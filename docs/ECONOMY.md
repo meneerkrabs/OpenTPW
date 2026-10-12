@@ -43,7 +43,7 @@ and report the file that supplied each value.
 | --- | --- | --- | --- |
 | `BankAccountInfo.InitialCash` | 50,000; easy 100,000 | Starting bank balance | data |
 | `BankAccountInfo.InitialAdmissionFee` | 20 | Starting ticket price (UITEXT 160 "Ticket Price") | data |
-| `LoanInfo[0–7].LoanAmount` / `.APRInPercent` / `.RepaymentPeriodInMonths` | 10,000–100,000 / 18–23 % (easy 0) / 24–48 | Loan offers (UITEXT 170–180: lender, term, amount, interest rate, monthly repayment, total payable) | data; repayment at APR > 0 approx |
+| `LoanInfo[0–7].LoanAmount` / `.APRInPercent` / `.RepaymentPeriodInMonths` | 10,000–100,000 / 18–23 % (easy 0) / 24–48 | Loan offers (UITEXT 170–180: lender, term, amount, interest rate, monthly repayment, total payable) | data; instalment per ORACLE F12 |
 | `LoanInfo[n].Lendername` | 0–17, renamed per theme | Index into `LOANNAMES.str` (18 names: "Cash Unlimited" … "Jurassic Loans", "Inca Finance", "Pumpkin Bank" …) | data |
 | `Costs.PathCell` / `QueueCell` / `KartTrackCell` / `WaterTrackCell` / `MapCell` | 20 / 75 / 400 (easy 200) / 500 (easy 250) / 100 (easy 10) | "How much incidental building costs" per cell; `MapCell` = land (UITEXT 134 "Buy Land") | data |
 | object `Upgrades[0].CostOfUpgrade` | 0–10,000 | "cash cost when buying this item" | data |
@@ -146,9 +146,10 @@ clean/dirty toilet, vomit, guard, camera, stink bomb, fireworks), `Seasons[]`/`W
 docs/reverse/SAVE-plan.md): the bank account named by `mBankAccount` (model 16) and the
 challenge system (model 19). `OriginalEconomyImport.Verify` then requires loan
 amount/APR/term/lender metadata and challenge fields to equal settings exactly. Monthly
-repayment equality is required only for 0 % APR, using integer `amount / months`, as proven by
-this fixture. Positive-APR monthly values are preserved in the decoded records and reported as
-**unverified**, without comparing them to the runtime's annuity approximation.
+repayment must equal the original's instalment `trunc(P x pow(1 + APR/100, N/24) / N)` for every APR
+(`LoanMath.MonthlyRepayment`, ORACLE F12: at 0 % APR that is `amount / months`, as this fixture shows;
+five original PC saves store the same eight positive-APR values, 3651, 1825, 912, 365, 922, 1282,
+2320, 2749).
 
 | Thing data | Layout | Cross-check |
 | --- | --- | --- |
@@ -156,16 +157,13 @@ this fixture. Positive-APR monthly values are preserved in the decoded records a
 | Loan offers | 8 × 32 bytes: available flag, i32 amount, i32 APR, months, monthly repayment, bought flag, months repaid, lender name index | Amounts, APR, terms and lenders equal `LoanInfo[0–7]`; repayments 2777, 1388, 694, 277, 750, 1000, 1666, 2166 = floor(amount / months), i.e. 0 % APR: only `Easy_Standard.sam` matches |
 | Challenge slots | 20 × 45 bytes: `i32 type, time, value, u16 object, u16 object2, i32 staff type, prize, follow-up, u8 check at end only`, 13 raw bytes, `u8 independent`, 2 raw bytes; the leading slots with a nonzero type are used | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
 
-Proven and used: the 0 % APR repayment formula, the easy balance for the jungle original level, and
+Proven and used: the loan instalment formula, the easy balance for the jungle original level, and
 the challenge list.
 
 The Mac serializer's named fields and 4-byte writes independently identify the bank words and
 eight-word loan records, and the actual PC fixture matches that order. Lender name index is
-independent of record order. APR > 0 repayment arithmetic on PC remains unproven; each such saved
-repayment receives an `[APPROX:ECON-006]` diagnostic and is not reported as matched. The current
-runtime calculation remains the ECON-006 approximation. A positive-APR stored value can differ from
-that calculation without invalidating otherwise matching typed data; replacing one unproved formula
-with the Mac formula is not part of validation. The decoded balance 87,987 and annual profit
+independent of record order. The instalment is the same expression the Mac binary executes
+(`0xcb7a8`, run in the PowerPC oracle, ORACLE F12), and OpenTPW uses it. The decoded balance 87,987 and annual profit
 −12,013 are consistent with 100,000 − 12,013; the spending history behind that profit is not in the
 save.
 
@@ -178,7 +176,7 @@ A park started from a shipped save (Instant Action, or the reference start) runs
 | --- | --- | --- | --- |
 | Turn | World `mGameTick` (755) | `Tick` = first tick of that turn; ledger month, hiring-pool timers and the first challenge offer day move with it | Traced (the turn the calendar converts); the save's calendar caches are checked against the resulting date (2 February 2000) |
 | Bank | bank words | `Balance` (ledger opening balance), `EntranceFee`, `ProfitThisYear` | Traced field identities |
-| Loans | bought loan offers | `Loans` (outstanding = monthly × months left) and taken offers | Field identities traced; outstanding balance SAVE-008 |
+| Loans | bought loan offers | `Loans` (months repaid and instalment; outstanding = monthly × months left, as in the original) and taken offers | Field identities traced; outstanding balance SAVE-008 |
 | Objects | RideSystem records (also those with an unverified footprint) + attraction things | registered uncharged; `Price`, `CostOfGoods`, `Level`, `Repair`, `LifeGauge` from the matching attraction (same Info.Id and cell) | Traced fields; state enum, chance of winning, totals, histories, names, operating, quality, queue and count fields, time stamp and mesh instance not imported (SAVE-006) |
 | Staff | models 4–8 | `Staff.Members`: type, grade, training percentage, happiness, state, hire tick (rounded down to its turn) | Grade/percentage/happiness traced; state order, names, jobs, idle tick, role suffix SAVE-003 |
 | Open state | World `mParkClosed` | the park opens when guests attach unless it is set | Traced |
@@ -222,7 +220,7 @@ PC fixture and the imported Instant Action start.
 | Ledger | Categories from UITEXT 164–169/356–360; integer dollars | Challenge prizes and scrap sales as "other income"; build, upgrade, goods, prizes and land as "other costs"; training as staff costs |
 | Gate/shops/sideshows | Entrance fee, shop price and cost of goods, sideshow price/prize/chance of losing | Purchase requires money ≥ cost; litter per sale |
 | Construction | Purchase, upgrade and cell costs; research gate; golden-ticket cost | Scrap value basis = catalogue cost up to the current level; park value = sum of scrap values |
-| Loans | Offers, lenders, terms; 0 % APR repayment = floor(amount/months) | Annuity formula and monthly interest for APR > 0; early repayment pays the remaining balance |
+| Loans | Offers, lenders, terms; instalment M = trunc(P x pow(1 + APR/100, N/24) / N) (F12); M paid flat for N months with no interest on a balance and no final remainder (F13); total payable M x N; early repayment M x months left, charged to the year profit as the whole-term share q x N (`0xccc78`, executed in the oracle); the year-profit word is 32-bit and wraps. **0 % APR (jungle Easy mode):** M = floor(P/N), so M x N < P and the unsigned share (M x N - P) / N is about 119 million a month; the original does this, and OpenTPW follows it on purpose (the year profit swings by that much and wraps) | The bank's withdrawals flag is assumed on (ECON-051) |
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
 | Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; repair restores 100 but not the life gauge. the life gauge starts at 100 (`0x100DAB1C`). Approximated: the ride-state gate (ECON-023) |
@@ -328,8 +326,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-001 | `Economy/ParkCalendar.cs:38` | OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases | runtime turn timing under load and speed changes |
 | ECON-002 | `Economy/ParkCalendar.cs:59` | the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar | the script system of an original run |
 | ECON-004 | `Economy/ParkCalendar.cs:11` | Fast x2 and Fastest x4 speeds (only pause is evidenced) | original speed controls, if any |
-| ECON-005 | `Economy/ParkLedger.cs:54` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received | the per-category ledger routines and the annual profit field |
-| ECON-006 | `Economy/ParkLedger.cs:148` | APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | standard-mode save or capture with an outstanding loan |
+| ECON-005 | `Economy/ParkLedger.cs:54` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received | the per-category ledger routines of other income and other costs (a loan received is money in and not profit: executed, ORACLE F14) |
 | ECON-007 | `Economy/ParkEconomy.cs:320` | repaid loan offers reopen without the original credit-eligibility gate | implement the traced credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `Economy/ParkStaff.cs:50` | 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") | capture of a training run |
 | ECON-010 | `Economy/ParkStaff.cs:64` | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | capture of pool refresh timing |
@@ -360,11 +357,12 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-048 | `Economy/ParkEconomy.cs:719` | a negative path or queue cell cost (modified `Costs.*`) is booked as other income; balance and profit match the original's Spend of a negative amount | the ledger category of a negative Spend |
 | ECON-049 | `World/ParkGate.cs:181` | the door's reopen guard (FUN_004df290) checks only VAR_BROKEN; the upgrade and condemned states and the back-of-queue path test (FUN_004de4a0) are not modelled | the ride states that block reopening and the queue back-link test |
 | ECON-050 | `World/ParkGate.cs` | the gate census reads the reduced imported guest grid; unpreserved outside, approach and footprint cells can remain counted type 0 | original cell-type provenance in the guest-grid import |
+| ECON-051 | `Economy/ParkEconomy.cs:362` | the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) | the writer of the flag and when the original clears it |
 
 ## Open questions
 
 - Original game speeds and runtime turn timing (the turn length, calendar start and civil months are traced).
-- Repayment formula with interest; whether loans can be retaken; whether building is allowed in the red.
+- Whether loans can be retaken; whether building is allowed in the red.
 - `BaseCostPerStaff`/`CostPerQualityLevel`, `Research.StartingWorkLoad`, researcher `WorkDuration`.
 - Park value and the scrap basis; how golden keys are earned.
 - The money block before the loan table (87,987 / 87,787 / −12,013), the extra words around the

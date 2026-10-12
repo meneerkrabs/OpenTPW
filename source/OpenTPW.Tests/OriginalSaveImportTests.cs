@@ -25,7 +25,7 @@ public class OriginalSaveImportTests
 	{
 		var offer = settings.Loans[index];
 		var isBought = bought?.Index == index;
-		return new[] { 0, (int)offer.Amount, offer.AprPercent, offer.Months, (int)(offer.Amount / offer.Months), isBought ? 1 : 0, isBought ? bought!.Value.Repaid : 0, offer.LenderNameIndex };
+		return new[] { 0, (int)offer.Amount, offer.AprPercent, offer.Months, (int)LoanMath.MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months ), isBought ? 1 : 0, isBought ? bought!.Value.Repaid : 0, offer.LenderNameIndex };
 	} );
 
 	/// <summary>The settings' level challenges in save slot layout.</summary>
@@ -256,7 +256,8 @@ public class OriginalSaveImportTests
 		var import = OriginalEconomyImport.Apply( economy, Park( settings, Bank( settings, balance: -500, bought: (1, 10) ), parkClosed: 1 ) );
 		var offer = settings.Loans[1];
 		var monthly = offer.Amount / offer.Months;
-		Assert.AreEqual( new LoanAccount( 1, offer.LenderNameIndex, offer.Amount, 0, offer.Months, monthly, offer.Months - 10, monthly * (offer.Months - 10) ), economy.Loans.Single() );
+		Assert.AreEqual( new LoanAccount( 1, offer.LenderNameIndex, offer.Amount, 0, offer.Months, monthly, 10 ), economy.Loans.Single() );
+		Assert.AreEqual( monthly * (offer.Months - 10), economy.Loans.Single().RemainingBalance, "early repayment is M x the months left" );
 		Assert.IsFalse( economy.AvailableLoans.Any( item => item.Index == 1 ), "a bought offer is taken" );
 		Assert.AreEqual( -500, economy.Balance );
 		Assert.IsTrue( import.ParkClosed );
@@ -273,8 +274,8 @@ public class OriginalSaveImportTests
 		var save = Park( settings );
 		var evidence = new List<string>();
 		OriginalEconomyImport.Verify( settings, save.Economy, evidence );
-		Assert.IsTrue( evidence.Any( line => line.Contains( "8 zero-APR monthly repayments" ) ) );
-		foreach ( var (word, value) in new[] { (1, 99_999), (2, 5), (3, 37), (4, 1), (7, 9) } )
+		Assert.IsTrue( evidence.Any( line => line.Contains( "8 monthly repayments equal" ) ) );
+		foreach ( var (word, value) in new[] { (1, 99_999), (2, 5), (3, 37), (7, 9) } )
 		{
 			var changed = Park( settings, Mutate( Bank( settings ), SaveThingBase.Bytes + SaveBank.AccountBytes + word * 4, value ) );
 			var error = Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Verify( settings, changed.Economy, new List<string>() ) );
@@ -286,7 +287,20 @@ public class OriginalSaveImportTests
 		var positiveSave = Park( positive );
 		var reported = new List<string>();
 		OriginalEconomyImport.Verify( positive, positiveSave.Economy, reported );
-		Assert.IsTrue( reported.Any( line => line.Contains( "[APPROX:ECON-006]" ) && line.Contains( "unverified" ) ) );
+		Assert.IsTrue( reported.Any( line => line.Contains( "8 monthly repayments equal trunc(P x pow(1 + APR/100, N/24) / N)" ) ), "the stored instalment is accepted at a positive APR" );
+		Assert.IsFalse( reported.Any( line => line.Contains( "ECON-006" ) ) );
+		// a stored M that differs from this host's pow (the last bit of PC and Mac pow is unproven) imports and is reported
+		var offByOne = Park( positive, SaveTestPayloads.Bank( loans: index =>
+		{
+			var offer = positive.Loans[index];
+			return new[] { 0, (int)offer.Amount, offer.AprPercent, offer.Months, (int)LoanMath.MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months ) + (index == 2 ? 1 : 0), index == 2 ? 1 : 0, index == 2 ? 3 : 0, offer.LenderNameIndex };
+		} ) );
+		var softEvidence = new List<string>();
+		OriginalEconomyImport.Verify( positive, offByOne.Economy, softEvidence );
+		Assert.IsTrue( softEvidence.Any( line => line.StartsWith( "Save loan offer 2 monthly repayment", StringComparison.Ordinal ) && line.Contains( "stored value is kept" ) ) );
+		var imported = new ParkEconomy( positive, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		OriginalEconomyImport.Apply( imported, offByOne );
+		Assert.AreEqual( LoanMath.MonthlyRepayment( positive.Loans[2].Amount, 10, positive.Loans[2].Months ) + 1, imported.Loans.Single().MonthlyRepayment, "the stored M is kept" );
 		var otherChallenges = EconomyTestData.Settings( apr: 0, extra: ExtraLoans + "ChallengesInThisLevel[1].ChallengeType 8\n" );
 		Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Verify( otherChallenges, save.Economy, new List<string>() ) );
 	}

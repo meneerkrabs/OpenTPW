@@ -109,8 +109,9 @@ Mutation checks (`test_oracle.py`):
 - `CSharpMutation` builds the bridge against a scratch copy of `source/` with one operand flipped,
   and each turns a C# agreement into mismatches: the queue floor `4f → 5f` (60), the
   `CanChangeCellType` rule `old == 21 → old == 20` (2), rule 7 back to `lastCell` (2), the money
-  test in 64 bits (2), the UNBOUNCE window `/ 200 → / 250` (39) and `IsOpen` dropped from the park points
-  counts-test. A no-op "mutation" fails the
+  test in 64 bits (2), the UNBOUNCE window `/ 200 → / 250` (39), `IsOpen` dropped from the park points
+  counts-test, the loan instalment `… / months → … / months + 1` and the loan credit booked as other income instead of
+  `LoanReceived`. A no-op "mutation" fails the
   test.
 
 ## 4. Targets, stubs and results (seed `oracle-v1`, 500 random + boundaries)
@@ -132,6 +133,11 @@ Mutation checks (`test_oracle.py`):
 | `arrival-update` | `0xcb2ac` (the arrival update), `0xcb4e8` (group size), `0xcb028` (constructor), `0x1210f8`/`0x121098` (timer elapsed / restart), `0x10a9a4` (game pointer) | `0x109784` vehicle phase and `0x109b78` report flag (chosen per call), `0x109368` vehicle script step (logged with its frame slot and size), `0xcb698` guest creation (counted, raises the counted guests), `0xcb750` group history (logged), `0xb678` assertion (logged), and the `arrival-group` stubs. One run is a script of `0xcb2ac` calls in one sandbox | 510 scripts | **agree** (behaviour: active byte, timer start, guests created per call; GUESTS.md loop with the F9 details, group floored at 0). Routine reading **agree** 510/510 (adds the group word and the vehicle steps). **F11**: the brief's static reading (a negative group holds the state) differs on 66 scripts | no C# hook (`UpdateArrivals` has no vehicle phase) |
 | `park-points` | `0xc24c0`, `0xc5828` (type count), `0xd1be8`/`0xd1c88` (park record search), `0xe4750` (turns → 100 ns units), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic, registry checked), `0xb678` assert (a zero condition fails the run), `0xdc834` counts-test (chosen flag, itself the next target), `0xdc520` own age (signed timestamp difference in days). The park record table is built: `+24` the listed copies, `+28` by the `0xda874` write rule. Clock rate 15000; no build after the current turn | 507 | **F10** (fixed): GUESTS.md and the routine reading **agree** 507/507 (the 121 differences came from the counts-test, ARRIVAL-003) | `ParkEconomy.ParkPoints` through `park_points`, the input's open flag passed as `IsOpen`: **agree** 507/507 (121 before the counts-test) |
 | `park-points-counts-test` | `0xdc834` (the counts-test), `0xdc988` (queue room), `0xdfe0c`/`0xdfe20` (ride state 1 / 4), `0xdff18` (open word), `0xe2fe4` (track type 3) | `0x118018` type record (`+156` chosen, registry and type id checked), `0xdd3f4` back-of-queue cell (writes the chosen u16), `0xdd118` listed guests (chosen), `0x45eac` coaster controller (chosen word). The u16 behind TOC −19648 is read as 0 (checked) | 522 (one failing condition at a time, wrapping queue room) | **Agree** 522/522 with the reading, stub call order included. The part C# implements (`implemented-subset`: choosable, not state 1 or 4, open) differs on 205 | no hook: entrance cell, queue room and coaster have no state in `ParkEconomy` |
+| `loan-offers` | fragment `0xcb7a8..0xcb908` (the 8-offer loop), `0x1c3fbc` (float→uint), glue `0x1c61a4` | `0xfa718` base constructor (header only), import `pow` (MathLib, stubbed with Python `math.pow`) | 505 offer sets (8 offers each) | **F12**: **agree** 505/505 with the plan (fixed in C#; 497 sets differed from the former annuity) and with the routine reading | `LoanMath.MonthlyRepayment` through `loan_offers`: **agree** 505/505 (497 differed before) |
+| `loan-month` | fragment `0xcc21c..0xcc3d0` (batch flush and the 8-record loan loop) | `0x1082b4` game → park (sentinel, checked), `0xb678` assertion and `0x5fbcc` debug print (logged) | 506 states of 1-3 months | no plan side. **Agree** 506/506 with the routine reading | no C# hook (see `loan-term`) |
+| `loan-term` | the same fragment, run once a month over a whole term (withdrawals enabled, no batch) | the same | 503 terms | **F13**: **agree** 503/503 with the plan (fixed in C#; 483 differed from the former interest-on-balance arithmetic), the routine reading too | `LoanMath.Pay`, `ParkLedger.Post`, `ChargeLoanInterest` through `loan_term`: **agree** 503/503 (483 differed before; the year-profit word wraps at 32 bits on both sides) |
+| `loan-payoff` | `0xccc78` (early repayment) | the same | 506 | **F13**: **agree** (payoff M × months left, year profit charged q × N, 32-bit wrap), routine reading too | `ParkEconomy.TryRepayLoan` through `loan_payoff`: **agree** |
+| `loan-take` | `0xcc904` | the same | 505 | **F14**: **agree** (money in, balance, no profit, bought flag), routine reading too | `ParkEconomy.TakeLoan` through `loan_take`: **agree** |
 
 The C# comparisons use these seams:
 
@@ -155,6 +161,12 @@ The C# comparisons use these seams:
   covers how purchases set it). The open flag (the
   chosen `0xdc834` counts-test result) is passed as the object's open state (`IsOpen`); the test's other conditions have no
   C# state and are not in the inputs.
+
+- `LoanMath.MonthlyRepayment` (`loan_offers`) for each offer of an input; `LoanMath.Pay`, `ParkLedger.Post` and
+  `ParkLedger.ChargeLoanInterest` (`loan_term`) run month by month exactly as `ParkEconomy.EndMonth` does, with the
+  instalment M given (the original's, as C# now computes it); the real `EndMonth` is covered by
+  `ParkEconomyTests`. `ParkEconomy.TryRepayLoan` (`loan_payoff`) on an imported bank with one bought loan; `ParkEconomy.TakeLoan` (`loan_take`) on an economy with the one offer (a second take refused for
+  an offer already bought); the changes of balance, year profit and the month's money-in total are compared.
 
 The pricing domain is the free byte clear, `game+36 == 0` and bank `+276 ≠ 0`. Old 1 → new 3
 belongs to `path-can-change`.
@@ -425,6 +437,109 @@ Result: ARRIVAL-004 changes no guest or timer behaviour. The C# floor at 0 produ
 original's negative group, differing only in the stored group word and the untraced empty-group vehicle step. The
 brief's static reading, a negative group holding the state, differs on 66 scripts and is refuted. The
 `plan` side models the stop gate as the vehicle phase 2, where `UpdateArrivals` uses a fixed 0.4 s spacing (ARRIVAL-001). C# is not compared.
+
+**F12, loan instalment (ECON-006, `LoanMath.MonthlyRepayment`, `0xcb7a8`; fixed in C#).** The constructor of the bank object fills
+eight loan records. Its loop (`0xcb84c..0xcb904`, run as a fragment) reads amount P, APR A, months N and lender from the
+settings block (`+416`, 16 bytes per offer; `+408` is the initial cash) and stores, per record (32 bytes from the bank
+object): `+20` available, `+24` P, `+28` A, `+32` N, `+36` instalment M, `+40` bought 0, `+44` months repaid 0, `+48` lender.
+The instalment is computed in binary64 as `trunc_u32(P × pow(1 + A/100, (N/12) × 0.5) / N)`: the constants in the TOC
+are 100, 12, 1 and 0.5, `0xcb8cc` calls `pow` (import glue `0x1c61a4`) and `0x1c3fbc` converts to unsigned (negative
+gives 0, NaN and 2³² and above give 2³² − 1). `pow` is the one stub that stands for code outside the binary: the
+MathLib import is replaced by Python's `math.pow`, which can differ from MathLib in the last bit. A last-bit
+difference changes M only when P × pow / N lies that close to an integer; at 0 % APR `pow` is exactly 1.
+
+The formula is not an annuity. It charges P × (1 + A/100)^(N/24): compound interest on the whole principal for half the
+term (a flat average-balance model), then divides by N. Executed on the eight shipped offers (PPC-economy):
+
+| P | APR | N | original M | M × N | former C# annuity M |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 100000 | 20 | 36 | 3651 | 131436 | 3716 |
+| 50000 | 20 | 36 | 1825 | 65700 | 1858 |
+| 25000 | 20 | 36 | 912 | 32832 | 929 |
+| 10000 | 20 | 36 | 365 | 13140 | 371 |
+| 18000 | 23 | 24 | 922 | 22128 | 942 |
+| 30000 | 22 | 30 | 1282 | 38460 | 1308 |
+| 80000 | 18 | 48 | 2320 | 111360 | 2349 |
+| 65000 | 21 | 30 | 2749 | 82470 | 2803 |
+
+First counterexample: the first row. Against the routine reading all 505 offer sets (4040 offers) agree, including
+the bank words the constructor sets (balance = initial cash, batch 0, withdrawals enabled 1, last balance 0, turn entered
+red 0, year profit 0). Dropping any one part of the reading brings mismatches back (`test_loan_offers_reading_is_sharp`:
+the exponent N/12, the APR divisor 1200, rounding instead of truncating, the annuity). At 0 % APR the routine
+gives floor(P/N), as the Easymode save does (the only offers where the old C# annuity agreed). The initial available flag is
+`amount ≤ 10000`; later code (`0xcc6d0`, `0xcc9e8`, ECON-007) sets it again, which the saves show (25,000 and 18,000
+offers available in Lost Kingdom). A zero term divides by zero and saturates to 2³² − 1 (no shipped offer has one; C# throws).
+
+Fixed in C#: `LoanMath.MonthlyRepayment` now computes the same expression in binary64 with the same float-to-unsigned
+conversion, for every APR, so the `plan` and `csharp` sides of `loan-offers` agree with the original on 505/505 offer
+sets (497 of 505 differed before). `OriginalEconomyImport.Verify` accepts and checks the stored M at every APR.
+
+Independent check without the oracle: original PC saves of Standard mode store the same eight instalments. Decoded with
+`SaveEconomyRecords`, the jungle `Lost Kingdom.TPWS` and `autosave.TPWS`, `Halloween World.TPWS`, `Space Zone.TPWS` and
+`Wonder Land.TPWS` of the Nexus mod's "All Researched Saves" all hold 3651, 1825, 912, 365, 922, 1282, 2320 and 2749 with
+the loans unbought. These values were written by the original's own code, so the formula is not just a reading of the
+binary. (No Standard save with an outstanding loan was available.)
+
+**F13, monthly loan step (ECON-006, `LoanMath.Pay`, `0xcc21c`; fixed in C#).** The monthly handler (bank message 12) first moves the
+batch credit (`+16`, asserted below 1,000,000) into the balance (`+12`), the money-in word (park `+0x1FC90`) and the year
+profit (`+292`). Then, for each bought record in index order, with withdrawals enabled (`+276`): the balance falls by the stored
+M (the turn the balance first goes negative is stored at `+288` when the last balance `+284` was not negative, and `+284`
+follows the balance), the money-out word (park `+0x1F5A0`) rises by M and the year profit falls by M. Whatever the
+withdrawals flag, months repaid rise by 1, the year profit then gains M − floor((M × N − P) / N) with the subtraction in
+32-bit unsigned arithmetic (so a net −floor((M × N − P) / N) with withdrawals), and when months repaid equal N the
+bought flag and months repaid clear. The routine reading agrees on 506/506 random bank states (1-3 months, any batch,
+withdrawal flag, red state, bought flag 0/1/2 and months repaid) and 503/503 whole terms, with every assertion and debug
+message in the same order (`test_loan_month_reading_is_sharp` drops each part in turn).
+
+Executed over a whole term, the original therefore deducts the stored M exactly N times and nothing else. There is no
+remaining balance, no interest on a balance and no last-month remainder. C# used to accrue APR/12 on the remaining
+balance each month, pay min(balance + interest, M) and settle the remainder in the last month; with the original's M the
+two differed on 483 of 503 terms (the 20 that agreed were 0 % loans where M × N = P exactly and one- or two-month terms).
+Example, 100,000 at 20 % over 36 months:
+
+- Original: M = 3651 for 36 months, 131,436 in all. The year profit falls by 873 a month (131,436 − 100,000 = 31,436 /
+  36), 31,428 in all because of the integer division.
+- OpenTPW before: M = 3716 and 133,795 in all (`LoanMath.TotalPayable`). After: M = 3651, total payable M × N = 131,436,
+  and early repayment after 12 months pays 3651 × 24 = 87,624 (before: the declining balance with interest).
+- 0 % APR: M = floor(100000 / 36) = 2777, and the original deducts 36 × 2777 = 99,972, 28 less than was lent. C#
+  now does the same (it used to settle the remainder, 100,000). The year-profit share (2777 × 36 − 100000) / 36 wraps in
+  32 bits to 119,304,646 a month (the 32-bit wrap `InstalmentInterest` already reproduced).
+
+Early repayment (`0xccc78`, executed by the `loan-payoff` target) refuses a loan that is not bought and a balance below the
+payoff (an unsigned compare), then pays M × (N − months repaid) and clears bought and months repaid, so it needs no remaining
+balance. It clears the months repaid before it reads them again, so the year profit is charged the share of the **whole**
+term, q × N with q = (M × N − P) / N (unsigned 32-bit), even after a partial repayment. Paying off 100,000 / 36 months / 20 %
+after 12 months takes 87,624 off the balance and 31,428 off the year profit. C# `TryRepayLoan` pays `RemainingBalance` =
+M × (N − months repaid) and charges `LoanMath.PayoffInterest`; `plan`, routine reading and C# agree with the original on 506/506
+inputs (`test_loan_payoff_100000_at_20_percent_after_12_months`, `test_loan_payoff_reading_is_sharp`; the withdrawals flag
+and a negative balance are covered by the routine reading only).
+
+**The 0 % APR quirk is original behaviour and is kept on purpose.** At 0 % APR M = floor(P / N), so M × N < P whenever N
+does not divide P, and the unsigned subtraction M × N − P wraps: the share is about 119 million a month (100,000 over 36
+months). Jungle Easy mode has only 0 % loans, so it swings the year profit by that much per loan and month, and the
+32-bit word wraps (two loans reach −2,147,483,628 after nine payments, and a $21 cost then wraps it to +2,147,483,647, as the
+original's `stw` does). Do not "fix" the share or the 32-bit wrap: the profit ticket reads this word signed
+(`0xCCFA8`, `0x14048`).
+
+Fixed in C#: `LoanAccount` stores the months repaid; `LoanMath.Pay` pays exactly M and counts a month, `TotalPayable` is
+M × N, the remaining amount is derived, instalments run in offer-index order, and the monthly step keeps the original's
+year-profit bookkeeping. `ParkLedger` keeps the year profit a signed 32-bit word on every update (`Post`, `ChargeLoanInterest`, restore), as the
+original stores it (at 0 % APR the interest share is about 119 million, so the word wraps within a year). The balance,
+money-in and money-out words are 32-bit in the original too, but the park cannot reach 2³¹ there, so C# keeps 64 bits. The `plan` and `csharp` sides of
+`loan-term` agree with the original on 503/503 whole terms. The
+withdrawals flag (`+276`) has no C# counterpart and is assumed on (ECON-051). Saves written by the old model (version 2
+with a remaining balance) load with their months left; the old balance is replaced by M × months left.
+
+**F14, a loan received (ECON-005, `0xcc904`).** Taking an offer that is not bought logs, then credits P to the balance
+(`+12`), the money-in word (park `+0x1FC90`) and the year profit (`+292`), and takes the same P off the year profit; it
+sets the bought flag to 1 and returns 1. An offer already bought logs and returns 0. The credit is the same
+as `0xcbf50`, the bank's ordinary credit (balance, money in, year profit), so a loan is **money in** and leaves the year
+profit unchanged. `ParkEconomy.TakeLoan` (`LoanReceived` is income, excluded from `ProfitThisYear`) agrees on all 505
+inputs (balance, year profit, money in, bought flag), as does the plan of ECON-005's loan clause. The routine reading
+agrees on 505/505 (including the assertion at 1,000,000). The remaining ECON-005 text (challenge prizes, scrap sales,
+build and upgrade costs as other income or costs) is not a loan matter and stays open. One difference in kind:
+`LedgerMonth.Profit` (monthly) charges whole instalments, where the original's year-profit word `+292` takes only the
+interest share; `ProfitThisYear` is the original's field and follows it.
 
 ## 6. Adding a target or a C# hook
 

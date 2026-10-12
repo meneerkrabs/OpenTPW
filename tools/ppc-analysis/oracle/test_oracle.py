@@ -99,9 +99,29 @@ EXPECTED = {
     ('park-points-counts-test', 'plan'): AGREE,
     ('park-points-counts-test', 'implemented-subset'): (205, {'flags': 4, 'state': 0, 'open': 1, 'cell': 0, 'cells': 2,
                                                               'track': 0, 'thing40': 1, 'coaster': 1, 'count': 7}),
+    # F12/F13 (fixed in C#): 0xcb7a8 stores monthly = trunc(P x pow(1 + APR/100, N/24) / N), not an annuity (3651 for 100000
+    # at 20 % over 36 months), and 0xcc21c deducts exactly that for N months (no balance, interest or last-month remainder,
+    # profit down by (M x N - P) / N). LoanMath.MonthlyRepayment / Pay and the plan now do the same.
+    ('loan-offers', 'plan'): AGREE,
+    ('loan-offers', 'routine-reading'): AGREE,
+    ('loan-offers', 'csharp'): AGREE,
+    ('loan-month', 'routine-reading'): AGREE,
+    ('loan-term', 'plan'): AGREE,
+    ('loan-term', 'routine-reading'): AGREE,
+    ('loan-term', 'csharp'): AGREE,
+    # F14: 0xcc904 credits the amount to the balance and the money-in word and leaves the year profit alone (ECON-005):
+    # OpenTPW's TakeLoan already does the same.
+    ('loan-take', 'plan'): AGREE,
+    ('loan-take', 'routine-reading'): AGREE,
+    ('loan-take', 'csharp'): AGREE,
+    # F13 (early repayment, executed): 0xccc78 pays M x (N - months repaid) and charges the year profit the whole-term share
+    # q x N; the year-profit word wraps at 32 bits. TryRepayLoan does the same.
+    ('loan-payoff', 'plan'): AGREE,
+    ('loan-payoff', 'routine-reading'): AGREE,
+    ('loan-payoff', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final', 'arrival-update', 'park-points-counts-test'}
+                  'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month'}
 
 
 class Identity(unittest.TestCase):
@@ -304,6 +324,149 @@ class Oracle(unittest.TestCase):
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
 
+    def test_loans(self):
+        for key in (('loan-offers', 'plan'), ('loan-offers', 'routine-reading'), ('loan-month', 'routine-reading'),
+                    ('loan-term', 'plan'), ('loan-term', 'routine-reading'), ('loan-take', 'plan'),
+                    ('loan-take', 'routine-reading'), ('loan-payoff', 'plan'), ('loan-payoff', 'routine-reading')):
+            self.check(key)
+
+    def test_loans_csharp(self):
+        for key in (('loan-offers', 'csharp'), ('loan-term', 'csharp'), ('loan-take', 'csharp'), ('loan-payoff', 'csharp')):
+            self.check(key)
+
+    def test_loan_shipped_offers(self):
+        """The eight shipped offers as the routine stores them (PPC-economy table); original PC saves (Lost Kingdom,
+        Halloween World, Space Zone, Wonder Land, autosave) hold the same eight instalments."""
+        target = targets.LOAN_OFFERS
+        x = {'cash': 100000, 'offers': targets.SHIPPED_LOANS}
+        original = targets.run_binary(target, target.sandbox(self.image), x)
+        self.assertEqual(original['monthly'], targets.SHIPPED_MONTHLY)
+        self.assertEqual(original['monthly'], [3651, 1825, 912, 365, 922, 1282, 2320, 2749])
+        self.assertEqual([n * m for (_, _, n, _), m in zip(targets.SHIPPED_LOANS, original['monthly'])],
+                         [131436, 65700, 32832, 13140, 22128, 38460, 111360, 82470])
+        annuity = [targets.loan_annuity_plan(a, r, n) for a, r, n, _ in targets.SHIPPED_LOANS]
+        self.assertEqual(annuity, [3716, 1858, 929, 371, 942, 1308, 2349, 2803])
+        self.assertEqual(original['bank'], (100000, 0, 1, 0, 0, 0, 0))
+        self.assertEqual([record[0] for record in original['records']], [0, 0, 0, 1, 0, 0, 0, 0])  # amount <= 10000
+
+    def test_loan_zero_months_saturates(self):
+        """No shipped offer has 0 months. The routine divides by 0: P > 0 gives +inf, saturated to 2^32 - 1 by
+        0x1c3fbc; P = 0 gives NaN, which the same helper also saturates."""
+        target = targets.LOAN_OFFERS
+        offers = [(10000, 20, 0, 0), (0, 20, 0, 0)] + [(1, 0, 1, 0)] * 6
+        original = targets.run_binary(target, target.sandbox(self.image), {'cash': 0, 'offers': offers})
+        self.assertEqual(original['monthly'][:2], [0xFFFFFFFF, 0xFFFFFFFF])
+        self.assertEqual(targets.loan_offers_reading({'cash': 0, 'offers': offers})['monthly'], original['monthly'])
+
+    def test_loan_offers_reading_is_sharp(self):
+        # Each part of the formula matters: the exponent (N/12 instead of N/24), the APR divisor (monthly rate), the
+        # truncation and the 0.5 -> 1 base; the retired annuity differs too.
+        import dataclasses
+        variants = {
+            'exponent-years': lambda x: targets.loan_offers_reading(x, exponent=1.0),
+            'apr-per-month': lambda x: targets.loan_offers_reading(x, rate=1200.0),
+            'annuity': lambda x: {**targets.loan_offers_reading(x), 'monthly': [
+                targets.loan_annuity_plan(a, r, n) for a, r, n, _ in x['offers']]},
+            'rounded': lambda x: {**targets.loan_offers_reading(x), 'monthly': [
+                int(targets.loan_pow(1.0 + r / 100.0, (n / 12.0) * 0.5) * a / n + 0.5) for a, r, n, _ in x['offers']]},
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.LOAN_OFFERS, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_loan_month_reading_is_sharp(self):
+        # Each part of the step matters: the batch flush, the withdrawals flag, the red turn, the year profit terms
+        # and the clear when the months repaid reach the term.
+        import dataclasses
+        for part in ('batch', 'withdraw-flag', 'red', 'share', 'profit-debit', 'clear'):
+            mutated = dataclasses.replace(targets.LOAN_MONTH, plan=lambda x, part=part: targets.loan_step_reading(x, drop=part),
+                                          alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, part)
+
+    def test_loan_term_100000_at_20_percent(self):
+        """100000 at 20 % over 36 months: the original deducts 3651 for 36 months (131436 in all, profit down by the
+        interest share 873 a month, 31428 in all) and the loan is gone after month 36. OpenTPW's former annuity
+        (M 3716) would have cost 133776 in all; the plan and C# now pay the original's 131436."""
+        target = targets.LOAN_TERM
+        loan = {'amount': 100000, 'apr': 20, 'months': 36, 'monthly': 3651, 'bought': 1, 'repaid': 0}
+        idle = {'amount': 0, 'apr': 0, 'months': 0, 'monthly': 0, 'bought': 0, 'repaid': 0}
+        x = {'bal': 1000000, 'batch': 0, 'wd': 1, 'last': 1000000, 'red': 0, 'profit': 0, 'loans': [loan] + [idle] * 7,
+             'turns': [800 * k for k in range(38)]}
+        original = targets.run_binary(target, target.sandbox(self.image), x)
+        self.assertEqual(original['balance'][35], 1000000 - 131436)
+        self.assertEqual(original['balance'][37], 1000000 - 131436)
+        self.assertEqual(original['profit'][35], -873 * 36)
+        self.assertEqual(original['active'][34:36], [1, 0])
+        self.assertEqual(original['acc_out'][-1], 131436)
+        self.assertEqual(original['loans'][35][0], (0, 0))
+        plan = targets.loan_term_plan(x)
+        self.assertEqual(1000000 - plan['balance'][-1], 131436)
+        self.assertEqual(plan['profit'][35], -873 * 36)
+        plan = targets.loan_term_plan({**x, 'loans': [{**loan, 'monthly': 3716}] + [idle] * 7})
+        self.assertEqual(1000000 - plan['balance'][-1], 133776)
+
+    def test_loan_zero_apr_pays_less_than_the_principal(self):
+        """At 0 % APR M = floor(P / N), so the original deducts M x N, which is less than P (100000 / 36: 99972); the
+        plan and C# follow it (they used to settle the remainder in the last month). The year-profit share wraps in 32 bits when M x N < P."""
+        target = targets.LOAN_TERM
+        loan = {'amount': 100000, 'apr': 0, 'months': 36, 'monthly': 2777, 'bought': 1, 'repaid': 0}
+        idle = {'amount': 0, 'apr': 0, 'months': 0, 'monthly': 0, 'bought': 0, 'repaid': 0}
+        x = {'bal': 1000000, 'batch': 0, 'wd': 1, 'last': 1000000, 'red': 0, 'profit': 0, 'loans': [loan] + [idle] * 7,
+             'turns': [800 * k for k in range(37)]}
+        original = targets.run_binary(target, target.sandbox(self.image), x)
+        self.assertEqual(1000000 - original['balance'][-1], 99972)
+        self.assertEqual(1000000 - targets.loan_term_plan(x)['balance'][-1], 99972)
+        self.assertEqual(original['profit'][0], -(((2777 * 36 - 100000) & 0xFFFFFFFF) // 36))
+
+    def test_loan_payoff_100000_at_20_percent_after_12_months(self):
+        """0xccc78 executed: paying off 100000 / 36 months / 20 % (M 3651) after 12 months takes 3651 x 24 = 87624 off the
+        balance and the whole-term share 873 x 36 = 31428 off the year profit (months repaid are cleared before they are
+        read again); with withdrawals off nothing leaves the balance and the profit gains 87624 - 31428."""
+        target = targets.LOAN_PAYOFF
+        x = {'bal': 300000, 'profit': 0, 'wd': 1, 'last': 300000, 'index': 2, 'amount': 100000, 'apr': 20, 'months': 36,
+             'monthly': 3651, 'bought': 1, 'repaid': 12}
+        original = targets.run_binary(target, target.sandbox(self.image), x)
+        self.assertEqual((original['taken'], original['balance'], original['profit'], original['bought'], original['repaid'],
+                          original['money_out']), (1, 300000 - 87624, -31428, 0, 0, 87624))
+        self.assertEqual(targets.loan_payoff_plan(x)['profit'], -31428)
+        off = {**x, 'wd': 0}
+        original = targets.run_binary(target, target.sandbox(self.image), off)
+        self.assertEqual((original['balance'], original['profit'], original['money_out']), (300000, 87624 - 31428, 0))
+        self.assertEqual(original, {**original, **targets.loan_payoff_reading(off)})
+
+    def test_loan_payoff_reading_is_sharp(self):
+        # The sufficiency test, the whole-term share (not the share of the months left, not none) and the flags matter.
+        import dataclasses
+        variants = {
+            'no-share': lambda x: {**targets.loan_payoff_plan(x), 'profit': x['profit']},
+            'share-of-months-left': lambda x: {**targets.loan_payoff_plan(x), 'profit': targets.to_s32(
+                x['profit'] - ((((x['monthly'] * x['months']) - x['amount']) & targets.MASK32) // max(x['months'], 1)) * (x['months'] - x['repaid']))
+                if targets.loan_payoff_plan(x)['taken'] else x['profit']},
+            'payoff-in-profit': lambda x: {**targets.loan_payoff_plan(x), 'profit': targets.to_s32(
+                targets.loan_payoff_plan(x)['profit'] - targets.loan_payoff_plan(x)['money_out'])},
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.LOAN_PAYOFF, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_loan_take_reading_is_sharp(self):
+        # ECON-005: the amount reaches the balance and the money-in word but not the year profit. Dropping either part, or
+        # letting the profit rise, turns the agreement into mismatches.
+        import dataclasses
+        variants = {
+            'profit-rises': lambda x: {**targets.loan_take_plan(x), 'profit': x['profit'] + (0 if x['bought'] else x['amount'])},
+            'no-money-in': lambda x: {**targets.loan_take_plan(x), 'money_in': 0},
+            'no-balance': lambda x: {**targets.loan_take_plan(x), 'balance': x['bal']},
+            'repeatable': lambda x: {**targets.loan_take_plan({**x, 'bought': 0})},
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.LOAN_TAKE, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})
         sandbox.reset()
@@ -354,6 +517,15 @@ class CSharpMutation(unittest.TestCase):
          'public const int Floor = 655;', 'public const int Floor = 654;'),
         ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          '!item.ScriptBroken && item.IsOpen;', '!item.ScriptBroken;'),
+        ('loan-offers', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',
+         'return TruncateUnsigned( amount * power / months );', 'return TruncateUnsigned( amount * power / months + 1.0 );'),
+        ('loan-term', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',
+         'account.MonthlyRepayment);\n\t}', 'account.MonthlyRepayment + 1);\n\t}'),
+        ('loan-payoff', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'Ledger.ChargeLoanInterest( LoanMath.PayoffInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );',
+         'Ledger.ChargeLoanInterest( 0 );'),
+        ('loan-take', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'Post( LedgerCategory.LoanReceived, offer.Amount );', 'Post( LedgerCategory.OtherIncome, offer.Amount );'),
     ]
 
     def test_mutations_are_detected(self):

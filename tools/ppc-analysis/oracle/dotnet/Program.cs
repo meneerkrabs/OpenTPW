@@ -21,6 +21,10 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["guest_speed_smoothing"] = GuestSpeedSmoothing,
 	["arrival_group"] = ArrivalGroup,
 	["park_points"] = ParkPoints,
+	["loan_offers"] = LoanOffers,
+	["loan_term"] = LoanTerm,
+	["loan_take"] = LoanTake,
+	["loan_payoff"] = LoanPayoff,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -181,4 +185,86 @@ static JsonNode? ParkPoints( JsonObject a )
 	}
 	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)a["now"]! ) } );
 	return JsonValue.Create( park.ParkPoints() );
+}
+
+// LoanMath.MonthlyRepayment (the monthly instalment at loan setup 0xcb7a8, ORACLE F12) for each [amount, APR, months] offer;
+// null where C# throws (months below 1).
+static JsonNode? LoanOffers( JsonObject a )
+{
+	var results = new JsonArray();
+	foreach ( var offer in a["offers"]!.AsArray() )
+	{
+		try { results.Add( JsonValue.Create( LoanMath.MonthlyRepayment( (long)offer![0]!, (int)offer[1]!, (int)offer[2]! ) ) ); }
+		catch ( ArgumentOutOfRangeException ) { results.Add( null ); }
+	}
+	return new JsonObject { ["monthly"] = results };
+}
+
+// The loan loop of ParkEconomy.EndMonth (the monthly step 0xcc21c) on the real ParkLedger and LoanMath: per month every
+// outstanding loan, in index order, pays exactly M with LoanMath.Pay and posts it as LoanPayments, the instalment's interest
+// share (LoanMath.InstalmentInterest) lowers the year's profit, and a loan with no months left ends. The loans arrive as
+// opened with the given monthly instalment (the original's M, or any other). ParkEconomyTests run the same loop through
+// EndMonth itself.
+static JsonNode? LoanTerm( JsonObject a )
+{
+	var ledger = new ParkLedger( (long)a["balance"]! );
+	var accounts = a["loans"]!.AsArray().Select( ( loan, index ) => new LoanAccount( index, 0, (long)loan!["amount"]!, (int)loan["apr"]!,
+		(int)loan["months"]!, (long)loan["monthly"]!, 0 ) ).ToList();
+	var months = new JsonArray();
+	for ( var step = 0; step < (int)a["steps"]!; step++ )
+	{
+		for ( var index = 0; index < accounts.Count; )
+		{
+			var (account, paid) = LoanMath.Pay( accounts[index] );
+			ledger.Post( LedgerCategory.LoanPayments, paid );
+			ledger.ChargeLoanInterest( LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
+			if ( account.MonthsRemaining <= 0 )
+				accounts.RemoveAt( index );
+			else
+				accounts[index++] = account;
+		}
+		months.Add( new JsonObject { ["balance"] = ledger.Balance, ["profit"] = ledger.ProfitThisYear, ["active"] = accounts.Count } );
+	}
+	return new JsonObject { ["months"] = months };
+}
+
+// ParkEconomy.TakeLoan (0xcc904, ECON-005) on an economy whose only offer is the given amount: the changes in balance, year
+// profit and the money-in total of the month, and whether the offer was taken. With taken_before the offer is taken first, so
+// the second take is the refused one (the original's bought flag).
+static JsonNode? LoanTake( JsonObject a )
+{
+	var amount = (long)a["amount"]!;
+	var text = System.Text.RegularExpressions.Regex.Replace( EconomyTestData.StandardText( (int)a["cash"]! ), @"^LoanInfo\[\d+\]\..*\n", "",
+		System.Text.RegularExpressions.RegexOptions.Multiline )
+		+ $"LoanInfo[0].LoanAmount\t{amount}\nLoanInfo[0].APRInPercent\t20\nLoanInfo[0].RepaymentPeriodInMonths\t36\nLoanInfo[0].Lendername\t0\n";
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	if ( (bool)a["taken_before"]! )
+		park.TakeLoan( 0 );
+	long MoneyIn() => park.Ledger.CurrentMonth( 0, 0 ).MoneyIn;
+	var (balance, profit, moneyIn) = (park.Balance, park.Ledger.ProfitThisYear, MoneyIn());
+	bool taken;
+	try { park.TakeLoan( 0 ); taken = true; }
+	catch ( InvalidOperationException ) { taken = false; }
+	return new JsonObject { ["taken"] = taken, ["balance"] = park.Balance - balance, ["profit"] = park.Ledger.ProfitThisYear - profit,
+		["money_in"] = MoneyIn() - moneyIn };
+}
+
+// ParkEconomy.TryRepayLoan (0xccc78, ORACLE F13) on a bank with the given balance, year profit and one bought loan (any
+// instalment, so the original's M and the loan's months repaid are given): whether it was repaid, and the balance, year
+// profit, money-out total, bought flag and months repaid afterwards. A loan that is not bought throws (no loan to repay).
+static JsonNode? LoanPayoff( JsonObject a )
+{
+	var park = EconomyTestData.Park( initialCash: 0 );
+	var accounts = (bool)a["bought"]!
+		? new[] { new LoanAccount( 0, 0, (long)a["amount"]!, (int)a["apr"]!, (int)a["months"]!, (long)a["monthly"]!, (int)a["repaid"]! ) }
+		: Array.Empty<LoanAccount>();
+	typeof( ParkEconomy ).GetMethod( "ImportOriginalBank", BindingFlags.NonPublic | BindingFlags.Instance )!
+		.Invoke( park, new object[] { (long)a["bal"]!, 20, (long)a["profit"]!, accounts } );
+	bool taken;
+	try { taken = park.TryRepayLoan( 0 ); }
+	catch ( InvalidOperationException ) { taken = false; }
+	var left = park.Loans.FirstOrDefault();
+	return new JsonObject { ["taken"] = taken ? 1 : 0, ["balance"] = park.Balance, ["profit"] = park.Ledger.ProfitThisYear,
+		["bought"] = left == null ? 0 : 1, ["repaid"] = left?.MonthsRepaid ?? 0, ["money_out"] = park.Ledger.CurrentMonth( 0, 0 )[LedgerCategory.LoanPayments] };
 }

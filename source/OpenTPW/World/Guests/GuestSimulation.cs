@@ -333,7 +333,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var count = (int)(1.2f * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		count = Math.Max( count, Settings.ArrivalMinPeople );
 		if ( guests.Count + count > ArrivalParkLimit )
-			// [APPROX:ARRIVAL-004] the cut group stops at 0; the original stores 1500 − guests as is (negative above 1500, compared unsigned; oracle F9), and its caller (0xcb3bc, 0xcb488) then neither creates guests nor restarts the timer — evidence needed: execute 0xcb2ac with a negative count and find what else resets the group
+			// [APPROX:ARRIVAL-004] the cut group stops at 0; the original stores 1500 − guests as is (negative above 1500, compared unsigned; oracle F9). Executing 0xcb2ac with a negative group (oracle F11) shows the same behaviour as 0: at the next stop (phase 2) it creates no guest, restarts the timer and clears the active byte (0xcb3bc, 0xcb3f4), so nothing holds. What differs is the stored group word (negative) and the missing 'group == 0' arrival-vehicle step (0xcb488, slot 74), whose effect is not traced
 			count = Math.Max( 0, ArrivalParkLimit - guests.Count );
 		return count;
 	}

@@ -70,6 +70,19 @@ EXPECTED = {
     ('arrival-group', 'routine-reading'): AGREE,
     ('arrival-group', 'csharp'): (125, {'world_mode': 0, 'guests': 0, 'points': 0, 'bonus': 20, 'per_visitor': 6,
                                         'min_people': 1, 'obj48': 1, 'limit_mode': 0}),
+    # F11: executed over scripts of 0xcb2ac calls, a negative group (1700 counted guests: 1500 − 1700 = −200) ends at the
+    # next stop exactly like 0: guests created, active byte and timer restart agree with the floored plan. The group word
+    # keeps the negative value and the "group == 0" vehicle event (slot 74) is missing. The static reading (only exactly 0
+    # ends a group, a negative group holds the state) is refuted.
+    ('arrival-update', 'plan'): AGREE,
+    ('arrival-update', 'routine-reading'): AGREE,
+    ('arrival-update', 'static-reading'): (66, {'world_mode': 0, 'guests': 0, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                                'min_people': 1, 'obj48': 0, 'limit_mode': 0, 'preset': [-5, 1],
+                                                'interval': 0, 'timer0': 0, 'steps': [[8, 2, 1], [12, 2, 1], [16, 2, 0]]}),
+    ('arrival-update', 'reading-held'): (210, {'world_mode': 0, 'guests': 1700, 'points': 552, 'bonus': 20, 'per_visitor': 6,
+                                               'min_people': 2, 'obj48': 1, 'limit_mode': 0, 'preset': None, 'interval': 2,
+                                               'timer0': 0, 'steps': [[40, 2, 0], [44, 2, 0], [48, 2, 1], [400, 2, 1],
+                                                                      [404, 2, 0], [900, 2, 0]]}),
     # F10: 0xc24c0 counts only things passing 0xdc834; a type with +0x9C == 0 is aged from its first purchase and divided
     # by its count, any other type is aged per thing and every copy counts in full (GUESTS.md and C# age every thing
     # from its own build and always divide).
@@ -81,7 +94,7 @@ EXPECTED = {
     ('park-points', 'routine-reading'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final', 'park-points'}
+                  'coast-rating-final', 'park-points', 'arrival-update'}
 
 
 class Identity(unittest.TestCase):
@@ -201,6 +214,38 @@ class Oracle(unittest.TestCase):
             mutated = dataclasses.replace(targets.ARRIVAL, plan=reading, alternatives={})
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_arrival_update(self):
+        for key in (('arrival-update', 'plan'), ('arrival-update', 'routine-reading'),
+                    ('arrival-update', 'static-reading'), ('arrival-update', 'reading-held')):
+            self.check(key)
+
+    def test_arrival_update_reading_is_sharp(self):
+        # Each part of the reading matters: the group word kept negative, the missing slot-74 event, the stop gating
+        # (phase 2) and the interval test each bring mismatches back when dropped. The plan keeps only the
+        # behaviour, so a floored group changes nothing there (the finding), but it does change the full reading.
+        import dataclasses
+        strip74 = lambda r: {**r, 'events': [[e for e in ev if e[0] != 74] for ev in r['events']]}
+        variants = {
+            'floor': targets.arrival_update_floored,
+            'hold': targets.arrival_update_reading_held,
+            'slot-74': lambda x: strip74(targets.arrival_update_reading(x)),
+            'phase-gate': lambda x: targets.arrival_update_reading(
+                {**x, 'steps': [(now, 2, flag) for now, _, flag in x['steps']]}),
+            'interval-off-by-one': lambda x: targets.arrival_update_reading({**x, 'interval': x['interval'] + 1}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.ARRIVAL_UPDATE, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+        # The negative group itself: the floored plan's behaviour agrees even where the group started below 0.
+        [original] = [targets.run_binary(targets.ARRIVAL_UPDATE, targets.ARRIVAL_UPDATE.sandbox(self.image), x)
+                      for x in [{'world_mode': 0, 'guests': 1700, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                 'min_people': 1, 'obj48': 0, 'limit_mode': 0, 'preset': None, 'interval': 2, 'timer0': 0,
+                                 'steps': [(40, -1, 0), (44, -1, 0), (48, 2, 0)]}]]
+        self.assertEqual(original['groups'], [-200, -200, -200])
+        self.assertEqual(original['calls'], [(1, 0, 0), (1, 0, 0), (0, 48, 0)])
+        self.assertEqual(original['events'], [[(2000, -200), (82, 1)], [(82, 1)], [(80, 0)]])
 
     def test_points(self):
         for key in (('park-points', 'plan'), ('park-points', 'routine-reading')):

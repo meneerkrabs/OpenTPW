@@ -128,6 +128,7 @@ Mutation checks (`test_oracle.py`):
 | `coast-rating-step` | `0x415b4` | none | 509 | **F7**: 440 differ with the stale term = 0. **Agree** 509/509 with the stale term = Fz. Previous force and bank are 0 in every input (OV-7, F7) | COAST-I not on main (hook `coaster_rating_step`) |
 | `coast-rating-final` | `0x41900` | none | 506 | **F8**: 280 differ. **Agree** 506/506 with the corrected count | hook `coaster_rating_final` |
 | `arrival-group` | `0xcb4e8` | `0x1082b4` game → park (sentinel, checked), `0xc1fb4` counted guests (chosen count; argument 20 checked), `0xc24c0` park points (chosen), `0x1083c8` thing lookup (synthetic thing, `+48` chosen), `0x5fbcc` debug print (logged). The GameType object is marked constructed, so its constructor `0x12bb64` must not run | 515 | **F9**: 125 differ from GUESTS.md. **Agree** 515/515 with the routine reading | **F9**: 125 differ, the same inputs as the plan (`arrival_group`: `GuestSimulation.ArrivalGroupSize`) |
+| `arrival-update` | `0xcb2ac` (the arrival update), `0xcb4e8` (group size), `0xcb028` (constructor), `0x1210f8`/`0x121098` (timer elapsed / restart), `0x10a9a4` (game pointer) | `0x109784` vehicle phase and `0x109b78` report flag (chosen per call), `0x109368` vehicle script step (logged with its frame slot and size), `0xcb698` guest creation (counted, raises the counted guests), `0xcb750` group history (logged), `0xb678` assertion (logged), and the `arrival-group` stubs. One run is a script of `0xcb2ac` calls in one sandbox | 510 scripts | **agree** (behaviour: active byte, timer start, guests created per call; GUESTS.md loop with the F9 details, group floored at 0). Routine reading **agree** 510/510 (adds the group word and the vehicle steps). **F11**: the brief's static reading (a negative group holds the state) differs on 66 scripts | no C# hook (`UpdateArrivals` has no vehicle phase) |
 | `park-points` | `0xc24c0`, `0xc5828` (type count), `0xd1be8`/`0xd1c88` (park record search), `0xe4750` (turns → 100 ns units), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic, registry checked), `0xb678` assert (a zero condition fails the run), `0xdc834` counts-test (chosen flag), `0xdc520` own age (signed timestamp difference in days). The park record table is built: `+24` the listed copies, `+28` by the `0xda874` write rule. Clock rate 15000; no build after the current turn | 507 | **F10**: 214 differ from GUESTS.md. **Agree** 507/507 with the routine reading | hook `park_points` not wired (`ParkEconomy.ParkPoints`) |
 
 The C# comparisons use these seams:
@@ -290,9 +291,8 @@ any one of them brings mismatches back (`test_arrival_reading_is_sharp`).
   no OpenTPW counterpart yet.
 - **No floor.** Both cuts compare `guests + group` with `cmplwi` (unsigned) and store `limit − guests` as is. With more
   guests counted than the limit, the group is negative: 1700 guests give −200, where C# gives 0. Statically, the caller
-  `0xcb2ac` creates guests only while the count is above 0 (`0xcb3bc`) and restarts the timer only at exactly 0
-  (`0xcb488`). A negative group would therefore hold the arrival state until something else resets it. This caller
-  consequence is static reading and has not been executed (ARRIVAL-004).
+  `0xcb2ac` creates guests only while the count is above 0 (`0xcb3bc`). Executing it with a negative group is F11
+  (ARRIVAL-004): the group does not hold the arrival state.
 
 First counterexample: shipped values (NewParkBonus 20, PointsPerVisitor 6, MinPeople 1), no points, no guests, thing
 `+48` = 1. The original gives 2 (0.8 × 20 / 6) and the plan gives 4. Integer and float steps agree with the plan
@@ -328,6 +328,39 @@ bought at turns 1 and 73 (three park days apart), evaluated at turn 73. The orig
 never place a build after the current turn; the unsigned turn difference in `0xe4750` would age such a build by
 years, where C# clamps to 0, but no purchase can produce it. The stub for `0xdc520` uses the same day scale with a
 signed difference; the routine itself is not executed.
+
+**F11, a negative group in the arrival update (GUESTS.md "Arrivals", ARRIVAL-004, `0xcb2ac`).** The static reading of the
+caller said a negative group would hold the arrival state: guests are created only while the group is above 0
+(`0xcb3bc`), and `0xcb488` tests exactly 0. Executed, this is wrong. `0xcb2ac` runs from the park manager's update `0xd67f0` (via `0xcb278`) on its
+arrival object (park manager `+708`: `+4` timer start, `+12` group, `+16` active byte). Its `bc 4,1` at `0xcb3c0`
+branches on "not above 0" (signed), so every group at or below 0 takes `0xcb3f4`. That restarts the timer (`0x121098`
+stores the world turn at `+4`), clears the active byte and starts the arrival vehicle script with size 0 (frame slot 80).
+Scripts of repeated calls, with the vehicle phase and report flag chosen per call:
+
+- **Same as 0.** With 1700 counted guests the group is 1500 − 1700 = −200 (limit mode 1 with 600 guests gives −100). The
+  group is stored negative and the active byte is set (the group history `0xcb750` receives −200). At the next call
+  with the vehicle phase 2 (`0x109784`, the vehicle at its stop) no guest is created, and the timer restarts at that
+  turn, the active byte clears and slot 80 runs. Guests created, active byte and timer start agree with a floored group
+  on all 510 scripts (169 of them start a negative group, 1348 negative starts in all). The group word stays negative
+  until the next group replaces it.
+- **Not held, but gated by the vehicle.** While the phase is −1 or 6 the active byte stays set for any group, and the
+  vehicle script runs with size 1 (group up to 35, 60, more: 1/2/3; a negative group gives 1, as 0 does). Only phase 2
+  ends it. Neither a negative nor an empty group ends earlier. What phases occur in play is not traced (ARRIVAL-001).
+- **What differs.** After the group handling, with `0x109b78` nonzero and phase 2, an exactly empty group starts one more
+  vehicle step with size 0 (slot 74, `0xcb488`); a negative group skips it. The two readings differ in the stored group
+  word, the history value and this step on 158 scripts beyond the history values. The vehicle step with size 0 chooses
+  its size from the world LCG when no vehicle is active (`0x1093f4`); whether the skipped step consumes a draw was not
+  traced.
+- **Other writers.** A static search for stores to the arrival object's group and active byte finds only the constructor
+  `0xcb028` (called from the park manager constructor `0x104534`, executed here: timer 0, group 0, active 0, `+8` = 5,
+  `+17` = 1) and the save/load serialiser `0xcb050` (timer through `0x121000`, group through `0xc7f8`, active byte and
+  `+17` through `0xca20`). A saved game therefore restores the group and active byte as saved. No other writer was
+  found; a store through a pointer copied elsewhere would not show up in this search (static reading).
+
+Result: ARRIVAL-004 changes no guest or timer behaviour. The C# floor at 0 produces the same guests and timer as the
+original's negative group, differing only in the stored group word and the untraced empty-group vehicle step. The
+brief's static reading, a negative group holding the state, differs on 66 scripts and is refuted. The
+`plan` side models the stop gate as the vehicle phase 2, where `UpdateArrivals` uses a fixed 0.4 s spacing (ARRIVAL-001). C# is not compared.
 
 ## 6. Adding a target or a C# hook
 

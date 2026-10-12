@@ -764,12 +764,12 @@ def arrival_stubs(target: Target) -> dict:
             DEBUG_LOG: log}
 
 
-def arrival_binary(sb: Sandbox, x: dict, log) -> int:
+def arrival_setup(sb: Sandbox, x: dict, park_size: int = 16) -> None:
     state = ARRIVAL_STATE
     state.game = sb.alloc(ARRIVAL_WORLD_MODE + 8)
     sb.write(state.game + ARRIVAL_WORLD_MODE, 'i', x['world_mode'])
     sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', state.game)
-    state.park = sb.struct(16)
+    state.park = sb.struct(park_size)
     state.factor_object = sb.struct(64, {48: ('i', x['obj48'])})
     state.guests, state.points = x['guests'], x['points']
     settings = toc_pointer(sb, ARRIVAL_SETTINGS)
@@ -778,6 +778,10 @@ def arrival_binary(sb: Sandbox, x: dict, log) -> int:
     sb.write(settings + 736, 'i', x['per_visitor'])
     sb.write(toc_pointer(sb, ARRIVAL_MODE_OBJECT), 'i', x['limit_mode'])
     sb.write(toc_pointer(sb, ARRIVAL_MODE_GUARD), 'B', 1)  # constructed: 0x12bb64 is not in `allowed` and must not run
+
+
+def arrival_binary(sb: Sandbox, x: dict, log) -> int:
+    arrival_setup(sb, x)
     return s32(sb.call(0xCB4E8).r3)
 
 
@@ -844,6 +848,215 @@ def arrival_inputs(rng: random.Random, n: int) -> list:
              make(**{**shipped, 'points': 16777217}), make(**{**shipped, 'per_visitor': 1}),
              make(**{**shipped, 'per_visitor': -7}), make(**{**shipped, 'min_people': -5, 'bonus': -100}),
              make(**{**shipped, 'points': 25, 'bonus': 20})]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (j) ARRIVAL: update 0xcb2ac
+ARRIVAL_TURN = 0x1E0000 - 22772        # game + 0x1da70c: the world turn, read by the timer routines 0x1210f8 / 0x121098
+ARRIVAL_PARK_SIZE = 0x20000 + 8192     # the park record: +0x20000+3264 guests created, +0x20000+5848 group history
+ARRIVAL_CREATED = 0x20000 + 3264       # park + 0x20cc0: raised by one for every guest 0xcb2ac creates
+ARRIVAL_CONSTRUCTOR = 0xCB028          # (arrival object): timer, group, active and the two other state bytes/words
+ARRIVAL_PHASE = 0x109784               # (game) -> state of the arrival vehicle: 2 = at the stop, -1 / 6 = on its way
+ARRIVAL_EVENTS = 0x109B78              # (game) -> nonzero when the vehicle script reports the arrival state
+ARRIVAL_VEHICLE = 0x109368             # (buffer, game, size) arrival vehicle script step; the buffer is r1 + a frame slot
+ARRIVAL_CREATE = 0xCB698               # (arrival object) creates one guest, returns 1
+ARRIVAL_HISTORY = 0xCB750              # (park + 0x20000 + 5848, group) ring buffer of the group sizes
+EVENT_ASSERT, EVENT_HISTORY = 1000, 2000  # codes in the event lists next to the vehicle script's frame slots 72..82
+
+
+def arrival_update_stubs(target: Target) -> dict:
+    state = ARRIVAL_STATE
+    stubs = arrival_stubs(target)
+
+    def phase(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x109784 called without the game pointer')
+        m.gpr[3] = state.phase & MASK32
+
+    def reports(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x109b78 called without the game pointer')
+        m.gpr[3] = state.flag
+
+    def vehicle(m: Machine) -> None:
+        if m.gpr[4] != state.game:
+            raise AssertionError('0x109368 called without the game pointer')
+        target.log.append(('event', (m.gpr[3] - m.gpr[1]) & MASK32, m.gpr[5]))
+
+    def create(m: Machine) -> None:
+        state.guests += 1
+        state.created += 1
+        m.gpr[3] = 1
+
+    def history(m: Machine) -> None:
+        if m.gpr[3] != state.park + ARRIVAL_CREATED + 5848 - 3264:
+            raise AssertionError('0xcb750 called without the park history')
+        target.log.append(('history', s32(m.gpr[4])))
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3]))
+
+    stubs.update({ARRIVAL_PHASE: phase, ARRIVAL_EVENTS: reports, ARRIVAL_VEHICLE: vehicle, ARRIVAL_CREATE: create,
+                  ARRIVAL_HISTORY: history, ASSERT: assertion})
+    return stubs
+
+
+def arrival_update_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Construct the arrival object (0xcb028, executed), set the saved state if given, then call 0xcb2ac once per step in
+    the same sandbox. Per call: (active, timer start, guests created so far), the group word and the events."""
+    state = ARRIVAL_STATE
+    arrival_setup(sb, x, ARRIVAL_PARK_SIZE)
+    sb.write(toc_pointer(sb, ARRIVAL_SETTINGS) + 724, 'I', x['interval'])
+    obj = sb.struct(32)
+    sb.call(ARRIVAL_CONSTRUCTOR, {3: obj})
+    sb.write(obj + 4, 'I', x['timer0'])
+    if x['preset'] is not None:
+        sb.write(obj + 12, 'i', x['preset'][0])
+        sb.write(obj + 16, 'B', x['preset'][1])
+    state.created = 0
+    calls, groups, events = [], [], []
+    for now, phase, flag in x['steps']:
+        sb.write(state.game + ARRIVAL_TURN, 'I', now)
+        state.phase, state.flag = phase, flag
+        mark = len(log)
+        sb.call(0xCB2AC, {3: obj})
+        created = sb.read(state.park + ARRIVAL_CREATED, 'i')
+        if created != state.created:
+            raise AssertionError('the created-guest counter disagrees with the creation calls')
+        calls.append((sb.read(obj + 16, 'B'), sb.read(obj + 4, 'I'), created))
+        groups.append(sb.read(obj + 12, 'i'))
+        codes = {'event': lambda e: (e[1], s32(e[2])), 'assert': lambda e: (EVENT_ASSERT, e[1]),
+                 'history': lambda e: (EVENT_HISTORY, e[1])}
+        events.append([codes[e[0]](e) for e in log[mark:] if e[0] in codes])
+    return {'calls': calls, 'groups': groups, 'events': events}
+
+
+def arrival_update_reading(x: dict, hold_negative: bool = False, floor: bool = False) -> dict:
+    """0xcb2ac as read from the listing. Per call: with no active group and (turn >> 2) − (start >> 2) above the
+    interval (unsigned), the group becomes the 0xcb4e8 size at the current count and starts. With an active group:
+    phase 2 creates a guest while the group is above 0 (signed) and otherwise restarts the timer, clears the active
+    byte and starts the vehicle with size 0; phase −1 or 6 starts the vehicle with size 1/2/3 (group up to 35, 60,
+    more; phase 6 logs a failed assertion first). Then, when 0x109b78 is nonzero: phase 2 with group == 0 starts the
+    vehicle with size 0 (slot 74), phase 0 (slot 76) and −1 (slot 78) too; with it zero, phase 4 (slot 72).
+    `hold_negative` is the static reading of the brief: a negative group neither ends nor creates. `floor` stores the
+    group floored at 0, as C# computes it."""
+    group, active, start, created = (x['preset'] if x['preset'] is not None else (0, 0)) + (x['timer0'], 0)
+    guests = x['guests']
+    calls, groups, events = [], [], []
+    for now, phase, flag in x['steps']:
+        out = []
+        if not active and (((now >> 2) - (start >> 2)) & MASK32) > x['interval']:
+            group = arrival_full({**x, 'guests': guests})
+            if floor:
+                group = max(0, group)
+            active = 1
+            out.append((EVENT_HISTORY, group))
+        if active:
+            if phase == 2:
+                if group > 0:
+                    created += 1
+                    guests += 1
+                    group -= 1
+                elif not (hold_negative and group < 0):
+                    start, active = now, 0
+                    out.append((80, 0))
+            elif phase in (-1, 6):
+                if phase == 6:
+                    out.append((EVENT_ASSERT, 0))
+                out.append((82, 1 if group <= 35 else 2 if group <= 60 else 3))
+        if flag:
+            if phase == 2 and group == 0:
+                out.append((74, 0))
+            elif phase == 0:
+                out.append((76, 0))
+            elif phase == -1:
+                out.append((78, 0))
+        elif phase == 4:
+            out.append((72, 0))
+        calls.append((active, start, created))
+        groups.append(group)
+        events.append(out)
+    return {'calls': calls, 'groups': groups, 'events': events}
+
+
+def arrival_update_plan(x: dict, hold_negative: bool = False) -> dict:
+    """GUESTS.md "Arrivals" / GuestSimulation.UpdateArrivals with the F9 details (factor, 500 cut) and the group floored
+    at 0: when no group is delivering and (turn >> 2) − (start >> 2) exceeds the interval, a group starts; a guest steps
+    off per stop (phase 2); an empty group ends and restarts the timer. Only the behaviour is returned: active flag,
+    timer start and guests created per call (C# has no group word and no vehicle events)."""
+    pending, delivering = (x['preset'] if x['preset'] is not None else (0, 0))
+    start, created, guests = x['timer0'], 0, x['guests']
+    calls = []
+    for now, phase, flag in x['steps']:
+        if not delivering and (((now >> 2) - (start >> 2)) & MASK32) > x['interval']:
+            pending = max(0, arrival_full({**x, 'guests': guests}))
+            delivering = 1
+        if delivering and phase == 2:
+            if pending < 1 and not (hold_negative and pending < 0):
+                delivering, start = 0, now
+            elif pending >= 1:
+                pending -= 1
+                created += 1
+                guests += 1
+        calls.append((delivering, start, created))
+    return {'calls': calls}
+
+
+def arrival_update_static(x: dict) -> dict:
+    """The brief's static reading: only exactly 0 ends a group, so a negative group holds the state."""
+    return arrival_update_plan(x, hold_negative=True)
+
+
+def arrival_update_reading_held(x: dict) -> dict:
+    return arrival_update_reading(x, hold_negative=True)
+
+
+def arrival_update_floored(x: dict) -> dict:
+    return arrival_update_reading(x, floor=True)
+
+
+def arrival_update_equal(original: dict, other: dict) -> bool:
+    return all(original[key] == value for key, value in other.items())
+
+
+def arrival_update_inputs(rng: random.Random, n: int) -> list:
+    shipped = dict(world_mode=0, guests=0, points=0, bonus=20, per_visitor=6, min_people=1, obj48=0, limit_mode=0,
+                   preset=None)
+
+    def script(first: int, length: int, phases: list, gap: int) -> list:
+        now, steps = first, []
+        for _ in range(length):
+            now += rng.randrange(0, gap + 1)
+            steps.append((now, rng.choice(phases), rng.choice([0, 1])))
+        return steps
+
+    def make(**kw):
+        timer0 = rng.choice([0, 0, rng.randrange(0, 400)])
+        x = {**shipped, 'world_mode': rng.choice([0, 0, 0, 0, 4]),
+             'guests': rng.choice([0, 1499, 1500, 1700, 2000, rng.randrange(0, 1700)]),
+             'points': rng.choice([0, rng.randrange(0, 600)]), 'min_people': rng.choice([1, 1, 2, rng.randrange(0, 70)]),
+             'obj48': rng.choice([0, 0, 1]), 'limit_mode': rng.choice([0, 0, 1]),
+             'interval': rng.choice([0, 1, 2, 5, rng.randrange(0, 40)]), 'timer0': timer0,
+             'preset': rng.choice([None, None, None, None, (rng.randrange(-300, 40), rng.choice([0, 1, 1]))])}
+        x.update(kw)
+        if 'steps' not in x:
+            phases = rng.choice([[2], [2], [2, 2, 2, -1], [-1, 6, 2], [2, -1, 6, 0, 1, 4, 3, 5]])
+            x['steps'] = script(x['timer0'] + rng.randrange(0, 30), rng.randrange(8, 40), phases, rng.choice([2, 6, 20, 80]))
+        return x
+    stop = lambda *s: list(s)
+    over = dict(guests=1700, interval=2, timer0=0, preset=None)  # 1700 counted guests: the group is 1500 - 1700 = -200
+    edges = [make(**{**over, 'steps': stop((40, 2, 0), (44, 2, 0), (48, 2, 1), (400, 2, 1), (404, 2, 0), (900, 2, 0))}),
+             make(**{**over, 'steps': stop((40, -1, 0), (44, 6, 0), (48, 2, 0), (52, 2, 1), (900, 2, 1))}),
+             make(**{**over, 'steps': stop((40, -1, 1), (44, -1, 1), (48, -1, 1), (400, -1, 1), (4000, -1, 1))}),
+             make(**{**over, 'limit_mode': 1, 'guests': 600, 'steps': stop((40, 2, 1), (44, 2, 1), (48, 2, 1))}),
+             make(**{**shipped, 'interval': 2, 'timer0': 0, 'steps': stop((40, 2, 1), (44, 2, 1), (48, 2, 1), (52, 2, 1),
+                                                                         (56, 2, 1), (60, 2, 1), (64, 2, 1), (68, 2, 1))}),
+             make(**{**shipped, 'guests': 1499, 'min_people': 1, 'interval': 0, 'timer0': 0,
+                     'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 1), (20, 2, 1))}),
+             make(**{**shipped, 'world_mode': 4, 'interval': 0, 'timer0': 0, 'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 1))}),
+             make(**{**shipped, 'preset': (-5, 1), 'interval': 0, 'timer0': 0, 'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 0))}),
+             make(**{**shipped, 'preset': (-5, 1), 'interval': 0, 'timer0': 0, 'steps': stop((8, -1, 1), (12, 0, 1), (16, 4, 0))}),
+             make(**{**shipped, 'preset': (7, 0), 'interval': 100, 'timer0': 0, 'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 1))})]
     return edges + [make() for _ in range(n)]
 
 
@@ -1097,6 +1310,21 @@ ARRIVAL = Target('arrival-group', 'Arrival group size 0xcb4e8', 'GUESTS.md "Arri
                         'Stubs: 0x1082b4 park, 0xc1fb4 counted guests, 0xc24c0 points, 0x1083c8 factor object, '
                         '0x5fbcc debug log; the mode object is marked constructed so 0x12bb64 does not run.'])
 
+ARRIVAL_UPDATE = Target('arrival-update', 'Arrival update 0xcb2ac', 'GUESTS.md "Arrivals"', 0xCB2AC,
+                        [(0xCB028, 0xCB050), (0xCB2AC, 0xCB4E4), (0xCB4E8, 0xCB698), (0x121098, 0x1210B0),
+                         (0x1210F8, 0x12113C), (0x10A9A4, 0x10A9B0)],
+                        arrival_update_stubs, arrival_update_binary, arrival_update_plan, arrival_update_inputs,
+                        alternatives={'routine-reading': arrival_update_reading, 'static-reading': arrival_update_static,
+                                      'reading-held': arrival_update_reading_held},
+                        equal=arrival_update_equal,
+                        notes=['No C# hook: GuestSimulation.UpdateArrivals runs on a frame clock, not on the original phases.',
+                               'Executed: 0xcb028 (constructor), 0xcb2ac, 0xcb4e8 (group size), 0x1210f8 / 0x121098 (timer '
+                               'elapsed / restart), 0x10a9a4 (game pointer). Stubs: 0x109784 vehicle phase and 0x109b78 '
+                               'report flag (chosen per call), 0x109368 vehicle script step (logged with its frame slot), '
+                               '0xcb698 guest creation (counted, raises the counted guests), 0xcb750 group history (logged), '
+                               '0xb678 assertion (logged), plus the arrival-group stubs.',
+                        'Each input is a script: one 0xcb2ac call per step in the same sandbox.'])
+
 POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0xC24C0,
                 [(0xC24C0, 0xC26DC), (0xC5828, 0xC5864), (0xD1BE8, 0xD1D1C), (0xE4750, 0xE47F8), (0x10A9A4, 0x10A9B0),
                  (0x1C4100, 0x1C4230)], points_stubs, points_binary, points_plan, points_inputs,
@@ -1110,5 +1338,5 @@ POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0x
                        '(points_first). Builds never lie after the current turn.'])
 
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, POINTS]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS]
 DOMAINS = {SET_CELL.key: set_cell_domain}

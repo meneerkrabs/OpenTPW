@@ -165,6 +165,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   empty one: no guest, timer restart and cleared active byte at the next stop,
   so nothing holds (the static reading was wrong). Only the stored group word
   and one arrival-vehicle step differ; C# behavior is unchanged.
+- The oracle executed the queue's two untraced predicates (F15, F16 in [ORACLE.md](reverse/ORACLE.md)).
+  `0xdfe34`, the guests' ride-failure exit, never reads `VAR_BROKEN`: it is a relief object (toilet) whose
+  wear gauge is below 25 (QUEUE-008 stays approximate: a broken ride has no such exit). The join excitement gate
+  `0xe9a84`/`0xe02ec` gates on the type's `ExcitementLevel` byte and compares a live excitement (sideshow
+  formula, speed and duration ratios, coaster `0.5 E + 50`) over bytes, clamped to ±50; C# compares the static
+  level (155 of 524 oracle inputs differ). `RideVisitorBridge.ExcitementRefusal` is now the gate on its own
+  (behaviour unchanged), compared through the C# bridge; QUEUE-004/008/019 comments say what execution showed.
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).

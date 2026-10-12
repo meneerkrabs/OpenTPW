@@ -336,9 +336,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:STP-PPC:0x100DC988 queue room] a guest may join only while count < 4 × queue size in cells (+60)
 		if ( count >= QueueRoom )
 			return QueueJoinResult.NoRoom;
-		// [APPROX:QUEUE-004] the excitement gate applies to rides and sideshows and uses |preferred − ride excitement|; the predicate 0xe02ec(ride, 1) and the difference 0xe9a84 are not traced — evidence needed: 0x100E02EC and 0x100E9A84
-		if ( Kind is RideVisitorKind.Ride or RideVisitorKind.Sideshow && Math.Abs( excitementDifference ) >= ExcitementGate )
-			return excitementDifference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;
+		// [APPROX:QUEUE-004] the gate applies to rides and sideshows on the static |preferred − ExcitementLevel| ≥ 45; executed (ORACLE.md F16): the original gates when the low byte of the type's UsageInfo.ExcitementLevel is nonzero (0xe02ec(ride, 1)), on |clamp(live excitement − preferred, ±50)| ≥ 45 over bytes, with a live excitement from 0xdff70 (sideshows 20 + 0.8 × win × sqrt(clamp(goods − price, 0, 100)) / 10; other types the level scaled by the speed and duration ratios clamped to 0.75..1.25, and with a thing behind ride +36 60 % of it plus up to 40), so C# differs on sideshows, rides off their design speed or duration and rides with a +36 thing — evidence needed: what ride +36, +84, +88 and the sideshow goods, price and win words are in play
+		if ( ExcitementRefusal( Kind, excitementDifference ) is { } refusal )
+			return refusal;
 		if ( count >= QueueLimit )
 			return QueueJoinResult.QueueTooLong;
 		// [BIN:STP-PPC:0x100DCD34 queue append] the guest is appended at the tail of the ride's linked list
@@ -349,6 +349,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			head = guestId;
 		tail = guestId;
 		return QueueJoinResult.Joined;
+	}
+
+	/// <summary>
+	/// The excitement gate of <see cref="JoinQueue"/>: rides and sideshows refuse a guest whose |preferred − excitement| reaches
+	/// <see cref="ExcitementGate"/>. A positive difference (the ride is below the preference) is "not exciting enough", a negative one
+	/// "too exciting". Null when the guest may join. Separate so the oracle bridge can call it on its own.
+	/// </summary>
+	internal static QueueJoinResult? ExcitementRefusal( RideVisitorKind kind, int excitementDifference )
+	{
+		if ( kind is not (RideVisitorKind.Ride or RideVisitorKind.Sideshow) || Math.Abs( excitementDifference ) < ExcitementGate )
+			return null;
+		return excitementDifference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;
 	}
 
 	/// <summary>0-based list position (<c>0xdd144</c>), or −1.</summary>
@@ -474,7 +486,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( turn >= 0 && turn == lastAdmissionTurn )
 			return;
 		lastAdmissionTurn = turn;
-		// [APPROX:QUEUE-019] admission is skipped while VAR_BROKEN ≠ 0: the ride update calls 0xe1864 → 0xe1404 only when ride +408 == 0, and a breakdown is read as +408 ≠ 0 — evidence needed: the ride +408 state names and their writers
+		// [APPROX:QUEUE-019] admission is skipped while VAR_BROKEN ≠ 0: the ride update calls 0xe1864 → 0xe1404 only when ride +408 == 0, and a breakdown is read as +408 ≠ 0; the predicate 0xdfe34 plays no part (executed, ORACLE.md F15: a relief object's gauge test) — evidence needed: the ride +408 state names and their writers
 		if ( IsBroken )
 			return;
 		CheckAdmission( turn );

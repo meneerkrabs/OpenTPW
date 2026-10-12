@@ -1990,6 +1990,273 @@ LOAN_PAYOFF = Target('loan-payoff', 'Early repayment 0xccc78', 'ECONOMY.md / Par
                             'print (logged). The inputs keep the balance non-negative (the sufficiency test is unsigned) and '
                             'the withdrawals flag on; the routine reading covers the flag.',
                             'C# hook: bridge function "loan_payoff" (ParkEconomy.TryRepayLoan on an imported bank).'])
+# ============================================================================== (j) QUEUE: failure predicate 0xdfe34, join gate 0xe9a84 / 0xe02ec
+FAILURE_PREDICATE = 0xDFE34      # (thing) -> 1 when the thing is a relief object (+46 & 1) whose gauge +64 is below 25
+FAILURE_LIMIT = 25.0             # data: TOC -11108
+JOIN_DIFFERENCE = 0xE9A84        # (guest, ride) -> excitement difference, 100 when 0xdfe34 holds
+JOIN_FRAGMENT = 0xECD6C          # state-10 handler 0xeccb0 from the 0xe9a84 call to the gate decision
+JOIN_PASS, JOIN_REFUSED = 0xECDB0, 0xECF34  # fragment stops: past the gate / after the refusal's thought call
+JOIN_STRINGS = -19316            # TOC slot -> the handler's string base (r31); the refusal logs +478 / +516 from it
+JOIN_SCRIPT_CONTROLLER = 0xB5E24  # (script) -> coaster controller index of the ride's script, 0 when none
+JOIN_PIECES = 0x1EA40            # (word, &p1, &p2, &p3, &p4) -> four counts for the thing behind ride +36
+JOIN_REASON = 0xFB7B4            # (guest + 48, reason, guest id) log the refusal's reason
+JOIN_THOUGHT = 0xFB54C           # (guest + 48, thought, 0) set the thought bubble
+JOIN_CONTROLLERS = -29712        # TOC slot -> array of coaster controller pointers (read by 0x41a14)
+JOIN_TYPE_ID = 0x4322
+JOIN_GUEST_ID = 0x77
+JOIN_STATE = type('JoinState', (), {})()
+JOIN_MESSAGES = {12: 'Person: ride is not exciting enough!\n', 15: 'Person: ride is too exciting!\n'}
+JOIN_ALLOWED = [(0xDFE34, 0xDFE88), (0xDFF70, 0xE02EC), (0xE02EC, 0xE03D0), (0xE1F70, 0xE1F80), (0xE2364, 0xE2370),
+                (0xE2FE4, 0xE3024), (0xE9A84, 0xE9B2C), (0xEB7E4, 0xEB800), (0x41A14, 0x41A34), (0x1C552C, 0x1C5544)]
+
+
+def failure_binary(sb: Sandbox, x: dict, log) -> int:
+    thing = sb.struct(128, {46: ('H', x['flags']), 64: ('f', x['gauge'])})
+    return sb.call(FAILURE_PREDICATE, {3: thing}).r3
+
+
+def failure_plan(x: dict) -> int:
+    """QUEUE-008 / GUESTS.md: the ride-failure exit is VAR_BROKEN != 0 (a script variable the routine never reads)."""
+    return int(x['broken'] != 0)
+
+
+def failure_reading(x: dict) -> int:
+    """0xdfe34 as read: a relief object (+46 bit 0x1, type ProvidesRelief) whose gauge +64, truncated to a byte, is below 25."""
+    return int(bool(x['flags'] & 1) and (fctiwz(x['gauge']) & 0xFF) < FAILURE_LIMIT)
+
+
+def failure_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'flags': rng.choice([0, 1, 1, rng.getrandbits(16), rng.getrandbits(16) | 1, rng.getrandbits(16) & 0xFFFE]),
+             'gauge': rng.choice([100.0, random_float(rng, 0, 100), random_float(rng, 0, 100), random_float(rng, 0, 30),
+                                  random_float(rng, -5, 300), random_single_bits(rng)]),
+             'broken': rng.choice([0, 0, 1, 1, 2, -1])}
+        x.update(kw)
+        return x
+    edges = [make(flags=0, gauge=100.0, broken=1),   # a broken-down ordinary ride at full gauge
+             make(flags=1, gauge=20.0, broken=0),    # a worn-out relief object that the script has not marked broken
+             make(flags=0x4, gauge=20.0, broken=1), make(flags=1, gauge=100.0, broken=0),
+             make(flags=1, gauge=24.999, broken=0), make(flags=1, gauge=25.0, broken=0), make(flags=1, gauge=25.5, broken=0),
+             make(flags=1, gauge=0.0, broken=0), make(flags=1, gauge=-0.5, broken=0), make(flags=1, gauge=-1.0, broken=0),
+             make(flags=1, gauge=255.5, broken=0), make(flags=1, gauge=256.0, broken=0), make(flags=1, gauge=256.9, broken=0),
+             make(flags=1, gauge=281.0, broken=0), make(flags=1, gauge=1e10, broken=0), make(flags=1, gauge=-1e10, broken=0),
+             make(flags=1, gauge=math.nan, broken=0), make(flags=1, gauge=math.inf, broken=0),
+             make(flags=1, gauge=-math.inf, broken=0), make(flags=0xFFFF, gauge=10.0, broken=0),
+             make(flags=0xFFFE, gauge=10.0, broken=0)]
+    return edges + [make() for _ in range(n)]
+
+
+def join_setup(sb: Sandbox, x: dict):
+    """The ride, guest, type record and settings word for one input; the stubs read the same state."""
+    st = JOIN_STATE
+    st.x = x
+    st.registry = toc_pointer(sb, POINTS_REGISTRY)
+    level = x['rlevel']
+    st.record = sb.struct(4096, {156: ('I', x['track'] & MASK32), 316: ('I', x['level'] & MASK32),
+                                 1960: ('I', x['kind'] & MASK32), 416 + 64 * level: ('I', x['init_dur'] & MASK32),
+                                 424 + 64 * level: ('I', x['init_speed'] & MASK32)})
+    st.script = sb.alloc(64)
+    st.ride = sb.struct(512, {14: ('H', JOIN_TYPE_ID), 32: ('I', st.script), 36: ('I', x['thing36'] & MASK32),
+                              46: ('H', x['flags']), 64: ('f', x['gauge']), 76: ('B', level), 84: ('I', x['speed'] & MASK32),
+                              88: ('B', x['dur']), 388: ('I', x['goods'] & MASK32), 396: ('I', x['win'] & MASK32),
+                              400: ('I', x['price'] & MASK32)})
+    st.guest = sb.struct(1024, {476: ('H', JOIN_GUEST_ID), 496: ('B', x['idx'])})
+    sb.write(toc_pointer(sb, ARRIVAL_SETTINGS) + 164 + 12 * x['idx'], 'I', x['pref'] & MASK32)
+    if x['ctrl']:
+        controller = sb.struct(512, {256: ('f', 12.5), 260: ('f', x['coaster_e'])})  # the getter must read +260, not +256
+        sb.write(toc_pointer(sb, JOIN_CONTROLLERS) + 4 * x['ctrl'], 'I', controller)
+    return st
+
+
+def join_stubs(target: Target) -> dict:
+    state = JOIN_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != JOIN_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the ride type id')
+        m.gpr[3] = state.record
+
+    def controller(m: Machine) -> None:
+        if m.gpr[3] != state.script:
+            raise AssertionError('0xb5e24 called without the ride script (+32)')
+        m.gpr[3] = state.x['ctrl'] & MASK32
+
+    def pieces(m: Machine) -> None:
+        outputs = [m.gpr[r] for r in (4, 5, 6, 7)]
+        if m.gpr[3] != state.x['thing36'] & MASK32 or len(set(outputs)) != 4 or any(o % 4 for o in outputs):
+            raise AssertionError('0x1ea40 called without the ride +36 word and four distinct word outputs')
+        for address, value in zip(outputs, state.x['pieces']):
+            m.memory.w32(address, value & MASK32)
+
+    def square_root(m: Machine) -> None:
+        value = bits_to_double(m.fpr[1])
+        if not value >= 0:
+            raise AssertionError('sqrt called with a negative or NaN argument')
+        m.fpr[1] = double_to_bits(math.sqrt(value))
+
+    def message(m: Machine) -> None:
+        address, text = m.gpr[4], b''
+        while m.memory.u8(address + len(text)):
+            text += bytes([m.memory.u8(address + len(text))])
+        target.log.append(('message', m.gpr[3], text.decode('latin-1')))
+
+    def reason(m: Machine) -> None:
+        if m.gpr[3] != state.guest + 48 or m.gpr[5] >> 16 != JOIN_GUEST_ID:  # the u16 id travels in the high half
+            raise AssertionError('0xfb7b4 called without the guest +48 object and the guest id')
+        target.log.append(('reason', m.gpr[4]))
+
+    def thought(m: Machine) -> None:
+        if m.gpr[3] != state.guest + 48 or m.gpr[5] != 0:
+            raise AssertionError('0xfb54c called without the guest +48 object and 0')
+        target.log.append(('thought', m.gpr[4]))
+
+    return {TYPE_RECORD_LOOKUP: lookup, JOIN_SCRIPT_CONTROLLER: controller, JOIN_PIECES: pieces, 'sqrt': square_root,
+            DEBUG_LOG: message, JOIN_REASON: reason, JOIN_THOUGHT: thought}
+
+
+def join_difference_binary(sb: Sandbox, x: dict, log) -> int:
+    st = join_setup(sb, x)
+    return s32(sb.call(JOIN_DIFFERENCE, {3: st.guest, 4: st.ride}).r3)
+
+
+def join_gate_binary(sb: Sandbox, x: dict, log) -> dict:
+    st = join_setup(sb, x)
+    r = sb.call(JOIN_FRAGMENT, {29: st.guest, 30: st.ride, 31: toc_pointer(sb, JOIN_STRINGS)},
+                stop=(JOIN_PASS, JOIN_REFUSED))
+    difference = s32(r.gpr[28])
+    if sb.machine.pc == sb.image.code(JOIN_PASS):
+        if log:
+            raise AssertionError('the gate passed with a thought logged')
+        return {'outcome': 'pass', 'difference': difference}
+    thoughts = [entry[1] for entry in log if entry[0] == 'thought']
+    messages = [entry[2] for entry in log if entry[0] == 'message']
+    reasons = [entry[1] for entry in log if entry[0] == 'reason']
+    if len(thoughts) != 1 or thoughts[0] not in JOIN_MESSAGES or messages != [JOIN_MESSAGES[thoughts[0]]] \
+            or reasons != [{12: 5, 15: 4}[thoughts[0]]]:
+        raise AssertionError(f'unexpected refusal trace {log}')
+    return {'outcome': {12: 'bored', 15: 'scared'}[thoughts[0]], 'difference': difference}
+
+
+def join_is_ride(x: dict) -> bool:
+    """Ride kind 0 and sideshow kind 2 (type +1960, Info.WhichUIType), the kinds C# gates."""
+    return x['kind'] in (0, 2)
+
+
+def join_static_excitement(x: dict) -> int:
+    """C# attraction.ExcitementLevel: the .sam UsageInfo.ExcitementLevel, or the coaster's trunc(0.5 E + 50) once its controller
+    exists (0 before; COAST-plan 6.1)."""
+    if x['track'] == 3:
+        return 0 if x['ctrl'] == 0 else fctiwz(f32(float(f32(x['coaster_e'] * 0.5)) + 50.0))
+    return x['level']
+
+
+def join_plan(x: dict) -> dict:
+    """What GUESTS.md / QUEUE-plan 4 and C# claim: rides and sideshows refuse when |preferred - ExcitementLevel| >= 45; a
+    preference above the ride's excitement is bored (thought 12), below is scared (thought 15)."""
+    difference = x['pref'] - join_static_excitement(x)
+    if join_is_ride(x) and abs(difference) >= 45:
+        return {'outcome': 'bored' if difference > 0 else 'scared', 'difference': None}
+    return {'outcome': 'pass', 'difference': None}
+
+
+def join_plan_difference(x: dict) -> int:
+    """The same claim for 0xe9a84's value, in its sign (ride minus preferred), unclamped and without the relief case."""
+    return join_static_excitement(x) - x['pref']
+
+
+def clamp_quotient(q: float) -> float:
+    return 0.75 if q < 0.75 else 1.25 if q > 1.25 else q  # NaN keeps (neither compare is true)
+
+
+def join_excitement_reading(x: dict, flag: int = 0) -> int:
+    """0xe02ec(ride, flag) with 0xdff70 as read, in the order they run."""
+    if flag:
+        return x['level'] & 0xFF
+    if s32(x['level']) == 0:
+        return 0
+    if x['kind'] == 2:  # sideshow: 20 + trunc(0.8f * ((win byte * sqrt(clamp(goods - price, 0, 100))) / 10))
+        d = s32(x['goods'] - x['price'])
+        d = 0 if d < 0 else 100 if d > 100 else d
+        shown = f32(f32(0.800000011920929) * f32(((x['win'] & 0xFF) * math.sqrt(d)) / 10.0))
+        return s32(fctiwz(shown) + 20)
+    if x['track'] == 3:  # coaster: no controller 0, else trunc(E * 0.5 + 50) (fused single)
+        if x['ctrl'] == 0:
+            return 0
+        return fctiwz(f32(float(f32(x['coaster_e'] * 0.5)) + 50.0))
+    base = s32(x['level'])
+    if x['thing36']:  # 60 % of the data level plus up to 40 for the pieces attached to the thing behind +36
+        p1, p2, p3, _ = x['pieces']
+        total = s32(3 * p3 + 2 * p1 + p2)
+        bonus = 0 if total < 0 else 40 if total > 40 else total
+        base = trunc_div(s32(base * 60), 100) + bonus
+        base = 0 if base < 0 else 100 if base > 100 else base
+    c1 = clamp_quotient(f32_div(f32(float(s32(x['speed']))), f32(float(s32(x['init_speed'])))))
+    c2 = clamp_quotient(f32_div(f32(float(x['dur'] & 0xFF)), f32(float(s32(x['init_dur'])))))
+    return fctiwz(f32(f32(float(base)) * f32(c1 * c2)))
+
+
+def join_difference_reading(x: dict) -> int:
+    """0xe9a84: 100 while 0xdfe34 holds, else clamp(excitement byte - preferred byte, -50, 50)."""
+    if failure_reading(x):
+        return 100
+    difference = (join_excitement_reading(x) & 0xFF) - (x['pref'] & 0xFF)
+    return max(-50, min(50, difference))
+
+
+def join_gate_reading(x: dict) -> dict:
+    """The state-10 gate: a nonzero low byte of the type's ExcitementLevel (0xe02ec(ride, 1)) and |difference| >= 45 refuse,
+    below zero 'not exciting enough' (thought 12), otherwise 'too exciting' (thought 15)."""
+    difference = join_difference_reading(x)
+    if join_excitement_reading(x, 1) and abs(difference) >= 45:
+        return {'outcome': 'bored' if difference < 0 else 'scared', 'difference': difference}
+    return {'outcome': 'pass', 'difference': difference}
+
+
+def join_gate_equal(original: dict, other: dict) -> bool:
+    return original['outcome'] == other['outcome'] and (other['difference'] is None or original['difference'] == other['difference'])
+
+
+def join_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        init_speed, init_dur = rng.randrange(1, 200), rng.randrange(1, 100)
+        x = {'idx': rng.randrange(0, 6), 'pref': rng.choice([rng.randrange(0, 101)] * 3 + [30, 50, 60, 70, 80, 100]),
+             'kind': rng.choice([0, 0, 0, 1, 2, 2, 3]), 'level': rng.choice([0, 30, 60, 90, rng.randrange(0, 121), rng.randrange(0, 121)]),
+             'track': rng.choice([0, 0, 0, 0, 1, 2, 3, 3]), 'flags': rng.choice([0, 1, 4, 8, rng.getrandbits(16)]),
+             'gauge': rng.choice([100.0, 100.0, random_float(rng, 0, 100)]), 'rlevel': rng.randrange(0, 4),
+             'init_speed': init_speed, 'speed': rng.choice([init_speed, init_speed, rng.randrange(0, 300)]),
+             'init_dur': init_dur, 'dur': rng.choice([init_dur, init_dur, rng.randrange(0, 200)]),
+             'thing36': rng.choice([0, 0, rng.randrange(1, 60)]), 'pieces': [rng.randrange(-2, 16) for _ in range(4)],
+             'goods': rng.randrange(0, 300), 'price': rng.randrange(0, 300), 'win': rng.randrange(0, 256),
+             'ctrl': rng.choice([0, 1, 2, 3, 9]), 'coaster_e': random_float(rng, 0, 100)}
+        x.update(kw)
+        return x
+    base = dict(idx=0, pref=80, kind=0, level=60, track=0, flags=0, gauge=100.0, rlevel=0, init_speed=100, speed=100, init_dur=30,
+                dur=30, thing36=0, pieces=[0, 0, 0, 0], goods=60, price=35, win=50, ctrl=0, coaster_e=40.0)
+    edges = [make(**{**base, 'kind': 2, 'level': 30, 'pref': 80}),   # a sideshow: formula 20 + 0.8 * 50 * 5 / 10 = 40
+             make(**base),                                           # an ordinary ride at its data excitement
+             make(**{**base, 'level': 90, 'thing36': 5, 'pieces': [3, 2, 1, 7]}),  # attached pieces: 0.6 * 90 + 11
+             make(**{**base, 'level': 100, 'pref': 50, 'speed': 150}),   # speed ratio 1.5 clamps to 1.25
+             make(**{**base, 'level': 100, 'pref': 50, 'speed': 10}),    # speed ratio 0.1 clamps to 0.75
+             make(**{**base, 'level': 0, 'pref': 80}),               # ExcitementLevel 0: no gate, no excitement
+             make(**{**base, 'level': 256, 'pref': 80}),             # low byte 0: no gate, but excitement from the word
+             make(**{**base, 'kind': 1, 'level': 20, 'pref': 80}),   # a shop with an excitement level: gated
+             make(**{**base, 'track': 3, 'ctrl': 2, 'coaster_e': 38.0, 'pref': 90}),  # coaster: trunc(0.5 * 38 + 50) = 69
+             make(**{**base, 'track': 3, 'ctrl': 0, 'pref': 90}),    # coaster without a controller: 0
+             make(**{**base, 'level': 50, 'pref': 80, 'flags': 1, 'gauge': 10.0}),  # worn-out relief object: 100
+             make(**{**base, 'level': 50, 'pref': 20, 'flags': 1, 'gauge': 10.0}),
+             make(**{**base, 'level': 50, 'pref': 95}), make(**{**base, 'level': 50, 'pref': 94}),
+             make(**{**base, 'level': 50, 'pref': 5}), make(**{**base, 'level': 50, 'pref': 6}),
+             make(**{**base, 'level': 50, 'pref': 400}), make(**{**base, 'level': 50, 'pref': 300 + 80}),
+             make(**{**base, 'level': 50, 'pref': 80, 'dur': 0, 'init_dur': 0}), make(**{**base, 'level': 50, 'init_speed': 0, 'speed': 0}),
+             make(**{**base, 'level': 0x7FFFFFFF, 'pref': 3}), make(**{**base, 'level': -3, 'pref': 3}),
+             make(**{**base, 'kind': 2, 'goods': 1000, 'price': -5, 'win': 255, 'level': 30, 'pref': 3}),
+             make(**{**base, 'kind': 2, 'goods': 10, 'price': 40, 'win': 255, 'level': 30, 'pref': 80})]
+    return edges + [make() for _ in range(n)]
+
+
+def join_gate_request(x: dict) -> dict:
+    return {'fn': 'queue_join_gate', 'kind': x['kind'], 'pref': x['pref'], 'level': s32(x['level']), 'coaster': x['track'] == 3,
+            'ctrl': x['ctrl'] != 0, 'e_bits': bits(x['coaster_e'])}
 
 
 # ============================================================================== registry
@@ -2100,6 +2367,32 @@ LOAN_OFFERS = Target('loan-offers', 'Loan offer setup 0xcb7a8', 'ECONOMY.md / Pa
                             'arithmetic and the float -> unsigned conversion 0x1c3fbc. Stubs: 0xfa718 base constructor (header '
                             'only), MathLib pow behind the glue 0x1c61a4 (Python math.pow).'])
 
+FAILURE = Target('queue-failure-predicate', 'Ride-failure predicate 0xdfe34', 'QUEUE-008 / GUESTS.md "Queue"', 0xDFE34,
+                 [(0xDFE34, 0xDFE88)], lambda t: {}, failure_binary, failure_plan, failure_inputs,
+                 alternatives={'routine-reading': failure_reading},
+                 notes=['No C# hook: the C# claim is RideVisitorBridge.IsBroken (VAR_BROKEN != 0), which needs a live RideVM; the '
+                        '"plan" side is that claim. CSHARP_PENDING.',
+                        'Executed alone (no stubs): the routine reads ride +46 bit 0x1 and the float +64; it never reads the script.',
+                        'The input "broken" is the script variable the plan reads; the routine cannot see it.'])
+
+JOIN_DIFFERENCE_TARGET = Target('queue-join-difference', 'Join excitement difference 0xe9a84', 'QUEUE-004 / QUEUE-plan 4',
+                                0xE9A84, JOIN_ALLOWED, join_stubs, join_difference_binary, join_plan_difference, join_inputs,
+                                alternatives={'routine-reading': join_difference_reading},
+                                notes=['No C# hook: C# has no clamped difference; the "plan" side is the claimed ride minus preferred '
+                                       'excitement, unclamped, without the relief case. CSHARP_PENDING.',
+                                       'Executed: 0xe9a84, 0xdfe34, 0xeb7e4, 0xe02ec, 0xdff70, 0xe1f70, 0xe1f78, 0xe2364, '
+                                       '0xe2fe4 and the controller getter 0x41a14. Stubs: 0x118018 type record, 0xb5e24 script '
+                                       'controller, 0x1ea40 pieces behind ride +36, the import sqrt.'])
+
+JOIN_GATE = Target('queue-join-gate', 'Join excitement gate (state 10, 0xeccb0 from 0xecd6c)', 'QUEUE-004 / QUEUE-plan 4',
+                   JOIN_FRAGMENT, JOIN_ALLOWED + [(0xECD6C, 0xECDB4), (0xECED0, 0xECF38)], join_stubs, join_gate_binary,
+                   join_plan, join_inputs, equal=join_gate_equal, alternatives={'routine-reading': join_gate_reading},
+                   csharp=('queue_join_gate', join_gate_request, lambda x, r: {'outcome': r.get('outcome', str(r)), 'difference': None}),
+                   notes=['C# hook: bridge function "queue_join_gate" (RideVisitorBridge.ExcitementRefusal by reflection).',
+                          'Fragment of the state-10 handler: the 0xe9a84 call, the 0xe02ec(ride, 1) predicate and the 45 test, '
+                          'stopping at 0xecdb0 (joined) or after the refusal thought call 0xecf34. Stubs as queue-join-difference '
+                          'plus 0x5fbcc log (the message text is read), 0xfb7b4 reason and 0xfb54c thought (arguments checked).'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE]
 DOMAINS = {SET_CELL.key: set_cell_domain}

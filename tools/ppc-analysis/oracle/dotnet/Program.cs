@@ -25,6 +25,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["loan_term"] = LoanTerm,
 	["loan_take"] = LoanTake,
 	["loan_payoff"] = LoanPayoff,
+	["queue_join_gate"] = QueueJoinGate,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -267,4 +268,21 @@ static JsonNode? LoanPayoff( JsonObject a )
 	var left = park.Loans.FirstOrDefault();
 	return new JsonObject { ["taken"] = taken ? 1 : 0, ["balance"] = park.Balance, ["profit"] = park.Ledger.ProfitThisYear,
 		["bought"] = left == null ? 0 : 1, ["repaid"] = left?.MonthsRepaid ?? 0, ["money_out"] = park.Ledger.CurrentMonth( 0, 0 )[LedgerCategory.LoanPayments] };
+}
+
+// RideVisitorBridge.ExcitementRefusal (the state-10 excitement gate of JoinQueue, 0xeccb0) through reflection (it is internal and
+// static). The guest's difference is built as GuestSimulation.UpdateGoingToRide builds it: preferred excitement minus the ride's
+// ExcitementLevel, which is the .sam value, or the coaster's CoasterRating.GuestExcitement once its controller exists (0 before).
+// Type +1960 (Info.WhichUIType) 0 is a ride, 2 a sideshow and anything else a facility, as OriginalObjectRuntime maps them.
+static JsonNode? QueueJoinGate( JsonObject a )
+{
+	var excitement = (bool)a["coaster"]!
+		? (bool)a["ctrl"]! ? CoasterRating.GuestExcitement( BitConverter.Int32BitsToSingle( (int)(uint)a["e_bits"]! ) ) : 0
+		: (int)a["level"]!;
+	var kind = (int)a["kind"]! switch { 0 => RideVisitorKind.Ride, 2 => RideVisitorKind.Sideshow, _ => RideVisitorKind.Facility };
+	var method = typeof( RideVisitorBridge ).GetMethod( "ExcitementRefusal", BindingFlags.NonPublic | BindingFlags.Static )
+		?? throw new MissingMethodException( "RideVisitorBridge.ExcitementRefusal" );
+	var refusal = (QueueJoinResult?)method.Invoke( null, new object[] { kind, (int)a["pref"]! - excitement } );
+	var outcome = refusal switch { null => "pass", QueueJoinResult.NotExcitingEnough => "bored", QueueJoinResult.TooExciting => "scared", _ => refusal.ToString()! };
+	return new JsonObject { ["outcome"] = outcome };
 }

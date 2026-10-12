@@ -165,9 +165,9 @@ public sealed class PredecodedUiArtTests
 			TexturePack.Activate( "", new List<string>() );
 			File.WriteAllBytes( png, new byte[1] );
 			File.WriteAllBytes( sibling, new byte[1] );
-			Assert.AreEqual( png, TexturePack.Find( "/ui/textures/b_buy.wct" ) );
+			Assert.AreEqual( Path.GetFullPath( png ), Path.GetFullPath( TexturePack.Find( "/ui/textures/b_buy.wct" )! ) );
 			File.Delete( png );
-			Assert.AreEqual( sibling, TexturePack.Find( "/ui/textures/b_buy.wct" ) );
+			Assert.AreEqual( Path.GetFullPath( sibling ), Path.GetFullPath( TexturePack.Find( "/ui/textures/b_buy.wct" )! ) );
 			File.Delete( sibling );
 			Assert.IsNull( TexturePack.Find( "/ui/textures/b_buy.wct" ) );
 			// With Original HUD/icons, interface art uses neither the PNG nor the sibling.
@@ -183,7 +183,7 @@ public sealed class PredecodedUiArtTests
 			var packed = Path.Combine( pack, "textures", "ui", "textures", "b_buy.wct.png" );
 			File.WriteAllBytes( packed, new byte[1] );
 			TexturePack.Activate( TexturePack.DefaultName, new List<string>(), packs, packs );
-			Assert.AreEqual( packed, TexturePack.Find( "/ui/textures/b_buy.wct" ) );
+			Assert.AreEqual( Path.GetFullPath( packed ), Path.GetFullPath( TexturePack.Find( "/ui/textures/b_buy.wct" )! ) );
 		}
 		finally
 		{

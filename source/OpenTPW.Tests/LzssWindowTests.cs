@@ -37,6 +37,8 @@ public class LzssWindowTests
 	{
 		var seed = new byte[] { 0, 255, 1, 128, 127, 4, 90 };
 		CollectionAssert.AreEqual( seed, Decode( Encode( seed ) ) );
+		var largeSeed = Enumerable.Range( 0, 5000 ).Select( i => (byte)i ).ToArray();
+		CollectionAssert.AreEqual( largeSeed, Decode( Encode( largeSeed ) ) );
 		CollectionAssert.AreEqual( Array.Empty<byte>(), Decode( Encode( Array.Empty<byte>() ) ) );
 	}
 

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -145,91 +144,6 @@ public class TextureDecoderIndexingSyntheticTests
 		Assert.IsNotNull( caught, $"{pin.Name} used to throw {pin.ErrorType}" );
 		Assert.AreEqual( pin.ErrorType, caught!.GetType().Name, $"{pin.Name} failure mode changed" );
 		Assert.AreEqual( pin.ErrorMessage, caught.Message, $"{pin.Name} failure message changed" );
-	}
-
-	/// <summary>
-	/// The direct integer indexing in D4InverseTransformRows/Columns must reproduce exactly what
-	/// the removed Func index lookups computed, for every size, index, wrap-around, component and
-	/// column offset, including the half-scale source halving and the alpha wavelet offset.
-	/// </summary>
-	[TestMethod]
-	public void DirectIndexMappingMatchesTheOriginalIndexLookups()
-	{
-		// Reference: the Func<int, D4Component, int> lambdas TextureFile.Decode.cs passed to
-		// D4InverseTransform before the rewrite (with the two-component switch as a bool and the
-		// constant sOffset folded away).
-		static int OriginalRowSource( int index, bool wavelet, bool isHalfScale )
-		{
-			int baseIndex = isHalfScale ? index / 2 : index * 2;
-			return wavelet ? baseIndex + 1 : baseIndex;
-		}
-
-		static int OriginalRowDest( int index, bool wavelet, bool isHalfScale )
-		{
-			int baseIndex = isHalfScale ? index : index * 2;
-			return wavelet ? baseIndex + 1 : baseIndex;
-		}
-
-		static int OriginalColumnSource( int index, bool wavelet, int size, int col, int wOffset )
-			=> index * size + col + (wavelet ? wOffset : 0);
-
-		static int OriginalColumnDest( int index, bool wavelet, int size, int col )
-			=> index * 2 * size + col + (wavelet ? size : 0);
-
-		// The direct formulas now used in the decoder.
-		static int NewRowSource( int index, bool wavelet, bool isHalfScale )
-			=> (isHalfScale ? index / 2 : index * 2) + (wavelet ? 1 : 0);
-
-		static int NewRowDest( int index, bool wavelet, bool isHalfScale )
-			=> (isHalfScale ? index : index * 2) + (wavelet ? 1 : 0);
-
-		static int NewColumnSource( int index, bool wavelet, int size, int col, int wOffset )
-			=> index * size + col + (wavelet ? wOffset : 0);
-
-		static int NewColumnDest( int index, bool wavelet, int size, int col )
-			=> index * 2 * size + col + (wavelet ? size : 0);
-
-		var sizes = new List<int>();
-		for ( var size = 2; size <= 65; size++ )
-			sizes.Add( size );
-		sizes.AddRange( new[] { 96, 128, 192, 256 } );
-
-		foreach ( var size in sizes )
-			foreach ( var isHalfScale in new[] { false, true } )
-				foreach ( var wavelet in new[] { false, true } )
-					for ( var i = 0; i < size; i++ )
-					{
-						var prev = (i == 0) ? size - 1 : i - 1;
-						Assert.AreEqual( OriginalRowSource( prev, wavelet, isHalfScale ), NewRowSource( prev, wavelet, isHalfScale ),
-							$"row source map size={size} i={i} wavelet={wavelet} half={isHalfScale}" );
-						Assert.AreEqual( OriginalRowSource( i, wavelet, isHalfScale ), NewRowSource( i, wavelet, isHalfScale ),
-							$"row source map size={size} i={i} wavelet={wavelet} half={isHalfScale}" );
-						Assert.AreEqual( OriginalRowDest( i, wavelet, isHalfScale ), NewRowDest( i, wavelet, isHalfScale ),
-							$"row dest map size={size} i={i} wavelet={wavelet} half={isHalfScale}" );
-
-						// Rows add the row base offset after the lookup in both versions.
-						var rowOffset = i * size;
-						Assert.AreEqual( OriginalRowSource( prev, wavelet, isHalfScale ) + rowOffset,
-							NewRowSource( prev, wavelet, isHalfScale ) + rowOffset, "row absolute source index" );
-					}
-
-		foreach ( var size in sizes )
-			foreach ( var wOffset in new[] { size * (size / 2), size * size, 5 } )
-				foreach ( var wavelet in new[] { false, true } )
-					for ( var col = 0; col < size; col++ )
-						for ( var i = 0; i < size / 2; i++ )
-						{
-							var prev = (i == 0) ? size / 2 - 1 : i - 1;
-							Assert.AreEqual( OriginalColumnSource( prev, wavelet, size, col, wOffset ),
-								NewColumnSource( prev, wavelet, size, col, wOffset ),
-								$"column source map size={size} col={col} i={i} wavelet={wavelet} wOffset={wOffset}" );
-							Assert.AreEqual( OriginalColumnSource( i, wavelet, size, col, wOffset ),
-								NewColumnSource( i, wavelet, size, col, wOffset ),
-								$"column source map size={size} col={col} i={i} wavelet={wavelet} wOffset={wOffset}" );
-							Assert.AreEqual( OriginalColumnDest( i, wavelet, size, col ),
-								NewColumnDest( i, wavelet, size, col ),
-								$"column dest map size={size} col={col} i={i} wavelet={wavelet}" );
-						}
 	}
 
 	private static Exception? TryDecode( byte[] wct )

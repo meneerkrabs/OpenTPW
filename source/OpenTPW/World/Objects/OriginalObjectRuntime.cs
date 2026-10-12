@@ -312,6 +312,8 @@ public sealed class OriginalObjectRuntime
 			settings.GetInt( "UsageInfo.ExcitementLevel" ), settings.GetInt( "Info.AttractionValue" ), needs, price )
 		{
 			Parameters = CreateQueueParameters( entry ),
+			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods/InitPricePerUse/InitChanceOfLoosing] the sideshow words of the join excitement (0xdff70); the level mirrors the live economy values over them
+			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
 			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" ))
 		};
@@ -338,7 +340,7 @@ public sealed class OriginalObjectRuntime
 		var initSpeed = level?.GetInt( "InitSpeed" ) ?? 0;
 		var trackType = settings.GetInt( "Bumper.WhichTrackType" );
 		return new QueueParameters( entry.HasQueue, settings.GetBool( "Info.RunsContinuously" ), trackType is 2 or 3,
-			level?.GetFloat( "QueueWaitTimeConstant" ) ?? 0, initSpeed, initSpeed, capacity, duration );
+			level?.GetFloat( "QueueWaitTimeConstant" ) ?? 0, initSpeed, initSpeed, capacity, duration, level?.GetInt( "InitDuration" ) ?? 0 );
 	}
 
 	private RideScriptFile? ResolveChildScript( string fileName )

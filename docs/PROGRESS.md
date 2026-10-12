@@ -194,6 +194,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   leaving an Ice Cream Shop walks about one percent faster for three turns (at most +15 per use, so the u16 wrap above 661 never happens in play). The oracle
   target `walk-boost` executes the routine (521/521); `GuestSpeed.RaiseBoost` does the same in `ApplyVisit` and agrees. WALK-001 now only keeps the shop screen's
   amount and its saved field.
+- The oracle settled ECON-039 (F23 in [ORACLE.md](reverse/ORACLE.md)): the yearly profit golden ticket is won when the bank's year profit is
+  signed strictly greater than `GoldenTicketLocal.ProfitYear` (`0xd33dc`, executed), with no factor. The 0.9 multiplier the register
+  saw at `0x13fdc` is the advisor's near-ticket hint (`GoldTicketNearToXProfit`), executed separately. OpenTPW now compares `>` instead
+  of `>=` (the two differ only at exactly 15000 in jungle) and the `[APPROX:ECON-039]` is gone. The same oracle run executed every
+  other local and global ticket arm: all are signed strictly-greater compares (so 100 admissions no longer win the visitors ticket), the
+  happiness ticket is the single average above `Happiness` and more than `AtLeastThisManyHappyPeople` guests, and OpenTPW follows; the recent-visitors
+  ticket's park-age gate is registered as ECON-052.
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).

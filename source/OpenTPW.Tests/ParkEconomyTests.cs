@@ -611,7 +611,7 @@ public class ParkEconomyTests
 	private sealed class FixedGuests( int inPark ) : IParkGuestStatistics
 	{
 		public int PeopleInPark => inPark;
-		public int AverageHappiness => 0;
+		public float AverageHappiness => 0;
 		public int CountHappierThan( int happiness ) => 0;
 		public int KidsWithBalloonsPercent => 0;
 		public int KidsWithCostumesPercent => 0;
@@ -856,13 +856,82 @@ public class ParkEconomyTests
 		{
 			var park = EconomyTestData.Park( mode: mode );
 			park.OpenPark();
-			for ( var visitor = 0; visitor < 100; visitor++ )
+			for ( var visitor = 0; visitor < 101; visitor++ )
 				park.TryAdmitVisitor( 100, out _ );
 			park.Advance( ParkCalendar.TickOfTurn( ParkEconomy.GoldenTicketCheckInterval ) - 1 );
 			Assert.AreEqual( 0, park.Objectives.GoldenTickets.Count, $"{mode}: not checked before turn 100" );
 			park.Advance( 1 );
 			Assert.AreEqual( mode == ParkGameMode.FullSimulation ? 1 : 0, park.Objectives.GoldenTickets.Count, $"{mode}: checked at turn 100" );
 		}
+	}
+
+	// ORACLE F23 (ECON-039): the local ticket check 0xd31d0 awards ticket 4 when the bank's year profit word is signed GREATER than
+	// GoldenTicketLocal.ProfitYear. The 0.9 multiplier of 0x13fdc is the advisor's near-ticket hint, not part of the award.
+	[TestMethod]
+	public void TheProfitTicketNeedsTheYearProfitStrictlyAboveProfitYear()
+	{
+		var threshold = EconomyTestData.Park().Settings.GoldenTickets.ProfitYear;
+		Assert.AreEqual( 15000, threshold );
+		bool Won( long profit )
+		{
+			var park = EconomyTestData.Park();
+			return park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, profit, Array.Empty<long>() ).Contains( GoldenTicketKind.ProfitYear );
+		}
+		Assert.IsFalse( Won( 0 ) );
+		Assert.IsFalse( Won( -20000 ) );
+		Assert.IsFalse( Won( (long)(threshold * 0.9) + 1 ), "no 0.9 factor: the advisor hint is not the award" );
+		Assert.IsFalse( Won( threshold - 1 ) );
+		Assert.IsFalse( Won( threshold ), "equal is not enough (signed greater-than at 0xd3400)" );
+		Assert.IsTrue( Won( threshold + 1 ) );
+		Assert.IsTrue( Won( int.MaxValue ) );
+	}
+
+	// ORACLE F23: every ticket arm of 0xd31d0 and 0xd34c0 is a signed strictly-greater compare. Each case checks the limit (not won) and
+	// the limit plus one (won) against the shipped jungle thresholds of the test Standard.sam.
+	private sealed class StatGuests( int people, float average ) : IParkGuestStatistics
+	{
+		public int PeopleInPark => people;
+		public float AverageHappiness => average;
+		public int CountHappierThan( int happiness ) => 0;
+		public int KidsWithBalloonsPercent => 0;
+		public int KidsWithCostumesPercent => 0;
+	}
+
+	private static bool TicketWon( GoldenTicketKind kind, int visitors = 0, int people = 0, float average = 0, long profit = 0, long recentVisitors = 0,
+		ParkRecordKind? record = null, long recordValue = 0 )
+	{
+		var park = EconomyTestData.Park();
+		park.Counters.Add( ParkCounters.Admissions, visitors );
+		if ( record is { } kindOfRecord )
+			park.Counters.Max( ParkCounters.Record( kindOfRecord, 0 ), recordValue );
+		// six closed months; the last carries the recent visitors (RecentVisitorMonths 6)
+		var months = new long[] { 0, 0, 0, 0, 0, recentVisitors };
+		return park.Objectives.CheckGoldenTickets( park.Counters, new StatGuests( people, average ), park.Research, profit, months ).Contains( kind );
+	}
+
+	[TestMethod]
+	public void EveryGoldenTicketNeedsItsStatisticStrictlyAboveTheLimit()
+	{
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Visitors, visitors: 100 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.Visitors, visitors: 101 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.PeopleInPark, people: 200 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.PeopleInPark, people: 201 ) );
+		// happiness: the single average above 75 and more than 150 guests; the fraction counts (75.5 > 75), nobody is filtered by happiness
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Happiness, people: 151, average: 75f ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.Happiness, people: 151, average: 75.5f ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Happiness, people: 150, average: 90f ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.Happiness, people: 151, average: 75.01f ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Happiness, people: 151, average: float.NaN ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.RecentVisitors, recentVisitors: 350 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.RecentVisitors, recentVisitors: 351 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.CoasterHeight, record: ParkRecordKind.CoasterHeight, recordValue: 105 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.CoasterHeight, record: ParkRecordKind.CoasterHeight, recordValue: 106 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.GokartExcitement, record: ParkRecordKind.GokartExcitement, recordValue: 90 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.GokartExcitement, record: ParkRecordKind.GokartExcitement, recordValue: 91 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.WaterLength, record: ParkRecordKind.WaterLength, recordValue: 50 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.WaterLength, record: ParkRecordKind.WaterLength, recordValue: 51 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3000 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3001 ) );
 	}
 
 	[TestMethod]
@@ -872,7 +941,7 @@ public class ParkEconomyTests
 		var events = new List<ParkEvent>();
 		park.EventRaised += events.Add;
 		park.OpenPark();
-		for ( var visitor = 0; visitor < 100; visitor++ )
+		for ( var visitor = 0; visitor < 101; visitor++ )
 			park.TryAdmitVisitor( 100, out _ );
 		park.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
 		park.AdvanceMonths( 1 );

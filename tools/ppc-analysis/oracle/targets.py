@@ -4081,6 +4081,403 @@ STRIKE_MONTH = Target('staff-strike-month', 'Strike consideration 0xf7e18 with t
                              '0xe4628 clock stamp (chosen; its epoch is not traced), 0x116590 / 0x11688c message construction and posting '
                              '(logged as role and kind), the world-stub set of staff-strike-grievance.'])
 
+# ============================================================================== (m) GOLDEN TICKET: the yearly profit ticket (ECON-039)
+# The local golden ticket checks run from the world update (0xd2f1c -> 0xd31d0, every 100 turns, game type 0): for each local ticket
+# they ask the earned flags (0x128d6c(flag set, index)) and, when the ticket is not yet earned, compare a park statistic with the
+# GoldenTicketLocal threshold from the Standard.sam block (TOC -30084). Ticket 4, the yearly profit, is 0xd33dc..0xd3410: it reads
+# the bank (0x108424(game)), the bank's year profit word (+292, 0xccfa8) and awards 0xd3664(this, 4) when the profit is signed
+# GREATER than the threshold word at +1888 (GoldenTicketLocal.ProfitYear). There is no factor in this comparison.
+# 0x13fdc, a virtual method of the advisor's rules, is a different routine: the advisor's "you are near the profit ticket" hint
+# (Advisor.sam GoldTicketNearToXProfit.ProfitMultiplier / .Score). It scales the same threshold by the multiplier and returns the
+# rule's score while the ticket is not yet earned: that is the "per-objective factor" ECON-039 saw.
+LOCAL_TICKETS = 0xD31D0        # (this) the six local tickets
+LOCAL_TICKETS_END = 0xD34C0
+TICKET_AWARD = 0xD3664         # (this, ticket index) awards; stubbed: the index is logged
+BANK_OF_GAME = 0x108424        # (game) -> bank thing; stubbed with a synthetic bank, game checked
+PROFIT_GAME_VARIABLE = -30124  # TOC slot -> variable holding the game pointer (0xd31d0)
+PROFIT_GAME_CELL = -30076      # TOC slot -> variable holding the address of a cell that holds the game pointer (0x13fdc)
+PROFIT_FLAGS = -30088          # TOC slot -> variable holding the earned-flags singleton (+68 -> flag bytes)
+PROFIT_SETTINGS = -30084       # TOC slot -> settings block: +1888 GoldenTicketLocal.ProfitYear
+PROFIT_TICKET = 4
+PROFIT_STATE = type('ProfitState', (), {})()
+
+
+def profit_stubs(target: Target) -> dict:
+    state = PROFIT_STATE
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    def bank(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x108424 called without the game pointer')
+        m.gpr[3] = state.bank
+
+    def award(m: Machine) -> None:
+        if m.gpr[3] != state.this:
+            raise AssertionError('0xd3664 called without the checking object')
+        target.log.append(('award', m.gpr[4]))
+
+    return {PARK_OF_GAME: park, BANK_OF_GAME: bank, TICKET_AWARD: award}
+
+
+def profit_setup(sb: Sandbox, x: dict) -> None:
+    """The game pointer variables, the settings threshold, the earned-flags singleton (every ticket but the profit one earned,
+    so that only ticket 4 reaches its statistic) and a bank whose +292 word is the year profit."""
+    state = PROFIT_STATE
+    state.game = sb.alloc(16)
+    state.park = sb.alloc(16)
+    state.this = sb.alloc(16)
+    state.bank = sb.struct(512, {292: ('i', x['profit'])})
+    sb.write(toc_pointer(sb, PROFIT_GAME_VARIABLE), 'I', state.game)
+    cell = sb.struct(8, {0: ('I', state.game)})
+    sb.write(toc_pointer(sb, PROFIT_GAME_CELL), 'I', cell)
+    flags = sb.struct(16, {i: ('B', 1) for i in range(16)})
+    sb.write(flags + PROFIT_TICKET, 'B', 1 if x.get('earned') else 0)
+    sb.write(toc_pointer(sb, PROFIT_FLAGS), 'I', sb.struct(80, {68: ('I', flags)}))
+    sb.write(toc_pointer(sb, PROFIT_SETTINGS) + 1888, 'i', x['threshold'])
+
+
+def profit_binary(sb: Sandbox, x: dict, log) -> list:
+    profit_setup(sb, x)
+    sb.call(LOCAL_TICKETS, {3: PROFIT_STATE.this})
+    return sorted(index for kind, index in log if kind == 'award')
+
+
+def profit_old_rule(x: dict) -> list:
+    """OpenTPW before F23 (ParkObjectives.CheckGoldenTickets): the ticket is won when the year profit reaches the threshold (>=)."""
+    return [PROFIT_TICKET] if not x.get('earned') and x['profit'] >= x['threshold'] else []
+
+
+def profit_reading(x: dict, strict: bool = True, unsigned: bool = False, scale: float | None = None) -> list:
+    """The routine as read from 0xd33dc..0xd3410: not earned, then a signed word compare profit > threshold. The keywords are
+    deliberate deviations for the sharpness tests: a >= compare, an unsigned compare and the advisor's multiplier."""
+    profit, threshold = x['profit'], x['threshold']
+    if scale is not None:
+        threshold = fctiwz(f32_mul(f32(float(threshold)), scale))
+    if unsigned:
+        profit, threshold = profit & MASK32, threshold & MASK32
+    if x.get('earned'):
+        return []
+    return [PROFIT_TICKET] if (profit > threshold if strict else profit >= threshold) else []
+
+
+def f32_mul(a: float, b: float) -> float:
+    """Single-precision product of two singles; an overflow gives the infinity (struct.pack would raise)."""
+    product = a * b
+    if math.isfinite(product) and abs(product) >= 3.4028235677973366e38:
+        return math.copysign(math.inf, product)
+    return f32(product)
+
+
+def profit_csharp_request(x: dict) -> dict:
+    return {'fn': 'profit_ticket', 'profit': x['profit'], 'threshold': x['threshold']}
+
+
+def profit_csharp_result(x: dict, awarded) -> list:
+    return [PROFIT_TICKET] if awarded else []
+
+
+def profit_inputs(rng: random.Random, n: int) -> list:
+    shipped = [15000, 30000]         # GoldenTicketLocal.ProfitYear of the jungle/fantasy/hallow and space Standard.sam files
+    edges = [{'profit': t + d, 'threshold': t} for t in shipped + [0, -5, 2 ** 31 - 1, -2 ** 31] for d in (-1, 0, 1)
+             if -2 ** 31 <= t + d < 2 ** 31]
+    edges += [{'profit': 2 ** 31 - 1, 'threshold': -2 ** 31}, {'profit': -2 ** 31, 'threshold': 2 ** 31 - 1},
+              {'profit': -1, 'threshold': 1}, {'profit': 1, 'threshold': -1},
+              {'profit': 13500, 'threshold': 15000}, {'profit': 15000, 'threshold': 15000}, {'profit': 15001, 'threshold': 15000}]
+
+    def make() -> dict:
+        threshold = rng.choice(shipped + [rng.randrange(-2 ** 31, 2 ** 31), rng.randrange(-50000, 60000)])
+        profit = rng.choice([threshold, threshold + rng.randrange(-3, 4), rng.randrange(-60000, 90000), rng.randrange(-2 ** 31, 2 ** 31)])
+        return {'profit': max(-2 ** 31, min(2 ** 31 - 1, profit)), 'threshold': threshold}
+    return edges + [make() for _ in range(n)]
+
+
+PROFIT_ALLOWED = [(LOCAL_TICKETS, LOCAL_TICKETS_END), (0xCCFA8, 0xCCFB0), (0x128D6C, 0x128D90), (0x12A438, 0x12A440)]
+PROFIT_TARGET = Target('profit-ticket', 'Yearly profit golden ticket (ticket 4 of 0xd31d0)', 'ORACLE F23 / ECONOMY.md "Golden tickets" (ECON-039)',
+                       LOCAL_TICKETS, PROFIT_ALLOWED, profit_stubs, profit_binary, profit_old_rule, profit_inputs,
+                       alternatives={'routine-reading': profit_reading},
+                       csharp=('profit_ticket', profit_csharp_request, profit_csharp_result),
+                       notes=['C# hook: bridge function "profit_ticket" (ParkObjectives.CheckGoldenTickets with the threshold in the synthetic '
+                              'Standard.sam; whether the profit ticket is newly won).',
+                              'Executed: 0xd31d0 with every other ticket marked earned (0x128d6c over a synthetic flag singleton), the bank '
+                              'year profit word 0xccfa8 and the earned flag test 0x12a438; ticket 4 is 0xd33dc..0xd3410. Stubs: 0x1082b4 and '
+                              '0x108424 (game checked, a synthetic park and bank) and 0xd3664 (the award: logged).',
+                              'The gate around the routine (game type 0, every 100 turns, ParkModeFeatures) is not executed.'])
+
+HINT_ENTRY = 0x13FDC           # (advisor rules this) the "near the profit ticket" hint: the rule's score, or 0
+
+
+def hint_binary(sb: Sandbox, x: dict, log) -> int:
+    profit_setup(sb, x)
+    this = sb.struct(1600, {1492: ('f', x['mult']), 1496: ('i', x['score'])})
+    return s32(sb.call(HINT_ENTRY, {3: this}).r3)
+
+
+def hint_reading(x: dict, unscaled: bool = False, ignore_earned: bool = False, strict: bool = True) -> int:
+    """0x13fdc: threshold = trunc(single(single(ProfitYear) * multiplier)) (fctiwz), then profit > threshold (signed) and the
+    ticket not earned: the score, else 0. The keywords are deliberate deviations: no multiplier, no earned test and a >= compare."""
+    threshold = x['threshold'] if unscaled else fctiwz(f32_mul(f32(float(x['threshold'])), f32(x['mult'])))
+    reached = x['profit'] > threshold if strict else x['profit'] >= threshold
+    if reached and (ignore_earned or not x.get('earned')):
+        return x['score']
+    return 0
+
+
+def hint_inputs(rng: random.Random, n: int) -> list:
+    shipped = [f32(0.9), f32(0.65), f32(0.85)]      # Advisor.sam: GoldTicketNearToXProfit / ...FirstOne / ...XHappiness multipliers
+    edges = []
+    for mult in shipped + [1.0, 0.0, -1.0, math.nan, math.inf, -math.inf]:
+        for threshold in (15000, 30000, 0, -5, 2 ** 31 - 1):
+            scaled = fctiwz(f32_mul(f32(float(threshold)), mult))
+            for d in (-1, 0, 1):
+                if -2 ** 31 <= scaled + d < 2 ** 31:
+                    edges.append({'profit': scaled + d, 'threshold': threshold, 'mult': mult, 'score': 100})
+    edges += [{'profit': 13500, 'threshold': 15000, 'mult': f32(0.9), 'score': 100, 'earned': True},
+              {'profit': 13501, 'threshold': 15000, 'mult': f32(0.9), 'score': 100, 'earned': True},
+              {'profit': 20000, 'threshold': 15000, 'mult': f32(0.9), 'score': 100}]
+
+    def make() -> dict:
+        threshold = rng.choice([15000, 30000, rng.randrange(-50000, 60000), rng.randrange(-2 ** 31, 2 ** 31)])
+        mult = rng.choice(shipped + [random_float(rng, 0, 2), random_float(rng, -2, 2), random_single_bits(rng)])
+        scaled = fctiwz(f32_mul(f32(float(threshold)), mult))
+        profit = rng.choice([scaled + rng.randrange(-3, 4), rng.randrange(-60000, 90000), rng.randrange(-2 ** 31, 2 ** 31)])
+        return {'profit': max(-2 ** 31, min(2 ** 31 - 1, profit)), 'threshold': threshold, 'mult': mult,
+                'score': rng.choice([100, rng.randrange(-2 ** 31, 2 ** 31)]), 'earned': rng.random() < 0.3}
+    return edges + [make() for _ in range(n)]
+
+
+HINT_TARGET = Target('profit-ticket-hint', 'Advisor hint "near the profit ticket" 0x13fdc', 'ORACLE F23 / ECONOMY.md (ECON-039)', HINT_ENTRY,
+                     [(HINT_ENTRY, 0x140B8), (0xCCFA8, 0xCCFB0), (0x128D6C, 0x128D90), (0x12A438, 0x12A440)], profit_stubs, hint_binary, None,
+                     hint_inputs, alternatives={'routine-reading': hint_reading},
+                     notes=['No plan side and no C# hook: OpenTPW has no advisor rule for the near-ticket hints (Advisor.sam GoldTicketNearTo*, '
+                            'ECONOMY.md "unused"); this target shows what the multiplier of ECON-039 is: the advisor, not the award.',
+                            'Executed: 0x13fdc with the rules object (+1492 multiplier as a single, +1496 score), the bank year profit 0xccfa8 and '
+                            'the earned flag 0x128d6c; stubs 0x108424 (game checked, a synthetic bank).'])
+
+# ---- all the local tickets (0xd31d0) and the global ones (0xd34c0): every arm, strictly greater
+# Local arms (flags[i] clear; stubs return the statistic, the real flag test 0x128d6c runs):
+#   0 visitors   0xc3b7c(park) > [1872]                                          (cmpw, signed)
+#   1 people     0xc3684(park) > [1876]
+#   2 happiness  float 0xc19e4(park, 0) > single([1880])  (fcmpo)  and  0xc3684(park) > [1884]
+#   3 research   0xc5510(park) low byte nonzero
+#   4 profit     bank +292 > [1888]                                              (F23 above)
+#   5 recent     0xc3b88(park, [1896]) > [1892]  and  the park age in 30-day months (0xe4628 / 0x1c4100, low word) > [1896]
+# Global arms (0xd34c0, each award 0xd3748(this, index) tests its own earned flag): 0xc73bc, 0xc6cec, 0xc710c, 0xc8cc0 (park
+# statistics) > [1900], [1904], [1908], [1916] (cmpw, signed).
+VISITORS_STAT, PEOPLE_STAT, HAPPINESS_STAT, RESEARCH_STAT, RECENT_STAT = 0xC3B7C, 0xC3684, 0xC19E4, 0xC5510, 0xC3B88
+PARK_AGE, WIDE_DIVIDE = 0xE4628, 0x1C4100
+GLOBAL_TICKETS, GLOBAL_TICKETS_END, GLOBAL_AWARD = 0xD34C0, 0xD35B4, 0xD3748
+GLOBAL_STATS = (0xC73BC, 0xC6CEC, 0xC710C, 0xC8CC0)
+LOCAL_KEYS = {1872: 'visitors_limit', 1876: 'people_limit', 1880: 'happiness_limit', 1884: 'happy_people_limit',
+              1888: 'threshold', 1892: 'recent_limit', 1896: 'months_limit'}
+GLOBAL_OFFSETS = (1900, 1904, 1908, 1916)
+
+
+def tickets_stubs(target: Target) -> dict:
+    state = PROFIT_STATE
+
+    def stat(name):
+        def stub(m: Machine) -> None:
+            if m.gpr[3] != state.park:
+                raise AssertionError(f'{name} called without the park')
+            m.gpr[3] = state.values[name] & MASK32
+        return stub
+
+    def happiness(m: Machine) -> None:
+        if m.gpr[3] != state.park or m.gpr[4] != 0:
+            raise AssertionError('0xc19e4 called with unexpected arguments')
+        m.fpr[1] = double_to_bits(state.values['avg'])
+
+    def recent(m: Machine) -> None:
+        if m.gpr[3] != state.park or s32(m.gpr[4]) != state.values['months_limit']:
+            raise AssertionError('0xc3b88 called without the park and the month count')
+        m.gpr[3] = state.values['recent'] & MASK32
+
+    def wide_divide(m: Machine) -> None:
+        m.gpr[3], m.gpr[4] = 0, state.values['age'] & MASK32   # the age in months: the low word of the quotient
+
+    def global_stat(index):
+        def stub(m: Machine) -> None:
+            if m.gpr[3] != state.park:
+                raise AssertionError('a global statistic was called without the park')
+            m.gpr[3] = state.values['stats'][index] & MASK32
+        return stub
+
+    def award(m: Machine) -> None:
+        if m.gpr[3] != state.this:
+            raise AssertionError('an award was called without the checking object')
+        target.log.append(('award', m.gpr[4]))
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    stubs = {PARK_OF_GAME: park, BANK_OF_GAME: profit_stubs(target)[BANK_OF_GAME],
+             TICKET_AWARD: award, GLOBAL_AWARD: award, VISITORS_STAT: stat('visitors'), PEOPLE_STAT: stat('people'),
+             HAPPINESS_STAT: happiness, RESEARCH_STAT: stat('built'), RECENT_STAT: recent, PARK_AGE: lambda m: None,
+             WIDE_DIVIDE: wide_divide}
+    for index, address in enumerate(GLOBAL_STATS):
+        stubs[address] = global_stat(index)
+    return stubs
+
+
+def tickets_setup(sb: Sandbox, x: dict) -> None:
+    """The local arms: the settings words, a bank with the year profit and the statistics the stubs return; every earned flag clear."""
+    profit_setup(sb, {'profit': x.get('profit', 0), 'threshold': x.get('threshold', 0), 'earned': False})
+    flags = sb.read(sb.read(toc_pointer(sb, PROFIT_FLAGS), 'I') + 68, 'I')
+    for index in range(16):
+        sb.write(flags + index, 'B', 0)
+    settings = toc_pointer(sb, PROFIT_SETTINGS)
+    for offset, key in LOCAL_KEYS.items():
+        sb.write(settings + offset, 'i', x.get(key, 0))
+    for offset, limit in zip(GLOBAL_OFFSETS, x.get('global_limits', [0, 0, 0, 0])):
+        sb.write(settings + offset, 'i', limit)
+    PROFIT_STATE.values = {'visitors': x.get('visitors', 0), 'people': x.get('people', 0), 'avg': x.get('avg', 0.0), 'built': x.get('built', 0),
+                           'recent': x.get('recent', 0), 'age': x.get('age', 0), 'months_limit': x.get('months_limit', 0),
+                           'stats': x.get('global_stats', [0, 0, 0, 0])}
+
+
+def local_binary(sb: Sandbox, x: dict, log) -> list:
+    tickets_setup(sb, x)
+    sb.call(LOCAL_TICKETS, {3: PROFIT_STATE.this})
+    return sorted(index for kind, index in log if kind == 'award')
+
+
+def global_binary(sb: Sandbox, x: dict, log) -> list:
+    tickets_setup(sb, x)
+    sb.call(GLOBAL_TICKETS, {3: PROFIT_STATE.this})
+    return sorted(index for kind, index in log if kind == 'award')
+
+
+def local_reading(x: dict, strict: bool = True, trunc_average: bool = False, count_happy: bool = False, age_strict: bool = True) -> list:
+    """0xd31d0 as read above. Keywords are deliberate deviations for the sharpness tests: >= compares, the average truncated to an
+    integer first, and a >= age gate."""
+    def over(a, b):
+        return a > b if strict else a >= b
+    avg = float(int(x['avg'])) if trunc_average and x['avg'] == x['avg'] and abs(x['avg']) < 1e9 else x['avg']
+    won = []
+    if over(x['visitors'], x['visitors_limit']):
+        won.append(0)
+    if over(x['people'], x['people_limit']):
+        won.append(1)
+    if over(avg, f32(float(x['happiness_limit']))) and over(x['people'], x['happy_people_limit']):
+        won.append(2)
+    if x['built'] & 0xFF:
+        won.append(3)
+    if over(x['profit'], x['threshold']):
+        won.append(4)
+    if over(x['recent'], x['recent_limit']) and (over(x['age'], x['months_limit']) if age_strict else x['age'] >= x['months_limit']):
+        won.append(5)
+    return won
+
+
+def local_old_rule(x: dict) -> list:
+    """OpenTPW before the strictness fix: every ticket >=, the average truncated to an integer, every guest counted as at least as
+    happy as the threshold (the old count of happier guests is not an input), and the age gate at least the month count (closed months)."""
+    won = local_reading(x, strict=False, trunc_average=True, age_strict=False)
+    return [i for i in won if i != 3 and (i != 2 or x['people'] > 0)]
+
+
+def global_reading(x: dict, strict: bool = True) -> list:
+    return [i for i, (stat, limit) in enumerate(zip(x['global_stats'], x['global_limits'])) if (stat > limit if strict else stat >= limit)]
+
+
+def local_csharp_request(x: dict) -> dict:
+    return {'fn': 'local_tickets', 'avg_bits': bits(x['avg']), **{k: x[k] for k in ('visitors', 'people', 'profit', 'recent', 'age', 'months_limit', 'visitors_limit',
+                                                         'people_limit', 'happiness_limit', 'happy_people_limit', 'threshold', 'recent_limit')}}
+
+
+def tickets_result(x: dict, awarded) -> list:
+    return sorted(awarded)
+
+
+def global_csharp_request(x: dict) -> dict:
+    return {'fn': 'global_tickets', 'stats': x['global_stats'], 'limits': x['global_limits']}
+
+
+def global_csharp_result(x: dict, awarded) -> list:
+    return sorted(index - 6 for index in awarded)
+
+
+def local_inputs(rng: random.Random, n: int) -> list:
+    limits = {'visitors_limit': 100, 'people_limit': 200, 'happiness_limit': 75, 'happy_people_limit': 150, 'threshold': 15000,
+              'recent_limit': 350, 'months_limit': 6}
+    base = {'visitors': 0, 'people': 0, 'avg': 0.0, 'built': 0, 'profit': 0, 'recent': 0, 'age': 0}
+
+    def one(**kw) -> dict:
+        x = {**limits, **base, **kw}
+        x['age'] = kw.get('age', x['months_limit'] + 3)
+        return x
+    edges = [one()]
+    for stat, limit in (('visitors', 'visitors_limit'), ('people', 'people_limit'), ('profit', 'threshold'), ('recent', 'recent_limit')):
+        edges += [one(**{stat: limits[limit] + d}) for d in (-1, 0, 1)]
+    for avg in (74.0, 74.9999, 75.0, 75.5, 76.0, math.nan, math.inf):
+        for people in (0, 150, 151):
+            edges.append(one(avg=f32(avg), people=people))
+    edges += [one(visitors=-1, visitors_limit=-1), one(visitors=0, visitors_limit=-1), one(age=2), one(age=9, recent=351),
+              one(age=2, recent=351), one(profit=-2 ** 31, threshold=2 ** 31 - 1),
+              one(profit=2 ** 31 - 1, threshold=-2 ** 31)]
+
+    def near(limit: int) -> int:
+        return max(-2 ** 31, min(2 ** 31 - 1, rng.choice([limit, limit + rng.randrange(-2, 3), rng.randrange(-300, 3000)])))
+
+    def make() -> dict:
+        x = {key: rng.choice([value, rng.randrange(-50, 400)]) for key, value in limits.items()}
+        x['months_limit'] = rng.choice([6, 3, 1, 12])
+        x['recent_limit'] = abs(x['recent_limit'])   # a negative limit lets a short park pass in C# (ECON-052); no shipped file has one
+        x.update(visitors=near(x['visitors_limit']), people=near(x['people_limit']), profit=near(x['threshold']),
+                 recent=near(x['recent_limit']), built=0,
+                 avg=rng.choice([f32(rng.uniform(0, 100)), float(x['happiness_limit']), f32(x['happiness_limit'] + 0.5), 0.0]))
+        x['age'] = x['months_limit'] + rng.choice([-3, 3, 10])   # never equal to the month count: the units differ (ECON-052)
+        return x
+    return edges + [make() for _ in range(n)]
+
+
+def local_domain(x: dict) -> bool:
+    return True
+
+
+def global_inputs(rng: random.Random, n: int) -> list:
+    limits = [105, 90, 50, 2000]
+    edges = [{'global_limits': limits, 'global_stats': [0, 0, 0, 0]}]
+    for i, limit in enumerate(limits):
+        for d in (-1, 0, 1):
+            stats = [0, 0, 0, 0]
+            stats[i] = limit + d
+            edges.append({'global_limits': limits, 'global_stats': stats})
+    edges += [{'global_limits': [-1, -1, -1, -1], 'global_stats': [0, 0, 0, 0]}, {'global_limits': [0, 0, 0, 0], 'global_stats': [0, 0, 0, 0]}]
+
+    def make() -> dict:
+        lim = [rng.choice([value, rng.randrange(-5, 3000)]) for value in limits]
+        return {'global_limits': lim, 'global_stats': [rng.choice([v, v + rng.randrange(-2, 3), rng.randrange(0, 3500)]) if v >= 0 else 0 for v in lim]}
+    return edges + [make() for _ in range(n)]
+
+
+LOCAL_TICKETS_TARGET = Target('local-tickets', 'All local golden tickets (arms of 0xd31d0)', 'ORACLE F23 / ECONOMY.md "Golden tickets"',
+                              LOCAL_TICKETS, PROFIT_ALLOWED, tickets_stubs, local_binary, local_old_rule, local_inputs,
+                              alternatives={'routine-reading': local_reading},
+                              csharp=('local_tickets', local_csharp_request, tickets_result),
+                              notes=['C# hook: bridge function "local_tickets" (ParkObjectives.CheckGoldenTickets with the threshold keys in the synthetic '
+                                     'Standard.sam, a guest-statistics stub and the monthly admissions list of the chosen age).',
+                                     'Executed: all six arms of 0xd31d0 with every earned flag clear (0x128d6c real). Stubs return the statistic: '
+                                     '0xc3b7c, 0xc3684, 0xc19e4 (float), 0xc5510, 0xc3b88 (month count checked), the park age 0xe4628 / 0x1c4100 '
+                                     '(the quotient low word is the chosen age) and the bank 0x108424.',
+                                     'The all-built ticket (3) has no C# input (built is 0 in every compared input; the arm is executed in test_local_tickets_all_built). Ages equal to the '
+                                     'month count are not compared with C# (units differ, ECON-052).'])
+GLOBAL_TICKETS_TARGET = Target('global-tickets', 'The global golden tickets (0xd34c0)', 'ORACLE F23 / ECONOMY.md "Golden tickets"',
+                               GLOBAL_TICKETS, [(GLOBAL_TICKETS, GLOBAL_TICKETS_END)], tickets_stubs, global_binary, None, global_inputs,
+                               alternatives={'routine-reading': global_reading},
+                               csharp=('global_tickets', global_csharp_request, global_csharp_result),
+                               notes=['C# hook: bridge function "global_tickets" (coaster height, go-kart excitement, water length and big park records '
+                                      'against the four thresholds; big park reads MinCellsOwned in C# but [1916] = MinCellsCovered in the original '
+                                      '(ECON-038), so the hook sets both keys to the same limit).',
+                                      'Executed: 0xd34c0 (four statistics against +1900, +1904, +1908, +1916, signed >); the earned test lives inside the '
+                                      'award 0xd3748 (stubbed, index logged). The secret camera ticket 0xd35b4 and the never-awarded all-land ticket are not run.'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

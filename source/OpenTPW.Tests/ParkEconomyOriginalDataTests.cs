@@ -47,6 +47,29 @@ public class ParkEconomyOriginalDataTests
 			Assert.IsFalse( BalanceSettings.HasEasyLayer( theme ) );
 	}
 
+	// ORACLE F23 (ECON-039): every shipped theme's GoldenTicketLocal.ProfitYear is the strict signed threshold of the award, with no factor.
+	[TestMethod]
+	public void TheShippedProfitTicketThresholdsAreStrictAndUnscaled()
+	{
+		UseOriginalData();
+		foreach ( var theme in Themes )
+		{
+			var settings = BalanceSettings.Load( theme, easy: false );
+			var threshold = settings.GoldenTickets.ProfitYear;
+			Assert.IsTrue( threshold > 0, theme );
+			bool Won( long profit )
+			{
+				var park = new ParkEconomy( settings, EconomyObjectCatalog.Load( theme, easy: false ), ParkGameMode.FullSimulation, 1 );
+				return park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, profit, Array.Empty<long>() ).Contains( GoldenTicketKind.ProfitYear );
+			}
+			Assert.IsFalse( Won( threshold ), theme );
+			Assert.IsTrue( Won( threshold + 1 ), theme );
+			Assert.IsFalse( Won( threshold * 9L / 10 + 1 ), $"{theme}: 0.9 x ProfitYear is the advisor hint, not the award" );
+		}
+		Assert.AreEqual( 15000, BalanceSettings.Load( "jungle", false ).GoldenTickets.ProfitYear );
+		Assert.AreEqual( 30000, BalanceSettings.Load( "space", false ).GoldenTickets.ProfitYear );
+	}
+
 	[TestMethod]
 	public void ObjectCatalogMergesCategoryObjectAndEasyFiles()
 	{

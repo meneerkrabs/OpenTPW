@@ -15,7 +15,7 @@ public class StaffVitalsTests
 	{
 		public FixedGuests( int people ) => PeopleInPark = people;
 		public int PeopleInPark { get; }
-		public int AverageHappiness => 50;
+		public float AverageHappiness => 50;
 		public int CountHappierThan( int happiness ) => 0;
 		public int KidsWithBalloonsPercent => 0;
 		public int KidsWithCostumesPercent => 0;

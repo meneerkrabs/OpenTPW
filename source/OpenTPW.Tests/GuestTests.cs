@@ -336,6 +336,22 @@ public class GuestTests
 	}
 
 	[TestMethod]
+	public void TheTicketAverageTruncatesEachGuestAndIsZeroWhileTheParkIsClosed()
+	{
+		// 0xc19e4 (PPC-scenarios): the mean of each in-park guest's (u8)trunc(happiness), 0.0 while the park is closed.
+		var economy = EconomyTestData.Park();
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 11 );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		var first = simulation.SpawnInPark( 19, 5 );
+		var second = simulation.SpawnInPark( 19, 5 );
+		first.Happiness = 75.5f;
+		second.Happiness = 74.5f;
+		Assert.AreEqual( 0f, bridge.AverageHappiness, "closed park" );
+		economy.OpenPark();
+		Assert.AreEqual( 74.5f, bridge.AverageHappiness, "(75 + 74) / 2, not (75.5 + 74.5) / 2" );
+	}
+
+	[TestMethod]
 	public void GuestsPayThroughTheParkEconomy()
 	{
 		var economy = EconomyTestData.Park();

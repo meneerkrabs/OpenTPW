@@ -77,7 +77,24 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public int PeopleInPark => Guests.GetStatistics().InPark;
 
-	public int AverageHappiness => (int)Guests.GetStatistics().AverageHappiness;
+	// [BIN:STP-PPC:0x100C19E4 average happiness] 0.0 while the park is closed (0x100C3524), otherwise the single mean of each in-park guest's (u8)trunc(happiness), not the mean of the raw values (PPC-scenarios, golden tickets)
+	public float AverageHappiness
+	{
+		get
+		{
+			if ( !Economy().IsParkOpen )
+				return 0f;
+			int count = 0, sum = 0;
+			foreach ( var guest in Guests.Guests )
+			{
+				if ( !Guests.IsInPark( guest ) )
+					continue;
+				count++;
+				sum += (byte)(int)guest.Happiness;
+			}
+			return count == 0 ? 0f : (float)sum / count;
+		}
+	}
 
 	public int CountHappierThan( int happiness ) => Guests.Guests.Count( guest => Guests.IsInPark( guest ) && guest.Happiness >= happiness );
 

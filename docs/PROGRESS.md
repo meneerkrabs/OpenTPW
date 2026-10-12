@@ -130,8 +130,14 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - Nine independent worktrees were started for the PowerPC follow-up analysis and
   TPI comparison (six native and three app subagents). Their new source and
   renderer changes will be reviewed and tested separately before merging.
-- [Fidelity register](FIDELITY-REGISTER.md): **135 original fidelity items** plus
-  **6 online extension uncertainties** remain open. CI checks explicit tags and
+- The PowerPC differential oracle ran the arrival rule: the group size `0xcb4e8`
+  (F9) and the park points `0xc24c0` (F10), see [ORACLE.md](reverse/ORACLE.md).
+  Both differ from GUESTS.md and the C# rule; the routine readings agree on every
+  input. `GuestSimulation.ArrivalGroupSize` is compared through the C# bridge
+  (the same 125 differences); C# behavior is unchanged and the differences are
+  tracked as ARRIVAL-002..004.
+- [Fidelity register](FIDELITY-REGISTER.md): **314 original fidelity items** plus
+  **24 online extension** IDs (338 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.
   Windows/Linux GPU/input/audio, original captures, coaster controllers, missing
   script effects, and further scenario acceptance remain release blockers.

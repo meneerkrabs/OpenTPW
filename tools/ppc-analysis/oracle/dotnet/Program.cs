@@ -51,6 +51,13 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["guest_start"] = GuestStartHook,
 	["shop_sale_meters"] = ShopSaleMeters,
 	["guest_leaves"] = GuestLeaves,
+	["ride_may_open"] = RideMayOpen,
+	["ride_repair"] = RideRepairOutcome,
+	["ride_breakdown_update"] = RideBreakdownUpdate,
+	["staff_wage_month"] = StaffWageMonth,
+	["staff_dismiss"] = StaffDismiss,
+	["park_rating"] = ParkRating,
+	["park_value_thing"] = ParkValueThing,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -713,6 +720,130 @@ static JsonNode? ShopSaleMeters( JsonObject a )
 // The leaving test of the state-6 handler (0xebdfc, ORACLE F26): GuestLifecycle.ShouldLeave on the happiness meter, the exit counter and the park-closed word.
 static JsonNode? GuestLeaves( JsonObject a ) =>
 	JsonValue.Create( GuestLifecycle.ShouldLeave( BitConverter.Int32BitsToSingle( (int)(uint)a["happy_bits"]! ), (int)a["exit"]!, (int)a["closing"]! != 0 ) );
+
+
+// A park with one employee of the input's role and grade, the five PerGradeStaffConsts.BaseWage and PerTypeStaffConsts.PayMultiplier words of
+// the input in the synthetic Standard.sam (the employee is added the way an original save adds one: AddImported is internal, reflection).
+static (ParkEconomy Park, StaffMember Member) WagePark( JsonObject a )
+{
+	var text = EconomyTestData.StandardText();
+	for ( var index = 0; index < 5; index++ )
+	{
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^PerGradeStaffConsts\[{index}\]\.BaseWage\t\d+",
+			$"PerGradeStaffConsts[{index}].BaseWage\t{(int)a["base_wages"]![index]!}", System.Text.RegularExpressions.RegexOptions.Multiline );
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^PerTypeStaffConsts\[{index}\]\.PayMultiplier\t\d+",
+			$"PerTypeStaffConsts[{index}].PayMultiplier\t{(int)a["multipliers"]![index]!}", System.Text.RegularExpressions.RegexOptions.Multiline );
+	}
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingMethodException( "ParkStaff.AddImported" );
+	var member = (StaffMember)add.Invoke( park.Staff, new object[] { (StaffType)(int)a["role"]!, (int)a["grade"]!, 0, 100f, StaffState.Idle, 0L, 100f } )!;
+	return (park, member);
+}
+
+// The month-end wage (0xf3364, ORACLE F28): ParkEconomy.EndMonth (private: reflection) on a one-employee park. Returns the change of the
+// balance and what was charged to the year profit.
+static JsonNode? StaffWageMonth( JsonObject a )
+{
+	var (park, _) = WagePark( a );
+	var before = park.Balance;
+	var profit = park.Ledger.ProfitThisYear;
+	typeof( ParkEconomy ).GetMethod( "EndMonth", BindingFlags.NonPublic | BindingFlags.Instance )!.Invoke( park, new object[] { 1L } );
+	return new JsonObject { ["balance"] = park.Balance - before, ["profit"] = profit - park.Ledger.ProfitThisYear };
+}
+
+// The dismissal charge (tail of 0xf33ec, ORACLE F28): ParkEconomy.Fire on a one-employee park.
+static JsonNode? StaffDismiss( JsonObject a )
+{
+	var (park, member) = WagePark( a );
+	var before = park.Balance;
+	var profit = park.Ledger.ProfitThisYear;
+	park.Fire( member.Id );
+	return new JsonObject { ["balance"] = park.Balance - before, ["profit"] = profit - park.Ledger.ProfitThisYear };
+}
+
+// ParkEconomy.ParkRating (0xc7b24, ORACLE F29) on a synthetic economy: one type per (Info.WhichUIType, directory kind) pair of the input with one object per
+// input object at its upgrade level, the staff counts per role (AddImported, reflection) and the guests in the park by state as a fixed statistic. The census
+// (cell types) and the staff byte +3 have no C# counterpart.
+static JsonNode? ParkRating( JsonObject a )
+{
+	var kinds = new[] { "ride", "shop", "sideshow", "feature", "upgrade", "fixed" };
+	var parkKinds = new[] { ParkObjectKind.Ride, ParkObjectKind.Shop, ParkObjectKind.Sideshow, ParkObjectKind.Feature, ParkObjectKind.Upgrade, ParkObjectKind.FixedItem };
+	var infos = new Dictionary<int, EconomyObjectInfo>();
+	foreach ( var item in a["objects"]!.AsArray() )
+	{
+		var ui = (int)item!["ui"]!;
+		var directory = Array.IndexOf( kinds, (string)item["dir"]! );
+		var id = 5000 + ui * 10 + directory;
+		infos.TryAdd( id, new EconomyObjectInfo( id, $"Type {id}", parkKinds[directory], ResearchCategory.Ride, 0,
+			new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "synthetic.wad", WhichUIType: ui ) );
+	}
+	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( infos.Values ), ParkGameMode.FullSimulation, 1 );
+	foreach ( var item in a["objects"]!.AsArray() )
+		park.RegisterExisting( 5000 + (int)item!["ui"]! * 10 + Array.IndexOf( kinds, (string)item["dir"]! ) ).Level = (int)item["level"]!;
+	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingMethodException( "ParkStaff.AddImported" );
+	for ( var role = 0; role < 5; role++ )
+		for ( var count = 0; count < (int)a["staff"]![role]!; count++ )
+			add.Invoke( park.Staff, new object[] { (StaffType)role, 0, 0, 100f, StaffState.Idle, 0L, 100f } );
+	park.GuestStatistics = new FixedGuestStatistics( (int)a["in_park"]!, 0 );
+	return JsonValue.Create( park.ParkRating );
+}
+
+// ParkValueRules (the thing loop body of 0xc1d4c, ORACLE F29): CountsForValue for the state, ObjectValue for the costs of the levels 0..level (0 past the
+// given costs) and the state of repair as single bits. The cell term has no C# counterpart: such inputs are skipped (null).
+static JsonNode? ParkValueThing( JsonObject a )
+{
+	if ( (bool)a["skip"]! )
+		return null;
+	if ( !ParkValueRules.CountsForValue( (int)a["state"]! ) )
+		return JsonValue.Create( 0 );
+	var costs = a["costs"]!.AsArray().Select( cost => (int)cost! ).ToArray();
+	var levels = Enumerable.Range( 0, (int)a["level"]! + 1 ).Select( level => level < costs.Length ? costs[level] : 0 );
+	return JsonValue.Create( ParkValueRules.ObjectValue( levels, BitConverter.Int32BitsToSingle( (int)(uint)a["gauge_bits"]! ) ) );
+}
+
+// 0xde654 (ORACLE F27): RideOpening.MayOpen, the guard of ParkGate.MayOpen, for the ride's state word, the maintenance flag, the back of the
+// queue (a chosen word on both sides) and the track type with the coaster's circuit.
+static JsonNode? RideMayOpen( JsonObject a ) =>
+	JsonValue.Create( RideOpening.MayOpen( (int)a["state"]!, (bool)a["maintenance"]!, (bool)a["queue"]!, (int)a["track"]!, (bool)a["coaster"]! ) ? 1 : 0 );
+
+// 0xdef2c (ORACLE F27): what a repair writes into the wear gauge (RideRepair.FullGauge, as single bits) and whether the ride is open afterwards
+// (RideRepair.OpensAfterRepair, which Level.OpenAfterRepair applies). The other fields of the routine's result have no C# counterpart here.
+static JsonNode? RideRepairOutcome( JsonObject a ) => new JsonObject
+{
+	["gauge_bits"] = (uint)BitConverter.SingleToInt32Bits( RideRepair.FullGauge ),
+	["open"] = RideRepair.OpensAfterRepair( (int)a["track"]!, (bool)a["coaster"]! ) ? 1 : 0,
+};
+
+// The breakdown check of the ride update (0xe077c from 0xe0800, ORACLE F27): RideBreakdownRules in the routine's order. The wear step is the
+// call "wear", the announcement 0xe09f4 is "announce" (VAR_BREAKSTAT = 1) and the relief test 0xe0910 is "worn" (VAR_WORN = 1); the life
+// gauge comes back as single bits.
+static JsonNode? RideBreakdownUpdate( JsonObject a )
+{
+	var state = (int)a["state"]!;
+	var relief = (bool)a["relief"]!;
+	var life = BitConverter.Int32BitsToSingle( (int)(uint)a["life_bits"]! );
+	var repair = BitConverter.Int32BitsToSingle( (int)(uint)a["repair_bits"]! );
+	var calls = new JsonArray();
+	var after = life;
+	if ( !RideBreakdownRules.SkipsUpdate( state ) )
+	{
+		if ( RideBreakdownRules.RunsWear( state, (bool)a["open"]!, (long)(uint)a["tick"]! ) )
+		{
+			calls.Add( "wear" );
+			if ( RideBreakdownRules.BreaksDown( relief, (int)a["breakstat"]!, life, repair ) )
+			{
+				after = RideBreakdownRules.LifeAfterBreakdown( life );
+				calls.Add( "announce" );
+			}
+		}
+		if ( QueueJoinRules.ReliefFailed( relief, repair ) )
+			calls.Add( "worn" );
+	}
+	return new JsonObject { ["calls"] = calls, ["life_bits"] = (uint)BitConverter.SingleToInt32Bits( after ) };
+}
 
 sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStatistics
 {

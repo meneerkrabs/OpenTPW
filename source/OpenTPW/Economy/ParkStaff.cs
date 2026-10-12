@@ -47,8 +47,8 @@ public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int 
 /// park maxima, wages (<see cref="BalanceSettings.GetMonthlyWage"/>) and <c>PoundsPerTrainingPoint</c>.
 /// <b>Approximations</b> (documented in docs/ECONOMY.md): pool timing treats
 /// <c>TimeBetweenStaffUpdates</c>/<c>StaffTimeoutTime</c> as seconds at normal speed, candidate grades
-/// are drawn around <c>AvgGradeOf*</c>, hiring is free (the meaning of <c>BaseCostPerStaff</c> and
-/// <c>CostPerQualityLevel</c> is unknown), training spends a per-role monthly budget at the month's end
+/// are drawn around <c>AvgGradeOf*</c>, hiring is free (the original's hire path has no debit, <c>BaseCostPerStaff</c> and
+/// <c>CostPerQualityLevel</c> are never read, ORACLE.md F28), training spends a per-role monthly budget at the month's end
 /// (divided over every employee of the role, ORACLE F17), and 100 training points raise one grade.
 /// </summary>
 public sealed class ParkStaff
@@ -161,7 +161,7 @@ public sealed class ParkStaff
 
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;
 
-	// [APPROX:ECON-012] hiring is free; BaseCostPerStaff/CostPerQualityLevel unused — evidence needed: capture of the balance before/after hiring
+	// [BIN:STP-PPC:0x100F61D0 hiring is free] the hire button's handler queues a command (0xf61d0, executor 0x6c034, thing factory 0xb882c) and nothing on that path debits the bank: the 16 direct callers of Spend 0xcbfdc include no hire routine, and BaseCostPerStaff (+700) and CostPerQualityLevel (+704) are never read; the wage is paid at the month's end and dismissing one costs one more (ParkEconomy.Fire, ORACLE.md F28)
 	public StaffMember Hire( int candidateId, long tick )
 	{
 		var candidate = candidates.FirstOrDefault( item => item.Id == candidateId ) ?? throw new InvalidOperationException( $"No staff candidate {candidateId}." );

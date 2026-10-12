@@ -324,7 +324,7 @@ fact does not authorize silently removing a Windows approximation tag.
 | 009 | Ordinary generator `0xf5b64` uses average + random modulo 3 - 1, then byte conversion/clamp; great-candidate path next `0xf732c`. |
 | 010 | Candidate timeout generator `0xf5db8` uses base timeout + random modulo floor(base/2); update units next `0xf6178`, `0xf732c`, timestamp helper `0x121098`. |
 | 011 | Pool fill logic next `0xf732c`; finite pool has 32 entries `0xf5e48`. No probability claimed. |
-| 012 | Hiring candidate path `0xf61d0` and UI command constructor `0x6bfa0`; charges require tracing complete command handling, not absence of a debit in allocation code. |
+| 012 | Hiring candidate path `0xf61d0` and UI command constructor `0x6bfa0`; the complete hire path (command executor `0x6c034`, completion `0x6c1f4`, thing factory `0xb882c`, staff constructors) has no debit, the staff charges are the monthly wage `0xf3364` and the dismissal `0xf33ec` (executed, ORACLE.md F28). |
 | 013 | Equal role budget division followed by per-worker training is proven on month type 12. |
 | 014 | Initial 100 and actual strike/rest states proven; mood update `0xf445c–0xf46bc`, strike `0xf4900`. |
 | 015 | Contribution every 20 turns with state filters and workload-weighted active effort split. |
@@ -338,7 +338,7 @@ fact does not authorize silently removing a Windows approximation tag.
 | 023 | 64-turn inner wear gate, derived decrement and separate 2% life decrement proven; full runtime equation below. |
 | 024 | Full repair writes 100 at `+64`, not `+68`, proven. |
 | 025 | Proven sale `0xdbfa8 → 0xe25e8 → 0xe2424`: base cost only × age/upgrade percentage, initial unused-refund branch. |
-| 026 | Analyzer valuation includes infrastructure in addition to placed objects; `0xc1d4c` rather than sum of scrap values alone. |
+| 026 | Analyzer valuation includes infrastructure in addition to placed objects; `0xc1d4c` rather than sum of scrap values alone (executed in the oracle, ORACLE.md F29: cell points plus the object costs times the state of repair, no scrap values). |
 | 027 | Composite `0xc7b24` writes history `+0x213b0`, read by annual-summary value44450 aligned with UITEXT190 Park rating. Exact count formula below. |
 | 028 | Actual bank withdrawal allows negative balances `0xcbfdc`; build affordability belongs to callers `0x859b4`, `0x8ba34` and object purchase `0xda874`. |
 | 029 | Manual explicitly supports ticket spending; ticket controller `0xd31d0` and purchase `0xda874` next. |

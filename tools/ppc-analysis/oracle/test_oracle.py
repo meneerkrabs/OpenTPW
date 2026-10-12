@@ -23,7 +23,7 @@ sys.path.insert(0, str(HERE))
 
 import bridge as bridge_module  # noqa: E402
 import targets  # noqa: E402
-from differential import DEFAULT_COUNT, compare  # noqa: E402
+from differential import DEFAULT_COUNT, compare, target_inputs  # noqa: E402
 from harness import Image, IdentityError, Sandbox, bin_root  # noqa: E402
 from ppc32 import UnknownCall, s32  # noqa: E402
 
@@ -337,12 +337,63 @@ EXPECTED = {
     ('guest-exit-test', 'plan'): (181, {'happy': 1.0, 'exit': 120, 'closing': 0}),
     ('guest-exit-test', 'routine-reading'): AGREE,
     ('guest-exit-test', 'csharp'): AGREE,
+    # F27 (fixed in C#, ECON-049): 0xde654, the guard of the park door's opening walk and of the open buttons, reads the ride's state word
+    # (not 1 broken down, not 4 condemned, not 2 upgrading), the maintenance flag +96, the back of the queue and a coaster's circuit. The
+    # old rule (ParkGate.MayOpen: the script's VAR_BROKEN == 0) is the pinned "plan-var-broken": 264 of 517 inputs differ.
+    ('ride-may-open', 'plan'): AGREE,
+    ('ride-may-open', 'plan-var-broken'): (264, {'state': 1, 'maintenance': 0, 'queue': 1, 'track': 0, 'coaster': 1, 'broken': 0}),
+    ('ride-may-open', 'routine-reading'): AGREE,
+    ('ride-may-open', 'csharp'): AGREE,
+    # F27 (executed): CObject::SetState 0xe0c3c writes only the state word for 0 and 3; for 1, 2 and 4 it also runs the head-guest step once,
+    # clears the open word +100 and the pending guest +104, writes VAR_RIDECLOSED = 1 and sends the effect 1. Others assert and store.
+    ('ride-set-state', 'plan'): AGREE,
+    ('ride-set-state', 'plan-store-only'): (248, {'state': 1, 'previous': 0, 'head': 5, 'letmeon': 5, 'head_state': 14, 'open': 1, 'pending': 5}),
+    ('ride-set-state', 'routine-reading'): AGREE,
+    # F27 (executed, fixed in C#): a repair (0xdef2c, not an upgrade) writes 100.0 into the wear gauge, clears VAR_WORN, the mechanic
+    # reservation, the maintenance flag and VAR_BREAKSTAT, opens the ride whatever the guard says (VAR_RIDECLOSED 0, open word 1, SetState(0)) and
+    # closes an incomplete coaster again. The life gauge is not touched. The old rule only restored the gauge: 423 of 512 inputs differ.
+    ('ride-repair', 'plan'): AGREE,
+    ('ride-repair', 'plan-gauge-only'): (423, {'state': 1, 'gauge': 0.0, 'life': 40.0, 'mechanic': 17185, 'maintenance': 0, 'open': 0,
+                                               'pending': 0, 'queue': 1, 'track': 0, 'coaster': 1}),
+    ('ride-repair', 'routine-reading'): AGREE,
+    ('ride-repair', 'csharp'): AGREE,
+    # F27 (executed, fixed in C#): the ride update 0xe077c skips states 3 and 4, and runs the wear step and the breakdown check only for a ride
+    # that is not in state 1, is open (+100 != 0) and on a turn that is a multiple of 8; relief objects never break down (VAR_WORN below 25).
+    # The old rule (ParkEconomy.UpdateRides: no state, open or relief gate) differs on 280 of 530 inputs.
+    ('ride-breakdown-update', 'plan'): AGREE,
+    ('ride-breakdown-update', 'plan-before'): (280, {'state': 1, 'open': 1, 'tick': 64, 'flags': 4, 'life': 100.0, 'repair': 0.0, 'breakstat': 0}),
+    ('ride-breakdown-update', 'routine-reading'): AGREE,
+    ('ride-breakdown-update', 'csharp'): AGREE,
+    # F28 (ECON-012, ECON-043): the monthly wage handler 0xf3364 debits PayMultiplier[role] x BaseWage[grade] (a 32-bit product) and raises the staff
+    # wages statistic, as ParkStaff / EndMonth already did. The dismissal routine 0xf33ec charges the same wage once more (fixed in C#: Fire was free,
+    # 506 of 511 inputs differ). Hiring has no charge (the static tests below).
+    ('staff-wage-month', 'plan'): AGREE,
+    ('staff-wage-month', 'routine-reading'): AGREE,
+    ('staff-wage-month', 'csharp'): AGREE,
+    ('staff-dismiss-charge', 'plan'): AGREE,
+    ('staff-dismiss-charge', 'plan-free'): (506, {'role': 0, 'grade': 0, 'multipliers': [2, 3, 4, 5, 6], 'base_wages': [500, 600, 700, 800, 900],
+                                                  'balance': 1000000, 'active': True}),
+    ('staff-dismiss-charge', 'routine-reading'): AGREE,
+    ('staff-dismiss-charge', 'csharp'): AGREE,
+    # F29 (ECON-027, fixed in C# except the census and the staff byte): 0xc7b24 adds eleven capped counts: guests on a cell of type 0, 1, 3, 9 or 10 (the census), objects
+    # by the type's Info.WhichUIType (the shipped add-ons declare 0 and count as rides), rides at level 2 or more, and staff of the five classes whose byte +3 is clear.
+    # The rule before (the directory kind, guests in the park by state, every hired staff member) differs on 249 of 519 inputs. C# now differs only where a guest's cell
+    # type and in-park state disagree or a staff byte is set (test_park_rating_csharp_remainder): ECON-027.
+    ('park-rating', 'plan'): AGREE,
+    ('park-rating', 'plan-before'): (249, {'things': [{'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0}, {'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0},
+                                                       {'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0}]}),
+    ('park-rating', 'csharp'): (134, {'things': [{'cls': 5, 'flag3': 1}, {'cls': 5, 'flag3': 0}]}),
+    # F29 (ECON-026, fixed in C# for the object part): 0xc1d4c adds points per map cell (1 / 3 / 5 / 1 / 1 / 2 by type, 50 for a cell with a track record, none for unowned
+    # cells) and, per object that is not condemned, the costs of its levels times its state of repair byte / 100. The former rule (the sum of the scrap values) differs on
+    # 355 of 526 inputs; C# agrees on the object part (the cell term has no counterpart).
+    ('park-value', 'plan'): AGREE,
+    ('park-value', 'plan-scrap-sum'): (355, {'kind': 'cell', 'type': 0, 'flags': 0, 'id': 3, 'rec_type': 0, 'link': None, 'link_type': 18}),
+    ('park-value', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
-                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival', 'profit-ticket-hint',
+                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival', 'ride-set-state', 'profit-ticket-hint',
                   'calendar-first-update', 'park-turn-cadence', 'clock-speed-scale'}
-
 
 class Identity(unittest.TestCase):
     def test_unidentified_container_is_rejected(self):
@@ -399,6 +450,21 @@ class Oracle(unittest.TestCase):
         for target in targets.TARGETS:
             for comparison in compare(target, cls.image, DEFAULT_COUNT, csharp=cls.bridge is not None):
                 cls.results[(target.key, comparison.side)] = comparison
+
+    _runs: dict = {}
+
+    @classmethod
+    def cached_runs(cls, target):
+        """The inputs of a target and the original's answers, run once for the sharpness and remainder tests."""
+        if target.key not in cls._runs:
+            inputs = target_inputs(target, DEFAULT_COUNT, 'oracle-v1')
+            sandbox = target.sandbox(cls.image)
+            cls._runs[target.key] = (inputs, [targets.run_binary(target, sandbox, x) for x in inputs])
+        return cls._runs[target.key]
+
+    def reading_mismatches(self, target, reading) -> int:
+        inputs, originals = self.cached_runs(target)
+        return sum(1 for x, original in zip(inputs, originals) if not target.equal(original, reading(x)))
 
     def check(self, key):
         comparison = self.results[key]
@@ -665,6 +731,288 @@ class Oracle(unittest.TestCase):
         # The 32-bit product wraps before the unsigned division by 100.
         big = {**y, 'cost': [50_000_000, 1, 1]}
         self.assertEqual(targets.run_binary(targets.SCRAP, targets.SCRAP.sandbox(self.image), big), 7_050_327)
+
+    def test_ride_state(self):
+        for key in (('ride-may-open', 'plan'), ('ride-may-open', 'plan-var-broken'), ('ride-may-open', 'routine-reading'),
+                    ('ride-set-state', 'plan'), ('ride-set-state', 'plan-store-only'), ('ride-set-state', 'routine-reading'),
+                    ('ride-repair', 'plan'), ('ride-repair', 'plan-gauge-only'), ('ride-repair', 'routine-reading'),
+                    ('ride-breakdown-update', 'plan'), ('ride-breakdown-update', 'plan-before'),
+                    ('ride-breakdown-update', 'routine-reading')):
+            self.check(key)
+
+    def test_ride_state_csharp(self):
+        for key in (('ride-may-open', 'csharp'), ('ride-repair', 'csharp'), ('ride-breakdown-update', 'csharp')):
+            self.check(key)
+
+    def test_ride_readings_are_sharp(self):
+        # Every part of the four readings matters: each guard condition of 0xde654, each write of SetState, each repair effect and each gate
+        # of the breakdown check turns an agreement into mismatches when dropped.
+        import dataclasses
+        variants = [(targets.MAY_OPEN_TARGET, f'no-{drop}', lambda x, drop=drop: targets.may_open_reading(x, drop=drop))
+                    for drop in ('broken', 'condemned', 'maintenance', 'upgrading', 'queue', 'coaster')]
+        variants += [(targets.SET_STATE_TARGET, 'no-writes', lambda x: targets.set_state_reading(x, write=False)),
+                     (targets.SET_STATE_TARGET, 'no-head-step', lambda x: targets.set_state_reading(x, head_step=False)),
+                     (targets.REPAIR_TARGET, 'no-reopen', lambda x: targets.repair_reading(x, reopen=False)),
+                     (targets.REPAIR_TARGET, 'keeps-flags', lambda x: targets.repair_reading(x, clear_flags=False)),
+                     (targets.REPAIR_TARGET, 'no-coaster-recheck', lambda x: targets.repair_reading(x, coaster_recheck=False)),
+                     (targets.REPAIR_TARGET, 'gauge-99', lambda x: targets.repair_reading(x, full_gauge=99.0)),
+                     (targets.BREAKDOWN_TARGET, 'no-state-gate', lambda x: targets.breakdown_reading(x, gate_state=False)),
+                     (targets.BREAKDOWN_TARGET, 'no-open-gate', lambda x: targets.breakdown_reading(x, gate_open=False)),
+                     (targets.BREAKDOWN_TARGET, 'no-relief', lambda x: targets.breakdown_reading(x, relief=False)),
+                     (targets.BREAKDOWN_TARGET, 'no-breakstat', lambda x: targets.breakdown_reading(x, breakstat=False))]
+        for target, name, reading in variants:
+            mutated = dataclasses.replace(target, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'{target.key}: {name}')
+
+    def test_repair_example(self):
+        # A broken-down ride (state 1, wear gauge 0, life 40) after its mechanic has finished: the gauge is 100.0, the reservation and the
+        # maintenance flag are gone, the ride is open (VAR_RIDECLOSED 0) and idle (state 0), the life gauge stays 40, and the guard of
+        # 0xde654 still sees state 1: it logs its warning five times ("opening non-openable ride") and the repair opens the ride anyway.
+        target = targets.REPAIR_TARGET
+        sandbox = target.sandbox(self.image)
+        base = {'state': 1, 'gauge': 0.0, 'life': 40.0, 'mechanic': 0x4321, 'maintenance': 1, 'open': 0, 'pending': 0, 'queue': 1, 'track': 0,
+                'coaster': 1}
+        original = targets.run_binary(target, sandbox, base)
+        self.assertEqual({key: original[key] for key in ('gauge', 'life', 'mechanic', 'maintenance', 'open', 'state')},
+                         {'gauge': 100.0, 'life': 40.0, 'mechanic': 0, 'maintenance': 0, 'open': 1, 'state': 0})
+        self.assertEqual(original['calls'].count(('warn',)), 5)
+        self.assertIn(('var', 6, 0), original['calls'])        # VAR_RIDECLOSED := 0
+        self.assertIn(('var', 4, 0), original['calls'])        # VAR_BREAKSTAT := 0
+        self.assertIn(('var', 8, 0), original['calls'])        # VAR_WORN := 0
+        # A condemned ride (life gauge 0) is idle again after its repair, and the life gauge is still 0: its next ride update breaks it again.
+        condemned = targets.run_binary(target, sandbox, {**base, 'state': 4, 'life': 0.0})
+        self.assertEqual((condemned['state'], condemned['life']), (0, 0.0))
+        # A coaster whose circuit is not complete is closed again by its own repair.
+        coaster = targets.run_binary(target, sandbox, {**base, 'state': 0, 'track': 3, 'coaster': 0, 'open': 1})
+        self.assertEqual((coaster['open'], coaster['state']), (0, 0))
+
+    def test_breakdown_example(self):
+        # A ride whose wear gauge ran out (life 100) on a multiple-of-8 turn: the wear step runs, the life gauge pays 5 and VAR_BREAKSTAT is
+        # set. The same ride closed (open word 0), broken down already (state 1) or condemned (4) is left alone, and a relief object with a
+        # wear gauge of 20 is only marked worn.
+        target = targets.BREAKDOWN_TARGET
+        sandbox = target.sandbox(self.image)
+        base = {'state': 0, 'open': 1, 'tick': 64, 'flags': 0x4, 'life': 100.0, 'repair': 0.0, 'breakstat': 0}
+        self.assertEqual(targets.run_binary(target, sandbox, base), {'calls': [('wear',), ('var', 4, 1)], 'life': 95.0})
+        for change in ({'open': 0}, {'state': 1}, {'state': 4}, {'tick': 12}, {'breakstat': 1}):
+            result = targets.run_binary(target, sandbox, {**base, **change})
+            self.assertNotIn(('var', 4, 1), result['calls'], str(change))
+        relief = targets.run_binary(target, sandbox, {**base, 'flags': 1, 'repair': 20.0})
+        self.assertEqual(relief, {'calls': [('wear',), ('var', 8, 1)], 'life': 100.0})
+
+    def test_repair_constant_is_one_hundred(self):
+        # ECON-024: the "fixed constant from the data pool" a repair writes into the wear gauge is the float at TOC -11016, 100.0.
+        self.assertEqual(self.image.memory.u32(self.image.toc + targets.RIDE_GAUGE_SLOT), targets.bits(100.0))
+
+    # ------------------------------------------------------------------------- F28: what a staff member costs
+    def test_staff_charges(self):
+        for key in (('staff-wage-month', 'plan'), ('staff-wage-month', 'routine-reading'), ('staff-dismiss-charge', 'plan'),
+                    ('staff-dismiss-charge', 'plan-free'), ('staff-dismiss-charge', 'routine-reading')):
+            self.check(key)
+
+    def test_staff_charges_csharp(self):
+        for key in (('staff-wage-month', 'csharp'), ('staff-dismiss-charge', 'csharp')):
+            self.check(key)
+
+    def test_staff_charge_reading_is_sharp(self):
+        # The wage is the pay multiplier of the role times the base wage of the grade (not the other way round, not a neighbour), the debit is
+        # the whole wage, and the wages statistic is raised even where the bank's flag stops the debit.
+        import dataclasses
+        variants = [(targets.WAGE_MONTH_TARGET, 'wrong-type', lambda x: targets.wage_reading(x, wrong_type=True)),
+                    (targets.WAGE_MONTH_TARGET, 'wrong-grade', lambda x: targets.wage_reading(x, wrong_grade=True)),
+                    (targets.WAGE_MONTH_TARGET, 'half-wage', lambda x: {**targets.wage_reading(x), 'balance': targets.wage_reading(x)['balance'] // 2}),
+                    (targets.WAGE_MONTH_TARGET, 'inactive-no-statistic', lambda x: {**targets.wage_reading(x), 'wages': 0 if not x['active'] else targets.wage_reading(x)['wages']}),
+                    (targets.DISMISS_TARGET, 'free', targets.dismiss_free),
+                    (targets.DISMISS_TARGET, 'wrong-grade', lambda x: targets.wage_reading(x, wrong_grade=True))]
+        for target, name, reading in variants:
+            mutated = dataclasses.replace(target, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'{target.key}: {name}')
+
+    def test_dismissal_example(self):
+        # A grade-2 mechanic (pay multiplier 3, base wage 700 for grade 2) dismissed from a park with 1,000,000: 2,100 leave the balance, the year profit
+        # and the staff statistics. Hiring the same mechanic cost nothing (test_hiring_has_no_debit_in_the_binary).
+        target = targets.DISMISS_TARGET
+        sandbox = target.sandbox(self.image)
+        x = {'role': 1, 'grade': 2, 'multipliers': [2, 3, 4, 5, 6], 'base_wages': [500, 600, 700, 800, 900], 'balance': 1_000_000, 'active': True}
+        self.assertEqual(targets.run_binary(target, sandbox, x), {'balance': -2100, 'profit': 2100, 'month': 2100, 'wages': 2100})
+        self.assertEqual(targets.run_binary(target, sandbox, {**x, 'active': False}), {'balance': 0, 'profit': 0, 'month': 0, 'wages': 2100})
+
+    @staticmethod
+    def code_words(image):
+        import struct
+        data = image.container.code.data
+        return struct.unpack('>%dI' % (len(data) // 4), data[:len(data) // 4 * 4])
+
+    @staticmethod
+    def direct_callers(words, target):
+        """Offsets of the bl / b instructions that reach the code offset `target` directly."""
+        callers = []
+        for index, word in enumerate(words):
+            if word >> 26 == 18:
+                displacement = word & 0x03FFFFFC
+                displacement -= 0x04000000 if displacement & 0x02000000 else 0
+                if (displacement if word & 2 else 4 * index + displacement) == target:
+                    callers.append(4 * index)
+        return callers
+
+    BANK_DEBIT, BANK_CREDIT, BANK_OF_GAME = 0xCBFDC, 0xCBF50, 0x108424
+    STAFF_CODE = [(0xD2000, 0xDA800), (0xEFF00, 0xF7800)]    # the five staff roles' update code and the staff manager (the object code starts at 0xda874)
+
+    def test_bank_debit_callers_are_pinned(self):
+        # ECON-012: every direct caller of the bank's Spend and credit routines. Three lie in the staff code: the monthly wage (0xf3364), the dismissal
+        # (0xf33ec) and the month-end training (0xf3588). None lies in the hire path (the next test).
+        words = self.code_words(self.image)
+        debits = self.direct_callers(words, self.BANK_DEBIT)
+        credits = self.direct_callers(words, self.BANK_CREDIT)
+        self.assertEqual(debits, [0x378C0, 0x462C0, 0x4A674, 0x4A6D8, 0x72BC8, 0x749D4, 0x74B28, 0x82CEC, 0x82D2C, 0x88E18, 0xDAD0C, 0xDF1C0, 0xE1EA8,
+                                  0xF33A0, 0xF3534, 0xF35D4])
+        self.assertEqual(credits, [0x462AC, 0x4A644, 0x4A660, 0x4A6C4, 0x85DF8, 0x85F00, 0x8BF44, 0xD06C8, 0xD0A28, 0xDC070, 0xE1B8C, 0x113294, 0x113CD8])
+        in_staff = [pc for pc in debits + credits if any(low <= pc < high for low, high in self.STAFF_CODE)]
+        self.assertEqual(in_staff, [0xF33A0, 0xF3534, 0xF35D4])
+
+    def test_hiring_has_no_debit_in_the_binary(self):
+        # ECON-012 (APPROX-TRACE round 3, "refuted -> not_found"): the hire path is the UI handler of the hire button (0x151d5c -> 0xf61d0, which
+        # queues a command for the candidate), the command's constructor 0x6bfa0, its executor 0x6c034 and completion 0x6c1f4, the pool removal 0xf6b58, the
+        # thing factory 0xb882c and the staff constructors 0xf2914 / 0xf2980. None of them calls the bank's Spend, credit or lookup routine: hiring is free in
+        # the Mac binary. (The staff things' own update code reaches the bank only through the wage, dismissal and training routines above.)
+        words = self.code_words(self.image)
+        hire_path = [(0xF61D0, 0xF6548), (0x6BFA0, 0x6BFDC), (0x6C034, 0x6C278), (0xF6B58, 0xF6BC8), (0xB882C, 0xB8974), (0xF2914, 0xF2B3C)]
+        for routine in (self.BANK_DEBIT, self.BANK_CREDIT, self.BANK_OF_GAME):
+            for pc in self.direct_callers(words, routine):
+                self.assertFalse(any(low <= pc < high for low, high in hire_path), f'{pc:#x} calls {routine:#x} inside the hire path')
+        # The scan sees what it should: the dismissal routine (0xf33ec..0xf3590) does call the bank.
+        self.assertTrue(any(0xF33EC <= pc < 0xF3590 for pc in self.direct_callers(words, self.BANK_DEBIT)))
+
+    def test_hire_fee_keys_are_never_read(self):
+        # StaffPoolInfo.BaseCostPerStaff (balance +700) and CostPerQualityLevel (+704) are never loaded from the settings object (the TOC slot -30084
+        # holds its address). Positive control: the pool timing words +708 and +712 are (ECON-010).
+        words = self.code_words(self.image)
+        loads: dict[int, list[int]] = {}
+        tracked: set[int] = set()
+        load_ops = {32, 34, 40, 42, 48, 50}
+        for index, word in enumerate(words):
+            op, rd, ra = word >> 26, (word >> 21) & 31, (word >> 16) & 31
+            if word == 0x7C0802A6:      # mfspr r0,8: a function prologue
+                tracked.clear()
+                continue
+            displacement = word & 0xFFFF
+            displacement -= 0x10000 if displacement & 0x8000 else 0
+            if op == 32 and ra == 2 and displacement == -30084:
+                tracked.add(rd)
+                continue
+            if op in load_ops and ra in tracked and ra != 1:
+                loads.setdefault(displacement, []).append(4 * index)
+            if op in (14, 15, 32, 34, 40, 42, 48, 50, 12, 13, 8, 7) and rd in tracked and op not in (48, 50):
+                tracked.discard(rd)
+            elif op == 31 and ((word >> 1) & 0x3FF) == 444 and ra in tracked:
+                tracked.discard(ra)
+            elif op == 21 and ra in tracked:
+                tracked.discard(ra)
+        self.assertTrue(loads.get(708) and loads.get(712), 'the scan must find the pool timing words')
+        self.assertEqual((loads.get(700), loads.get(704)), (None, None))
+
+    # ------------------------------------------------------------------------- F29: the park rating and the park value
+    def test_park_rating(self):
+        for key in (('park-rating', 'plan'), ('park-rating', 'plan-before')):
+            self.check(key)
+
+    def test_park_rating_csharp(self):
+        self.check(('park-rating', 'csharp'))
+
+    def test_park_rating_csharp_remainder(self):
+        # C# has neither the census (the cell type under each guest) nor the staff byte +3, so it differs exactly where a guest's cell type and in-park state disagree
+        # and the crowd is large enough to move the visitor term, or a staff member has the byte set (ECON-027). Every other input, objects included, agrees.
+        if self.bridge is None:
+            self.skipTest('no .NET SDK')
+        target = targets.RATING_TARGET
+        inputs, originals = self.cached_runs(target)
+        answers = self.bridge.run([target.csharp[1](x) for x in inputs])
+        differing = [x for x, original, answer in zip(inputs, originals, answers) if not target.equal(original, target.csharp[2](x, answer))]
+        self.assertGreater(len(differing), 0)
+        for x in differing:
+            things = x['things']
+            explained = any(t['cls'] == 1 and t['counted'] != t['in_park'] for t in things) or any(t['cls'] in (4, 5, 6, 7, 8) and t['flag3'] for t in things)
+            self.assertTrue(explained, f'unexplained: {x}')
+        # ... and every input without such a guest or staff member agrees.
+        clean = [x for x in inputs if not any(t['cls'] == 1 and t['counted'] != t['in_park'] for t in x['things'])
+                 and not any(t['cls'] in (4, 5, 6, 7, 8) and t['flag3'] for t in x['things'])]
+        self.assertGreater(len(clean), 100)
+        self.assertFalse([x for x in clean if x in differing])
+
+    def test_park_rating_reading_is_sharp(self):
+        # Every part of the reading matters: the census (not the in-park state), the cap of 1,000 guests, the UI type of the object (not its directory), the level 2
+        # of the upgraded rides, the staff byte +3 and each cap.
+        directory_ui = {'ride': 0, 'shop': 1, 'sideshow': 2, 'feature': 3, 'upgrade': 5, 'fixed': 5}
+        variants = {'in-park-guests': lambda x: targets.rating_reading(x, census=False),
+                    'cap-999': lambda x: targets.rating_reading(x, cap_visitors=999), 'cap-1100': lambda x: targets.rating_reading(x, cap_visitors=1100),
+                    'directory-kind': lambda x: targets.rating_reading(x, ui_of=lambda t: directory_ui[t['dir']]),
+                    'level-1': lambda x: targets.rating_reading(x, upgraded_level=1), 'level-3': lambda x: targets.rating_reading(x, upgraded_level=3),
+                    'ignore-byte-3': lambda x: targets.rating_reading(x, flag3=False),
+                    'staff-cap-3': lambda x: targets.rating_reading(x, staff_cap=3), 'staff-cap-5': lambda x: targets.rating_reading(x, staff_cap=5)}
+        for name, reading in variants.items():
+            self.assertGreater(self.reading_mismatches(targets.RATING_TARGET, reading), 0, name)
+
+    def test_park_rating_example(self):
+        # Three "Jump" add-ons (the upgrades directory: Info.WhichUIType 0) count as rides, 3 x 3 / 2 = 4 points, where the directory rule gave nothing. A handyman
+        # whose byte +3 is set (being removed) does not count, and 999 counted guests give 19 points where 1,000 give 20.
+        target = targets.RATING_TARGET
+        sandbox = target.sandbox(self.image)
+        addons = {'things': [{'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0}] * 3}
+        self.assertEqual((targets.run_binary(target, sandbox, addons), targets.rating_before(addons)), (4, 0))
+        staff = {'things': [{'cls': 5, 'flag3': 1}, {'cls': 5, 'flag3': 0}]}
+        self.assertEqual((targets.run_binary(target, sandbox, staff), targets.rating_before(staff)), (1, 2))
+        for count, expected in ((999, 19), (1000, 20), (1100, 20)):
+            crowd = {'things': [{'cls': 1, 'counted': True, 'in_park': True, 'cell': n} for n in range(count)]}
+            self.assertEqual(targets.run_binary(target, sandbox, crowd), expected, count)
+
+    def test_park_value(self):
+        for key in (('park-value', 'plan'), ('park-value', 'plan-scrap-sum')):
+            self.check(key)
+
+    def test_park_value_csharp(self):
+        self.check(('park-value', 'csharp'))
+
+    def test_park_value_reading_is_sharp(self):
+        variants = {'owned-mask-0x20': lambda x: targets.value_cell_points(x, mask=0x20) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'no-link-points': lambda x: targets.value_cell_points(x, weights=(1, 3, 5, 1, 1, 2, 0)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'no-follow': lambda x: targets.value_cell_points(x, follow=False) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'empty-cell-1': lambda x: targets.value_cell_points(x, weights=(1, 3, 5, 1, 1, 1, 50)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'path-cell-2': lambda x: targets.value_cell_points(x, weights=(1, 2, 5, 1, 1, 2, 50)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'queue-cell-4': lambda x: targets.value_cell_points(x, weights=(1, 3, 4, 1, 1, 2, 50)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'no-repair-scale': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, scale=False),
+                    'count-condemned': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, skip_condemned=False),
+                    'current-level-only': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, sum_levels=False),
+                    'no-byte': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, byte=False)}
+        for name, reading in variants.items():
+            self.assertGreater(self.reading_mismatches(targets.VALUE_TARGET, reading), 0, name)
+
+    def test_park_value_whole_function(self):
+        # The cell loop (128 x 128) and the thing loop of 0xc1d4c run once on a whole map: the value is the sum of the per-cell and per-thing readings, an empty map is
+        # worth 2 points per cell, and the cache (0xc9020) answers within the same four-turn window.
+        empty, executed = targets.value_whole(self.image, {}, [])
+        self.assertEqual(empty, 2 * 128 * 128)
+        self.assertGreater(executed, 2_000_000)
+        cells = {0: {14: ('H', 0x40)}, 5: {8: ('I', 1)}, 6: {8: ('I', 3)}, 7: {8: ('I', 9)}, 8: {8: ('I', 10)}, 9: {8: ('I', 2)},
+                 10: {0: ('H', 3)}, 11: {0: ('H', 4), 8: ('I', 3)}, 12: {0: ('H', 5)}}
+        records = {3: {8: ('I', 12), 16: ('H', 9)}, 9: {8: ('I', 25)}, 4: {8: ('I', 13)}, 5: {8: ('I', 17), 16: ('H', 7)}}
+        things = [{'gauge': 80.0, 'level': 1, 'state': 0}, {'gauge': 80.0, 'level': 1, 'state': 4}, {'gauge': 25.5, 'level': 0, 'state': 1}]
+        value, _ = targets.value_whole(self.image, cells, things, records=records)
+        base = {'type': 0, 'flags': 0, 'rec_type': 0, 'link': None, 'link_type': 0}
+        special = [{**base, 'flags': 0x40}, {**base, 'type': 1}, {**base, 'type': 3}, {**base, 'type': 9}, {**base, 'type': 10}, {**base, 'type': 2},
+                   {**base, 'rec_type': 12, 'link': 9, 'link_type': 25}, {**base, 'type': 3, 'rec_type': 13}, {**base, 'rec_type': 17, 'link': 7, 'link_type': 0}]
+        self.assertEqual([targets.value_cell_points(cell) for cell in special], [0, 3, 5, 6, 1, 1, 52, 55, 2])
+        expected = sum(targets.value_cell_points(cell) for cell in special) + 2 * (128 * 128 - len(special))
+        expected += targets.value_thing_points({**things[0], 'costs': [1000, 500, 300]}) + targets.value_thing_points({**things[1], 'costs': [1000, 500, 300]}) \
+            + targets.value_thing_points({**things[2], 'costs': [1000, 500, 300]})
+        self.assertEqual(expected - 2 * (128 * 128 - len(special)) - sum(targets.value_cell_points(cell) for cell in special), 1200 + 0 + 250)
+        self.assertEqual(value, expected)
+        # The cache: a valid value answers when the turn is in the stamp's four-turn window (the maximum age is 0), else the map is walked again.
+        cached, short = targets.value_whole(self.image, {}, [], elapsed=(1, 100, 101))
+        self.assertEqual((cached, short < 1000), (77777, True))
+        fresh, _ = targets.value_whole(self.image, {}, [], elapsed=(1, 100, 104))
+        self.assertEqual(fresh, 2 * 128 * 128)
 
     def test_loans(self):
         for key in (('loan-offers', 'plan'), ('loan-offers', 'routine-reading'), ('loan-month', 'routine-reading'),
@@ -1778,6 +2126,27 @@ class CSharpMutation(unittest.TestCase):
         ('golden-ticket-cadence', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'turn % GoldenTicketCheckInterval == 0 && ParkModeFeatures.For( mode ).GoldenTickets',
          'turn % GoldenTicketCheckInterval == 1 && ParkModeFeatures.For( mode ).GoldenTickets'),
+        ('ride-may-open', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         '&& queueConnected && (trackType != CoasterTrackType || coasterComplete);', '&& queueConnected;'),
+        ('ride-breakdown-update', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         '(GaugeByte( life ) == 0 || GaugeByte( repair ) == 0)', '(GaugeByte( life ) == 0 || GaugeByte( repair ) <= 1)'),
+        ('ride-breakdown-update', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         'return after > 100f ? 100f : after < 0f ? 0f : after;', 'return after > 100f ? 100f : after;'),
+        ('ride-repair', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         'public const float FullGauge = 100f;', 'public const float FullGauge = 99f;'),
+        ('staff-dismiss-charge', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'Post( LedgerCategory.StaffCosts, wage );', 'Post( LedgerCategory.StaffCosts, wage + 1 );'),
+        ('park-value', 'csharp', 'source/OpenTPW/Economy/ParkValueRules.cs',
+         'return unchecked( total * RideBreakdownRules.GaugeByte( stateOfRepair ) ) / 100;',
+         'return unchecked( total * RideBreakdownRules.GaugeByte( stateOfRepair ) ) / 101;'),
+        ('park-value', 'csharp', 'source/OpenTPW/Economy/ParkValueRules.cs',
+         'public static bool CountsForValue( int state ) => state != RideObjectStates.Condemned;',
+         'public static bool CountsForValue( int state ) => true;'),
+        ('park-rating', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'Math.Min( Count( 0, 2 ), 10 );', 'Math.Min( Count( 0, 3 ), 10 );'),
+        ('staff-wage-month', 'csharp', 'source/OpenTPW/Economy/BalanceSettings.cs',
+         'unchecked( BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier )',
+         '(long)BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier'),
     ]
 
     def test_mutations_are_detected(self):

@@ -180,11 +180,10 @@ public sealed class BalanceSettings
 
 	/// <summary>
 	/// Monthly wage: <c>PerGradeStaffConsts[grade].BaseWage × PerTypeStaffConsts[type].PayMultiplier</c>.
-	/// The product is inferred from the key names (both are "pay" factors, one per grade and one per
-	/// role); the original formula is unverified.
+	/// The product is read from the Mac routine <c>0xf46bc</c> and executed by the oracle (ORACLE.md F28): a 32-bit signed product.
 	/// </summary>
-	// [BIN:STP-PPC:0x100F46BC staff wage] monthly wage = PerGradeStaffConsts[grade].BaseWage (balance +748, stride 16) × PerTypeStaffConsts[type].PayMultiplier (+832, stride 4), unscaled
-	public long GetMonthlyWage( StaffType type, int grade ) => (long)BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier;
+	// [BIN:STP-PPC:0x100F46BC staff wage] monthly wage = PerGradeStaffConsts[grade].BaseWage (balance +748, stride 16) × PerTypeStaffConsts[type].PayMultiplier (+832, stride 4), unscaled, a 32-bit product (mullw; executed by the oracle target staff-wage-month, ORACLE.md F28)
+	public long GetMonthlyWage( StaffType type, int grade ) => unchecked( BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier );
 
 	/// <summary>Original layer order for a theme: global Standard, theme Standard, then the theme's Easy_Standard in easy mode.</summary>
 	// [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then <theme>/Standard.sam; type 2 (Instant Action) adds <theme>/Easy_Standard.sam and only logs when it is missing

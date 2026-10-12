@@ -253,7 +253,7 @@ public partial class Level : IDisposable
 	{
 		if ( Park == null )
 			return;
-		Gate = ParkGate.ForLevel( Park.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime );
+		Gate = ParkGate.ForLevel( Park.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime, EconomyStateOf );
 		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
 		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
 		// the initial OpenPark of AttachGuests raises its event before this wiring, so it commands nothing.
@@ -262,7 +262,41 @@ public partial class Level : IDisposable
 		{
 			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
 				Gate.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
+			else if ( item.Kind == ParkEventKind.RideRepaired )
+				OpenAfterRepair( item.InstanceId );
 		};
+	}
+
+	/// <summary>The economy record behind a placed object's runtime (or the prototype ride's), or null.</summary>
+	private ParkObjectState? EconomyStateOf( OriginalObjectRuntime runtime )
+	{
+		if ( Park == null )
+			return null;
+		foreach ( var (item, instance) in economyInstances )
+			if ( item.Runtime == runtime )
+				return Park.Economy.TryGetObject( instance, out var state ) ? state : null;
+		return prototypeInstance is int id && PlacedRide?.Runtime == runtime && Park.Economy.TryGetObject( id, out var prototype ) ? prototype : null;
+	}
+
+	/// <summary>
+	/// A finished repair opens the ride whatever the reopening guard says (<c>0xdef2c</c>: the open word 1, VAR_RIDECLOSED 0, SetState(0); it only
+	/// logs a warning when <c>0xde654</c> refuses), except that a coaster without a complete circuit is closed again (ORACLE.md F27).
+	/// </summary>
+	// [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again
+	private void OpenAfterRepair( int instance )
+	{
+		OriginalObjectRuntime? runtime = null;
+		foreach ( var (item, linked) in economyInstances )
+			if ( linked == instance )
+				runtime = item.Runtime;
+		runtime ??= prototypeInstance == instance ? PlacedRide?.Runtime : null;
+		if ( runtime is not { IsAttraction: true } )
+			return;
+		var coaster = runtime.Coaster != null;
+		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.IsOperational ) )
+			runtime.Open();
+		else
+			runtime.Close();
 	}
 
 	/// <summary>Walkable path cell next to (or nearest to) a footprint; the prototype Totem has no catalog entrance cell yet.</summary>

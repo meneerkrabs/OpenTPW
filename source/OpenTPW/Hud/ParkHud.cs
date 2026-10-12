@@ -345,7 +345,11 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !item.Runtime.IsAttraction )
 			return;
-		if ( item.IsOpen ) item.Close(); else item.Open();
+		// [BIN:STP-PPC:0x1007159C open button] the open buttons call the reopening guard 0xde654 first and open only when it allows (ORACLE.md F27, ECON-049)
+		if ( item.IsOpen )
+			item.Close();
+		else if ( level.Gate?.MayOpen( item.Runtime ) ?? true )
+			item.Open();
 	}
 
 	private void DeleteRide()

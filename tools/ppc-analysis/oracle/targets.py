@@ -80,10 +80,11 @@ class Target:
     equal: Callable = staticmethod(lambda a, b: a == b)
     notes: list[str] = field(default_factory=list)
     log: list = field(default_factory=list)
+    budget: int = 100_000   # instructions per call
 
     def sandbox(self, image: Image) -> Sandbox:
         self.log = []
-        return Sandbox(image, self.allowed, self.stubs(self))
+        return Sandbox(image, self.allowed, self.stubs(self), budget=self.budget)
 
 
 def run_binary(target: Target, sandbox: Sandbox, x):
@@ -4478,6 +4479,1132 @@ def speed_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (m) RIDES: reopening, repair and breakdown (F27)
+# The ride object's state word +408 (CObject::SetState 0xe0c3c, ORACLE F15): 0 idle (the admission runs), 1 broken down, 2 upgrading,
+# 3 not an attraction (built so when type +46 bit 0x4 is clear: 0xdad24 / 0xdad34), 4 condemned. The open word +100 and the script's
+# VAR_RIDECLOSED (variable 6) always move together; +96 is the maintenance flag, +90 / +92 the mechanic reserved for the ride and when,
+# +64 the wear gauge (float, 100.0 after a repair), +68 the life gauge, +104 the guest the script is loading.
+RIDE_MAY_OPEN = 0xDE654          # (ride) -> 1 when the ride may be opened: the guard of the park door walk and of the open buttons
+RIDE_MAY_OPEN_QUEUE = 0xDD744    # (ride) -> the back of the queue still joins a path (cells, orientation): stubbed, chosen word
+RIDE_MAY_OPEN_COASTER = 0x45EAC  # (ride) -> the coaster controller exists, its circuit is complete: stubbed, chosen word
+RIDE_TYPE_ID = 0x4331
+RIDE_STATE = type('RideState', (), {})()
+RIDE_SCRIPT_OBJECT, RIDE_SCRIPT_READ, RIDE_SCRIPT_WRITE = 0xB5758, 0xB5BE0, 0xB57D4  # (script +32) -> accessor; (accessor, index); (accessor, index, value)
+RIDE_EFFECT, RIDE_EFFECT_OPEN = 0x52AA8, 0x52D98       # (effect object of the ride, code) / (effect object): visual state of the object
+RIDE_GAUGE_FULL = 100.0          # data: TOC -11016, the constant a repair writes into +64 (checked in the binary)
+RIDE_GAUGE_SLOT = -11016
+
+
+def ride_equal(original: dict, other: dict) -> bool:
+    """Compares every key the other side gives (a None value or a missing key is not compared); floats bitwise."""
+    for key, value in other.items():
+        if value is None or key not in original:
+            continue
+        if isinstance(value, float) or isinstance(original[key], float):
+            if not same_float(original[key], value):
+                return False
+        elif original[key] != value:
+            return False
+    return True
+
+
+def ride_open_stubs(target: Target) -> dict:
+    state = RIDE_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != RIDE_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the ride type id')
+        target.log.append('lookup')
+        m.gpr[3] = state.record
+
+    def queue(m: Machine) -> None:
+        if m.gpr[3] != state.ride:
+            raise AssertionError('0xdd744 called without the ride')
+        target.log.append('queue')
+        m.gpr[3] = state.x['queue'] & MASK32
+
+    def coaster(m: Machine) -> None:
+        if m.gpr[3] != state.ride:
+            raise AssertionError('0x45eac called without the ride')
+        target.log.append('coaster')
+        m.gpr[3] = state.x['coaster'] & MASK32
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+
+    return {TYPE_RECORD_LOOKUP: lookup, RIDE_MAY_OPEN_QUEUE: queue, RIDE_MAY_OPEN_COASTER: coaster, ASSERT: assertion}
+
+
+def ride_open_setup(sb: Sandbox, x: dict) -> int:
+    st = RIDE_STATE
+    st.x = x
+    st.registry = toc_pointer(sb, POINTS_REGISTRY)
+    st.record = sb.struct(2048, {156: ('i', x['track'])})
+    st.ride = sb.struct(1024, {14: ('H', RIDE_TYPE_ID), 96: ('i', x['maintenance']), 408: ('i', x['state'])})
+    return st.ride
+
+
+def may_open_binary(sb: Sandbox, x: dict, log) -> dict:
+    ride = ride_open_setup(sb, x)
+    r = sb.call(RIDE_MAY_OPEN, {3: ride})
+    return {'may_open': r.r3, 'calls': list(log)}
+
+
+def may_open_reading(x: dict, drop: str = '') -> dict:
+    """0xde654 as read, in the order it runs: the object state is not 1 (broken down, 0xdfe0c), not 4 (condemned, 0xdfe20), the
+    maintenance flag +96 is zero (0xdfe88), the state is not 2 (upgrading, 0xdfe90), the back of the queue joins a path (0xdd744), and
+    a coaster (track type 3, 0xe2fe4) has a complete circuit (0x45eac). `drop` names conditions to leave out (the sharpness test):
+    'broken', 'condemned', 'maintenance', 'upgrading', 'queue', 'coaster'."""
+    calls: list = []
+
+    def done(value: int) -> dict:
+        return {'may_open': value, 'calls': calls}
+    state = s32(x['state'])
+    if (state == 1 and 'broken' not in drop) or (state == 4 and 'condemned' not in drop):
+        return done(0)
+    if (s32(x['maintenance']) != 0 and 'maintenance' not in drop) or (state == 2 and 'upgrading' not in drop):
+        return done(0)
+    calls.append('queue')
+    if x['queue'] & MASK32 == 0 and 'queue' not in drop:
+        return done(0)
+    calls.append('lookup')
+    if s32(x['track']) == 3:
+        calls.append('coaster')
+        if x['coaster'] & MASK32 == 0 and 'coaster' not in drop:
+            return done(0)
+    return done(1)
+
+
+def may_open_plan(x: dict) -> dict:
+    """The corrected plan (GATES.md, ECON-049): PC FUN_004df290 is the routine reading; the reopen guard reads the object's state, not
+    VAR_BROKEN."""
+    return may_open_reading(x)
+
+
+def may_open_var_broken(x: dict) -> dict:
+    """The claim before F27 (ParkGate.MayOpen, ECON-049): the guard is VAR_BROKEN == 0, a script variable the routine never reads."""
+    return {'may_open': int(x['broken'] == 0), 'calls': None}
+
+
+def may_open_request(x: dict) -> dict:
+    return {'fn': 'ride_may_open', 'state': s32(x['state']), 'maintenance': s32(x['maintenance']) != 0,
+            'queue': x['queue'] & MASK32 != 0, 'track': s32(x['track']), 'coaster': x['coaster'] & MASK32 != 0}
+
+
+def may_open_result(x: dict, answer) -> dict:
+    return {'may_open': int(answer), 'calls': None}
+
+
+def may_open_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'state': rng.choice([0, 0, 0, 0, 1, 2, 3, 4, rng.randrange(-2, 7)]),
+             'maintenance': rng.choice([0, 0, 0, 1, rng.randrange(-3, 4), 0x100]),
+             'queue': rng.choice([1, 1, 1, 0, 0xFF, 0x80000000]),
+             'track': rng.choice([0, 0, 1, 2, 3, 3, rng.randrange(-3, 6)]),
+             'coaster': rng.choice([1, 1, 0, 2, 0x100, 0xFFFFFFFF]),
+             'broken': rng.choice([0, 0, 0, 1, 2, -1])}
+        x.update(kw)
+        return x
+    ok = dict(state=0, maintenance=0, queue=1, track=0, coaster=1, broken=0)
+    edges = [make(**ok),
+             # One condition fails at a time.
+             make(**{**ok, 'state': 1}), make(**{**ok, 'state': 4}), make(**{**ok, 'state': 2}), make(**{**ok, 'maintenance': 1}),
+             make(**{**ok, 'queue': 0}), make(**{**ok, 'track': 3, 'coaster': 0}), make(**{**ok, 'track': 3, 'coaster': 1}),
+             # States that do not block: 3 (not an attraction) and the ones the original asserts on.
+             make(**{**ok, 'state': 3}), make(**{**ok, 'state': 5}), make(**{**ok, 'state': -1}),
+             # The claim before F27: a script variable the routine never reads.
+             make(**{**ok, 'broken': 1}), make(**{**ok, 'state': 1, 'broken': 0}), make(**{**ok, 'state': 1, 'broken': 1}),
+             make(**{**ok, 'maintenance': -1}), make(**{**ok, 'track': 4, 'coaster': 0}), make(**{**ok, 'track': 1, 'coaster': 0})]
+    return edges + [make() for _ in range(n)]
+
+
+RIDE_MAY_OPEN_ALLOWED = [(0xDE654, 0xDE704), (0xDFE0C, 0xDFEA4), (0xE2FE4, 0xE3024)]
+MAY_OPEN_TARGET = Target('ride-may-open', 'Reopen guard 0xde654 (ECON-049)', 'GATES.md / ECON-049, QUEUE-019', RIDE_MAY_OPEN, RIDE_MAY_OPEN_ALLOWED,
+                         ride_open_stubs, may_open_binary, may_open_plan, may_open_inputs, equal=ride_equal,
+                         alternatives={'plan-var-broken': may_open_var_broken, 'routine-reading': may_open_reading},
+                         csharp=('ride_may_open', may_open_request, may_open_result),
+                         notes=['C# hook: bridge function "ride_may_open" (RideOpening.MayOpen, the guard of ParkGate.MayOpen). The back-of-queue '
+                                'test (0xdd744) is a chosen word on both sides; C# derives the state from the ride script and the economy.',
+                                'Executed: 0xde654 with 0xdfe0c / 0xdfe20 (state 1, 4), 0xdfe88 (+96), 0xdfe90 (state 2) and 0xe2fe4 (track type 3). '
+                                'Stubs: 0xdd744 (back of the queue joins a path: a chosen word), 0x45eac (coaster circuit complete: a chosen word), '
+                                '0x118018 type record (+156 chosen, registry and type id checked), 0xb678 assertion.',
+                                '"plan-var-broken" is the rule before F27: the guard is the script variable VAR_BROKEN == 0.'])
+
+
+# ---- the ride script and effect callees shared by the next targets: recorded, never run (they touch the script VM and the visual state)
+def ride_script_stubs(target: Target, state, reads: dict | None = None) -> dict:
+    """Stubs of the script accessor 0xb5758, the variable reader 0xb5be0 (answers from `reads`, a variable index -> value; any other index
+    fails the run; logged as ('read', index) when state.log_reads), the variable writer 0xb57d4 (logged as ('var', index, value)), the
+    effect calls 0x52aa8 / 0x52d98, the id writer 0xfa9a4 (a log argument), the debug log 0x5fbcc (the warning about opening a
+    non-openable ride is logged, the rest ignored) and the assertion 0xb678 (logged when its condition is zero)."""
+    def accessor(m: Machine) -> None:
+        if m.gpr[3] != state.script:
+            raise AssertionError('0xb5758 called without the ride script (+32)')
+
+    def read(m: Machine) -> None:
+        if m.gpr[3] != state.script or reads is None or m.gpr[4] not in reads:
+            raise AssertionError(f'0xb5be0 called for variable {m.gpr[4]}')
+        if state.log_reads:
+            target.log.append(('read', m.gpr[4]))
+        m.gpr[3] = reads[m.gpr[4]] & MASK32
+
+    def write(m: Machine) -> None:
+        if m.gpr[3] != state.script:
+            raise AssertionError('0xb57d4 called without the ride script')
+        target.log.append(('var', m.gpr[4], s32(m.gpr[5])))
+
+    def effect(m: Machine) -> None:
+        target.log.append(('effect', m.gpr[4]))
+
+    def effect_open(m: Machine) -> None:
+        target.log.append(('effect-open',))
+
+    def thing_id(m: Machine) -> None:
+        m.memory.w16(m.gpr[3], 0x1234)
+
+    def log(m: Machine) -> None:
+        address, text = m.gpr[4], b''
+        while len(text) < 10 and m.memory.u8(address + len(text)):
+            text += bytes([m.memory.u8(address + len(text))])
+        if text.startswith(b'!!!!!!!!!!'):
+            target.log.append(('warn',))
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert',))
+
+    return {RIDE_SCRIPT_OBJECT: accessor, RIDE_SCRIPT_READ: read, RIDE_SCRIPT_WRITE: write, RIDE_EFFECT: effect, RIDE_EFFECT_OPEN: effect_open,
+            THING_ID_OF: thing_id, DEBUG_LOG: log, ASSERT: assertion}
+
+
+# ---- SetState 0xe0c3c: what entering each state writes
+RIDE_SET_STATE = 0xE0C3C
+RIDE_SET_STATE_CALLS = {0xDCEBC: 'remove', 0xEE804: 'dismiss', 0xEDA04: 'force'}
+RIDE_SET_STATE_MESSAGES = (0x116410, 0x1163E8, 0x116438, 0x11688C)   # message constructors and the queue push behind the closing effect
+RIDE_SET_STATE_LIST_SLOT = -30100    # TOC slot -> the global holding the message list (non-null: the allocation 0x1c4794 is skipped)
+RIDE_SET_STATE_STATE = type('RideSetState', (), {})()
+RIDE_SET_STATE_STATE.log_reads = False
+
+
+def set_state_stubs(target: Target) -> dict:
+    state = RIDE_SET_STATE_STATE
+
+    def read(m: Machine) -> None:
+        if m.gpr[3] != state.script or m.gpr[4] != 0:
+            raise AssertionError('0xb5be0 called for something other than variable 0 (VAR_LETMEON)')
+        m.gpr[3] = state.x['letmeon'] & MASK32
+
+    stubs = ride_script_stubs(target, state, {0: 0})
+    stubs[RIDE_SCRIPT_READ] = read
+
+    def record(name):
+        def stub(m: Machine) -> None:
+            if name == 'remove':
+                target.log.append((name, m.gpr[3] == state.ride, m.gpr[4] >> 16))  # the u16 id travels in the high half
+            else:
+                target.log.append((name, m.gpr[3] == state.guest))
+        return stub
+    stubs.update({address: record(name) for address, name in RIDE_SET_STATE_CALLS.items()})
+    stubs.update({address: (lambda m: None) for address in RIDE_SET_STATE_MESSAGES})
+    return stubs
+
+
+def set_state_binary(sb: Sandbox, x: dict, log) -> dict:
+    st = RIDE_SET_STATE_STATE
+    st.x = x
+    st.script = sb.alloc(64)
+    st.guest = sb.struct(1024, {544: ('I', x['head_state'] & MASK32)})
+    st.ride = sb.struct(1024, {32: ('I', st.script), 56: ('H', x['head']), 100: ('i', x['open']), 104: ('H', x['pending']), 408: ('i', x['previous'])})
+    if sb.read(toc_pointer(sb, NO_THING), 'H') != 0:
+        raise AssertionError('the "no thing" id is not zero')
+    if x['head']:
+        sb.write(toc_pointer(sb, POINTS_THINGS) + 20 * x['head'], 'I', st.guest)
+    sb.write(toc_pointer(sb, RIDE_SET_STATE_LIST_SLOT), 'I', sb.alloc(64))
+    sb.call(RIDE_SET_STATE, {3: st.ride, 4: x['state'] & MASK32})
+    return {'state': sb.read(st.ride + 408, 'i'), 'open': sb.read(st.ride + 100, 'i'), 'pending': sb.read(st.ride + 104, 'H'), 'calls': list(log)}
+
+
+def set_state_reading(x: dict, write: bool = True, head_step: bool = True) -> dict:
+    """0xe0c3c as read: 0 (idle) and 3 (not an attraction) store the state word. 1, 2 and 4 (broken down, upgrading, condemned) run the
+    head-guest step once (the guest the script has taken and that waits in state 14 is forced aboard, otherwise the head leaves the queue
+    and is dismissed), clear the open word +100 and the pending guest +104, write VAR_RIDECLOSED (variable 6) = 1, send the effect 1 and store
+    the state. Any other state asserts and stores it too. `write` and `head_step` build the variants of the sharpness test."""
+    state, calls = s32(x['state']), []
+    result = {'state': state, 'open': x['open'], 'pending': x['pending'], 'calls': calls}
+    if state in (1, 2, 4):
+        head = x['head']
+        if head_step and head != 0 and head != x['letmeon'] and x['head_state'] == 14:
+            calls.append(('force', True))
+        elif head_step and head != 0:
+            calls += [('remove', True, head), ('dismiss', True)]
+        if write:
+            calls += [('var', 6, 1), ('effect', 1)]
+            result['open'], result['pending'] = 0, 0
+    elif state != 0 and state != 3:
+        calls.append(('assert',))
+    return result
+
+
+def set_state_plan(x: dict) -> dict:
+    """The corrected plan (QUEUE-plan 5.2, QUEUE-019): the routine reading."""
+    return set_state_reading(x)
+
+
+def set_state_store_only(x: dict) -> dict:
+    """The claim before F27: the ride state is a word the ride update reads; entering 1, 2 or 4 changes nothing else."""
+    state = s32(x['state'])
+    calls = [] if state in (0, 1, 2, 3, 4) else [('assert',)]
+    return {'state': state, 'open': x['open'], 'pending': x['pending'], 'calls': calls}
+
+
+def set_state_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        head = rng.choice([0, rng.randrange(1, 200)])
+        x = {'state': rng.choice([0, 1, 1, 2, 2, 3, 4, 4, 5, 6, -1, 7]), 'previous': rng.choice([0, 0, 1, 2, 3, 4]), 'head': head,
+             'letmeon': rng.choice([0, head, head, rng.randrange(1, 300)]) if head else 0, 'head_state': rng.choice([14, 14, 11, 13, 6, 16]),
+             'open': rng.choice([1, 1, 0, 3]), 'pending': rng.choice([0, 0, 5, rng.randrange(0, 0x10000)])}
+        x.update(kw)
+        return x
+    edges = [make(state=1, head=5, letmeon=5, head_state=14, open=1, pending=5),   # broken down, the head waits for the script: dismissed
+             make(state=1, head=5, letmeon=0, head_state=14, open=1, pending=0),   # the script took the head: forced aboard
+             make(state=1, head=0, letmeon=0, head_state=11, open=1, pending=7),   # no queue: only the writes
+             make(state=4, head=9, letmeon=0, head_state=11), make(state=2, head=9, letmeon=3, head_state=11),
+             make(state=0, head=5, letmeon=0, head_state=11, open=1, pending=9), make(state=3, head=5, letmeon=5, head_state=14, open=0),
+             make(state=5, head=5, letmeon=0, head_state=11), make(state=-1, head=0, letmeon=0, head_state=11)]
+    return edges + [make() for _ in range(n)]
+
+
+RIDE_SET_STATE_ALLOWED = [(0xE0C3C, 0xE1320)]
+SET_STATE_TARGET = Target('ride-set-state', 'CObject::SetState 0xe0c3c (what entering each state writes)', 'QUEUE-plan 5.2 / QUEUE-019',
+                          RIDE_SET_STATE, RIDE_SET_STATE_ALLOWED, set_state_stubs, set_state_binary, set_state_plan, set_state_inputs,
+                          equal=ride_equal, alternatives={'plan-store-only': set_state_store_only, 'routine-reading': set_state_reading},
+                          notes=['No C# hook yet (CSHARP_PENDING): OpenTPW keeps no ride state word.',
+                                 'Executed: 0xe0c3c itself. Stubs record the calls instead of running them: 0xb5758 / 0xb5be0 (VAR_LETMEON) / 0xb57d4 '
+                                 '(variable writes), 0xdcebc remove from queue, 0xee804 dismiss, 0xeda04 force aboard, 0x52aa8 effect, the closing '
+                                 'message constructors 0x116410 / 0x1163e8 / 0x116438 and the queue push 0x11688c, 0xfa9a4 and the log 0x5fbcc. The '
+                                 'message list global (TOC -30100) is made non-null so the operator new 0x1c4794 is not reached.',
+                                 '"plan-store-only" is the claim before F27: entering a state only stores it.'])
+
+
+# ---- repair 0xdef2c (the non-upgrade branch: the ride is not in state 2)
+RIDE_REPAIR = 0xDEF2C            # (ride, mechanic thing id in the high half of r4)
+RIDE_REPAIR_STATE = type('RideRepairState', (), {})()
+RIDE_REPAIR_STATE.log_reads = True
+
+
+def repair_stubs(target: Target) -> dict:
+    stubs = ride_script_stubs(target, RIDE_REPAIR_STATE, {7: 0, 4: 0})
+    stubs.update(ride_open_stubs(target))
+    return stubs
+
+
+def repair_binary(sb: Sandbox, x: dict, log) -> dict:
+    RIDE_REPAIR_STATE.script = sb.alloc(64)
+    ride = ride_open_setup(sb, x)
+    sb.write(ride + 32, 'I', RIDE_REPAIR_STATE.script)
+    sb.write(ride + 64, 'f', x['gauge'])
+    sb.write(ride + 68, 'f', x['life'])
+    sb.write(ride + 90, 'H', x['mechanic'])
+    sb.write(ride + 100, 'i', x['open'])
+    sb.write(ride + 104, 'H', x['pending'])
+    if sb.image.memory.u32(sb.image.toc + RIDE_GAUGE_SLOT) != bits(RIDE_GAUGE_FULL):
+        raise AssertionError('the constant behind TOC -11016 is not 100.0')
+    sb.call(RIDE_REPAIR, {3: ride, 4: 0x1234 << 16})
+    return {'gauge': sb.read(ride + 64, 'f'), 'life': sb.read(ride + 68, 'f'), 'mechanic': sb.read(ride + 90, 'H'),
+            'maintenance': sb.read(ride + 96, 'i'), 'open': sb.read(ride + 100, 'i'), 'pending': sb.read(ride + 104, 'H'),
+            'state': sb.read(ride + 408, 'i'), 'calls': list(log)}
+
+
+def repair_reading(x: dict, reopen: bool = True, clear_flags: bool = True, coaster_recheck: bool = True, full_gauge: float = RIDE_GAUGE_FULL) -> dict:
+    """0xdef2c, the branch of a ride that is not being upgraded: the wear gauge +64 becomes 100.0, VAR_WORN (8) is cleared, the mechanic
+    reservation +90 and the maintenance flag +96 are cleared, VAR_BREAKSTAT (4) is read and cleared (variable 7, VAR_BROKEN, is read and not
+    used). Then the ride is opened whatever the guard says (a warning is logged five times when the guard fails, and the guard still sees
+    the state the ride is in): the open word +100 = 1, VAR_RIDECLOSED = 0, SetState(0). A coaster without a complete circuit is closed again
+    (open word 0, the pending guest cleared, VAR_RIDECLOSED = 1), and the life gauge +68 is not touched. The keyword flags build the variants
+    of the sharpness test."""
+    state, calls = s32(x['state']), [('var', 8, 0), ('read', 7), ('read', 4), ('var', 4, 0), ('effect-open',)]
+    result = {'gauge': full_gauge, 'life': x['life'], 'mechanic': 0, 'maintenance': 0, 'open': x['open'], 'pending': x['pending'],
+              'state': state, 'calls': calls}
+    if not clear_flags:
+        result['mechanic'], result['maintenance'] = x['mechanic'], x['maintenance']
+    track, ok = s32(x['track']), True
+    if state in (1, 4):
+        ok = False
+    else:
+        calls.append('queue')
+        if x['queue'] & MASK32 == 0:
+            ok = False
+        else:
+            calls.append('lookup')
+            if track == 3:
+                calls.append('coaster')
+                ok = x['coaster'] & MASK32 != 0
+    if not ok:
+        calls += [('warn',)] * 5
+    if reopen:
+        calls += [('effect-open',), ('var', 6, 0)]
+        result['open'], result['state'] = 1, 0
+        calls.append('lookup')
+        if coaster_recheck and track == 3:
+            calls.append('coaster')
+            if x['coaster'] & MASK32 == 0:
+                calls += [('var', 6, 1), ('effect', 1)]
+                result['open'], result['pending'] = 0, 0
+    return result
+
+
+def repair_plan(x: dict) -> dict:
+    """The corrected plan (RIDE-WEAR.md, ECONOMY.md, QUEUE-019): the routine reading."""
+    return repair_reading(x)
+
+
+def repair_gauge_only(x: dict) -> dict:
+    """The claim before F27 (ParkEconomy.FinishJob): a repair sets the state of repair to 100 and ends the breakdown; it neither reopens
+    the ride nor clears the maintenance flag or the script's variables."""
+    state = s32(x['state'])
+    return {'gauge': 100.0, 'life': x['life'], 'mechanic': 0, 'maintenance': x['maintenance'], 'open': x['open'], 'pending': x['pending'],
+            'state': 0 if state in (1, 4) else state, 'calls': None}
+
+
+def repair_request(x: dict) -> dict:
+    return {'fn': 'ride_repair', 'track': s32(x['track']), 'coaster': x['coaster'] & MASK32 != 0}
+
+
+def repair_result(x: dict, answer: dict) -> dict:
+    return {'gauge': from_bits(answer['gauge_bits']), 'open': answer['open']}
+
+
+def repair_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'state': rng.choice([0, 0, 1, 1, 1, 3, 4, 4, rng.randrange(-2, 7)]), 'gauge': rng.choice([0.0, 5.0, 24.0, 50.0, random_float(rng, 0, 100), 100.0]),
+             'life': rng.choice([0.0, 0.5, 30.0, 100.0, random_float(rng, 0, 100)]), 'mechanic': rng.choice([0, 0x4321, rng.randrange(0, 0x10000)]),
+             'maintenance': rng.choice([0, 0, 1, rng.randrange(-3, 4)]), 'open': rng.choice([0, 0, 1, 1, rng.randrange(-2, 4)]),
+             'pending': rng.choice([0, 0, 7, rng.randrange(0, 0x10000)]), 'queue': rng.choice([1, 1, 0, 0xFF]), 'track': rng.choice([0, 0, 1, 2, 3, 3]),
+             'coaster': rng.choice([1, 1, 0, 2])}
+        if x['state'] == 2:
+            x['state'] = 0         # state 2 takes the upgrade branch, which is not run here
+        x.update(kw)
+        return x
+    base = dict(state=1, gauge=0.0, life=40.0, mechanic=0x4321, maintenance=0, open=0, pending=0, queue=1, track=0, coaster=1)
+    edges = [make(**base),                                    # a broken-down ride repaired: opened, state 0 (the guard warning: it still reads state 1)
+             make(**{**base, 'state': 4, 'life': 0.0}),       # a condemned ride (life gauge 0): idle again, the life gauge is not restored
+             make(**{**base, 'state': 0, 'gauge': 20.0, 'open': 1}),            # a worn ride that still runs: gauge restored, nothing else
+             make(**{**base, 'state': 0, 'gauge': 20.0, 'open': 0}),            # the player closed it: the repair reopens it
+             make(**{**base, 'state': 0, 'maintenance': 1, 'open': 0}),         # maintenance flag set by the player: cleared, reopened
+             make(**{**base, 'state': 3}), make(**{**base, 'state': 0, 'queue': 0}),
+             make(**{**base, 'state': 0, 'track': 3, 'coaster': 1}), make(**{**base, 'state': 0, 'track': 3, 'coaster': 0, 'open': 1}),
+             make(**{**base, 'state': 1, 'track': 3, 'coaster': 0}), make(**{**base, 'state': 5}), make(**{**base, 'state': -1})]
+    return edges + [make() for _ in range(n)]
+
+
+RIDE_REPAIR_ALLOWED = [(0xDEF2C, 0xDF5B4), (0xDFE0C, 0xDFEA4), (0xE0C3C, 0xE1320), (0xE2FE4, 0xE3024)]
+REPAIR_TARGET = Target('ride-repair', 'Repair 0xdef2c (what a repair restores and reopens)', 'RIDE-WEAR.md / ECON-024, QUEUE-019',
+                       RIDE_REPAIR, RIDE_REPAIR_ALLOWED, repair_stubs, repair_binary, repair_plan, repair_inputs, equal=ride_equal,
+                       alternatives={'plan-gauge-only': repair_gauge_only, 'routine-reading': repair_reading},
+                       csharp=('ride_repair', repair_request, repair_result),
+                       notes=['C# hook: bridge function "ride_repair" (RideRepair.FullGauge and OpensAfterRepair, which ParkEconomy.FinishJob and '
+                              'Level.OpenAfterRepair apply); only the wear gauge and the open word are compared. The reopening guard has its own target '
+                              '(ride-may-open).',
+                              'Executed: 0xdef2c for a ride that is not in state 2 (the upgrade branch is not run), with SetState 0xe0c3c (state 0) and '
+                              'the state tests. Stubs: 0xb5758 / 0xb5be0 / 0xb57d4 (variables 7 and 4 are read, 8, 4 and 6 are written), 0x52d98 and 0x52aa8 '
+                              '(effects), 0xdd744 and 0x45eac (chosen words), 0x118018 type record, 0xfa9a4, the log 0x5fbcc (the warning about opening a '
+                              'non-openable ride is counted) and the assertion 0xb678.',
+                              'The constant a repair writes into the wear gauge is read from the data (TOC -11016) and checked to be 100.0.'])
+
+
+# ---- the breakdown check of the ride update 0xe077c (fragment 0xe0800..0xe0970)
+RIDE_BREAKDOWN, RIDE_BREAKDOWN_STOP = 0xE0800, (0xE0970, 0xE09D8)   # the relief test ends at 0xe0970; states 3 and 4 jump to the epilogue 0xe09d8
+RIDE_WEAR_STEP = 0xDEC2C         # (ride, script accessor): the wear step; recorded, not run (RIDE-WEAR.md, ECON-023)
+RIDE_BREAKDOWN_STATE = type('RideBreakdownState', (), {})()
+RIDE_BREAKDOWN_STATE.log_reads = False
+BREAKDOWN_LIFE_LOSS = 5.0        # data: TOC -11148
+
+
+def breakdown_stubs(target: Target) -> dict:
+    state = RIDE_BREAKDOWN_STATE
+
+    def wear(m: Machine) -> None:
+        if m.gpr[3] != state.ride:
+            raise AssertionError('0xdec2c called without the ride')
+        target.log.append(('wear',))
+
+    def read(m: Machine) -> None:
+        if m.gpr[3] != state.script or m.gpr[4] != 4:
+            raise AssertionError('0xb5be0 called for something other than variable 4 (VAR_BREAKSTAT)')
+        m.gpr[3] = state.x['breakstat'] & MASK32
+
+    stubs = ride_script_stubs(target, state, {4: 0})
+    stubs[RIDE_SCRIPT_READ] = read
+    stubs[RIDE_WEAR_STEP] = wear
+    return stubs
+
+
+def breakdown_binary(sb: Sandbox, x: dict, log) -> dict:
+    st = RIDE_BREAKDOWN_STATE
+    st.x = x
+    st.script = sb.alloc(64)
+    game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', game)
+    sb.write(game + POINTS_TURN, 'I', x['tick'] & MASK32)
+    st.ride = sb.struct(1024, {32: ('I', st.script), 46: ('H', x['flags']), 64: ('f', x['repair']), 68: ('f', x['life']),
+                               100: ('i', x['open']), 408: ('i', x['state'])})
+    sb.call(RIDE_BREAKDOWN, {30: st.ride, 31: toc_pointer(sb, POINTS_THINGS)}, stop=RIDE_BREAKDOWN_STOP)
+    return {'calls': list(log), 'life': sb.read(st.ride + 68, 'f')}
+
+
+def byte_of(value: float) -> int:
+    """fctiwz, then the low byte of the word (0xe0864 and friends): NaN and out-of-range values go through the saturated word."""
+    return fctiwz(value) & 0xFF
+
+
+def breakdown_reading(x: dict, gate_state: bool = True, gate_open: bool = True, relief: bool = True, breakstat: bool = True) -> dict:
+    """The ride update 0xe077c from 0xe0800: a ride in state 3 or 4 does nothing. Otherwise, except in state 1, with the open word +100 not
+    zero and the world turn a multiple of 8, the wear step runs; then a ride that is not a relief object (+46 bit 0x1) and whose VAR_BREAKSTAT
+    is 0 breaks down when its life gauge +68 truncates to a zero byte, or its wear gauge +64 does: VAR_BREAKSTAT (4) is set to 1 by 0xe09f4,
+    after the life gauge lost 5 (clamped to 0..100, single precision) when the wear gauge was the one that ran out. Finally a relief object
+    whose wear gauge byte is below 25 sets VAR_WORN (8). The keyword flags build the variants of the sharpness test."""
+    state, calls, life = s32(x['state']), [], x['life']
+    if gate_state and state in (3, 4):
+        return {'calls': calls, 'life': life}
+    if (not gate_state or state != 1) and (not gate_open or s32(x['open']) != 0) and x['tick'] & 7 == 0:
+        calls.append(('wear',))
+        if (byte_of(x['life']) == 0 or byte_of(x['repair']) == 0) and (not relief or not x['flags'] & 1) and (not breakstat or s32(x['breakstat']) == 0):
+            if byte_of(x['life']) != 0:
+                after = f32(life + f32(-BREAKDOWN_LIFE_LOSS))
+                life = 100.0 if after > 100.0 else 0.0 if after < 0.0 else after
+            calls.append(('var', 4, 1))
+    if relief and x['flags'] & 1 and byte_of(x['repair']) < 25.0:
+        calls.append(('var', 8, 1))
+    return {'calls': calls, 'life': life}
+
+
+def breakdown_plan(x: dict) -> dict:
+    """The corrected plan (RIDE-WEAR.md, ECON-023): the routine reading."""
+    return breakdown_reading(x)
+
+
+def breakdown_before(x: dict) -> dict:
+    """The rule before F27 (ParkEconomy.UpdateRides): a ride with a mechanic at work (state 2 stands for it) or that is not a ride (3) is
+    skipped; every 8th turn the wear step runs, and then a ride that is not already broken down (states 1 and 4) breaks down when its life or
+    wear gauge byte is 0, whether it is open or not, whatever VAR_BREAKSTAT holds; the life gauge loses 5 when only the wear gauge ran out.
+    A relief object is treated like a ride and VAR_WORN is not set."""
+    state, calls, life = s32(x['state']), [], x['life']
+    if state in (2, 3) or x['tick'] & 7 != 0:
+        return {'calls': calls, 'life': life}
+    calls.append(('wear',))
+    if state not in (1, 4) and (byte_of(x['life']) == 0 or byte_of(x['repair']) == 0):
+        if byte_of(x['life']) != 0:
+            after = f32(life + f32(-BREAKDOWN_LIFE_LOSS))
+            life = 100.0 if after > 100.0 else 0.0 if after < 0.0 else after
+        calls.append(('var', 4, 1))
+    return {'calls': calls, 'life': life}
+
+
+def breakdown_request(x: dict) -> dict:
+    return {'fn': 'ride_breakdown_update', 'state': s32(x['state']), 'open': s32(x['open']) != 0, 'tick': x['tick'] & MASK32,
+            'relief': bool(x['flags'] & 1), 'breakstat': s32(x['breakstat']), 'life_bits': bits(x['life']), 'repair_bits': bits(x['repair'])}
+
+
+def breakdown_result(x: dict, answer: dict) -> dict:
+    names = {'wear': ('wear',), 'announce': ('var', 4, 1), 'worn': ('var', 8, 1)}
+    return {'calls': [names[call] for call in answer['calls']], 'life': from_bits(answer['life_bits'])}
+
+
+def breakdown_equal(original: dict, other: dict) -> bool:
+    return original['calls'] == other['calls'] and same_float(original['life'], other['life'])
+
+
+def breakdown_inputs(rng: random.Random, n: int) -> list:
+    def gauge() -> float:
+        return rng.choice([0.0, 0.5, 0.99, 1.0, 4.9, 5.0, 5.5, 24.9, 25.0, 50.0, 100.0, random_float(rng, 0, 100), random_float(rng, 0, 100),
+                           random_float(rng, -10, 300), 255.5, 256.0, -3.0, math.nan, math.inf, -math.inf])
+
+    def make(**kw) -> dict:
+        x = {'state': rng.choice([0, 0, 0, 1, 2, 3, 4, rng.randrange(-1, 7)]), 'open': rng.choice([1, 1, 1, 0, rng.randrange(-2, 4)]),
+             'tick': rng.choice([8 * rng.randrange(0, 5000), 8 * rng.randrange(0, 5000), rng.randrange(0, 40000), 64 * rng.randrange(0, 600)]),
+             'flags': rng.choice([0, 0x4, 0x104, 1, 0x5, rng.getrandbits(16), rng.getrandbits(16) & 0xFFFE]), 'life': gauge(), 'repair': gauge(),
+             'breakstat': rng.choice([0, 0, 0, 1, 2, -1])}
+        x.update(kw)
+        return x
+    base = dict(state=0, open=1, tick=64, flags=0x4, life=100.0, repair=100.0, breakstat=0)
+    edges = [make(**base),                                                            # healthy: the wear step only
+             make(**{**base, 'repair': 0.0}),                                         # wear gauge 0, life 100: life 95, VAR_BREAKSTAT 1
+             make(**{**base, 'repair': 0.9}), make(**{**base, 'repair': 1.0}), make(**{**base, 'life': 0.0}),   # life 0: announce only
+             make(**{**base, 'life': 0.9}), make(**{**base, 'life': 3.0, 'repair': 0.0}),           # 3 - 5 = -2 clamps to 0
+             make(**{**base, 'life': 104.0, 'repair': 0.0}), make(**{**base, 'life': 300.0, 'repair': 0.0}),
+             make(**{**base, 'repair': 0.0, 'state': 1}), make(**{**base, 'repair': 0.0, 'state': 3}), make(**{**base, 'repair': 0.0, 'state': 4}),
+             make(**{**base, 'repair': 0.0, 'state': 2}),                              # upgrading: the open word is 0 in a real ride, so no check
+             make(**{**base, 'repair': 0.0, 'open': 0}),                               # a closed ride does not break down
+             make(**{**base, 'repair': 0.0, 'tick': 12}), make(**{**base, 'repair': 0.0, 'tick': 8}), make(**{**base, 'repair': 0.0, 'tick': 0}),
+             make(**{**base, 'repair': 0.0, 'breakstat': 1}),                          # the breakdown was already announced
+             make(**{**base, 'repair': 0.0, 'flags': 1}),                              # a relief object: no breakdown, VAR_WORN below 25
+             make(**{**base, 'repair': 20.0, 'flags': 1}), make(**{**base, 'repair': 25.0, 'flags': 1}), make(**{**base, 'repair': 24.9, 'flags': 0x5}),
+             make(**{**base, 'repair': 20.0, 'flags': 1, 'state': 1}),                 # state 1 still runs the relief test
+             make(**{**base, 'repair': 20.0, 'flags': 1, 'state': 3}), make(**{**base, 'repair': 20.0, 'flags': 1, 'state': 4}),
+             make(**{**base, 'life': math.nan}), make(**{**base, 'repair': math.nan, 'flags': 1}), make(**{**base, 'life': 256.0}),
+             make(**{**base, 'life': 1e30, 'repair': 0.0}), make(**{**base, 'life': -1e30, 'repair': 0.0})]
+    return edges + [make() for _ in range(n)]
+
+
+RIDE_BREAKDOWN_ALLOWED = [(0xE0800, 0xE09DC), (0xE09F4, 0xE0A70)]
+BREAKDOWN_TARGET = Target('ride-breakdown-update', 'Breakdown check of the ride update 0xe077c (fragment 0xe0800)', 'RIDE-WEAR.md / ECON-023, QUEUE-019',
+                          RIDE_BREAKDOWN, RIDE_BREAKDOWN_ALLOWED, breakdown_stubs, breakdown_binary, breakdown_plan, breakdown_inputs,
+                          equal=breakdown_equal, alternatives={'plan-before': breakdown_before, 'routine-reading': breakdown_reading},
+                          csharp=('ride_breakdown_update', breakdown_request, breakdown_result),
+                          notes=['C# hook: bridge function "ride_breakdown_update" (RideBreakdownRules in the routine order, which ParkEconomy.UpdateRides '
+                                 'applies; the wear step is the recorded call "wear").',
+                                 'Executed: the fragment from the dispatch on the ride state to the relief test, with the announcement 0xe09f4 '
+                                 '(VAR_BREAKSTAT = 1) and 0xe0a40 (VAR_WORN = 1). Stubs: 0xdec2c (the wear step: recorded), 0xb5758 / 0xb5be0 (variable '
+                                 '4 chosen) / 0xb57d4 (writes logged), the log 0x5fbcc. The world turn (+0x1da70c) is chosen.',
+                                 '"plan-before" is the rule before F27: ParkEconomy.UpdateRides.'])
+
+
+# ============================================================================== (n) STAFF: the wage and the dismissal charge (F28)
+# What the original charges for a staff member. The wage of 0xf46bc is the same for both routines: the thing's class byte +2 (4 mechanic, 5 handyman,
+# 6 entertainer, 7 guard, 8 researcher) selects the PerTypeStaffConsts.PayMultiplier (balance +832 + 4 * index, in the StaffType order handyman,
+# mechanic, entertainer, guard, researcher) and the grade (thing +484) the PerGradeStaffConsts.BaseWage (+748 + 16 * grade); the wage is their 32-bit product.
+# The monthly handler 0xf3364 (bank message 12, reached by the thing's message handler 0xf2b5c) debits it with the bank's Spend 0xcbfdc and adds it to the
+# park statistic +0x1f7f0. The dismissal routine 0xf33ec (UI-MAP "the dismissal routine 0x100f33ec") does the same once more when a staff member is dismissed
+# (its tail from 0xf3518); no routine of the hire path debits the bank (the test `test_hiring_has_no_debit_in_the_binary`).
+WAGE_MONTH = 0xF3364             # (staff thing): the monthly wage, bank message 12
+DISMISS_FRAGMENT, DISMISS_STOP = 0xF3518, 0xF3568   # the charge of the dismissal routine 0xf33ec, up to its effect call 0xe66b0
+WAGE_BASE_WAGE, WAGE_PAY_MULTIPLIER = 748, 832      # balance +748 + 16 * grade, +832 + 4 * type index
+WAGE_STAT = 0x20000 - 2064       # park +0x1f7f0: the staff wages statistic, raised by the wage
+WAGE_ALLOWED = [(WAGE_MONTH, 0xF33EC), (0xF46BC, 0xF4780), (0x108424, 0x108480), (0x1082B4, 0x108310), (0xCBFDC, 0xCC084)]
+DISMISS_ALLOWED = [(DISMISS_FRAGMENT, 0xF356C), (0xF46BC, 0xF4780), (0x108424, 0x108480), (0x1082B4, 0x108310), (0xCBFDC, 0xCC084)]
+WAGE_STATE = type('WageState', (), {})()
+
+
+def wage_stubs(target: Target) -> dict:
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+    return {ASSERT: assertion}
+
+
+def wage_setup(sb: Sandbox, x: dict):
+    """A game with a bank thing and a park thing (as train_binary), the settings tables of the wage and one staff thing."""
+    game = sb.alloc(0x1E0000)
+    for slot in TRAIN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', game)
+    things = toc_pointer(sb, POINTS_THINGS)
+    bank = sb.struct(512, {12: ('i', x['balance']), 276: ('i', 1 if x['active'] else 0)})
+    park = sb.struct(ARRIVAL_PARK_SIZE)
+    sb.write(things + 20 * TRAIN_BANK_ID, 'I', bank)
+    sb.write(things + 20 * TRAIN_PARK_ID, 'I', park)
+    sb.write(game + 0x1E0000 - 22746, 'H', TRAIN_BANK_ID)
+    sb.write(game + 0x1E0000 - 22752, 'H', TRAIN_PARK_ID)
+    sb.write(game + 0x1E0000 - 22772, 'I', 1)
+    settings = toc_pointer(sb, TRAIN_SETTINGS)
+    for grade, wage in enumerate(x['base_wages']):
+        sb.write(settings + WAGE_BASE_WAGE + 16 * grade, 'i', wage)
+    for role, multiplier in enumerate(x['multipliers']):
+        sb.write(settings + WAGE_PAY_MULTIPLIER + 4 * role, 'i', multiplier)
+    staff = sb.struct(536, {0: ('H', TRAIN_FIRST_STAFF_ID), 2: ('B', TRAIN_ROLE_CLASS[x['role']]), 484: ('i', x['grade'])})
+    return game, bank, park, staff
+
+
+def wage_result(sb: Sandbox, x: dict, bank: int, park: int, log) -> dict:
+    if any(entry[0] == 'assert' and entry[1] == 0 for entry in log):
+        raise AssertionError('an assertion failed while charging a wage')
+    return {'balance': sb.read(bank + 12, 'i') - x['balance'], 'profit': -sb.read(bank + 292, 'i'),
+            'month': sb.read(park + 0x20000 - 2656, 'i'), 'wages': sb.read(park + WAGE_STAT, 'i')}
+
+
+def wage_month_binary(sb: Sandbox, x: dict, log) -> dict:
+    game, bank, park, staff = wage_setup(sb, x)
+    sb.call(WAGE_MONTH, {3: staff})
+    return wage_result(sb, x, bank, park, log)
+
+
+def dismiss_binary(sb: Sandbox, x: dict, log) -> dict:
+    game, bank, park, staff = wage_setup(sb, x)
+    sb.call(DISMISS_FRAGMENT, {29: toc_pointer(sb, TRAIN_GAME_SLOTS[0]), 31: staff}, stop=DISMISS_STOP)   # r29: the game variable, r31: the staff thing
+    return wage_result(sb, x, bank, park, log)
+
+
+def wage_value(x: dict, wrong_type: bool = False, wrong_grade: bool = False) -> int:
+    """0xf46bc: PayMultiplier[type index] * BaseWage[grade], a 32-bit product."""
+    role = (x['role'] + 1) % 5 if wrong_type else x['role']
+    grade = (x['grade'] + 1) % 5 if wrong_grade else x['grade']
+    return s32(x['multipliers'][role] * x['base_wages'][grade])
+
+
+def wage_reading(x: dict, **variant) -> dict:
+    """The charge as read: the bank balance and the year profit fall by the wage and the two park statistics rise by it, when the bank's flag +276 is set;
+    with the flag clear 0xcbfdc does nothing, but the wages statistic (+0x1f7f0) is raised either way."""
+    wage = wage_value(x, **variant)
+    if not x['active']:
+        return {'balance': 0, 'profit': 0, 'month': 0, 'wages': wage}
+    return {'balance': -wage, 'profit': wage, 'month': wage, 'wages': wage}
+
+
+def wage_month_plan(x: dict) -> dict:
+    """ECONOMY.md and ParkStaff (ECON-043): the monthly wage is BaseWage[grade] x PayMultiplier[type] and is paid at the month's end: the balance and the
+    year profit fall by it and it is booked as a staff cost (the month's costs and the staff total)."""
+    return wage_reading(x)
+
+
+def dismiss_free(x: dict) -> dict:
+    """The rule before F28 (ParkEconomy.Fire): a dismissal is free."""
+    return {'balance': 0, 'profit': 0, 'month': 0, 'wages': 0}
+
+
+def dismiss_plan(x: dict) -> dict:
+    """The corrected plan (ECONOMY.md, ECON-012): the routine reading, the wage is charged once more when a staff member is dismissed."""
+    return wage_reading(x)
+
+
+def wage_request(function: str):
+    def request(x: dict) -> dict:
+        return {'fn': function, 'role': x['role'], 'grade': x['grade'], 'multipliers': x['multipliers'], 'base_wages': x['base_wages'],
+                'balance': x['balance'], 'active': x['active']}
+    return request
+
+
+def wage_csharp_result(x: dict, answer: dict) -> dict:
+    """The bank flag has no C# counterpart (ECON-051): an inactive bank is not compared, and C# books no park statistics (None)."""
+    if not x['active']:
+        return {'balance': None, 'profit': None, 'month': None, 'wages': None}
+    return {'balance': answer['balance'], 'profit': answer['profit'], 'month': None, 'wages': None}
+
+
+def wage_equal(original: dict, other: dict) -> bool:
+    return all(value is None or original[key] == value for key, value in other.items())
+
+
+def wage_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'role': rng.randrange(5), 'grade': rng.choice([0, 1, 2, 3, 4, rng.randrange(5)]),
+             'multipliers': [rng.choice([1, 2, 3, 5, 7, rng.randrange(0, 40)]) for _ in range(5)],
+             'base_wages': [rng.choice([50, 100, 200, 400, 800, rng.randrange(0, 5000)]) for _ in range(5)],
+             'balance': rng.choice([1_000_000, 50_000, 0, 123, -5000, rng.randrange(-10 ** 6, 10 ** 6)]), 'active': rng.random() < 0.9}
+        x.update(kw)
+        return x
+    base = dict(role=0, grade=0, multipliers=[2, 3, 4, 5, 6], base_wages=[500, 600, 700, 800, 900], balance=1_000_000, active=True)
+    edges = [make(**base),                                          # a grade-0 handyman: 2 x 500
+             make(**{**base, 'role': 1, 'grade': 2}), make(**{**base, 'role': 4, 'grade': 4}), make(**{**base, 'role': 3, 'grade': 1}),
+             make(**{**base, 'role': 2, 'grade': 3}),
+             make(**{**base, 'active': False}),                     # the debit does nothing; the wages statistic still rises
+             make(**{**base, 'balance': 100}),                      # more than the balance: the balance goes negative (no check)
+             make(**{**base, 'balance': 0}),
+             make(**{**base, 'multipliers': [0] * 5}), make(**{**base, 'base_wages': [0] * 5}),
+             make(**{**base, 'multipliers': [65536] * 5, 'base_wages': [65536] * 5})]   # the 32-bit product wraps to 0
+    return edges + [make() for _ in range(n)]
+
+
+WAGE_MONTH_TARGET = Target('staff-wage-month', 'Monthly staff wage 0xf3364 (bank message 12)', 'ECONOMY.md / ECON-043',
+                           WAGE_MONTH, WAGE_ALLOWED, wage_stubs, wage_month_binary, wage_month_plan, wage_inputs, equal=wage_equal,
+                           alternatives={'routine-reading': wage_reading},
+                           csharp=('staff_wage_month', wage_request('staff_wage_month'), wage_csharp_result),
+                           notes=['C# hook: bridge function "staff_wage_month" (ParkEconomy.EndMonth on a one-employee park: the balance and the year profit; the '
+                                  'park statistics have no C# counterpart and the bank flag is not compared, ECON-051).',
+                                  'Executed: 0xf3364, the wage 0xf46bc, the game lookups 0x108424 / 0x1082b4 and the bank debit 0xcbfdc with its statistics. '
+                                  'Stub: the assertion 0xb678 (a zero condition fails the run).',
+                                  'Domain: grades 0..4 (the tables have five entries).'])
+DISMISS_TARGET = Target('staff-dismiss-charge', 'Dismissal charge (tail of 0xf33ec from 0xf3518)', 'ECONOMY.md / ECON-012, UI-MAP dismissal',
+                        DISMISS_FRAGMENT, DISMISS_ALLOWED, wage_stubs, dismiss_binary, dismiss_plan, wage_inputs, equal=wage_equal,
+                        alternatives={'plan-free': dismiss_free, 'routine-reading': wage_reading},
+                        csharp=('staff_dismiss', wage_request('staff_dismiss'), wage_csharp_result),
+                        notes=['C# hook: bridge function "staff_dismiss" (ParkEconomy.Fire on a one-employee park: the balance and the year profit).',
+                               'Executed: the fragment 0xf3518..0xf3568 of the dismissal routine (the wage 0xf46bc, the bank debit 0xcbfdc, the wages statistic '
+                               '+0x1f7f0); the run ends before the effect call 0xe66b0 and the removal of the thing 0xfad64. The first part of 0xf33ec (the '
+                               'commands it queues) is not executed. "plan-free" is the rule before F28: dismissing is free.'])
+
+
+# ============================================================================== (o) PARK: the park rating 0xc7b24 and the park value 0xc1d4c (F29)
+# The thing list (list header at TOC -26704, thing array at TOC -30140, next ids through 0x1050a4) holds every thing of the park; the class byte +2 is 1
+# for a guest, 3 for an object (a ride, shop, sideshow, feature or add-on) and 4..8 for staff (4 mechanic, 5 handyman, 6 entertainer, 7 guard, 8
+# researcher), the staff byte +3 is 0 for a staff member that is not being removed. An object's type record (0x118018) carries Info.WhichUIType at
+# +1960 (0 ride, 1 shop, 2 sideshow, 3 feature, 4 not shown) and the upgrade level is the byte +76 of the thing.
+RATING = 0xC7B24                 # (this) -> the park rating: eleven capped counts added
+RATING_END_SLOTS = (-20404, -20336, -20300)   # TOC slots -> the u16 id that ends a list walk (zero in the file): objects, staff, guests
+RATING_CELLS_SLOT = -27300       # TOC slot -> variable holding the map cell array (game + 728), read by the guest's cell lookup 0xe6c6c
+RATING_TYPE_ID = 0x4400          # object type ids: RATING_TYPE_ID + Info.WhichUIType
+RATING_STAFF_CLASSES = (5, 4, 6, 7, 8)   # StaffType order: handyman, mechanic, entertainer, guard, researcher
+RATING_GUEST_TYPES = (0, 1, 3, 9, 10)    # the cell types the census counts (predicates 0x85258, 0x85190, 0x851ac, 0x851d0, 0x851ec)
+RATING_OTHER_TYPES = (2, 4, 5, 6, 7, 8, 11, 12, 30)
+RATING_STATE = type('RatingState', (), {})()
+RATING_ALLOWED = [(0xC7B24, 0xC8664), (0xC5864, 0xC5968), (0xC4064, 0xC41A4), (0xC3684, 0xC3758), (0x10507C, 0x105110), (0x10A9A4, 0x10A9BC),
+                  (0x10A9B0, 0x10A9BC), (0xFA9A4, 0xFA9B0), (0xE6C6C, 0xE6D20), (0x85190, 0x85294)]
+
+
+def rating_stubs(target: Target) -> dict:
+    state = RATING_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry:
+            raise AssertionError('0x118018 called without the registry')
+        m.gpr[3] = state.records[m.gpr[4] >> 16]
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+    return {TYPE_RECORD_LOOKUP: lookup, ASSERT: assertion}
+
+
+def thing_list_setup(sb: Sandbox, things: list[dict], fields) -> list[int]:
+    """Builds the global thing list in memory (header, thing array, next-id nodes); `fields(index, thing)` gives the thing struct's fields."""
+    table = toc_pointer(sb, POINTS_THINGS)
+    ids = [1 + n for n in range(len(things))]
+    addresses = []
+    for n, thing in enumerate(things):
+        following = ids[n + 1] if n + 1 < len(ids) else 0
+        node = sb.struct(16, {4: ('I', following)})
+        address = sb.struct(128, {0: ('H', ids[n]), **fields(n, thing)})
+        sb.write(table + 20 * ids[n], 'I', address)
+        sb.write(table + 20 * ids[n] + 8, 'I', node)
+        addresses.append(address)
+    header = sb.struct(16, {4: ('I', ids[0] if ids else 0)})
+    sb.write(toc_pointer(sb, TRAIN_LIST_HEADER), 'I', header)
+    return addresses
+
+
+def rating_binary(sb: Sandbox, x: dict, log) -> int:
+    state = RATING_STATE
+    for slot in RATING_END_SLOTS:
+        if sb.image.memory.u16(toc_pointer(sb, slot)) != 0:
+            raise AssertionError(f'the u16 behind TOC {slot} is not zero in the file')
+    game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', game)
+    cells = game + 728
+    sb.write(toc_pointer(sb, RATING_CELLS_SLOT), 'I', cells)
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    state.records = {RATING_TYPE_ID + ui: sb.struct(2048, {1960: ('i', ui)}) for ui in range(6)}
+    guests_so_far = [0]
+
+    def fields(n: int, thing: dict) -> dict:
+        cls = thing['cls']
+        if cls == 1:
+            index = guests_so_far[0]
+            guests_so_far[0] += 1
+            kind = rng_choice_type(thing, index)
+            sb.write(cells + 68 * (index % 128) + 8, 'I', kind)         # the guest stands at (index, 0): cell id index + 1
+            return {2: ('B', 1), 4: ('B', index % 128), 6: ('B', 0)}
+        if cls == 3:
+            return {2: ('B', 3), 14: ('H', RATING_TYPE_ID + thing['ui']), 76: ('B', thing['level'])}
+        return {2: ('B', cls), 3: ('B', thing.get('flag3', 0))}
+    thing_list_setup(sb, x['things'], fields)
+    r = sb.call(RATING, {3: sb.struct(16)})
+    if any(kind == 'assert' and value == 0 for kind, value in log):
+        raise AssertionError('an assertion failed (a ThingArray entry is not in use)')
+    return s32(r.r3)
+
+
+def rng_choice_type(thing: dict, index: int) -> int:
+    """The type word of the cell a guest stands on: one of the counted cell types for a counted guest, else another type (chosen from the guest's own key)."""
+    pool = RATING_GUEST_TYPES if thing['counted'] else RATING_OTHER_TYPES
+    return pool[thing.get('cell', 0) % len(pool)]
+
+
+def rating_count(x: dict, predicate) -> int:
+    return sum(1 for thing in x['things'] if predicate(thing))
+
+
+def rating_reading(x: dict, **variant) -> int:
+    """0xc7b24 as read: eleven terms added, each a count capped by a literal. Guests: the things of class 1 standing on a cell of type 0, 1, 3, 9 or 10
+    (the census 0xc3684: the same predicate as the inline count; at 1,000 the count is cut), times 20 / 1000, truncated. Objects (class 3) by the
+    type's Info.WhichUIType: rides (0) 3 / 2 each up to 20, shops (1) 2 each up to 10, sideshows (2) 2 each up to 10, features (3) 1 each up to 10, and
+    rides whose upgrade level +76 is at least 2, 1 each up to 10. Staff of class 5, 4, 6, 7 and 8 with the byte +3 clear, 1 each up to 4 per class.
+    The sum is not normalised. The keyword flags build the variants of the sharpness test."""
+    census = rating_count(x, lambda t: t['cls'] == 1 and (t['counted'] if variant.get('census', True) else t['in_park']))
+    cap_visitors = variant.get('cap_visitors', 1000)
+    visitors = min(census, cap_visitors) * 20 // 1000
+    objects = [t for t in x['things'] if t['cls'] == 3]
+    uis = variant.get('ui_of', lambda t: t['ui'])
+    rides = sum(1 for t in objects if uis(t) == 0)
+    shops, sideshows, features = (sum(1 for t in objects if uis(t) == ui) for ui in (1, 2, 3))
+    upgraded = sum(1 for t in objects if uis(t) == 0 and t['level'] >= variant.get('upgraded_level', 2))
+    total = visitors + min(rides * 3 // 2, 20) + min(shops * 2, 10) + min(sideshows * 2, 10) + min(features, 10) + min(upgraded, 10)
+    for cls in RATING_STAFF_CLASSES:
+        total += min(sum(1 for t in x['things'] if t['cls'] == cls and (not t['flag3'] or not variant.get('flag3', True))), variant.get('staff_cap', 4))
+    return total
+
+
+def rating_before(x: dict) -> int:
+    """The rule before F29 (ParkEconomy.ParkRating): guests in the park by state (not the census), the object's directory (rides, shops, sideshows,
+    features) instead of Info.WhichUIType, and every hired staff member whatever its byte +3."""
+    in_park = rating_count(x, lambda t: t['cls'] == 1 and t['in_park'])
+    objects = [t for t in x['things'] if t['cls'] == 3]
+    count = lambda directory: sum(1 for t in objects if t['dir'] == directory)
+    total = min(in_park, 1000) * 20 // 1000 + min(count('ride') * 3 // 2, 20) + min(count('shop') * 2, 10) + min(count('sideshow') * 2, 10)
+    total += min(count('feature'), 10) + min(sum(1 for t in objects if t['dir'] == 'ride' and t['level'] >= 2), 10)
+    for cls in RATING_STAFF_CLASSES:
+        total += min(sum(1 for t in x['things'] if t['cls'] == cls), 4)
+    return total
+
+
+def rating_request(x: dict) -> dict:
+    return {'fn': 'park_rating', 'in_park': rating_count(x, lambda t: t['cls'] == 1 and t['in_park']),
+            'objects': [{'ui': t['ui'], 'dir': t['dir'], 'level': t['level']} for t in x['things'] if t['cls'] == 3],
+            'staff': [sum(1 for t in x['things'] if t['cls'] == cls) for cls in RATING_STAFF_CLASSES]}
+
+
+def rating_result(x: dict, answer) -> int:
+    return answer
+
+
+def rating_inputs(rng: random.Random, n: int) -> list:
+    shipped = [(0, 'ride'), (0, 'ride'), (1, 'shop'), (2, 'sideshow'), (3, 'feature'), (3, 'feature'), (0, 'upgrade'), (4, 'fixed')]
+
+    def guest(**kw) -> dict:
+        counted = rng.random() < 0.8
+        t = {'cls': 1, 'counted': counted, 'in_park': counted if rng.random() < 0.9 else not counted, 'cell': rng.randrange(1000)}
+        t.update(kw)
+        return t
+
+    def obj(**kw) -> dict:
+        ui, directory = rng.choice(shipped)
+        t = {'cls': 3, 'ui': ui, 'dir': directory, 'level': rng.choice([0, 0, 0, 1, 2, 2, 3, rng.randrange(256)])}
+        t.update(kw)
+        return t
+
+    def staff(**kw) -> dict:
+        t = {'cls': rng.choice(RATING_STAFF_CLASSES), 'flag3': 0 if rng.random() < 0.92 else rng.choice([1, 2, 255])}
+        t.update(kw)
+        return t
+
+    def other() -> dict:
+        return {'cls': rng.choice([0, 2, 9, 12, 255])}
+
+    def make(**kw) -> dict:
+        things = ([guest() for _ in range(rng.choice([0, 0, 1, 5, 12, 52, rng.randrange(0, 20)]))]
+                  + [obj() for _ in range(rng.choice([0, 1, 2, 4, 8, rng.randrange(0, 24)]))]
+                  + [staff() for _ in range(rng.choice([0, 1, 3, 5, 8, rng.randrange(0, 16)]))]
+                  + [other() for _ in range(rng.choice([0, 0, 3]))])
+        rng.shuffle(things)
+        x = {'things': things}
+        x.update(kw)
+        return x
+    edges = [make(things=[]),
+             make(things=[obj(ui=0, dir='ride', level=0)]), make(things=[obj(ui=0, dir='ride', level=2)]),
+             make(things=[obj(ui=1, dir='shop', level=0)] * 5), make(things=[obj(ui=2, dir='sideshow', level=0)] * 5),
+             make(things=[obj(ui=3, dir='feature', level=0)] * 11),
+             make(things=[obj(ui=0, dir='ride', level=2)] * 14),                       # 21 -> 20 rides, 10 upgraded
+             make(things=[obj(ui=0, dir='upgrade', level=0)] * 3),                     # add-on objects have the ride UI type
+             make(things=[obj(ui=4, dir='fixed', level=0)] * 3),                       # fixed items have none of the counted types
+             make(things=[staff(cls=cls, flag3=0) for cls in RATING_STAFF_CLASSES for _ in range(5)]),
+             make(things=[staff(cls=5, flag3=1), staff(cls=5, flag3=0)]),              # a staff member with the byte +3 set does not count
+             make(things=[guest(counted=True, in_park=True)] * 10), make(things=[guest(counted=False, in_park=True)] * 10),
+             make(things=[guest(counted=True, in_park=False)] * 10),                   # standing on a counted cell, not in the park by state
+             make(things=[guest(counted=True, in_park=False, cell=n) for n in range(100)]),     # 100 counted guests: 2 points by the census, 0 by state
+             make(things=[guest(counted=False, in_park=True, cell=n) for n in range(100)]),
+             make(things=[guest(counted=True, in_park=True, cell=n) for n in range(999)]),
+             make(things=[guest(counted=True, in_park=True, cell=n) for n in range(1000)]),
+             make(things=[guest(counted=True, in_park=True, cell=n) for n in range(1100)]
+                  + [obj(ui=0, dir='ride', level=3)] * 20 + [obj(ui=1, dir='shop', level=0)] * 6 + [obj(ui=2, dir='sideshow', level=0)] * 6
+                  + [obj(ui=3, dir='feature', level=0)] * 12 + [staff(cls=cls, flag3=0) for cls in RATING_STAFF_CLASSES for _ in range(5)])]
+    return edges + [make() for _ in range(n)]
+
+
+RATING_TARGET = Target('park-rating', 'Park rating 0xc7b24', 'ECONOMY.md "Park rating" / ECON-027', RATING, RATING_ALLOWED, rating_stubs, rating_binary,
+                       rating_reading, rating_inputs, alternatives={'plan-before': rating_before},
+                       csharp=('park_rating', rating_request, rating_result), budget=3_000_000,
+                       notes=['C# hook: bridge function "park_rating" (ParkEconomy.ParkRating on a synthetic economy: one object per input object with its '
+                              'Info.WhichUIType and directory kind, the staff counts, and the guests in the park by state). The census (cell types) and the staff '
+                              'byte +3 have no C# counterpart (ECON-027): the C# mismatches are exactly the inputs with a guest whose cell type and in-park '
+                              'state disagree or a staff member with the byte set (test_park_rating_csharp_remainder).',
+                              'Executed: 0xc7b24 with its recount helpers 0xc5864 (objects), 0xc4064 (staff), 0xc3684 (the census), the list walkers 0x10507c / '
+                              '0x1050a4 / 0xfa9a4, the game getters, the guest cell test 0xe6c6c and the cell type predicates 0x85190..0x85258 over a real cell array. '
+                              'Stubs: 0x118018 type record (Info.WhichUIType at +1960) and the assertion 0xb678. The ends of the list walks (TOC -20404, -20336, '
+                              '-20300) are checked to be zero in the file.'])
+
+
+# ---- the park value 0xc1d4c: points per map cell, plus the cost of every object scaled by its state of repair
+VALUE_CELL, VALUE_CELL_STOP = 0xC1DD4, 0xC1E84      # the body of the 128 x 128 cell loop for one cell (r21 = the cell, r4 = the mask 0x40)
+VALUE_THING, VALUE_THING_STOP = 0xC1EF0, 0xC1F68    # the body of the thing loop for one thing (r27 = the thing)
+VALUE_ENTRY = 0xC1D4C            # (game, maximum age): the whole value, cached by 0xc9020
+VALUE_LINK_NULL_SLOT = -21032    # TOC slot -> the u16 "no link" id compared with a record's link
+VALUE_TYPE_ID = 0x4410
+VALUE_MAGIC = 0x51EB851F         # r23: the multiplier of the signed divide by 100
+VALUE_LINKED_TYPES = (11, 13, 16, 18, 25)   # record types that make a cell worth 50 (0x8b224)
+VALUE_FOLLOW_TYPES = (12, 17)               # record types whose link (+16) is followed first (0x8b2a0)
+VALUE_STATE = type('ValueState', (), {})()
+VALUE_ALLOWED = [(VALUE_CELL, 0xC1E88), (0x84A74, 0x84A98), (0x85174, 0x85294), (0x85418, 0x854A4), (0xCD324, 0xCD36C), (0x8B2A0, 0x8B2C4),
+                 (0x8B224, 0x8B260), (0x10A9B0, 0x10A9BC), (VALUE_THING, 0xC1F6C), (0xDFE20, 0xDFE34)]
+
+
+def value_stubs(target: Target) -> dict:
+    state = VALUE_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != VALUE_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the thing type id')
+        m.gpr[3] = state.record
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+    return {TYPE_RECORD_LOOKUP: lookup, ASSERT: assertion}
+
+
+def value_game(sb: Sandbox):
+    game = sb.alloc(0x1E0000)
+    for slot in TRAIN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', game)
+    sb.write(toc_pointer(sb, RATING_CELLS_SLOT), 'I', game + 728)
+    return game, game + 728
+
+
+def value_binary(sb: Sandbox, x: dict, log) -> int:
+    state = VALUE_STATE
+    game, cells = value_game(sb)
+    if x['kind'] == 'cell':
+        null_link = sb.read(toc_pointer(sb, VALUE_LINK_NULL_SLOT), 'H')
+        cell = cells + 68 * 5
+        sb.write(cell + 0, 'H', x['id'])
+        sb.write(cell + 8, 'I', x['type'])
+        sb.write(cell + 14, 'H', x['flags'])
+        records = cells + 0x110000
+        sb.write(records + 40 * (x['id'] - 1) + 8, 'I', x['rec_type'])
+        sb.write(records + 40 * (x['id'] - 1) + 16, 'H', null_link if x['link'] is None else x['link'])
+        if x['link'] is not None:
+            sb.write(records + 40 * (x['link'] - 1) + 8, 'I', x['link_type'])
+        return s32(sb.call(VALUE_CELL, {21: cell, 4: 0x40, 26: 0}, stop=VALUE_CELL_STOP).gpr[26])
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    fields = {440 + 64 * level: ('i', cost) for level, cost in enumerate(x['costs'])}
+    state.record = sb.struct(20000, fields)
+    thing = sb.struct(512, {14: ('H', VALUE_TYPE_ID), 64: ('f', x['gauge']), 76: ('B', x['level']), 408: ('i', x['state'])})
+    r = sb.call(VALUE_THING, {27: thing, 25: 0, 26: 0, 30: state.registry, 23: VALUE_MAGIC}, stop=VALUE_THING_STOP)
+    return s32(r.gpr[25])
+
+
+def value_cell_points(x: dict, mask: int = 0x40, weights: tuple = (1, 3, 5, 1, 1, 2, 50), follow: bool = True) -> int:
+    """The cell loop's body: a cell whose flags +14 have the bit 0x40 (not owned land) adds nothing; any other adds 1 for type 2, 3 for type 1, 5 for
+    type 3 or 9, 1 more for type 9, 1 for type 10 (the predicate 0x85208 never holds: its 10 points are not given), 2 for type 0, and 50 when the cell's
+    record (id +0 -> the 40-byte record, which for a type 12 or 17 record is replaced by the one its link +16 names) has a type in 11, 13, 16, 18 or 25.
+    The keyword arguments build the variants of the sharpness test."""
+    if x['flags'] & mask:
+        return 0
+    t = x['type']
+    w2, w1, w39, w9, w10, w0, wlink = weights
+    points = (w2 if t == 2 else 0) + (w1 if t == 1 else 0) + (w39 if t in (3, 9) else 0) + (w9 if t == 9 else 0) + (w10 if t == 10 else 0) + (w0 if t == 0 else 0)
+    if follow and x['rec_type'] in VALUE_FOLLOW_TYPES:
+        linked = x['link'] is not None and x['link_type'] in VALUE_LINKED_TYPES
+    else:
+        linked = x['rec_type'] in VALUE_LINKED_TYPES
+    return points + (wlink if linked else 0)
+
+
+def value_thing_points(x: dict, scale: bool = True, skip_condemned: bool = True, sum_levels: bool = True, byte: bool = True) -> int:
+    """The thing loop's body: a thing in state 4 (condemned) adds nothing; any other adds the costs of its levels 0..level (the type record's words
+    +440 + 64 * level, a 32-bit sum) times the truncated state of repair taken as a byte (a 32-bit product), divided by 100 toward zero."""
+    if skip_condemned and s32(x['state']) == 4:
+        return 0
+    total = 0
+    for level in (range(x['level'] + 1) if sum_levels else [x['level']]):
+        total = s32(total + (x['costs'][level] if level < len(x['costs']) else 0))
+    gauge = fctiwz(x['gauge'])
+    return trunc_div(s32(total * ((gauge & 0xFF) if byte else gauge) if scale else total * 100), 100)
+
+
+def value_reading(x: dict) -> int:
+    return value_cell_points(x) if x['kind'] == 'cell' else value_thing_points(x)
+
+
+def value_before(x: dict) -> int:
+    """The rule before F29 (ParkEconomy.ParkValue): the sum of the object's scrap values (the costs of its levels up to the current one times the scrap percent of its
+    age); there is no map term, no state-of-repair factor and condemned objects count."""
+    if x['kind'] == 'cell':
+        return 0
+    basis = sum(x['costs'][level] if level < len(x['costs']) else 0 for level in range(x['level'] + 1))
+    return basis * x['scrap'] // 100
+
+
+def value_request(x: dict) -> dict:
+    if x['kind'] == 'cell':
+        return {'fn': 'park_value_thing', 'skip': True}
+    return {'fn': 'park_value_thing', 'skip': False, 'state': s32(x['state']), 'level': x['level'], 'costs': x['costs'], 'gauge_bits': bits(x['gauge'])}
+
+
+def value_result(x: dict, answer):
+    return None if x['kind'] == 'cell' else answer
+
+
+def value_equal(original, other) -> bool:
+    return other is None or original == other
+
+
+def value_inputs(rng: random.Random, n: int) -> list:
+    def cell(**kw) -> dict:
+        x = {'kind': 'cell', 'type': rng.choice([0, 0, 1, 2, 3, 9, 10, 4, 7, 12, 30, rng.randrange(0, 40)]), 'flags': rng.choice([0, 0, 0x20, 0x40, 0x60, 0x80, rng.getrandbits(16)]),
+             'id': rng.choice([1, 2, 3, 7, rng.randrange(1, 50)]), 'rec_type': rng.choice([0, 11, 12, 13, 16, 17, 18, 25, 1, rng.randrange(0, 30)]),
+             'link': rng.choice([None, None, 4, 9, rng.randrange(1, 50)]), 'link_type': rng.choice([0, 11, 13, 16, 18, 25, 12, rng.randrange(0, 30)])}
+        x.update(kw)
+        if x['link'] == x['id']:
+            x['link'] = x['id'] + 1
+        return x
+
+    def thing(**kw) -> dict:
+        x = {'kind': 'thing', 'state': rng.choice([0, 0, 0, 1, 2, 3, 4, rng.randrange(-2, 7)]), 'level': rng.choice([0, 0, 1, 2, 2, 3, rng.randrange(0, 256)]),
+             'costs': [rng.choice([0, 100, 400, 3000, 12000, rng.randrange(0, 100000), rng.randrange(-5000, 5000)]) for _ in range(3)],
+             'gauge': rng.choice([100.0, 100.0, 99.5, 50.0, 0.0, 0.5, 25.0, random_float(rng, 0, 100), 255.0, 256.5, -3.0, 300.0, math.nan]),
+             'scrap': rng.choice([100, 75, 50, 25, 0])}
+        x.update(kw)
+        return x
+    edges = [cell(type=0, flags=0, rec_type=0, link=None), cell(type=0, flags=0x40, rec_type=0, link=None),      # an owned and an unowned empty cell
+             cell(type=1, flags=0, rec_type=0, link=None), cell(type=2, flags=0, rec_type=0, link=None), cell(type=3, flags=0, rec_type=0, link=None),
+             cell(type=9, flags=0, rec_type=0, link=None), cell(type=10, flags=0, rec_type=0, link=None), cell(type=7, flags=0, rec_type=0, link=None),
+             cell(type=0, flags=0, rec_type=11, link=None), cell(type=0, flags=0, rec_type=12, link=4, link_type=16),
+             cell(type=0, flags=0, rec_type=12, link=None, link_type=16), cell(type=0, flags=0, rec_type=12, link=4, link_type=12),
+             cell(type=0, flags=0, rec_type=17, link=9, link_type=25), cell(type=3, flags=0, rec_type=18, link=None),
+             thing(state=0, level=0, costs=[1000, 0, 0], gauge=100.0), thing(state=0, level=2, costs=[1000, 400, 300], gauge=100.0),
+             thing(state=0, level=0, costs=[1000, 0, 0], gauge=25.0), thing(state=4, level=0, costs=[1000, 0, 0], gauge=100.0),
+             thing(state=1, level=1, costs=[1000, 500, 0], gauge=60.0), thing(state=0, level=0, costs=[1000, 0, 0], gauge=0.9),
+             thing(state=0, level=0, costs=[1000, 0, 0], gauge=256.0), thing(state=0, level=0, costs=[1000, 0, 0], gauge=math.nan),
+             thing(state=0, level=0, costs=[-1000, 0, 0], gauge=50.0), thing(state=0, level=0, costs=[2 ** 31 - 1, 0, 0], gauge=100.0),
+             thing(state=0, level=255, costs=[100, 100, 100], gauge=100.0), thing(state=3, level=1, costs=[100, 100, 100], gauge=100.0)]
+    return edges + [(cell() if rng.random() < 0.5 else thing()) for _ in range(n)]
+
+
+VALUE_TARGET = Target('park-value', 'Park value 0xc1d4c (cell and thing loop bodies)', 'ECONOMY.md "Park value" / ECON-026', VALUE_CELL, VALUE_ALLOWED,
+                      value_stubs, value_binary, value_reading, value_inputs, equal=value_equal, alternatives={'plan-scrap-sum': value_before},
+                      csharp=('park_value_thing', value_request, value_result),
+                      notes=['C# hook: bridge function "park_value_thing" (ParkValueRules.ObjectValue and CountsForValue, which ParkEconomy.ParkValue applies); '
+                             'the cell term has no C# counterpart (the cell map has no ownership, PATH-007) and is not compared.',
+                             'Executed: the body of the cell loop for one cell (the mask test 0x84a74, the predicates 0x85174..0x85418 with the cell record helpers '
+                             '0xcd324 / 0x8b2a0 / 0x8b224) and the body of the thing loop for one thing (the state test 0xdfe20, the level costs, the state-of-repair '
+                             'scaling). The loops themselves (128 x 128 cells, then the thing list, then the cache 0xc9020) are executed once on a whole map in '
+                             'test_park_value_whole_function, because 16,384 iterations per input would take minutes.',
+                             'Stubs: 0x118018 type record (the costs at +440 + 64 * level), 0xb678. The "no link" id behind TOC -21032 is read from the file.'])
+
+
+VALUE_WHOLE_ALLOWED = [(VALUE_ENTRY, 0xC1FB4), (0xC9018, 0xC904C), (0x121098, 0x1210B0), (0x1210F8, 0x12113C), (0x10A9A4, 0x10A9BC)] + VALUE_ALLOWED[1:]
+VALUE_FIRST = 0x1E0000 - 22714   # game + 0x1da746: the first object of the chain (u16); the next is the u16 at thing +12
+VALUE_OBJECT_END = -20264        # TOC slot -> the u16 that ends the chain (zero in the file)
+
+
+def value_whole(image: Image, cells: dict, things: list[dict], elapsed: tuple[int, int, int] | None = None, records: dict | None = None) -> tuple[int, int]:
+    """Runs the whole 0xc1d4c once on a map of 128 x 128 cells (all zero: type 0, flags 0) with the given cell fields {(index): {offset: (fmt, value)}} and the
+    given objects, with the value cache invalid, and returns (value, instructions executed). `elapsed` = (valid byte, turn stamp, now) runs the cached path."""
+    target = VALUE_TARGET
+    target.log.clear()
+    sandbox = Sandbox(image, VALUE_WHOLE_ALLOWED, value_stubs(target), budget=6_000_000)
+    sandbox.reset()
+    game, base = value_game(sandbox)
+    if sandbox.image.memory.u16(toc_pointer(sandbox, VALUE_OBJECT_END)) != 0:
+        raise AssertionError('the u16 behind TOC -20264 is not zero in the file')
+    VALUE_STATE.registry = toc_pointer(sandbox, POINTS_REGISTRY)
+    VALUE_STATE.record = sandbox.struct(20000, {440: ('i', 1000), 504: ('i', 500), 568: ('i', 300)})
+    for index, fields in cells.items():
+        for offset, (fmt, value) in fields.items():
+            sandbox.write(base + 68 * index + offset, fmt, value)
+    for number, fields in (records or {}).items():     # the 40-byte records behind the cells: cells + 0x110000 + 40 * (id - 1)
+        for offset, (fmt, value) in fields.items():
+            sandbox.write(base + 0x110000 + 40 * (number - 1) + offset, fmt, value)
+    table = toc_pointer(sandbox, POINTS_THINGS)
+    for n, thing in enumerate(things, start=1):
+        following = n + 1 if n < len(things) else 0
+        address = sandbox.struct(512, {12: ('H', following), 14: ('H', VALUE_TYPE_ID), 64: ('f', thing['gauge']), 76: ('B', thing['level']), 408: ('i', thing['state'])})
+        sandbox.write(table + 20 * n, 'I', address)
+    sandbox.write(game + VALUE_FIRST, 'H', 1 if things else 0)
+    park = sandbox.alloc(0x20000 + 8192)
+    if elapsed is not None:
+        sandbox.write(park + 0x20000 - 3856, 'B', elapsed[0])
+        sandbox.write(park + 0x20000 - 3864, 'I', elapsed[1])
+        sandbox.write(park + 0x20000 - 3860, 'I', 77777)    # a cached value
+        sandbox.write(game + 0x1E0000 - 22772, 'I', elapsed[2])
+    result = sandbox.call(VALUE_ENTRY, {3: park, 4: 0})
+    return s32(result.r3), result.executed
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -5184,7 +6311,8 @@ SPEED_TARGET = Target('clock-speed-scale', 'Speed keys 0x11315c / 0x113184 / 0x1
                              'and the scheduler clock read 0x10e844 down to the stubbed library clock LbTime_GetClock (the chosen raw millisecond).'])
 
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET,
+           MAY_OPEN_TARGET, SET_STATE_TARGET, REPAIR_TARGET, BREAKDOWN_TARGET, WAGE_MONTH_TARGET, DISMISS_TARGET, RATING_TARGET, VALUE_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
            CALENDAR_DATE, CALENDAR_UPDATE_TARGET, CALENDAR_FIRST_TARGET, CADENCE_TARGET, GOLDEN_TARGET,
            CADENCE_FRAMES_TARGET, SPEED_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

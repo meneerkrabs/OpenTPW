@@ -302,26 +302,38 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The original ride update (docs/reverse/RIDE-WEAR.md): every 8 turns each ride runs the wear step, which acts on
-	/// every 64th turn, and then the breakdown check.
+	/// The original ride update (docs/reverse/RIDE-WEAR.md, ORACLE.md F27): every 8 turns each ride that is open and not broken down runs the
+	/// wear step, which acts on every 64th turn, and then the breakdown check.
 	/// </summary>
 	private void UpdateRides( long turn )
 	{
 		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride ).ToList() )
 		{
-			// [APPROX:ECON-023] the ride update skips rides in states 1, 3 and 4 (+0x198) and rides with +0x64 == 0, and the breakdown check skips +0x2e bit 0; OpenTPW maps these only to "a mechanic is at work" — evidence needed: the names of those ride states and flags
-			if ( item.MechanicId != 0 )
+			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
+			// [APPROX:ECON-023] the wear step and the breakdown check do not know relief objects (toilets are not simulated, +0x2E bit 0), and the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does — evidence needed: the callers that set state 2 for an upgrade, what feeds toilets' wear and the script side of VAR_BREAKSTAT
+			var state = ObjectState( item );
+			if ( !RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
 				continue;
 			if ( turn % WearInterval == 0 )
 				Wear( item );
-			// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
-			if ( item.IsBrokenDown || ((int)item.LifeGauge != 0 && (int)item.Repair != 0) )
+			// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken down breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
+			if ( !RideBreakdownRules.BreaksDown( false, 0, (float)item.LifeGauge, (float)item.Repair ) )
 				continue;
-			if ( (int)item.LifeGauge != 0 )
-				item.LifeGauge = Math.Clamp( item.LifeGauge - BreakdownLifeLoss, 0, 100 );
+			item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
 			item.IsBrokenDown = true;
 			Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 		}
+	}
+
+	/// <summary>
+	/// The ride object's state word as far as OpenTPW can tell it (<see cref="RideObjectStates"/>): broken down or condemned (the life gauge
+	/// truncates to a zero byte) when the economy or the ride script reports a breakdown, upgrading while a purchased upgrade is not installed.
+	/// </summary>
+	internal static int ObjectState( ParkObjectState item )
+	{
+		if ( item.IsBrokenDown || item.ScriptBroken )
+			return RideBreakdownRules.GaugeByte( (float)item.LifeGauge ) == 0 ? RideObjectStates.Condemned : RideObjectStates.BrokenDown;
+		return item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 	}
 
 	/// <summary>One original wear step (0x100DEC2C) of a ride whose script reports it running.</summary>
@@ -368,7 +380,8 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		member.AssignedInstanceId = 0;
 		item.MechanicId = 0;
-		if ( item.PendingLevel > item.Level )
+		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
+		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
@@ -376,8 +389,8 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		else
 		{
-			// [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100 and clears the worn flag; it does not restore the life gauge
-			item.Repair = 100;
+			// [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100.0 (the float at TOC -11016, ORACLE F27) and clears the worn flag; it does not restore the life gauge. It also opens the ride (the host reopens the ride on RideRepaired)
+			item.Repair = RideRepair.FullGauge;
 			item.IsBrokenDown = false;
 			Raise( ParkEventKind.RideRepaired, 0, item.Id, item.InfoId );
 		}
@@ -408,8 +421,8 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	private void DispatchMechanics()
 	{
-		var jobs = objects.Values.Where( item => item.MechanicId == 0 && (item.IsBrokenDown || item.PendingLevel > item.Level || (item.Kind == ParkObjectKind.Ride && item.StateOfRepair < WornStateOfRepair)) )
-			.OrderBy( item => item.IsBrokenDown ? 0 : item.PendingLevel > item.Level ? 1 : 2 ).ThenBy( item => item.StateOfRepair ).ThenBy( item => item.Id ).ToList();
+		var jobs = objects.Values.Where( item => item.MechanicId == 0 && JobRank( item ) >= 0 )
+			.OrderBy( JobRank ).ThenBy( item => item.StateOfRepair ).ThenBy( item => item.Id ).ToList();
 		if ( jobs.Count == 0 )
 			return;
 		var role = Settings[StaffType.Mechanic];
@@ -420,7 +433,7 @@ public sealed class ParkEconomy : IParkEconomy
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
 			// [APPROX:ECON-021] the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically) — evidence needed: capture of a repair from arrival to completion
-			int? upgradeDuration = job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
+			int? upgradeDuration = ObjectState( job ) == RideObjectStates.Upgrading && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
 				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
 			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
 			mechanic.BusyTicks = RepairTimer( role.WorkDuration[mechanic.Grade], job.Repair, upgradeDuration ) + 1;
@@ -429,6 +442,19 @@ public sealed class ParkEconomy : IParkEconomy
 			job.MechanicId = mechanic.Id;
 		}
 	}
+
+	/// <summary>
+	/// The mechanic's job for an object, as a dispatch rank (lower first), or -1 for none: an object the economy has broken down, then a purchased
+	/// upgrade, then a worn ride (OpenTPW's own threshold, Advisor.sam). A condemned ride (life gauge 0) is no job.
+	/// </summary>
+	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] the timer starts only for a ride in state 1 (broken down) or 2 (upgrading) or with the maintenance word +96; any other ride, a condemned one (state 4) included, logs and releases the mechanic (ORACLE F19)
+	private static int JobRank( ParkObjectState item ) => ObjectState( item ) switch
+	{
+		RideObjectStates.BrokenDown when item.IsBrokenDown => 0,
+		RideObjectStates.Upgrading => 1,
+		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && item.StateOfRepair < WornStateOfRepair => 2,
+		_ => -1,
+	};
 
 	/// <summary>Each free handyman removes one litter item per <c>HandymanConstsPerGrade[grade].WorkDuration</c> game minutes (<b>approximation</b>).</summary>
 	private void CleanLitter()
@@ -573,19 +599,21 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Park value (UITEXT 163): the sum over all objects of the catalogue costs up to the current level times the level's age
-	/// percentage, which was the scrap value before ORACLE.md F21 — an <b>approximation</b>.
+	/// Park value (UITEXT 163): the object part of the original's <c>0xc1d4c</c> (ORACLE.md F29): per object, unless it is condemned, the costs of its upgrade levels up to the
+	/// current one times its state of repair / 100. The original adds the map's cell points to it (2 per owned empty cell, 3 per path, 5 per queue, ...).
 	/// </summary>
-	// [APPROX:ECON-026] park value = sum of catalogue costs up to the current level times the age percentage (the scrap rule before ORACLE F21), not the sale refund — evidence needed: capture of the park value screen
-	public long ParkValue => objects.Values.Sum( item =>
+	// [BIN:STP-PPC:0x100C1D4C park value] the thing loop adds sum(Upgrades[0..level].CostOfUpgrade) × byte(state of repair) / 100 for every object that is not in state 4; the 128 × 128 cell loop adds 1, 3, 5, 1, 1, 2 and 50 points by cell type (the predicates 0x10085174..0x10085418) for cells without the unowned flag 0x40; both executed by the oracle target park-value
+	// [APPROX:ECON-026] the map's cell points are not added: the cell map has no ownership flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, and the scrap values are no longer part of it — evidence needed: the ownership of the starting park's cells and the original cell types
+	public long ParkValue => objects.Values.Sum( ObjectValue );
+
+	/// <summary>One object's share of the park value (<see cref="ParkValueRules.ObjectValue"/>); condemned objects count for nothing.</summary>
+	private long ObjectValue( ParkObjectState item )
 	{
-		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+		if ( !Catalog.TryGet( item.InfoId, out var info ) || !ParkValueRules.CountsForValue( ObjectState( item ) ) )
 			return 0;
-		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
-		var year = (int)Math.Min( 3, (ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick )) / (365 * ParkCalendar.SecondsPerDay) );
-		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
-		return info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade ) * percent / 100;
-	} );
+		var costs = Enumerable.Range( 0, item.Level + 1 ).Select( level => level < info.Upgrades.Count ? unchecked( (int)info.Upgrades[level].CostOfUpgrade ) : 0 );
+		return ParkValueRules.ObjectValue( costs, (float)item.Repair );
+	}
 
 	public int LitterItems => (int)(LitterScaled / LitterScale);
 
@@ -593,19 +621,20 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Park rating 0–100 (UITEXT 155): a sum of capped counts of guests, attractions and staff. It does
 	/// not use guest happiness, litter or whether an attraction is open.
 	/// </summary>
-	// [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4
+	// [BIN:STP-PPC:0x100C7B24 park rating] min(counted guests, 1000) × 20 / 1000; objects by Info.WhichUIType (type +1960): rides (0) × 3 / 2 up to 20, shops (1) and sideshows (2) × 2 up to 10 each, features (3) up to 10, rides at upgrade level 2 or more up to 10; each of the five staff classes with the thing byte +3 clear up to 4; executed by the oracle target park-rating (ORACLE.md F29)
 	public int ParkRating
 	{
 		get
 		{
+			// [APPROX:ECON-027] the visitor term counts the guests in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 (the census 0xc3684); every hired staff member counts, where the original skips a staff thing whose byte +3 is set — evidence needed: cell-type provenance for the census (ECON-050) and the writers of the staff byte +3
 			var guests = Math.Min( guestStatistics.PeopleInPark, 1000 ) * 20 / 1000;
-			// [APPROX:ECON-027] the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts — evidence needed: the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064
-			int Count( ParkObjectKind kind, int minimumLevel = 0 ) => objects.Values.Count( item => item.Kind == kind && item.Level >= minimumLevel );
-			var attractions = Math.Min( Count( ParkObjectKind.Ride ) * 3 / 2, 20 )
-				+ Math.Min( Count( ParkObjectKind.Shop ) * 2, 10 )
-				+ Math.Min( Count( ParkObjectKind.Sideshow ) * 2, 10 )
-				+ Math.Min( Count( ParkObjectKind.Feature ), 10 )
-				+ Math.Min( Count( ParkObjectKind.Ride, 2 ), 10 );
+			// An object counts by the type's Info.WhichUIType: the shipped add-ons (the upgrades directory) declare 0 and count as rides, fixed items declare 4 and count for nothing.
+			int Count( int uiType, int minimumLevel = 0 ) => objects.Values.Count( item => Catalog.TryGet( item.InfoId, out var info ) && info.RatingType == uiType && item.Level >= minimumLevel );
+			var attractions = Math.Min( Count( 0 ) * 3 / 2, 20 )
+				+ Math.Min( Count( 1 ) * 2, 10 )
+				+ Math.Min( Count( 2 ) * 2, 10 )
+				+ Math.Min( Count( 3 ), 10 )
+				+ Math.Min( Count( 0, 2 ), 10 );
 			var staff = Enum.GetValues<StaffType>().Sum( type => Math.Min( Staff.Members.Count( member => member.Type == type ), 4 ) );
 			return guests + attractions + staff;
 		}
@@ -1004,12 +1033,20 @@ public sealed class ParkEconomy : IParkEconomy
 		return member;
 	}
 
+	/// <summary>
+	/// Dismisses an employee. The original charges one more monthly wage for it (ORACLE.md F28): hiring costs nothing, dismissing costs the
+	/// wage the employee would have been paid at the month's end.
+	/// </summary>
+	// [BIN:STP-PPC:0x100F33EC dismissal] the dismissal routine (the UI's dismiss button, UI-MAP) debits the wage 0xf46bc with Spend 0xcbfdc, as the monthly handler 0xf3364 does, and adds it to the staff wages statistic +0x1F7F0; the bank has no affordability check
 	public void Fire( int staffId )
 	{
 		var member = Staff.Fire( staffId );
 		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) )
 			item.MechanicId = 0;
-		Raise( ParkEventKind.StaffFired, 0, member.Id, (int)member.Type );
+		var wage = Staff.MonthlyWage( member );
+		if ( wage > 0 )
+			Post( LedgerCategory.StaffCosts, wage );
+		Raise( ParkEventKind.StaffFired, wage, member.Id, (int)member.Type );
 	}
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => Staff.SetTrainingBudget( type, monthlyBudget );

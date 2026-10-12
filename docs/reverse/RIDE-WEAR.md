@@ -133,32 +133,39 @@ wear always applies.
 
 ## Breakdown and repair
 
-The ride update `0x100e077c` runs on ticks where `(counter & 7) == 0`. It skips rides in states 1, 3 and 4
-(`ride + 0x198`) and rides with `ride + 0x64 == 0`.
+Updated 2026-10-12: the routines below are executed in the PowerPC oracle (ORACLE.md F27; the targets `ride-breakdown-update`, `ride-set-state`,
+`ride-repair` and `ride-may-open`), no longer only read. Offsets: the object state word `+0x198` (408), the open word `+0x64` (100), the maintenance flag
+`+0x60` (96), the mechanic reservation `+0x5A` (90), the wear gauge `+0x40`, the life gauge `+0x44`, the pending guest `+0x68` (104).
 
-1. It calls the wear step, which acts only on every eighth of these calls, because of its own `& 0x3f` gate.
-2. It checks for a breakdown. A ride breaks down when the truncated state of repair (`+0x40`) is 0, or when a
-   second gauge (`+0x44`) is truncated to 0. Two further conditions apply: bit 0 of `ride + 0x2e` is clear,
-   and the ride is not already broken (statistic 4 is 0). There is no random roll.
-3. If the ride breaks down because repair reached 0 while the gauge is still above 0, the gauge first loses
-   5.0 (clamped to 0–100).
-4. `0x100e09f4` posts an announcement and sets ride statistic 4 to 1. Statistic 4 is the broken-down state.
+The ride update `0x100e077c` runs on ticks where `(counter & 7) == 0`.
 
-The wear step itself sets statistic 8 below 20. Statistic 8 is a worn warning; its reader is not yet found.
+1. A ride in state 3 or 4 is not updated at all. A ride in state 1 skips the next steps (the relief test below still runs), and so does a ride whose open word
+   `+0x64` is 0, which includes every closed ride and state 2.
+2. It calls the wear step, which acts only on every eighth of these calls, because of its own `& 0x3f` gate.
+3. It checks for a breakdown. A ride breaks down when the truncated state of repair (`+0x40`) is 0, or when the second gauge (`+0x44`) is truncated to 0
+   (each taken as a byte). Two further conditions apply: bit 0 of `ride + 0x2e` is clear (a relief object never breaks down), and the ride is not already
+   broken (statistic 4 is 0). There is no random roll.
+4. If the ride breaks down because repair reached 0 while the gauge is still above 0, the gauge first loses 5.0 (clamped to 0–100).
+5. `0x100e09f4` posts an announcement and sets ride statistic 4 to 1. Statistic 4 is the broken-down state (VAR_BREAKSTAT).
+6. A relief object whose state of repair byte is below 25 gets statistic 8 (VAR_WORN) set to 1 (`0x100e0a40`).
 
-`0x100def2c` repairs a ride: state of repair becomes 100.0 and statistic 8 is cleared. If `ride + 0x198 == 2`,
-the same function instead advances the upgrade level (`+0x4c`). It does not touch the second gauge.
+The ride script then reports VAR_BROKEN (statistic 7) itself. The next ride update in state 0 (`0xe0a8c` → `0xe1864`) runs the admission, reads VAR_BROKEN and
+calls `SetState(1)` (`SetState(4)` when the life gauge byte is 0), which clears the open word and writes VAR_RIDECLOSED = 1 (ORACLE.md F15, F27).
+
+`0x100def2c` repairs a ride (executed for a ride that is not being upgraded): the state of repair becomes **100.0** (the float at TOC −11016), statistic 8 is
+cleared, the mechanic reservation and the maintenance flag are cleared, statistic 4 is cleared, and the ride is **opened** (open word 1, VAR_RIDECLOSED 0,
+`SetState(0)`) whatever the reopening guard `0x100de654` says. A coaster without a complete circuit is closed again. If `ride + 0x198 == 2`, the same function
+instead advances the upgrade level (`+0x4c`); that branch is not executed. The life gauge is not restored by a repair.
 
 The second gauge falls by `0.02 * wear` per wear step and by 5.0 per breakdown, and no repair restores it.
 It behaves like a remaining-life meter, which may be the Remaining Life value in UI-028. That is a hypothesis.
 
-Not verified (agent reports, recorded as leads):
-- `0x100d9e04` clears statistic 4 and calls the repair when a job timer ends, except when statistic 7 is set.
-  The timer itself is set by the mechanic's arrival `0x100d9c0c` and was executed (ORACLE.md F19): a repair takes
-  `WorkDuration × (100 − low byte of the truncated +0x40) / 100` park turns, an upgrade (ride state 2) `WorkDuration × Upgrades[level + 1].DurationOfUpgrade`;
-  the ride's own level does not scale a repair.
-- `0x100df5b4` repairs on a timer without clearing statistic 4.
-- The constructor `0x100da874` sets `+0x40`, `+0x44` and `+0x48` to 0.
+`0x100d9e04` (a mechanic's job timer; static): for a ride in state 1 it clears statistic 4 and then repairs only once statistic 7 (VAR_BROKEN) is not positive, so the
+job waits for the script; a ride in any other state is repaired at once. `0x100df5b4` repairs a relief object on a timer without clearing statistic 4.
+The timer the arrival `0x100d9c0c` starts was executed (ORACLE.md F19): a repair takes `WorkDuration × (100 − low byte of the truncated +0x40) / 100`
+park turns, an upgrade (ride state 2) `WorkDuration × Upgrades[level + 1].DurationOfUpgrade`; the ride's own level does not scale a repair.
+
+The constructor `0x100da874` first stores 0 in `+0x40`, `+0x44` and `+0x48`, and then 100.0 (`0x100dab1c`, ECON-047).
 
 Verified since: the object serializer `0x100daf04` writes the three floats as whole numbers 0–255, and
 `SaveAttractionList` decodes them from original saves (see
@@ -185,29 +192,33 @@ The speed is the script's own field `+0xC0` (`0x100B5B40`). The wear step calls 
 
 ## In OpenTPW
 
-`ParkEconomy` follows the original ride update (`UpdateRides`, `Wear`, `WearAmount`):
+`ParkEconomy` follows the original ride update (`UpdateRides`, `Wear`, `WearAmount`; `RideBreakdownRules` is the pure form the oracle compares):
 
-- Every 8 park turns each ride gets the breakdown check. On every 64th turn the wear step runs first. The park
-  turn is the original world counter `+0x1DA70C`, so no conversion is needed.
+- Every 8 park turns each ride that is open and not broken down (and has no upgrade waiting) gets the breakdown check. On every 64th turn the wear step runs first. The
+  park turn is the original world counter `+0x1DA70C`, so no conversion is needed. A closed ride does not wear or break down; a mechanic at work on a ride in state 0 does
+  not stop its update.
 - The wear step reads `VAR_RUNNING`, `VAR_ONRIDE` and the speed through `IRideOperations`. In the game,
   `GuestEconomyBridge` supplies them from the linked ride's script; the speed is the ride record's InitSpeed,
   because OpenTPW has no speed control. Objects without a linked running script do not wear.
 - The state of repair (`Repair`, shown truncated as `StateOfRepair`) and the life gauge (`LifeGauge`) are kept
   exactly and saved in OpenTPW's park save.
-- A breakdown happens when the truncated life gauge or state of repair is 0. Repair sets 100 and does not
-  restore the life gauge.
+- A breakdown happens when the truncated life gauge or state of repair is 0. Repair sets 100 (`RideRepair.FullGauge`), does not
+  restore the life gauge and opens the ride (`Level.OpenAfterRepair`; a coaster with an incomplete circuit stays closed).
+- The park door and the open buttons ask the reopening guard (`RideOpening.MayOpen`, `ParkGate.MayOpen`): a ride the economy has broken down, a ride with an upgrade on its
+  way and a coaster without a complete circuit stay closed; the script's `VAR_BROKEN` still counts as a breakdown.
 
 Still approximations:
 
 | ID | What |
 | --- | --- |
-| ECON-023 | The ride update skips rides in states 1, 3 and 4 (`+0x198`) and rides with `+0x64 == 0`, and the breakdown check skips `+0x2E` bit 0. OpenTPW maps these only to "a mechanic is at work". |
+| ECON-023 | The wear step and the breakdown check do not know relief objects (toilets are not simulated), and the ride's state is derived from the economy and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does. |
+| ECON-049 | The maintenance flag (+96, a player request) and the back-of-queue link test of the reopening guard are not modelled. |
 | ECON-047 | A newly built ride starts with life gauge 100. Easymode stores 100, but the constructor sets 0 and the code that fills it in was not traced. |
 
 Not in OpenTPW yet:
 
-- The breakdown and worn state reaching the ride script (`VAR_BREAKSTAT`, `VAR_WORN`). Guests and queues still
-  read `VAR_BROKEN` only.
+- The breakdown and worn state reaching the ride script (`VAR_BREAKSTAT`, `VAR_WORN`): the economy does not write them, so a ride that breaks down in the economy keeps running for
+  guests until the script reports `VAR_BROKEN` itself. Guests and queues read `VAR_BROKEN` only.
 - The message when the state of repair crosses below 10.
 - Online mode, which OpenTPW does not have.
 - OpenTPW's own `RideWorn` event and mechanic dispatch keep the Advisor.sam threshold 25.

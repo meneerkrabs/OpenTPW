@@ -195,6 +195,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   every update, and a saved instalment that differs from this host's pow is kept
   and reported instead of rejected. The 0 % APR share (about 119 million a month
   in jungle Easy mode) is original behaviour and stays.
+- An x86 differential oracle now runs isolated routines of the decrypted TPW v2.0
+  `tp.exe` (Unicorn engine, a dev-only optional tool; ORACLE.md section 7, owner
+  decision 2026-10-12). Its first target is the world RNG step `0x516330`: it is the
+  same logical generator as the Mac `0x105328` (same object offset, constants,
+  setter, tick and inline copies) but stores the successor rotated right by 13, so
+  the PC and Mac streams differ (finding X1: 507 of 508 inputs). OpenTPW has no
+  world LCG yet and DET-plan follows the Mac; nothing in the game changed.
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

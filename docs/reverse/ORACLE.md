@@ -7,6 +7,7 @@ finding to report and resolve, never something to hide.
 
 Code: `tools/ppc-analysis/oracle/`. Tests: `test_ppc32.py` (always) and `test_oracle.py` (with the
 private binary). Both run in `tools/ppc-analysis/run_evidence_checks.py`.
+Section 7 describes the x86 counterpart for the Windows executables (`oracle_x86/`, Unicorn, dev-only).
 
 ## 1. Policy and how it is enforced
 
@@ -651,3 +652,148 @@ the original's ride-closed handling once `SetState(1)`'s effect on the queue is 
    `guest_speed_smoothing`, `coaster_rating_step` or `coaster_rating_final`.
    `test_every_comparison_is_pinned` then demands an `EXPECTED` entry.
 4. Pin the result in `test_oracle.EXPECTED` and in section 4/5 here.
+
+## 7. x86 oracle for the Windows executables (`oracle_x86/`)
+
+Added 2026-10-12. The same idea as sections 1 to 6, for the two Windows executables that may
+be analysed (docs/COMPLETION-PLAN.md, "Provenance of game rules"): isolated routines run in
+an emulator and their results are compared with the plans and with the routine's own reading.
+Code: `tools/ppc-analysis/oracle_x86/` (`x86_pe.py`, `x86_harness.py`, `x86_targets.py`,
+`x86_differential.py`, `test_x86_oracle.py`, `README.md`). It is a sibling of `oracle/`, not a
+subdirectory, because `run_evidence_checks.py` runs one discovery process per directory and
+the x86 modules must not share a module namespace with the PowerPC `harness.py`/`targets.py`.
+
+### 7.1 Decision and dependency
+
+Decision of the project owner, 2026-10-12, scope **dev-only oracle tooling**: the x86 oracle
+uses the **Unicorn** CPU emulator (checked with 2.1.4, `cp37-abi3-macosx_11_0_arm64` wheel from
+PyPI). It is an explicit exception to the "no new pip dependencies" rule (`.github/glm/RULES.md`,
+which GLM workers follow and which this change does not edit). The exception is bounded:
+
+- Unicorn is imported in one module (`x86_harness.py`) inside `try/except ImportError`. Nothing
+  under `source/` and no shipped tool imports it. It is not in any requirements file, project file,
+  workflow or release artifact.
+- Every test that needs it skips when `import unicorn` fails (`requires unicorn (dev-only: pip
+  install unicorn==2.1.4; ...)`) or when the private executable variable is unset. The PE reader
+  and the identity gate are pure Python and run everywhere. CI has neither Unicorn nor the binaries
+  and reports skips.
+- A developer installs it in a separate venv (`oracle_x86/README.md`).
+
+**Licence check.** The installed wheel carries no licence or COPYING file (its `dist-info` holds
+`METADATA`, `RECORD`, `WHEEL`, `top_level.txt`, `INSTALLER` and `REQUESTED`), and the bundled
+`libunicorn` holds no licence text. Its `METADATA` says `License: BSD License` (also as a
+classifier), while the long description, which is upstream's README, says "Distributed under free
+software license GPLv2". The upstream project is GPL-2.0 (it contains QEMU code), so the PyPI
+classifier is not reliable and this repository treats Unicorn as GPLv2. (Capstone, used only in
+scratch analysis and by no repository code, ships a BSD `LICENSE.TXT` in its wheel.) The repository
+licence is MIT (`LICENSE.md`). That does not change OpenTPW's licence: Unicorn is neither vendored,
+linked into nor distributed with OpenTPW. A developer fetches it separately and the oracle tests
+only `import` it at their own run time. GPL obligations attach to distributing the library or a
+work combined with it, and nothing OpenTPW distributes is that. No real problem found. One
+condition follows: do not put Unicorn, or an image or archive containing it, into a release, CI
+image or other artifact without meeting the GPL for that artifact. That would be a decision of its
+own.
+
+### 7.2 Harness
+
+`x86_pe.py` is a minimal PE32 reader: sections, imports and base relocations. `x86_harness.py`:
+
+- **Identity.** `Image` refuses any file whose SHA-256 and size are not those of the two identified
+  executables (`IDENTIFIED`): the decrypted TPW v2.0 `tp.exe` (3,734,528 bytes, SHA-256
+  `5472f97b...d1b805`) and the TPI no-CD `Game.exe` (6,742,016 bytes, SHA-256
+  `77ea0c41410aad7c94a5eda658e31cb4ac05f7253aaf6746ad5e8a90afbd967a`; the prefix matches
+  docs/MTR.md). The SafeDisc disc-root `Game.exe`, `TP.ICD` and every other file fail the check.
+  The paths come from `OPENTPW_TPW_EXE` and `OPENTPW_TPI_EXE` (outside the checkout); the runner
+  sets or strips them from `--tpw-exe` / `--tpi-exe`, like the Mac variables.
+- **Loading.** Sections at the preferred base `0x400000` (relocated when another base is asked
+  for; neither executable needs it). Every import address table slot points at a per-import trap
+  address, keyed `dll!name` (DLL case-insensitive).
+- **Sandbox.** Image sections (code read/execute, data read/write), a 16 MiB heap (the world object
+  puts its RNG state about 2 MB in), a stack, an import trap page and a return sentinel page. Only
+  the code ranges the target names (`allowed`, virtual addresses) may execute. A call into any other
+  address, or into an import trap without a stub, raises `UnknownCall`. An instruction budget raises
+  `BudgetExceeded`; unmapped access raises `MemoryFault`; an invalid instruction `Unsupported`.
+- **Calls.** `call(entry, args, this=, regs=, stop=)` pushes stack arguments right to left, puts
+  `this` in `ecx` and the sentinel as the return address, so cdecl, stdcall and thiscall all work.
+  `Result` reports registers, executed instructions, the final `esp` relative to the argument
+  base (0: callee popped, -4n: cdecl) and the raw x87 registers.
+- **Pristine runs.** Pages written by the previous run (a write hook records them) are restored,
+  the heap is zero, registers are zero, and the x87 (control word 0x37f, empty stack) and SSE state
+  are reset. Unicorn's x87 keeps 80-bit precision (`test_x87_keeps_extended_precision_and_is_reset`).
+- **Stubs.** A stub is `fn(sandbox) -> (eax, bytes the callee pops)`; it replaces the routine and
+  acts as its `ret`. `sandbox.arg(i)` reads its stack arguments.
+
+### 7.3 First target and pins
+
+| Target | Routine (allowed code) | Stubs | Inputs | vs plan | vs routine reading |
+| --- | --- | --- | --- | --- | --- |
+| `tpw-exe-world-rng` | tp.exe `0x516330`..`0x516365` (thiscall, `ecx` = object; state at `+0x1da708`) | none | 508 (500 random + 8 boundaries) | **X1**: 507 differ from the Mac model `det_model.world_next` (first input 0: original returns 1694899337 and stores 2600067959, the plan 1013904223 for both) | **agree** 508/508 |
+
+The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
+rotate the result right by 13 bits, store that, and return its signed absolute value (the
+wrapping `neg` keeps `INT_MIN`). The single agreeing input with the plan is the state whose
+successor is 0, a fixed point of the rotation. All pins live in `test_x86_oracle.EXPECTED`; the
+sharpness tests cover a mutated reading (rotation 12), an overrun of the allowed range, and a
+modified copy of the executable (refused by the hash).
+
+### 7.4 Finding X1: tp.exe 0x516330 is the same logical generator as the Mac world LCG, with a different step
+
+Question: is tp.exe `0x516330` the PC counterpart of the Mac world generator `0x105328`, or a
+different generator that happens to use the same constants?
+
+Evidence (static, read with Capstone in a scratch directory, terminal only; plus the executed
+agreement above):
+
+- Same state slot: `0x516330` reads and writes the dword at object `+0x1da708`; DET-plan §2.3 puts
+  the Mac world RNG (`mRandomSeed`) at world `+0x1da708`, next to `mGameTick` at `+0x1da70c`.
+  On the PC the three functions sit together in the same order as on the Mac (generator `0x516330`,
+  setter `0x516370`, tick `0x516380`; Mac `0x105328`, `0x105360`, `0x1053a0`), the setter stores its
+  stack argument at `+0x1da708` and the tick increments `+0x1da70c`.
+- Same constants and quirk: multiplier 1664525, increment 1013904223, the successor stored twice (the
+  Mac model records "one advance despite the duplicate native store"), and the same absolute value
+  as return.
+- Same users: 139 direct callers of `0x516330` (Mac 142), four inline copies of the advance next to
+  it (`0x516753`, `0x516811`, `0x51687f`, `0x51a353`; Mac four), and eight direct callers of the
+  setter, seven of which pass a zero-extended halfword read from the first field of a thing record
+  (the thing-ID reseed of DET-plan §2.3; Mac 7 + 1 object field) and one a halfword it also keeps
+  in an object field. The object is reached through one global (`0x80239c`). The inline copies
+  project the value with a modulo or a low bit (for example modulo 3 at `0x51a381`).
+- The difference: after storing the LCG successor the PC rotates it right by 13 bits and stores the
+  rotated word, which is also the base of the returned absolute value. The Mac routine has no
+  rotate (executed oracle `det-world-lcg`, 507/507 with the plain model). The four inline copies
+  on the PC rotate as well.
+
+Result: **the same logical generator (the shared gameplay RNG), with a platform difference**. The
+PC stream is the Mac's with an extra rotation of the stored state, so from the same seed the two
+platforms produce different streams (the one coincidence is a state whose successor is 0).
+Executed: the function itself, 508 inputs. Static only: the callers, the setter, the tick function
+and the inline copies; their roles were read, not run, and the Mac side comes from DET-plan, not
+from a re-derivation here.
+
+Consequence. DET-plan (static evidence for the Mac build, "no Windows/Patch 2 behaviour is
+claimed") and its `WorldRng` class (§4.3: `s = s·1664525 + 1013904223`, no rotation) follow the
+**Mac** generator, and OpenTPW has no world LCG yet (docs/DETERMINISM.md: DET-I2 is a later
+step; guests and economy use their own SplitMix64 streams, DET-013 to DET-015). So nothing in the
+game diverges today and nothing changed here. When DET-I2 ports the world LCG it must choose a
+platform: the Mac step reproduces the Mac saves' `mRandomSeed` stream, the PC step (with the
+rotation) the Windows executable, and a save, replay or trace from one platform does not continue
+on the other. That choice needs its own decision, and the PC rotation must be in the plan's
+`WorldRng` and `det_model` before any "original behaviour" claim is made for the Windows build.
+The same check applies to the weather generator and the sound seed, which are not examined on the
+PC. Whether the TPI `Game.exe` has the rotation is the next target.
+
+### 7.5 Running and adding a target
+
+```
+python3 -m venv /tmp/oracle-venv && /tmp/oracle-venv/bin/python -m pip install unicorn==2.1.4
+OPENTPW_TPW_EXE=/path/tp.exe /tmp/oracle-venv/bin/python -I tools/ppc-analysis/oracle_x86/x86_differential.py
+/tmp/oracle-venv/bin/python -I -B tools/ppc-analysis/run_evidence_checks.py --tpw-exe /path/tp.exe
+```
+
+To add a target: read the routine with a disassembler in a scratch directory (never in the
+checkout), note every call and the code range, then add `binary`, `plan`, `inputs`, `allowed` and
+`stubs` (each stub justified) to `x86_targets.py`, and pin the result in
+`test_x86_oracle.EXPECTED` and in 7.3 here. Recommended next targets: the TPI `Game.exe`
+counterpart of the world RNG step (same object offset? rotation?), then the tp.exe counterparts of
+the Mac targets already pinned (`arrival-group`, loans, park points), where a PC-vs-Mac divergence
+would matter most.

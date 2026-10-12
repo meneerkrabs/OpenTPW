@@ -12,16 +12,27 @@ internal sealed class AutomaticAdvisor : IDisposable
 {
 	// [APPROX:ADVISOR-017] the clock starts at 0 when the automatic advisor is created (the original adds an offset word, +0x18 of its clock, whose writer is not traced), is sampled once per frame and stands still while the pause menu is open (the original's other pause callers are not mapped) — evidence needed: the clock offset writer and the screens that call 0x10110518
 	private readonly PausableClock clock;
+	// A park save's advisor clock continues from its saved value: the offset is added to the running watch so
+	// the queue's action reservations (advisor-clock timestamps) stay meaningful across a restart.
+	private long clockOffset;
 	private Advisor? presentation;
 	private bool presentationFailed;
 	private Level? level;
 	private ParkEconomyRuntime? park;
 
-	private AutomaticAdvisor( AdvisorController controller )
+	private AutomaticAdvisor( AdvisorController controller ) : this( controller, StopwatchSource() ) { }
+
+	private static Func<long> StopwatchSource()
+	{
+		var watch = Stopwatch.StartNew();
+		return () => watch.ElapsedMilliseconds;
+	}
+
+	/// <param name="milliseconds">The running clock the pause snapshots resume (tests supply a controllable one).</param>
+	internal AutomaticAdvisor( AdvisorController controller, Func<long> milliseconds )
 	{
 		Controller = controller;
-		var watch = Stopwatch.StartNew();
-		clock = new PausableClock( () => watch.ElapsedMilliseconds );
+		clock = new PausableClock( () => clockOffset + milliseconds() );
 	}
 
 	public AdvisorController Controller { get; }
@@ -156,6 +167,53 @@ internal sealed class AutomaticAdvisor : IDisposable
 
 	/// <summary>The advisor image rendered this frame, or null while the advisor is silent.</summary>
 	public Veldrid.Texture? Image { get; private set; }
+
+	/// <summary>
+	/// Whether a response is being spoken right now. Active speech cannot be captured in this scope — the
+	/// presentation (<see cref="Advisor"/>) is render/playback state without a snapshot seam — so
+	/// <see cref="CaptureSnapshot"/> records it as <see cref="AutomaticAdvisorSnapshot.SpeechWasActive"/>
+	/// instead of dropping it silently; the restored advisor stays silent until the next advice.
+	/// </summary>
+	public bool IsSpeechActive => presentation is { IsSpeaking: true };
+
+	/// <summary>
+	/// The automatic advisor's own-format state for a park save: the controller's queue (pending advice,
+	/// history, action reservation) and the advisor clock's milliseconds the reservations are measured on.
+	/// The presentation's active speech is flagged, not captured (see <see cref="IsSpeechActive"/>); the
+	/// process-local presentation-failure flag and the pause state are re-established, not saved.
+	/// </summary>
+	internal sealed record AutomaticAdvisorSnapshot( AdvisorController.AdvisorControllerSnapshot Controller, uint AdvisorClockMilliseconds, bool SpeechWasActive );
+
+	/// <summary>The advisor's state for a park save; fails explicitly while a playback attempt is outstanding.</summary>
+	public AutomaticAdvisorSnapshot CaptureSnapshot()
+	{
+		var speech = IsSpeechActive;
+		if ( speech )
+			Log.Warning( "Advisor snapshot: a response is being spoken; the speech itself is not captured and does not continue after a load." );
+		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, speech );
+	}
+
+	/// <summary>Checks a snapshot without touching this advisor (the controller validates its queue).</summary>
+	public void ValidateSnapshot( AutomaticAdvisorSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		Controller.ValidateSnapshot( snapshot.Controller );
+	}
+
+	/// <summary>
+	/// Continues this advisor (freshly created and attached to the restored level) from a validated
+	/// snapshot: the queue replaces the level-start advice and the advisor clock continues from its saved
+	/// value, so a speech's action reservation keeps holding until it would have ended. Active speech at
+	/// capture time does not resume. Restore after <see cref="AttachLevel"/>, before the next
+	/// <see cref="Update"/>.
+	/// </summary>
+	public void RestoreSnapshot( AutomaticAdvisorSnapshot snapshot )
+	{
+		ValidateSnapshot( snapshot );
+		Controller.RestoreSnapshot( snapshot.Controller );
+		// A fresh advisor's clock reads ~0 (no pause compensation yet); the offset moves it to the saved value.
+		clockOffset = snapshot.AdvisorClockMilliseconds;
+	}
 
 	/// <summary>World pass: renders the speaking advisor into its own image (see <see cref="Draw"/>).</summary>
 	public void Render() =>

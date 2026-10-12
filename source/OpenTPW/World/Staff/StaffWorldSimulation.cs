@@ -88,4 +88,69 @@ public sealed class StaffWorldSimulation
 			}
 		}
 	}
+
+	/// <summary>One staff actor's world position and movement phase for a park save.</summary>
+	/// <param name="CellX">Cell-unit position, null while the actor has not been attached to a world.</param>
+	/// <param name="TravelSeconds">Fraction of the next one-cell movement interval (<see cref="StaffMember.TravelSeconds"/>).</param>
+	public sealed record StaffActorSnapshot( int Id, float? CellX, float? CellY, double TravelSeconds );
+
+	/// <summary>
+	/// The staff actors' positions for a park save: one record per employee, in hire order. Restoring writes
+	/// the saved positions and movement phases back into the restored economy's employees, so travelling
+	/// actors resume mid-interval instead of restarting the cell step; job assignment and states come from
+	/// the economy's own save.
+	/// </summary>
+	public sealed record StaffWorldStateSnapshot( IReadOnlyList<StaffActorSnapshot> Actors );
+
+	/// <summary>The actors' positions and movement phases for a park save, in member order.</summary>
+	public StaffWorldStateSnapshot CaptureSnapshot() => new( members()
+		.Select( member => new StaffActorSnapshot( member.Id, member.CellX, member.CellY, member.TravelSeconds ) )
+		.ToArray() );
+
+	/// <summary>
+	/// Checks a snapshot against this world's employee list and grid without touching either: every actor
+	/// must name one current employee exactly once, positions must be finite, paired and inside the grid
+	/// (off-path positions are legal and stay where they are), and a travel fraction is one interval at most.
+	/// </summary>
+	public void ValidateSnapshot( StaffWorldStateSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.Actors is null )
+			throw new InvalidDataException( "Staff world snapshot is inconsistent: missing actor records." );
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"Staff world snapshot is inconsistent: {message}." );
+		}
+		var ids = new HashSet<int>();
+		foreach ( var actor in snapshot.Actors )
+		{
+			Require( ids.Add( actor.Id ), $"duplicate actor {actor.Id}" );
+			Require( actor.CellX.HasValue == actor.CellY.HasValue, $"actor {actor.Id} has one position component only" );
+			if ( actor.CellX is { } x && actor.CellY is { } y )
+				Require( float.IsFinite( x ) && float.IsFinite( y ) && x >= 0 && x < grid.CountX && y >= 0 && y < grid.CountY,
+					$"actor {actor.Id} stands outside the grid" );
+			Require( double.IsFinite( actor.TravelSeconds ) && actor.TravelSeconds >= 0 && actor.TravelSeconds < SecondsPerCell,
+				$"actor {actor.Id} travel fraction outside one interval" );
+		}
+		var current = members().Select( member => member.Id ).ToHashSet();
+		Require( ids.SetEquals( current ), "the snapshot's actors must be exactly the current employees" );
+	}
+
+	/// <summary>
+	/// Writes a validated snapshot's positions and movement phases into the matching employees. Call after
+	/// the economy's staff are restored and this world is constructed: <see cref="Synchronize"/> has already
+	/// spawned unpositioned employees at the gate, and the saved positions (including saved nulls) replace that.
+	/// </summary>
+	public void RestoreSnapshot( StaffWorldStateSnapshot snapshot )
+	{
+		ValidateSnapshot( snapshot );
+		foreach ( var actor in snapshot.Actors )
+		{
+			var member = members().Single( item => item.Id == actor.Id );
+			member.CellX = actor.CellX;
+			member.CellY = actor.CellY;
+			member.TravelSeconds = actor.TravelSeconds;
+		}
+	}
 }

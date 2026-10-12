@@ -103,6 +103,138 @@ public sealed class ParkWeather
 		return due;
 	}
 
+	/// <summary>One bolt top with thunder already due but not yet played, in strike order.</summary>
+	public readonly record struct ThunderStrikeSnapshot( float X, float Y, float Z );
+
+	/// <summary>
+	/// The weather's own-format state for a park save: the draw stream's whole state, the sim's position in
+	/// it (started flag, last turn, change/roll/apply schedule), the current quality's converted bands and
+	/// drop target, the ramped drops, the lightning/thunder clocks and the thunder strikes still waiting to
+	/// be played. Deep-copied on capture; validated against the destination's settings before restore, so a
+	/// restore continues the same weather instead of re-rolling from the seed.
+	/// </summary>
+	public sealed record ParkWeatherSnapshot
+	{
+		public required ulong RandomState { get; init; }
+		public required bool Started { get; init; }
+		public required long LastTurn { get; init; }
+		public required long LastChanged { get; init; }
+		public required long NextRollDay { get; init; }
+		/// <summary>The forecast's rolled quality, null while none is pending (<see cref="Forecast"/>).</summary>
+		public int? PendingQuality { get; init; }
+		/// <summary>The day the pending quality applies on; 0 while none is pending.</summary>
+		public required long ApplyDay { get; init; }
+		public required int Quality { get; init; }
+		public required bool Snow { get; init; }
+		public required bool Rain { get; init; }
+		public required bool Lightning { get; init; }
+		public required int CurrentDrops { get; init; }
+		public required int TargetDrops { get; init; }
+		public required int LightningCountdown { get; init; }
+		public required int Bolts { get; init; }
+		public required int ThunderCountdown { get; init; }
+		/// <summary>The last strike's bolt top, the position the pending thunder plays at.</summary>
+		public required ThunderStrikeSnapshot LastTop { get; init; }
+		public required IReadOnlyList<ThunderStrikeSnapshot> PendingStrikes { get; init; }
+		/// <summary>Bound for <see cref="PendingStrikes"/>: at most one thunder per park turn can be due, and frames drain them.</summary>
+		public const int MaximumPendingStrikes = 4096;
+	}
+
+	/// <summary>The weather's state for a park save (the draw stream, the schedule, the bands and the lightning clocks).</summary>
+	public ParkWeatherSnapshot CaptureSnapshot() => new()
+	{
+		RandomState = random.State,
+		Started = started,
+		LastTurn = lastTurn,
+		LastChanged = lastChanged,
+		NextRollDay = nextRollDay,
+		PendingQuality = pendingQuality,
+		ApplyDay = applyDay,
+		Quality = Quality,
+		Snow = Snow,
+		Rain = Rain,
+		Lightning = Lightning,
+		CurrentDrops = CurrentDrops,
+		TargetDrops = TargetDrops,
+		LightningCountdown = lightningCountdown,
+		Bolts = bolts,
+		ThunderCountdown = thunderCountdown,
+		LastTop = new ThunderStrikeSnapshot( lastTop.X, lastTop.Y, lastTop.Z ),
+		PendingStrikes = strikes.Select( strike => new ThunderStrikeSnapshot( strike.X, strike.Y, strike.Z ) ).ToArray()
+	};
+
+	/// <summary>
+	/// Checks a snapshot against this weather's invariants without touching it. A weather that has not started
+	/// must be pristine; a started one carries a valid quality, drop counts within the settings' cap, a
+	/// non-negative schedule, and the converter's snow/rain exclusions. Uses this instance's settings, so a
+	/// snapshot is validated against the destination park's own <c>Standard.sam</c> layer.
+	/// </summary>
+	public void ValidateSnapshot( ParkWeatherSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.PendingStrikes is null )
+			throw new InvalidDataException( "Park weather snapshot is inconsistent: missing pending thunder strikes." );
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"Park weather snapshot is inconsistent: {message}." );
+		}
+		Require( snapshot.PendingStrikes.Count <= ParkWeatherSnapshot.MaximumPendingStrikes, "too many pending thunder strikes" );
+		Require( snapshot.PendingStrikes.All( strike => float.IsFinite( strike.X ) && float.IsFinite( strike.Y ) && float.IsFinite( strike.Z ) ), "a bolt top is not finite" );
+		Require( float.IsFinite( snapshot.LastTop.X ) && float.IsFinite( snapshot.LastTop.Y ) && float.IsFinite( snapshot.LastTop.Z ), "the last bolt top is not finite" );
+		if ( !snapshot.Started )
+		{
+			Require( snapshot.Quality == 0 && !snapshot.Snow && !snapshot.Rain && !snapshot.Lightning
+				&& snapshot.CurrentDrops == 0 && snapshot.TargetDrops == 0
+				&& snapshot.LightningCountdown == 0 && snapshot.Bolts == 0 && snapshot.ThunderCountdown == 0
+				&& snapshot.LastTurn == 0 && snapshot.LastChanged == 0 && snapshot.NextRollDay == 0 && snapshot.ApplyDay == 0
+				&& snapshot.PendingQuality is null && snapshot.PendingStrikes.Count == 0,
+				"a weather that has not started must be pristine" );
+			return;
+		}
+		Require( snapshot.Quality is >= 1 and <= 100, "quality outside 1..100" );
+		Require( !snapshot.Snow || !snapshot.Rain, "snow and rain at once (the converter keeps them apart)" );
+		Require( snapshot.CurrentDrops >= 0 && snapshot.CurrentDrops <= settings.MaxRaindrops
+			&& snapshot.TargetDrops >= 0 && snapshot.TargetDrops <= settings.MaxRaindrops,
+			$"drop counts outside 0..{settings.MaxRaindrops}" );
+		Require( snapshot.LastTurn >= 0 && snapshot.LastChanged >= 0 && snapshot.NextRollDay >= 0 && snapshot.ApplyDay >= 0, "negative schedule" );
+		Require( snapshot.NextRollDay >= snapshot.LastChanged, "the next roll precedes the last change" );
+		Require( snapshot.PendingQuality is null || snapshot.PendingQuality is >= 1 and <= 100, "pending quality outside 1..100" );
+		Require( snapshot.PendingQuality is null || snapshot.ApplyDay >= snapshot.LastChanged, "the forecast applies before the last change" );
+		Require( snapshot.LightningCountdown >= 0 && snapshot.LightningCountdown < Math.Max( 1, settings.LightningCountdownFrom ), "lightning countdown outside its band" );
+		Require( snapshot.Bolts >= 0 && snapshot.ThunderCountdown >= 0, "negative bolt or thunder count" );
+	}
+
+	/// <summary>
+	/// Continues this weather (a fresh instance of the same park, seed and settings) from a validated
+	/// snapshot: the draw stream, the schedule, the converted state and the due thunder all resume instead
+	/// of re-rolling. Call before the first <see cref="AdvanceTo"/> of the restored level.
+	/// </summary>
+	public void RestoreSnapshot( ParkWeatherSnapshot snapshot )
+	{
+		ValidateSnapshot( snapshot );
+		random.Restore( snapshot.RandomState );
+		started = snapshot.Started;
+		lastTurn = snapshot.LastTurn;
+		lastChanged = snapshot.LastChanged;
+		nextRollDay = snapshot.NextRollDay;
+		pendingQuality = snapshot.PendingQuality;
+		applyDay = snapshot.ApplyDay;
+		Quality = snapshot.Quality;
+		Snow = snapshot.Snow;
+		Rain = snapshot.Rain;
+		Lightning = snapshot.Lightning;
+		CurrentDrops = snapshot.CurrentDrops;
+		TargetDrops = snapshot.TargetDrops;
+		lightningCountdown = snapshot.LightningCountdown;
+		bolts = snapshot.Bolts;
+		thunderCountdown = snapshot.ThunderCountdown;
+		lastTop = new Vector3( snapshot.LastTop.X, snapshot.LastTop.Y, snapshot.LastTop.Z );
+		strikes.Clear();
+		foreach ( var strike in snapshot.PendingStrikes )
+			strikes.Enqueue( new Vector3( strike.X, strike.Y, strike.Z ) );
+	}
+
 	internal void Step( long tick )
 	{
 		var day = ParkCalendar.DayIndex( tick );

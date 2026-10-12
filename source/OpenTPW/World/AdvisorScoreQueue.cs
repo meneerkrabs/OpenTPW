@@ -32,6 +32,22 @@ internal readonly record struct AdvisorQueueAdmission( AdvisorEligibility Eligib
 
 internal readonly record struct AdvisorResponseSelection( int Slot, AdvisorPendingAdvice Advice, int Variant, int ResponseId );
 
+/// <summary>One pending advice record's own-format state for a park save (a free slot is null).</summary>
+internal sealed record AdvisorPendingAdviceSnapshot( int MessageId, int Score, int ResponseVariantOverride, bool OverrideOnlyOnce );
+
+/// <summary>One message's history record for a park save (<see cref="AdvisorMessageHistory"/>).</summary>
+internal sealed record AdvisorHistorySnapshot( uint SavedGameTick, int PreviousVariant, bool HasBeenPlayed, uint SlapCount );
+
+/// <summary>
+/// The queue's own-format state for a park save: the eight pending records in slot order, the per-message
+/// history of the bound messages, and the action reservation the current speech holds. The controller has
+/// no other mutable state; an outstanding playback attempt cannot be captured (it exists only inside one
+/// <see cref="AdvisorController.Update"/> call).
+/// </summary>
+internal sealed record AdvisorQueueSnapshot(
+	IReadOnlyList<AdvisorPendingAdviceSnapshot?> Slots, IReadOnlyDictionary<int, AdvisorHistorySnapshot> History,
+	uint LastActionStarted, uint LastActionDuration );
+
 /// <summary>
 /// The original advisor controller's pending-advice queue and per-message history, ported from the
 /// reviewed standalone model in the PowerPC advisor lane (docs/reverse/PPC-advisor.md, "Phase four").
@@ -95,6 +111,67 @@ internal sealed class AdvisorScoreQueue
 		history.Clear();
 		foreach ( var (id, value) in restoredHistory )
 			history[id] = value;
+	}
+
+	/// <summary>
+	/// The queue's state for a park save, deep-copied. Fails explicitly while a playback attempt is
+	/// outstanding — between frames it never is, since <see cref="AdvisorController.Update"/> completes the
+	/// attempt within the call.
+	/// </summary>
+	public AdvisorQueueSnapshot CaptureSnapshot()
+	{
+		if ( playbackAttempt.HasValue )
+			throw new InvalidOperationException( "Cannot capture the advisor queue while a playback attempt is outstanding." );
+		return new AdvisorQueueSnapshot(
+			slots.Select( item => item is { } advice
+				? new AdvisorPendingAdviceSnapshot( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce )
+				: null ).ToArray(),
+			history.ToDictionary( pair => pair.Key, pair => new AdvisorHistorySnapshot( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ),
+			LastActionStarted, LastActionDuration );
+	}
+
+	/// <summary>
+	/// Checks a snapshot against this queue's descriptors without touching it: all eight slots, bound
+	/// message IDs, variant overrides of −1 (none) or a request, history only for bound messages, and
+	/// non-negative stored variants.
+	/// </summary>
+	public void ValidateSnapshot( AdvisorQueueSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.Slots is null || snapshot.History is null )
+			throw new InvalidDataException( "Advisor queue snapshot is inconsistent: missing slots or history." );
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"Advisor queue snapshot is inconsistent: {message}." );
+		}
+		Require( snapshot.Slots.Count == Capacity, $"supply all {Capacity} pending slots" );
+		foreach ( var item in snapshot.Slots )
+			if ( item != null )
+			{
+				Require( descriptors.ContainsKey( item.MessageId ), $"message {item.MessageId} has no bound descriptor" );
+				Require( item.ResponseVariantOverride >= -1, $"message {item.MessageId}'s variant override is below none" );
+			}
+		foreach ( var (id, entry) in snapshot.History )
+		{
+			Require( descriptors.ContainsKey( id ), $"history message {id} has no bound descriptor" );
+			Require( entry.PreviousVariant >= -1, $"history message {id}'s previous variant is below none" );
+		}
+	}
+
+	/// <summary>
+	/// Continues this queue (a fresh controller's, with the same balance) from a validated snapshot: the
+	/// pending records, the history and the current speech's action reservation all resume.
+	/// </summary>
+	public void RestoreSnapshot( AdvisorQueueSnapshot snapshot )
+	{
+		ValidateSnapshot( snapshot );
+		Restore( snapshot.Slots!.Select( item => item is { } advice
+				? new AdvisorPendingAdvice( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce )
+				: null ).ToArray(),
+			snapshot.History!.ToDictionary( pair => pair.Key, pair => new AdvisorMessageHistory( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ) );
+		LastActionStarted = snapshot.LastActionStarted;
+		LastActionDuration = snapshot.LastActionDuration;
 	}
 
 	/// <summary>

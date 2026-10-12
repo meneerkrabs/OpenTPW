@@ -64,14 +64,14 @@ EXPECTED = {
                                            'sections': [5678, 64, 10262, 128, 64]}),
     ('coast-rating-final', 'plan-both-flags'): AGREE,
     # F9: 0xcb4e8 uses the factor 0.8 while the 0x1083c8 thing's +48 word is positive (the Traffic Lights' mTopLeft: GUESTS.md
-    # and C# take that since ARRIVAL-002 was resolved), cuts to 500 − guests in limit mode 1 (online parks; no OpenTPW
-    # counterpart), and both cuts compare guests + group unsigned without a floor at 0 (GUESTS.md and C# have 1500 / ≥ 0).
-    # 55 of the 515 inputs remain: 42 in limit mode 1, 12 above the limit (negative group), 1 negative group wrapping the
-    # unsigned compare.
-    ('arrival-group', 'plan'): (55, {'world_mode': 0, 'guests': 499, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+    # and C# take that), cuts to 500 − guests in limit mode 1 (online; C#: OnlineVisit, ARRIVAL-002), and both cuts compare
+    # guests + group unsigned without a floor at 0 (GUESTS.md and C# floor at 0, ARRIVAL-004). 49 of the 515 inputs remain:
+    # 36 in limit mode 1 and 12 in the other modes where the group is cut below 0 (guests above the limit), plus 1 where a
+    # negative group (MinPeople −5) wraps the unsigned compare.
+    ('arrival-group', 'plan'): (49, {'world_mode': 0, 'guests': 600, 'points': 0, 'bonus': 20, 'per_visitor': 6,
                                      'min_people': 1, 'obj48': 0, 'limit_mode': 1}),
     ('arrival-group', 'routine-reading'): AGREE,
-    ('arrival-group', 'csharp'): (55, {'world_mode': 0, 'guests': 499, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+    ('arrival-group', 'csharp'): (49, {'world_mode': 0, 'guests': 600, 'points': 0, 'bonus': 20, 'per_visitor': 6,
                                        'min_people': 1, 'obj48': 0, 'limit_mode': 1}),
     # F11: executed over scripts of 0xcb2ac calls, a negative group (1700 counted guests: 1500 − 1700 = −200) ends at the
     # next stop exactly like 0: guests created, active byte and timer restart agree with the floored plan. The group word

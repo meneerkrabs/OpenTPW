@@ -507,6 +507,24 @@ public class GuestTests
 	}
 
 	[TestMethod]
+	public void OnlineVisitsCutArrivalGroupsTo500()
+	{
+		// 0x100CB4E8: with the GameType word 1 the group is cut to 500 − guests instead of 1500 − guests.
+		var settings = CreateSettings();
+		settings.ArrivalMinPeople = 40;
+		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { OnlineVisit = true };
+		var field = typeof( GuestSimulation ).GetField( "guests", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		var list = (List<Guest>)field.GetValue( simulation )!;
+		list.AddRange( Enumerable.Repeat<Guest>( null!, 480 ) );
+		Assert.AreEqual( 20, simulation.ArrivalGroupSize(), "500 − 480" );
+		simulation.OnlineVisit = false;
+		Assert.AreEqual( 40, simulation.ArrivalGroupSize(), "an offline park is cut at 1500" );
+		simulation.OnlineVisit = true;
+		list.AddRange( Enumerable.Repeat<Guest>( null!, 120 ) );
+		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "600 guests: the group stops at 0 (ARRIVAL-004)" );
+	}
+
+	[TestMethod]
 	public void ArrivalTimerCountsFourTurnUnitsAndRestartsAfterTheGroup()
 	{
 		// 0x100CB2AC: a group starts once (turn >> 2) − (start >> 2) exceeds TimeBetweenArrivals; the timer restarts when it is empty.

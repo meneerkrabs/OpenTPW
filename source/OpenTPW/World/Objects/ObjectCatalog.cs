@@ -122,7 +122,7 @@ public sealed class ObjectCatalogEntry
 	/// <summary><c>Info.DontApplyOffset 1</c>: "a fixed item whose animation should be played relative to world (0,0)" (gates, bus, lights, ferry, seaplane, end).</summary>
 	// [DATA:<object>.sam:Info.DontApplyOffset]
 	public bool IsFixedItem => Settings.GetBool( "Info.DontApplyOffset" );
-	/// <summary>The Traffic Lights fixed item (<c>Info.Name "Lights"</c>, Info.Id 1603): the original's world setup stores its thing as mTrafficLights (<see cref="GuestSimulation.TrafficLightsPlaced"/>).</summary>
+	/// <summary>The Traffic Lights fixed item (<c>Info.Name "Lights"</c>; Info.Id 1603 jungle, 2603 hallow, 4603 fantasy, 3603 space): the original's world setup stores its thing as mTrafficLights (<see cref="GuestSimulation.TrafficLightsPlaced"/>).</summary>
 	public bool IsTrafficLights => IsFixedItem && SettingsName == "Lights";
 	/// <summary>Shapes without occupied cells (Mystery ride, Buy Land, Clear Land) are tools, not objects.</summary>
 	public bool IsTool => !Shape.OccupiedCells.Any();

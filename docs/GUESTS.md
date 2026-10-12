@@ -137,10 +137,11 @@ a bankrupt park gets none. With the shipped 20 and 6 a new park gets 2 guests pe
 ran this routine (docs/reverse/ORACLE.md, F9). It adds three details to the first reading. The factor is
 0.8, not 1.2, while the `+48` word of the thing at game `+0x1da734` is positive. That thing is the Traffic Lights
 fixed item (`mTrafficLights`), and the word is its `mTopLeft` cell id, which is 1 for a fixed item, so every park with
-its lights uses 0.8 (the saved Easymode Lights record holds 1; 1.2 is only the branch for a missing lights thing).
-OpenTPW uses 0.8 while the level has its Traffic Lights (`GuestSimulation.TrafficLightsPlaced`) and 1.2 without them
-(a bare simulation). Online
-parks (GameType 1) are cut at 500 instead of 1,500 (ARRIVAL-002, no OpenTPW counterpart). A group cut with more guests than the limit becomes
+its lights uses 0.8 (the saved Easymode Lights record holds 1; the rule itself is "word positive: 0.8, else 1.2", and what
+the original does without the lights is not established). OpenTPW uses 0.8 while the level has its Traffic Lights
+(`GuestSimulation.TrafficLightsPlaced`); 1.2 without them is OpenTPW's own fallback. Online parks (GameType 1) are cut at
+500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`, an assumption,
+ARRIVAL-002). A group cut with more guests than the limit becomes
 negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)
 shows that this changes nothing in behaviour: a group at or below 0 creates no guest and, at the next stop of
 the arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does, so nothing

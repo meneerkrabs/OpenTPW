@@ -1175,8 +1175,9 @@ def points_plan(x: dict) -> int:
     """GUESTS.md "Arrivals" and ParkEconomy.ParkPoints: per ride or sideshow (type kind 0 or 2), AttractionValue plus the
     NewBonus of the age bracket (none outside 0..2). A type without a track (+0x9C, Bumper.WhichTrackType, 0) is aged
     from its first purchase after turn 0 and divided by its copies; a tracked type is aged per copy and counts in full.
-    Every thing counts (the 0xdc834 counts-test is ARRIVAL-003)."""
-    return points_full({**x, 'things': [{**thing, 'open': True} for thing in x['things']]})
+    Only things passing the counts-test 0xdc834 count; the input's open flag is the chosen test result (the test itself
+    is the park-points-counts-test target, and C# applies the part of it that it has state for, ARRIVAL-003)."""
+    return points_full(x)
 
 
 def points_full(x: dict) -> int:
@@ -1204,12 +1205,13 @@ def points_first(builds: list[int], sold: list[int]) -> int:
 
 
 def points_csharp_request(x: dict) -> dict:
-    # The open flag (the 0xdc834 counts-test) has no C# counterpart (ARRIVAL-003): not passed. Type +0x9C is
-    # Bumper.WhichTrackType; park record +28 is the first-purchase turn counter.
+    # The open flag (the chosen 0xdc834 counts-test result) is the object's open state (thing +0x64, ParkObjectState.IsOpen):
+    # the other conditions of the test have no C# state (ARRIVAL-003). Type +0x9C is Bumper.WhichTrackType; park record
+    # +28 is the first-purchase turn counter.
     return {'fn': 'park_points', 'now': x['now'],
             'types': [{'id': kind['id'], 'kind': kind['kind'], 'value': kind['value'], 'decay': kind['decay'],
                        'bonus': kind['bonus'], 'track_type': kind['f9c'], 'first': kind['first']} for kind in x['types']],
-            'things': [{k: thing[k] for k in ('type', 'built')} for thing in x['things']]}
+            'things': [{k: thing[k] for k in ('type', 'built', 'open')} for thing in x['things']]}
 
 
 def points_inputs(rng: random.Random, n: int) -> list:
@@ -1252,6 +1254,129 @@ def points_inputs(rng: random.Random, n: int) -> list:
              make(now=1, types=[{**ride, 'first': 1}], things=[{'type': 0x101, 'open': False, 'built': 1}]),
              # Kinds other than 0 and 2 never count.
              make(now=1, types=[{**ride, 'kind': 1, 'first': 1}], things=[{'type': 0x101, 'open': True, 'built': 1}])]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (i2) ARRIVAL: counts-test 0xdc834
+COUNTS_ENTRY_CELL = 0xDD3F4  # (out u16*, thing) -> writes the back-of-queue cell; stubbed: the chosen cell
+COUNTS_QUEUE_COUNT = 0xDD118  # (thing) -> guests listed in the thing's queue; stubbed: the chosen count
+COUNTS_COASTER = 0x45EAC      # (thing) -> the coaster controller exists and carries no riders; stubbed: the chosen word
+COUNTS_NULL_CELL = -19648     # TOC slot -> the u16 the cell is compared with; zero in the file (read, never written)
+COUNTS_TYPE_ID = 0x4321
+COUNTS_STATE = type('CountsState', (), {})()
+
+
+def counts_stubs(target: Target) -> dict:
+    state = COUNTS_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != COUNTS_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the thing type id')
+        target.log.append('lookup')
+        m.gpr[3] = state.record
+
+    def cell(m: Machine) -> None:
+        if m.gpr[4] != state.thing:
+            raise AssertionError('0xdd3f4 called without the thing')
+        target.log.append('cell')
+        m.memory.w16(m.gpr[3], state.x['cell'])
+
+    def count(m: Machine) -> None:
+        if m.gpr[3] != state.thing:
+            raise AssertionError('0xdd118 called without the thing')
+        target.log.append('count')
+        m.gpr[3] = state.x['count'] & MASK32
+
+    def coaster(m: Machine) -> None:
+        target.log.append('coaster')
+        m.gpr[3] = state.x['coaster'] & MASK32
+
+    return {TYPE_RECORD_LOOKUP: lookup, COUNTS_ENTRY_CELL: cell, COUNTS_QUEUE_COUNT: count, COUNTS_COASTER: coaster}
+
+
+def counts_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = COUNTS_STATE
+    state.x = x
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    state.record = sb.struct(2048, {156: ('i', x['track'])})
+    state.thing = sb.struct(512, {14: ('H', COUNTS_TYPE_ID), 40: ('i', x['thing40']), 46: ('H', x['flags']),
+                                  60: ('I', x['cells'] & MASK32), 100: ('i', x['open']), 408: ('i', x['state'])})
+    if sb.image.memory.u16(toc_pointer(sb, COUNTS_NULL_CELL)) != 0:
+        raise AssertionError('the u16 behind TOC -19648 is not zero in the file')
+    r = sb.call(0xDC834, {3: state.thing})
+    return {'counts': r.r3, 'calls': list(log)}
+
+
+def counts_plan(x: dict) -> dict:
+    """The routine as read from 0xdc834..0xdc984, in the order it runs: thing +46 bit 0x4 (Info.IsChoosable), ride state
+    (+408) not 1 (BROKEN_DOWN, 0xdfe0c), the open word +100 nonzero (0xdff18 is +100 == 0), state not 4 (CONDEMNED,
+    0xdfe20), a back-of-queue cell different from the zero null cell (0xdd3f4), the listed guests below four times the
+    queue cells (+60, unsigned, 0xdc988), a coaster (track type 3, 0xe2fe4) only with 0x45eac nonzero, and a track word
+    (+40) for track types 1 and 2."""
+    calls: list = []
+
+    def done(counts: int) -> dict:
+        return {'counts': counts, 'calls': calls}
+    if not x['flags'] & 0x4 or s32(x['state']) == 1 or s32(x['open']) == 0 or s32(x['state']) == 4:
+        return done(0)
+    calls.append('cell')
+    if x['cell'] == 0:
+        return done(0)
+    calls.append('count')
+    if not (x['count'] & MASK32) < (x['cells'] << 2) & MASK32:
+        return done(0)
+    calls.append('lookup')  # 0xe2fe4
+    if s32(x['track']) == 3:
+        calls.append('coaster')
+        if x['coaster'] & MASK32 == 0:
+            return done(0)
+    calls.append('lookup')
+    if s32(x['track']) == 1 and s32(x['thing40']) == 0:
+        return done(0)
+    calls.append('lookup')
+    if s32(x['track']) == 2 and s32(x['thing40']) == 0:
+        return done(0)
+    return done(1)
+
+
+def counts_subset(x: dict) -> dict:
+    """What ParkEconomy.CountsForParkPoints tests (ARRIVAL-003): Info.IsChoosable (+46 bit 0x4), not broken down or
+    condemned (state 1 or 4) and open (+100). The entrance cell, the queue room, the coaster and the track word have no
+    C# state, so every input counts as if they held."""
+    return {'counts': int(bool(x['flags'] & 0x4) and s32(x['state']) not in (1, 4) and s32(x['open']) != 0),
+            'calls': []}
+
+
+def counts_equal(original: dict, other: dict) -> bool:
+    return original['counts'] == other['counts'] and (other['calls'] == original['calls'] or not other['calls'])
+
+
+def counts_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'flags': rng.choice([0x4, 0x4, 0x4, rng.getrandbits(16) | 0x4, rng.getrandbits(16)]),
+             'state': rng.choice([0, 0, 0, 0, 1, 2, 3, 4, rng.randrange(-2, 7)]),
+             'open': rng.choice([1, 1, 1, 0, rng.randrange(-3, 4)]),
+             'cell': rng.choice([rng.randrange(1, 0x10000), rng.randrange(1, 0x10000), 0, 0x8000, 0xFFFF]),
+             'cells': rng.choice([rng.randrange(0, 40), rng.randrange(0, 40), 0, 0x40000000, 0x3FFFFFFF, 0xFFFFFFFF]),
+             'track': rng.choice([0, 0, 1, 2, 3, 3, rng.randrange(-3, 6)]),
+             'thing40': rng.choice([1, 1, 0, rng.randrange(-2, 3)]),
+             'coaster': rng.choice([1, 1, 0, 2, 0x100, 0xFFFFFFFF])}
+        x['count'] = rng.choice([rng.randrange(0, 4 * max(1, min(x['cells'], 40)) + 2), rng.randrange(0, 160), 0,
+                                 4 * x['cells'] & MASK32, (4 * x['cells'] - 1) & MASK32, 0xFFFFFFFF])
+        x.update(kw)
+        return x
+    passing = dict(flags=0x4, state=0, open=1, cell=0x1234, cells=2, count=7, track=0, thing40=1, coaster=1)
+    edges = [make(**passing),
+             # One condition fails at a time.
+             make(**{**passing, 'flags': 0}), make(**{**passing, 'flags': 0xFFFB}), make(**{**passing, 'state': 1}),
+             make(**{**passing, 'state': 4}), make(**{**passing, 'state': 2}), make(**{**passing, 'state': 3}),
+             make(**{**passing, 'open': 0}), make(**{**passing, 'cell': 0}), make(**{**passing, 'count': 8}),
+             make(**{**passing, 'count': 9}), make(**{**passing, 'cells': 0, 'count': 0}),
+             make(**{**passing, 'cells': 0x40000000, 'count': 0xFFFFFFFF}), make(**{**passing, 'cells': 0x40000001, 'count': 3}),
+             make(**{**passing, 'track': 3, 'coaster': 0}), make(**{**passing, 'track': 3, 'coaster': 1}),
+             make(**{**passing, 'track': 3, 'thing40': 0}), make(**{**passing, 'track': 1, 'thing40': 0}),
+             make(**{**passing, 'track': 2, 'thing40': 0}), make(**{**passing, 'track': 0, 'thing40': 0}),
+             make(**{**passing, 'track': 4, 'thing40': 0}), make(**{**passing, 'track': 1, 'coaster': 0})]
     return edges + [make() for _ in range(n)]
 
 
@@ -1333,7 +1458,7 @@ POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0x
                 alternatives={'routine-reading': points_full},
                 csharp=('park_points', points_csharp_request, lambda x, r: r),
                 notes=['C# hook: bridge function "park_points" (ParkEconomy.ParkPoints): track type and first-purchase turn '
-                       'are passed; the open flag (0xdc834) has no C# counterpart.',
+                       'and the open flag (the chosen 0xdc834 result, ParkObjectState.IsOpen) are passed.',
                        'Executed: 0xc5828 (type count = park record +24), 0xd1be8 / 0xd1c88 (park record search over a '
                        'built table), 0xe4750 (turns -> 100 ns units), 0x10a9a4 (game pointer), 0x1c4100 (64-bit divide). '
                        'Stubs: 0x118018 type record, 0xb678 assert (a zero condition fails the run), 0xdc834 counts-test '
@@ -1341,6 +1466,19 @@ POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0x
                        'Park record +24 is the number of listed copies; +28 follows the 0xda874 write rule '
                        '(points_first). Builds never lie after the current turn.'])
 
+COUNTS = Target('park-points-counts-test', 'Park points counts-test 0xdc834', 'GUESTS.md "Arrivals"', 0xDC834,
+                [(0xDC834, 0xDC9D4), (0xDFE0C, 0xDFE34), (0xDFF18, 0xDFF2C), (0xE2FE4, 0xE3024)], counts_stubs,
+                counts_binary, counts_plan, counts_inputs, equal=counts_equal,
+                alternatives={'implemented-subset': counts_subset},
+                notes=['No C# hook: the entrance cell, the queue room and the coaster have no state in ParkEconomy; the '
+                       '"implemented-subset" reading is the Python mirror of ParkEconomy.CountsForParkPoints (ARRIVAL-003), '
+                       'whose mismatches are the conditions C# omits.',
+                       'Executed: 0xdc834, 0xdc988 (queue room), 0xdfe0c / 0xdfe20 (ride state 1 / 4), 0xdff18 (open word '
+                       '+100 == 0), 0xe2fe4 (track type 3). Stubs: 0x118018 type record (+156 chosen), 0xdd3f4 back of queue '
+                       '(writes the chosen cell), 0xdd118 listed guests (chosen), 0x45eac coaster controller (chosen word).',
+                       'The compared result is the returned word and, for the plan, the stub call order; the u16 behind TOC '
+                       '-19648 (zero in the file, read only here) is checked to be zero.'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS]
 DOMAINS = {SET_CELL.key: set_cell_domain}

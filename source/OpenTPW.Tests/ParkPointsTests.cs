@@ -9,19 +9,21 @@ public class ParkPointsTests
 {
 	private const int Plain = 1;
 	private const int Tracked = 2;
+	private const int Unchoosable = 3;
 	// 3,750 s per turn: turn 73 is three park days after turn 1 (72 × 3,750 s = 3.125 days).
 	private const long ThreeDaysLater = 73;
 
 	private static ParkEconomy Park() => new( EconomyTestData.Settings(), new EconomyObjectCatalog( new[]
 	{
 		Ride( Plain, trackType: 0 ),
-		Ride( Tracked, trackType: 3 )
+		Ride( Tracked, trackType: 3 ),
+		Ride( Unchoosable, trackType: 0, choosable: false )
 	} ), ParkGameMode.FullSimulation, 7 );
 
 	// AttractionValue 25, a two-day decay and bonuses 30/20/10.
-	private static EconomyObjectInfo Ride( int id, int trackType ) => new( id, $"Ride {id}", ParkObjectKind.Ride, ResearchCategory.Ride, 0,
+	private static EconomyObjectInfo Ride( int id, int trackType, bool choosable = true ) => new( id, $"Ride {id}", ParkObjectKind.Ride, ResearchCategory.Ride, 0,
 		new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, null, null, null, 0, 0, 0, 0, 0, 25, "synthetic.wad",
-		NewAttractionDecayTime: 2, NewBonus: new[] { 30, 20, 10 }, TrackType: trackType );
+		NewAttractionDecayTime: 2, NewBonus: new[] { 30, 20, 10 }, TrackType: trackType, IsChoosable: choosable );
 
 	[TestMethod]
 	public void CopiesOfAnUntrackedTypeShareTheAgeOfItsFirstPurchase()
@@ -95,5 +97,56 @@ public class ParkPointsTests
 		data.Counters.Remove( ParkCounters.FirstPurchaseTurn( Plain ) );
 		// An unset park record +28 counts from turn 0, as in the original: 73 turns are three days (bracket 1).
 		Assert.AreEqual( 20 + 25, ParkSaveFile.Restore( data, park.Settings, park.Catalog ).ParkPoints() );
+	}
+
+	// The counts-test 0x100DC834 (docs/reverse/ORACLE.md F10): only the conditions with state in OpenTPW are applied.
+
+	[TestMethod]
+	public void AClosedRideDoesNotCount()
+	{
+		var park = Park();
+		EconomyTestData.AdvanceToTurn( park, 1 );
+		var ride = park.RegisterExisting( Tracked );
+		Assert.AreEqual( 30 + 25, park.ParkPoints() );
+		// Thing +0x64, the open word, is 0 while the ride is closed (0x100DFF18 reads it as "closed").
+		park.SetObjectOpen( ride.Id, false );
+		Assert.AreEqual( 0, park.ParkPoints() );
+		park.SetObjectOpen( ride.Id, true );
+		Assert.AreEqual( 30 + 25, park.ParkPoints() );
+	}
+
+	[TestMethod]
+	public void ABrokenDownRideDoesNotCount()
+	{
+		var park = Park();
+		EconomyTestData.AdvanceToTurn( park, 1 );
+		var ride = park.RegisterExisting( Tracked );
+		// Ride state BROKEN_DOWN (1) fails 0x100DFE0C; CONDEMNED (4, a breakdown at life gauge 0) fails 0x100DFE20.
+		ride.IsBrokenDown = true;
+		Assert.AreEqual( 0, park.ParkPoints() );
+		ride.IsBrokenDown = false;
+		Assert.AreEqual( 30 + 25, park.ParkPoints() );
+	}
+
+	[TestMethod]
+	public void ATypeThatGuestsCannotChooseDoesNotCount()
+	{
+		var park = Park();
+		EconomyTestData.AdvanceToTurn( park, 1 );
+		park.RegisterExisting( Unchoosable );
+		// Info.IsChoosable 0 leaves thing +0x2E bit 0x4 clear, which 0x100DC834 tests first.
+		Assert.AreEqual( 0, park.ParkPoints() );
+	}
+
+	[TestMethod]
+	public void AClosedCopyStillCountsInTheDivisorOfItsType()
+	{
+		var park = Park();
+		EconomyTestData.AdvanceToTurn( park, 1 );
+		park.RegisterExisting( Plain );
+		var closed = park.RegisterExisting( Plain );
+		park.SetObjectOpen( closed.Id, false );
+		// The divisor is the park record's copy count (+24, 0x100C5828), which lists the closed copy too: (30 + 25) / 2.
+		Assert.AreEqual( (30 + 25) / 2, park.ParkPoints() );
 	}
 }

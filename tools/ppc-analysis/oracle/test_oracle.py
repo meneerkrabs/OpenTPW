@@ -70,9 +70,18 @@ EXPECTED = {
     ('arrival-group', 'routine-reading'): AGREE,
     ('arrival-group', 'csharp'): (125, {'world_mode': 0, 'guests': 0, 'points': 0, 'bonus': 20, 'per_visitor': 6,
                                         'min_people': 1, 'obj48': 1, 'limit_mode': 0}),
+    # F10: 0xc24c0 counts only things passing 0xdc834; a type with +0x9C == 0 is aged from its first purchase and divided
+    # by its count, any other type is aged per thing and every copy counts in full (GUESTS.md and C# age every thing
+    # from its own build and always divide).
+    ('park-points', 'plan'): (214, {'now': 73, 'scale': 15000,
+                                    'types': [{'id': 257, 'kind': 0, 'f9c': 0, 'value': 25, 'decay': 2,
+                                               'bonus': [30, 20, 10], 'first': 1}],
+                                    'things': [{'type': 257, 'open': True, 'built': 1},
+                                               {'type': 257, 'open': True, 'built': 73}]}),
+    ('park-points', 'routine-reading'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final'}
+                  'coast-rating-final', 'park-points'}
 
 
 class Identity(unittest.TestCase):
@@ -190,6 +199,29 @@ class Oracle(unittest.TestCase):
         }
         for name, reading in variants.items():
             mutated = dataclasses.replace(targets.ARRIVAL, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_points(self):
+        for key in (('park-points', 'plan'), ('park-points', 'routine-reading')):
+            self.check(key)
+
+    def test_points_reading_is_sharp(self):
+        # Each part of the routine reading matters: the 0xdc834 test, the +0x9C branch either way and the park record
+        # age (+28, not the earliest copy) each bring mismatches back when dropped.
+        import dataclasses
+
+        def earliest(x, kind):
+            return min([t['built'] for t in x['things'] if t['type'] == kind['id']] or [x['now']])
+        variants = {
+            'open-test': lambda x: targets.points_full({**x, 'things': [{**t, 'open': True} for t in x['things']]}),
+            'f9c-zero': lambda x: targets.points_full({**x, 'types': [{**k, 'f9c': 0} for k in x['types']]}),
+            'f9c-set': lambda x: targets.points_full({**x, 'types': [{**k, 'f9c': 1} for k in x['types']]}),
+            'record-age': lambda x: targets.points_full(
+                {**x, 'types': [{**k, 'first': earliest(x, k)} for k in x['types']]}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.POINTS, plan=reading, alternatives={})
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
 

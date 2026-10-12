@@ -847,6 +847,199 @@ def arrival_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (i) ARRIVAL: park points 0xc24c0
+POINTS_FIRST = 0x1E0000 - 22714        # game + 0x1da746: index of the first thing in the list (u16)
+POINTS_TURN = 0x1E0000 - 22772         # game + 0x1da70c: the world turn, read by 0xe4750
+POINTS_CLOCK = 672                     # game + 672: the clock; its +28 word is the rate (15000 s per tick)
+POINTS_TYPE_TABLE = 0x1E0000 - 27588   # game + 0x1d943c: per-type park records searched by 0xd1be8 / 0xd1c88
+POINTS_THINGS = -30140                 # TOC slot -> ThingArray: 20-byte entries, word 0 = the thing
+POINTS_END = -20276                    # TOC slot -> u16 index that ends the thing list
+POINTS_REGISTRY = -29976               # TOC slot -> type registry passed to 0x118018
+OPEN_TEST = 0xDC834                    # (thing) -> nonzero when the thing counts; stubbed: the chosen flag
+THING_AGE = 0xDC520                    # (thing) -> days since the thing's purchase timestamp (+20); stubbed
+CLOCK_RATE = 15000                     # clock +28 as the clock constructor sets it (APPROX-TRACE ECON-001/002)
+DAY_TICKS = 864_000_000_000            # 100 ns units per day, the divisor at 0xc2600..0xc2608
+POINTS_STATE = type('PointsState', (), {})()
+
+
+def s64(value: int) -> int:
+    value &= (1 << 64) - 1
+    return value - (1 << 64) if value >> 63 else value
+
+
+def div64(a: int, b: int) -> int:
+    """0x1c4100: signed 64-bit division toward zero; a zero divisor gives 0."""
+    return 0 if b == 0 else abs(a) // abs(b) * (1 if (a < 0) == (b < 0) else -1)
+
+
+def points_days(now: int, turn: int, scale: int) -> int:
+    """0xe4750 then the divide at 0xc2600..0xc2608: the turn difference as an unsigned word times the clock rate
+    (a 64-bit product), divided by 4, times 10^7, divided by DAY_TICKS; the low word of the quotient."""
+    ticks = s64(div64(s64(((now - turn) & MASK32) * (scale & MASK32)), 4) * 10_000_000)
+    return s32(div64(ticks, DAY_TICKS))
+
+
+def points_own_days(now: int, built: int, scale: int) -> int:
+    """The 0xdc520 stub: the clock's timestamps (unsigned64(rate x turn / 4) seconds, 0xe4394) subtracted signed
+    (TbTimeStamp::operator-), divided by DAY_TICKS (0x1c4100)."""
+    return s32(div64((scale * now // 4 - scale * built // 4) * 10_000_000, DAY_TICKS))
+
+
+def points_count(x: dict, type_id: int) -> int:
+    """Park record +24: copies of the type in the park (raised by 0xda874, lowered on removal at 0xdbfcc)."""
+    return sum(1 for thing in x['things'] if thing['type'] == type_id)
+
+
+def points_stubs(target: Target) -> dict:
+    state = POINTS_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry:
+            raise AssertionError('0x118018 called without the type registry')
+        m.gpr[3] = state.records[m.gpr[4] >> 16]
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3]))
+
+    def thing_of(address: int) -> dict:
+        if address not in state.things:
+            raise AssertionError('called without a thing')
+        return state.things[address]
+
+    def open_test(m: Machine) -> None:
+        m.gpr[3] = 1 if thing_of(m.gpr[3])['open'] else 0
+
+    def age(m: Machine) -> None:
+        thing = thing_of(m.gpr[3])
+        m.gpr[3] = points_own_days(state.x['now'], thing['built'], state.x['scale']) & MASK32
+
+    return {TYPE_RECORD_LOOKUP: lookup, ASSERT: assertion, OPEN_TEST: open_test, THING_AGE: age}
+
+
+def points_binary(sb: Sandbox, x: dict, log) -> int:
+    state = POINTS_STATE
+    state.x = x
+    game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', game)
+    sb.write(game + POINTS_TURN, 'I', x['now'] & MASK32)
+    sb.write(game + POINTS_CLOCK + 28, 'I', x['scale'] & MASK32)
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    state.records = {}
+    table = game + POINTS_TYPE_TABLE
+    for n, kind in enumerate(x['types']):
+        fields = {88: ('i', kind['value']), 92: ('i', kind['decay']), 156: ('i', kind['f9c']), 1960: ('i', kind['kind'])}
+        fields.update({616 + 4 * k: ('i', bonus) for k, bonus in enumerate(kind['bonus'])})
+        state.records[kind['id']] = sb.struct(2048, fields)
+        sb.write(table + 32 * n, 'H', kind['id'])
+        sb.write(table + 32 * n + 24, 'i', points_count(x, kind['id']))
+        sb.write(table + 32 * n + 28, 'I', kind['first'] & MASK32)
+    sb.write(table + 4800, 'i', len(x['types']))  # +4804 (cached id 0, never a type id) and +4808 stay 0
+    things = toc_pointer(sb, POINTS_THINGS)
+    state.things = {}
+    for index, thing in enumerate(x['things'], start=1):
+        following = index + 1 if index < len(x['things']) else 0
+        address = sb.struct(64, {12: ('H', following), 14: ('H', thing['type'])})
+        sb.write(things + 20 * index, 'I', address)
+        state.things[address] = thing
+    sb.write(toc_pointer(sb, POINTS_END), 'H', 0)
+    sb.write(game + POINTS_FIRST, 'H', 1 if x['things'] else 0)
+    result = s32(sb.call(0xC24C0, {3: sb.struct(16)}).r3)
+    if any(kind == 'assert' and value == 0 for kind, value in log):  # 0xb678 reports a zero condition
+        raise AssertionError('an assertion failed (park record not found or ThingArray entry 0 in use)')
+    return result
+
+
+def trunc_div(a: int, b: int) -> int:
+    return abs(a) // abs(b) * (1 if (a < 0) == (b < 0) else -1)
+
+
+def points_bonus(kind: dict, days: int) -> int:
+    bracket = trunc_div(days, kind['decay'])
+    return kind['bonus'][bracket] if 0 <= bracket < 3 else 0
+
+
+def points_plan(x: dict) -> int:
+    """GUESTS.md "Arrivals" and ParkEconomy.ParkPoints: per ride or sideshow (type kind 0 or 2), (Attraction NewBonus
+    of the age bracket + AttractionValue) / copies of that type, each copy aged from its own build turn (never below
+    0, 3750 s per turn); no bonus for a bracket outside 0..2."""
+    types = {kind['id']: kind for kind in x['types']}
+    points = 0
+    for thing in x['things']:
+        kind = types[thing['type']]
+        if kind['kind'] not in (0, 2):
+            continue
+        days = max(0, x['now'] - thing['built']) * (x['scale'] // 4) // 86400
+        points = s32(points + trunc_div(points_bonus(kind, days) + kind['value'], points_count(x, thing['type'])))
+    return points
+
+
+def points_full(x: dict) -> int:
+    """The routine as read from 0xc24c0..0xc26dc: only things passing 0xdc834 count. A type whose +0x9C word is 0 is
+    aged from its park record +28 (written by 0xda874 at a purchase while it is still 0) and divided by its count
+    (park record +24, 0xc5828); any other type is aged from the thing's own purchase (0xdc520) and divided by 1."""
+    types = {kind['id']: kind for kind in x['types']}
+    points = 0
+    for thing in x['things']:
+        kind = types[thing['type']]
+        if kind['kind'] not in (0, 2) or not thing['open'] or points_count(x, thing['type']) <= 0:
+            continue
+        if kind['f9c'] == 0:
+            days, divisor = points_days(x['now'], kind['first'], x['scale']), points_count(x, thing['type'])
+        else:
+            days, divisor = points_own_days(x['now'], thing['built'], x['scale']), 1
+        points = s32(points + trunc_div(s32(points_bonus(kind, days) + kind['value']), divisor))
+    return points
+
+
+def points_first(builds: list[int], sold: list[int]) -> int:
+    """Park record +28 after purchases at these turns: 0xda874 stores the turn while +28 is still 0, so purchases at
+    turn 0 leave it unset and the first purchase at a later turn sets it for good (removal does not clear it)."""
+    return next((turn for turn in sorted(builds + sold) if turn != 0), 0)
+
+
+def points_inputs(rng: random.Random, n: int) -> list:
+    day = 86400 * 4 // CLOCK_RATE + 1  # turns per park day, rounded up (23.04 turns at 3750 s per turn)
+
+    def make_type(type_id: int, **kw) -> dict:
+        kind = {'id': type_id, 'kind': rng.choice([0, 0, 2, 2, 1, 3, 4]), 'f9c': rng.choice([0, 0, 0, 1, rng.randrange(-3, 4)]),
+                'value': rng.choice([10, 25, rng.randrange(-20, 120)]),
+                'decay': rng.choice([1, 2, 5, 60, rng.randrange(1, 12)]),
+                'bonus': [rng.choice([0, rng.randrange(0, 60), rng.randrange(-30, 80)]) for _ in range(3)]}
+        kind.update(kw)
+        return kind
+
+    def make(**kw) -> dict:
+        now = rng.choice([rng.randrange(0, 12 * day), rng.randrange(0, 200 * day)])
+        types = [make_type(0x100 + k) for k in range(rng.randrange(1, 5))]
+        things = [{'type': rng.choice(types)['id'], 'open': rng.random() < 0.85,
+                   'built': rng.choice([0, now, rng.randrange(0, now + 1)])} for _ in range(rng.randrange(0, 9))]
+        for kind in types:
+            builds = [thing['built'] for thing in things if thing['type'] == kind['id']]
+            sold = [rng.randrange(0, now + 1) for _ in range(rng.choice([0, 0, 1]))]
+            kind['first'] = points_first(builds, sold)
+        x = {'now': now, 'scale': CLOCK_RATE, 'types': types, 'things': things}
+        x.update(kw)
+        return x
+
+    ride = dict(id=0x101, kind=0, f9c=0, value=25, decay=2, bonus=[30, 20, 10])
+    copies = [{'type': 0x101, 'open': True, 'built': 1}, {'type': 0x101, 'open': True, 'built': 1 + 3 * day}]
+    edges = [make(things=[], types=[{**ride, 'first': 0}]),
+             # One ride, built now: both readings give 25 + 30.
+             make(now=1, types=[{**ride, 'first': 1}], things=[{'type': 0x101, 'open': True, 'built': 1}]),
+             # Two copies bought three days apart: the first purchase ages both, the plan ages each copy.
+             make(now=1 + 3 * day, types=[{**ride, 'first': 1}], things=copies),
+             # The same with +0x9C set: own ages and no division by the count.
+             make(now=1 + 3 * day, types=[{**ride, 'f9c': 1, 'first': 1}], things=copies),
+             # A copy bought at turn 0 leaves +28 unset; the next purchase sets it and ages both copies from then.
+             make(now=1 + 3 * day, types=[{**ride, 'first': 1 + 3 * day}],
+                  things=[{'type': 0x101, 'open': True, 'built': 0}, {'type': 0x101, 'open': True, 'built': 1 + 3 * day}]),
+             # A thing failing 0xdc834.
+             make(now=1, types=[{**ride, 'first': 1}], things=[{'type': 0x101, 'open': False, 'built': 1}]),
+             # Kinds other than 0 and 2 never count.
+             make(now=1, types=[{**ride, 'kind': 1, 'first': 1}], things=[{'type': 0x101, 'open': True, 'built': 1}])]
+    return edges + [make() for _ in range(n)]
+
+
 # ============================================================================== registry
 LCG = Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -904,6 +1097,18 @@ ARRIVAL = Target('arrival-group', 'Arrival group size 0xcb4e8', 'GUESTS.md "Arri
                         'Stubs: 0x1082b4 park, 0xc1fb4 counted guests, 0xc24c0 points, 0x1083c8 factor object, '
                         '0x5fbcc debug log; the mode object is marked constructed so 0x12bb64 does not run.'])
 
+POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0xC24C0,
+                [(0xC24C0, 0xC26DC), (0xC5828, 0xC5864), (0xD1BE8, 0xD1D1C), (0xE4750, 0xE47F8), (0x10A9A4, 0x10A9B0),
+                 (0x1C4100, 0x1C4230)], points_stubs, points_binary, points_plan, points_inputs,
+                alternatives={'routine-reading': points_full},
+                notes=['C# hook: bridge function "park_points" (ParkEconomy.ParkPoints) is not wired yet.',
+                       'Executed: 0xc5828 (type count = park record +24), 0xd1be8 / 0xd1c88 (park record search over a '
+                       'built table), 0xe4750 (turns -> 100 ns units), 0x10a9a4 (game pointer), 0x1c4100 (64-bit divide). '
+                       'Stubs: 0x118018 type record, 0xb678 assert (a zero condition fails the run), 0xdc834 counts-test '
+                       '(chosen flag), 0xdc520 own age (signed timestamp difference in days).',
+                       'Park record +24 is the number of listed copies; +28 follows the 0xda874 write rule '
+                       '(points_first). Builds never lie after the current turn.'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL]
+           ARRIVAL, POINTS]
 DOMAINS = {SET_CELL.key: set_cell_domain}

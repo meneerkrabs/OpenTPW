@@ -212,4 +212,59 @@ public class Layer1DecoderTests
 		}
 	}
 
+	[TestMethod]
+	public void OriginalMpeg1ClipMatchesIndependentReference()
+	{
+		// The stored name is truncated (no ".mp2" suffix) in this bank. Reference values come
+		// from ffmpeg's mp3 decoder run offline on the same frame bytes (within 1 LSB).
+		var dataDirectory = Directory.GetParent( Mp2DecoderTests.SpeechDirectory() )!.Parent!.FullName;
+		var path = Path.Combine( dataDirectory, "global", "sound", "RideHD.sdt" );
+		if ( !File.Exists( path ) ) Assert.Inconclusive( "The global RideHD bank is missing." );
+		using var bank = new SdtArchive( path );
+		var audio = Mp2Decoder.Decode( bank.soundFiles.Single( file => file.Name == "tp_riderepaired" ).FrameData );
+		Assert.AreEqual( 44100, audio.SampleRate );
+		Assert.AreEqual( 117, audio.FrameCount );
+		Assert.AreEqual( 44928, audio.Samples.Length );
+		foreach ( var (index, expected) in new[] { (1000, -8342), (14976, 522), (29952, 66) } )
+			Assert.IsTrue( Math.Abs( audio.Samples[index] - expected ) <= 1, $"sample {index}: {audio.Samples[index]}" );
+		Assert.AreEqual( 4832.75, Math.Sqrt( audio.Samples.Average( sample => (double)sample * sample ) ), 0.5 );
+	}
+
+	[TestMethod]
+	public void OriginalGameBanksDecodeEveryLayerOneEntry()
+	{
+		var dataDirectory = Directory.GetParent( Mp2DecoderTests.SpeechDirectory() )!.Parent!.FullName;
+		var layerOne = 0;
+		var mpeg1 = 0;
+		var failures = new List<string>();
+		foreach ( var path in Directory.EnumerateFiles( dataDirectory, "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".sdt", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			using var bank = new SdtArchive( path );
+			foreach ( var clip in bank.soundFiles )
+			{
+				var frame = clip.FrameData;
+				if ( frame.Length < 2 || (frame[1] & 0x06) != 0x06 )
+					continue;
+				layerOne++;
+				var isMpeg1 = (frame[1] & 0x18) == 0x18;
+				if ( isMpeg1 )
+					mpeg1++;
+				try
+				{
+					var audio = Mp2Decoder.Decode( frame );
+					if ( audio.SampleRate != (isMpeg1 ? 44100 : 22050) || audio.Samples.Length != audio.FrameCount * 384 * audio.Channels || audio.TrailingBytes > 1 )
+						failures.Add( $"{Path.GetFileName( path )}/{clip.Name}: rate {audio.SampleRate}, {audio.FrameCount} frames, {audio.TrailingBytes} trailing bytes" );
+				}
+				catch ( Exception exception )
+				{
+					failures.Add( $"{Path.GetFileName( path )}/{clip.Name}: {exception.Message}" );
+				}
+			}
+		}
+		CollectionAssert.AreEqual( Array.Empty<string>(), failures );
+		// Data/ holds 2,650 Layer I entries, 5 of them MPEG-1 (the rest MPEG-2 LSF).
+		Assert.AreEqual( 2650, layerOne );
+		Assert.AreEqual( 5, mpeg1 );
+	}
+
 }

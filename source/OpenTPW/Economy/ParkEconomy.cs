@@ -587,7 +587,8 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / divisor, age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
 	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
-	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow, and every object counts: the original's counts-test 0x100DC834 (thing +46 bit 0x4, ride state, coaster riders and editing, a built kart or water track at thing +40, and further untraced tests) is not reproduced — evidence needed: the type record key behind +46 bit 0x4 and the routines 0x100DFF18, 0x100DFE20, 0x100DC988 and 0x100DD3F4
+	// [BIN:STP-PPC:0x100DC834 counts-test] only things passing 0x100DC834 count: thing +0x2E bit 0x4 (the type's Info.IsChoosable, 0x100DABDC), ride state (+0x198) not BROKEN_DOWN (1, 0x100DFE0C) and not CONDEMNED (4, 0x100DFE20), the open word +0x64 nonzero (0x100DFF18; 1 at construction, cleared by closing and by breaking down), a connected entrance (0x100DD3F4 gives a cell), room in the queue (0x100DC988), a coaster without riders (0x100E2FE4, 0x10045EAC) and a built track for karts and water rides (+0x28)
+	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; of the counts-test only Info.IsChoosable, IsBrokenDown (which also stands for the original's CONDEMNED, a breakdown at life gauge 0) and IsOpen (+0x64) are applied — evidence needed: world state for the entrance cell 0x100DD3F4 (a cell other than the u16 behind TOC -19648, zero in the file), the queue room 0x100DC988 (guests listed < 4 × queue cells), the coaster controller riders +0x140 (equal to the script's VAR_ONRIDE?) and the kart or water track word +0x28 (written only by the constructor, as 1), and whether a condemned ride stays condemned after a repair
 	public int ParkPoints()
 	{
 		var counts = new Dictionary<int, int>();
@@ -596,7 +597,7 @@ public sealed class ParkEconomy : IParkEconomy
 		var points = 0;
 		foreach ( var item in objects.Values )
 		{
-			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Kind is not (ParkObjectKind.Ride or ParkObjectKind.Sideshow) )
+			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Kind is not (ParkObjectKind.Ride or ParkObjectKind.Sideshow) || !CountsForParkPoints( item, info ) )
 				continue;
 			var tracked = info.TrackType != 0;
 			var since = tracked ? ParkCalendar.Turn( item.BuiltTick ) : Counters[ParkCounters.FirstPurchaseTurn( item.InfoId )];
@@ -607,6 +608,12 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		return points;
 	}
+
+	/// <summary>
+	/// The part of the original's park points counts-test (0x100DC834) that OpenTPW has state for: the type is choosable, and the
+	/// object is neither broken down nor closed. The test's world conditions are listed at <see cref="ParkPoints"/>.
+	/// </summary>
+	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && item.IsOpen;
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
 	public ParkObjectState RegisterExisting( int infoId )

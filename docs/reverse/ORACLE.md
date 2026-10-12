@@ -109,7 +109,8 @@ Mutation checks (`test_oracle.py`):
 - `CSharpMutation` builds the bridge against a scratch copy of `source/` with one operand flipped,
   and each turns a C# agreement into mismatches: the queue floor `4f → 5f` (60), the
   `CanChangeCellType` rule `old == 21 → old == 20` (2), rule 7 back to `lastCell` (2), the money
-  test in 64 bits (2) and the UNBOUNCE window `/ 200 → / 250` (39). A no-op "mutation" fails the
+  test in 64 bits (2), the UNBOUNCE window `/ 200 → / 250` (39) and `IsOpen` dropped from the park points
+  counts-test. A no-op "mutation" fails the
   test.
 
 ## 4. Targets, stubs and results (seed `oracle-v1`, 500 random + boundaries)
@@ -129,7 +130,8 @@ Mutation checks (`test_oracle.py`):
 | `coast-rating-final` | `0x41900` | none | 506 | **F8**: 280 differ. **Agree** 506/506 with the corrected count | hook `coaster_rating_final` |
 | `arrival-group` | `0xcb4e8` | `0x1082b4` game → park (sentinel, checked), `0xc1fb4` counted guests (chosen count; argument 20 checked), `0xc24c0` park points (chosen), `0x1083c8` thing lookup (synthetic thing, `+48` chosen), `0x5fbcc` debug print (logged). The GameType object is marked constructed, so its constructor `0x12bb64` must not run | 515 | **F9**: 125 differ from GUESTS.md. **Agree** 515/515 with the routine reading | **F9**: 125 differ, the same inputs as the plan (`arrival_group`: `GuestSimulation.ArrivalGroupSize`) |
 | `arrival-update` | `0xcb2ac` (the arrival update), `0xcb4e8` (group size), `0xcb028` (constructor), `0x1210f8`/`0x121098` (timer elapsed / restart), `0x10a9a4` (game pointer) | `0x109784` vehicle phase and `0x109b78` report flag (chosen per call), `0x109368` vehicle script step (logged with its frame slot and size), `0xcb698` guest creation (counted, raises the counted guests), `0xcb750` group history (logged), `0xb678` assertion (logged), and the `arrival-group` stubs. One run is a script of `0xcb2ac` calls in one sandbox | 510 scripts | **agree** (behaviour: active byte, timer start, guests created per call; GUESTS.md loop with the F9 details, group floored at 0). Routine reading **agree** 510/510 (adds the group word and the vehicle steps). **F11**: the brief's static reading (a negative group holds the state) differs on 66 scripts | no C# hook (`UpdateArrivals` has no vehicle phase) |
-| `park-points` | `0xc24c0`, `0xc5828` (type count), `0xd1be8`/`0xd1c88` (park record search), `0xe4750` (turns → 100 ns units), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic, registry checked), `0xb678` assert (a zero condition fails the run), `0xdc834` counts-test (chosen flag), `0xdc520` own age (signed timestamp difference in days). The park record table is built: `+24` the listed copies, `+28` by the `0xda874` write rule. Clock rate 15000; no build after the current turn | 507 | **F10** (partly fixed): 121 differ from GUESTS.md, all through the counts-test. **Agree** 507/507 with the routine reading | `ParkEconomy.ParkPoints` through `park_points`: the same 121 differ |
+| `park-points` | `0xc24c0`, `0xc5828` (type count), `0xd1be8`/`0xd1c88` (park record search), `0xe4750` (turns → 100 ns units), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic, registry checked), `0xb678` assert (a zero condition fails the run), `0xdc834` counts-test (chosen flag, itself the next target), `0xdc520` own age (signed timestamp difference in days). The park record table is built: `+24` the listed copies, `+28` by the `0xda874` write rule. Clock rate 15000; no build after the current turn | 507 | **F10** (fixed): GUESTS.md and the routine reading **agree** 507/507 (the 121 differences came from the counts-test, ARRIVAL-003) | `ParkEconomy.ParkPoints` through `park_points`, the input's open flag passed as `IsOpen`: **agree** 507/507 (121 before the counts-test) |
+| `park-points-counts-test` | `0xdc834` (the counts-test), `0xdc988` (queue room), `0xdfe0c`/`0xdfe20` (ride state 1 / 4), `0xdff18` (open word), `0xe2fe4` (track type 3) | `0x118018` type record (`+156` chosen, registry and type id checked), `0xdd3f4` back-of-queue cell (writes the chosen u16), `0xdd118` listed guests (chosen), `0x45eac` coaster controller (chosen word). The u16 behind TOC −19648 is read as 0 (checked) | 522 (one failing condition at a time, wrapping queue room) | **Agree** 522/522 with the reading, stub call order included. The part C# implements (`implemented-subset`: choosable, not state 1 or 4, open) differs on 205 | no hook: entrance cell, queue room and coaster have no state in `ParkEconomy` |
 
 The C# comparisons use these seams:
 
@@ -307,31 +309,47 @@ First counterexample: shipped values (NewParkBonus 20, PointsPerVisitor 6, MinPe
 wherever the three points above do not apply: the int → double → `fsubs` conversion is `(float)(points + bonus)` with a
 32-bit wrapping sum, `fmuls` rounds to single, `fctiwz` truncates and saturates, and `divw` truncates toward zero.
 
-**F10, park points (GUESTS.md "Arrivals", `ParkEconomy.ParkPoints`).** GUESTS.md and C# sum, over every ride and
+**F10, park points (GUESTS.md "Arrivals", `ParkEconomy.ParkPoints`).** GUESTS.md and C# summed, over every ride and
 sideshow, `(NewBonus[age / decay] + AttractionValue) / copies of that type`, with each object aged from its own build.
 Executed, `0xc24c0` differs in three places. A reading with all three agrees on 507/507 inputs, and dropping any one
 of them brings mismatches back (`test_points_reading_is_sharp`).
 
 Fixed in GUESTS.md and C# since: type `+0x9C` is `Bumper.WhichTrackType` (`0xe2fe4` tests it against 3, the coaster
-value), and `ParkEconomy.ParkPoints` now ages an untracked type from its first purchase (the counter
+value), and `ParkEconomy.ParkPoints` ages an untracked type from its first purchase (the counter
 `firstturn:<Info.Id>`, set like park record `+28` and saved with the park counters) and counts every copy of a
-tracked type in full. The 121 remaining differences all come from the counts-test (ARRIVAL-003). The first one: a
-single ride that fails `0xdc834` gives 0 in the original and 55 in C#.
+tracked type in full. The remaining 121 differences all came from the counts-test (ARRIVAL-003): a single ride that
+fails `0xdc834` gives 0 in the original and 55 in C#. `ParkEconomy` now applies the part of the test it has state for,
+and the bridge passes the input's open flag as the object's open state, so all three sides **agree** on 507/507. The
+flag stands for the whole test in the input, which is why the agreement does not close ARRIVAL-003 (below).
 
-- **Counts-test.** Only things for which `0xdc834` returns nonzero count. It tests thing `+46` bit 0x4, then
-  `0xdfe0c`, `0xdff18`, `0xdfe20`, `0xdd3f4` (against a u16 behind TOC −19648), `0xdc988` and `0xe2fe4`/`0x45eac`,
-  and finally rejects a thing whose type `+0x9C` is 1 or 2 while thing `+40` is 0 (`0xdc918..0xdc964`). What these
-  stand for is not traced (ARRIVAL-003).
+- **Counts-test (`0xdc834`).** Only things for which it returns nonzero count. Executed in the target
+  `park-points-counts-test` (522 inputs, the returned word and the order of the stubbed calls agree with the reading
+  below). In the order it runs:
+
+  | # | Test | Meaning | Evidence | C# |
+  | --- | --- | --- | --- | --- |
+  | 1 | thing `+46` bit `0x4` | `Info.IsChoosable` (type `+60`; the build path sets the bit at `0xdabdc..0xdabf0`) | executed; the key is static (descriptor table `0x39b64`). The constructor sets the ride state to 0 when the bit is set and to 3 otherwise (`0xdad10..0xdad34`) | `EconomyObjectInfo.IsChoosable` |
+  | 2 | `0xdfe0c(thing)` must be 0 | ride state `+408` is 1, BROKEN_DOWN (the log text "Setting state BROKEN_DOWN" belongs to the call with state 1, `0xe1908`) | executed; the state name static | `IsBrokenDown` |
+  | 3 | `0xdff18(thing)` must be 0 | the word `+100` is 0: **closed**. It is 1 at construction (`0xdab5c`), set to 1 by the open routine `0xde7e4` after its can-open checks (`0xdf4a0`, `0xdf8d8`, `0xdfad4`) and cleared by closing (`0xe0de8`, `0xe1004`, `0xe1220`, "Closing...") | executed; the open/close role static | `IsOpen` |
+  | 4 | `0xdfe20(thing)` must be 0 | ride state is 4, CONDEMNED (log "Setting state CONDEMNED", `0xe1954`): the breakdown path `0xe1864` picks 4 instead of 1 when the truncated life gauge (`+68`) is 0 | executed; the state name static | `IsBrokenDown` stands for it (a repaired ride is not condemned in C#; whether a condemned one stays so is untraced) |
+  | 5 | `0xdd3f4(&cell, thing)` must differ from the u16 behind TOC −19648 | the back-of-queue cell: `+54` when cached, otherwise the front cell (`0xdd2b4`, the neighbour of the entrance cell `+50` in its connection direction, 0 when none) followed along the queue links; so **the entrance connects to a cell**. The compared u16 is 0 in the file and read only here | stubbed (the cell chosen); the null value is checked | missing: no entrance cell or path connection in the economy |
+  | 6 | `0xdc988(thing)` must be nonzero | listed guests (`0xdd118`) below `4 × +60` (queue cells), unsigned: **the queue is not physically full** | executed with `0xdd118` stubbed | missing: no queue state in the economy |
+  | 7 | `0xe2fe4` then `0x45eac` | track type 3 (a coaster) needs the controller to exist and `+320` (riders on board) to be 0. The extra "complete, not editing" part of `0x45eac` cannot change the result | executed (`0xe2fe4`); `0x45eac` stubbed, its reading static | missing: `RideOperation.Riders` is the script's VAR_ONRIDE, not shown to be the controller's `+320` |
+  | 8 | type `+156` 1 or 2, thing `+40` 0 | a kart or water ride without the word `+40`. The constructor sets it to 1 (`0xda8e8`) and no other store of a ride was found; what would clear it is untraced (the queue-edit reopen `0xdd70c` tests it too) | executed | no state: always satisfied |
+
+  ARRIVAL-003 stays open for the conditions with no state (5, 6, 7, 8) and for the reading of 4 as `IsBrokenDown`. Not in
+  the test: the maintenance flag `+96` and the maintenance state 2 (`0xdfe88`, `0xdfe90`), which the open routine
+  `0xde654` does check.
 - **Age per type.** When type `+0x9C` (156) is 0, the age comes from the park's per-type record (`0xd1be8` on the
   table at game `+0x1d943c`, 32-byte entries keyed by type id). The object purchase routine `0xda874` writes the
   current turn (game `+0x1da70c`) to its `+28` only while `+28` is still 0 (`0xdadec..0xdae14`). Purchases at turn 0
   therefore leave it unset, and the first purchase at a later turn fixes it. All copies of the type share that age, so
   a copy bought later gets no fresh bonus. The purchase also raises `+24`, the removal path lowers it
-  (`0xdbfcc..0xdbfdc`), and `0xc5828` returns it as the divisor. Statically, no removal path writes `+28`; it is
-  zeroed when the table is reset (`0xd1d1c`) and restored by the save loader (`0xd1e8c`). `0xe4750` turns the
-  difference into 100 ns units: `(now − turn)` as an unsigned word times clock `+28` (15000), divided by 4, times
-  10^7. `0xc24c0` divides that by 864,000,000,000 (one day) with the signed 64-bit helper `0x1c4100` and keeps the low
-  word.
+  (`0xdbfcc..0xdbfdc`), and `0xc5828` returns it as the divisor, so a closed copy still counts in the divisor. Statically,
+  no removal path writes `+28`; it is zeroed when the table is reset (`0xd1d1c`) and restored by the save loader
+  (`0xd1e8c`). `0xe4750` turns the difference into 100 ns units: `(now − turn)` as an unsigned word times clock `+28`
+  (15000), divided by 4, times 10^7. `0xc24c0` divides that by 864,000,000,000 (one day) with the signed 64-bit helper
+  `0x1c4100` and keeps the low word.
 - **Copies of other types.** When type `+0x9C` is nonzero, the age is the thing's own (`0xdc520`: the clock's
   timestamp minus the one stored at thing `+20` at purchase, `TbTimeStamp::operator-`) and the divisor is 1. Every copy
   then counts in full, so these copies do not count once.

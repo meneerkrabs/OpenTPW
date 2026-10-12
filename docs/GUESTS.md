@@ -149,9 +149,13 @@ without a track (`Bumper.WhichTrackType` 0) is aged from its first purchase afte
 share one age, and is divided by the number of its objects, so its copies count once; selling does not reset
 that first purchase. Every copy of a tracked type (karts 1, water rides 2, coasters and flumes 3) is aged
 from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has
-25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (a working ride, no
-riders on a coaster being edited, a built kart or water track, and further untraced tests); OpenTPW counts
-every one (ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
+25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (executed in the oracle, F10): the type is
+choosable (`Info.IsChoosable`), the ride is neither broken down nor condemned and is open, its entrance connects
+to a cell, its queue holds fewer guests than four per queue cell, a coaster carries no riders, and a kart or water
+ride has its track word (set when the ride is built). OpenTPW applies the first three (`IsChoosable`,
+`IsBrokenDown`, `IsOpen`), so a closed or broken ride gives no points, while its copies still count in the
+divisor of an untracked type; the entrance, queue room and coaster conditions have no state in the economy
+(ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
 purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`). Open points are ARRIVAL-001..004 (`ArrivalApproximations`).
 
 ## Simulation

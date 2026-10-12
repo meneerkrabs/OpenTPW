@@ -138,7 +138,15 @@ preview; original runtime fidelity and the complete offline scope remain open.
   tracked as ARRIVAL-002..004. `ParkEconomy.ParkPoints` now follows F10's track
   type rule: an untracked type is aged from its first purchase and divided by
   its copies, every copy of a kart, water ride or coaster counts in full. Only
-  the counts-test `0xdc834` remains (121 differences, ARRIVAL-003).
+  the counts-test `0xdc834` remained (121 differences, ARRIVAL-003).
+- The counts-test `0xdc834` was traced and executed (oracle target
+  `park-points-counts-test`, 522/522 against the reading, call order included).
+  It needs `Info.IsChoosable`, a ride that is not broken down or condemned, the
+  open word, a connected entrance, queue room, a riderless coaster and a kart or
+  water track word. `ParkEconomy.ParkPoints` now applies the first three
+  (`IsChoosable`, `IsBrokenDown`, `IsOpen`): the park points bridge input's open
+  flag is passed as `IsOpen` and C# agrees on 507/507. ARRIVAL-003 stays open for
+  the conditions that need world state (entrance, queue room, coaster riders).
 - The oracle also executed the arrival update `0xcb2ac` over scripts of repeated
   calls (F11, ARRIVAL-004). A negative group (1700 guests: -200) behaves like an
   empty one: no guest, timer restart and cleared active byte at the next stop,

@@ -152,8 +152,8 @@ static JsonNode? ArrivalGroup( JsonObject a )
 // property, so its setter is reached through reflection to put each object's BuiltTick on the first tick of its build turn and the
 // economy on the first tick of turn "now". The type's first-purchase turn (park record +28) is then set to the input's value, as a
 // loaded save restores its counters after its objects: it can stem from a sold copy or be unset (0) with later copies standing;
-// ParkPointsTests covers how purchases set it. The original's counts-test (0xdc834, the input's open flag) has no C# counterpart
-// (ARRIVAL-003, F10), so it is not passed.
+// ParkPointsTests covers how purchases set it. The input's open flag stands for the original's counts-test (0xdc834) and is passed as
+// the object's open state (thing +0x64); the test's other conditions have no C# state (ARRIVAL-003, F10) and are not in the inputs.
 static JsonNode? ParkPoints( JsonObject a )
 {
 	var infos = a["types"]!.AsArray().Select( type =>
@@ -169,7 +169,7 @@ static JsonNode? ParkPoints( JsonObject a )
 	foreach ( var thing in a["things"]!.AsArray() )
 	{
 		tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)thing!["built"]! ) } );
-		park.RegisterExisting( (int)thing["type"]! );
+		park.RegisterExisting( (int)thing["type"]! ).IsOpen = (bool)thing["open"]!;
 	}
 	foreach ( var type in a["types"]!.AsArray() )
 	{

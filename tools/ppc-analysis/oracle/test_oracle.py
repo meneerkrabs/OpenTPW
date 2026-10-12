@@ -83,21 +83,22 @@ EXPECTED = {
                                                'min_people': 2, 'obj48': 1, 'limit_mode': 0, 'preset': None, 'interval': 2,
                                                'timer0': 0, 'steps': [[40, 2, 0], [44, 2, 0], [48, 2, 1], [400, 2, 1],
                                                                       [404, 2, 0], [900, 2, 0]]}),
-    # F10 (partly fixed): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its first purchase and divided
-    # by its count, any other type is aged per copy and counts in full, in GUESTS.md and C# too. Open: 0xc24c0 counts only
-    # things passing 0xdc834 (ARRIVAL-003).
-    ('park-points', 'plan'): (121, {'now': 1, 'scale': 15000,
-                                    'types': [{'id': 257, 'kind': 0, 'f9c': 0, 'value': 25, 'decay': 2,
-                                               'bonus': [30, 20, 10], 'first': 1}],
-                                    'things': [{'type': 257, 'open': False, 'built': 1}]}),
+    # F10 (fixed, counts-test partly): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its first purchase and
+    # divided by its count, any other type is aged per copy and counts in full, and only things passing 0xdc834 count, in
+    # GUESTS.md and C# too. The input's open flag is the chosen result of the counts-test; C# maps it to the object's open
+    # state (thing +0x64), the one condition of the test that the inputs vary.
+    ('park-points', 'plan'): AGREE,
     ('park-points', 'routine-reading'): AGREE,
-    ('park-points', 'csharp'): (121, {'now': 1, 'scale': 15000,
-                                      'types': [{'id': 257, 'kind': 0, 'f9c': 0, 'value': 25, 'decay': 2,
-                                                 'bonus': [30, 20, 10], 'first': 1}],
-                                      'things': [{'type': 257, 'open': False, 'built': 1}]}),
+    ('park-points', 'csharp'): AGREE,
+    # ARRIVAL-003: 0xdc834 executed (the entrance cell, the queue count and the coaster controller stubbed) agrees with the
+    # reading on the returned word and the stub call order. The part C# implements (Info.IsChoosable, not broken down or
+    # condemned, open) differs wherever one of the other conditions fails.
+    ('park-points-counts-test', 'plan'): AGREE,
+    ('park-points-counts-test', 'implemented-subset'): (205, {'flags': 4, 'state': 0, 'open': 1, 'cell': 0, 'cells': 2,
+                                                              'track': 0, 'thing40': 1, 'coaster': 1, 'count': 7}),
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final', 'arrival-update'}
+                  'coast-rating-final', 'arrival-update', 'park-points-counts-test'}
 
 
 class Identity(unittest.TestCase):
@@ -273,6 +274,32 @@ class Oracle(unittest.TestCase):
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
 
+    def test_counts_test(self):
+        for key in (('park-points-counts-test', 'plan'), ('park-points-counts-test', 'implemented-subset')):
+            self.check(key)
+
+    def test_counts_test_reading_is_sharp(self):
+        # Every condition of the reading matters: dropping any one brings mismatches back.
+        import dataclasses
+
+        def without(**fixed):
+            return lambda x: targets.counts_plan({**x, **fixed})
+        variants = {
+            'choosable': lambda x: targets.counts_plan({**x, 'flags': x['flags'] | 4}),
+            'broken-down': lambda x: targets.counts_plan({**x, 'state': 0 if x['state'] == 1 else x['state']}),
+            'condemned': lambda x: targets.counts_plan({**x, 'state': 0 if x['state'] == 4 else x['state']}),
+            'open': without(open=1),
+            'cell': without(cell=1),
+            'queue-room': without(count=0, cells=1),
+            'coaster': without(coaster=1),
+            'kart-track': lambda x: targets.counts_plan({**x, 'thing40': 1 if x['track'] == 1 else x['thing40']}),
+            'water-track': lambda x: targets.counts_plan({**x, 'thing40': 1 if x['track'] == 2 else x['thing40']}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.COUNTS, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})
         sandbox.reset()
@@ -321,6 +348,8 @@ class CSharpMutation(unittest.TestCase):
          '(3f * previous + (baseSpeed + bonus + boost) / (float)Divisor) * 0.25f'),
         ('walk-speed-setter', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
          'public const int Floor = 655;', 'public const int Floor = 654;'),
+        ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'info.IsChoosable && !item.IsBrokenDown && item.IsOpen;', 'info.IsChoosable && !item.IsBrokenDown;'),
     ]
 
     def test_mutations_are_detected(self):

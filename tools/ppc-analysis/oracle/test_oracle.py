@@ -230,10 +230,27 @@ EXPECTED = {
     ('staff-strike-month', 'plan'): 442,
     ('staff-strike-month', 'routine-reading'): AGREE,
     ('staff-strike-month', 'csharp'): AGREE,
+    # F23 (ECON-039, fixed in C#): the local ticket check 0xd31d0 awards the yearly profit ticket when the bank's year profit word is signed
+    # GREATER than GoldenTicketLocal.ProfitYear, with no factor (the 0.9 multiplier of 0x13fdc is the advisor's near-ticket hint). The
+    # former rule (>=) is the pinned plan: it differs exactly where the profit equals the threshold.
+    ('profit-ticket', 'plan'): (154, {'profit': 15000, 'threshold': 15000}),
+    ('profit-ticket', 'routine-reading'): AGREE,
+    ('profit-ticket', 'csharp'): AGREE,
+    ('profit-ticket-hint', 'routine-reading'): AGREE,
+    # F23 (all tickets): every local and global arm is a signed strictly-greater compare; the happiness ticket compares the single average with
+    # single(Happiness) and the guest count with AtLeastThisManyHappyPeople; the recent-visitors arm also needs the park age in months above
+    # RecentVisitorMonths. The former rule (>= everywhere, the average truncated) is the pinned plan.
+    ('local-tickets', 'plan'): (458, {'visitors_limit': 100, 'people_limit': 200, 'happiness_limit': 75, 'happy_people_limit': 150, 'threshold': 15000,
+                                      'recent_limit': 350, 'months_limit': 6, 'visitors': 100, 'people': 0, 'avg': 0.0, 'built': 0, 'profit': 0,
+                                      'recent': 0, 'age': 9}),
+    ('local-tickets', 'routine-reading'): AGREE,
+    ('local-tickets', 'csharp'): AGREE,
+    ('global-tickets', 'routine-reading'): AGREE,
+    ('global-tickets', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
-                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival'}
+                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival', 'profit-ticket-hint'}
 
 
 class Identity(unittest.TestCase):
@@ -856,6 +873,113 @@ class Oracle(unittest.TestCase):
         self.assertEqual(targets.run_binary(target, sandbox, {**base, 'pref': 0, 'level': 90, 'flags': 1, 'gauge': 3.0}),
                          {'outcome': 'scared', 'difference': 100})
         self.assertEqual(targets.run_binary(target, sandbox, {**base, 'level': 0}), {'outcome': 'pass', 'difference': -50})
+
+    def test_profit_ticket(self):
+        for key in (('profit-ticket', 'plan'), ('profit-ticket', 'routine-reading'), ('profit-ticket-hint', 'routine-reading')):
+            self.check(key)
+
+    def test_profit_ticket_csharp(self):
+        self.check(('profit-ticket', 'csharp'))
+
+    def test_profit_ticket_old_rule_differs_only_at_equality(self):
+        # F23: the former rule (>=) and the routine disagree only where the profit equals the threshold.
+        [comparison] = [c for c in compare(targets.PROFIT_TARGET, self.image, DEFAULT_COUNT, csharp=False, keep=10**6) if c.side == 'plan']
+        self.assertGreater(comparison.mismatches, 0)
+        for example in comparison.examples:
+            self.assertEqual(example['input']['profit'], example['input']['threshold'], example)
+            self.assertEqual((example['original'], example['plan']), ([], [4]))
+
+    def test_profit_ticket_reading_is_sharp(self):
+        # The strict compare, the signed compare and the absence of a factor each matter, and so do the hint's pieces.
+        import dataclasses
+        variants = {'at-least': lambda x: targets.profit_reading(x, strict=False),
+                    'unsigned': lambda x: targets.profit_reading(x, unsigned=True),
+                    'hint-factor': lambda x: targets.profit_reading(x, scale=targets.f32(0.9))}
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.PROFIT_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+        hint = {'unscaled': lambda x: targets.hint_reading(x, unscaled=True),
+                'ignore-earned': lambda x: targets.hint_reading(x, ignore_earned=True),
+                'at-least': lambda x: targets.hint_reading(x, strict=False)}
+        for name, reading in hint.items():
+            mutated = dataclasses.replace(targets.HINT_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'hint {name}')
+
+    def test_profit_ticket_earned_flag_and_hint(self):
+        # Executed: an earned profit ticket is not awarded again, and with the profit ticket open and every other ticket earned
+        # it is the only award. The hint (0x13fdc) is the advisor's: 0.9 x ProfitYear, the rule's score, none once earned.
+        target = targets.PROFIT_TARGET
+        box = target.sandbox(self.image)
+        self.assertEqual(targets.run_binary(target, box, {'profit': 15001, 'threshold': 15000}), [4])
+        self.assertEqual(targets.run_binary(target, box, {'profit': 15001, 'threshold': 15000, 'earned': True}), [])
+        self.assertEqual(targets.run_binary(target, box, {'profit': 15000, 'threshold': 15000}), [])
+        hint, hint_box = targets.HINT_TARGET, targets.HINT_TARGET.sandbox(self.image)
+        base = {'profit': 13501, 'threshold': 15000, 'mult': targets.f32(0.9), 'score': 100}
+        self.assertEqual(targets.run_binary(hint, hint_box, base), 100)
+        self.assertEqual(targets.run_binary(hint, hint_box, {**base, 'profit': 13500}), 0)
+        self.assertEqual(targets.run_binary(hint, hint_box, {**base, 'earned': True}), 0)
+
+    def test_all_tickets(self):
+        for key in (('local-tickets', 'plan'), ('local-tickets', 'routine-reading'), ('global-tickets', 'routine-reading')):
+            self.check(key)
+
+    def test_all_tickets_csharp(self):
+        for key in (('local-tickets', 'csharp'), ('global-tickets', 'csharp')):
+            self.check(key)
+
+    def test_all_tickets_reading_is_sharp(self):
+        import dataclasses
+        local = {'at-least': lambda x: targets.local_reading(x, strict=False),
+                 'truncated-average': lambda x: targets.local_reading(x, trunc_average=True)}   # the age gate: test_local_tickets_arms_and_boundaries
+        for name, reading in local.items():
+            mutated = dataclasses.replace(targets.LOCAL_TICKETS_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+        mutated = dataclasses.replace(targets.GLOBAL_TICKETS_TARGET, plan=lambda x: targets.global_reading(x, strict=False), alternatives={})
+        [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+        self.assertGreater(comparison.mismatches, 0, 'global at-least')
+
+    def test_local_tickets_arms_and_boundaries(self):
+        # Executed boundaries of each arm (the shipped jungle limits): equal never wins, one above does.
+        target = targets.LOCAL_TICKETS_TARGET
+        box = target.sandbox(self.image)
+        base = {'visitors_limit': 100, 'people_limit': 200, 'happiness_limit': 75, 'happy_people_limit': 150, 'threshold': 15000,
+                'recent_limit': 350, 'months_limit': 6, 'visitors': 0, 'people': 0, 'avg': 0.0, 'built': 0, 'profit': 0, 'recent': 0, 'age': 9}
+        run = lambda **kw: targets.run_binary(target, box, {**base, **kw})
+        self.assertEqual(run(), [])
+        self.assertEqual((run(visitors=100), run(visitors=101)), ([], [0]))
+        self.assertEqual(run(people=200), [])   # 200 is not above 200 (the happiness arm needs the average too)
+        self.assertEqual(run(people=201), [1])
+        # happiness: the single average above single(75) and the guest count above 150 (nobody is filtered by happiness)
+        self.assertEqual(run(avg=75.0, people=151), [])
+        self.assertEqual(run(avg=targets.f32(75.01), people=150), [])
+        self.assertEqual(run(avg=targets.f32(75.01), people=151), [2])
+        self.assertEqual(run(avg=targets.f32(75.5), people=151), [2], 'the original compares the fraction: 75.5 > 75')
+        # all researched and built: the low byte of the result
+        self.assertEqual((run(built=1), run(built=256), run(built=255)), ([3], [], [3]))
+        self.assertEqual((run(profit=15000), run(profit=15001)), ([], [4]))
+        # recent visitors: the counter above 350 and the park age in months above 6 (equal ages do not count)
+        self.assertEqual((run(recent=350), run(recent=351)), ([], [5]))
+        self.assertEqual((run(recent=351, age=6), run(recent=351, age=7), run(recent=351, age=5)), ([], [5], []))
+        glob, glob_box = targets.GLOBAL_TICKETS_TARGET, targets.GLOBAL_TICKETS_TARGET.sandbox(self.image)
+        limits = [105, 90, 50, 2000]
+        for i, limit in enumerate(limits):
+            for stat, expected in ((limit, []), (limit + 1, [i])):
+                stats = [0, 0, 0, 0]
+                stats[i] = stat
+                self.assertEqual(targets.run_binary(glob, glob_box, {'global_limits': limits, 'global_stats': stats}), expected, (i, stat))
+
+    def test_profit_ticket_stubs_are_checked(self):
+        # The bank lookup must see the game pointer; a wrong one aborts the run instead of returning the bank.
+        target = targets.PROFIT_TARGET
+        box = target.sandbox(self.image)
+        box.reset()
+        targets.profit_setup(box, {'profit': 1, 'threshold': 0})
+        box.write(targets.toc_pointer(box, targets.PROFIT_GAME_VARIABLE), 'I', box.alloc(16))
+        with self.assertRaises(AssertionError):
+            box.call(targets.LOCAL_TICKETS, {3: targets.PROFIT_STATE.this})
 
     def test_shop_sale_litter(self):
         for key in (('shop-sale-litter', 'plan'), ('shop-sale-litter', 'routine-reading'), ('guest-litter-trigger', 'routine-reading')):

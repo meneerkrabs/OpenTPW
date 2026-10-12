@@ -104,8 +104,8 @@ public sealed class NoRideOperations : IRideOperations
 public interface IParkGuestStatistics
 {
 	int PeopleInPark { get; }
-	/// <summary>Average visitor happiness, 0–100.</summary>
-	int AverageHappiness { get; }
+	/// <summary>Average visitor happiness, 0–100, as the original's 0xc19e4 returns it: a single, the mean of each guest's truncated happiness, 0 while the park is closed.</summary>
+	float AverageHappiness { get; }
 	/// <summary>Visitors whose happiness is at least <see cref="GoldenTicketSettings.Happiness"/>.</summary>
 	int CountHappierThan( int happiness );
 	int KidsWithBalloonsPercent { get; }
@@ -117,7 +117,7 @@ public sealed class NoGuestStatistics : IParkGuestStatistics
 {
 	public static readonly NoGuestStatistics Instance = new();
 	public int PeopleInPark => 0;
-	public int AverageHappiness => 0;
+	public float AverageHappiness => 0;
 	public int CountHappierThan( int happiness ) => 0;
 	public int KidsWithBalloonsPercent => 0;
 	public int KidsWithCostumesPercent => 0;

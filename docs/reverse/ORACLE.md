@@ -155,10 +155,18 @@ Mutation checks (`test_oracle.py`):
 | `staff-rest-seek` | the tail of `0xf4900` (`0xf4a60..0xf4c04`) and the world LCG `0x105328` | `0xfb54c` thought, `0xf4c18` navigation (a rest area found or not), `0xf311c` state change, `0x5fbcc` log | 509 | **F22**: 81 differ from the old claim. **Agree** 509/509 with the routine reading (energy byte against `RestLevel`, the thoughts, the one-in-sixteen happiness hit with the world draw) | `StaffVitals.SeekRest` through `staff_rest_seek` (the world draw is passed in): **agree** 509/509 |
 | `staff-strike-grievance` | `0xf8410` | `0x1082b4` game -> park, the two analyser sums `0xc21f4` / `0xc2264` (chosen words, arguments checked), `0xb678`, `0x5fbcc`. One chain of staff per role, decoys in the other roles | 515 | **F22**: 313 differ from the old claim (no strikes). **Agree** 515/515 with the routine reading | `StaffStrikeBoard.Grievance` through `staff_grievance`: **agree** 515/515 |
 | `staff-strike-month` | `0xf7e18` (the month-end consideration), `0xf7fe0` (the escalation), `0xf8410`, `0xf8bc0` / `0xf8bd0` (active flag), `0x1091ac` (park closed word), `0x1c4100` (64-bit divide) | `0xfc1c4` training, `0xc1fb4` guests in the park (chosen), `0xe4628` clock stamp (chosen), `0x116590` / `0x11688c` message construction and posting (logged as role and kind), the grievance stubs. One run replays 1 to 6 month ends in one sandbox | 513 scripts | **F22**: 442 differ from the old claim (no strikes). **Agree** 513/513 with the routine reading (levels, flags, turns considered, messages and every debug line) | `StaffStrikeBoard.ConsiderMonth` through `staff_strike_month`: **agree** 513/513 |
+| `profit-ticket` | `0xd31d0` (the six local golden tickets; ticket 4 is `0xd33dc..0xd3410`), the bank year profit `0xccfa8`, the earned flag `0x128d6c` / `0x12a438` | `0x1082b4` and `0x108424` (game checked; synthetic park and bank), `0xd3664` (the award, logged) | 523 | **F23**: 154 differ from the former rule (`>=`), every one with profit equal to the threshold. **Agree** 523/523 with the routine reading (`test_profit_ticket_reading_is_sharp`) | `ParkObjectives.CheckGoldenTickets` through `profit_ticket`: **agree** (154 differed before the fix) |
+| `profit-ticket-hint` | `0x13fdc` (the advisor's "near the profit ticket" hint), `0xccfa8`, `0x128d6c` / `0x12a438` | `0x108424` (game checked; synthetic bank) | 621 | no plan side. **Agree** 621/621 with the routine reading | none: OpenTPW has no advisor hints (`CSHARP_PENDING`) |
+| `local-tickets` | all six arms of `0xd31d0`, `0x128d6c` / `0x12a438` (earned flags) | `0xc3b7c`, `0xc3684`, `0xc19e4` (float), `0xc5510`, `0xc3b88` (month count checked), `0xe4628` / `0x1c4100` (the age in months), `0x1082b4`, `0x108424`, award `0xd3664` (logged) | 541 | **F23**: 458 differ from the former rule (every `>=`, average truncated). **Agree** 541/541 with the routine reading | `ParkObjectives.CheckGoldenTickets` through `local_tickets`: **agree** |
+| `global-tickets` | `0xd34c0` (four statistics against `+1900`, `+1904`, `+1908`, `+1916`) | `0x1082b4`, `0xc73bc`, `0xc6cec`, `0xc710c`, `0xc8cc0`, award `0xd3748` (logged) | 515 | no plan side. **Agree** 515/515 with the routine reading | `CheckGoldenTickets` through `global_tickets`: **agree** |
 
 The C# comparisons use these seams:
 
 - `ParkEconomy.TryBuy` (`shop_sale_litter`): the litter store delta of one sale.
+- `ParkObjectives.CheckGoldenTickets` (`local_tickets`, `global_tickets`): the won ticket indices for chosen statistics and limits; the guest
+  statistics are a stub, the year profit comes from `ImportOriginalBank`, the records from `ParkCounters.Max`.
+- `ParkObjectives.CheckGoldenTickets` (`profit_ticket`): whether the yearly profit ticket is newly won, on a park whose bank holds the
+  given year profit and whose Standard.sam has the given `GoldenTicketLocal.ProfitYear`.
 - `RideVisitorBridge.ComputeQueueLimit`.
 - `ParkCellMap.CanChangeCellType`.
 - `ParkEconomy.TrySpendCell` in `ParkPathBuilder.Validate` order: refuse, then the same type
@@ -213,6 +221,58 @@ The pricing domain is the free byte clear, `game+36 == 0` and bank `+276 ≠ 0`.
 belongs to `path-can-change`.
 
 ## 5. Findings
+**F23, the yearly profit golden ticket (ECON-039, `ParkObjectives.CheckGoldenTickets`, `0xd33dc`; fixed in C#).** The register said the
+profit ticket compares the year's profit with `ProfitYear` directly, while the original (`0x13fdc`) "scales the threshold by a per-objective
+factor". Both routines are executed (`profit-ticket`, `profit-ticket-hint`) and they are not the same rule:
+
+- The award is the local ticket check `0xd31d0` (called from `0xd2f1c`, game type 0, every 100 turns). For each local ticket it asks the
+  earned flags (`0x128d6c(flag set, index)` over the byte `flags[index]`) and, when the ticket is not earned, compares a park statistic
+  with a word of the Standard.sam block (TOC `-30084`). Ticket 4 is `0xd33dc..0xd3410`: `0x108424(game)` is the bank, `0xccfa8` is its
+  `+292` word (the year profit), and `cmpw` (signed) of that word against the word at `+1888` (`GoldenTicketLocal.ProfitYear`) with a
+  branch on "not greater" decides; the award is `0xd3664(this, 4)`. **There is no factor, and equal is not enough.** The executed
+  routine agrees with that reading on 523/523 inputs, and a `>=` compare, an unsigned compare and the 0.9 multiplier each break it
+  (`test_profit_ticket_reading_is_sharp`).
+- `0x13fdc` is a virtual method of the advisor's rule object (a large vtable of rule methods; the neighbours `0x13de8`, `0x13ec4` do the
+  same for people and happiness). Its fields are the advisor's rule table: `this+1492` is `GoldTicketNearToXProfit.ProfitMultiplier` (the
+  layout of the Advisor.sam record table puts it 12 bytes lower than the object offset, and the same shift fits the people and happiness
+  rules), `this+1496` is that rule's `.Score`. It computes `trunc(single(single(ProfitYear) * multiplier))`, tests the same bank word
+  `>` that value (signed) and, while the ticket is not earned (`0x128d6c(flag set, 4)`), returns the score, else 0. With the shipped
+  Advisor.sam (multiplier 0.9, score 100) that is the advisor's "you are close to the profit golden ticket" message at 90 % of
+  `ProfitYear`. The routine reading agrees with the executed routine on 621/621 inputs, and the missing multiplier, the missing earned
+  test and a `>=` compare each break it. This is the "per-objective factor" ECON-039 found: it belongs to the advisor, not to the award.
+
+Before the fix OpenTPW compared `profit >= ProfitYear`; the original is `profit > ProfitYear`. The two differ only when the year's profit is
+exactly the threshold: with the shipped jungle value 15000, a year profit of exactly 15000 won the ticket in OpenTPW and wins nothing in the
+original (it needs 15001). The oracle's former-rule side and C# both showed 154 mismatches, every one with profit equal to the threshold
+(first counterexample: profit 15000, threshold 15000: original no award, old rule ticket 4), and C# now agrees on 523/523.
+**Fixed in C#:** `profitThisYear > rules.ProfitYear`; the `[APPROX:ECON-039]` is gone. The statistic was already the right one
+(`mProfitThisYear`, the bank's `+292`, a signed 32-bit word). Extension: every other ticket (`local-tickets`, `global-tickets`, executed arm by arm; the earned flags are the real `0x128d6c`, the park
+statistics are stubbed). All are `cmpw` and a branch on "not greater" (signed, strictly greater, no factor), with these exact reads:
+
+| Ticket | Original (`0xd31d0` / `0xd34c0`) | OpenTPW before | OpenTPW now |
+| --- | --- | --- | --- |
+| Visitors | `0xc3b7c(park) > [1872]` | `>=` | `>` |
+| People in park | `0xc3684(park) > [1876]` | `>=` | `>` |
+| Happiness | single `0xc19e4(park, 0)` (average happiness, `fcmpo`) `> single([1880])` **and** `0xc3684(park) > [1884]` | the average truncated to an integer, `>=`, plus a count of guests at least that happy `>=` `AtLeastThisManyHappyPeople` | the single average `> Happiness` and the guests in the park `> AtLeastThisManyHappyPeople`; nobody is filtered by happiness (`IParkGuestStatistics.AverageHappiness` is now a float: the mean of each in-park guest's `(u8)trunc(happiness)`, 0 while the park is closed, as `0xc19e4` computes it per PPC-scenarios; the routine itself is stubbed here) |
+| All researched and built | `0xc5510(park)` low byte nonzero | same | same (no C# input in the oracle) |
+| Profit | bank `+292 > [1888]` | `>=` | `>` |
+| Recent visitors | `0xc3b88(park, [1896]) > [1892]` **and** the park age in 30-day months `> [1896]` | the last N closed months `>=` | the last N closed months `>`; the age gate is still "N closed months" (ECON-052) |
+| Coaster height, go-kart excitement, water length | `0xc73bc` / `0xc6cec` / `0xc710c` `> [1900]` / `[1904]` / `[1908]` | `>=` | `>` |
+| Big park | `0xc8cc0 > [1916]` (`MinCellsCovered`) | `>=` `MinCellsOwned` | `>` `MinCellsOwned` (key mapping is ECON-038) |
+
+The global tickets are a small routine of their own (`0xd34c0`, four statistics against four words, each award `0xd3748` tests its own earned
+flag), so they are executed too. The secret camera ticket (`0xd35b4`: `0xc8b08 == 100` percent covered) and the never-awarded all-land
+ticket are not run, and C# keeps its `>= MinCellsCovered` records for them. Wherever the ticket checks differ from C# only at the limit
+itself, the shipped files give limits of 100 visitors, 200 and 150 guests, average happiness 75, 15000 profit, 350 recent visitors and the
+global 105, 90, 50 and 2000 / 3000, so for example a park with exactly 100 admissions no longer wins the visitors ticket (it needs 101) and
+a go-kart excitement of exactly 90 no longer wins (91). Not compared with C#: the age gate of the recent-visitors ticket (the original
+counts 30-day months of park age, OpenTPW closed calendar months; the oracle inputs keep the age at least three months away from the
+month count, and the boundary is executed in `test_local_tickets_arms_and_boundaries`) and the big-park key. Inputs with a negative
+`RecentVisitors` limit also differ (a short park passes in C#); no shipped file has one.
+
+The gate around the
+routine (game type 0, every 100 turns) is not executed, and the advisor hint has no C# counterpart (the advisor slice is unused).
+
 **F17, the month-end staff training (ECON-013, `ParkStaff.Train`).**
 `staff-training-split` executes `0xfc1c4` over a staff list built in memory (the list walkers, the thing array, the settings prices,
 a bank and a park thing for the debit `0xcbfdc` and its statistics). The routine reading agrees on 507/507, C# agrees after the fix,

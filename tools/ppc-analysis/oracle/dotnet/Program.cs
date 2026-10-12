@@ -37,6 +37,9 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["staff_rest_seek"] = StaffRestSeek,
 	["staff_grievance"] = StaffGrievance,
 	["staff_strike_month"] = StaffStrikeMonth,
+	["profit_ticket"] = ProfitTicket,
+	["local_tickets"] = LocalTickets,
+	["global_tickets"] = GlobalTickets,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -368,6 +371,62 @@ static JsonNode? ShopSaleLitter( JsonObject a )
 	return JsonValue.Create( park.LitterScaled - before );
 }
 
+// ParkObjectives.CheckGoldenTickets (the local ticket check 0xd31d0, ORACLE F23) on a park whose bank holds the given year profit
+// (ImportOriginalBank, like a loaded original save) and whose Standard.sam has the given GoldenTicketLocal.ProfitYear: whether the
+// yearly profit ticket is newly won. The other tickets are not reached on an empty park and are not looked at.
+static JsonNode? ProfitTicket( JsonObject a )
+{
+	var text = System.Text.RegularExpressions.Regex.Replace( EconomyTestData.StandardText(), @"^GoldenTicketLocal\.ProfitYear .*$",
+		$"GoldenTicketLocal.ProfitYear {(int)a["threshold"]!}", System.Text.RegularExpressions.RegexOptions.Multiline );
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	typeof( ParkEconomy ).GetMethod( "ImportOriginalBank", BindingFlags.NonPublic | BindingFlags.Instance )!
+		.Invoke( park, new object[] { 0L, 20, (long)(int)a["profit"]!, Array.Empty<LoanAccount>() } );
+	var won = park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, park.Ledger.ProfitThisYear, Array.Empty<long>() );
+	return JsonValue.Create( won.Contains( GoldenTicketKind.ProfitYear ) );
+}
+
+// ParkObjectives.CheckGoldenTickets for the six local tickets (0xd31d0, ORACLE F23): the Standard.sam keys are replaced, the guest
+// statistics come from a stub, the profit from the imported bank and the monthly admissions are `age` closed months whose last
+// RecentVisitorMonths sum to `recent`. Returns the won ticket indices (the enum order is the original's ticket order).
+static JsonNode? LocalTickets( JsonObject a )
+{
+	var text = EconomyTestData.StandardText();
+	foreach ( var (key, value) in new[] { ("Visitors", "visitors_limit"), ("PeopleInPark", "people_limit"), ("Happiness", "happiness_limit"),
+		("AtLeastThisManyHappyPeople", "happy_people_limit"), ("ProfitYear", "threshold"), ("RecentVisitors", "recent_limit"), ("RecentVisitorMonths", "months_limit") } )
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^GoldenTicketLocal\.{key} .*$", $"GoldenTicketLocal.{key} {(int)a[value]!}",
+			System.Text.RegularExpressions.RegexOptions.Multiline );
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	typeof( ParkEconomy ).GetMethod( "ImportOriginalBank", BindingFlags.NonPublic | BindingFlags.Instance )!
+		.Invoke( park, new object[] { 0L, 20, (long)(int)a["profit"]!, Array.Empty<LoanAccount>() } );
+	park.Counters.Add( ParkCounters.Admissions, (int)a["visitors"]! );
+	var months = new long[Math.Max( 0, (int)a["age"]! )];
+	if ( months.Length > 0 )
+		months[^1] = (int)a["recent"]!;
+	var average = BitConverter.Int32BitsToSingle( (int)(uint)a["avg_bits"]! );
+	var won = park.Objectives.CheckGoldenTickets( park.Counters, new FixedGuestStatistics( (int)a["people"]!, average ), park.Research, park.Ledger.ProfitThisYear, months );
+	return new JsonArray( won.Where( kind => (int)kind < 6 ).Select( kind => (JsonNode)JsonValue.Create( (int)kind )! ).ToArray() );
+}
+
+// The four global tickets (0xd34c0, ORACLE F23): the statistic is the reported record, the limits are the Standard.sam keys (big park
+// reads MinCellsOwned in C# and [1916] = MinCellsCovered in the original, so both keys get the limit). Returns the won kinds (6..9).
+static JsonNode? GlobalTickets( JsonObject a )
+{
+	var text = EconomyTestData.StandardText();
+	var keys = new[] { "CoasterHeight", "GokartExcitement", "WaterLength", "MinCellsOwned" };
+	for ( var i = 0; i < 4; i++ )
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^GoldenTicketGlobal\.{keys[i]} .*$", $"GoldenTicketGlobal.{keys[i]} {(int)a["limits"]![i]!}",
+			System.Text.RegularExpressions.RegexOptions.Multiline );
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	var kinds = new[] { ParkRecordKind.CoasterHeight, ParkRecordKind.GokartExcitement, ParkRecordKind.WaterLength, ParkRecordKind.CellsOwned };
+	for ( var i = 0; i < 4; i++ )
+		park.Counters.Max( ParkCounters.Record( kinds[i], 0 ), (int)a["stats"]![i]! );
+	var won = park.Objectives.CheckGoldenTickets( park.Counters, NoGuestStatistics.Instance, park.Research, 0, Array.Empty<long>() );
+	return new JsonArray( won.Where( kind => (int)kind >= 6 && (int)kind <= 9 ).Select( kind => (JsonNode)JsonValue.Create( (int)kind )! ).ToArray() );
+}
+
 // ParkStaff.Train (0xfc1c4, ORACLE F17) on staff added the way an original save adds them (AddImported is internal: reflection), with
 // the five roles' PoundsPerTrainingPoint columns replaced in the synthetic Standard.sam. Returns the members in input order and the
 // amount Train reports (ParkEconomy.EndMonth books it as one staff cost).
@@ -466,4 +525,13 @@ static JsonNode? StaffStrikeMonth( JsonObject a )
 		messages.Add( new JsonArray( sent.Select( message => (JsonNode)new JsonArray( (int)message.Role, (int)message.Kind ) ).ToArray() ) );
 	}
 	return new JsonObject { ["levels"] = levels, ["flags"] = flags, ["ticks"] = ticks, ["messages"] = messages };
+}
+
+sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStatistics
+{
+	public int PeopleInPark => people;
+	public float AverageHappiness => average;
+	public int CountHappierThan( int happiness ) => 0;
+	public int KidsWithBalloonsPercent => 0;
+	public int KidsWithCostumesPercent => 0;
 }

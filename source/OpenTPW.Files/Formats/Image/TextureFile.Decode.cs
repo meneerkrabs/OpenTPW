@@ -37,7 +37,7 @@ partial class TextureFile
 	// half-scale data halves the source index; output pairs sit at stride 2
 	// for full-scale data and stride 1 for half-scale, so half-scale output
 	// neighbours overlap by one sample.
-	void D4InverseTransformRows( ref List<float> pSrc, ref List<float> pDest, int offset, int size, D4Coefficients coefs, bool isHalfScale )
+	void D4InverseTransformRows( float[] pSrc, float[] pDest, int offset, int size, D4Coefficients coefs, bool isHalfScale )
 	{
 		for ( int i = 0; i < size; i++ )
 		{
@@ -59,7 +59,7 @@ partial class TextureFile
 	// One inverse D4 step down a single column: scale values come from row
 	// `index`, wavelet values from `index + wOffset`, and the results land in
 	// interleaved output rows two strides apart.
-	void D4InverseTransformColumns( ref List<float> pSrc, ref List<float> pDest, int size, D4Coefficients coefs, int col, int wOffset )
+	void D4InverseTransformColumns( float[] pSrc, float[] pDest, int size, D4Coefficients coefs, int col, int wOffset )
 	{
 		int count = size / 2;
 
@@ -80,7 +80,7 @@ partial class TextureFile
 		}
 	}
 
-	private bool DecodeChannel( ref ImageDecodeState state, int size, ref byte[] pSrc, ref List<float> outputBuffer, float dequantizationScale, bool isHalfScale, bool isAlpha = false )
+	private bool DecodeChannel( ref ImageDecodeState state, int size, ref byte[] pSrc, float[] outputBuffer, float dequantizationScale, bool isHalfScale, bool isAlpha = false )
 	{
 		int count = size * (size / 2);
 		int index = 0;
@@ -122,7 +122,7 @@ partial class TextureFile
 		D4Coefficients coefs = new( dequantizationScale );
 		int rowTransformSize = (isHalfScale) ? size : size / 2;
 		for ( int i = 0; i < size; i++ )
-			D4InverseTransformRows( ref state.DequantizationBuffer, ref state.RowDecodeBuffer, i * size, rowTransformSize, coefs, isHalfScale );
+			D4InverseTransformRows( state.DequantizationBuffer, state.RowDecodeBuffer, i * size, rowTransformSize, coefs, isHalfScale );
 
 		//
 		// Step 3: decode columns
@@ -130,7 +130,7 @@ partial class TextureFile
 		coefs = new( 1.0f );
 		int wOffset = isAlpha && isHalfScale ? (size * size) : size * (size / 2);
 		for ( int i = 0; i < size; ++i )
-			D4InverseTransformColumns( ref state.RowDecodeBuffer, ref outputBuffer, size, coefs, i, wOffset );
+			D4InverseTransformColumns( state.RowDecodeBuffer, outputBuffer, size, coefs, i, wOffset );
 
 		return true;
 	}

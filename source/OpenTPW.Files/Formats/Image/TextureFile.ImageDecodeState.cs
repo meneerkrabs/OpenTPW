@@ -26,15 +26,20 @@ public partial class TextureFile
 	// alpha wavelet plane reads them, so they affect the decoded output.
 	// (The original allocation was N*N*N entries per buffer; only the N*N and
 	// 1.5*N*N prefixes above are ever touched.)
+	// Plain arrays rather than lists: the decode loops are the browser's cold
+	// path, where every List indexer read/write is a method call (and the WASM
+	// interpreter never tiers it up), while array element access stays an
+	// opcode. New arrays are zero-filled, exactly like the Repeat( 0f )
+	// lists they replace - the zeros the half-scale alpha plane reads depend on.
 	struct ImageDecodeState
 	{
-		public List<float> DequantizationBuffer;
-		public List<float> RowDecodeBuffer;
+		public float[] DequantizationBuffer;
+		public float[] RowDecodeBuffer;
 
 		public ImageDecodeState( int size )
 		{
-			DequantizationBuffer = Enumerable.Repeat( 0f, size * size ).ToList();
-			RowDecodeBuffer = Enumerable.Repeat( 0f, size * size * 2 ).ToList();
+			DequantizationBuffer = new float[size * size];
+			RowDecodeBuffer = new float[size * size * 2];
 		}
 	}
 }

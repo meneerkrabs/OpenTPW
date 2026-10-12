@@ -28,6 +28,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["queue_failure"] = QueueFailure,
 	["queue_join_difference"] = QueueJoinDifference,
 	["queue_join_gate"] = QueueJoinGate,
+	["shop_sale_litter"] = ShopSaleLitter,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -315,4 +316,18 @@ static JsonNode? QueueJoinGate( JsonObject a )
 	var pref = (int)a["pref"]!;
 	var outcome = bridge.ExcitementRefusal( pref ) switch { null => "pass", QueueJoinResult.NotExcitingEnough => "bored", QueueJoinResult.TooExciting => "scared", var other => other.ToString()! };
 	return new JsonObject { ["outcome"] = outcome, ["difference"] = bridge.JoinDifference( pref ) };
+}
+
+// ParkEconomy.TryBuy (ECON-020, ORACLE F18): the change of the park's litter store (LitterScaled, 1/100 litter item) caused by one sale in
+// a shop whose UsageInfo.LitterEffect is the input. The store has no per-guest meter and no floor or ceiling.
+static JsonNode? ShopSaleLitter( JsonObject a )
+{
+	var shop = new EconomyObjectInfo( 9001, "Shop", ParkObjectKind.Shop, ResearchCategory.Ride, 0,
+		new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, 30, 20, null, 2, 0, 0, 0, (int)a["effect"]!, 0, "synthetic.wad" );
+	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[] { shop } ), ParkGameMode.FullSimulation, 1 );
+	var item = park.RegisterExisting( 9001 );
+	var before = park.LitterScaled;
+	if ( !park.TryBuy( item.Id, 1000, out _ ) )
+		throw new InvalidOperationException( "the sale was refused" );
+	return JsonValue.Create( park.LitterScaled - before );
 }

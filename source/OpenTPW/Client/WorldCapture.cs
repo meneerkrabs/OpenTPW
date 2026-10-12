@@ -1,6 +1,4 @@
 using System.Runtime.InteropServices;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 
 namespace OpenTPW;
@@ -86,10 +84,9 @@ public sealed class WorldCapture
 					(pixels[pixel], pixels[pixel + 2]) = (pixels[pixel + 2], pixels[pixel]);
 			for ( var pixel = 3; pixel < pixels.Length; pixel += 4 )
 				pixels[pixel] = 255;
-			using var image = Image.LoadPixelData<Bgra32>( pixels, (int)source.Width, (int)source.Height );
 			var full = Path.GetFullPath( count == 1 ? path : SequencePath( path, written ) );
 			Directory.CreateDirectory( Path.GetDirectoryName( full )! );
-			image.SaveAsPng( full );
+			PngWriter.SaveBgra( full, pixels, (int)source.Width, (int)source.Height );
 			var cameraText = Camera.Mode is ParkCameraMode park ? FormattableString.Invariant( $" Camera {park.Target.X:0.#},{park.Target.Y:0.#},{park.Height:0.#},{park.Yaw:0.#}." ) : "";
 			Log.Trace( $"World capture: {source.Width}x{source.Height} written to {full}.{cameraText}" );
 		}

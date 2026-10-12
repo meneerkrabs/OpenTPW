@@ -1,6 +1,4 @@
 using System.Runtime.InteropServices;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 
 namespace OpenTPW;
@@ -325,10 +323,9 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
 				colors.Add( BitConverter.ToUInt32( pixels, pixel ) );
 			Require( colors.Count > 32, "terrain framebuffer retains texture detail" );
-			using var image = Image.LoadPixelData<Bgra32>( pixels, (int)source.Width, (int)source.Height );
 			var artifactDirectory = Path.GetFullPath( "artifacts" );
 			Directory.CreateDirectory( artifactDirectory );
-			image.SaveAsPng( Path.Combine( artifactDirectory, $"native-smoke-{name}" ) );
+			PngWriter.SaveBgra( Path.Combine( artifactDirectory, $"native-smoke-{name}" ), pixels, (int)source.Width, (int)source.Height );
 			return (pixels, (int)source.Width, (int)source.Height);
 		}
 		finally
@@ -383,8 +380,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		var crop = new byte[width * height * 4];
 		for ( var row = 0; row < height; ++row )
 			Array.Copy( frame.Pixels, ((y + row) * frame.Width + x) * 4, crop, row * width * 4, width * 4 );
-		using var image = Image.LoadPixelData<Bgra32>( crop, width, height );
-		image.SaveAsPng( Path.Combine( Path.GetFullPath( "artifacts" ), "native-smoke-text.png" ) );
+		PngWriter.SaveBgra( Path.Combine( Path.GetFullPath( "artifacts" ), "native-smoke-text.png" ), crop, width, height );
 	}
 
 	private string displaySummary = "";

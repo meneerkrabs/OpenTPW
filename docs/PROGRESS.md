@@ -144,6 +144,9 @@ preview; original runtime fidelity and the complete offline scope remain open.
   empty one: no guest, timer restart and cleared active byte at the next stop,
   so nothing holds (the static reading was wrong). Only the stored group word
   and one arrival-vehicle step differ; C# behavior is unchanged.
+- Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
+  (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
+  13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.
@@ -224,8 +227,7 @@ contain original assets and are not distributed as repository fixtures.
   audio/video, localization, and original behavior references.
 - M7: actually running on Windows/Linux, packaging and licenses, long sessions,
   complete native dependency evidence, and a supported release runtime policy.
-- Existing NuGet audit warnings for ImageSharp and existing code warnings have
-  not been cleaned up. No dependency upgrades without explicit authorization.
+- Existing code warnings have not been cleaned up. No dependency upgrades without explicit authorization.
 - Subagent follow-up was blocked by a revoked refresh token. Work continued
   locally; independent architect or review sign-off is not claimed.
 

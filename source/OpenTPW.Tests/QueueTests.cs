@@ -52,7 +52,6 @@ public class QueueTests
 			if ( queueCells > 0 )
 				Assert.AreEqual( queueCells, QueuePaths.TryExtend( Grid, Ride, Enumerable.Range( 0, queueCells ).Select( index => (2, 5 - index) ) ) );
 			var settings = GuestTests.CreateSettings();
-			settings.ToiletPerSecond = 0;
 			configure?.Invoke( settings );
 			Simulation = new GuestSimulation( Grid, settings, 7 ) { ArrivalsEnabled = false };
 			Simulation.Register( Ride );
@@ -71,9 +70,20 @@ public class QueueTests
 			return guest;
 		}
 
+		/// <summary>
+		/// Keeps every guest's thirst, hunger and toilet at 0 after each tick, so that the needs (which grow on the needs phase and cost happiness at 100,
+		/// ORACLE.md F25) never end a long wait: for tests about the queue rules over thousands of turns.
+		/// </summary>
+		public bool KeepNeedsEmpty { get; set; }
+
 		public void Step()
 		{
 			Simulation.Tick( Tick );
+			if ( KeepNeedsEmpty )
+			{
+				foreach ( var guest in Simulation.Guests )
+					guest.Hunger = guest.Thirst = guest.Toilet = 0;
+			}
 			Ride.HostStep();
 			Script.Advance( Tick );
 		}
@@ -410,7 +420,9 @@ public class QueueTests
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
 		CollectionAssert.AreEqual( Enumerable.Range( 0, 6 ).ToArray(), guests.Select( guest => guest.QueuePosition ).ToArray() );
 		// Positions 0..3 stand in the front cell, 4 and 5 in the second cell; everyone walked in over the back cells.
-		CollectionAssert.AreEqual( new[] { (2, 5), (2, 5), (2, 5), (2, 5), (2, 4), (2, 4) }, guests.Select( guest => guest.Cell ).ToArray() );
+		// (a guest standing a hair past the cell edge of its slot, which is 255/256 deep, is counted in the neighbouring cell: the slots below are asserted exactly)
+		CollectionAssert.AreEqual( new[] { (2, 5), (2, 5), (2, 5), (2, 5) }, guests.Take( 4 ).Select( guest => guest.Cell ).ToArray() );
+		Assert.IsTrue( guests.Skip( 4 ).All( guest => guest.Cell is (2, 4) or (2, 5) ), string.Join( " ", guests.Skip( 4 ).Select( guest => guest.Cell ) ) );
 		Assert.IsTrue( visited.SetEquals( new[] { (2, 5), (2, 4), (2, 3), (2, 2), (2, 1) } ), string.Join( " ", visited ) );
 		Assert.IsTrue( guests.All( guest => rig.Grid.IsQueue( guest.Cell.X, guest.Cell.Y ) ) );
 		// Depth 0/63/127/191 from the front edge (toward the ride at +Y), a small sideways offset, in bytes of 1/256 cell
@@ -512,7 +524,7 @@ public class QueueTests
 	[TestMethod]
 	public void StandingGuestsNeverLeaveForBoredom()
 	{
-		var rig = new Rig( configure: settings => settings.HungerPerSecond = settings.ThirstPerSecond = 0 );
+		var rig = new Rig { KeepNeedsEmpty = true };
 		rig.HoldAdmission();
 		var calm = Enumerable.Range( 0, 5 ).Select( _ => rig.Send( 60 ) ).ToList();
 		var happy = Enumerable.Range( 0, 5 ).Select( _ => rig.Send( 95 ) ).ToList();
@@ -526,6 +538,19 @@ public class QueueTests
 		Assert.IsTrue( calm.Concat( happy ).All( guest => rig.Simulation.QueueWaitTurns( guest ) >= 1990 ) );
 	}
 
+	[TestMethod]
+	public void AQueueingGuestWhoseCounterPassesZeroNeverLeavesByIt()
+	{
+		// ORACLE.md F26: the counter is tested for equality in state 6 only; a guest standing in the queue while it reads 0 keeps a negative counter.
+		var rig = new Rig { KeepNeedsEmpty = true };
+		rig.HoldAdmission();
+		var guest = rig.Send( 60 );
+		guest.ExitLevel = 3;
+		rig.RunTurns( 400, () => { } );
+		Assert.IsTrue( guest.IsInQueue, "still in the queue" );
+		Assert.IsTrue( guest.ExitLevel < 0, $"the counter ran on below 0: {guest.ExitLevel}" );
+	}
+
 	// ---- Leaving ---------------------------------------------------------------------------------
 
 	[TestMethod]
@@ -534,6 +559,7 @@ public class QueueTests
 		var rig = new Rig();
 		rig.HoldAdmission();
 		var guest = rig.Send( 5 );
+		guest.BaseSpeed = 140; // the fastest walker reaches its queue position well inside the window, so the window alone decides
 		long leftAt = -1;
 		var leftCell = (-1, -1);
 		var thought = GuestThought.None;

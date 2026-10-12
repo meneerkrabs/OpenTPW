@@ -52,6 +52,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( attractionId <= 0 )
 			throw new ArgumentOutOfRangeException( nameof( attractionId ) );
 		AttractionId = attractionId;
+		TypeId = attractionId;
 		Name = name;
 		Kind = kind;
 		Capacity = Math.Max( 1, capacity );
@@ -79,6 +80,24 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	// [APPROX:HEADS-005] root and resolved child/sound scripts share the attraction head table; the Mac opcode reads the calling script +48/+76, but allocation/binding for child scripts is not traced
 	public RideHeadSpace? Heads { get; set; }
 	public int AttractionValue { get; }
+	/// <summary>Type <c>UsageInfo.ThirstEffect</c> (<c>+324</c>).</summary>
+	public int ThirstEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.HungerEffect</c> (<c>+328</c>).</summary>
+	public int HungerEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.VomitEffect</c> (<c>+332</c>).</summary>
+	public int VomitEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
+	public int HappinessEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>).</summary>
+	public int GoldenTicketCost { get; set; }
+	/// <summary>Type <c>Upgrades[0].CostOfUpgrade</c> (<c>+440</c>).</summary>
+	public int UpgradeCost { get; set; }
+	/// <summary>Type <c>UsageInfo.ISIndoors</c> (<c>+276</c>).</summary>
+	public bool IsIndoors { get; set; }
+	/// <summary>The object type (<c>Info.Id</c>); defaults to the attraction's own id (every attraction its own type).</summary>
+	public int TypeId { get; set; }
+	/// <summary>Days since the attraction was bought, mirrored from the economy each tick; <see cref="uint.MaxValue"/> (not new) until then.</summary>
+	public uint AgeDays { get; set; } = uint.MaxValue;
 	public GuestNeeds Satisfies { get; }
 	public int Price { get; }
 	/// <summary>The type's <c>UsageInfo.SpecialIngredient</c> (<c>+344</c>); 4 (Sugar) makes a visit raise the guest's speed boost.</summary>

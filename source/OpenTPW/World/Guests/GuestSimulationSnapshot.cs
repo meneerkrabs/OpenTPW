@@ -47,13 +47,17 @@ public sealed record GuestSnapshot
 	public required float Nausea { get; init; }
 	public required float Happiness { get; init; }
 	public required int Money { get; init; }
-	public required float ExitLevel { get; init; }
+	public required int ExitLevel { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
 	public required GuestThought Thought { get; init; }
 	public required int AttractionId { get; init; }
 	/// <summary>May name an attraction that is no longer registered (a demolished ride the guest remembers).</summary>
 	public required int LastAttractionId { get; init; }
+	/// <summary>The four attractions the guest used last, newest first (guest <c>+480..+486</c>); 0 = empty.</summary>
+	public required int[] UsedHistory { get; init; }
+	/// <summary>The four attractions the guest recently turned away from, newest first (guest <c>+488..+494</c>); 0 = empty.</summary>
+	public required int[] TemporaryHistory { get; init; }
 
 	// Queue bookkeeping (docs/reverse/QUEUE-plan.md §3.2).
 	public required int QueuePosition { get; init; }
@@ -171,7 +175,7 @@ public sealed record RideVisitorBridgeSnapshot
 public sealed record GuestSimulationSnapshot
 {
 	/// <summary>Bumped whenever the DTO fields or their meaning change; restore refuses other versions.</summary>
-	public const int CurrentSchemaVersion = 1;
+	public const int CurrentSchemaVersion = 2;
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>

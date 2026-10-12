@@ -12,6 +12,8 @@ public interface IGuestPayments
 	int AdmissionFee { get; }
 	/// <summary>Charges admission. False when the park is closed or the guest cannot pay.</summary>
 	bool TryPayAdmission( long guestMoney, out int feePaid );
+	/// <summary>True while the park is closed (the world variable <c>mParkClosed</c>): every guest that gets to decide heads home (<see cref="GuestLifecycle"/>).</summary>
+	bool ParkClosed => false;
 	/// <summary>Charges a shop or sideshow visit (0 for rides, which only count the use).</summary>
 	bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid );
 	/// <summary>A guest has left the attraction (the original's use counter, +412, rises on release).</summary>

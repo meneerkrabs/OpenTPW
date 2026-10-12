@@ -2639,6 +2639,9 @@ ECON_SALE = Target('shop-sale-litter', 'Shop sale effects on the guest (fragment
                    SALE_FRAGMENT, SALE_ALLOWED, sale_stubs, sale_binary, sale_plan, sale_inputs, equal=sale_equal,
                    alternatives={'routine-reading': sale_reading},
                    csharp=('shop_sale_litter', sale_csharp_request, sale_csharp_result),
+                   csharp_variants={'csharp-guest-meters': (lambda x: {'fn': 'shop_sale_meters', 'effects': [s32(e) for e in x['effects']],
+                                                                       'meters': [bits(x['meters'][n]) for n in ('thirst', 'hunger', 'vomit', 'happy')]},
+                                                            lambda x, r: {'meters': {n: from_bits(b) for n, b in zip(('thirst', 'hunger', 'vomit', 'happy'), r)}})},
                    notes=['C# hook: bridge function "shop_sale_litter" (ParkEconomy.TryBuy on a one-shop economy; the delta of LitterScaled). C# keeps '
                           'a park-wide store, not a guest meter, so the guest\'s meter before the sale is carried over: after = before + delta.',
                           'Executed: the type record getter 0xdc320 and the fragment 0xeabb8..0xeae44 (thirst, hunger, vomit, happiness and litter '
@@ -5172,3 +5175,8 @@ TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEE
            CALENDAR_DATE, CALENDAR_UPDATE_TARGET, CALENDAR_FIRST_TARGET, CADENCE_TARGET, GOLDEN_TARGET,
            CADENCE_FRAMES_TARGET, SPEED_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}
+
+# The guests' core decisions (F24 attraction choice, F25 needs, F26 lifecycle) live in targets_guests.py; they are appended here.
+import targets_guests  # noqa: E402  (after every helper it imports is defined)
+
+TARGETS += targets_guests.TARGETS

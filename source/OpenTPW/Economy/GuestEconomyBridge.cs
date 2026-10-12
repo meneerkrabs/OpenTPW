@@ -49,6 +49,8 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public int AdmissionFee => Economy().EntranceFee;
 
+	public bool ParkClosed => !Economy().IsParkOpen;
+
 	public bool TryPayAdmission( long guestMoney, out int feePaid ) => Economy().TryAdmitVisitor( guestMoney, out feePaid );
 
 	public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid )

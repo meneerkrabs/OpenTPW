@@ -44,6 +44,13 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["calendar_update"] = CalendarUpdate,
 	["golden_check_turns"] = GoldenCheckTurns,
 	["park_turns"] = ParkTurns,
+	["attraction_score"] = AttractionScoreHook,
+	["ride_outcome"] = RideOutcomeHook,
+	["attraction_choice"] = AttractionChoiceHook,
+	["needs_turn"] = NeedsTurn,
+	["guest_start"] = GuestStartHook,
+	["shop_sale_meters"] = ShopSaleMeters,
+	["guest_leaves"] = GuestLeaves,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -596,6 +603,116 @@ static JsonNode? ParkTurns( JsonObject a )
 	}
 	return new JsonObject { ["turns"] = turns };
 }
+
+// The attraction score (0xe9164, ORACLE F24) through AttractionScore.TryCompute: the excitement words come from a real RideVisitorBridge built like the join
+// targets' (live excitement, and whether the type's ExcitementLevel byte is nonzero), the rest from the request. "UNDEFINED" where the original's divwu by
+// zero is undefined (the weights add up to 0). The thing behind ride +36 is not sent.
+static JsonNode? AttractionScoreHook( JsonObject a )
+{
+	var bridge = JoinBridge( a );
+	var w = a["w"]!.AsArray().Select( value => unchecked( (uint)(long)value! ) ).ToArray();
+	var dv = a["dv"]!.AsArray().Select( value => unchecked( (uint)(long)value! ) ).ToArray();
+	var input = new AttractionScoreInput( (int)a["gx"]!, (int)a["gy"]!, (int)a["rx"]!, (int)a["ry"]!, (int)a["mod"]!, (int)a["qcount"]!, (int)a["qcells"]!,
+		(int)a["pref"]!, bridge.LiveExcitement, (bridge.StaticExcitementLevel & 0xFF) != 0,
+		BitConverter.Int32BitsToSingle( (int)(uint)a["thirst_bits"]! ), BitConverter.Int32BitsToSingle( (int)(uint)a["hunger_bits"]! ),
+		BitConverter.Int32BitsToSingle( (int)(uint)a["toilet_bits"]! ), BitConverter.Int32BitsToSingle( (int)(uint)a["ill_bits"]! ),
+		(int)a["teffect"]!, (int)a["heffect"]!, (bool)a["relief"]!, (uint)(long)a["age"]!, (int)a["drops"]! > 0, (bool)a["indoors"]!, (int)a["golden"]!, (int)a["cost0"]!,
+		(int)a["rid"]!, (bool)a["hist_same"]!, a["used"]!.AsArray().Select( value => (int)value! ).ToArray(), a["temp"]!.AsArray().Select( value => (int)value! ).ToArray() );
+	var weights = new DecisionWeights( w[0], w[1], w[2], w[3], w[4], w[5], w[6] );
+	var variables = new DecisionVariables( dv[0], dv[1], dv[2] );
+	return AttractionScore.TryCompute( input, weights, variables, out var score ) ? JsonValue.Create( (long)score ) : JsonValue.Create( "UNDEFINED" );
+}
+
+// What a use does to happiness and illness (0xea318, ORACLE F24): RideOutcome.Apply with the live excitement of a real RideVisitorBridge. A divisor of 0 is the
+// original's undefined divw and surfaces as the exception the bridge reports (the Python side maps it to UNDEFINED).
+static JsonNode? RideOutcomeHook( JsonObject a )
+{
+	var bridge = JoinBridge( a );
+	var (happiness, illness) = RideOutcome.Apply( BitConverter.Int32BitsToSingle( (int)(uint)a["happy_bits"]! ), BitConverter.Int32BitsToSingle( (int)(uint)a["hunger_bits"]! ),
+		BitConverter.Int32BitsToSingle( (int)(uint)a["ill_bits"]! ), (int)a["pref"]!, bridge.LiveExcitement, (int)a["perfect"]!, (int)a["good"]!, (int)a["ok"]!, (int)a["divisor"]! );
+	return new JsonObject { ["happy_bits"] = (uint)BitConverter.SingleToInt32Bits( happiness ), ["ill_bits"] = (uint)BitConverter.SingleToInt32Bits( illness ) };
+}
+
+// The choice loop (0xe8ff4, ORACLE F24): AttractionChoice.Pick over the things in list order with their chosen scores. The call log records, in order, the
+// attractions scored (choosable, with a back cell), the counts-tests and the reachability tests that ran.
+static JsonNode? AttractionChoiceHook( JsonObject a )
+{
+	var calls = new List<(string, int)>();
+	var things = a["things"]!.AsArray();
+	IEnumerable<AttractionChoice.Candidate> Candidates()
+	{
+		for ( var index = 0; index < things.Count; index++ )
+		{
+			var thing = things[index]!.AsArray();
+			var id = index + 1;
+			var choosable = ((int)thing[0]! & 4) != 0;
+			var cell = (int)thing[1]!;
+			if ( choosable && cell != 0 )
+				calls.Add( ("score", id) );
+			yield return new AttractionChoice.Candidate( id, choosable, cell != 0, unchecked( (uint)(long)thing[2]! ), () =>
+			{
+				calls.Add( ("counts", id) );
+				if ( (int)thing[3]! == 0 )
+					return false;
+				calls.Add( ("reach", cell) );
+				return (int)thing[4]! != 0;
+			} );
+		}
+	}
+	var chosen = AttractionChoice.Pick( Candidates(), (long)a["turn"]! );
+	return new JsonObject { ["target"] = chosen, ["calls"] = new JsonArray( calls.Select( call => (JsonNode)new JsonArray( call.Item1, call.Item2 ) ).ToArray() ) };
+}
+
+// The needs update of one park turn (0xeece4, ORACLE F25): NeedsUpdate.Apply for the guest's phase, then NeedsUpdate.DecayHistory. The environment words
+// of the guest's cell (the three s16 values) are passed as the original reads them; OpenTPW itself passes 0 (GUEST-006). A toilet speed term of null (off phase)
+// leaves the guest's previous +194 value.
+static JsonNode? NeedsTurn( JsonObject a )
+{
+	float Meter( string key ) => BitConverter.Int32BitsToSingle( (int)(uint)a[key]! );
+	var turn = unchecked( (uint)(long)a["turn"]! );
+	var cells = a["cells"]!.AsArray().Select( value => (short)(int)value! ).ToArray();
+	var result = NeedsUpdate.Apply( new GuestMeters( Meter( "happy_bits" ), Meter( "thirst_bits" ), Meter( "hunger_bits" ), Meter( "toilet_bits" ), Meter( "ill_bits" ) ),
+		(int)a["exit"]!, turn, (int)a["id"]!, cells[0], cells[1], cells[2] );
+	var temp = a["temp"]!.AsArray().Select( value => (int)value! ).ToArray();
+	NeedsUpdate.DecayHistory( temp, turn );
+	uint Bits( float value ) => (uint)BitConverter.SingleToInt32Bits( value );
+	return new JsonObject
+	{
+		["happy_bits"] = Bits( result.Meters.Happiness ), ["thirst_bits"] = Bits( result.Meters.Thirst ), ["hunger_bits"] = Bits( result.Meters.Hunger ),
+		["toilet_bits"] = Bits( result.Meters.Toilet ), ["ill_bits"] = Bits( result.Meters.Illness ), ["exit"] = result.ExitLevel,
+		["bonus"] = result.ToiletSpeedTerm ?? (int)a["bonus"]!, ["temp"] = new JsonArray( temp.Select( value => (JsonNode)JsonValue.Create( value )! ).ToArray() )
+	};
+}
+
+// The guest constructor's starting values (0xe7644, ORACLE F25): GuestStart.FromDraws on the eight words of the world generator that the Python side computes
+// (C# draws from its own stream in play, DET-014).
+static JsonNode? GuestStartHook( JsonObject a )
+{
+	var draws = a["draws"]!.AsArray().Select( value => unchecked( (uint)(long)value! ) ).ToArray();
+	var next = 0;
+	var types = a["types"]!.AsArray().Select( row => new GuestType( (int)row![0]!, (int)row[1]!, (int)row[2]! ) ).ToList();
+	var values = GuestStart.FromDraws( types, (int)a["exit"]!, (int)a["exit_var"]!, (int)a["cash_pc"]!, () => draws[next++] );
+	uint Bits( float value ) => (uint)BitConverter.SingleToInt32Bits( value );
+	return new JsonObject
+	{
+		["happy_bits"] = Bits( values.Happiness ), ["money"] = values.Money, ["thirst_bits"] = Bits( values.Thirst ), ["hunger_bits"] = Bits( values.Hunger ),
+		["toilet_bits"] = Bits( values.Toilet ), ["ill_bits"] = Bits( values.Illness ), ["litter_bits"] = Bits( values.Litter ), ["exit"] = values.ExitLevel, ["type"] = values.Type
+	};
+}
+
+// The four meter updates of a use (0xeabb8, ORACLE F18): UseEffects.Apply on the meters (thirst, hunger, illness, happiness; the litter meter has no guest field in C#).
+static JsonNode? ShopSaleMeters( JsonObject a )
+{
+	var meters = a["meters"]!.AsArray().Select( value => BitConverter.Int32BitsToSingle( (int)(uint)value! ) ).ToArray();
+	var effects = a["effects"]!.AsArray().Select( value => (int)value! ).ToArray();
+	var result = UseEffects.Apply( new GuestMeters( meters[3], meters[0], meters[1], 0f, meters[2] ), effects[0], effects[1], effects[2], effects[3] );
+	uint Bits( float value ) => (uint)BitConverter.SingleToInt32Bits( value );
+	return new JsonArray( Bits( result.Thirst ), Bits( result.Hunger ), Bits( result.Illness ), Bits( result.Happiness ) );
+}
+
+// The leaving test of the state-6 handler (0xebdfc, ORACLE F26): GuestLifecycle.ShouldLeave on the happiness meter, the exit counter and the park-closed word.
+static JsonNode? GuestLeaves( JsonObject a ) =>
+	JsonValue.Create( GuestLifecycle.ShouldLeave( BitConverter.Int32BitsToSingle( (int)(uint)a["happy_bits"]! ), (int)a["exit"]!, (int)a["closing"]! != 0 ) );
 
 sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStatistics
 {

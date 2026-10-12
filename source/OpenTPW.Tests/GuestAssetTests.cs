@@ -59,6 +59,109 @@ public class GuestAssetTests
 		Assert.AreEqual( 5, settings.ArrivalLaneA!.Length );
 	}
 
+	/// <summary>
+	/// The attraction score's inputs from the shipped data (ORACLE.md F24): every theme's PeepInfo has the weights 1, 1, 1, 2, 2, 2, 2 and the decision
+	/// variables 7, 5, 5; every choosable object's thirst and hunger effects stay in 0..100, so the thirst and hunger matches never index past the
+	/// original's 11 × 11 table; and the golden-ticket and upgrade costs feed the multipliers.
+	/// </summary>
+	[TestMethod]
+	public void ShippedDataFeedsTheAttractionScoreInsideItsTables()
+	{
+		var golden = 0;
+		var costly = 0;
+		var indoors = 0;
+		var inspected = 0;
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			var settings = GuestSettings.Load( theme );
+			Assert.AreEqual( DecisionWeights.Shipped, settings.DecisionWeights, theme );
+			Assert.AreEqual( DecisionVariables.Shipped, settings.DecisionVariables, theme );
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( entry => entry.IsChoosable ) )
+			{
+				var bridge = OriginalObjectRuntime.CreateVisitorBridge( entry, 1 );
+				Assert.IsTrue( bridge.ThirstEffect is >= 0 and <= 100, $"{theme} {entry.DisplayName} ThirstEffect {bridge.ThirstEffect}" );
+				Assert.IsTrue( bridge.HungerEffect is >= 0 and <= 100, $"{theme} {entry.DisplayName} HungerEffect {bridge.HungerEffect}" );
+				Assert.IsTrue( bridge.GoldenTicketCost >= 0 && bridge.UpgradeCost >= 0, $"{theme} {entry.DisplayName}" );
+				Assert.AreEqual( entry.InfoId, bridge.TypeId );
+				golden += bridge.GoldenTicketCost > 0 ? 1 : 0;
+				costly += bridge.UpgradeCost > 3000 ? 1 : 0;
+				indoors += bridge.IsIndoors ? 1 : 0;
+				inspected++;
+			}
+		}
+		Assert.IsTrue( inspected > 50, $"{inspected} choosable objects" );
+		Console.WriteLine( $"{inspected} choosable objects: {golden} with a golden-ticket cost, {costly} with a first upgrade above 3000, {indoors} indoors" );
+	}
+
+	/// <summary>
+	/// The constructor's starting values from the shipped balance (ORACLE.md F25): ExitLevel 120 ± 60 gives a counter of 60..179 (about two minutes, at one count per
+	/// 0.992 s), cash within ±15 % of each of the eight types' StartingCash, thirst and hunger below 50, toilet below 30; and the shipped use effects keep
+	/// the meters' clamps meaningful (no effect above 100).
+	/// </summary>
+	[TestMethod]
+	public void ShippedBalanceGivesTheOriginalsStartingValuesAndEffectsStayBelowTheMeterRange()
+	{
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			var settings = GuestSettings.Load( theme );
+			Assert.AreEqual( 120, settings.ExitLevelSeconds );
+			Assert.AreEqual( 60, settings.ExitLevelVarSeconds );
+			Assert.AreEqual( 15, settings.StartingCashVarPercent );
+			var random = new GuestRandom( 99 );
+			var types = new HashSet<int>();
+			for ( var count = 0; count < 4000; count++ )
+			{
+				var start = GuestStart.FromDraws( settings.Types, settings.ExitLevelSeconds, settings.ExitLevelVarSeconds, settings.StartingCashVarPercent, () => random.NextWord() );
+				var cash = settings.Types[start.Type].StartingCash;
+				Assert.IsTrue( start.ExitLevel is >= 60 and <= 179, $"{theme} exit {start.ExitLevel}" );
+				Assert.IsTrue( start.Money >= cash * 85 / 100 && start.Money <= cash * 115 / 100, $"{theme} money {start.Money} of {cash}" );
+				Assert.IsTrue( start.Thirst < 50 && start.Hunger < 50 && start.Toilet < 30 && start.Happiness == 50 );
+				types.Add( start.Type );
+			}
+			Assert.AreEqual( settings.Types.Count, types.Count, "every type is drawn" );
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( entry => entry.IsChoosable ) )
+			{
+				var bridge = OriginalObjectRuntime.CreateVisitorBridge( entry, 1 );
+				Assert.IsTrue( bridge.VomitEffect is >= 0 and <= 100 && bridge.HappinessEffect is >= 0 and <= 100, $"{theme} {entry.DisplayName}" );
+			}
+		}
+	}
+
+	/// <summary>
+	/// The lifecycle with the shipped balance on the Easymode park (ORACLE.md F26): guests that only walk (no attractions) head home when their exit counter reads 0, one count per
+	/// 0.992 s, so each leaves after about its starting counter in seconds (60..179 counts: one to three minutes), losing BigHappinessChange on the way.
+	/// </summary>
+	[TestMethod]
+	public void ShippedGuestsWalkingAloneLeaveWhenTheirCounterReadsZero()
+	{
+		var (grid, settings) = LoadJungle();
+		// OpenTPW's own boredom loss (GUEST-009) would drain a guest that never rides within a minute; it is switched off so that only the counter is measured
+		settings.Types = settings.Types.Select( type => new GuestType( type.PreferredExcitement, type.StartingCash, 1_000_000 ) ).ToList();
+		var simulation = new GuestSimulation( grid, settings, 41 ) { ArrivalsEnabled = false };
+		var entrance = settings.ArrivalLaneA![^1];
+		var guests = Enumerable.Range( 0, 30 ).Select( _ => simulation.SpawnInPark( entrance.X, entrance.Y ) ).ToList();
+		var start = guests.ToDictionary( guest => guest.Id, guest => guest.ExitLevel );
+		var leftAt = new Dictionary<int, double>();
+		var happinessAtLeaving = new Dictionary<int, float>();
+		for ( var tick = 0; tick < 200 * 60; tick++ )
+		{
+			simulation.Tick( Tick );
+			foreach ( var guest in guests.Where( guest => !leftAt.ContainsKey( guest.Id ) && guest.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone ) )
+			{
+				leftAt[guest.Id] = simulation.TimeSeconds;
+				happinessAtLeaving[guest.Id] = guest.Happiness;
+			}
+		}
+		Assert.AreEqual( 30, leftAt.Count, "every walking guest went home within 200 s" );
+		foreach ( var guest in guests )
+		{
+			var expected = start[guest.Id] * ParkCalendar.TurnMilliseconds * 4 / 1000.0;
+			Assert.AreEqual( expected, leftAt[guest.Id], 2.5, $"guest {guest.Id} started at {start[guest.Id]} counts" );
+			Assert.IsTrue( happinessAtLeaving[guest.Id] is >= 0 and <= 50 - 25 + 0.001f, $"guest {guest.Id} left at happiness {happinessAtLeaving[guest.Id]}: 50 less the {settings.BigHappinessChange} of the way out, less any full-need points" );
+		}
+		Assert.IsTrue( leftAt.Values.Min() >= 55 && leftAt.Values.Max() <= 180, $"{leftAt.Values.Min():F0}..{leftAt.Values.Max():F0} s" );
+	}
+
 	private static (GuestPathGrid Grid, GuestSettings Settings) LoadJungle()
 	{
 		var park = OriginalPark.Load( "jungle" );
@@ -254,8 +357,12 @@ public class GuestAssetTests
 			maximumQueue = Math.Max( maximumQueue, ride.QueueLength );
 			foreach ( var guest in simulation.Guests.Where( guest => guest.State == GuestState.Queueing ) )
 			{
-				Assert.IsTrue( grid.IsQueue( guest.Cell.X, guest.Cell.Y ), $"guest {guest.Id} stands on a queue cell, not at {guest.Cell}" );
-				queueCellsStoodOn.Add( guest.Cell );
+				// the traced arrival ends within 0.32 cell of the slot (QueueTests), so a guest in the first slot of the front cell may stand a hair past its edge
+				var distance = MathF.Sqrt( (guest.X - guest.QueueTargetX) * (guest.X - guest.QueueTargetX) + (guest.Y - guest.QueueTargetY) * (guest.Y - guest.QueueTargetY) );
+				Assert.IsTrue( grid.IsQueue( guest.Cell.X, guest.Cell.Y ) || distance < (GuestNavigation.ArrivalRadius + guest.MaxSpeed) / (float)Fixed16.One,
+					$"guest {guest.Id} stands on a queue cell or at its slot, not at {guest.Cell} ({distance} cell from it)" );
+				if ( grid.IsQueue( guest.Cell.X, guest.Cell.Y ) )
+					queueCellsStoodOn.Add( guest.Cell );
 			}
 		}
 		Console.WriteLine( $"Belly Bounce queue {string.Join( " ", queue )}: boarded {ride.BoardedTotal}, released {ride.ReleasedTotal}, max queue {maximumQueue}, "

@@ -20,6 +20,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["guest_speed_limits"] = GuestSpeedLimits,
 	["guest_speed_smoothing"] = GuestSpeedSmoothing,
 	["arrival_group"] = ArrivalGroup,
+	["park_points"] = ParkPoints,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -143,4 +144,31 @@ static JsonNode? ArrivalGroup( JsonObject a )
 		?? throw new MissingFieldException( "GuestSimulation.guests" );
 	((List<Guest>)field.GetValue( simulation )!).AddRange( Enumerable.Repeat<Guest>( null!, (int)a["guests"]! ) );
 	return JsonValue.Create( simulation.ArrivalGroupSize() );
+}
+
+// ParkEconomy.ParkPoints (0xc24c0) on an economy built from the input: one synthetic object type per input type (kind 0 -> Ride,
+// 2 -> Sideshow, any other kind -> Shop, the C# reading ARRIVAL-003; AttractionValue, NewAttractionDecayTime and NewBonus from the
+// input), one RegisterExisting object per thing. The economy clock is a read-only property, so its setter is reached through
+// reflection to put each object's BuiltTick on the first tick of its build turn and the economy on the first tick of turn "now"
+// (ParkCalendar.Turn of those ticks is the input turn). The original's open flag, type +0x9C word and park record +28 first-purchase
+// turn have no C# counterpart (ARRIVAL-003, F10), so they are not passed.
+static JsonNode? ParkPoints( JsonObject a )
+{
+	var infos = a["types"]!.AsArray().Select( type =>
+	{
+		var kind = (int)type!["kind"]! switch { 0 => ParkObjectKind.Ride, 2 => ParkObjectKind.Sideshow, _ => ParkObjectKind.Shop };
+		return new EconomyObjectInfo( (int)type["id"]!, $"Type {(int)type["id"]!}", kind, ResearchCategory.Ride, 0,
+			new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, null, null, null, 0, 0, 0, 0, 0, (int)type["value"]!, "synthetic.wad",
+			0, 0, (int)type["decay"]!, type["bonus"]!.AsArray().Select( bonus => (int)bonus! ).ToArray() );
+	} ).ToList();
+	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( infos ), ParkGameMode.FullSimulation, 1 );
+	var tick = typeof( ParkEconomy ).GetProperty( "Tick" )!.GetSetMethod( nonPublic: true )
+		?? throw new MissingMethodException( "ParkEconomy.Tick setter" );
+	foreach ( var thing in a["things"]!.AsArray() )
+	{
+		tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)thing!["built"]! ) } );
+		park.RegisterExisting( (int)thing["type"]! );
+	}
+	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)a["now"]! ) } );
+	return JsonValue.Create( park.ParkPoints() );
 }

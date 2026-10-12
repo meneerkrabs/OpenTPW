@@ -1210,6 +1210,13 @@ def points_first(builds: list[int], sold: list[int]) -> int:
     return next((turn for turn in sorted(builds + sold) if turn != 0), 0)
 
 
+def points_csharp_request(x: dict) -> dict:
+    # The open flag, type +0x9C word and park record +28 (first) have no C# counterpart (F10): not passed.
+    return {'fn': 'park_points', 'now': x['now'],
+            'types': [{k: kind[k] for k in ('id', 'kind', 'value', 'decay', 'bonus')} for kind in x['types']],
+            'things': [{k: thing[k] for k in ('type', 'built')} for thing in x['things']]}
+
+
 def points_inputs(rng: random.Random, n: int) -> list:
     day = 86400 * 4 // CLOCK_RATE + 1  # turns per park day, rounded up (23.04 turns at 3750 s per turn)
 
@@ -1329,7 +1336,9 @@ POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0x
                 [(0xC24C0, 0xC26DC), (0xC5828, 0xC5864), (0xD1BE8, 0xD1D1C), (0xE4750, 0xE47F8), (0x10A9A4, 0x10A9B0),
                  (0x1C4100, 0x1C4230)], points_stubs, points_binary, points_plan, points_inputs,
                 alternatives={'routine-reading': points_full},
-                notes=['C# hook: bridge function "park_points" (ParkEconomy.ParkPoints) is not wired yet.',
+                csharp=('park_points', points_csharp_request, lambda x, r: r),
+                notes=['C# hook: bridge function "park_points" (ParkEconomy.ParkPoints); the open flag, the type +0x9C word '
+                       'and the park record +28 are not passed (no C# counterpart).',
                        'Executed: 0xc5828 (type count = park record +24), 0xd1be8 / 0xd1c88 (park record search over a '
                        'built table), 0xe4750 (turns -> 100 ns units), 0x10a9a4 (game pointer), 0x1c4100 (64-bit divide). '
                        'Stubs: 0x118018 type record, 0xb678 assert (a zero condition fails the run), 0xdc834 counts-test '

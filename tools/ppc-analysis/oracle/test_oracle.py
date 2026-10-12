@@ -92,9 +92,14 @@ EXPECTED = {
                                     'things': [{'type': 257, 'open': True, 'built': 1},
                                                {'type': 257, 'open': True, 'built': 73}]}),
     ('park-points', 'routine-reading'): AGREE,
+    ('park-points', 'csharp'): (214, {'now': 73, 'scale': 15000,
+                                      'types': [{'id': 257, 'kind': 0, 'f9c': 0, 'value': 25, 'decay': 2,
+                                                 'bonus': [30, 20, 10], 'first': 1}],
+                                      'things': [{'type': 257, 'open': True, 'built': 1},
+                                                 {'type': 257, 'open': True, 'built': 73}]}),
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final', 'park-points', 'arrival-update'}
+                  'coast-rating-final', 'arrival-update'}
 
 
 class Identity(unittest.TestCase):
@@ -248,7 +253,7 @@ class Oracle(unittest.TestCase):
         self.assertEqual(original['events'], [[(2000, -200), (82, 1)], [(82, 1)], [(80, 0)]])
 
     def test_points(self):
-        for key in (('park-points', 'plan'), ('park-points', 'routine-reading')):
+        for key in (('park-points', 'plan'), ('park-points', 'routine-reading'), ('park-points', 'csharp')):
             self.check(key)
 
     def test_points_reading_is_sharp(self):

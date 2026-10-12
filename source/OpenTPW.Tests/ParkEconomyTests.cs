@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace OpenTPW.Tests;
 
@@ -134,14 +135,18 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void LoanRepaymentsFollowTermsAndInterest()
+	public void LoanRepaymentsFollowTheOriginalInstalment()
 	{
+		// ORACLE F12: M = trunc(P x pow(1 + APR/100, (N/12) x 0.5) / N); the five original PC saves store these eight values
+		CollectionAssert.AreEqual( new long[] { 3651, 1825, 912, 365, 922, 1282, 2320, 2749 },
+			new[] { (100000, 20, 36), (50000, 20, 36), (25000, 20, 36), (10000, 20, 36), (18000, 23, 24), (30000, 22, 30), (80000, 18, 48), (65000, 21, 30) }
+				.Select( offer => LoanMath.MonthlyRepayment( offer.Item1, offer.Item2, offer.Item3 ) ).ToArray() );
 		Assert.AreEqual( 2777, LoanMath.MonthlyRepayment( 100000, 0, 36 ) );
 		Assert.AreEqual( 750, LoanMath.MonthlyRepayment( 18000, 0, 24 ) );
-		Assert.AreEqual( 100000, LoanMath.TotalPayable( 100000, 0, 36 ) );
-		Assert.AreEqual( 3716, LoanMath.MonthlyRepayment( 100000, 20, 36 ) );
-		var total = LoanMath.TotalPayable( 100000, 20, 36 );
-		Assert.IsTrue( total > 133000 && total < 134000, total.ToString() );
+		Assert.AreEqual( 99972, LoanMath.TotalPayable( 100000, 0, 36 ), "at 0 % APR the original repays M x N, short of P by the division remainder" );
+		Assert.AreEqual( 3651, LoanMath.MonthlyRepayment( 100000, 20, 36 ) );
+		Assert.AreEqual( 131436, LoanMath.TotalPayable( 100000, 20, 36 ), "the total payable is M x N" );
+		Assert.AreEqual( 4294967295L, LoanMath.MonthlyRepayment( long.MaxValue / 2, 20, 1 ), "the float to unsigned conversion saturates" );
 
 		var park = EconomyTestData.Park( initialCash: 0 );
 		var account = park.TakeLoan( 2 );
@@ -149,24 +154,73 @@ public class ParkEconomyTests
 		Assert.AreEqual( LoanMath.MonthlyRepayment( 18000, 20, 24 ), account.MonthlyRepayment );
 		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
 		Assert.ThrowsException<InvalidOperationException>( () => park.TakeLoan( 2 ) );
-		park.AdvanceMonths( 24 );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( 18000 - account.MonthlyRepayment, park.Balance, "exactly M leaves the bank, with no interest on a balance" );
+		Assert.AreEqual( 23, park.Loans.Single().MonthsRemaining );
+		park.AdvanceMonths( 23 );
 		Assert.AreEqual( 0, park.Loans.Count );
 		Assert.AreEqual( 18000 - LoanMath.TotalPayable( 18000, 20, 24 ), park.Balance );
 		Assert.AreEqual( LoanMath.TotalPayable( 18000, 20, 24 ), park.Ledger.History.Sum( month => month[LedgerCategory.LoanPayments] ) );
 		Assert.AreEqual( 18000, park.Ledger.History.Sum( month => month.MoneyIn ), "the loan is money in" );
 		Assert.IsTrue( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
 
-		var early = EconomyTestData.Park( initialCash: 5000 );
+		var early = EconomyTestData.Park( initialCash: 30000 );
 		early.TakeLoan( 1 );
-		early.AdvanceMonths( 1 );
-		var remaining = early.Loans[0].RemainingBalance;
-		Assert.AreEqual( 50000 + LoanMath.MonthlyInterest( 50000, 20 ) - early.Loans[0].MonthlyRepayment, remaining );
+		early.AdvanceMonths( 12 );
+		var loan = early.Loans[0];
+		Assert.AreEqual( 12, loan.MonthsRepaid );
+		var remaining = loan.MonthlyRepayment * (loan.Months - 12);
+		Assert.AreEqual( remaining, loan.RemainingBalance, "early repayment is M x the months left (0xccc78)" );
 		var before = early.Balance;
 		Assert.IsTrue( early.TryRepayLoan( 1 ) );
 		Assert.AreEqual( before - remaining, early.Balance );
 		Assert.AreEqual( 0, early.Loans.Count );
 		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
 		Assert.AreEqual( 0, instant.AvailableLoans.Count() );
+	}
+
+	[TestMethod]
+	public void EarlyPayoffChargesTheWholeTermShareToTheYearProfit()
+	{
+		// 0xCCC78: months repaid are cleared before they are read again, so a payoff after 12 of 36 months still lowers the
+		// year profit by q x N = 873 x 36 = 31,428 (q = (3651 x 36 - 100,000) / 36), beside the 87,624 that leaves the balance.
+		var park = EconomyTestData.Park( initialCash: 300000, apr: 20 );
+		var loan = park.TakeLoan( 0 );
+		Assert.AreEqual( 3651, loan.MonthlyRepayment );
+		park.AdvanceMonths( 12 );
+		var (balance, profit) = (park.Balance, park.Ledger.ProfitThisYear);
+		Assert.IsTrue( park.TryRepayLoan( 0 ) );
+		Assert.AreEqual( balance - 87624, park.Balance );
+		Assert.AreEqual( profit - 31428, park.Ledger.ProfitThisYear );
+		Assert.AreEqual( 31428, LoanMath.PayoffInterest( 3651, 36, 100000 ) );
+	}
+
+	[TestMethod]
+	public void TheYearProfitWrapsAsASigned32BitWordOnEveryUpdate()
+	{
+		// Two 0 % jungle-easy loans take 119,304,646 a month each off the profit (the unsigned share of M x N < P). After nine
+		// payments the word sits just above -2^31, and an ordinary $21 cost wraps it to +2,147,483,647 as the original's stw does.
+		var ledger = new ParkLedger( 0 );
+		for ( var month = 0; month < 9; month++ )
+			ledger.ChargeLoanInterest( 238_609_292 );
+		Assert.AreEqual( -2_147_483_628L, ledger.ProfitThisYear );
+		ledger.Post( LedgerCategory.OtherCosts, 21 );
+		Assert.AreEqual( 2_147_483_647L, ledger.ProfitThisYear );
+		ledger.Post( LedgerCategory.GateTakings, 1 );
+		Assert.AreEqual( -2_147_483_648L, ledger.ProfitThisYear, "income wraps the other way" );
+	}
+
+	[TestMethod]
+	public void SeveralLoansArePaidInOfferOrder()
+	{
+		var park = EconomyTestData.Park( initialCash: 0 );
+		var events = new List<ParkEvent>();
+		park.EventRaised += events.Add;
+		var second = park.TakeLoan( 2 );
+		var first = park.TakeLoan( 0 );
+		park.AdvanceMonths( 1 );
+		CollectionAssert.AreEqual( new[] { 0, 2 }, events.Where( item => item.Kind == ParkEventKind.LoanPayment ).Select( item => item.InfoId ).ToArray() );
+		Assert.AreEqual( first.MonthlyRepayment + second.MonthlyRepayment, park.Ledger.History[^1][LedgerCategory.LoanPayments] );
 	}
 
 	[TestMethod]
@@ -789,6 +843,29 @@ public class ParkEconomyTests
 			Play( park, day );
 		park.Advance( 37 );
 		return park;
+	}
+
+	[TestMethod]
+	public void SavesWrittenWithTheOldLoanBalanceStillLoad()
+	{
+		// Version 2 saves from the interest-on-balance model hold the old remaining balance and an annuity instalment. The
+		// months left already say how far a loan is repaid, so the balance is dropped and M x the months left replaces it.
+		var park = EconomyTestData.Park( initialCash: 5000 );
+		park.TakeLoan( 1 );
+		park.AdvanceMonths( 5 );
+		var json = JsonNode.Parse( ParkSaveFile.Serialize( park ) )!;
+		var loan = json["Loans"]![0]!.AsObject();
+		Assert.AreEqual( 31, (int)loan["MonthsRemaining"]! );
+		Assert.AreEqual( park.Loans[0].RemainingBalance, (long)loan["RemainingBalance"]!, "written as M x the months left" );
+		loan["MonthlyRepayment"] = 1858;
+		loan["RemainingBalance"] = 43210;
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) ), park.Settings, park.Catalog );
+		var account = restored.Loans.Single();
+		Assert.AreEqual( (5, 31, 1858L, 1858L * 31), (account.MonthsRepaid, account.MonthsRemaining, account.MonthlyRepayment, account.RemainingBalance) );
+		loan.Remove( "RemainingBalance" );
+		Assert.AreEqual( account, ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) ), park.Settings, park.Catalog ).Loans.Single() );
+		loan["MonthsRemaining"] = 0;
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) ) );
 	}
 
 	[TestMethod]

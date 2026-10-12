@@ -29,7 +29,7 @@ sys.path.insert(0, str(HERE.parent / 'lanes' / 'det'))
 
 import det_model  # noqa: E402  (DET-plan's reference arithmetic)
 from harness import Image, Sandbox, f32  # noqa: E402
-from ppc32 import MASK32, Machine, Undefined, s32  # noqa: E402
+from ppc32 import MASK32, Machine, Undefined, bits_to_double, double_to_bits, s32  # noqa: E402
 
 UNDEFINED = 'UNDEFINED'
 
@@ -1382,8 +1382,618 @@ def counts_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (j) LOANS: offers 0xcb7a8
+LOAN_SETTINGS = -30084         # TOC slot -> settings block: +408 InitialCash, then 4 words per loan offer from +416
+LOAN_BASE_CTOR = 0xFA718       # (bank, u16 1, ...) base-class constructor: writes the object header only; stubbed
+LOAN_POW = 'pow'               # MathLib import behind the glue 0x1c61a4
+LOAN_TO_UINT = (0x1C3FBC, 0x1C400C)
+LOAN_POW_GLUE = (0x1C61A4, 0x1C61BC)
+LOAN_UNSIGNED_STOP = 0xCB908   # end of the 8-offer loop (the rest of the constructor builds the bank object's helpers)
+SHIPPED_LOANS = [(100000, 20, 36, 0), (50000, 20, 36, 1), (25000, 20, 36, 2), (10000, 20, 36, 3),
+                 (18000, 23, 24, 4), (30000, 22, 30, 5), (80000, 18, 48, 6), (65000, 21, 30, 7)]
+SHIPPED_MONTHLY = [3651, 1825, 912, 365, 922, 1282, 2320, 2749]  # PPC-economy "Mac expression monthly"
+
+
+def loan_stubs(target: Target) -> dict:
+    def base_constructor(m: Machine) -> None:
+        target.log.append(('base-ctor', m.gpr[3], m.gpr[4] >> 16))
+
+    def pow_stub(m: Machine) -> None:
+        """MathLib pow(f1, f2) on binary64: stubbed with Python's math.pow (the host C library). The base is
+        1 + APR/100 >= 1 and the exponent N/24 >= 0, so every result is finite or +inf (overflow)."""
+        try:
+            value = math.pow(bits_to_double(m.fpr[1]), bits_to_double(m.fpr[2]))
+        except OverflowError:
+            value = math.inf
+        except ValueError:
+            value = math.nan
+        target.log.append(('pow', bits_to_double(m.fpr[1]), bits_to_double(m.fpr[2])))
+        m.fpr[1] = double_to_bits(value)
+
+    return {LOAN_BASE_CTOR: base_constructor, LOAN_POW: pow_stub}
+
+
+def loan_offers_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Run the 8-offer loop of 0xcb7a8 on a zeroed bank object. The settings block (TOC -30084, data 0x54860) holds
+    InitialCash at +408 and the offers (amount, APR, months, lender) from +416, 16 bytes each."""
+    bank = sb.struct(512)
+    settings = toc_pointer(sb, LOAN_SETTINGS)
+    sb.write(settings + 408, 'I', x['cash'])
+    for index, (amount, apr, months, lender) in enumerate(x['offers']):
+        for word, value in enumerate((amount, apr, months, lender)):
+            sb.write(settings + 416 + 16 * index + 4 * word, 'I', value)
+    sb.call(0xCB7A8, {3: bank}, stop=LOAN_UNSIGNED_STOP)
+    if [entry for entry in log if entry[0] == 'base-ctor'] != [('base-ctor', bank, 1)]:
+        raise AssertionError('the base constructor was not called once with the bank object and the word 1')
+    records = [tuple(struct.unpack('>8I', sb.image.memory.read(bank + 32 * i + 20, 32))) for i in range(8)]
+    # record words: available, amount, APR, months, monthly, bought, months repaid, lender
+    return {'monthly': [record[4] for record in records],
+            'records': [(r[0], r[1], r[2], r[3], r[5], r[6], r[7]) for r in records],
+            'bank': tuple(sb.read(bank + offset, 'I') for offset in (12, 16, 276, 280, 284, 288, 292))}
+
+
+def trunc_u32(value: float) -> int:
+    """0x1c3fbc: negative gives 0, NaN and anything from 2^32 up give 2^32 - 1, else truncation toward zero."""
+    if math.isnan(value):
+        return MASK32
+    if value < 0.0:
+        return 0
+    return MASK32 if value >= 4294967296.0 else int(value)
+
+
+def loan_pow(base: float, exponent: float) -> float:
+    try:
+        return math.pow(base, exponent)
+    except OverflowError:
+        return math.inf
+
+
+def loan_fdiv(a: float, b: float) -> float:
+    if b == 0.0:
+        return math.nan if a == 0.0 or math.isnan(a) else math.copysign(math.inf, a)
+    return a / b
+
+
+def loan_monthly_reading(amount: int, apr: int, months: int, exponent: float = 0.5, rate: float = 100.0) -> int:
+    """0xcb8a4..0xcb8f4 in binary64: trunc_u32(P * pow(1 + APR/100, (N/12) * 0.5) / N). The two optional parameters are
+    the sharpness variants (full years in the exponent, the APR divisor)."""
+    power = loan_pow(1.0 + apr / rate, (months / 12.0) * exponent)
+    return trunc_u32(loan_fdiv(float(amount) * power, float(months)))
+
+
+def loan_offers_reading(x: dict, **variant) -> dict:
+    """The routine as read: per offer record (available when the amount is at most 10000, copied fields, bought and
+    months repaid 0), the monthly instalment above, and the bank words the constructor initialises (balance =
+    InitialCash, batch 0, withdrawals enabled 1, last balance 0, turn entered red 0, year profit 0)."""
+    offers = x['offers']
+    return {'monthly': [loan_monthly_reading(a, r, n, **variant) for a, r, n, _ in offers],
+            'records': [(int(a <= 10000), a, r, n, 0, 0, lender) for a, r, n, lender in offers],
+            'bank': (x['cash'], 0, 1, 0, 0, 0, 0)}
+
+
+def loan_annuity_plan(amount: int, apr: int, months: int) -> int | str:
+    """The retired OpenTPW rule (an annuity at APR/12 per month, rounded down; floor(amount / months) at 0 % APR). C#
+    no longer uses it; the random loan inputs still draw an instalment from it so that M differs from the original's."""
+    if months <= 0 or amount < 0:
+        return 'exception'
+    if apr <= 0:
+        return amount // months
+    rate = apr / 1200.0
+    return math.floor(amount * rate / (1 - loan_pow(1 + rate, -months)))
+
+
+def loan_plan(amount: int, apr: int, months: int) -> int | str:
+    """ECON-006 resolved (ParkLedger LoanMath.MonthlyRepayment, ORACLE F12): the original's instalment, trunc_u32 of
+    P x pow(1 + APR/100, (N/12) x 0.5) / N, for every APR; C# throws for months below 1 or a negative amount."""
+    if months <= 0 or amount < 0:
+        return 'exception'
+    return loan_monthly_reading(amount, apr, months)
+
+
+def loan_offers_plan(x: dict) -> dict:
+    return {'monthly': [loan_plan(a, r, n) for a, r, n, _ in x['offers']]}
+
+
+def loan_offers_request(x: dict) -> dict:
+    return {'fn': 'loan_offers', 'offers': [[a, r, n] for a, r, n, _ in x['offers']]}
+
+
+def loan_offers_result(x: dict, answer) -> dict:
+    return {'monthly': ['exception' if value is None else value for value in answer['monthly']]}
+
+
+def loan_equal(original, other) -> bool:
+    """Compare on the keys the other side has (the plan and C# know only the monthly instalment)."""
+    return all(original[key] == other[key] for key in other)
+
+
+def loan_offers_inputs(rng: random.Random, n: int) -> list:
+    def offer(**kw) -> tuple:
+        amount = rng.choice([rng.randrange(0, 200001), rng.choice([1000, 5000, 9999, 10000, 10001, 25000, 100000]), 0])
+        apr = rng.choice([0, rng.randrange(1, 41), rng.randrange(18, 24)])
+        months = rng.choice([rng.randrange(1, 61), rng.choice([1, 12, 24, 36, 48, 120])])
+        return (kw.get('amount', amount), kw.get('apr', apr), kw.get('months', months), kw.get('lender', rng.randrange(0, 8)))
+
+    def make(offers=None, cash=None) -> dict:
+        return {'cash': cash if cash is not None else rng.choice([0, 50000, 100000, rng.randrange(0, 1 << 20)]),
+                'offers': offers if offers is not None else [offer() for _ in range(8)]}
+    edges = [make(list(SHIPPED_LOANS), cash=100000),
+             make([(10000, 0, 36, i) for i in range(8)], cash=0),
+             make([(a, 0, 24, 3) for a in (1000, 1, 23, 24, 25, 99999, 100000, 7)]),
+             make([(18000, a, 24, 4) for a in (0, 1, 5, 10, 20, 23, 40, 100)]),
+             make([(10000, 20, n, 1) for n in (1, 2, 12, 24, 36, 60, 120, 240)])]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (k) LOANS: monthly step 0xcc21c
+LOAN_STEP_STOP = 0xCC3D0       # end of the loan loop; the tail (bank in the red for a month) sends a message
+LOAN_GAME_SLOTS = (-30080, -30124)  # TOC slots -> words holding the game pointer (0xcc21c reads both)
+LOAN_STRINGS = -20224          # TOC slot -> string table (assert / debug messages); ids are offsets from it
+LOAN_ACC_IN, LOAN_ACC_OUT = 0x1FC90, 0x1F5A0   # park words raised by credits (money in) and debits (money out)
+LOAN_TURN = 0x1DA70C           # game + 0x1da70c: the turn counter
+LOAN_STATE = type('LoanState', (), {})()
+BANK_BALANCE, BANK_BATCH, BANK_WITHDRAW, BANK_LAST, BANK_RED, BANK_PROFIT = 12, 16, 276, 284, 288, 292
+LOAN_OUT_KEYS = ('balance', 'profit', 'active', 'batch', 'last', 'red', 'acc_in', 'acc_out', 'loans', 'events')
+
+
+def loan_step_stubs(target: Target) -> dict:
+    state = LOAN_STATE
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF, (m.gpr[4] - state.strings) & MASK32))
+
+    def debug(m: Machine) -> None:
+        message = (m.gpr[4] - state.strings) & MASK32
+        if message == 465:
+            target.log.append(('log465', m.gpr[5], m.gpr[6], m.gpr[7]))   # months repaid + 1, loan index, instalment
+        elif message == 587:
+            target.log.append(('log587', m.gpr[5]))                       # loan index
+        else:
+            raise AssertionError(f'unexpected debug message {message}')
+
+    return {PARK_OF_GAME: park, ASSERT: assertion, DEBUG_LOG: debug}
+
+
+def loan_step_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Set up a bank object (balance +12, batch +16, withdrawals +276, last balance +284, turn entered red +288, year
+    profit +292, eight 32-byte loan records: P +24, APR +28, months +32, instalment +36, bought +40, months repaid
+    +44) and call the loan loop of 0xcc21c once per month in one sandbox."""
+    state = LOAN_STATE
+    state.game = sb.alloc(0x1E0000)
+    state.park = sb.alloc(0x21000)
+    state.strings = toc_pointer(sb, LOAN_STRINGS)
+    for slot in LOAN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', state.game)
+    bank = sb.struct(512)
+    for offset, key in ((BANK_BALANCE, 'bal'), (BANK_BATCH, 'batch'), (BANK_WITHDRAW, 'wd'), (BANK_LAST, 'last'),
+                        (BANK_RED, 'red'), (BANK_PROFIT, 'profit')):
+        sb.write(bank + offset, 'I', x[key] & MASK32)
+    for index, loan in enumerate(x['loans']):
+        base = bank + 32 * index
+        for offset, key in ((24, 'amount'), (28, 'apr'), (32, 'months'), (36, 'monthly'), (40, 'bought'), (44, 'repaid')):
+            sb.write(base + offset, 'I', loan[key] & MASK32)
+    out = {key: [] for key in LOAN_OUT_KEYS}
+    for turn in x['turns']:
+        sb.write(state.game + LOAN_TURN, 'I', turn)
+        mark = len(log)
+        sb.call(0xCC21C, {3: bank}, stop=LOAN_STEP_STOP)
+        out['balance'].append(sb.read(bank + BANK_BALANCE, 'i'))
+        out['profit'].append(sb.read(bank + BANK_PROFIT, 'i'))
+        out['batch'].append(sb.read(bank + BANK_BATCH, 'I'))
+        out['last'].append(sb.read(bank + BANK_LAST, 'i'))
+        out['red'].append(sb.read(bank + BANK_RED, 'I'))
+        out['acc_in'].append(sb.read(state.park + LOAN_ACC_IN, 'I'))
+        out['acc_out'].append(sb.read(state.park + LOAN_ACC_OUT, 'I'))
+        loans = [(sb.read(bank + 32 * i + 40, 'I'), sb.read(bank + 32 * i + 44, 'I')) for i in range(8)]
+        out['loans'].append(loans)
+        out['active'].append(sum(1 for bought, _ in loans if bought))
+        out['events'].append([tuple(entry) for entry in log[mark:]])
+    return out
+
+
+def loan_step_reading(x: dict, drop: str = '') -> dict:
+    """0xcc21c..0xcc3d0 as read. Per month: the batch credit is moved into the balance, the money-in word and the year
+    profit; each bought loan then (with withdrawals enabled) takes its stored instalment M off the balance (and records
+    the turn the balance first goes negative), raises the money-out word and lowers the year profit by M. Whatever the
+    withdrawals flag, the year profit then gains M - floor((M x N - P) / N) in 32-bit unsigned arithmetic (a net
+    -floor((M x N - P) / N) with withdrawals), months repaid rise by 1, and when they reach N the bought flag and the
+    months repaid clear. `drop` (sharpness tests) removes one part of the reading: 'share', 'withdraw-flag', 'red',
+    'clear', 'batch' or 'profit-debit'."""
+    bal, batch, last, red, profit = (x[key] & MASK32 for key in ('bal', 'batch', 'last', 'red', 'profit'))
+    acc_in = acc_out = 0
+    loans = [{**loan, 'bought': loan['bought'] & MASK32, 'repaid': loan['repaid'] & MASK32} for loan in x['loans']]
+    out = {key: [] for key in LOAN_OUT_KEYS}
+    for turn in x['turns']:
+        events = [('assert', int(batch < 1_000_000), 340)]
+        if drop != 'batch':
+            bal = (bal + batch) & MASK32
+            acc_in = (acc_in + batch) & MASK32
+            profit = (profit + batch) & MASK32
+            batch = 0
+        for index, loan in enumerate(loans):
+            if loan['bought'] == 0:
+                continue
+            instalment = loan['monthly'] & MASK32
+            events.append(('log465', (loan['repaid'] + 1) & MASK32, index, instalment))
+            if x['wd'] & MASK32 or drop == 'withdraw-flag':
+                bal = (bal - instalment) & MASK32
+                if s32(bal) < 0 and s32(last) >= 0 and drop != 'red':
+                    red = turn & MASK32
+                last = bal
+                acc_out = (acc_out + instalment) & MASK32
+                if drop != 'profit-debit':
+                    profit = (profit - instalment) & MASK32
+            loan['repaid'] = (loan['repaid'] + 1) & MASK32
+            months = loan['months'] & MASK32
+            events.append(('assert', int(months != 0), 525))
+            if months != 0 and drop != 'share':
+                share = (((instalment * months) - (loan['amount'] & MASK32)) & MASK32) // months
+                profit = (profit + instalment - share) & MASK32
+            if loan['repaid'] == months and drop != 'clear':
+                events.append(('log587', index))
+                loan['bought'] = loan['repaid'] = 0
+        out['balance'].append(s32(bal))
+        out['profit'].append(s32(profit))
+        out['batch'].append(batch)
+        out['last'].append(s32(last))
+        out['red'].append(red)
+        out['acc_in'].append(acc_in)
+        out['acc_out'].append(acc_out)
+        snapshot = [(loan['bought'], loan['repaid']) for loan in loans]
+        out['loans'].append(snapshot)
+        out['active'].append(sum(1 for bought, _ in snapshot if bought))
+        out['events'].append(events)
+    return out
+
+
+def to_s32(value: int) -> int:
+    value &= MASK32
+    return value - (1 << 32) if value & 0x80000000 else value
+
+
+def loan_term_plan(x: dict) -> dict:
+    """ECON-006 resolved (ORACLE F13): per month every outstanding loan, in index order, pays exactly M, the
+    instalment's interest share (M x N - P) / N (32-bit) lowers the year profit (a 32-bit word, so it wraps), and a loan
+    ends after N months. Balance and profit are cumulative from the input state."""
+    accounts = [{'left': loan['months'], 'monthly': loan['monthly'], 'months': loan['months'], 'amount': loan['amount']}
+                for loan in x['loans'] if loan['bought']]
+    balance, profit = x['bal'], x['profit']
+    out = {'balance': [], 'profit': [], 'active': []}
+    for _ in x['turns']:
+        for account in list(accounts):
+            balance -= account['monthly']
+            profit = to_s32(profit - (((account['monthly'] * account['months']) - account['amount']) & MASK32) // account['months'])
+            account['left'] -= 1
+            if account['left'] <= 0:
+                accounts.remove(account)
+        out['balance'].append(balance)
+        out['profit'].append(profit)
+        out['active'].append(len(accounts))
+    return out
+
+
+def loan_term_request(x: dict) -> dict:
+    return {'fn': 'loan_term', 'balance': x['bal'], 'steps': len(x['turns']),
+            'loans': [{k: loan[k] for k in ('amount', 'apr', 'months', 'monthly')} for loan in x['loans'] if loan['bought']]}
+
+
+def loan_term_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'months' not in answer:
+        return {'exception': str(answer)}
+    return {'balance': [m['balance'] for m in answer['months']],
+            'profit': [to_s32(x['profit'] + m['profit']) for m in answer['months']],
+            'active': [m['active'] for m in answer['months']]}
+
+
+def loan_state_inputs(rng: random.Random, n: int, terms: bool) -> list:
+    """Random bank states. `terms`: fresh loans only (bought, none repaid, months at least 1), withdrawals enabled and no
+    batch credit, run until two months after the longest term; otherwise any state, one to three months."""
+    def loan() -> dict:
+        amount = rng.choice([rng.randrange(0, 200001), rng.choice([10000, 18000, 50000, 100000])])
+        apr = rng.choice([0, rng.randrange(1, 41), rng.randrange(18, 24)])
+        months = rng.choice([rng.randrange(1, 49), rng.choice([1, 2, 12, 24, 36])]) if terms else rng.choice(
+            [rng.randrange(0, 49), rng.choice([0, 1, 2, 12, 36])])
+        kind = rng.choice(['reading', 'reading', 'annuity', 'random'])
+        if kind == 'reading' and months:
+            monthly = loan_monthly_reading(amount, apr, months)
+        elif kind == 'annuity' and months:
+            monthly = loan_annuity_plan(amount, apr, months)
+        else:
+            monthly = rng.randrange(0, 20000)
+        bought = 1 if terms else rng.choice([0, 1, 1, 2])
+        repaid = 0 if terms else rng.choice([0, 0, max(0, months - 1), months, rng.randrange(0, months + 2)])
+        return {'amount': amount, 'apr': apr, 'months': months, 'monthly': monthly, 'bought': bought, 'repaid': repaid}
+
+    idle = {'amount': 0, 'apr': 0, 'months': 0, 'monthly': 0, 'bought': 0, 'repaid': 0}
+
+    def make() -> dict:
+        loans = [loan() for _ in range(rng.randrange(1, 4) if terms else 8)]
+        loans += [idle] * (8 - len(loans))
+        steps = (max([item['months'] for item in loans if item['bought']] or [0]) + 2) if terms else rng.randrange(1, 4)
+        turn = rng.randrange(0, 1 << 20)
+        bal = rng.choice([rng.randrange(0, 1 << 24), 1000000, 50000]) if terms else rng.choice(
+            [rng.randrange(0, 1 << 20), 0, 50000, rng.randrange(-60000, 60000)])
+        return {'bal': bal,
+                'batch': 0 if terms else rng.choice([0, 0, rng.randrange(0, 5000), 999999, 1000000, 1000001, rng.getrandbits(32)]),
+                'wd': 1 if terms else rng.choice([1, 1, 1, 0]),
+                'last': bal if terms else rng.choice([rng.randrange(-1000, 1000), 0, -1, rng.randrange(0, 1 << 20)]),
+                'red': rng.randrange(0, 1 << 20), 'profit': rng.choice([0, rng.randrange(-20000, 20000)]),
+                'loans': loans, 'turns': [turn + 800 * k for k in range(steps)]}
+    return [make() for _ in range(n)]
+
+
+LOAN_IDLE = {'amount': 0, 'apr': 0, 'months': 0, 'monthly': 0, 'bought': 0, 'repaid': 0}
+
+
+def loan_month_inputs(rng: random.Random, n: int) -> list:
+    rise = {'amount': 100000, 'apr': 20, 'months': 36, 'monthly': 3651, 'bought': 1, 'repaid': 0}
+    base = {'bal': 50000, 'batch': 0, 'wd': 1, 'last': 50000, 'red': 0, 'profit': 0, 'turns': [800]}
+    first = [rise] + [LOAN_IDLE] * 7
+    edges = [{**base, 'loans': first},
+             # the balance goes negative: the red turn is set
+             {**base, 'bal': 1000, 'last': 1000, 'loans': first},
+             # withdrawals disabled: nothing is taken, but the year profit still gains M - interest share
+             {**base, 'wd': 0, 'loans': first},
+             # a batch credit flushed into the balance, money in and profit
+             {**base, 'batch': 2500, 'loans': [LOAN_IDLE] * 8},
+             # the loan's last month: bought and months repaid clear
+             {**base, 'turns': [800, 1600], 'loans': [{**rise, 'repaid': 35}] + [LOAN_IDLE] * 7},
+             {**base, 'batch': 1000000, 'loans': [LOAN_IDLE] * 8}]
+    return edges + loan_state_inputs(rng, n, terms=False)
+
+
+def loan_term_inputs(rng: random.Random, n: int) -> list:
+    def one(amount, apr, months, monthly):
+        return {'amount': amount, 'apr': apr, 'months': months, 'monthly': monthly, 'bought': 1, 'repaid': 0}
+    base = {'bal': 1000000, 'batch': 0, 'wd': 1, 'last': 1000000, 'red': 0, 'profit': 0}
+    # 100000 at 20 % over 36 months as the Mac expression stores it (3651) and as OpenTPW's former annuity did (3716),
+    # and 10000 at 0 % over 24 months
+    edges = [{**base, 'loans': [one(100000, 20, 36, 3651)] + [LOAN_IDLE] * 7, 'turns': [800 * k for k in range(38)]},
+             {**base, 'loans': [one(100000, 20, 36, 3716)] + [LOAN_IDLE] * 7, 'turns': [800 * k for k in range(38)]},
+             {**base, 'loans': [one(10000, 0, 24, 416)] + [LOAN_IDLE] * 7, 'turns': [800 * k for k in range(26)]}]
+    return edges + loan_state_inputs(rng, n, terms=True)
+
+
+def loan_equal_state(original, other) -> bool:
+    return all(original[key] == other[key] for key in other)
+
+
+LOAN_ALLOWED = [(0xCC21C, LOAN_STEP_STOP)]
+LOAN_MONTH = Target('loan-month', 'Loan monthly step 0xcc21c', 'ECONOMY.md / PPC-economy', 0xCC21C, LOAN_ALLOWED,
+                    loan_step_stubs, loan_step_binary, None, loan_month_inputs,
+                    alternatives={'routine-reading': loan_step_reading}, equal=loan_equal_state,
+                    notes=['Fragment 0xcc21c..0xcc3d0 (batch flush and the 8-record loan loop). Stubs: 0x1082b4 game -> park '
+                           '(sentinel, checked), 0xb678 assertion and 0x5fbcc debug print (both logged). The tail (a bank '
+                           'in the red for a month) is not run.',
+                           'No plan side: the plan has no monthly step on the bank object; see loan-term.'])
+LOAN_TERM = Target('loan-term', 'Loan term 0xcc21c run over the loan term', 'ECONOMY.md / ParkLedger LoanMath (F12, F13)',
+                   0xCC21C, LOAN_ALLOWED, loan_step_stubs, loan_step_binary, loan_term_plan, loan_term_inputs,
+                   alternatives={'routine-reading': loan_step_reading}, equal=loan_equal_state,
+                   csharp=('loan_term', loan_term_request, loan_term_result),
+                   notes=['The same fragment run once per month over a whole term (withdrawals enabled, no batch credit), with '
+                          'the instalment M given. The plan and C# sides take M as given and pay it flat (LoanMath.Pay).',
+                          'C# hook: bridge function "loan_term" (LoanMath.Pay, ParkLedger.Post and ChargeLoanInterest, the '
+                          'calls of ParkEconomy.EndMonth).'])
+
+# ============================================================================== (l) LOANS: taking an offer 0xcc904
+LOAN_TAKE_ALLOWED = [(0xCC904, 0xCC9E8)]
+
+
+def loan_take_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Call 0xcc904(bank, index) on a bank with the chosen balance, year profit and the offer's amount and bought flag."""
+    state = LOAN_STATE
+    state.game = sb.alloc(0x1E0000)
+    state.park = sb.alloc(0x21000)
+    state.strings = toc_pointer(sb, LOAN_STRINGS)
+    for slot in LOAN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', state.game)
+    bank = sb.struct(512)
+    sb.write(bank + BANK_BALANCE, 'I', x['bal'] & MASK32)
+    sb.write(bank + BANK_PROFIT, 'I', x['profit'] & MASK32)
+    base = bank + 32 * x['index']
+    sb.write(base + 24, 'I', x['amount'] & MASK32)
+    sb.write(base + 40, 'I', x['bought'] & MASK32)
+    result = sb.call(0xCC904, {3: bank, 4: x['index']})
+    return {'taken': result.r3 & 0xFF, 'balance': sb.read(bank + BANK_BALANCE, 'i'), 'profit': sb.read(bank + BANK_PROFIT, 'i'),
+            'money_in': sb.read(state.park + LOAN_ACC_IN, 'I'), 'money_out': sb.read(state.park + LOAN_ACC_OUT, 'I'),
+            'bought': sb.read(base + 40, 'I'), 'events': [tuple(entry) for entry in log]}
+
+
+def loan_take_stubs(target: Target) -> dict:
+    stubs = loan_step_stubs(target)
+    state = LOAN_STATE
+
+    def debug(m: Machine) -> None:
+        target.log.append(('log', (m.gpr[4] - state.strings) & MASK32))   # 667 already taken, 701 / 762 taking
+
+    stubs[DEBUG_LOG] = debug
+    return stubs
+
+
+def loan_take_reading(x: dict) -> dict:
+    """0xcc904: an offer already bought logs and returns 0. Otherwise it logs twice, credits the amount to the balance
+    (+12), the money-in word (park +0x1FC90) and the year profit (+292), takes the same amount off the year profit again,
+    sets the bought flag to 1 and returns 1. The amount is asserted below 1,000,000 (the assertion does not stop it)."""
+    if x['bought'] & MASK32:
+        return {'taken': 0, 'balance': s32(x['bal']), 'profit': s32(x['profit']), 'money_in': 0, 'money_out': 0,
+                'bought': x['bought'] & MASK32, 'events': [('log', 667)]}
+    amount = x['amount'] & MASK32
+    return {'taken': 1, 'balance': s32(x['bal'] + amount), 'profit': s32(x['profit'] + amount - amount), 'money_in': amount,
+            'money_out': 0, 'bought': 1,
+            'events': [('log', 701), ('log', 762), ('assert', int(amount < 1_000_000), 340)]}
+
+
+def loan_take_plan(x: dict) -> dict:
+    """ECON-005 as OpenTPW has it (ParkEconomy.TakeLoan): the amount is posted as LoanReceived: it raises the balance and
+    the money-in total, but not the year's profit; an offer already taken cannot be taken again."""
+    if x['bought']:
+        return {'taken': 0, 'balance': x['bal'], 'profit': x['profit'], 'money_in': 0, 'bought': x['bought']}
+    return {'taken': 1, 'balance': x['bal'] + x['amount'], 'profit': x['profit'], 'money_in': x['amount'], 'bought': 1}
+
+
+def loan_take_request(x: dict) -> dict:
+    return {'fn': 'loan_take', 'cash': x['bal'], 'amount': x['amount'], 'taken_before': bool(x['bought'])}
+
+
+def loan_take_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'taken' not in answer:
+        return {'exception': str(answer)}
+    return {'taken': int(answer['taken']), 'balance': x['bal'] + answer['balance'], 'profit': x['profit'] + answer['profit'],
+            'money_in': answer['money_in'], 'bought': 1 if answer['taken'] or x['bought'] else 0}
+
+
+def loan_take_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'bal': rng.choice([0, rng.randrange(0, 1 << 24), 50000]), 'profit': rng.choice([0, rng.randrange(-30000, 30000)]),
+             'index': rng.randrange(0, 8), 'amount': rng.choice([rng.randrange(0, 200001), 10000, 100000]),
+             'bought': rng.choice([0, 0, 0, 1])}
+        x.update(kw)
+        return x
+    edges = [make(bought=0, amount=100000, bal=50000, index=0), make(bought=1, amount=100000, bal=50000, index=0),
+             make(bought=0, amount=1000000, index=7), make(bought=0, amount=1000001, index=7), make(bought=0, amount=0)]
+    return edges + [make() for _ in range(n)]
+
+
+def loan_take_equal(original, other) -> bool:
+    return all(original[key] == other[key] for key in other)
+
+
+LOAN_TAKE = Target('loan-take', 'Loan taken 0xcc904', 'ECONOMY.md / ParkEconomy.TakeLoan (ECON-005)', 0xCC904,
+                   LOAN_TAKE_ALLOWED, loan_take_stubs, loan_take_binary, loan_take_plan, loan_take_inputs,
+                   alternatives={'routine-reading': loan_take_reading}, equal=loan_take_equal,
+                   csharp=('loan_take', loan_take_request, loan_take_result),
+                   notes=['Whole routine. Stubs: 0x1082b4 game -> park (sentinel, checked), 0xb678 assertion and 0x5fbcc debug '
+                          'print (logged). Only the money-in word is compared with the plan: the plan has no money-out change.',
+                          'C# hook: bridge function "loan_take" (ParkEconomy.TakeLoan on an economy with the one offer).'])
+
+# ============================================================================== (m) LOANS: early repayment 0xccc78
+LOAN_PAYOFF_ALLOWED = [(0xCCC78, 0xCCDEC)]
+
+
+def loan_payoff_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Call 0xccc78(bank, index): a bank with the chosen balance, withdrawals flag, last balance and year profit and one
+    loan record (P +24, months +32, instalment +36, bought +40, months repaid +44)."""
+    state = LOAN_STATE
+    state.game = sb.alloc(0x1E0000)
+    state.park = sb.alloc(0x21000)
+    state.strings = toc_pointer(sb, LOAN_STRINGS)
+    for slot in LOAN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', state.game)
+    bank = sb.struct(512)
+    for offset, key in ((BANK_BALANCE, 'bal'), (BANK_WITHDRAW, 'wd'), (BANK_LAST, 'last'), (BANK_PROFIT, 'profit')):
+        sb.write(bank + offset, 'I', x[key] & MASK32)
+    base = bank + 32 * x['index']
+    for offset, key in ((24, 'amount'), (32, 'months'), (36, 'monthly'), (40, 'bought'), (44, 'repaid')):
+        sb.write(base + offset, 'I', x[key] & MASK32)
+    result = sb.call(0xCCC78, {3: bank, 4: x['index']})
+    return {'taken': result.r3 & 0xFF, 'balance': sb.read(bank + BANK_BALANCE, 'i'), 'profit': sb.read(bank + BANK_PROFIT, 'i'),
+            'last': sb.read(bank + BANK_LAST, 'i'), 'bought': sb.read(base + 40, 'I'), 'repaid': sb.read(base + 44, 'I'),
+            'money_out': sb.read(state.park + LOAN_ACC_OUT, 'I'), 'events': [tuple(entry) for entry in log]}
+
+
+def loan_payoff_reading(x: dict) -> dict:
+    """0xccc78 as read. Not bought: log 813, return 0. The payoff is M x (N - months repaid) (32-bit); a balance (unsigned
+    compare) below it logs 855 and returns 0. Otherwise, with withdrawals enabled, the payoff leaves the balance (+12; the
+    last balance +284 follows it) and the money-out word and lowers the year profit; whatever the flag the year profit then
+    gains the payoff less q x N, q = (M x N - P) / N in 32-bit unsigned arithmetic (months repaid are cleared before they
+    are read again, so the whole term counts). Bought and months repaid clear; the term is asserted non-zero (525) and a
+    zero term skips the share. Returns 1. A balance that ends negative (the red turn) is not covered by the inputs."""
+    bal, profit, last = (x[key] & MASK32 for key in ('bal', 'profit', 'last'))
+    amount, months, monthly, repaid = (x[key] & MASK32 for key in ('amount', 'months', 'monthly', 'repaid'))
+    keep = {'taken': 0, 'balance': s32(bal), 'profit': s32(profit), 'last': s32(last), 'bought': x['bought'] & MASK32,
+            'repaid': repaid, 'money_out': 0}
+    if not x['bought'] & MASK32:
+        return {**keep, 'events': [('log', 813)]}
+    payoff = (monthly * ((months - repaid) & MASK32)) & MASK32
+    if bal < payoff:
+        return {**keep, 'events': [('log', 855)]}
+    money_out = 0
+    if x['wd'] & MASK32:
+        bal = (bal - payoff) & MASK32
+        last = bal
+        money_out = payoff
+        profit = (profit - payoff) & MASK32
+    if months:
+        share = ((monthly * months - amount) & MASK32) // months
+        profit = (profit + payoff - ((share * months) & MASK32)) & MASK32
+    return {'taken': 1, 'balance': s32(bal), 'profit': s32(profit), 'last': s32(last), 'bought': 0, 'repaid': 0,
+            'money_out': money_out, 'events': [('assert', int(months != 0), 525)]}
+
+
+def loan_payoff_plan(x: dict) -> dict:
+    """ECON-006 resolved (ParkEconomy.TryRepayLoan, ORACLE F13): the payoff M x (N - months repaid) leaves the balance
+    (always, ECON-051) when the balance covers it; the year profit (a 32-bit word) falls by the whole-term share q x N
+    (32-bit), not by the payoff; the loan ends. Without the cash or without the loan nothing changes."""
+    keep = {'taken': 0, 'balance': x['bal'], 'profit': x['profit'], 'bought': int(bool(x['bought'])), 'repaid': x['repaid'],
+            'money_out': 0}
+    if not x['bought'] or x['months'] <= 0:
+        return keep
+    payoff = x['monthly'] * (x['months'] - x['repaid'])
+    if payoff > x['bal']:
+        return keep
+    share = (((x['monthly'] * x['months']) - x['amount']) & MASK32) // x['months']
+    return {'taken': 1, 'balance': x['bal'] - payoff, 'profit': to_s32(x['profit'] - ((share * x['months']) & MASK32)),
+            'bought': 0, 'repaid': 0, 'money_out': payoff}
+
+
+def loan_payoff_request(x: dict) -> dict:
+    return {'fn': 'loan_payoff', 'bal': x['bal'], 'profit': x['profit'], 'amount': x['amount'], 'apr': x['apr'],
+            'months': x['months'], 'monthly': x['monthly'], 'repaid': x['repaid'], 'bought': bool(x['bought'])}
+
+
+def loan_payoff_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'taken' not in answer:
+        return {'exception': str(answer)}
+    # a record that is not bought keeps its stale months repaid; C# has no such record
+    return {key: answer[key] for key in ('taken', 'balance', 'profit', 'bought', 'money_out')} | {
+        'repaid': answer['repaid'] if x['bought'] else x['repaid']}
+
+
+def loan_payoff_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        amount = rng.choice([rng.randrange(0, 200001), 10000, 18000, 100000])
+        apr = rng.choice([0, 0, rng.randrange(1, 41), 20])
+        months = rng.choice([rng.randrange(1, 49), 36, 24, 1])
+        monthly = loan_monthly_reading(amount, apr, months) if rng.random() < 0.7 else rng.randrange(0, 20000)
+        repaid = rng.choice([0, months - 1, rng.randrange(0, months), 12 % months])
+        payoff = monthly * (months - repaid)
+        x = {'bal': rng.choice([rng.randrange(0, 1 << 24), 0, 50000, payoff, payoff + 1, max(payoff - 1, 0), payoff * 2]),
+             'profit': rng.choice([0, rng.randrange(-30000, 30000), -2147483640, 2147483640, -(1 << 31), (1 << 31) - 1]),
+             'wd': 1, 'last': 0, 'index': rng.randrange(0, 8), 'amount': amount, 'apr': apr, 'months': months,
+             'monthly': monthly, 'bought': rng.choice([1, 1, 1, 0]), 'repaid': repaid}
+        x['last'] = x['bal']
+        x.update(kw)
+        return x
+    edges = [make(amount=100000, apr=20, months=36, monthly=3651, repaid=12, bal=300000, profit=0, bought=1),
+             make(amount=100000, apr=0, months=36, monthly=2777, repaid=0, bal=300000, profit=0, bought=1),
+             make(amount=100000, apr=0, months=36, monthly=2777, repaid=9, bal=300000, profit=-2147483600, bought=1),
+             make(amount=100000, apr=20, months=36, monthly=3651, repaid=12, bal=87623, profit=0, bought=1),
+             make(amount=100000, apr=20, months=36, monthly=3651, repaid=12, bal=87624, profit=0, bought=1),
+             make(amount=100000, apr=20, months=36, monthly=3651, repaid=12, bal=300000, profit=0, bought=0)]
+    return edges + [make() for _ in range(n)]
+
+
+def loan_payoff_equal(original, other) -> bool:
+    return all(original[key] == other[key] for key in other)
+
+
+LOAN_PAYOFF = Target('loan-payoff', 'Early repayment 0xccc78', 'ECONOMY.md / ParkEconomy.TryRepayLoan (F13)', 0xCCC78,
+                     LOAN_PAYOFF_ALLOWED, loan_take_stubs, loan_payoff_binary, loan_payoff_plan, loan_payoff_inputs,
+                     alternatives={'routine-reading': loan_payoff_reading}, equal=loan_payoff_equal,
+                     csharp=('loan_payoff', loan_payoff_request, loan_payoff_result),
+                     notes=['Whole routine. Stubs: 0x1082b4 game -> park (sentinel, checked), 0xb678 assertion and 0x5fbcc debug '
+                            'print (logged). The inputs keep the balance non-negative (the sufficiency test is unsigned) and '
+                            'the withdrawals flag on; the routine reading covers the flag.',
+                            'C# hook: bridge function "loan_payoff" (ParkEconomy.TryRepayLoan on an imported bank).'])
+
+
 # ============================================================================== registry
-LCG = Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
+LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
              notes=['C# hook: bridge function "world_rng_next" (DET-I2 WorldRng); main has no port yet (DET-plan D5-D7).'])
 RAND = Target('det-rse-rand', 'RSE RAND call site 0xb07f8..0xb0828', 'DET-plan §4.3 / det_model.rse_rand', 0xB07F8,
@@ -1481,6 +2091,15 @@ COUNTS = Target('park-points-counts-test', 'Park points counts-test 0xdc834', 'G
                        'The compared result is the returned word and, for the plan, the stub call order; the u16 behind TOC '
                        '-19648 (zero in the file, read only here) is checked to be zero.'])
 
+LOAN_OFFERS = Target('loan-offers', 'Loan offer setup 0xcb7a8', 'ECONOMY.md / ParkLedger LoanMath (F12, F13)', 0xCB7A8,
+                     [(0xCB7A8, LOAN_UNSIGNED_STOP), LOAN_TO_UINT, LOAN_POW_GLUE], loan_stubs, loan_offers_binary,
+                     loan_offers_plan, loan_offers_inputs, equal=loan_equal,
+                     alternatives={'routine-reading': loan_offers_reading},
+                     csharp=('loan_offers', loan_offers_request, loan_offers_result),
+                     notes=['Fragment 0xcb7a8..0xcb908: the 8-offer loop. Executed: the loop, the u32 field copies, the binary64 '
+                            'arithmetic and the float -> unsigned conversion 0x1c3fbc. Stubs: 0xfa718 base constructor (header '
+                            'only), MathLib pow behind the glue 0x1c61a4 (Python math.pow).'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF]
 DOMAINS = {SET_CELL.key: set_cell_domain}

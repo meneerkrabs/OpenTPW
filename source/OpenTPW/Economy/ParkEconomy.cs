@@ -359,22 +359,25 @@ public sealed class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.StaffCosts, training );
 			Raise( ParkEventKind.TrainingPaid, training );
 		}
-		for ( var index = loans.Count - 1; index >= 0; index-- )
+		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
+		// [APPROX:ECON-051] the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) — evidence needed: the writer of the flag and when the original clears it
+		foreach ( var loan in loans.OrderBy( item => item.OfferIndex ).ToList() )
 		{
-			var (account, paid) = LoanMath.Pay( loans[index] );
+			var (account, paid) = LoanMath.Pay( loan );
 			Post( LedgerCategory.LoanPayments, paid );
 			Ledger.ChargeLoanInterest( LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
 			Raise( ParkEventKind.LoanPayment, paid, 0, account.OfferIndex );
-			if ( account.MonthsRemaining == 0 || account.RemainingBalance <= 0 )
+			var position = loans.IndexOf( loan );
+			if ( account.MonthsRemaining <= 0 )
 			{
-				loans.RemoveAt( index );
+				loans.RemoveAt( position );
 				// [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes
 				// [APPROX:ECON-007] reopening has no original credit-eligibility gate — evidence needed: implement the traced credit predicate and qualify its cross-edition behavior
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}
 			else
-				loans[index] = account;
+				loans[position] = account;
 		}
 		foreach ( var item in objects.Values )
 		{
@@ -828,13 +831,15 @@ public sealed class ParkEconomy : IParkEconomy
 		return account;
 	}
 
-	/// <summary>Repays a loan's remaining balance in full; requires the money (UITEXT 182).</summary>
+	/// <summary>Repays a loan early: M × the months left (0xccc78); requires the money (UITEXT 182).</summary>
 	public bool TryRepayLoan( int offerIndex )
 	{
 		var account = loans.FirstOrDefault( item => item.OfferIndex == offerIndex ) ?? throw new InvalidOperationException( $"Loan {offerIndex} is not outstanding." );
 		if ( account.RemainingBalance > Balance )
 			return false;
 		Post( LedgerCategory.LoanPayments, account.RemainingBalance );
+		// [BIN:STP-PPC:0x100CCC78 loan payoff] months repaid are cleared before they are read again, so the profit is charged the share of the whole term (q x N), even after a partial repayment (ORACLE F13)
+		Ledger.ChargeLoanInterest( LoanMath.PayoffInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
 		loans.Remove( account );
 		takenOffers.Remove( offerIndex );
 		Raise( ParkEventKind.LoanRepaid, account.RemainingBalance, 0, offerIndex );

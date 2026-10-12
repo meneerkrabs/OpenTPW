@@ -102,7 +102,7 @@ public sealed class OriginalEconomyImport
 		ArgumentNullException.ThrowIfNull( evidence );
 		if ( records.Loans.Count != settings.Loans.Count )
 			throw new InvalidDataException( $"The save has {records.Loans.Count} loan offers; the settings define {settings.Loans.Count}." );
-		var zeroAprRepayments = 0;
+		var matchedRepayments = 0;
 		for ( var index = 0; index < records.Loans.Count; index++ )
 		{
 			var saved = records.Loans[index];
@@ -110,19 +110,17 @@ public sealed class OriginalEconomyImport
 			if ( saved.Amount != offer.Amount || saved.AprPercent != offer.AprPercent || saved.Months != offer.Months
 				|| saved.LenderNameIndex != offer.LenderNameIndex )
 				throw new InvalidDataException( $"Save loan offer {index} ({saved.Amount}/{saved.AprPercent} % APR/{saved.Months} months/lender {saved.LenderNameIndex}) differs from LoanInfo[{offer.Index}] ({offer.Amount}/{offer.AprPercent}/{offer.Months}/lender {offer.LenderNameIndex})." );
-			if ( saved.AprPercent == 0 )
-			{
-				var expected = offer.Amount / offer.Months;
-				if ( saved.MonthlyRepayment != expected )
-					throw new InvalidDataException( $"Save loan offer {index} zero-APR monthly repayment {saved.MonthlyRepayment} differs from floor(amount/months) = {expected}." );
-				zeroAprRepayments++;
-			}
+			// [BIN:STP-PPC:0xCB7A8 loan offer setup] the stored instalment is trunc_u32(P x pow(1 + APR/100, N/24) / N) for every APR (ORACLE F12); OpenTPW computes the same value
+			// the stored M is kept for a bought loan whatever pow gives here: PC and Mac pow agreement in the last bit is unproven
+			var expected = LoanMath.MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months );
+			if ( saved.MonthlyRepayment == expected )
+				matchedRepayments++;
 			else
-				evidence.Add( $"[APPROX:ECON-006] Save loan offer {index} monthly repayment {saved.MonthlyRepayment} at {saved.AprPercent} % APR is unverified: original PC repayment arithmetic is not established; this stored value was not validated against the runtime approximation." );
+				evidence.Add( $"Save loan offer {index} monthly repayment {saved.MonthlyRepayment} at {saved.AprPercent} % APR differs from trunc(P x pow(1 + APR/100, N/24) / N) = {expected}; the stored value is kept for a bought loan (pow may differ in the last bit, or the save is modified)." );
 		}
 		evidence.Add( $"{records.Loans.Count} loan offers match LoanInfo amounts, APR, terms and lenders." );
-		if ( zeroAprRepayments != 0 )
-			evidence.Add( $"{zeroAprRepayments} zero-APR monthly repayments equal floor(amount/months)." );
+		if ( matchedRepayments != 0 )
+			evidence.Add( $"{matchedRepayments} monthly repayments equal trunc(P x pow(1 + APR/100, N/24) / N)." );
 		var level = settings.ChallengesInThisLevel;
 		if ( records.Challenges.Count != level.Count )
 			throw new InvalidDataException( $"The save has {records.Challenges.Count} challenges; ChallengesInThisLevel lists {level.Count}." );
@@ -149,7 +147,7 @@ public sealed class OriginalEconomyImport
 			if ( left <= 0 )
 				throw new InvalidDataException( $"Save loan offer {loan.Index} is bought but fully repaid ({loan.MonthsRepaid}/{loan.Months} months)." );
 			// [BIN:STP-PPC:0x100CCC78 loan payoff] the outstanding amount of a bought loan is M × (N − months repaid); the original keeps no declining principal
-			bought.Add( new LoanAccount( loan.Index, loan.LenderNameIndex, loan.Amount, loan.AprPercent, loan.Months, loan.MonthlyRepayment, left, (long)loan.MonthlyRepayment * left ) );
+			bought.Add( new LoanAccount( loan.Index, loan.LenderNameIndex, loan.Amount, loan.AprPercent, loan.Months, loan.MonthlyRepayment, loan.MonthsRepaid ) );
 		}
 		// [BIN:STP-PPC:0x100CBA54 bank serializer] admission fee, balance and mProfitThisYear (+292) are the bank words of the save; bought loans keep offer, amount, APR, term, repayment and months repaid
 		economy.ImportOriginalBank( account.Balance, account.AdmissionFee, account.ProfitThisYear, bought );

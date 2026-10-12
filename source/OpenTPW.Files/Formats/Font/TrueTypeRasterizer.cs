@@ -81,29 +81,50 @@ public static class TrueTypeRasterizer
 		var coverage = new byte[width * height];
 		var accumulator = new double[width + 1];
 		var crossings = new List<(double X, int Winding)>();
-		// Edges sorted by top so each row only scans active candidates.
+		// Edges sorted by top; tops/bottoms are precomputed once from the same normalized doubles the
+		// per-sample tests below compare against, so every window decision sees a full scan's values.
 		var sorted = edges.Select( edge => edge with { X0 = edge.X0 - minX, X1 = edge.X1 - minX, Y0 = edge.Y0 - minY, Y1 = edge.Y1 - minY } )
 			.OrderBy( edge => Math.Min( edge.Y0, edge.Y1 ) ).ToArray();
-		var firstCandidate = 0;
+		var tops = new double[sorted.Length];
+		var bottoms = new double[sorted.Length];
+		for ( var i = 0; i < sorted.Length; i++ )
+		{
+			tops[i] = Math.Min( sorted[i].Y0, sorted[i].Y1 );
+			bottoms[i] = Math.Max( sorted[i].Y0, sorted[i].Y1 );
+		}
+		// Active-edge window per row: indices into sorted, kept in ascending sorted order (ended edges
+		// compact out in place, candidates entering the row append in sorted order). The per-sample scan
+		// therefore appends crossings in exactly the original full-scan order — tops are non-decreasing
+		// along the list, so the early break stays valid — and the crossing arithmetic still reads the
+		// same sorted doubles.
+		var active = new int[sorted.Length];
+		var activeCount = 0;
+		var nextCandidate = 0;
 		for ( var row = 0; row < height; row++ )
 		{
 			Array.Clear( accumulator );
-			while ( firstCandidate < sorted.Length && Math.Max( sorted[firstCandidate].Y0, sorted[firstCandidate].Y1 ) < row )
-				firstCandidate++;
+			var kept = 0;
+			for ( var i = 0; i < activeCount; i++ )
+				if ( bottoms[active[i]] > row )
+					active[kept++] = active[i];
+			activeCount = kept;
+			while ( nextCandidate < sorted.Length && tops[nextCandidate] < row + 1 )
+				active[activeCount++] = nextCandidate++;
 			for ( var sub = 0; sub < SubScanlines; sub++ )
 			{
 				var y = row + (sub + 0.5) / SubScanlines;
 				crossings.Clear();
-				for ( var i = firstCandidate; i < sorted.Length; i++ )
+				for ( var i = 0; i < activeCount; i++ )
 				{
-					var edge = sorted[i];
-					var top = Math.Min( edge.Y0, edge.Y1 );
+					var index = active[i];
+					var top = tops[index];
 					if ( top > y )
 						break;
-					var bottom = Math.Max( edge.Y0, edge.Y1 );
+					var bottom = bottoms[index];
 					// Half-open [top, bottom) so shared vertices are counted once.
 					if ( y < top || y >= bottom )
 						continue;
+					var edge = sorted[index];
 					var t = (y - edge.Y0) / (edge.Y1 - edge.Y0);
 					crossings.Add( (edge.X0 + t * (edge.X1 - edge.X0), edge.Winding) );
 				}

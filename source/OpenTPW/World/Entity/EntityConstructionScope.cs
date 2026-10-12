@@ -100,7 +100,10 @@ internal sealed class EntityConstructionScope : IDisposable
 			try { previous.Restore(); }
 			finally
 			{
-				ReleaseCandidateAssets( failures );
+				// Release must never leave the scope marked active, or a later construction would be
+				// rejected because this rollback's own bookkeeping failed.
+				try { ReleaseCandidateAssets( failures ); }
+				catch ( Exception error ) { failures.Add( error ); }
 				finished = true;
 				active = null;
 			}
@@ -113,7 +116,7 @@ internal sealed class EntityConstructionScope : IDisposable
 	/// Retires the materials and shaders the rejected candidate registered. Entities only clear their
 	/// bindings when deleted, so without this every failed candidate would leave its pipelines and
 	/// native shader programs growing in <see cref="Asset.All"/> forever. Assets registered before the
-	/// scope started, the shared texture cache and the process-lifetime UI materials stay untouched.
+	/// scope started, the shared texture cache and the process-lifetime shared materials stay untouched.
 	/// </summary>
 	private void ReleaseCandidateAssets( List<Exception> failures )
 	{
@@ -121,7 +124,12 @@ internal sealed class EntityConstructionScope : IDisposable
 		{
 			if ( retainedAssets.Contains( asset ) || asset is not Material and not Shader )
 				continue;
-			if ( IsProcessLifetimeMaterial( asset ) )
+			// Material.UI/Default record themselves and their owned shaders as process-lifetime when
+			// created; the candidate can be the first to create them, and a kept shared material must
+			// keep the shader that registers before it. Only the instance flag is read here: touching
+			// those statics during cleanup could run their initializer (allocating assets mid-rollback,
+			// or poisoning the type on a host without a graphics device).
+			if ( asset is Material { IsProcessLifetime: true } or Shader { IsProcessLifetime: true } )
 				continue;
 			try
 			{
@@ -131,22 +139,6 @@ internal sealed class EntityConstructionScope : IDisposable
 					shader.ReleaseOwnedResources();
 			}
 			catch ( Exception error ) { failures.Add( error ); }
-		}
-	}
-
-	// Material.UI and Material.Default (cursor, images, terrain) are shared by every scene, but the
-	// candidate can be the first thing to touch them, so the start snapshot may not contain them;
-	// releasing them would break every later scene. Reading them can run their initializer, which
-	// needs the graphics device — without one nothing has been shared yet, and that failure is fine.
-	private static bool IsProcessLifetimeMaterial( Asset asset )
-	{
-		try
-		{
-			return ReferenceEquals( asset, Material.UI ) || ReferenceEquals( asset, Material.Default );
-		}
-		catch ( TypeInitializationException )
-		{
-			return false;
 		}
 	}
 }

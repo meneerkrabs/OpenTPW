@@ -31,7 +31,9 @@ public sealed class ParkEconomyRuntime
 	/// statistics to the park rating, tickets and challenges, and opens the park unless the imported
 	/// save's <c>mParkClosed</c> says it is closed.
 	/// </summary>
-	public void AttachGuests( GuestSimulation guests )
+	public void AttachGuests( GuestSimulation guests ) => AttachGuests( guests, openParkOnAttach: true );
+
+	internal void AttachGuests( GuestSimulation guests, bool openParkOnAttach )
 	{
 		Guests = new GuestEconomyBridge( () => Economy, guests );
 		guests.Payments = Guests;
@@ -43,7 +45,7 @@ public sealed class ParkEconomyRuntime
 		Economy.RideOperations = Guests;
 		if ( Import is { ParkClosed: true } )
 			Log.Trace( "Park economy: the imported park is closed, as saved." );
-		else
+		else if ( openParkOnAttach )
 			// [APPROX:ECON-031] a park started without an original save is opened when guests attach (an imported park follows its saved mParkClosed) — evidence needed: the open state of a new original park
 			Economy.OpenPark();
 		Log.Trace( $"Park economy: guests pay the ${Economy.EntranceFee} entrance fee and shop/sideshow prices into the ledger." );
@@ -95,6 +97,21 @@ public sealed class ParkEconomyRuntime
 		foreach ( var line in import?.Evidence ?? Array.Empty<string>() )
 			Log.Trace( $"Park economy import: {line}" );
 		return new ParkEconomyRuntime( economy, import ) { Start = start };
+	}
+
+	/// <summary>Wraps a separately validated and restored economy without importing or opening a shipped park.</summary>
+	internal static ParkEconomyRuntime ForResume( ParkEconomy economy, ParkStartKind originalStart )
+	{
+		ArgumentNullException.ThrowIfNull( economy );
+		if ( !Enum.IsDefined( originalStart ) )
+			throw new InvalidDataException( "The saved park start is unknown." );
+		var expectedMode = originalStart == ParkStartKind.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation;
+		if ( economy.Mode != expectedMode )
+			throw new InvalidDataException( "The saved park start and economy mode differ." );
+		return new ParkEconomyRuntime( economy, import: null )
+		{
+			Start = new ParkStart( originalStart, economy.Mode, economy.Settings.IsEasy, ImportShippedSave: false )
+		};
 	}
 
 	/// <summary>Called once per 60 Hz fixed simulation tick.</summary>

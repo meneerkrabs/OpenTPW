@@ -424,6 +424,10 @@ public static class GuestSpeed
 	public const float InputCap = 2f;
 	public const double MaxSpeedFactor = 0.2;
 	public const double MaxForceFactor = 0.4;
+	/// <summary>Largest speed the setter writes (trunc(<see cref="InputCap"/> × <see cref="MaxSpeedFactor"/>) in 16.16); the bound snapshot validation accepts.</summary>
+	public const int VelocityBound = (int)(InputCap * MaxSpeedFactor * 65536.0);
+	/// <summary>Largest force the setter writes (trunc(<see cref="InputCap"/> × <see cref="MaxForceFactor"/>) in 16.16); the bound snapshot validation accepts.</summary>
+	public const int ForceBound = (int)(InputCap * MaxForceFactor * 65536.0);
 
 	/// <summary>
 	/// <c>0xe6b28</c>: +200 = (3.0 × +200 + (+192 + +194 + +196) / 100) × 0.25 in single precision. The multiply-add is

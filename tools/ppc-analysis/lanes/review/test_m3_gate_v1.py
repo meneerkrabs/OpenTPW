@@ -68,6 +68,41 @@ def method_body(text: str, signature: str) -> str:
     raise ValueError(f'unbalanced block after {signature!r}')
 
 
+def expand_level_fixed_tick(update: str, simulation: str) -> str:
+    """Inline the reachable fixed-step callback so the drift check still sees all Update calls."""
+    dispatch = 'AdvanceSimulation( Time.Delta * SimulationTimeScale );'
+    if dispatch not in update:
+        raise ValueError('Level.Update does not dispatch AdvanceSimulation with scaled frame time')
+    signature = 'internal void AdvanceSimulation( double elapsedSeconds )'
+    start = simulation.index(signature)
+    open_at = simulation.index('{', start)
+    declaration = re.sub(r'\s+', ' ', simulation[start:open_at]).strip()
+    if declaration != signature + ' => simulationClock.Advance( elapsedSeconds, deltaTime =>':
+        raise ValueError('AdvanceSimulation does not dispatch the simulation clock callback')
+    return update.replace(dispatch, method_body(simulation, signature))
+
+
+class FixedTickCallbackTraversal(unittest.TestCase):
+    simulation = '''internal void AdvanceSimulation( double elapsedSeconds ) =>
+        simulationClock.Advance( elapsedSeconds, deltaTime => {
+            Guests?.Tick( deltaTime );
+        } );'''
+
+    def test_callback_traversal_preserves_inline_calls(self):
+        update = '{ Guests?.Tick( frameTime ); AdvanceSimulation( Time.Delta * SimulationTimeScale ); }'
+        expanded = expand_level_fixed_tick(update, self.simulation)
+        self.assertEqual(['Guests?.Tick', 'Guests?.Tick'], re.findall(r'Guests\?\.Tick', expanded))
+
+    def test_unreachable_callback_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'Level.Update does not dispatch'):
+            expand_level_fixed_tick('{ OtherSimulation(); }', self.simulation)
+
+    def test_callback_requires_simulation_clock_dispatch(self):
+        update = '{ AdvanceSimulation( Time.Delta * SimulationTimeScale ); }'
+        with self.assertRaisesRegex(ValueError, 'simulation clock callback'):
+            expand_level_fixed_tick(update, self.simulation.replace('simulationClock.Advance', 'OtherSimulation'))
+
+
 @unittest.skipUnless(has_commit(SUBJECT), f'subject commit {SUBJECT} not in this repository')
 class StaticFindings(unittest.TestCase):
     def test_tick_order_matches_level_update(self):
@@ -87,6 +122,8 @@ class StaticFindings(unittest.TestCase):
     def test_tick_order_matches_level_update_in_gate_under_test(self):
         # GATE-FIX: the same drift check on the gate under test (the open-state sync now covers every economy link).
         level = method_body(show('source/OpenTPW/World/Level.cs', MUTATION_SUBJECT), 'public void Update()')
+        if re.search(r'\bAdvanceSimulation\s*\(', level):
+            level = expand_level_fixed_tick(level, show('source/OpenTPW/World/Level.Simulation.cs', MUTATION_SUBJECT))
         level_calls = re.findall(r'(SyncObjectEconomy|Guests\?\.Tick|PlacedRide\?\.Simulate|Objects\.Simulate|Park\?\.FixedTick)', level)
         self.assertEqual(['SyncObjectEconomy', 'Guests?.Tick', 'PlacedRide?.Simulate', 'Objects.Simulate', 'Park?.FixedTick'], level_calls)
         loop = method_body(show(GATE, MUTATION_SUBJECT), 'private void Simulate( long ticks )')

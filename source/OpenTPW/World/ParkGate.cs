@@ -208,4 +208,33 @@ public sealed class ParkGate
 	/// </summary>
 	// [APPROX:ECON-049] only the broken-down guard (VAR_BROKEN) is modelled; the upgrade/condemned states and the back-of-queue link test (PC FUN_004de4a0) are not — evidence needed: those ride states in the original
 	private static bool MayOpen( OriginalObjectRuntime item ) => item.GetVariableByName( nameof( RideVariables.VAR_BROKEN ) ) == 0;
+
+	/// <summary>
+	/// The gate's own-format state for a park save: the park turn whose retry crossing was last observed.
+	/// The commanded open/close state itself lives in the gate script's variables (VM lane) and the park's
+	/// open flag in the economy, so this record carries only the retry bookkeeping.
+	/// </summary>
+	public sealed record ParkGateSnapshot( long LastObservedTurn );
+
+	/// <summary>The gate's retry bookkeeping for a park save.</summary>
+	public ParkGateSnapshot CaptureSnapshot() => new( lastObservedTurn );
+
+	/// <summary>Checks a snapshot's bounds without touching this gate: turns are non-negative.</summary>
+	public void ValidateSnapshot( ParkGateSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.LastObservedTurn < 0 )
+			throw new InvalidDataException( "Park gate snapshot is inconsistent: negative last observed turn." );
+	}
+
+	/// <summary>
+	/// Continues this gate (built on the restored economy) from a validated snapshot, so the deferred-close
+	/// retry crosses the same turn multiples it would have without the restart. Restore after the economy's
+	/// tick, so a saved turn behind the restored one only means the retry waits for the next crossing.
+	/// </summary>
+	public void RestoreSnapshot( ParkGateSnapshot snapshot )
+	{
+		ValidateSnapshot( snapshot );
+		lastObservedTurn = snapshot.LastObservedTurn;
+	}
 }

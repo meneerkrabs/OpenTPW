@@ -61,17 +61,32 @@ public partial class Material : Asset
 		ClearResourceSets();
 		Asset.All.Remove( this );
 		Shader.OnRecompile = null!;
-		Render.ScheduleDelete( () =>
+		DisposeOwnedResources();
+		Shader.ReleaseOwnedResources();
+	}
+
+	/// <summary>
+	/// Retires the material's own GPU objects. A failed construction can leave the pipeline, scratch
+	/// buffer or layouts unset, so every native object here is optional. With a live renderer the
+	/// objects can still be referenced by the last submitted frame; without one the material was
+	/// never drawn and is freed at once.
+	/// </summary>
+	private void DisposeOwnedResources()
+	{
+		Action dispose = () =>
 		{
-			Pipeline.Dispose();
-			ScratchBuffer.Dispose();
+			Pipeline?.Dispose();
+			ScratchBuffer?.Dispose();
 			foreach ( var layout in _resourceLayouts )
 				layout.Dispose();
 			_boundResources.Clear();
 			_boundTextures.Clear();
 			_boundTextureArrays.Clear();
-		} );
-		Shader.ReleaseOwnedResources();
+		};
+		if ( Render is { } renderer )
+			renderer.ScheduleDelete( dispose );
+		else
+			dispose();
 	}
 
 	private static readonly Sampler[] Samplers =

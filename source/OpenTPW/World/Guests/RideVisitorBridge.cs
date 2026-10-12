@@ -169,6 +169,198 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		hash.Add( MaximumCalledAgeTurns );
 	}
 
+	// ---- Snapshots (park save/load) -------------------------------------------------------------
+
+	/// <summary>
+	/// Captures the queue and rider bookkeeping as a typed deep copy: the guest-id linked list front first, the
+	/// script-held guests with their timers, the computed queue geometry and the admission counters. The script, the
+	/// open delegate and the placement's cells metadata (entrance/exit, stand position, queue parameters) are owned by
+	/// the object/script slices and are re-attached around a restore, not captured.
+	/// </summary>
+	public RideVisitorBridgeSnapshot CaptureSnapshot() => new()
+	{
+		AttractionId = AttractionId,
+		Queue = Queue.ToArray(),
+		OnRide = onRide.ToArray(),
+		WalkingOff = walkingOff.ToArray(),
+		Hopped = hopped.Order().ToArray(),
+		Limbo = limbo.ToArray(),
+		Bounce = bouncing.ToArray(),
+		CalledGuest = called,
+		LetMeOnWritten = letMeOnWritten,
+		LastAdmissionTurn = lastAdmissionTurn,
+		CalledTurn = calledTurn,
+		QueueCells = queueCells.ToArray(),
+		QueueEditCount = QueueEditCount,
+		JoinCell = JoinCell,
+		HeadNotReadyStreak = HeadNotReadyStreak,
+		MaximumHeadNotReadyStreak = MaximumHeadNotReadyStreak,
+		CalledAgeTurns = CalledAgeTurns,
+		MaximumCalledAgeTurns = MaximumCalledAgeTurns,
+		LastAdmissionCheck = LastAdmissionCheck,
+		BoardedTotal = BoardedTotal,
+		ReleasedTotal = ReleasedTotal
+	};
+
+	/// <summary>
+	/// Bridge-local snapshot checks that need no park context: positive and unique guest ids, the called guest in the
+	/// queue, rider subsets, finite timers and bounded counters. A list the file lost (a JSON null) is named as a
+	/// problem instead of crashing. Whether the referenced guests exist — and each is queued or aboard at exactly one
+	/// attraction — is validated by <see cref="GuestSimulation.ValidateSnapshot"/>.
+	/// </summary>
+	public static IReadOnlyList<string> ValidateSnapshot( RideVisitorBridgeSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		var errors = new List<string>();
+		void Error( string message ) => errors.Add( message );
+		// Name every list a corrupt file nulled out before anything dereferences them; a snapshot without its
+		// tables cannot be checked structurally.
+		var listsMissing = false;
+		void Require<T>( T[]? list, string name )
+		{
+			if ( list == null )
+			{
+				Error( $"the {name} is missing." );
+				listsMissing = true;
+			}
+		}
+		Require( snapshot.Queue, "queue list" );
+		Require( snapshot.OnRide, "rider list" );
+		Require( snapshot.WalkingOff, "walking-off list" );
+		Require( snapshot.Hopped, "hopped set" );
+		Require( snapshot.Limbo, "limbo table" );
+		Require( snapshot.Bounce, "bounce table" );
+		Require( snapshot.QueueCells, "queue cell list" );
+		if ( listsMissing )
+			return errors;
+		var riders = new HashSet<int>( snapshot.OnRide );
+		if ( riders.Count != snapshot.OnRide.Length )
+			Error( "the rider list repeats a guest." );
+		foreach ( var guestId in snapshot.Queue )
+			if ( guestId <= 0 )
+				Error( $"the queue holds guest id {guestId}." );
+		if ( snapshot.Queue.Distinct().Count() != snapshot.Queue.Length )
+			Error( "the queue repeats a guest." );
+		if ( snapshot.Queue.Length > PositionsPerCell * Math.Max( 1, snapshot.QueueCells.Length ) )
+			Error( $"the queue holds {snapshot.Queue.Length} guests beyond the physical room of its {snapshot.QueueCells.Length} cells." );
+		if ( snapshot.QueueCells.Length == 0 )
+			Error( "the queue has no cells." );
+		if ( snapshot.CalledGuest < 0 )
+			Error( $"the called guest id {snapshot.CalledGuest} is negative." );
+		if ( snapshot.CalledGuest != 0 && !snapshot.Queue.Contains( snapshot.CalledGuest ) )
+			Error( $"the called guest {snapshot.CalledGuest} is not in the queue." );
+		if ( snapshot.LetMeOnWritten && snapshot.CalledGuest == 0 )
+			Error( "VAR_LETMEON is marked written without a called guest." );
+		foreach ( var guestId in snapshot.OnRide )
+			if ( guestId <= 0 )
+				Error( $"the rider list holds guest id {guestId}." );
+		foreach ( var guestId in snapshot.WalkingOff )
+			if ( !riders.Contains( guestId ) )
+				Error( $"walking-off guest {guestId} is not aboard." );
+		if ( snapshot.WalkingOff.Distinct().Count() != snapshot.WalkingOff.Length )
+			Error( "the walking-off list repeats a guest." );
+		foreach ( var guestId in snapshot.Hopped )
+			if ( !riders.Contains( guestId ) )
+				Error( $"hopped guest {guestId} is not aboard." );
+		if ( snapshot.Hopped.Distinct().Count() != snapshot.Hopped.Length )
+			Error( "the hopped set repeats a guest." );
+		var limboGuests = new HashSet<int>();
+		foreach ( var (guestId, until) in snapshot.Limbo )
+		{
+			if ( !riders.Contains( guestId ) )
+				Error( $"limbo guest {guestId} is not aboard." );
+			if ( !limboGuests.Add( guestId ) )
+				Error( $"limbo holds guest {guestId} twice." );
+			if ( !double.IsFinite( until ) )
+				Error( $"limbo guest {guestId} has a deadline that is not finite." );
+		}
+		var bouncingGuests = new HashSet<int>();
+		for ( var index = 0; index < snapshot.Bounce.Length; index++ )
+		{
+			var (guestId, until, start) = snapshot.Bounce[index];
+			if ( guestId < 0 )
+				Error( $"bounce slot {index} holds guest id {guestId}." );
+			if ( guestId != 0 && !bouncingGuests.Add( guestId ) )
+				Error( $"the bounce table repeats guest {guestId}." );
+			if ( guestId != 0 && !riders.Contains( guestId ) )
+				Error( $"bouncing guest {guestId} is not aboard." );
+			if ( !double.IsFinite( until ) || !double.IsFinite( start ) )
+				Error( $"bounce slot {index} has a time that is not finite." );
+		}
+		if ( snapshot.Bounce.Length > 0 && snapshot.Bounce[^1].Guest == 0 )
+			Error( "the bounce table keeps trailing free slots." );
+		if ( snapshot.QueueEditCount < 0 )
+			Error( $"the queue edit count {snapshot.QueueEditCount} is negative." );
+		if ( snapshot.HeadNotReadyStreak < 0 || snapshot.MaximumHeadNotReadyStreak < snapshot.HeadNotReadyStreak )
+			Error( $"the head-not-ready streaks ({snapshot.HeadNotReadyStreak}, {snapshot.MaximumHeadNotReadyStreak}) are negative or inverted." );
+		if ( snapshot.CalledAgeTurns < 0 || snapshot.MaximumCalledAgeTurns < snapshot.CalledAgeTurns )
+			Error( $"the called-age turns ({snapshot.CalledAgeTurns}, {snapshot.MaximumCalledAgeTurns}) are negative or inverted." );
+		if ( snapshot.CalledTurn < -1 )
+			Error( $"the called turn {snapshot.CalledTurn} is negative." );
+		if ( snapshot.BoardedTotal < snapshot.OnRide.Length )
+			Error( $"only {snapshot.BoardedTotal} guests boarded, but {snapshot.OnRide.Length} are aboard." );
+		if ( snapshot.ReleasedTotal < 0 )
+			Error( $"the released total {snapshot.ReleasedTotal} is negative." );
+		return errors;
+	}
+
+	/// <summary>
+	/// Restores a validated queue snapshot into this bridge: the linked list is rebuilt front first from
+	/// <see cref="RideVisitorBridgeSnapshot.Queue"/>, and the rider lists, timers, queue geometry and admission
+	/// counters are copied. Bridge-local problems throw <see cref="InvalidDataException"/> before anything is touched;
+	/// whether the guest ids exist in the park is the caller's check (see
+	/// <see cref="GuestSimulation.RestoreSnapshot"/>, which runs it first). The attached script's VAR_LETMEON must be
+	/// restored with the value <see cref="RideVisitorBridgeSnapshot.LetMeOnWritten"/> describes — the script slice
+	/// owns that variable — and <see cref="Attach"/> must already point at the restored script.
+	/// </summary>
+	public void RestoreSnapshot( RideVisitorBridgeSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.AttractionId != AttractionId )
+			throw new InvalidDataException( $"The queue snapshot describes attraction {snapshot.AttractionId}, not {AttractionId} ('{Name}')." );
+		var problems = ValidateSnapshot( snapshot );
+		if ( problems.Count > 0 )
+			throw new InvalidDataException( $"Attraction {AttractionId} ('{Name}') queue snapshot does not restore: " + string.Join( " ", problems ) );
+		// Candidates first; the live tables are only replaced once everything is parsed.
+		var queue = snapshot.Queue;
+		var linksCandidate = new Dictionary<int, (int Next, int Previous)>( queue.Length );
+		for ( var index = 0; index < queue.Length; index++ )
+			linksCandidate.Add( queue[index], (index + 1 < queue.Length ? queue[index + 1] : 0, index > 0 ? queue[index - 1] : 0) );
+		var headCandidate = queue.Length > 0 ? queue[0] : 0;
+		var tailCandidate = queue.Length > 0 ? queue[^1] : 0;
+		links.Clear();
+		foreach ( var (guestId, link) in linksCandidate )
+			links.Add( guestId, link );
+		head = headCandidate;
+		tail = tailCandidate;
+		onRide.Clear();
+		onRide.AddRange( snapshot.OnRide );
+		walkingOff.Clear();
+		foreach ( var guestId in snapshot.WalkingOff )
+			walkingOff.Enqueue( guestId );
+		hopped.Clear();
+		hopped.UnionWith( snapshot.Hopped );
+		limbo.Clear();
+		limbo.AddRange( snapshot.Limbo );
+		bouncing.Clear();
+		bouncing.AddRange( snapshot.Bounce );
+		called = snapshot.CalledGuest;
+		letMeOnWritten = snapshot.LetMeOnWritten;
+		lastAdmissionTurn = snapshot.LastAdmissionTurn;
+		calledTurn = snapshot.CalledTurn;
+		queueCells.Clear();
+		queueCells.AddRange( snapshot.QueueCells );
+		QueueEditCount = snapshot.QueueEditCount;
+		JoinCell = snapshot.JoinCell;
+		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
+		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
+		CalledAgeTurns = snapshot.CalledAgeTurns;
+		MaximumCalledAgeTurns = snapshot.MaximumCalledAgeTurns;
+		LastAdmissionCheck = snapshot.LastAdmissionCheck;
+		BoardedTotal = snapshot.BoardedTotal;
+		ReleasedTotal = snapshot.ReleasedTotal;
+	}
+
 	// ---- Queue geometry ----------------------------------------------------------------------
 
 	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>

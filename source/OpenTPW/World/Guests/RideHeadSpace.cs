@@ -22,13 +22,15 @@ public sealed class RideHeadSpace
 
 	private readonly int[] nodes;
 	private readonly int[] visitors;
-	private readonly Random random;
+	// An owned seeded .NET-compatible generator whose full state the park-resume snapshot stores (ScriptRandomTests
+	// proves its draws equal a seeded System.Random's).
+	private readonly ScriptRandom random;
 
 	private RideHeadSpace( int[] nodes, int seed )
 	{
 		this.nodes = nodes;
 		visitors = new int[nodes.Length];
-		random = new Random( seed );
+		random = new ScriptRandom( seed );
 	}
 
 	/// <summary>A head space with the given node for each slot (test seam; <see cref="Create"/> reads the model).</summary>
@@ -118,5 +120,28 @@ public sealed class RideHeadSpace
 			removed = true;
 		}
 		return removed;
+	}
+
+	// ---- Park-resume snapshot ----
+
+	/// <summary>Explicit state of the slot table and its draw generator (see <see cref="RideHeadSpaceSnapshot"/>).</summary>
+	public RideHeadSpaceSnapshot CaptureSnapshot() => new()
+	{
+		Visitors = (int[])visitors.Clone(),
+		RandomState = random.CaptureState()
+	};
+
+	/// <summary>
+	/// Restores into this head space: the slot table length must match (the model fixed it), the generator state is
+	/// validated first. Throws <see cref="InvalidDataException"/> without changing anything on a violation.
+	/// </summary>
+	public void RestoreSnapshot( RideHeadSpaceSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		snapshot.ValidateSnapshot();
+		if ( snapshot.Visitors.Length != visitors.Length )
+			throw new InvalidDataException( $"head space has {visitors.Length} slots, the snapshot stores {snapshot.Visitors.Length}." );
+		Array.Copy( snapshot.Visitors, visitors, visitors.Length );
+		random.RestoreState( snapshot.RandomState );
 	}
 }

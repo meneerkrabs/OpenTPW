@@ -139,20 +139,61 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
-	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true )
-	{
-		// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
-		// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
-		var placement = entry.IsFixedItem && !GameEditions.IsThemeParkInc
+	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open ) );
+
+	/// <summary>
+	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
+	/// with the record's own creation seed instead of the allocator's next value, and its saved attraction id instead
+	/// of a fresh allocation — the object's runtime adopts the id, so guests, scripts and the economy stay linked to
+	/// the exact identity they were saved with, in constant time (ids of removed objects are never replayed). Like
+	/// Add it applies no build rules and charges nothing; the seed allocator itself is restored separately with
+	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
+	/// </summary>
+	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open, attractionId ) );
+
+	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
+	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
+	private ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+		entry.IsFixedItem && !GameEditions.IsThemeParkInc
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin,
 				entry.IsFixedItem ? 0 : GetBaseHeight( entry, anchorX, anchorY, rotation ) );
-		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++ ^ scriptKey, open );
+
+	private OriginalObject Register( OriginalObject item )
+	{
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
 		ObjectPlaced?.Invoke( item );
 		return item;
+	}
+
+	/// <summary>The next seed <see cref="Add"/> draws (one past every placement ever made; removals do not rewind it).</summary>
+	internal int NextPlacementSeed => nextSeed;
+	/// <summary>The world seed's object-script key the placement seeds are XORed with (<see cref="WorldSeed.ObjectScriptKey"/>).</summary>
+	internal int ObjectScriptKey => scriptKey;
+	/// <summary>
+	/// The script world's next attraction id. Like the seed allocator it never rewinds, so a park that removed objects
+	/// has holes in both — <see cref="ParkLayoutSnapshot"/> captures and reproduces them with explicit ids, not by
+	/// renumbering the survivors.
+	/// </summary>
+	internal int NextAttractionId => ScriptWorld.NextAttractionId;
+
+	/// <summary>Restores the placement-seed allocator of a saved park (validation checked every saved seed against it).</summary>
+	internal void RestoreSeedAllocator( int value ) => nextSeed = value >= 1 ? value : throw new ArgumentOutOfRangeException( nameof( value ) );
+
+	/// <summary>
+	/// Restores the script world's attraction-id frontier to a saved park's next id in constant time: the frontier
+	/// adopts it, so the ids of objects the park removed are skipped without replaying their allocation. Requires a
+	/// value the allocator could still allocate from (a fresh world starts at 1).
+	/// </summary>
+	internal void RestoreAttractionIdAllocator( int value )
+	{
+		if ( value < 1 || value >= int.MaxValue )
+			throw new ArgumentOutOfRangeException( nameof( value ) );
+		ScriptWorld.AdoptAttractionId( value - 1 );
 	}
 
 	/// <summary>

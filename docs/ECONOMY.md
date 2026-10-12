@@ -241,7 +241,7 @@ the original GameType, front-end exit code or main-loop state (docs/reverse/PPC-
 | --- | --- | --- | --- | --- |
 | Full Simulation (front end) | Full Simulation | no | not read | Mac (static): layer added for GameType 2 only (`0x10474c`). An offline park entry reads the level, its balance and then only the newest `*.TPW*` in the player's theme directory (`0x198e50`); `easymode.TPWI` is named only by the copy made for Instant Action players (`0x137600`). A Full Simulation player's first park in a theme therefore has no seed |
 | Instant Action (front end) | Instant Action | where the theme has one (jungle); object files too | imported where shipped (jungle) | Mac: same sites; the copy is the newest file on the first entry; a missing layer is not an error (balance `0x10474c`, object files `0x119878`) |
-| Reference (`--load-original-level`, Load Park) | Full Simulation | when the shipped save is imported | imported where shipped | OpenTPW inspection path, unchanged; not an original GameType. Load Park ignores the last Game Mode choice (UI-041): the Mac saves no GameType with a park and takes it from the loading player's profile, which OpenTPW does not have |
+| Reference (`--load-original-level`, Load Park) | Full Simulation | when the shipped save is imported | imported where shipped | OpenTPW inspection path, unchanged; not an original GameType. Load Park ignores the last Game Mode choice (UI-041): the Mac saves no GameType with a park and takes it from the loading player's profile, which OpenTPW does not have; an own world save restores its saved start kind instead (docs/PARK-SAVES.md) |
 
 Instant Action rules (`ParkModeFeatures`, Mac direct GameType tests; PC equivalence not established):
 no golden-ticket checks and no challenges, no loan offers, research lab efforts cannot be changed,
@@ -252,12 +252,14 @@ seed (Full Simulation, or an Instant Action theme that ships none) has no staff.
 smoke run starts jungle in Instant Action from the menu and checks the seed, its imported bank, turn
 and staff, research advancing over 60 days and each refused gate.
 
-OpenTPW's own park save stores `Mode` by name (`"FullSimulation"`/`"InstantAction"`, integers
+OpenTPW's economy-only park save stores `Mode` by name (`"FullSimulation"`/`"InstantAction"`, integers
 rejected) and `Easy` as required members; neither has a default, so older version-1 saves already
-carry both. A running park refuses a save of the other mode. The start kind is not saved: the
-reference start is not an original state, and an imported seed is already in the saved objects and
-staff. The legacy `SeedResearcherStandIn` member of earlier version-2 saves is still accepted, ignored
-and written as `false` (the stand-in it described is gone).
+carry both. A running park refuses a save of the other mode. That legacy file does not save the start
+kind: the reference start is not an original state, and an imported seed is already in the saved objects and
+staff. The park-resume world save (docs/PARK-SAVES.md) does save the start kind, together with the
+mode and the closed-park state, and pins the three together — an Instant Action park restores under
+the easy layer, a closed park stays closed. The legacy `SeedResearcherStandIn` member of earlier
+version-2 saves is still accepted, ignored and written as `false` (the stand-in it described is gone).
 
 Original flow that OpenTPW does not reproduce (Mac, static; docs/reverse/PPC-scenarios.md, "Park
 entry"): leaving a park saves `<player>:<theme>:autosave.TPWS`, and the next entry resumes the
@@ -304,7 +306,7 @@ tests compare saves before/after load and after identical continuations byte for
 
 ## Save format
 
-`ParkSaveFile`: JSON, `"Format": "opentpw-park"`, `"Version": 2` (version 1 used the earlier 30-day calendar and is rejected). Stores theme, difficulty and mode
+`ParkSaveFile`: JSON, `"Format": "opentpw-park"`, `"Version": 2` (version 1 used the earlier 30-day calendar and is rejected). This is the economy-only save; the park-resume world save of docs/PARK-SAVES.md embeds this record by value in its own `opentpw-world` envelope together with the layout, guests, scripts and clock. It stores theme, difficulty and mode
 (not the balance values, which are reloaded from the original files), tick, speed, RNG state, park
 open/fee/bankruptcy/litter/tickets, ledger with current totals and up to 144 closed months, objects
 with prices, levels, repair and statistics, loans, staff and candidates, training budgets, research

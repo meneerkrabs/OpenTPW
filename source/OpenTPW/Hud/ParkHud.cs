@@ -9,6 +9,8 @@ public sealed class HudHost
 {
 	public Action ExitToLobby { get; init; } = () => { };
 	public Action Quit { get; init; } = () => { };
+	/// <summary>Saves the writable park through its owning game flow.</summary>
+	public Action? SavePark { get; init; }
 	/// <summary>Creates the options screen; the callback runs when it closes.</summary>
 	public Func<UiScreenStack, Action, UiScreen>? CreateOptions { get; init; }
 	/// <summary>Creates the load screen.</summary>
@@ -443,7 +445,7 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return;
-		if ( level.OriginalPark != null )
+		if ( level.OriginalPark != null && host.SavePark == null )
 		{
 			PostMessage( strings.Extra( OpenTpwText.OriginalParkReadOnly ) );
 			ClosePauseMenu();
@@ -451,10 +453,11 @@ public sealed partial class ParkHud
 		}
 		try
 		{
-			level.SaveSandbox();
+			if ( host.SavePark != null ) host.SavePark();
+			else level.SaveSandbox();
 			PostMessage( strings.Extra( OpenTpwText.ParkSaved ) );
 		}
-		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidOperationException )
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException )
 		{
 			PostMessage( string.Format( strings.Extra( OpenTpwText.SaveFailed ), exception.Message ) );
 		}

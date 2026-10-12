@@ -7,6 +7,10 @@ public class Shader : Asset
 	private ShaderInfo shaderInfo;
 	private bool released;
 
+	/// <summary>True for the shader a process-lifetime shared material owns; a rejected candidate's
+	/// rollback skips it so the shared material keeps its shader.</summary>
+	internal bool IsProcessLifetime { get; private set; }
+
 	public VertexElementDescription[] VertexElements => shaderInfo.Reflection.VertexElements;
 	public ResourceLayoutDescription[] ResourceLayouts => shaderInfo.Reflection.ResourceLayouts;
 	public Veldrid.Shader[] ShaderProgram => shaderInfo.ShaderProgram;
@@ -71,6 +75,9 @@ public class Shader : Asset
 		}
 	}
 
+	/// <summary>Marks this shader as owned by a process-lifetime shared material (see <see cref="Material.UI"/>).</summary>
+	internal void MarkAsProcessLifetime() => IsProcessLifetime = true;
+
 	/// <summary>Stops this shader's watcher subscription and releases its independently owned native shader objects.</summary>
 	internal void ReleaseOwnedResources()
 	{
@@ -82,11 +89,22 @@ public class Shader : Asset
 			if ( watchers.TryGetValue( Path, out var watcher ) && watcher != null )
 				watcher.Changed -= OnWatcherChanged;
 		var program = ShaderProgram;
-		Render.ScheduleDelete( () =>
-		{
+		// The constructor registers before compiling, so a shader whose file was missing or whose
+		// compilation threw owns no native objects to retire.
+		if ( program[0] == null && program[1] == null )
+			return;
+		// A partially failed compile can still own one stage, so each stage is disposed on its own.
+		// Without a renderer the shader was never submitted to a frame, so its objects are freed at
+		// once instead of after the last drawn frame.
+		if ( Render is { } renderer )
+			renderer.ScheduleDelete( () =>
+			{
+				foreach ( var shader in program )
+					shader?.Dispose();
+			} );
+		else
 			foreach ( var shader in program )
-				shader.Dispose();
-		} );
+				shader?.Dispose();
 	}
 
 	public static bool IsFileReady( string path )

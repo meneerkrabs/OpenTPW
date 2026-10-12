@@ -251,6 +251,16 @@ internal static class Game
 		using var flow = new GameFlow { OnlineFolders = onlineFolders, AutomaticAdvisorEnabled = !args.Contains( "--no-advisor" ) && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) };
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
+		var parkResumePhase = GetOption( args, "--park-resume-smoke", "'capture' or 'restore'" );
+		if ( parkResumePhase != null )
+		{
+			var parkResumeFile = GetOption( args, "--park-resume-file", "the own-format world save path" );
+			var parkResumeEvidence = GetOption( args, "--park-resume-evidence", "an evidence directory" );
+			if ( parkResumeFile == null || parkResumeEvidence == null )
+				throw new ArgumentException( "--park-resume-smoke also needs --park-resume-file and --park-resume-evidence." );
+			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
+			return;
+		}
 		// [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options.
 		// Startup never requests it, including a saved Clarity choice whose files are absent; smoke/captures stay offline.
 		if ( !smoke && capturePath == null && !GameEditions.IsThemeParkInc )

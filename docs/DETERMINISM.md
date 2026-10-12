@@ -76,8 +76,8 @@ code (`GameFlow`, the M3 gate) is not scanned.
 
 ## Park save
 
-OpenTPW's park save (`ParkSaveFile`, still version 2) has an optional `World`
-section:
+The economy-only park save (`ParkSaveFile`, still version 2; docs/ECONOMY.md
+"Save format") has an optional `World` section:
 
 ```json
 "World": { "Seed": 6075451861746676596, "GuestRandom": …, "ScriptRandom": …, "SoundSeed": … }
@@ -89,9 +89,17 @@ continues the guest, script and sound streams. Both delegate to
 `ParkWorldStreams` (`source/OpenTPW/World/ParkWorldStreams.cs`), which holds no
 state and needs no renderer, so tests run the same save, load and hash code. Saves without the section
 (older files and economy-only callers) still load, but those streams are not
-restored. The save does not hold guests, queues or object script state, so a
-load keeps the running guests and scripts (DET-016). Coaster tracks, trains and
-the coaster generator are not saved either (COAST-025).
+restored. This legacy file does not hold guests, queues or object script state, so a
+`LoadPark` keeps the running guests and scripts (DET-016). Coaster tracks, trains and
+the coaster generator are not saved by it either (COAST-025).
+
+The park-resume world save (docs/PARK-SAVES.md) is separate: its
+`opentpw-world` envelope captures the whole running park — layout, guests,
+script world, per-object runtimes, clock and the attraction→economy links —
+and restores it into a fresh candidate park, continuing the run exactly. The
+streams still ride inside the embedded economy's `World` section, and the
+envelope's shape check requires them to agree with the typed guest and script
+fields, so a resumed park continues the same streams this page describes.
 
 ## Canonical state hash
 
@@ -255,7 +263,7 @@ itself needs a renderer and is not constructed by tests.
 | DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world LCG |
 | DET-014 | guests use their own SplitMix64 stream, not the world LCG reseeded per guest id |
 | DET-015 | the economy uses its own SplitMix64 stream, not the world LCG |
-| DET-016 | the park save holds the streams and the economy, not guests, queues or scripts |
+| DET-016 | the economy-only park save holds the streams and the economy, not guests, queues or scripts (the park-resume world save of docs/PARK-SAVES.md does hold them) |
 
 The remaining IDs proposed in DET-plan §4.6 (DET-001, DET-003 to DET-011) belong
 to the substep scheduler and the original generators. DET-I2 will register them

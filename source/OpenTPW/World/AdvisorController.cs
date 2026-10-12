@@ -142,6 +142,33 @@ internal sealed class AdvisorController
 	}
 
 	/// <summary>
+	/// The controller's own-format state for a park save: its queue's pending records, history and action
+	/// reservation (an <see cref="ImportOriginal"/> import takes this path too).
+	/// </summary>
+	internal sealed record AdvisorControllerSnapshot( AdvisorQueueSnapshot Queue );
+
+	/// <summary>The controller's state for a park save; fails explicitly while a playback attempt is outstanding.</summary>
+	public AdvisorControllerSnapshot CaptureSnapshot() => new( Queue.CaptureSnapshot() );
+
+	/// <summary>Checks a snapshot against this controller's bound messages without touching it.</summary>
+	public void ValidateSnapshot( AdvisorControllerSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		Queue.ValidateSnapshot( snapshot.Queue );
+	}
+
+	/// <summary>
+	/// Continues this controller (fresh, with the same balance) from a validated snapshot. Restore after the
+	/// level-start game events of <see cref="AutomaticAdvisor.AttachLevel"/> so the saved pending advice and
+	/// history replace the freshly raised welcome advice.
+	/// </summary>
+	public void RestoreSnapshot( AdvisorControllerSnapshot snapshot )
+	{
+		ValidateSnapshot( snapshot );
+		Queue.RestoreSnapshot( snapshot.Queue );
+	}
+
+	/// <summary>
 	/// Takes the pending records and per-message history of an original park save's advisor controller (model 11).
 	/// Free (invalid) records stay free; records and non-initial history of messages without a bound descriptor are
 	/// dropped and counted. Returns a report line for the log.

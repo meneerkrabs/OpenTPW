@@ -60,13 +60,28 @@ public class OriginalObject : Entity
 	private int hiddenVersion = -1;
 
 	public OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world = null, int? seed = null, bool open = true )
+		: this( entry, placement, world, seed, open, attractionId: null )
+	{
+	}
+
+	/// <summary>
+	/// Constructor body. <paramref name="attractionId"/> null: the runtime allocates the world's next attraction id
+	/// (the default placement path). A restored id (layout restore, <see cref="ParkObjects.AddRestored"/>) is this
+	/// object's identity verbatim: the runtime is built by <see cref="OriginalObjectRuntime.CreateForRestore"/>,
+	/// which moves the world's frontier past it without allocating — dead ids are skipped in constant time, never
+	/// replayed. Everything else (validation, render init, self-cleanup on failure) is the constructor's own.
+	/// </summary>
+	internal OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world, int? seed, bool open, int? attractionId )
 	{
 		try
 		{
 			if ( !ObjectFootprint.IsValidRotation( placement.Rotation ) || !float.IsFinite( placement.BaseHeight ) )
 				throw new ArgumentOutOfRangeException( nameof( placement ) );
 			Placement = placement;
-			Runtime = new OriginalObjectRuntime( entry, world, seed, open );
+			CreationSeed = seed;
+			Runtime = attractionId is { } restored
+				? OriginalObjectRuntime.CreateForRestore( entry, world ?? new RideScriptWorld(), seed, open, restored )
+				: new OriginalObjectRuntime( entry, world, seed, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
 			BuildModels();
@@ -82,6 +97,11 @@ public class OriginalObject : Entity
 	public ObjectCatalogEntry Entry => Runtime.Entry;
 	public OriginalObjectRuntime Runtime { get; } = null!;
 	public ObjectPlacement Placement { get; }
+	/// <summary>
+	/// The seed this object's script was created with — explicit for every <see cref="ParkObjects"/> placement, so a
+	/// layout snapshot can recreate the same script stream (null: created without one, not snapshottable).
+	/// </summary>
+	public int? CreationSeed { get; }
 	public RideVM? Script => Runtime.Script;
 	/// <summary>Visitor side of the script (guests slice).</summary>
 	public RideVisitorBridge Visitors => Runtime.Visitors;

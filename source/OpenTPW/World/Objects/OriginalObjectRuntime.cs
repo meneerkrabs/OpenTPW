@@ -18,12 +18,28 @@ public sealed class OriginalObjectRuntime
 
 	/// <param name="world">The park's script world; it also allocates the attraction id. Null: a world of its own.</param>
 	public OriginalObjectRuntime( ObjectCatalogEntry entry, RideScriptWorld? world = null, int? seed = null, bool open = true )
+		: this( entry, world, seed, open, attractionId: null )
+	{
+	}
+
+	/// <summary>
+	/// The constructor body. <paramref name="attractionId"/> null allocates the next id from the world; a restored
+	/// id (park-resume restore, <see cref="CreateForRestore"/>) is taken as this object's id and the world's
+	/// frontier adopts it — no new allocation, no hole closed.
+	/// </summary>
+	internal OriginalObjectRuntime( ObjectCatalogEntry entry, RideScriptWorld? world, int? seed, bool open, int? attractionId )
 	{
 		ArgumentNullException.ThrowIfNull( entry );
 		Entry = entry;
 		world ??= new RideScriptWorld();
-		var attractionId = world.AllocateAttractionId();
-		Visitors = CreateVisitorBridge( entry, attractionId );
+		if ( attractionId is { } restored )
+		{
+			AttractionId = restored;
+			world.AdoptAttractionId( restored );
+		}
+		else
+			AttractionId = world.AllocateAttractionId();
+		Visitors = CreateVisitorBridge( entry, AttractionId );
 		if ( CoasterDefinition.IsCoaster( entry.Settings ) )
 		{
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
@@ -32,7 +48,7 @@ public sealed class OriginalObjectRuntime
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
-		Visitors.Heads = RideHeadSpace.Create( Model, attractionId );
+		Visitors.Heads = RideHeadSpace.Create( Model, AttractionId );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
 		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem );
 		effects = new OriginalObjectEffects( this );
@@ -59,6 +75,8 @@ public sealed class OriginalObjectRuntime
 	}
 
 	public ObjectCatalogEntry Entry { get; }
+	/// <summary>The attraction id this runtime's bridge carries (allocated at construction or restored; the allocator frontier moves past it).</summary>
+	public int AttractionId { get; }
 	/// <summary>The coaster controller of a coaster station (<c>Bumper.WhichTrackType 3</c>), else null.</summary>
 	public CoasterRide? Coaster { get; }
 	public ModelFile Model { get; }
@@ -150,6 +168,118 @@ public sealed class OriginalObjectRuntime
 		}
 		Script?.Stop();
 		Animator.StopAll();
+	}
+
+	// ---- Park-resume snapshot ----
+
+	/// <summary>
+	/// Fresh runtime for a park-resume restore: identical to the constructor but with the saved attraction id (no
+	/// allocation; the world's frontier adopts it, holes below included). Pass the saved script seed and open flag,
+	/// restore the state with <see cref="RestoreSnapshot"/>, then rebind script ids with
+	/// <see cref="RideScriptWorld.RestoreSnapshot"/>. Coaster entries are outside the slice: their controller state
+	/// is neither captured nor restored.
+	/// </summary>
+	public static OriginalObjectRuntime CreateForRestore( ObjectCatalogEntry entry, RideScriptWorld world, int? seed, bool open, int attractionId )
+	{
+		ArgumentNullException.ThrowIfNull( world );
+		return new OriginalObjectRuntime( entry, world, seed, open, attractionId );
+	}
+
+	/// <summary>
+	/// Explicit state of this runtime (see <see cref="OriginalObjectRuntimeSnapshot"/>). The script's instruction
+	/// state lives in the <see cref="RideScriptWorld"/> snapshot; this carries its identity so the world restore can
+	/// check the candidate against it. Fails explicitly for coaster stations.
+	/// </summary>
+	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
+	{
+		if ( Coaster != null )
+			throw new InvalidDataException( $"{Entry.ArchivePath}: coaster controller state is not part of the park-resume slice." );
+		return new OriginalObjectRuntimeSnapshot
+		{
+			AttractionId = AttractionId,
+			EntryArchivePath = Entry.ArchivePath,
+			EntryInfoId = Entry.InfoId,
+			ModelPath = Entry.ModelPath,
+			HasScript = Script != null,
+			ScriptIdentityHash = Script == null ? 0 : RideScriptIdentity.Hash( Script.Script ),
+			Animator = Animator.CaptureSnapshot(),
+			Heads = Visitors.Heads?.CaptureSnapshot(),
+			Stopped = stopped,
+			WasRunning = wasRunning,
+			CompletedCycles = CompletedCycles,
+			AnimationsPlayed = AnimationsPlayed,
+			UnresolvedAnimations = unresolvedAnimations.ToArray(),
+			HeldScream = effects.HoldsScream,
+			OwnedScreamCount = effects.OwnedScreamCount,
+			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null
+		};
+	}
+
+	/// <summary>
+	/// Restores a snapshot into this fresh candidate (built by <see cref="CreateForRestore"/> with the snapshot's
+	/// attraction id, seed and open flag). Validates the entry and script identity first and throws
+	/// <see cref="InvalidDataException"/> — without changing the candidate — on a mismatch; a candidate world whose
+	/// coaster controllers are live is refused. A stopped snapshot replays <see cref="Stop"/>'s teardown (a fresh
+	/// candidate has no riders, chains or trains to lose). Returns the explicit gaps: live audio state (held/owned
+	/// scream chains) cannot cross a restart and is reported, never silently dropped.
+	/// </summary>
+	public IReadOnlyList<string> RestoreSnapshot( OriginalObjectRuntimeSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		snapshot.ValidateSnapshot();
+		if ( !string.Equals( Entry.ArchivePath, snapshot.EntryArchivePath, StringComparison.Ordinal ) || Entry.InfoId != snapshot.EntryInfoId || !string.Equals( Entry.ModelPath, snapshot.ModelPath, StringComparison.Ordinal ) )
+			throw new InvalidDataException( $"the snapshot belongs to '{snapshot.EntryArchivePath}' ({snapshot.EntryInfoId}, {snapshot.ModelPath}), this runtime is '{Entry.ArchivePath}' ({Entry.InfoId}, {Entry.ModelPath})." );
+		if ( ( Script != null ) != snapshot.HasScript )
+			throw new InvalidDataException( $"'{Entry.ArchivePath}': {(snapshot.HasScript ? "the snapshot has a script, this entry has none" : "the snapshot has no script, this entry has one")}." );
+		if ( AttractionId != snapshot.AttractionId )
+			throw new InvalidDataException( $"'{Entry.ArchivePath}': attraction id {AttractionId} does not match the snapshot's {snapshot.AttractionId}; construct the candidate with CreateForRestore." );
+		if ( snapshot.HasScript && RideScriptIdentity.Hash( Script!.Script ) != snapshot.ScriptIdentityHash )
+			throw new InvalidDataException( $"'{Entry.ArchivePath}': the entry's script does not match the snapshot's script identity." );
+		if ( ( Visitors.Heads != null ) != ( snapshot.Heads != null ) )
+			throw new InvalidDataException( $"'{Entry.ArchivePath}': head-space presence does not match the snapshot." );
+
+		var gaps = new List<string>();
+		if ( snapshot.Stopped )
+		{
+			// Stop()'s teardown, replayed on the fresh candidate: the script leaves the world (the saved world
+			// snapshot does not contain it), the visitors and animator are cleared.
+			stopped = true;
+			effects.StopSounds();
+			Visitors.ReleaseAll();
+			if ( Coaster != null )
+			{
+				Coaster.ClearTrains();
+				Coaster.World.Remove( Coaster );
+			}
+			Script?.Stop();
+			Animator.StopAll();
+			if ( snapshot.StoppedScriptFault is { } fault )
+				Script!.RestoreStoppedFault( fault );
+		}
+		wasRunning = snapshot.WasRunning;
+		CompletedCycles = snapshot.CompletedCycles;
+		AnimationsPlayed = snapshot.AnimationsPlayed;
+		unresolvedAnimations.Clear();
+		foreach ( var unresolved in snapshot.UnresolvedAnimations )
+			unresolvedAnimations.Add( unresolved );
+		if ( snapshot.Heads != null )
+			Visitors.Heads!.RestoreSnapshot( snapshot.Heads );
+		Animator.RestoreSnapshot( snapshot.Animator, ResolveSnapshotClip );
+		if ( snapshot.HeldScream )
+			gaps.Add( $"{Entry.ArchivePath}: the script held a STARTSCREAM chain at capture; live audio cannot cross a restart, the handle is cleared" );
+		if ( snapshot.OwnedScreamCount > 0 )
+			gaps.Add( $"{Entry.ArchivePath}: {snapshot.OwnedScreamCount} owned scream chain(s) at capture; live audio cannot cross a restart, they are dropped" );
+		return gaps;
+	}
+
+	/// <summary>Snapshot-clip resolver through this object's own archive and clip cache (no saved paths).</summary>
+	private ResolvedAnimatorClip? ResolveSnapshotClip( AnimatorClipIdentity identity )
+	{
+		var file = Entry.ResolveAnimation( identity.AnimationId, identity.Variant );
+		if ( file == null )
+			return null;
+		var clip = LoadClip( file.Path );
+		return clip == null ? null : new ResolvedAnimatorClip( file.Name, clip );
 	}
 
 	/// <summary>
@@ -298,6 +428,12 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		ownedScreams.Clear();
 		screamChain = null;
 	}
+
+	/// <summary>Whether the script holds a STARTSCREAM chain (park-resume capture; live audio is a reported gap).</summary>
+	internal bool HoldsScream => screamChain != null;
+
+	/// <summary>Chains this effects object still owns (park-resume capture; live audio is a reported gap).</summary>
+	internal int OwnedScreamCount => ownedScreams.Count;
 
 	public int Perform( RideEffectCall call )
 	{

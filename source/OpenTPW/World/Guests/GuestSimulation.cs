@@ -1417,6 +1417,642 @@ public sealed class GuestSimulation : IRideVisitorHost
 		return new GuestStatistics( inPark, walking, queueing, onRides, arriving, leaving, inPark == 0 ? 0 : happiness / inPark, (GuestThought)common, Admissions );
 	}
 
+	// ---- Snapshots (park save/load) ------------------------------------------------------------
+
+	/// <summary>
+	/// Captures the whole guest system between ticks as a typed deep copy: the explicit <see cref="GuestRandom"/>
+	/// state, tick/counters, the arrival stream, every guest in update order and every registered attraction's queue
+	/// state (with the simulation's seen queue-edit counters). Economy bindings (<see cref="Payments"/>,
+	/// <see cref="ArrivalClock"/>, <see cref="ParkPoints"/>, <see cref="ArrivalsHalted"/>) are live references the
+	/// park re-attaches after a restore and are not captured. Throws <see cref="NotSupportedException"/> when a
+	/// registered attraction is not a <see cref="RideVisitorBridge"/>: an unsupported attraction is an explicit save
+	/// failure, never a silent omission.
+	/// </summary>
+	public GuestSimulationSnapshot CaptureSnapshot()
+	{
+		var attractionSnapshots = new RideVisitorBridgeSnapshot[attractions.Count];
+		var seenEdits = new (int AttractionId, int SeenEditCount)[attractions.Count];
+		for ( var index = 0; index < attractions.Count; index++ )
+		{
+			if ( attractions[index] is not RideVisitorBridge bridge )
+				throw new NotSupportedException( $"Attraction {attractions[index].AttractionId} ('{attractions[index].Name}', {attractions[index].GetType().Name}) has no queue snapshot; only RideVisitorBridge attractions can be saved." );
+			attractionSnapshots[index] = bridge.CaptureSnapshot();
+			seenEdits[index] = (bridge.AttractionId, seenQueueEdits.TryGetValue( bridge.AttractionId, out var seen ) ? seen : -1);
+		}
+		var guestSnapshots = new GuestSnapshot[guests.Count];
+		for ( var index = 0; index < guests.Count; index++ )
+			guestSnapshots[index] = CaptureGuest( guests[index] );
+		return new GuestSimulationSnapshot
+		{
+			SchemaVersion = GuestSimulationSnapshot.CurrentSchemaVersion,
+			Seed = Seed,
+			RandomState = random.State,
+			TickCount = TickCount,
+			TimeSeconds = TimeSeconds,
+			NextGuestId = nextId,
+			Admissions = Admissions,
+			Departed = Departed,
+			ArrivalTimerStart = arrivalTimerStart,
+			DeliveringArrivals = deliveringArrivals,
+			SpawnTimer = spawnTimer,
+			PendingArrivals = pendingArrivals,
+			LaneToggle = laneToggle,
+			ArrivalsEnabled = ArrivalsEnabled,
+			SeenGridVersion = seenGridVersion,
+			Guests = guestSnapshots,
+			Attractions = attractionSnapshots,
+			SeenQueueEdits = seenEdits
+		};
+	}
+
+	private static GuestSnapshot CaptureGuest( Guest guest )
+	{
+		var navigation = guest.Navigation;
+		return new GuestSnapshot
+		{
+			Id = guest.Id,
+			Type = guest.Type,
+			State = guest.State,
+			HeadingX = guest.HeadingX,
+			HeadingY = guest.HeadingY,
+			IsMoving = guest.IsMoving,
+			DistanceWalked = guest.DistanceWalked,
+			DrawX = guest.DrawX,
+			DrawY = guest.DrawY,
+			DrawDistanceWalked = guest.DrawDistanceWalked,
+			StepFromX = guest.StepFromX,
+			StepFromY = guest.StepFromY,
+			StepFromDistance = guest.StepFromDistance,
+			StepTick = guest.StepTick,
+			Hunger = guest.Hunger,
+			Thirst = guest.Thirst,
+			Toilet = guest.Toilet,
+			Energy = guest.Energy,
+			Nausea = guest.Nausea,
+			Happiness = guest.Happiness,
+			Money = guest.Money,
+			ExitLevel = guest.ExitLevel,
+			SecondsSinceRide = guest.SecondsSinceRide,
+			RidesTaken = guest.RidesTaken,
+			Thought = guest.Thought,
+			AttractionId = guest.AttractionId,
+			LastAttractionId = guest.LastAttractionId,
+			QueuePosition = guest.QueuePosition,
+			QueueJoinTurn = guest.QueueJoinTurn,
+			LastQueueWaitTurns = guest.LastQueueWaitTurns,
+			QueueMoveDelay = guest.QueueMoveDelay,
+			QueueCalled = guest.QueueCalled,
+			QueueStandingSinceTurn = guest.QueueStandingSinceTurn,
+			InterludeTurn = guest.InterludeTurn,
+			InQueueInterlude = guest.InQueueInterlude,
+			QueueJoinHappiness = guest.QueueJoinHappiness,
+			QueueCellIndex = guest.QueueCellIndex,
+			QueueTargetIndex = guest.QueueTargetIndex,
+			QueueTargetX = guest.QueueTargetX,
+			QueueTargetY = guest.QueueTargetY,
+			LastQueueUpdateTurn = guest.LastQueueUpdateTurn,
+			BaseSpeed = guest.BaseSpeed,
+			ToiletBonus = guest.ToiletBonus,
+			Boost = guest.Boost,
+			SmoothedSpeed = guest.SmoothedSpeed,
+			MaxSpeed = guest.MaxSpeed,
+			MaxForce = guest.MaxForce,
+			Navigation = new GuestNavigationSnapshot
+			{
+				X = navigation.X,
+				Y = navigation.Y,
+				VelocityX = navigation.VelocityX,
+				VelocityY = navigation.VelocityY,
+				TargetX = navigation.TargetX,
+				TargetY = navigation.TargetY,
+				Arrived = navigation.Arrived,
+				Index = navigation.Index,
+				Count = navigation.Count,
+				Route = navigation.Route.ToArray(),
+				Cursor = navigation.Cursor,
+				WalkCrossings = navigation.WalkCrossings,
+				AlsoOpen = navigation.AlsoOpen.ToArray(),
+				History = navigation.History,
+				PreviousRemaining = navigation.PreviousRemaining,
+				OffGrid = navigation.OffGrid,
+				Reroutes = navigation.Reroutes
+			},
+			CellX = guest.CellX,
+			CellY = guest.CellY,
+			PreviousCellX = guest.PreviousCellX,
+			PreviousCellY = guest.PreviousCellY,
+			OnGrid = guest.OnGrid,
+			OffsetX = guest.OffsetX,
+			OffsetY = guest.OffsetY,
+			HasWaypoint = guest.HasWaypoint,
+			Lane = guest.Lane?.ToArray(),
+			LaneIndex = guest.LaneIndex,
+			LaneReversed = guest.LaneReversed,
+			StateTimer = guest.StateTimer,
+			DecisionTimer = guest.DecisionTimer
+		};
+	}
+
+	/// <summary>
+	/// Pure validation of a guest snapshot against this park: schema, bounded numbers, guest and attraction identity,
+	/// state-specific structure (arrival lanes, grid position, queue and rider membership) and the cross-references
+	/// between guests and attraction queues. Reference-typed parts a corrupt file may null out — the core lists, an
+	/// attraction entry, a guest's navigation or route — are named as errors instead of crashing. Nothing is
+	/// mutated; every problem found is returned, so a caller can reject a save without touching the live world.
+	/// </summary>
+	public GuestSnapshotValidation ValidateSnapshot( GuestSimulationSnapshot? snapshot )
+	{
+		var errors = new List<string>();
+		void Error( string message ) => errors.Add( message );
+		if ( snapshot == null )
+		{
+			Error( "The guest snapshot is missing." );
+			return new GuestSnapshotValidation( errors );
+		}
+		void Bounded( int id, float value, string name, float minimum, float maximum )
+		{
+			if ( !float.IsFinite( value ) || value < minimum || value > maximum )
+				Error( $"Guest {id} {name} {value} is outside [{minimum}, {maximum}]." );
+		}
+		void Finite( int id, float value, string name )
+		{
+			if ( !float.IsFinite( value ) )
+				Error( $"Guest {id} {name} is not finite." );
+		}
+
+		if ( snapshot.SchemaVersion != GuestSimulationSnapshot.CurrentSchemaVersion )
+			Error( $"Guest snapshot schema version {snapshot.SchemaVersion} is not supported; this build reads {GuestSimulationSnapshot.CurrentSchemaVersion}." );
+		if ( snapshot.TickCount < 0 )
+			Error( $"TickCount {snapshot.TickCount} is negative." );
+		if ( !double.IsFinite( snapshot.TimeSeconds ) || snapshot.TimeSeconds < 0 )
+			Error( $"TimeSeconds {snapshot.TimeSeconds} is negative or not finite." );
+		if ( snapshot.NextGuestId < 1 )
+			Error( $"NextGuestId {snapshot.NextGuestId} is not positive." );
+		if ( snapshot.Admissions < 0 )
+			Error( $"Admissions {snapshot.Admissions} is negative." );
+		if ( snapshot.Departed < 0 )
+			Error( $"Departed {snapshot.Departed} is negative." );
+		if ( !float.IsFinite( snapshot.SpawnTimer ) )
+			Error( $"SpawnTimer {snapshot.SpawnTimer} is not finite." );
+		if ( snapshot.PendingArrivals < 0 )
+			Error( $"PendingArrivals {snapshot.PendingArrivals} is negative." );
+		if ( snapshot.LaneToggle < 0 )
+			Error( $"LaneToggle {snapshot.LaneToggle} is negative." );
+		// A file that lost one of its core lists (a JSON null) cannot be cross-checked; the hole is named and
+		// validation stops before anything dereferences it, exactly like a wholly missing snapshot.
+		if ( snapshot.Guests == null )
+		{
+			Error( "Guests is missing; a guest snapshot needs its guest list." );
+			return new GuestSnapshotValidation( errors );
+		}
+		if ( snapshot.Attractions == null )
+		{
+			Error( "Attractions is missing; a guest snapshot needs its attraction list." );
+			return new GuestSnapshotValidation( errors );
+		}
+		if ( snapshot.SeenQueueEdits == null )
+		{
+			Error( "SeenQueueEdits is missing; a guest snapshot needs one counter per attraction." );
+			return new GuestSnapshotValidation( errors );
+		}
+
+		// Attractions: the snapshot must describe exactly the registered set.
+		var registeredIds = new HashSet<int>();
+		foreach ( var attraction in attractions )
+		{
+			if ( !registeredIds.Add( attraction.AttractionId ) )
+				Error( $"The park registers attraction {attraction.AttractionId} twice." );
+			if ( attraction is not RideVisitorBridge )
+				Error( $"Registered attraction {attraction.AttractionId} ('{attraction.Name}', {attraction.GetType().Name}) has no queue snapshot support." );
+		}
+		var snapshotIds = new HashSet<int>();
+		for ( var index = 0; index < snapshot.Attractions.Length; index++ )
+		{
+			var attractionSnapshot = snapshot.Attractions[index];
+			if ( attractionSnapshot == null )
+			{
+				Error( $"Attractions[{index}] is missing." );
+				continue;
+			}
+			if ( !snapshotIds.Add( attractionSnapshot.AttractionId ) )
+				Error( $"Attractions[{index}] repeats attraction {attractionSnapshot.AttractionId}." );
+		}
+		foreach ( var attractionId in registeredIds )
+			if ( !snapshotIds.Contains( attractionId ) )
+				Error( $"Registered attraction {attractionId} has no snapshot." );
+		foreach ( var attractionId in snapshotIds )
+			if ( !registeredIds.Contains( attractionId ) )
+				Error( $"Attraction snapshot {attractionId} is not registered in this park." );
+		var seenIds = new HashSet<int>();
+		for ( var index = 0; index < snapshot.SeenQueueEdits.Length; index++ )
+		{
+			var (attractionId, seen) = snapshot.SeenQueueEdits[index];
+			if ( !seenIds.Add( attractionId ) )
+				Error( $"SeenQueueEdits[{index}] repeats attraction {attractionId}." );
+			if ( !snapshotIds.Contains( attractionId ) )
+				Error( $"SeenQueueEdits[{index}] names attraction {attractionId}, which has no snapshot." );
+			if ( seen < -1 )
+				Error( $"SeenQueueEdits[{index}] of attraction {attractionId} is {seen}." );
+		}
+		foreach ( var attractionId in snapshotIds )
+			if ( !seenIds.Contains( attractionId ) )
+				Error( $"Attraction {attractionId} has no seen queue-edit counter." );
+
+		// Bridge snapshots: local invariants and map bounds, then the membership indexes for the guest cross-checks.
+		var queuedIn = new Dictionary<int, int>(); // guest id -> attraction id whose queue holds it
+		var aboardOf = new Dictionary<int, int>(); // guest id -> attraction id whose riders hold it
+		for ( var index = 0; index < snapshot.Attractions.Length; index++ )
+		{
+			var attractionSnapshot = snapshot.Attractions[index];
+			if ( attractionSnapshot == null )
+				continue; // already reported above: Attractions[index] is missing
+			foreach ( var problem in RideVisitorBridge.ValidateSnapshot( attractionSnapshot ) )
+				Error( $"Attractions[{index}] (attraction {attractionSnapshot.AttractionId}): {problem}" );
+			// A list the file lost is already named by the bridge validation; the membership cross-checks skip it.
+			if ( attractionSnapshot.Queue != null )
+				foreach ( var guestId in attractionSnapshot.Queue )
+				{
+					if ( queuedIn.TryGetValue( guestId, out var otherAttraction ) )
+						Error( $"Guest {guestId} is queued at attractions {otherAttraction} and {attractionSnapshot.AttractionId}." );
+					else
+						queuedIn[guestId] = attractionSnapshot.AttractionId;
+				}
+			if ( attractionSnapshot.OnRide != null )
+				foreach ( var guestId in attractionSnapshot.OnRide )
+				{
+					if ( aboardOf.TryGetValue( guestId, out var otherAttraction ) )
+						Error( $"Guest {guestId} is aboard attractions {otherAttraction} and {attractionSnapshot.AttractionId}." );
+					else
+						aboardOf[guestId] = attractionSnapshot.AttractionId;
+				}
+			if ( attractionSnapshot.QueueCells != null )
+				for ( var cell = 0; cell < attractionSnapshot.QueueCells.Length; cell++ )
+				{
+					var (x, y) = attractionSnapshot.QueueCells[cell];
+					if ( !Grid.InBounds( x, y ) )
+						Error( $"Attraction {attractionSnapshot.AttractionId} queue cell {cell} ({x}, {y}) is outside the map." );
+				}
+			if ( attractionSnapshot.JoinCell is { } join && !Grid.InBounds( join.X, join.Y ) )
+				Error( $"Attraction {attractionSnapshot.AttractionId} join cell ({join.X}, {join.Y}) is outside the map." );
+		}
+
+		// Guests: identity, bounds and per-guest structure first, state cross-references after.
+		var guestIds = new HashSet<int>();
+		var typeCount = Math.Max( 1, Settings.Types.Count );
+		GuestSnapshot? previous = null;
+		for ( var index = 0; index < snapshot.Guests.Length; index++ )
+		{
+			var guest = snapshot.Guests[index];
+			if ( guest == null )
+			{
+				Error( $"Guests[{index}] is missing." );
+				continue;
+			}
+			if ( guest.Id < 1 )
+				Error( $"Guests[{index}] id {guest.Id} is not positive." );
+			if ( previous != null && guest.Id <= previous.Id )
+				Error( $"Guests[{index}] id {guest.Id} does not follow guest id {previous.Id}; guests are saved in ascending id order." );
+			previous = guest;
+			if ( !guestIds.Add( guest.Id ) )
+				Error( $"Guest {guest.Id} appears more than once." );
+			if ( guest.Id >= snapshot.NextGuestId )
+				Error( $"Guest {guest.Id} is not below the next guest id {snapshot.NextGuestId}." );
+			if ( !Enum.IsDefined( guest.State ) )
+				Error( $"Guest {guest.Id} state {(int)guest.State} is not a guest state." );
+			else if ( guest.State == GuestState.Gone )
+				Error( $"Guest {guest.Id} is already gone; gone guests are removed at the end of their tick." );
+			if ( !Enum.IsDefined( guest.Thought ) )
+				Error( $"Guest {guest.Id} thought {(int)guest.Thought} is not a guest thought." );
+			if ( (uint)guest.Type >= (uint)typeCount )
+				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
+			Bounded( guest.Id, guest.Hunger, nameof( guest.Hunger ), 0, 150 );
+			Bounded( guest.Id, guest.Thirst, nameof( guest.Thirst ), 0, 150 );
+			Bounded( guest.Id, guest.Toilet, nameof( guest.Toilet ), 0, 150 );
+			Bounded( guest.Id, guest.Energy, nameof( guest.Energy ), 0, 100 );
+			Bounded( guest.Id, guest.Happiness, nameof( guest.Happiness ), 0, 100 );
+			Bounded( guest.Id, guest.Nausea, nameof( guest.Nausea ), 0, 1000 );
+			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
+			Bounded( guest.Id, guest.SecondsSinceRide, nameof( guest.SecondsSinceRide ), 0, 1_000_000 );
+			if ( guest.Money < 0 )
+				Error( $"Guest {guest.Id} Money {guest.Money} is negative." );
+			if ( guest.RidesTaken < 0 )
+				Error( $"Guest {guest.Id} RidesTaken {guest.RidesTaken} is negative." );
+			if ( guest.QueueMoveDelay < 0 )
+				Error( $"Guest {guest.Id} QueueMoveDelay {guest.QueueMoveDelay} is negative." );
+			if ( guest.QueueCellIndex < 0 )
+				Error( $"Guest {guest.Id} QueueCellIndex {guest.QueueCellIndex} is negative." );
+			Finite( guest.Id, guest.HeadingX, nameof( guest.HeadingX ) );
+			Finite( guest.Id, guest.HeadingY, nameof( guest.HeadingY ) );
+			Finite( guest.Id, guest.DistanceWalked, nameof( guest.DistanceWalked ) );
+			Finite( guest.Id, guest.DrawX, nameof( guest.DrawX ) );
+			Finite( guest.Id, guest.DrawY, nameof( guest.DrawY ) );
+			Finite( guest.Id, guest.DrawDistanceWalked, nameof( guest.DrawDistanceWalked ) );
+			Finite( guest.Id, guest.StepFromX, nameof( guest.StepFromX ) );
+			Finite( guest.Id, guest.StepFromY, nameof( guest.StepFromY ) );
+			Finite( guest.Id, guest.StepFromDistance, nameof( guest.StepFromDistance ) );
+			Finite( guest.Id, guest.ExitLevel, nameof( guest.ExitLevel ) );
+			Finite( guest.Id, guest.OffsetX, nameof( guest.OffsetX ) );
+			Finite( guest.Id, guest.OffsetY, nameof( guest.OffsetY ) );
+			Finite( guest.Id, guest.QueueTargetX, nameof( guest.QueueTargetX ) );
+			Finite( guest.Id, guest.QueueTargetY, nameof( guest.QueueTargetY ) );
+			Finite( guest.Id, guest.StateTimer, nameof( guest.StateTimer ) );
+			Finite( guest.Id, guest.DecisionTimer, nameof( guest.DecisionTimer ) );
+			if ( guest.Navigation == null )
+				Error( $"Guests[{index}] (guest {guest.Id}) has no navigation snapshot." );
+			else
+				ValidateGuestStructure( guest, Error );
+		}
+
+		// State cross-references: queue and rider membership both ways.
+		for ( var index = 0; index < snapshot.Guests.Length; index++ )
+		{
+			var guest = snapshot.Guests[index];
+			if ( guest == null )
+				continue;
+			var inQueue = guest.State is GuestState.MovingUpQueue or GuestState.Queueing or GuestState.Boarding or GuestState.WaitingToBoard;
+			if ( inQueue )
+			{
+				if ( !queuedIn.TryGetValue( guest.Id, out var queueAttraction ) )
+					Error( $"Guest {guest.Id} is in state {guest.State} but no attraction's queue holds it." );
+				else if ( queueAttraction != guest.AttractionId )
+					Error( $"Guest {guest.Id} queues for attraction {guest.AttractionId} but attraction {queueAttraction}'s queue holds it." );
+				if ( guest.QueuePosition < 0 )
+					Error( $"Guest {guest.Id} queues without a queue position." );
+				if ( guest.QueueJoinTurn < 0 )
+					Error( $"Guest {guest.Id} queues without a join turn." );
+				if ( guest.QueueTargetIndex < 0 )
+					Error( $"Guest {guest.Id} queues without a queue target index." );
+				if ( guest.State == GuestState.Queueing && guest.LastQueueUpdateTurn < 0 )
+					Error( $"Guest {guest.Id} stands in a queue without a last queue update turn." );
+			}
+			else
+			{
+				if ( queuedIn.TryGetValue( guest.Id, out var queueAttraction ) )
+					Error( $"Guest {guest.Id} is in state {guest.State} but is still held in attraction {queueAttraction}'s queue." );
+				if ( guest.QueuePosition >= 0 )
+					Error( $"Guest {guest.Id} is in state {guest.State} but still carries queue position {guest.QueuePosition}." );
+			}
+			if ( guest.State == GuestState.Using )
+			{
+				if ( !aboardOf.TryGetValue( guest.Id, out var rideAttraction ) )
+					Error( $"Guest {guest.Id} rides but no attraction holds it aboard." );
+				else if ( rideAttraction != guest.AttractionId )
+					Error( $"Guest {guest.Id} rides attraction {guest.AttractionId} but is held aboard attraction {rideAttraction}." );
+			}
+			else if ( aboardOf.TryGetValue( guest.Id, out var rideAttraction ) )
+				Error( $"Guest {guest.Id} is in state {guest.State} but is held aboard attraction {rideAttraction}." );
+			if ( guest.AttractionId != 0 )
+			{
+				if ( !snapshotIds.Contains( guest.AttractionId ) )
+					Error( $"Guest {guest.Id} names attraction {guest.AttractionId}, which is not registered." );
+				else if ( !inQueue && guest.State is not (GuestState.GoingToRide or GuestState.Using) )
+					Error( $"Guest {guest.Id} is in state {guest.State} while bound to attraction {guest.AttractionId}." );
+			}
+			else if ( guest.State == GuestState.GoingToRide )
+				Error( $"Guest {guest.Id} heads for a ride without naming an attraction." );
+		}
+		foreach ( var (guestId, attractionId) in queuedIn )
+			if ( !guestIds.Contains( guestId ) )
+				Error( $"Attraction {attractionId}'s queue holds guest {guestId}, which does not exist." );
+		foreach ( var (guestId, attractionId) in aboardOf )
+			if ( !guestIds.Contains( guestId ) )
+				Error( $"Attraction {attractionId}'s riders hold guest {guestId}, which does not exist." );
+
+		return new GuestSnapshotValidation( errors );
+	}
+
+	/// <summary>Per-guest structure that needs the park's grid: arrival lane shape and position, cells, navigation buffers.</summary>
+	private void ValidateGuestStructure( GuestSnapshot guest, Action<string> error )
+	{
+		var onLane = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
+			or GuestState.AtTicketBooth or GuestState.EnteringPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome;
+		if ( onLane )
+		{
+			if ( guest.Lane == null || guest.Lane.Length < 2 )
+				error( $"Guest {guest.Id} is in state {guest.State} without an arrival lane of at least two cells." );
+			else if ( (uint)guest.LaneIndex >= (uint)guest.Lane.Length )
+				error( $"Guest {guest.Id} lane index {guest.LaneIndex} is outside its {guest.Lane.Length}-cell lane." );
+			if ( guest.OnGrid || !guest.Navigation.OffGrid )
+				error( $"Guest {guest.Id} is in state {guest.State} but is marked on the path grid." );
+		}
+		else if ( guest.State == GuestState.LeavingPark && guest.Lane != null )
+		{
+			if ( guest.Lane.Length < 2 || (uint)guest.LaneIndex >= (uint)guest.Lane.Length )
+				error( $"Guest {guest.Id} walks a lane home with index {guest.LaneIndex} of {guest.Lane.Length} cells." );
+			if ( guest.OnGrid || !guest.Navigation.OffGrid )
+				error( $"Guest {guest.Id} walks a lane home but is marked on the path grid." );
+		}
+		else
+		{
+			if ( !guest.OnGrid || guest.Navigation.OffGrid )
+				error( $"Guest {guest.Id} is in state {guest.State} but is not on the path grid." );
+			if ( guest.Lane != null )
+				error( $"Guest {guest.Id} is in state {guest.State} but still carries an arrival lane." );
+		}
+		if ( guest.Lane != null )
+		{
+			for ( var cell = 0; cell < guest.Lane.Length; cell++ )
+			{
+				var (x, y) = guest.Lane[cell];
+				if ( !Grid.InBounds( x, y ) )
+					error( $"Guest {guest.Id} lane cell {cell} ({x}, {y}) is outside the map." );
+			}
+		}
+		if ( !Grid.InBounds( guest.CellX, guest.CellY ) )
+			error( $"Guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the map." );
+		if ( (guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0) && !Grid.InBounds( guest.PreviousCellX, guest.PreviousCellY ) )
+			error( $"Guest {guest.Id} previous cell ({guest.PreviousCellX}, {guest.PreviousCellY}) is outside the map." );
+		var navigation = guest.Navigation;
+		if ( !Grid.InBounds( navigation.X >> 16, navigation.Y >> 16 ) )
+			error( $"Guest {guest.Id} navigation position ({navigation.X >> 16}, {navigation.Y >> 16}) is outside the map." );
+		if ( !Grid.InBounds( navigation.TargetX >> 16, navigation.TargetY >> 16 ) )
+			error( $"Guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the map." );
+		if ( Math.Abs( (long)navigation.VelocityX ) > GuestSpeed.VelocityBound || Math.Abs( (long)navigation.VelocityY ) > GuestSpeed.VelocityBound )
+			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
+		if ( navigation.Route == null )
+			error( $"Guest {guest.Id} has no route." );
+		else
+		{
+			if ( navigation.Cursor < 0 || navigation.Cursor > navigation.Route.Length )
+				error( $"Guest {guest.Id} navigation cursor {navigation.Cursor} is outside its {navigation.Route.Length}-cell route." );
+			else
+			{
+				var buffered = Math.Min( GuestNavigation.BufferedWaypoints, navigation.Route.Length - navigation.Cursor );
+				if ( navigation.Count != buffered )
+					error( $"Guest {guest.Id} buffers {navigation.Count} waypoints, but its route from cursor {navigation.Cursor} gives {buffered}." );
+				if ( navigation.Count == 0 ? navigation.Index != 0 : (uint)navigation.Index >= (uint)navigation.Count )
+					error( $"Guest {guest.Id} waypoint index {navigation.Index} is outside its {navigation.Count} buffered waypoints." );
+			}
+			for ( var cell = 0; cell < navigation.Route.Length; cell++ )
+			{
+				var (x, y) = navigation.Route[cell];
+				if ( !Grid.InBounds( x, y ) )
+					error( $"Guest {guest.Id} route cell {cell} ({x}, {y}) is outside the map." );
+			}
+		}
+		if ( navigation.History is < 0 or > 0x7fff )
+			error( $"Guest {guest.Id} progress history {navigation.History} is outside its 15-bit window." );
+		if ( navigation.PreviousRemaining < -1 )
+			error( $"Guest {guest.Id} previous remaining distance {navigation.PreviousRemaining} is negative." );
+		if ( navigation.Reroutes < 0 || navigation.WalkCrossings < 0 )
+			error( $"Guest {guest.Id} navigation counters ({navigation.Reroutes} reroutes, {navigation.WalkCrossings} crossings) are negative." );
+		if ( navigation.AlsoOpen == null )
+			error( $"Guest {guest.Id} has no extra-open-cell list." );
+		else
+			for ( var cell = 0; cell < navigation.AlsoOpen.Length; cell++ )
+			{
+				var (x, y) = navigation.AlsoOpen[cell];
+				if ( !Grid.InBounds( x, y ) )
+					error( $"Guest {guest.Id} extra open cell {cell} ({x}, {y}) is outside the map." );
+			}
+		if ( guest.BaseSpeed is < 60 or > 140 )
+			error( $"Guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds." );
+		if ( guest.MaxSpeed is < GuestSpeed.Floor or > GuestSpeed.VelocityBound )
+			error( $"Guest {guest.Id} max speed {guest.MaxSpeed} is outside the speed setter's range." );
+		if ( guest.MaxForce is < GuestSpeed.Floor or > GuestSpeed.ForceBound )
+			error( $"Guest {guest.Id} max force {guest.MaxForce} is outside the speed setter's range." );
+		if ( !float.IsFinite( guest.SmoothedSpeed ) || guest.SmoothedSpeed < 0 )
+			error( $"Guest {guest.Id} smoothed speed {guest.SmoothedSpeed} is negative or not finite." );
+	}
+
+	/// <summary>
+	/// Restores a validated snapshot into this simulation in two passes: pass one materialises every guest as a fresh
+	/// object with its identity and all fields; pass two restores each attraction's queue, then commits the guests,
+	/// counters, arrival stream, explicit RNG state and the derived occupant index. Anything
+	/// <see cref="ValidateSnapshot"/> rejects throws <see cref="InvalidDataException"/> before this simulation is
+	/// touched. The economy bindings (<see cref="Payments"/>, <see cref="ArrivalClock"/>, <see cref="ParkPoints"/>,
+	/// <see cref="ArrivalsHalted"/>) are live references the caller re-attaches; the restore does not change them.
+	/// Every attraction in the snapshot must already be registered (see <see cref="Register"/>).
+	/// </summary>
+	public void RestoreSnapshot( GuestSimulationSnapshot snapshot )
+	{
+		var validation = ValidateSnapshot( snapshot );
+		if ( !validation.IsValid )
+			throw new InvalidDataException( "The guest snapshot does not restore: " + string.Join( " ", validation.Errors ) );
+		// Pass 1: identities first — every guest becomes a fresh object; nothing live is replaced yet.
+		var restored = new List<Guest>( snapshot.Guests.Length );
+		var restoredById = new Dictionary<int, Guest>( snapshot.Guests.Length );
+		foreach ( var guestSnapshot in snapshot.Guests )
+		{
+			var guest = new Guest( guestSnapshot.Id, guestSnapshot.Type );
+			ApplyGuestSnapshot( guest, guestSnapshot );
+			restored.Add( guest );
+			restoredById.Add( guest.Id, guest );
+		}
+		// Pass 2: references — each attraction's queue and riders into its bridge, then the candidate commits as a whole.
+		var bridges = new Dictionary<int, RideVisitorBridge>( attractions.Count );
+		foreach ( var attraction in attractions )
+			bridges.Add( attraction.AttractionId, (RideVisitorBridge)attraction );
+		foreach ( var attractionSnapshot in snapshot.Attractions )
+			bridges[attractionSnapshot.AttractionId].RestoreSnapshot( attractionSnapshot );
+		guests.Clear();
+		guests.AddRange( restored );
+		byId.Clear();
+		foreach ( var (guestId, guest) in restoredById )
+			byId.Add( guestId, guest );
+		seenQueueEdits.Clear();
+		foreach ( var (attractionId, seen) in snapshot.SeenQueueEdits )
+			seenQueueEdits[attractionId] = seen;
+		random = new GuestRandom( snapshot.RandomState );
+		nextId = snapshot.NextGuestId;
+		TickCount = snapshot.TickCount;
+		TimeSeconds = snapshot.TimeSeconds;
+		Admissions = snapshot.Admissions;
+		Departed = snapshot.Departed;
+		arrivalTimerStart = snapshot.ArrivalTimerStart;
+		deliveringArrivals = snapshot.DeliveringArrivals;
+		spawnTimer = snapshot.SpawnTimer;
+		pendingArrivals = snapshot.PendingArrivals;
+		laneToggle = snapshot.LaneToggle;
+		ArrivalsEnabled = snapshot.ArrivalsEnabled;
+		seenGridVersion = snapshot.SeenGridVersion;
+		RebuildOccupants();
+	}
+
+	/// <summary>Copies a validated guest snapshot into a fresh <see cref="Guest"/> (route, lane and buffer arrays are copied again).</summary>
+	private static void ApplyGuestSnapshot( Guest guest, GuestSnapshot snapshot )
+	{
+		guest.State = snapshot.State;
+		guest.HeadingX = snapshot.HeadingX;
+		guest.HeadingY = snapshot.HeadingY;
+		guest.IsMoving = snapshot.IsMoving;
+		guest.DistanceWalked = snapshot.DistanceWalked;
+		guest.DrawX = snapshot.DrawX;
+		guest.DrawY = snapshot.DrawY;
+		guest.DrawDistanceWalked = snapshot.DrawDistanceWalked;
+		guest.StepFromX = snapshot.StepFromX;
+		guest.StepFromY = snapshot.StepFromY;
+		guest.StepFromDistance = snapshot.StepFromDistance;
+		guest.StepTick = snapshot.StepTick;
+		guest.Hunger = snapshot.Hunger;
+		guest.Thirst = snapshot.Thirst;
+		guest.Toilet = snapshot.Toilet;
+		guest.Energy = snapshot.Energy;
+		guest.Nausea = snapshot.Nausea;
+		guest.Happiness = snapshot.Happiness;
+		guest.Money = snapshot.Money;
+		guest.ExitLevel = snapshot.ExitLevel;
+		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
+		guest.RidesTaken = snapshot.RidesTaken;
+		guest.Thought = snapshot.Thought;
+		guest.AttractionId = snapshot.AttractionId;
+		guest.LastAttractionId = snapshot.LastAttractionId;
+		guest.QueuePosition = snapshot.QueuePosition;
+		guest.QueueJoinTurn = snapshot.QueueJoinTurn;
+		guest.LastQueueWaitTurns = snapshot.LastQueueWaitTurns;
+		guest.QueueMoveDelay = snapshot.QueueMoveDelay;
+		guest.QueueCalled = snapshot.QueueCalled;
+		guest.QueueStandingSinceTurn = snapshot.QueueStandingSinceTurn;
+		guest.InterludeTurn = snapshot.InterludeTurn;
+		guest.InQueueInterlude = snapshot.InQueueInterlude;
+		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
+		guest.QueueCellIndex = snapshot.QueueCellIndex;
+		guest.QueueTargetIndex = snapshot.QueueTargetIndex;
+		guest.QueueTargetX = snapshot.QueueTargetX;
+		guest.QueueTargetY = snapshot.QueueTargetY;
+		guest.LastQueueUpdateTurn = snapshot.LastQueueUpdateTurn;
+		guest.BaseSpeed = snapshot.BaseSpeed;
+		guest.ToiletBonus = snapshot.ToiletBonus;
+		guest.Boost = snapshot.Boost;
+		guest.SmoothedSpeed = snapshot.SmoothedSpeed;
+		guest.MaxSpeed = snapshot.MaxSpeed;
+		guest.MaxForce = snapshot.MaxForce;
+		guest.CellX = snapshot.CellX;
+		guest.CellY = snapshot.CellY;
+		guest.PreviousCellX = snapshot.PreviousCellX;
+		guest.PreviousCellY = snapshot.PreviousCellY;
+		guest.OnGrid = snapshot.OnGrid;
+		guest.OffsetX = snapshot.OffsetX;
+		guest.OffsetY = snapshot.OffsetY;
+		guest.HasWaypoint = snapshot.HasWaypoint;
+		guest.Lane = snapshot.Lane?.ToArray();
+		guest.LaneIndex = snapshot.LaneIndex;
+		guest.LaneReversed = snapshot.LaneReversed;
+		guest.StateTimer = snapshot.StateTimer;
+		guest.DecisionTimer = snapshot.DecisionTimer;
+		var navigation = guest.Navigation;
+		var navigationSnapshot = snapshot.Navigation;
+		navigation.X = navigationSnapshot.X;
+		navigation.Y = navigationSnapshot.Y;
+		navigation.VelocityX = navigationSnapshot.VelocityX;
+		navigation.VelocityY = navigationSnapshot.VelocityY;
+		navigation.TargetX = navigationSnapshot.TargetX;
+		navigation.TargetY = navigationSnapshot.TargetY;
+		navigation.Arrived = navigationSnapshot.Arrived;
+		navigation.Index = navigationSnapshot.Index;
+		navigation.Count = navigationSnapshot.Count;
+		navigation.Route = navigationSnapshot.Route.ToArray();
+		navigation.Cursor = navigationSnapshot.Cursor;
+		navigation.WalkCrossings = navigationSnapshot.WalkCrossings;
+		navigation.AlsoOpen = navigationSnapshot.AlsoOpen.ToArray();
+		navigation.History = navigationSnapshot.History;
+		navigation.PreviousRemaining = navigationSnapshot.PreviousRemaining;
+		navigation.OffGrid = navigationSnapshot.OffGrid;
+		navigation.Reroutes = navigationSnapshot.Reroutes;
+		for ( var index = 0; index < navigationSnapshot.Count; index++ )
+			navigation.Buffer[index] = navigation.Route[navigationSnapshot.Cursor + index];
+	}
+
 	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: every field the next tick reads, in id order.</summary>
 	internal void AddCanonicalState( StateHasher hash )
 	{

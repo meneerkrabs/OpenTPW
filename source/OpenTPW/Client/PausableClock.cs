@@ -28,4 +28,19 @@ internal sealed class PausableClock
 			compensation += source() - snapshot;
 		Paused = paused;
 	}
+
+	/// <summary>
+	/// Rebases this clock so it reads exactly <paramref name="milliseconds"/> now, whether it is running or
+	/// paused: a running clock recomputes its compensation from the current source (however long that clock
+	/// already ran), a paused one rebases its frozen value and later resumes from the saved value. The
+	/// original has no persistence counterpart; the pause arithmetic itself is untouched, and a rebase adds
+	/// nothing — restoring twice is as exact as restoring once.
+	/// </summary>
+	public void RestoreMilliseconds( uint milliseconds )
+	{
+		if ( Paused )
+			compensation = snapshot - milliseconds;
+		else
+			compensation = source() - milliseconds;
+	}
 }

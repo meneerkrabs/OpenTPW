@@ -347,6 +347,18 @@ public sealed class ObjectAnimator
 
 	private void Start( int index, Clip clip, long now )
 	{
+		var state = BindChannel( clip );
+		state.Serial = ++serial;
+		state.StartMilliseconds = now;
+		// A start without flag 0x2 leaves the deferred slot (+36) as it was.
+		state.Deferred = channels.TryGetValue( index, out var previous ) ? previous.Deferred : null;
+		channels[index] = state;
+		ApplyNodeList( clip.Animation );
+	}
+
+	/// <summary>Binds a clip's tracks to this model — the body of a channel start, shared by the snapshot restore.</summary>
+	private Channel BindChannel( Clip clip )
+	{
 		// The channel wraps the frame itself; the player only clamps.
 		var player = new ModelAnimationPlayer( model, clip.Animation, TicksPerSecond ) { Loop = false };
 		var tracks = new ModelAnimationTrack?[model.Nodes.Count];
@@ -372,20 +384,155 @@ public sealed class ObjectAnimator
 					uvs[track.NodeIndex] = track.UvAnimation;
 			}
 		}
-		var state = new Channel
+		return new Channel { Clip = clip, Player = player, Tracks = tracks, Vertices = vertices, Uvs = uvs };
+	}
+
+	// ---- Park-resume snapshot ----
+
+	/// <summary>Explicit state of every channel, the caches and the clocks (see <see cref="ObjectAnimatorSnapshot"/>).</summary>
+	public ObjectAnimatorSnapshot CaptureSnapshot()
+	{
+		var capturedChannels = channels.OrderBy( pair => pair.Key ).Select( pair => new AnimatorChannelSnapshot
 		{
-			Clip = clip,
-			Player = player,
-			Tracks = tracks,
-			Vertices = vertices,
-			Uvs = uvs,
-			Serial = ++serial,
-			StartMilliseconds = now,
-			// A start without flag 0x2 leaves the deferred slot (+36) as it was.
-			Deferred = channels.TryGetValue( index, out var previous ) ? previous.Deferred : null
+			ChannelIndex = pair.Key,
+			ClipName = pair.Value.Clip.Name,
+			AnimationId = pair.Value.Clip.AnimationId,
+			Variant = pair.Value.Clip.Variant,
+			Loop = pair.Value.Clip.Loop,
+			Speed = pair.Value.Clip.Speed,
+			Serial = pair.Value.Serial,
+			StartMilliseconds = pair.Value.StartMilliseconds,
+			Ended = pair.Value.Ended,
+			Tick = pair.Value.Player.Tick,
+			ClipDurationTicks = pair.Value.Clip.Animation.Duration,
+			Deferred = pair.Value.Deferred is { } deferred
+				? new AnimatorDeferredClipSnapshot
+				{
+					Name = deferred.Name,
+					AnimationId = deferred.AnimationId,
+					Variant = deferred.Variant,
+					Loop = deferred.Loop,
+					Speed = deferred.Speed,
+					ClipDurationTicks = deferred.Animation.Duration
+				}
+				: null
+		} ).ToArray();
+		var capturedMeshes = Enumerable.Range( 0, model.Meshes.Count ).Select( mesh => new AnimatorMeshCacheSnapshot
+		{
+			Mesh = mesh,
+			VertexVersion = vertexVersions[mesh],
+			VertexSerial = vertexSources[mesh].Serial,
+			VertexTick = vertexSources[mesh].Tick,
+			Positions = vertexPositions[mesh]?.SelectMany( position => new[] { position.X, position.Y, position.Z } ).ToArray(),
+			UvSerial = uvSources[mesh].Serial,
+			UvTick = uvSources[mesh].Tick,
+			TexCoords = texCoords[mesh]?.SelectMany( coordinate => new[] { coordinate.X, coordinate.Y } ).ToArray()
+		} ).ToArray();
+		return new ObjectAnimatorSnapshot
+		{
+			ClockMilliseconds = clockMilliseconds,
+			Serial = serial,
+			HiddenVersion = hiddenVersion,
+			TicksPerSecond = TicksPerSecond,
+			KeepsPoseOnClipChange = keepsPoseOnClipChange,
+			Channels = capturedChannels,
+			NodeStateBits = (bool[])nodeStateBit.Clone(),
+			Meshes = capturedMeshes,
+			VertexLimitations = vertexLimitations.ToArray()
 		};
-		channels[index] = state;
-		ApplyNodeList( clip.Animation );
+	}
+
+	/// <summary>
+	/// Restores a snapshot into this animator. <paramref name="resolveClip"/> resolves each clip through the
+	/// object's own archive (the runtime passes <see cref="OriginalObjectRuntime"/>'s member lookup); a clip that
+	/// resolves to null, another name or another length fails the restore. Everything is resolved and verified
+	/// before this animator changes; a throw leaves it partially restored — discard the candidate then. The node
+	/// transforms are recomputed by the trailing <see cref="Update"/> from the restored channels.
+	/// </summary>
+	internal void RestoreSnapshot( ObjectAnimatorSnapshot snapshot, Func<AnimatorClipIdentity, ResolvedAnimatorClip?> resolveClip )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		ArgumentNullException.ThrowIfNull( resolveClip );
+		snapshot.ValidateSnapshot();
+		if ( snapshot.TicksPerSecond != TicksPerSecond )
+			throw new InvalidDataException( $"animator runs at {TicksPerSecond} ticks/s, the snapshot stores {snapshot.TicksPerSecond}." );
+		if ( snapshot.KeepsPoseOnClipChange != keepsPoseOnClipChange )
+			throw new InvalidDataException( "animator fixed-item pose retention does not match the snapshot." );
+		if ( snapshot.NodeStateBits.Length != nodeStateBit.Length )
+			throw new InvalidDataException( $"animator has {nodeStateBit.Length} nodes, the snapshot stores {snapshot.NodeStateBits.Length} node-state bits." );
+		if ( snapshot.Meshes.Count != vertexVersions.Length || snapshot.Meshes.Where( ( cached, index ) => cached.Mesh != index ).Any() )
+			throw new InvalidDataException( $"animator has {vertexVersions.Length} meshes, the snapshot does not describe exactly those, in order." );
+		foreach ( var cached in snapshot.Meshes )
+		{
+			if ( cached.Positions != null && cached.Positions.Length != model.Meshes[cached.Mesh].Positions.Length * 3 )
+				throw new InvalidDataException( $"mesh {cached.Mesh} position cache has {cached.Positions.Length} floats, the mesh has {model.Meshes[cached.Mesh].Positions.Length} vertices." );
+			if ( cached.TexCoords != null && cached.TexCoords.Length != model.Meshes[cached.Mesh].TexCoords.Length * 2 )
+				throw new InvalidDataException( $"mesh {cached.Mesh} texture-coordinate cache has {cached.TexCoords.Length} floats, the mesh has {model.Meshes[cached.Mesh].TexCoords.Length} coordinates." );
+		}
+
+		// Resolve and bind every channel first; only then replace the live state.
+		var restored = new List<(int Index, Channel State)>();
+		foreach ( var captured in snapshot.Channels )
+		{
+			var clip = ResolveSnapshotClip( resolveClip, captured.ClipName, captured.AnimationId, captured.Variant, captured.ClipDurationTicks, captured.Loop, captured.Speed, $"channel {captured.ChannelIndex}" );
+			var state = BindChannel( clip );
+			state.Serial = captured.Serial;
+			state.StartMilliseconds = captured.StartMilliseconds;
+			state.Ended = captured.Ended;
+			state.Player.SetTick( captured.Tick );
+			if ( captured.Deferred is { } deferred )
+				state.Deferred = ResolveSnapshotClip( resolveClip, deferred.Name, deferred.AnimationId, deferred.Variant, deferred.ClipDurationTicks, deferred.Loop, deferred.Speed, $"channel {captured.ChannelIndex} deferred" );
+			restored.Add( (captured.ChannelIndex, state) );
+		}
+		if ( restored.Count > 0 && snapshot.Serial < restored.Max( pair => pair.State.Serial ) )
+			throw new InvalidDataException( "animator serial counter is below a channel's bind serial." );
+
+		channels.Clear();
+		foreach ( var (index, state) in restored )
+			channels[index] = state;
+		Array.Copy( snapshot.NodeStateBits, nodeStateBit, nodeStateBit.Length );
+		foreach ( var cached in snapshot.Meshes )
+		{
+			vertexVersions[cached.Mesh] = cached.VertexVersion;
+			vertexSources[cached.Mesh] = (cached.VertexSerial, cached.VertexTick);
+			uvSources[cached.Mesh] = (cached.UvSerial, cached.UvTick);
+			vertexPositions[cached.Mesh] = cached.Positions == null ? null : RestorePositions( cached.Positions );
+			texCoords[cached.Mesh] = cached.TexCoords == null ? null : RestoreTexCoords( cached.TexCoords );
+		}
+		serial = snapshot.Serial;
+		hiddenVersion = snapshot.HiddenVersion;
+		clockMilliseconds = snapshot.ClockMilliseconds;
+		vertexLimitations.Clear();
+		vertexLimitations.UnionWith( snapshot.VertexLimitations );
+		Update();
+	}
+
+	private NVector3[] RestorePositions( float[] flat )
+	{
+		var positions = new NVector3[flat.Length / 3];
+		for ( var index = 0; index < positions.Length; index++ )
+			positions[index] = new NVector3( flat[index * 3], flat[index * 3 + 1], flat[index * 3 + 2] );
+		return positions;
+	}
+
+	private NVector2[] RestoreTexCoords( float[] flat )
+	{
+		var coordinates = new NVector2[flat.Length / 2];
+		for ( var index = 0; index < coordinates.Length; index++ )
+			coordinates[index] = new NVector2( flat[index * 2], flat[index * 2 + 1] );
+		return coordinates;
+	}
+
+	private Clip ResolveSnapshotClip( Func<AnimatorClipIdentity, ResolvedAnimatorClip?> resolveClip, string name, int animationId, int variant, int durationTicks, bool loop, float speed, string what )
+	{
+		var resolved = resolveClip( new AnimatorClipIdentity( animationId, variant, name ) );
+		if ( resolved == null )
+			throw new InvalidDataException( $"{what}: animation {animationId}/{variant} ('{name}') could not be resolved from the object's archive." );
+		if ( !string.Equals( resolved.Name, name, StringComparison.Ordinal ) )
+			throw new InvalidDataException( $"{what}: the archive resolves animation {animationId}/{variant} to '{resolved.Name}', not the snapshot's '{name}'." );
+		if ( resolved.Clip.Duration != durationTicks )
+			throw new InvalidDataException( $"{what}: clip '{name}' has length {resolved.Clip.Duration} ticks, the snapshot stores {durationTicks}." );
+		return new Clip { Animation = resolved.Clip, Name = name, AnimationId = animationId, Variant = variant, Loop = loop, Speed = speed };
 	}
 
 	/// <summary>

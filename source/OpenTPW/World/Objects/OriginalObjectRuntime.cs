@@ -312,6 +312,8 @@ public sealed class OriginalObjectRuntime
 			settings.GetInt( "UsageInfo.ExcitementLevel" ), settings.GetInt( "Info.AttractionValue" ), needs, price )
 		{
 			Parameters = CreateQueueParameters( entry ),
+			// [DATA:<object>.sam:UsageInfo.SpecialIngredient] type +344: 0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar (the ice cream shops); only Sugar changes a guest here (the speed boost)
+			SpecialIngredient = settings.GetInt( "UsageInfo.SpecialIngredient" ),
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods/InitPricePerUse/InitChanceOfLoosing] the sideshow words of the join excitement (0xdff70); the level mirrors the live economy values over them
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)

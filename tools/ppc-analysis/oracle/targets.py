@@ -575,6 +575,116 @@ def smoothing_result(x: dict, r: dict) -> dict:
     return {'s': from_bits(r['s_bits']), 'boost': r['boost'], 'force': r['force'], 'speed': r['speed']}
 
 
+# ============================================================================== (e2) WALK: the speed boost 0xeaaf8
+# 0xeaaf8(guest, ride) is the outcome of a completed use (shop, sideshow, ride; 497 != 0: the always-true win of an object
+# with chance 100). After the happiness and need effects of the type record (+324 thirst, +328 hunger, +332 vomit,
+# +336 happiness, +340 litter) it switches on the type's special ingredient (+344, UsageInfo.SpecialIngredient) with the
+# amount byte of the ride (+404, mAmountOfSpecialIngredient, read by 0xe2384): 1 Fat adds the amount to the toilet float
+# (+428), 2 Salt to the thirst float (+420), 3 Ice adds trunc(+324 x amount / 100) to the thirst, 4 Sugar adds
+# trunc(6 x amount / 100) to the speed boost (+196, a u16). 0xeb0f4 is the `sth` that stores the boost.
+BOOST_TYPE_ID = 0x4321
+BOOST_STATE = type('BoostState', (), {})()
+BOOST_REGISTRY = -29976          # TOC slot -> type registry passed to 0x118018
+BOOST_WORLD = -30124             # TOC slot -> the global that holds the world pointer (0x105328's argument)
+BOOST_ALLOWED = [(0xEAAF8, 0xEB49C), (0xDC320, 0xDC350), (0xE2384, 0xE2390), (0x105328, 0x10536C)]
+
+
+def boost_stubs(target: Target) -> dict:
+    state = BOOST_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != BOOST_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the ride type id')
+        m.gpr[3] = state.record
+
+    def thing_id(m: Machine) -> None:
+        # 0xfa9a4(out, thing): the 16-bit thing id behind the output pointer (the caller reads it back as a word or half)
+        if m.gpr[4] not in (state.guest, state.ride):
+            raise AssertionError('0xfa9a4 called without the guest or the ride')
+        m.memory.w16(m.gpr[3], 0x1234 if m.gpr[4] == state.ride else 0x4321)
+
+    def record(name, *registers):
+        def stub(m: Machine) -> None:
+            target.log.append((name,) + tuple(m.gpr[r] & MASK32 for r in registers))
+        return stub
+
+    def goods_cost(m: Machine) -> None:
+        m.gpr[3] = 33
+
+    return {TYPE_RECORD_LOOKUP: lookup, 0xFA9A4: thing_id, 0xFB7B4: record('thought', 4, 5), 0xEA318: record('outcome', 3, 4),
+            0xE1F78: lambda m: m.gpr.__setitem__(3, 77), 0xE1E58: record('charge', 4), 0xE2094: goods_cost,
+            0xEB6F4: record('happiness', 4), 0xE6D20: record('state-log', 5), 0x5FBCC: record('log', 3)}
+
+
+def boost_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = BOOST_STATE
+    state.registry = toc_pointer(sb, BOOST_REGISTRY)
+    world = sb.alloc(WORLD_RNG + 8)
+    sb.write(world + WORLD_RNG, 'I', 12345)
+    sb.write(toc_pointer(sb, BOOST_WORLD), 'I', world)
+    state.record = sb.struct(2048, {324: ('i', x['thirst_effect']), 328: ('i', 5), 332: ('i', 5), 336: ('i', 5),
+                                    340: ('i', 5), 344: ('i', x['mode']), 348: ('i', 0), 1960: ('i', x['ui'])})
+    state.ride = sb.struct(1024, {14: ('H', BOOST_TYPE_ID), 46: ('H', 0), 404: ('I', x['amount'])})
+    state.guest = sb.struct(1024, {196: ('H', x['boost']), 420: ('f', x['thirst']), 428: ('f', x['toilet']), 412: ('f', 50.0)})
+    sb.call(0xEAAF8, {3: state.guest, 4: state.ride})
+    if [entry[0] for entry in log if entry[0] == 'outcome'] != ['outcome']:
+        raise AssertionError('the outcome 0xea318 was not called once')
+    return {'boost': sb.read(state.guest + 196, 'H'), 'thirst': bits(sb.read(state.guest + 420, 'f')),
+            'toilet': bits(sb.read(state.guest + 428, 'f'))}
+
+
+def boost_clamp(value: float) -> float:
+    """The float clamp of the effects: above 100 gives 100, below 0 gives 0, else the value."""
+    return 100.0 if value > 100.0 else 0.0 if value < 0.0 else value
+
+
+def boost_reading(x: dict) -> dict:
+    """0xeaaf8 as read: the thirst effect (+324) is taken off the thirst float and clamped to 0..100, then the ingredient (+344)
+    with the byte amount (+404): 1 Fat toilet + amount, 2 Salt thirst + amount (both single, clamped to 0..100), 3 Ice thirst +
+    trunc(+324 x amount / 100), 4 Sugar boost + trunc(6 x amount / 100) (u16 store). Any other value changes nothing."""
+    amount = x['amount'] & 0xFF
+    thirst = boost_clamp(f32(x['thirst'] - float(x['thirst_effect'])))
+    toilet, boost, mode = x['toilet'], x['boost'], x['mode']
+    if mode == 1:
+        toilet = boost_clamp(f32(toilet + float(amount)))
+    elif mode == 2:
+        thirst = boost_clamp(f32(thirst + float(amount)))
+    elif mode == 3:
+        thirst = boost_clamp(f32(thirst + float(x['thirst_effect'] * amount // 100)))
+    elif mode == 4:
+        boost = (boost + amount * 6 // 100) & 0xFFFF
+    return {'boost': boost, 'thirst': bits(thirst), 'toilet': bits(f32(toilet))}
+
+
+def boost_equal(a, b) -> bool:
+    """C# models the boost only: thirst and toilet are compared where both sides carry them."""
+    return a['boost'] == b['boost'] and all(a[k] == b[k] for k in ('thirst', 'toilet') if k in a and k in b)
+
+
+def boost_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw):
+        x = {'mode': rng.choice([0, 1, 2, 3, 4, 4, 4, 5]), 'amount': rng.choice([rng.randrange(0, 256), 50, 100, 50]),
+             'boost': rng.choice([0, 0, rng.randrange(0, 200), rng.randrange(0, 0x10000)]), 'ui': rng.choice([0, 1]),
+             'thirst_effect': rng.randrange(0, 30), 'thirst': random_float(rng, 0.0, 100.0),
+             'toilet': random_float(rng, 0.0, 100.0)}
+        x.update(kw)
+        return x
+    edges = [make(mode=4, amount=a, boost=0) for a in (0, 1, 16, 17, 33, 34, 50, 100, 255)]
+    edges += [make(mode=4, amount=255, boost=b) for b in (661, 662, 0xFFF0, 0xFFFF)]
+    edges += [make(mode=4, amount=256 + 50, boost=7), make(mode=4, amount=0x1_0100, boost=7), make(mode=-1, amount=50),
+              make(mode=9, amount=50), make(mode=0, amount=255), make(mode=3, amount=255, thirst_effect=29, thirst=99.0),
+              make(mode=2, amount=255, thirst=99.0), make(mode=1, amount=255, toilet=0.0)]
+    return edges + [make() for _ in range(n)]
+
+
+def boost_request(x: dict) -> dict:
+    return {'fn': 'guest_ingredient_boost', 'boost': x['boost'], 'ingredient': x['mode'], 'amount': x['amount'] & 0xFF}
+
+
+def boost_result(x: dict, r: dict) -> dict:
+    return {'boost': r['boost']}
+
+
 # ============================================================================== (f) COAST: rating step, final
 TOC = {'S': -29460, 'E': -29464, 'prev_bank': -29476, 'prev_force': -29472, 'peak_s': -29484, 'peak_e': -29480,
        'e_prev': -29496, 'normal': -29492, 'terror': -29488}
@@ -2993,6 +3103,19 @@ SMOOTHING = Target('walk-smoothing', 'Guest speed smoothing 0xe6b28', 'WALK-plan
                    smoothing_inputs, equal=smoothing_equal, alternatives={'plan-fused': smoothing_fused},
                    csharp=('guest_speed_smoothing', smoothing_request, smoothing_result),
                    notes=['C# hook: bridge function "guest_speed_smoothing" (WALK-I GuestSpeed.Update).'])
+BOOST = Target('walk-boost', 'Guest speed boost 0xeaaf8 (0xeb0cc..0xeb0f4)', 'WALK-plan §4, ORACLE.md F20', 0xEAAF8, BOOST_ALLOWED,
+               boost_stubs, boost_binary, boost_reading, boost_inputs, equal=boost_equal,
+               csharp=('guest_ingredient_boost', boost_request, boost_result),
+               notes=['C# hook: bridge function "guest_ingredient_boost" (GuestSpeed.RaiseBoost: only the boost; the thirst and toilet '
+                      'words are compared with the plan only).',
+                      'Executed: the whole outcome routine 0xeaaf8 of one completed use, with the type record +324..+348 and the ride '
+                      '+404 byte as the inputs, the amount getter 0xe2384, the type lookup 0xdc320 and the world LCG 0x105328 (drawn '
+                      'for the happiness checks). The appearance switch (+348) is 0 and the toilet flag (ride +46 bit 0x1) clear, so '
+                      'the balloon and costume blocks (0xeb0f8..0xeb33c) are not entered. Type UI kind 0 (ride) and 1 (shop).',
+                      'Stubs record the calls instead of running them: 0x118018 type record (registry and type id checked), 0xfa9a4 '
+                      'thing id, 0xfb7b4 thought, 0xea318 ride outcome (checked: once), 0xe1f78 / 0xe2094 goods, 0xe1e58 charge, '
+                      '0xeb6f4 happiness change, 0xe6d20 and the log 0x5fbcc.'])
+
 COAST_STEP = Target('coast-rating-step', 'Coaster rating step 0x415b4', 'COAST-plan §6.3 (coast-research2 32dfe49)',
                     0x415B4, [(0x415B4, 0x41900)], lambda t: {}, coast_step_binary, coast_step_plan, coast_step_inputs,
                     equal=coast_equal, alternatives={'plan-stale-fz': coast_step_plan_fz},
@@ -3122,6 +3245,6 @@ TRAIN_TARGET = Target('staff-training-split', 'Staff training split 0xfc1c4', 'E
                              'the bank (equal to the profit, month and training statistics, which are checked inside the run).',
                              'Domain: prices of at least 1 (divw by zero is undefined); budgets from 0 to 2^28 (the sum of the debits stays inside 32 bits); an active bank.'])
 
-TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
+TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
            ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain}

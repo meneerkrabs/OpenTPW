@@ -114,7 +114,7 @@ behaviours are registered (data `0x4477c`). They are looked up by name from the 
 | --- | --- | --- |
 | `+192` base | constructor `0xe48d0` (data `0x4105e[rand % 5]`); `0xd2870`, `0xf2abc/0xf2ac8`, `0xf4b70/0xf4b98` read the same table | 60, 80, 100, 120, 140 |
 | `+194` bonus | constructor 0; needs block `0xef0d8/0xef0e4` on the guest's needs phase only (`0xeed40`: park turn & 3 = thing id & 3, see W1): 25 while trunc(toilet `+428`) & 0xff > 80 unsigned, else 0; `0xef8c4` (a state entry) 0 | 0 or 25 |
-| `+196` boost | `0xeb0f4` adds an event-dependent amount; `0xe6bbc..0xe6bd8` decays it by trunc(×99/100) per update | ≥ 0 (u16) |
+| `+196` boost | `0xeb0cc..0xeb0f4` (inside the outcome routine `0xeaaf8`) adds trunc(6 × amount / 100) when the type's special ingredient is Sugar (ORACLE.md F20); `0xe6bbc..0xe6bd8` decays it by trunc(×99/100) per update | ≥ 0 (u16) |
 | `+200` s | `0xe6b28`: `(3.0·s + (+192 + +194 + +196)/100)·0.25` (data `0x550c`, `0x5508`; divisor 100 = data `0x41062`) | float |
 | `+24`, `+28` | setter `0xffe38` with s (`0xe6ba8`) | see §1 |
 
@@ -335,7 +335,7 @@ This applies to BOARD-plan §8 and does not need WALK-I.
   per-cell thing lists are not.
 - The route search `0x101c64` beyond its route-store points, and the `+164/+168` bookkeeping. The
   enumeration uses the segment-sum form of the remaining distance.
-- The `+196` boost increments (`0xeb0f4` caller) and the `+194` writer at `0x1a95fc`. These only add
+- The `+194` writer at `0x1a95fc` (the `+196` boost increments are traced: ORACLE.md F20, WALK-001 keeps the amount's shop screen). These only add
   speed.
 - Whether the state-11 handler also steps (W5 allows 2·`+28` of drift either way).
 - The cadence (BOARD A2) and real-clock jitter (A1).

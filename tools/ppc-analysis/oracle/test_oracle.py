@@ -52,6 +52,10 @@ EXPECTED = {
     ('walk-speed-setter', 'plan'): AGREE,
     ('walk-speed-setter', 'csharp'): AGREE,
     ('walk-smoothing', 'csharp'): AGREE,
+    # F20 (fixed in C#): the only writer of the speed boost +196 is the Sugar branch (type +344 == 4) of the outcome routine 0xeaaf8:
+    # boost += trunc(6 x amount byte / 100), u16. Fat, Salt and Ice change the toilet and thirst floats instead (plan only).
+    ('walk-boost', 'plan'): AGREE,
+    ('walk-boost', 'csharp'): AGREE,
     # F6: 0xe6b28 uses fmadds (one rounding; 98 inputs differ in s) and stores boost·99 as u16 before dividing (wraps above 661).
     ('walk-smoothing', 'plan'): (99, {'s': 1.2833095788955688, 'base': 120, 'bonus': 0, 'boost': 662}),
     ('walk-smoothing', 'plan-fused'): (2, {'s': 1.2833095788955688, 'base': 120, 'bonus': 0, 'boost': 662}),
@@ -285,12 +289,31 @@ class Oracle(unittest.TestCase):
             self.check(key)
 
     def test_walk(self):
-        for key in (('walk-speed-setter', 'plan'), ('walk-smoothing', 'plan'), ('walk-smoothing', 'plan-fused')):
+        for key in (('walk-speed-setter', 'plan'), ('walk-smoothing', 'plan'), ('walk-smoothing', 'plan-fused'),
+                    ('walk-boost', 'plan')):
             self.check(key)
+
+    def test_walk_boost_reading_is_sharp(self):
+        # Each part of the reading matters: the factor 6, the amount byte, the u16 wrap, the Sugar ingredient and the
+        # thirst/toilet effects of the other ingredients.
+        import dataclasses
+        read = targets.boost_reading
+        variants = {
+            'factor': lambda x: {**read(x), 'boost': (x['boost'] + (x['amount'] & 0xFF) * 5 // 100) & 0xFFFF if x['mode'] == 4 else read(x)['boost']},
+            'amount-byte': lambda x: {**read(x), 'boost': (x['boost'] + (x['amount'] & 0xFFFF) * 6 // 100) & 0xFFFF if x['mode'] == 4 else read(x)['boost']},
+            'no-wrap': lambda x: {**read(x), 'boost': min(x['boost'] + (x['amount'] & 0xFF) * 6 // 100, 0xFFFF) if x['mode'] == 4 else read(x)['boost']},
+            'ingredient': lambda x: read({**x, 'mode': 3 if x['mode'] == 4 else x['mode']}),
+            'fat-is-thirst': lambda x: read({**x, 'mode': 2 if x['mode'] == 1 else x['mode']}),
+            'ice-is-salt': lambda x: read({**x, 'mode': 2 if x['mode'] == 3 else x['mode']}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.BOOST, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
 
     def test_walk_csharp(self):
         # WALK-F wired GuestSpeed.Caps / GuestSpeed.Update into the bridge (WALK-plan section 15 left them for after the merge).
-        for key in (('walk-speed-setter', 'csharp'), ('walk-smoothing', 'csharp')):
+        for key in (('walk-speed-setter', 'csharp'), ('walk-smoothing', 'csharp'), ('walk-boost', 'csharp')):
             self.check(key)
 
     def test_coast(self):
@@ -896,6 +919,8 @@ class CSharpMutation(unittest.TestCase):
          '(3f * previous + (baseSpeed + bonus + boost) / (float)Divisor) * 0.25f'),
         ('walk-speed-setter', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
          'public const int Floor = 655;', 'public const int Floor = 654;'),
+        ('walk-boost', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
+         '(amount & 0xFF) * 6 / Divisor', '(amount & 0xFF) * 5 / Divisor'),
         ('queue-join-gate', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
          'return difference < 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;',
          'return difference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;'),

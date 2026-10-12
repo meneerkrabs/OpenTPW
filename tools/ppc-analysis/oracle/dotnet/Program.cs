@@ -29,6 +29,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["queue_join_difference"] = QueueJoinDifference,
 	["queue_join_gate"] = QueueJoinGate,
 	["shop_sale_litter"] = ShopSaleLitter,
+	["staff_training"] = StaffTraining,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -330,4 +331,30 @@ static JsonNode? ShopSaleLitter( JsonObject a )
 	if ( !park.TryBuy( item.Id, 1000, out _ ) )
 		throw new InvalidOperationException( "the sale was refused" );
 	return JsonValue.Create( park.LitterScaled - before );
+}
+
+// ParkStaff.Train (0xfc1c4, ORACLE F17) on staff added the way an original save adds them (AddImported is internal: reflection), with
+// the five roles' PoundsPerTrainingPoint columns replaced in the synthetic Standard.sam. Returns the members in input order and the
+// amount Train reports (ParkEconomy.EndMonth books it as one staff cost).
+static JsonNode? StaffTraining( JsonObject a )
+{
+	var singulars = new[] { "Handyman", "Mechanic", "Entertainer", "Guard", "Researcher" };
+	var text = EconomyTestData.StandardText();
+	for ( var role = 0; role < 5; role++ )
+	{
+		for ( var grade = 0; grade < 5; grade++ )
+			text = System.Text.RegularExpressions.Regex.Replace( text, $@"^{singulars[role]}ConstsPerGrade\[{grade}\]\.PoundsPerTrainingPoint .*$",
+				$"{singulars[role]}ConstsPerGrade[{grade}].PoundsPerTrainingPoint {(int)a["prices"]![role]![grade]!}", System.Text.RegularExpressions.RegexOptions.Multiline );
+	}
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var staff = new ParkStaff( settings );
+	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingMethodException( "ParkStaff.AddImported" );
+	var members = a["staff"]!.AsArray().Select( member => (StaffMember)add.Invoke( staff, new object[]
+		{ (StaffType)(int)member!["role"]!, (int)member["grade"]!, (int)member["points"]!, 100, StaffState.Idle, 0L } )! ).ToList();
+	for ( var role = 0; role < 5; role++ )
+		staff.SetTrainingBudget( (StaffType)role, (long)(int)a["budgets"]![role]! );
+	var spent = staff.Train();
+	return new JsonObject { ["spent"] = spent,
+		["staff"] = new JsonArray( members.Select( member => (JsonNode)new JsonArray( member.Grade, member.TrainingPoints ) ).ToArray() ) };
 }

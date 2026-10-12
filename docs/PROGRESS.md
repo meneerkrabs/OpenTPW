@@ -147,6 +147,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).
+- Two original-data regressions for the SDT Layer I decoder: every Layer I entry
+  in all installed `.sdt` banks decodes (2,650, of which 5 MPEG-1 at 44.1 kHz),
+  and the MPEG-1 clip `tp_riderepaired` (stored without a `.mp2` suffix) matches
+  the pinned ffmpeg reference within 1 LSB. No decoder change: `Mp2Decoder`
+  already covers MPEG-1/2 Layer I.
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

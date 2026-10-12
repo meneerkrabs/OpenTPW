@@ -20,6 +20,7 @@ COPY content/data/ content/data/
 COPY content/hero-art/ content/hero-art/
 COPY content/texture-packs/clarity-enhanced/ content/texture-packs/clarity-enhanced/
 COPY source/ source/
+COPY tools/hero-art/ tools/hero-art/
 RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -o /web --nologo
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-false

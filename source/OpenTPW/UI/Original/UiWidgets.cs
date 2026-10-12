@@ -187,8 +187,7 @@ public sealed class UiContext
 		var color = tint ?? RgbaByte.White;
 		foreach ( var part in frame.Parts )
 		{
-			var path = part.TextureName.Length == 0 ? null : ResolveTexture( part.TextureName );
-			var texture = path == null ? UiTexture.Solid : UiTexture.Image( part.Transparent ? path + UiImages.BlackKeySuffix : path );
+			var texture = TextureFor( part );
 			UiVertex Convert( int index )
 			{
 				var vertex = part.Vertices[index];
@@ -197,6 +196,13 @@ public sealed class UiContext
 			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
 				Batch.AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
 		}
+	}
+
+	/// <summary>The exact resource key used when drawing this model part.</summary>
+	internal UiTexture TextureFor( UiModelPart part )
+	{
+		var path = part.TextureName.Length == 0 ? null : ResolveTexture( part.TextureName );
+		return path == null ? UiTexture.Solid : UiTexture.Image( part.Transparent ? path + UiImages.BlackKeySuffix : path );
 	}
 
 	/// <summary>Draws model <paramref name="name"/> frame <paramref name="frame"/> into <paramref name="rect"/>; false if the model is missing.</summary>

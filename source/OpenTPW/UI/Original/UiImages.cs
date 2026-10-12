@@ -29,8 +29,14 @@ public static class UiImages
 		// [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in.
 		if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) && TexturePack.Find( path ) is { } replacement )
 		{
-			var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
-			(width, height, data) = (image.Width, image.Height, image.Data);
+			// The browser's shipped art arrives predecoded (docs/WEB.md); the pink key below applies to it exactly as to a PNG.
+			if ( replacement.EndsWith( PredecodedUiArt.Extension, StringComparison.OrdinalIgnoreCase ) )
+				(width, height, data) = PredecodedUiArt.Load( File.ReadAllBytes( replacement ) );
+			else
+			{
+				var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
+				(width, height, data) = (image.Width, image.Height, image.Data);
+			}
 		}
 		else if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
 		{
@@ -107,15 +113,20 @@ public static class UiImages
 	public static void KeyOut( byte[] rgba, int width, int height, Func<byte, byte, byte, bool> key )
 	{
 		var keyed = new bool[width * height];
+		var anyKeyed = false;
 		for ( var index = 0; index < keyed.Length; index++ )
 		{
 			var pixel = index * 4;
 			if ( key( rgba[pixel], rgba[pixel + 1], rgba[pixel + 2] ) )
 			{
 				keyed[index] = true;
+				anyKeyed = true;
 				rgba[pixel + 3] = 0;
 			}
 		}
+		// Shipped interface art carries no keyed texels at all; the neighbour pass would visit every texel only to skip it.
+		if ( !anyKeyed )
+			return;
 		for ( var y = 0; y < height; y++ )
 		{
 			for ( var x = 0; x < width; x++ )

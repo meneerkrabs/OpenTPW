@@ -46,11 +46,43 @@
 	<ItemGroup>
 		<EmbeddedResource Include="../../content/shaders/**/*" LogicalName="content/shaders/%(RecursiveDir)%(Filename)%(Extension)" />
 		<EmbeddedResource Include="../../content/data/**/*" LogicalName="content/data/%(RecursiveDir)%(Filename)%(Extension)" />
-		<!-- The HD interface art (docs/TEXTURE-PACKS.md), about 6 MB of PNGs, for the default Enhanced look. -->
-		<EmbeddedResource Include="../../content/hero-art/**/*" LogicalName="content/hero-art/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The HD interface art (docs/TEXTURE-PACKS.md) is NOT embedded as the PNGs here: the browser ships the
+		     predecoded RGBA siblings staged by the PredecodeHeroArt target below instead (~+1.7 MB for skipping
+		     PNG decode on a first menu open; UiImages/Texture load them through PredecodedUiArt). Desktop builds
+		     keep the PNGs, and the two representations never coexist in one build. -->
 		<!-- The pinned index is small; PNGs arrive on demand from the texture CDN. -->
 		<EmbeddedResource Include="../../content/texture-packs/clarity-enhanced/distribution.json" LogicalName="content/texture-packs/clarity-enhanced/distribution.json" Condition="Exists('../../content/texture-packs/clarity-enhanced/distribution.json')" />
 	</ItemGroup>
+
+	<!-- Stages the predecoded hero art the browser embeds instead of content/hero-art's PNGs. The generator
+	     (tools/hero-art) always runs and rewrites only changed files, so additions, removals and content or
+	     tool changes take effect on the next build without timestamp tracking; the staging directory lives
+	     under obj, outside git. -->
+	<PropertyGroup>
+		<!-- Under obj (outside git), per configuration so Debug and Release each keep their own staged set.
+		     BaseIntermediateOutputPath is used because this SDK only sets IntermediateOutputPath later in the build. -->
+		<PredecodedHeroArtStaging>$(BaseIntermediateOutputPath)predecoded-hero-art/$(Configuration)/</PredecodedHeroArtStaging>
+	</PropertyGroup>
+	<Target Name="PredecodeHeroArt" BeforeTargets="AssignTargetPaths">
+		<PropertyGroup>
+			<!-- NetCoreRoot is set when dotnet drives the build; plain msbuild takes dotnet from PATH. -->
+			<_PredecodeDotnet Condition="'$(NetCoreRoot)' != '' And Exists('$(NetCoreRoot)dotnet')">"$(NetCoreRoot)dotnet"</_PredecodeDotnet>
+			<_PredecodeDotnet Condition="'$(_PredecodeDotnet)' == ''">dotnet</_PredecodeDotnet>
+		</PropertyGroup>
+		<MakeDir Directories="$(PredecodedHeroArtStaging)" />
+		<Exec StandardOutputImportance="high" Command="$(_PredecodeDotnet) build &quot;$(MSBuildThisFileDirectory)../../tools/hero-art/PredecodeHeroArt.csproj&quot; -c $(Configuration) --nologo -v:quiet" />
+		<Exec StandardOutputImportance="high" Command="$(_PredecodeDotnet) &quot;$(MSBuildThisFileDirectory)../../tools/hero-art/bin/$(Configuration)/net10.0/PredecodeHeroArt.dll&quot; --source &quot;$(MSBuildThisFileDirectory)../../content/hero-art&quot; --staging &quot;$(PredecodedHeroArtStaging.TrimEnd('/\'))&quot;" />
+		<ItemGroup>
+			<_PredecodedHeroArt Include="$(PredecodedHeroArtStaging)**/*" />
+		</ItemGroup>
+		<ItemGroup>
+			<!-- Inside a target, an item's own metadata is not yet readable, so the logical names are attached in a second step. -->
+			<_PredecodedHeroArt Update="@(_PredecodedHeroArt)" LogicalName="content/hero-art/%(RecursiveDir)%(Filename)%(Extension)" />
+		</ItemGroup>
+		<ItemGroup>
+			<EmbeddedResource Include="@(_PredecodedHeroArt)" />
+		</ItemGroup>
+	</Target>
 
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->
 	<ItemGroup>

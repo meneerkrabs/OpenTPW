@@ -108,8 +108,15 @@ public static class TexturePack
 		var shipped = interfaceTexture && EnhancedInterface ? Path.Combine( ShippedDirectory, relative ) : null;
 		if ( packBeforeShippedArt && packed != null && File.Exists( packed ) )
 			return ReplacedFile( packed );
-		if ( shipped != null && File.Exists( shipped ) )
-			return shipped;
+		if ( shipped != null )
+		{
+			if ( File.Exists( shipped ) )
+				return shipped;
+			// [EXT:texture-pack] the browser build ships predecoded siblings instead of the PNGs (docs/WEB.md); only the shipped art can be one.
+			var predecoded = PredecodedUiArt.SiblingPath( shipped );
+			if ( predecoded != null && File.Exists( predecoded ) )
+				return predecoded;
+		}
 		return packed != null && File.Exists( packed ) ? ReplacedFile( packed ) : null;
 	}
 

@@ -35,8 +35,10 @@ MIN_SIZE = 600
 OUTPUT = os.path.join("docs", "reverse", "COVERAGE.md")
 # Generated maps list uncited addresses and class names; reading them back would mark everything cited.
 GENERATED = (OUTPUT, os.path.join("docs", "reverse", "AREAS.md"))
+# Files whose addresses and names are inputs of these tools, not citations (areas.json pins functions).
+NOT_CITATIONS = GENERATED + (os.path.join("tools", "ppc-analysis", "areas.json"),)
 LONG_ADDRESS = re.compile(r"0x10[0-9a-fA-F]{6}\b")
-SHORT_ADDRESS = re.compile(r"STP-PPC:?\s*0x([0-9a-fA-F]{4,6})\b")
+SHORT_ADDRESS = re.compile(r"(?:STP-PPC:?|\bcode:)\s*0x([0-9a-fA-F]{4,6})\b")
 VIRTUAL = re.compile(r"(.+)::vf\d+$")
 # Research notes and analysis lanes also cite code-section offsets in short form (`0x84ea4`). Data and table
 # offsets look the same, so a short value counts only when it is exactly a function's start (see resolve);
@@ -47,7 +49,7 @@ CODE_LIMIT = 0x200000
 
 
 def cited_addresses(text: str) -> set[int]:
-    """Mac addresses cited in repository text: full 0x10xxxxxx values and STP-PPC code offsets."""
+    """Mac addresses cited in repository text: full 0x10xxxxxx values and code offsets marked STP-PPC or code:."""
     found = {int(m.group(0), 16) for m in LONG_ADDRESS.finditer(text)}
     found |= {MAC_BASE + int(m.group(1), 16) for m in SHORT_ADDRESS.finditer(text)}
     return found
@@ -74,18 +76,23 @@ def clean(text: str, limit: int = 60) -> str | None:
 
 
 def repository_text(repo: str) -> str:
-    out = subprocess.run(["git", "-C", repo, "grep", "-h", "-I", "-e", "0x", "--", "source", "docs", "tools",
-                          *(":!" + path for path in GENERATED)],
-                         capture_output=True, text=True, check=True).stdout
-    return out
+    result = subprocess.run(["git", "-C", repo, "grep", "-h", "-I", "-e", "0x", "--", "source", "docs", "tools",
+                             *(":!" + path for path in NOT_CITATIONS)],
+                            capture_output=True, text=True)
+    if result.returncode not in (0, 1):  # 1: nothing matched
+        raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
+    return result.stdout
 
 
 def citations_by_file(repo: str) -> dict[str, tuple[set[int], set[int]]]:
     """Per tracked file (checkout-relative, '/' separated): the Mac addresses it cites, and the short code-offset
     candidates of research notes and lanes."""
-    out = subprocess.run(["git", "-C", repo, "grep", "-I", "--full-name", "-e", "0x", "--", "source", "docs", "tools",
-                          *(":!" + path for path in GENERATED)],
-                         capture_output=True, text=True, check=True).stdout
+    result = subprocess.run(["git", "-C", repo, "grep", "-I", "--full-name", "-e", "0x", "--", "source", "docs", "tools",
+                             *(":!" + path for path in NOT_CITATIONS)],
+                            capture_output=True, text=True)
+    if result.returncode not in (0, 1):  # 1: nothing matched
+        raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
+    out = result.stdout
     found: dict[str, tuple[set[int], set[int]]] = {}
     for line in out.splitlines():
         path, _, text = line.partition(":")
@@ -113,7 +120,7 @@ def repository_words(repo: str, names: list[str]) -> set[str]:
     if not names:
         return set()
     out = subprocess.run(["git", "-C", repo, "grep", "-h", "-o", "-w", "-F", *sum((["-e", n] for n in names), []),
-                          "--", "source", "docs", "tools", *(":!" + path for path in GENERATED)],
+                          "--", "source", "docs", "tools", *(":!" + path for path in NOT_CITATIONS)],
                          capture_output=True, text=True).stdout
     return set(out.split())
 

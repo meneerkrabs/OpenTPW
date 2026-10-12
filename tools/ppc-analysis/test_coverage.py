@@ -52,13 +52,28 @@ class RepositoryTextTests(unittest.TestCase):
             with open(os.path.join(repo, "docs", "reverse", "PATH-plan.md"), "w") as f:
                 f.write("LayLine `0x84ea4`, flag data:0x84b2c, field +0x2d8\n")
             with open(os.path.join(repo, "docs", "b.md"), "w") as f:
-                f.write("not code: 0x84ea4\n")
+                f.write("outside the notes: 0x84ea4\n")
             subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
             self.assertEqual(coverage.citations_by_file(repo),
                              {"docs/reverse/PATH-plan.md": (set(), {coverage.MAC_BASE + 0x84EA4})}, "b.md has no full address")
 
 
+    def test_the_area_configuration_is_not_a_citation(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as repo:
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            os.makedirs(os.path.join(repo, "tools", "ppc-analysis"))
+            with open(os.path.join(repo, "tools", "ppc-analysis", "areas.json"), "w") as f:
+                f.write('{"functions": {"0x10F1E418": "text"}}\n')
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            self.assertEqual(coverage.citations_by_file(repo), {})
+            self.assertEqual(coverage.cited_addresses(coverage.repository_text(repo)), set())
+
+
 class ShortOffsetTests(unittest.TestCase):
+    def test_explicit_code_offsets_are_read_everywhere(self):
+        self.assertEqual(coverage.cited_addresses("see code:0x1c3fbc, not data:0x1c3fbc"), {coverage.MAC_BASE + 0x1C3FBC})
+
     def test_short_offsets_skip_data_and_structure_offsets(self):
         text = "`0x84ea4` and 0x1c22c4; data:0x84b04, +0x2d8, TOC -0x6dd0, 0x7fffff, 0x12345678"
         self.assertEqual(coverage.short_offsets(text), {coverage.MAC_BASE + 0x84EA4, coverage.MAC_BASE + 0x1C22C4})

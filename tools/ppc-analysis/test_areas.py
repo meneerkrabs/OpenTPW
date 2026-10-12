@@ -76,6 +76,23 @@ class LabelTests(unittest.TestCase):
         self.assertEqual([area for area, _ in labels], ["guests", "guests", "guests", areas.UNKNOWN])
         self.assertEqual(labels[1][1], "propagated")
 
+    def test_a_propagated_label_follows_the_majority_once_more_callers_are_labelled(self):
+        functions = [
+            facts(0x10F00200, strings=["window"]),          # 0: interface
+            facts(0x10F00300, strings=["peep"]),            # 1: guests
+            facts(0x10F00400, callers=[1]),                 # 2: guests in round 1
+            facts(0x10F00500, callers=[1]),                 # 3: guests in round 1
+            facts(0x10F00600, callers=[0, 2, 3]),           # 4: interface 1:0 in round 1, guests 2:1 in round 2
+        ]
+        labels, _ = self.labeller.label(functions)
+        self.assertEqual(labels[4], ("guests", "propagated"))
+
+    def test_shipped_class_rules_leave_application_classes_to_other_evidence(self):
+        with open(areas.CONFIG, encoding="utf-8") as handle:
+            labeller = areas.Labeller(json.load(handle))
+        self.assertEqual(labeller.direct(facts(0x10F00200, classes=["ThemeParkWorld"]))[1], "unknown")
+        self.assertEqual(labeller.direct(facts(0x10F00200, classes=["SamsUtilities::URectangleMac"]))[0], "platform")
+
     def test_majority_ties_are_deterministic(self):
         self.assertEqual(areas.majority(["paths", "guests"]), "guests")
         self.assertIsNone(areas.majority([]))

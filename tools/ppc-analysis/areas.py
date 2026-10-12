@@ -143,16 +143,16 @@ class Labeller:
             area, level, conflict = self.direct(facts)
             labels.append((area, level))
             conflicts += conflict
-        # Callers to callees only: a helper takes the area of the code that uses it, never the reverse.
+        # Callers to callees only: a helper takes the area of the code that uses it, never the reverse. Every
+        # round recomputes all propagated labels from the previous round's, so a helper follows the majority
+        # of its callers once they are labelled; the round limit bounds how far a label travels.
+        undecided = [index for index, (area, _) in enumerate(labels) if area is None]
         for _ in range(PROPAGATION_ROUNDS):
             updates = {}
-            for index, facts in enumerate(functions):
-                if labels[index][0] is not None:
-                    continue
-                area = majority([labels[caller][0] for caller in facts.callers if labels[caller][0] is not None])
-                if area:
-                    updates[index] = (area, "propagated")
-            if not updates:
+            for index in undecided:
+                area = majority([labels[caller][0] for caller in functions[index].callers if labels[caller][0] is not None])
+                updates[index] = (area, "propagated") if area else (None, "unknown")
+            if all(labels[index] == value for index, value in updates.items()):
                 break
             for index, value in updates.items():
                 labels[index] = value

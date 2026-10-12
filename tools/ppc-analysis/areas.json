@@ -124,7 +124,7 @@
     ["^(Avoid_|Seek$|Separation$|Follow_Path$|Arrival$|Repel_Obstacle$)", "guests"],
     ["^(CMapChunkHandler|CIndividualChunkHandler|CMapLinkBase)$", "save & load"],
     ["^(LbTimeClockTickFunction|timeGetTimeClockTickFunction)$", "simulation core"],
-    [".", "platform"]
+    ["^(SamsUtilities::|bfl::|ThemeParkWorld::CdDialog$|std::)", "platform"]
   ],
   "libraries": [
     ["^sound shared$", "audio & video"],
@@ -158,6 +158,7 @@
     "QUEUE": "paths & construction",
     "BLUEPRINT": "paths & construction",
     "WALK": "guests",
+    "ARRIVAL": "guests",
     "HEADS": "guests",
     "ECON": "economy & research",
     "SAVE": "save & load",

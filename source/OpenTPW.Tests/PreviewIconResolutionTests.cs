@@ -32,6 +32,31 @@ public class PreviewIconResolutionTests
 	}
 
 	[TestMethod]
+	public void DistinctUsedMaterialsKeepTheirOwnTexturesAcrossRotations()
+	{
+		var model = Quad();
+		var mesh = model.Meshes.Single();
+		mesh.Materials = mesh.Materials.Append( new ModelFile.MaterialData { Name = "tex_b", TextureIndex = 0 } ).ToArray();
+		var vertex = mesh.Vertices[mesh.Indices[3]];
+		var uv = mesh.TexCoords[mesh.Indices[3]];
+		vertex.TextureIndex = 1;
+		mesh.Indices[3] = (uint)mesh.Vertices.Length;
+		mesh.Vertices = mesh.Vertices.Append( vertex ).ToArray();
+		mesh.TexCoords = mesh.TexCoords.Append( uv ).ToArray();
+		var calls = new System.Collections.Generic.List<string>();
+		var icon = new PreviewIcon( model, name => { calls.Add( name ); return "image/" + name; } );
+		CollectionAssert.AreEquivalent( new[] { "tex_a", "tex_b" }, calls );
+		foreach ( var yaw in new[] { 0f, 0.5f, 1f } )
+		{
+			var batch = new UiBatch();
+			icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), yaw );
+			CollectionAssert.AreEquivalent( new[] { "image/tex_a", "image/tex_b" }, batch.Draws.Select( draw => draw.Texture.ImagePath ).ToArray() );
+			Assert.IsTrue( batch.Draws.All( draw => draw.Vertices.Count == 3 ) );
+		}
+		Assert.AreEqual( 2, calls.Count );
+	}
+
+	[TestMethod]
 	public void RuntimeMaterialKeepsPriorityOverImageResolution()
 	{
 		var calls = 0;

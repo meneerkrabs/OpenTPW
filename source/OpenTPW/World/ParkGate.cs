@@ -50,30 +50,37 @@ public sealed class ParkGate
 	private readonly Func<IEnumerable<OriginalObjectRuntime>> attractions;
 	private readonly GuestSimulation? guests;
 	private readonly Func<IEnumerable<StaffMember>>? staff;
+	private readonly Func<OriginalObjectRuntime, ParkObjectState?>? economyOf;
 	private long lastObservedTurn;
 
 	/// <param name="gate">The level's entrance gate runtime (its <c>Gates</c> fixed item), or null when the level has none.</param>
 	/// <param name="attractions">The park's placed objects; those guests may be offered take the open/close walk.</param>
 	/// <param name="guests">The park's visitors (the close census); null counts nobody.</param>
 	/// <param name="staff">The park's live staff (the retry's outside-staff guard, kinds 4–8 of the original).</param>
-	public ParkGate( ParkEconomy economy, Func<OriginalObjectRuntime?> gate, Func<IEnumerable<OriginalObjectRuntime>> attractions, GuestSimulation? guests = null, Func<IEnumerable<StaffMember>>? staff = null )
+	/// <param name="economyOf">The economy record of a placed object (its breakdown and pending upgrade feed <see cref="MayOpen"/>), or null.</param>
+	public ParkGate( ParkEconomy economy, Func<OriginalObjectRuntime?> gate, Func<IEnumerable<OriginalObjectRuntime>> attractions, GuestSimulation? guests = null, Func<IEnumerable<StaffMember>>? staff = null,
+		Func<OriginalObjectRuntime, ParkObjectState?>? economyOf = null )
 	{
 		this.economy = economy;
 		this.gate = gate;
 		this.attractions = attractions;
 		this.guests = guests;
 		this.staff = staff;
+		this.economyOf = economyOf;
 		lastObservedTurn = economy.Turn;
 	}
 
 	/// <summary>The gate of a running level: its <c>Gates</c> fixed item, every placed object and its separately owned prototype ride.</summary>
 	/// <param name="prototype">Reads the current prototype runtime when the door moves, including a prototype placed after gate setup.</param>
-	public static ParkGate ForLevel( ParkEconomy economy, ParkObjects objects, GuestSimulation? guests = null, Func<IEnumerable<StaffMember>>? staff = null, Func<OriginalObjectRuntime?>? prototype = null )
+	/// <param name="economyOf">The economy record of a placed object or the prototype ride, or null.</param>
+	public static ParkGate ForLevel( ParkEconomy economy, ParkObjects objects, GuestSimulation? guests = null, Func<IEnumerable<StaffMember>>? staff = null, Func<OriginalObjectRuntime?>? prototype = null,
+		Func<OriginalObjectRuntime, ParkObjectState?>? economyOf = null )
 		=> new( economy,
 			() => objects.Objects.FirstOrDefault( item => item.Entry.SettingsName.Equals( "Gates", StringComparison.OrdinalIgnoreCase ) )?.Runtime,
 			() => WithPrototype( objects.Objects.Select( item => item.Runtime ), prototype?.Invoke() ),
 			guests,
-			staff );
+			staff,
+			economyOf );
 
 	private static IEnumerable<OriginalObjectRuntime> WithPrototype( IEnumerable<OriginalObjectRuntime> placed, OriginalObjectRuntime? prototype )
 	{
@@ -203,11 +210,20 @@ public sealed class ParkGate
 	internal static bool CountsCellType( byte type ) => type is 0 or 1 or 3 or 9 or 10;
 
 	/// <summary>
-	/// Whether a closed attraction may be opened again — the original's <c>FUN_004df290</c>: not broken down,
-	/// condemned or waiting for an upgrade, no mechanic called, and the back of its queue still connected to a path.
+	/// Whether a closed attraction may be opened again: the original's <c>0xde654</c> (PC <c>FUN_004df290</c>), the guard of the door's opening
+	/// walk and of the open buttons (ORACLE.md F27, ECON-049). It reads the ride's state: not broken down, condemned or upgrading, no maintenance
+	/// flag, the back of its queue connected to a path, and a coaster with a complete circuit.
 	/// </summary>
-	// [APPROX:ECON-049] only the broken-down guard (VAR_BROKEN) is modelled; the upgrade/condemned states and the back-of-queue link test (PC FUN_004de4a0) are not — evidence needed: those ride states in the original
-	private static bool MayOpen( OriginalObjectRuntime item ) => item.GetVariableByName( nameof( RideVariables.VAR_BROKEN ) ) == 0;
+	// [BIN:STP-PPC:0x100DE654 reopen guard] state 1, 4 and 2 (the script's VAR_BROKEN or the economy's breakdown; a purchased upgrade not yet installed), maintenance flag +96, back of the queue 0xdd744, coaster circuit 0x45eac; executed by the oracle target ride-may-open
+	// [APPROX:ECON-049] the maintenance flag (the original's player request, +96) and the back-of-queue link test (0xdd744, PC FUN_004de4a0) are not modelled: OpenTPW has no maintenance button and takes the queue as connected — evidence needed: the callers of 0xdd744 and the cell test it makes
+	internal bool MayOpen( OriginalObjectRuntime item )
+	{
+		var record = economyOf?.Invoke( item );
+		var state = item.GetVariable( RideVariables.VAR_BROKEN ) != 0 || record is { IsBrokenDown: true } ? RideObjectStates.BrokenDown
+			: record is { } && record.PendingLevel > record.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
+		var coaster = item.Coaster != null;
+		return RideOpening.MayOpen( state, maintenanceFlag: false, queueConnected: true, coaster ? RideOpening.CoasterTrackType : 0, coasterComplete: !coaster || item.Coaster!.IsOperational );
+	}
 
 	/// <summary>
 	/// The gate's own-format state for a park save: the park turn whose retry crossing was last observed.

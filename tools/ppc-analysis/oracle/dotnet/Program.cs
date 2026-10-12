@@ -51,6 +51,9 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["guest_start"] = GuestStartHook,
 	["shop_sale_meters"] = ShopSaleMeters,
 	["guest_leaves"] = GuestLeaves,
+	["ride_may_open"] = RideMayOpen,
+	["ride_repair"] = RideRepairOutcome,
+	["ride_breakdown_update"] = RideBreakdownUpdate,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -713,6 +716,46 @@ static JsonNode? ShopSaleMeters( JsonObject a )
 // The leaving test of the state-6 handler (0xebdfc, ORACLE F26): GuestLifecycle.ShouldLeave on the happiness meter, the exit counter and the park-closed word.
 static JsonNode? GuestLeaves( JsonObject a ) =>
 	JsonValue.Create( GuestLifecycle.ShouldLeave( BitConverter.Int32BitsToSingle( (int)(uint)a["happy_bits"]! ), (int)a["exit"]!, (int)a["closing"]! != 0 ) );
+
+// 0xde654 (ORACLE F27): RideOpening.MayOpen, the guard of ParkGate.MayOpen, for the ride's state word, the maintenance flag, the back of the
+// queue (a chosen word on both sides) and the track type with the coaster's circuit.
+static JsonNode? RideMayOpen( JsonObject a ) =>
+	JsonValue.Create( RideOpening.MayOpen( (int)a["state"]!, (bool)a["maintenance"]!, (bool)a["queue"]!, (int)a["track"]!, (bool)a["coaster"]! ) ? 1 : 0 );
+
+// 0xdef2c (ORACLE F27): what a repair writes into the wear gauge (RideRepair.FullGauge, as single bits) and whether the ride is open afterwards
+// (RideRepair.OpensAfterRepair, which Level.OpenAfterRepair applies). The other fields of the routine's result have no C# counterpart here.
+static JsonNode? RideRepairOutcome( JsonObject a ) => new JsonObject
+{
+	["gauge_bits"] = (uint)BitConverter.SingleToInt32Bits( RideRepair.FullGauge ),
+	["open"] = RideRepair.OpensAfterRepair( (int)a["track"]!, (bool)a["coaster"]! ) ? 1 : 0,
+};
+
+// The breakdown check of the ride update (0xe077c from 0xe0800, ORACLE F27): RideBreakdownRules in the routine's order. The wear step is the
+// call "wear", the announcement 0xe09f4 is "announce" (VAR_BREAKSTAT = 1) and the relief test 0xe0910 is "worn" (VAR_WORN = 1); the life
+// gauge comes back as single bits.
+static JsonNode? RideBreakdownUpdate( JsonObject a )
+{
+	var state = (int)a["state"]!;
+	var relief = (bool)a["relief"]!;
+	var life = BitConverter.Int32BitsToSingle( (int)(uint)a["life_bits"]! );
+	var repair = BitConverter.Int32BitsToSingle( (int)(uint)a["repair_bits"]! );
+	var calls = new JsonArray();
+	var after = life;
+	if ( !RideBreakdownRules.SkipsUpdate( state ) )
+	{
+		if ( RideBreakdownRules.RunsWear( state, (bool)a["open"]!, (long)(uint)a["tick"]! ) )
+		{
+			calls.Add( "wear" );
+			if ( RideBreakdownRules.BreaksDown( relief, (int)a["breakstat"]!, life, repair ) )
+			{
+				after = RideBreakdownRules.LifeAfterBreakdown( life );
+				calls.Add( "announce" );
+			}
+		}
+		if ( QueueJoinRules.ReliefFailed( relief, repair ) )
+			calls.Add( "worn" );
+	}
+	return new JsonObject { ["calls"] = calls, ["life_bits"] = (uint)BitConverter.SingleToInt32Bits( after ) };
 
 sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStatistics
 {

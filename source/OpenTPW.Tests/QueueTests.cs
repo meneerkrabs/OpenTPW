@@ -956,7 +956,8 @@ public class QueueTests
 	[TestMethod]
 	public void BrokenRidesAreNotChosenJoinedOrAdmitted()
 	{
-		// Admission: a broken ride does not call its ready head (APPROX:QUEUE-019).
+		// Admission: the ride update runs the admission on the turn it notices the breakdown (0xe1864 calls 0xe1404 before it reads VAR_BROKEN),
+		// then SetState(1) dismisses the head it has just called, zeroes the pending visitor and writes VAR_RIDECLOSED (ORACLE.md F27).
 		var (ride, script, host) = CreateAdmission();
 		Assert.IsTrue( ride.TryJoinQueue( 1 ) );
 		host.AtFront.Add( 1 );
@@ -964,11 +965,18 @@ public class QueueTests
 		var checks = 0;
 		ride.AdmissionChecked += ( _, _ ) => checks++;
 		NextTurn( ride, host );
-		Assert.AreEqual( (0, 0), (checks, ride.CalledGuest), "no admission evaluation while broken" );
-		CollectionAssert.AreEqual( new[] { "away 1" }, host.Events, "the ready head is dismissed instead (F15)" );
+		Assert.AreEqual( (1, 0), (checks, ride.CalledGuest), "one admission evaluation on the breakdown turn, and no pending visitor after it" );
+		Assert.AreEqual( 1, script[RideVariables.VAR_RIDECLOSED], "SetState(1) writes VAR_RIDECLOSED = 1" );
+		CollectionAssert.AreEqual( new[] { "call 1", "away 1" }, host.Events, "the head was called, then dismissed by the state change (F15, F27)" );
 		// Joining: a broken ride refuses like a closed one (APPROX:QUEUE-018).
 		Assert.AreEqual( QueueJoinResult.Closed, ride.JoinQueue( 2 ) );
+		var checksAfterBreakdown = checks;
+		NextTurn( ride, host );
+		NextTurn( ride, host );
+		Assert.AreEqual( checksAfterBreakdown, checks, "no admission evaluation on the turns after it: the ride is in state 1" );
+		// Repaired and opened again (the callers of SetState(0)): the head is called again.
 		script[RideVariables.VAR_BROKEN] = 0;
+		script[RideVariables.VAR_RIDECLOSED] = 0;
 		Assert.IsTrue( ride.TryJoinQueue( 1 ) );
 		host.AtFront.Add( 1 );
 		Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, "repaired: the head is called again" );

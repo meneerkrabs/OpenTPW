@@ -26,7 +26,7 @@ public static class QueueApproximations
 		("QUEUE-016", "rides evaluate admission and queued guests run state 11 once per park turn"),
 		("QUEUE-017", "guests do not choose a broken attraction (VAR_BROKEN ≠ 0)"),
 		("QUEUE-018", "a broken attraction refuses joins as if closed"),
-		("QUEUE-019", "a breakdown is read from VAR_BROKEN ≠ 0 at once: the broken ride skips admission and dismisses its queue head each park turn; the original admits on the turn it notices, SetState(1) also writes VAR_RIDECLOSED and the open word, and the callers that reopen it are not traced"),
+		("QUEUE-019", "OpenTPW keeps no ride state word: a ride is in state 0 while it is open and in state 1 while it is closed and VAR_BROKEN ≠ 0; a queue that is still there when the script clears VAR_BROKEN is turned away at once, the original's ride stays in state 1 and keeps dismissing its head until a SetState(0) caller reopens it, and state 4 (life gauge 0) is not told apart"),
 		("QUEUE-020", "BOUNCE stores one script-clock reading as both the deadline's base and the slot's start; the original reads its millisecond clock 0x10e844 twice, so its start can lie 1 ms after the deadline's base"),
 		("QUEUE-021", "a left click on a queue cell starts the queue tool at that ride's back cell (help 444 says click to edit); the click handler is not traced"),
 		("QUEUE-022", "a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object; every original object has InitSpeed and InitDuration) is read at its design speed and duration, where the original would divide 0 by 0 and score 0"),

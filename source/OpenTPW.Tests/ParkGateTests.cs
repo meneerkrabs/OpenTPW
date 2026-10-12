@@ -181,6 +181,37 @@ public class ParkGateTests
 	}
 
 	[TestMethod]
+	public void OpeningTheParkOnlyReopensTheRidesTheGuardAllows()
+	{
+		// ORACLE.md F27 (ECON-049): 0xde654 reads the ride's state (broken down, upgrading, condemned) and a coaster's circuit, not VAR_BROKEN alone.
+		UseOriginalData();
+		var (_, gates, totem, economy) = Park();
+		var record = economy.RegisterExisting( 1110 );
+		var gate = new ParkGate( economy, () => gates, () => new[] { totem }, economyOf: runtime => runtime == totem ? record : null );
+		economy.OpenPark();
+		void Cycle()
+		{
+			gate.DoorMoved( closed: true );
+			Assert.IsFalse( totem.IsOpen );
+			gate.DoorMoved( closed: false );
+		}
+		record.IsBrokenDown = true;
+		Cycle();
+		Assert.IsFalse( totem.IsOpen, "a ride the economy has broken down stays closed when the door opens" );
+		record.IsBrokenDown = false;
+		record.PendingLevel = record.Level + 1;
+		Cycle();
+		Assert.IsFalse( totem.IsOpen, "a ride with an upgrade on its way (state 2) stays closed" );
+		record.PendingLevel = 0;
+		totem.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
+		Cycle();
+		Assert.IsFalse( totem.IsOpen, "the script's VAR_BROKEN still blocks" );
+		totem.SetVariable( nameof( RideVariables.VAR_BROKEN ), 0 );
+		gate.DoorMoved( closed: false );
+		Assert.IsTrue( totem.IsOpen, "repaired: the door opens it again" );
+	}
+
+	[TestMethod]
 	public void AttractionWalkDeduplicatesRuntimeAliases()
 	{
 		UseOriginalData();

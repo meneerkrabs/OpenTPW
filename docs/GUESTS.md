@@ -505,8 +505,8 @@ and 4) removes the head from the queue and sends it away (`0xdcebc`, `0xee804`: 
 thought, happiness down by `PeepInfo.MediumHappinessChange`, back to wandering). A head the script
 has already taken is forced aboard instead. The guests behind keep their places and wait, and a
 repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new joins: walking guests do not choose the ride
-(QUEUE-017) and joins are refused as if it were closed (QUEUE-018), and admission does not call
-the head (QUEUE-019); these three are approximations. Queued guests no longer leave "feeling sick" for
+(QUEUE-017) and joins are refused as if it were closed (QUEUE-018); these two are approximations. The ride update runs the admission once on the turn it
+notices the breakdown and then enters state 1, which writes VAR_RIDECLOSED = 1 and the open word 0 (ORACLE.md F27); admission does not call the head afterwards. Queued guests no longer leave "feeling sick" for
 a breakdown: state 11's exit at `0xed424` is `0xdfe34`, a relief object (toilet) whose wear gauge
 is below 25. OpenTPW wears only rides, so a toilet's gauge never falls and the exit does not fire
 in practice (QUEUE-008).
@@ -574,7 +574,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-016 | Admission and state 11 run once per park turn | Live-list eligibility of objects and guests |
 | QUEUE-017 | Guests do not choose a broken attraction | The state-6 attraction choice and its test of ride `+408` |
 | QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |
-| QUEUE-019 | A breakdown is read from `VAR_BROKEN ≠ 0` at once: the broken ride skips admission and dismisses its queue head each park turn. The original admits on the turn it notices, `SetState(1)` also writes `VAR_RIDECLOSED` and the open word, and what reopens it is not traced | The callers of `SetState(0)` (`0xdad24`, `0xde8e4`, `0xdf4d4`, `0xdf90c`, `0xdfb08`) |
+| QUEUE-019 | OpenTPW keeps no ride state word: a ride is in state 0 while it is open and in state 1 while it is closed and `VAR_BROKEN ≠ 0` (the admission runs on the turn it is noticed, `SetState(1)` writes `VAR_RIDECLOSED` and the open word, F27); a queue still there when the script clears `VAR_BROKEN` is turned away at once, where the original's ride stays in state 1 and keeps dismissing until a `SetState(0)` caller reopens it | A trace of when the script clears `VAR_BROKEN` |
 | QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; the original calls its millisecond clock twice (`0xadfb0`, `0xadfcc`), so its start can lie 1 ms later | None for the reading; OpenTPW's stepped script clock cannot tick between the two calls |
 | QUEUE-021 | A left click on a queue cell (help 444, "Left-click to edit this queue") starts the queue tool at that ride's back cell; the click handler is not traced | None: `Level.EditQueueAt` follows the help text and `EnterQueueTool` |
 | QUEUE-022 | A bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object; every original object has `InitSpeed` and `InitDuration`) is read at its design speed and duration, where the original would divide 0 by 0 and score 0 | None |

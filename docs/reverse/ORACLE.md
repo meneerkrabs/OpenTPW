@@ -153,6 +153,10 @@ Mutation checks (`test_oracle.py`):
 | `staff-training-split` | `0xfc1c4` (the month-end training split), the list walkers `0x10507c` / `0x1050a4` / `0xfa9a4`, `0xf3588` (train one member), `0x108424` / `0x1082b4` (bank and park things of the game) and the debit `0xcbfdc` with its statistics | `0xb678` assertion (a zero condition fails the run) and the debug print `0x5fbcc` (logged) | 507 | **F17**: 358 differ from the former rule (the plan). **Agree** 507/507 with the routine reading | `ParkStaff.Train` through `staff_training`: **agree** (358 differed before the fix) |
 | `ride-repair-duration` | `0xd9c0c` (the mechanic's repair-state entry), `0xdfe0c`/`0xdfe88`/`0xdfe90` (ride state 1, maintenance word `+96`, state 2), `0xd2290` (sub-state setter) | `0xfa9a4` thing id, `0xdfb94` the ride's mechanic id, `0xe6454` arrival state (chosen), `0xdc320` type record (the word at `+508 + 64 · level` chosen), `0xd99ac` release (recorded), `0xb678` assertion and `0x5fbcc` log (recorded); the balance block word `+1004 + 8 · grade` is `WorkDuration` | 529 jobs | **F19** (fixed in C#): 396 differ from the old claim (a flat `WorkDuration`, `plan`; the same without the upgrade factor, `flat-repair`, differs on 352). The routine reading **agrees** 529/529 | `ParkEconomy.RepairTimer` through `repair_timer`: **agree** 529/529 |
 | `ride-repair-arrival` | the same | the same | 515 | **F19**: the flow (another mechanic on the ride: log and release; still walking: let go; no broken, upgrade or maintenance state: log and release; else timer, state 13, sub-state 18) **agrees** 515/515 | no hook (CSHARP_PENDING): OpenTPW starts a mechanic at once and has no walk or release |
+| `ride-may-open` | `0xde654` (the reopening guard) with the state tests `0xdfe0c` / `0xdfe20` / `0xdfe88` / `0xdfe90` and `0xe2fe4` (track type 3) | `0xdd744` back of the queue (chosen word), `0x45eac` coaster circuit (chosen word), `0x118018` type record (`+156` chosen, registry and type id checked), `0xb678` | 517 | **F27** (fixed in C#): the plan is now the routine reading, **agree** 517/517; the former rule (`VAR_BROKEN == 0`) differs on 264 | `RideOpening.MayOpen` through `ride_may_open`: **agree** 517/517 |
+| `ride-set-state` | `0xe0c3c` (`CObject::SetState`) | the script accessor `0xb5758`, `0xb5be0` (VAR_LETMEON) and the writer `0xb57d4` (logged), `0xdcebc` remove from queue, `0xee804` dismiss, `0xeda04` force aboard, `0x52aa8` effect, the closing message constructors `0x116410` / `0x1163e8` / `0x116438` and queue push `0x11688c`, `0xfa9a4`, `0x5fbcc`, `0xb678`; the message list global (TOC −30100) is non-null so `0x1c4794` is not reached | 509 | **F27**: **agree** 509/509 with the routine reading; "entering a state only stores it" differs on 248 | no hook (CSHARP_PENDING): OpenTPW has no state word; `RideVisitorBridge.EnterBrokenState` ports states 1 and 4 (`QueueTests`) |
+| `ride-repair` | `0xdef2c`, the branch of a ride that is not in state 2, with `0xe0c3c` (state 0), `0xdfe0c`..`0xdfe90` and `0xe2fe4` | the script calls as above (variables 7 and 4 read; 8, 4 and 6 written), `0x52d98` / `0x52aa8` effects, `0xdd744` and `0x45eac` (chosen words), `0x118018`, `0xfa9a4`, `0x5fbcc` (the non-openable warning is counted), `0xb678`. The constant behind TOC −11016 is checked to be 100.0 | 512 | **F27**: **agree** 512/512 with the routine reading; "a repair only restores the gauge" differs on 423 | `RideRepair.FullGauge` / `OpensAfterRepair` through `ride_repair` (gauge and open word): **agree** 512/512 |
+| `ride-breakdown-update` | the fragment `0xe0800..0xe0970` of the ride update `0xe077c` (state dispatch, breakdown check, relief test) with `0xe09f4` (announce) and `0xe0a40` (worn) | `0xdec2c` wear step (recorded), `0xb5758`, `0xb5be0` (VAR_BREAKSTAT chosen), `0xb57d4` (logged), `0x5fbcc`. The world turn (`+0x1da70c`) is chosen | 530 | **F27**: **agree** 530/530 with the routine reading; the former `UpdateRides` rule differs on 280 | `RideBreakdownRules` through `ride_breakdown_update`: **agree** 530/530 |
 | `object-scrap-value` | `0xe25e8` (the scrap value getter), `0xe2424` (the age percentage), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic: percentages at `+392 + 64 · level + 4 · year`, costs at `+440 + 64 · level`; registry checked), `0xe4394` the clock stamp (turn × 15000 / 4 × 10^7 as 100 ns units, the value `0xdad90` stores to thing `+20`) and the glue `0x1c5c64` (the signed 64-bit stamp subtraction, as at `0xdc520`). Thing: type `+14`, stamp `+20`, level byte `+76`, use word `+412`. No thing bought after the current turn | 572 | **F21** (fixed in C#): the old rule (catalogue costs summed through the level, no 100 %) differs on 280. The routine reading **agrees** 572/572 | `ParkEconomy.ScrapValue` through `object_scrap_value`: **agree** 572/572 (the use count passed as `ParkObjectState.TimesUsed`) |
 | `staff-vitals` | `0xf44c0` (moving step), `0xf459c` (working step), `0xf3d8c` (rest step), `0xf448c` (energy byte below `RestLevel`) | `0xf4d00` (frees the rest area), the role actions `0xd99ac`, `0xd5a3c`, `0xd2b04`, `0xd4b74`, `0xf0380` (logged), `0xb678`. The settings block (`RestLevel`, the grade's recuperation rates) is written in the data section | 526 | **F22**: 427 differ from the old claim (happiness fixed at 100, no energy, no rest). **Agree** 526/526 with the routine reading | `StaffVitals.Walk`, `Work`, `Rest`, `IsBelowRestLevel` through `staff_vitals`: **agree** 526/526 |
 | `staff-rest-seek` | the tail of `0xf4900` (`0xf4a60..0xf4c04`) and the world LCG `0x105328` | `0xfb54c` thought, `0xf4c18` navigation (a rest area found or not), `0xf311c` state change, `0x5fbcc` log | 509 | **F22**: 81 differ from the old claim. **Agree** 509/509 with the routine reading (energy byte against `RestLevel`, the thoughts, the one-in-sixteen happiness hit with the world draw) | `StaffVitals.SeekRest` through `staff_rest_seek` (the world draw is passed in): **agree** 509/509 |
@@ -257,6 +261,10 @@ The C# comparisons use these seams:
   `FixedStepClock.Advance` exactly as `Level.Update` feeds it (`Time.Delta × SimulationTimeScale`), and the turns so far are read after each frame.
   The oracle's loop runs a turn when the scaled time passes 248 j − 31 ms, OpenTPW at the first 60 Hz tick of 248 j ms, so the comparison is a
   window: the C# count is never ahead and at most one turn behind at every frame (`cadence_frames_equal`).
+
+- `RideOpening.MayOpen` (`ride_may_open`), `RideRepair.FullGauge` and `RideRepair.OpensAfterRepair` (`ride_repair`) and `RideBreakdownRules` in the routine's order
+  (`ride_breakdown_update`: the wear step is a recorded call, the announcement and the worn flag are the VAR_BREAKSTAT and VAR_WORN writes, the life gauge comes back as
+  single bits). `ParkGate.MayOpen`, `ParkEconomy.UpdateRides` and `Level.OpenAfterRepair` apply them (`RideStateRulesTests`, `ParkGateTests`).
 
 The pricing domain is the free byte clear, `game+36 == 0` and bank `+276 ≠ 0`. Old 1 → new 3
 belongs to `path-can-change`.
@@ -773,7 +781,7 @@ What this does to the queue (executed, `queue-ride-update`, F15 fixed in C#):
 gauge as a single, truncated, low byte below 25), and a broken ride dismisses its head each park turn (`RideVisitorBridge.DismissHead`,
 `GuestSimulation` `OnVisitorDismissed`: medium happiness loss, no thought). OpenTPW wears only rides, so a toilet's gauge never falls and
 the exit does not fire in practice (QUEUE-008); the reading of a breakdown from `VAR_BROKEN` at once (QUEUE-019) and that the C# ride
-does not write VAR_RIDECLOSED or the open word stay approximations. Before → after: the old
+does not write VAR_RIDECLOSED or the open word were approximations that F27 settles (executed `SetState`, the admission on the notice turn, the callers of `SetState(0)`). Before → after: the old
 claim (`IsBroken`) differed from the original on 310 of 521 inputs; `ReliefWornOut` agrees on all 521.
 
 **F16, the join excitement gate (QUEUE-004, `RideVisitorBridge.JoinQueue`).** `queue-join-difference` runs `0xe9a84` with
@@ -1375,6 +1383,56 @@ it — the booth refusal enters on a lane and is exempt, like the original's zer
 what the original does with queued or riding guests at `mParkClosed` is not traced — OpenTPW also pulls guests out of queues and drops `GoingToRide` reservations on closure, or a closed park would strand every guest
 whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the queue's leave level); guests on a ride finish it (GUEST-011);
 the decision cadence (F24); the happiness a guest on a lane or at the booth carries; and the reading that a negative counter never leaves is an observation of the instruction (`beq`), not of a played game.
+
+**F27, ride breakdown, repair and reopening (ECON-049, ECON-024, ECON-023, QUEUE-019; `RideOpening`, `RideBreakdownRules`, `RideRepair`, `ParkGate.MayOpen`).**
+Four targets execute the routines of a ride's life (`ride-may-open`, `ride-breakdown-update`, `ride-set-state`, `ride-repair`). All four agree with the
+routine reading on every input, and each part of the reading is needed (`test_ride_readings_are_sharp`: 16 variants). The ride's state word `+408` takes
+the values 0 idle (the admission runs), 1 broken down, 2 upgrading, 3 not an attraction (the build routine `0xdad24` / `0xdad34` sets 0 for objects with type
+`+46` bit 0x4 and 3 for the others) and 4 condemned. What the original does, in the order a ride lives through it:
+
+1. *Breakdown check, `0xe077c` (`ride-breakdown-update`).* A ride in state 3 or 4 is not updated at all. Otherwise, **except in state 1**, with the open
+   word `+100` not zero and the world turn a multiple of 8, the wear step `0xdec2c` runs and then: a ride that is not a relief object (`+46` bit 0x1) and whose
+   VAR_BREAKSTAT (variable 4) is 0 breaks down when its life gauge `+68` or its wear gauge `+64`, truncated to a byte, is 0. `0xe09f4` ("requested breakdown")
+   writes VAR_BREAKSTAT = 1; when it was the wear gauge that ran out, the life gauge first loses 5 (single precision, clamped to 0..100). There is no random roll.
+   Last, a relief object whose wear gauge byte is below 25 gets VAR_WORN = 1 (state 1 still runs this test; 3 and 4 do not). So **a closed ride (open word 0)
+   neither wears nor breaks down**, state 2 (which clears the open word) neither, and a mechanic at work on a ride in state 0 (a repair of a worn ride) does
+   not stop the update.
+2. *Noticing it, `0xe1864` (QUEUE-019, F15).* In state 0 the ride update runs the admission `0xe1404` **first**, then reads VAR_BROKEN (variable 7) and enters
+   state 1, or 4 when the life gauge byte is 0.
+3. *Entering a state, `0xe0c3c` (`ride-set-state`).* State 0 and 3 only store the word. States 1, 2 and 4 run the head-guest step once (F15), clear the
+   open word `+100` and the pending guest `+104` (the one the admission has just called), write **VAR_RIDECLOSED = 1** (variable 6) and send the effect 1;
+   other values assert and are stored. So the open word and VAR_RIDECLOSED always move together: every writer of one writes the other (`SetState`,
+   close `0xde704`, open `0xde7e4`, maintenance on / off `0xdf674`, upgrade start / end `0xdf928`, repair `0xdef2c`). VAR_BROKEN is the script's own variable: the host
+   only reads it (`0xe1864`, `0xdfed4` for "> 0", signed).
+4. *Who reopens a ride.* A ride leaves state 1, 2 or 4 only through a `SetState(0)` caller: the open routine `0xde7e4` (the park door's walk `0x108f40`, the open
+   buttons and `0xdd6b8`, each behind the guard `0xde654`), maintenance off (`0xdf674`), an upgrade's end (`0xdf928`) and the repair. The guard **`0xde654`**
+   (`ride-may-open`, PC `FUN_004df290`) refuses state 1 (broken down), 4 (condemned) and 2 (upgrading), the maintenance flag `+96`, a back of the queue that no
+   longer joins a path (`0xdd744`, not executed) and a coaster whose circuit is not complete (`0xe2fe4` and `0x45eac`). It never reads VAR_BROKEN: the old rule
+   (`ParkGate.MayOpen`: VAR_BROKEN == 0) differs on 264 of 517 inputs, in both directions (a ride in state 1 whose script variable is back to 0 stays closed; a
+   state-0 ride with VAR_BROKEN ≠ 0 is not refused by the guard).
+5. *What a repair restores, `0xdef2c` (`ride-repair`; the upgrade branch for state 2 is not executed).* The wear gauge `+64` is written **100.0** (the float at TOC −11016,
+   checked in the binary: the "fixed full-condition constant" of the static trace, ECON-024 settled), VAR_WORN is cleared, the mechanic reservation `+90` and the
+   maintenance flag `+96` are cleared, VAR_BREAKSTAT is read and cleared (VAR_BROKEN is read and not used), and then the ride is **opened whatever the guard says**:
+   open word 1, VAR_RIDECLOSED 0, `SetState(0)`. The guard inlined before it still sees the old state, so the repair of a ride in state 1 or 4 logs the warning "opening
+   non-openable ride (non-fatal, can ignore)" five times and opens it anyway. A coaster without a complete circuit is closed again at the end (open word 0, pending guest
+   cleared, VAR_RIDECLOSED 1). The life gauge `+68` is not touched: a condemned ride (life gauge 0) is idle after its repair and breaks down again at its next ride
+   update. The mechanic job `0xd9e04` (static) clears VAR_BREAKSTAT for a ride in state 1 and **waits** while VAR_BROKEN > 0 (the script must clear it first), and repairs a ride
+   in any other state at once; the repair of a worn ride that the player had closed reopens it.
+
+**Fixed in C#** (before → after: `ride-may-open` 264 → 0, `ride-breakdown-update` 280 → 0, `ride-repair` 423 → 0 on the compared fields). `RideOpening.MayOpen` is the guard of
+`ParkGate.MayOpen`: the state comes from the script's VAR_BROKEN or the economy's breakdown flag (1), a purchased upgrade not yet installed (2) and the coaster's circuit;
+`Level` gives the gate the economy record of each object, and the HUD's open button asks the same guard. `ParkEconomy.UpdateRides` applies `RideBreakdownRules`: a broken or
+upgrading or closed ride is skipped (it kept wearing, and a closed ride with an empty gauge broke down in a closed park), a mechanic at work on a ride in state 0 does not stop it.
+`ParkEconomy.FinishJob` writes `RideRepair.FullGauge`, and `Level.OpenAfterRepair` opens the ride on `RideRepaired` (a coaster with an incomplete circuit stays closed).
+`RideVisitorBridge` runs the admission on the turn it first sees VAR_BROKEN and then `EnterBrokenState` (head dismissed, pending visitor withdrawn, VAR_RIDECLOSED = 1), so the ride
+counts as closed from then on. Examples a player would notice: the door opens in the morning while the Totem is broken down in the economy: it stays closed (it reopened before)
+and opens when the mechanic has finished; a ride the player closed and that a mechanic then services opens again; a ride with an empty life gauge stays whole overnight with the park
+closed and breaks at the first update after the door opens (it broke at night before); a ride under a mechanic's preventive repair keeps wearing for the job's duration.
+`ECON-049` keeps only the maintenance button and the queue link test, `ECON-023` only the relief objects and the derived state word.
+
+Still open: the upgrade branch of `0xdef2c` (state 2: the level, the open word and the queue), `0xdd744` and the maintenance flag's player action (`0xdf674` callers `0x1452a8`, `0x147174`:
+UI code not traced), what the script does with VAR_BREAKSTAT (the scripts set VAR_BROKEN themselves: OpenTPW's economy does not write VAR_BREAKSTAT, so a ride that breaks down in the
+economy does not close or stop for guests, `RideBrokeDown` stays an economy event), and state 4 in the bridge. The F19 repair duration and mechanic arrival (`0xd9c0c`) are not part of this finding.
 
 ## 6. Adding a target or a C# hook
 

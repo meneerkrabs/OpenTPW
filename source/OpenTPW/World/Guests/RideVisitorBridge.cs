@@ -740,13 +740,32 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return;
 		lastAdmissionTurn = turn;
 		// [BIN:STP-PPC:0x100E0AEC ride update, states 1, 2 and 4] while the ride is broken (state 1; 4 when condemned) every update removes the head guest from the queue and sends it away (0xdcebc, 0xee804) unless the script has already taken it; the rest wait their turn, so a queue drains one guest per park turn. Static reading (ORACLE.md F15): the dispatch is exercised in the oracle target queue-ride-update
-		// [APPROX:QUEUE-019] a breakdown is read from VAR_BROKEN ≠ 0 at once; the original's ride update first runs the admission (0xe1864 → 0xe1404) on the turn it notices VAR_BROKEN and then SetState(1), which also writes VAR_RIDECLOSED = 1 and clears the open word +100, and only a repair reopens it — evidence needed: the callers that set ride state 0 again (0xdad24, 0xde8e4, 0xdf4d4, 0xdf90c, 0xdfb08), not traced to a player action
+		// [BIN:STP-PPC:0x100E1864 breakdown noticed] in state 0 the ride update runs the admission (0xe1404) first and only then reads VAR_BROKEN and enters state 1 (4 when the life gauge is 0): SetState(1) runs the head step once, zeroes the pending visitor and writes VAR_RIDECLOSED = 1 with the open word 0 (the oracle target ride-set-state executes it, ORACLE.md F27)
+		// [APPROX:QUEUE-019] OpenTPW keeps no ride state word: a ride is in state 0 while it is open and in state 1 while it is closed and VAR_BROKEN ≠ 0; a queue that is still there when the script clears VAR_BROKEN is turned away at once, the original's ride stays in state 1 and keeps dismissing its head until a SetState(0) caller (0xdad24, 0xde8e4 open, 0xdf4d4 repair, 0xdf90c maintenance off, 0xdfb08 upgrade done) reopens it, and state 4 (life gauge 0) is not told apart — evidence needed: none for the callers (executed), a trace of when the script clears VAR_BROKEN
 		if ( IsBroken )
 		{
-			DismissHead();
+			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 )
+			{
+				CheckAdmission( turn );
+				EnterBrokenState();
+			}
+			else
+				DismissHead();
 			return;
 		}
 		CheckAdmission( turn );
+	}
+
+	/// <summary>
+	/// <c>SetState(1)</c> (<c>0xe0ec4</c>): the head-guest step runs once, the pending visitor (ride <c>+104</c>) is zeroised and the open word and
+	/// VAR_RIDECLOSED are written 0 and 1. The ride then counts as closed, so the ride update dismisses one head guest per turn from here on.
+	/// </summary>
+	private void EnterBrokenState()
+	{
+		DismissHead();
+		if ( called != 0 )
+			Withdraw();
+		Set( RideVariables.VAR_RIDECLOSED, 1 );
 	}
 
 	/// <summary>

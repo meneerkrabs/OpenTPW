@@ -323,10 +323,12 @@ blocked in state 1) nor sends them away (step 3 is the toilet predicate). `SetSt
 (`0xe0ec4`) runs the same head step once, logs "Closing...", zeroes the pending visitor `+104`,
 sets script variable 6 (VAR_RIDECLOSED) to 1 and clears the open word `+100`; the `SetState(0)`
 callers that reopen the ride (`0xdad24`, `0xde8e4`, `0xdf4d4`, `0xdf90c`, `0xdfb08`) write
-variable 6 back to 0 and `+100` to 1. Which of them a repair uses is not traced.
+variable 6 back to 0 and `+100` to 1. The repair (`0xdef2c`, executed in the oracle, ORACLE.md F27) uses `0xdf4d4`; the open routine `0xde7e4` (`0xde8e4`), maintenance off (`0xdf90c`) and an
+upgrade's end (`0xdfb08`) are the others.
 
-C# reads the breakdown from `VAR_BROKEN ≠ 0` at once and dismisses the head each park turn
-(`RideVisitorBridge.DismissHead`, QUEUE-019); it does not write VAR_RIDECLOSED or the open word.
+C# runs the admission on the turn it first sees `VAR_BROKEN ≠ 0` and then enters state 1 (`RideVisitorBridge.EnterBrokenState`: head dismissed, pending visitor withdrawn,
+VAR_RIDECLOSED = 1); from then on the ride counts as closed and dismisses the head each park turn (`DismissHead`, QUEUE-019). It keeps no state word, so a queue that is still
+there when the script clears `VAR_BROKEN` is turned away at once.
 
 OpenTPW differences:
 

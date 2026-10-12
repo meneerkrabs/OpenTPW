@@ -302,26 +302,38 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The original ride update (docs/reverse/RIDE-WEAR.md): every 8 turns each ride runs the wear step, which acts on
-	/// every 64th turn, and then the breakdown check.
+	/// The original ride update (docs/reverse/RIDE-WEAR.md, ORACLE.md F27): every 8 turns each ride that is open and not broken down runs the
+	/// wear step, which acts on every 64th turn, and then the breakdown check.
 	/// </summary>
 	private void UpdateRides( long turn )
 	{
 		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride ).ToList() )
 		{
-			// [APPROX:ECON-023] the ride update skips rides in states 1, 3 and 4 (+0x198) and rides with +0x64 == 0, and the breakdown check skips +0x2e bit 0; OpenTPW maps these only to "a mechanic is at work" — evidence needed: the names of those ride states and flags
-			if ( item.MechanicId != 0 )
+			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
+			// [APPROX:ECON-023] the wear step and the breakdown check do not know relief objects (toilets are not simulated, +0x2E bit 0), and the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word — evidence needed: the callers that set state 2 for an upgrade and what feeds toilets' wear
+			var state = ObjectState( item );
+			if ( !RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
 				continue;
 			if ( turn % WearInterval == 0 )
 				Wear( item );
-			// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
-			if ( item.IsBrokenDown || ((int)item.LifeGauge != 0 && (int)item.Repair != 0) )
+			// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken down breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
+			if ( !RideBreakdownRules.BreaksDown( false, 0, (float)item.LifeGauge, (float)item.Repair ) )
 				continue;
-			if ( (int)item.LifeGauge != 0 )
-				item.LifeGauge = Math.Clamp( item.LifeGauge - BreakdownLifeLoss, 0, 100 );
+			item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
 			item.IsBrokenDown = true;
 			Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 		}
+	}
+
+	/// <summary>
+	/// The ride object's state word as far as OpenTPW can tell it (<see cref="RideObjectStates"/>): broken down or condemned (the life gauge
+	/// truncates to a zero byte) when the economy or the ride script reports a breakdown, upgrading while a purchased upgrade is not installed.
+	/// </summary>
+	internal static int ObjectState( ParkObjectState item )
+	{
+		if ( item.IsBrokenDown || item.ScriptBroken )
+			return RideBreakdownRules.GaugeByte( (float)item.LifeGauge ) == 0 ? RideObjectStates.Condemned : RideObjectStates.BrokenDown;
+		return item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 	}
 
 	/// <summary>One original wear step (0x100DEC2C) of a ride whose script reports it running.</summary>
@@ -376,8 +388,8 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		else
 		{
-			// [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100 and clears the worn flag; it does not restore the life gauge
-			item.Repair = 100;
+			// [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100.0 (the float at TOC -11016, ORACLE F27) and clears the worn flag; it does not restore the life gauge. It also opens the ride (the host reopens the ride on RideRepaired)
+			item.Repair = RideRepair.FullGauge;
 			item.IsBrokenDown = false;
 			Raise( ParkEventKind.RideRepaired, 0, item.Id, item.InfoId );
 		}

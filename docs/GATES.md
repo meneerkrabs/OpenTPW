@@ -18,8 +18,8 @@ binary is the checked source. The world field the routine reads is at Mac `world
 `-0x58F0`).
 
 **Opening** (`DoorMoved(closed: false)`): the gate's command variable `VAR_COMMAND` becomes 1, and every
-closed attraction the walk reaches opens again, unless it is broken down (the `VAR_BROKEN` guard, see
-ECON-049 for what is not modelled).
+closed attraction the walk reaches opens again, unless the original's reopening guard `0xde654` refuses it: broken down or
+condemned, an upgrade on its way, or a coaster without a complete circuit (ORACLE.md F27; ECON-049 for what is not modelled).
 
 **Closing** (`DoorMoved(closed: true)`): every attraction the guests may be offered closes at once (thing
 flag `+0x2E` bit 4). The gate is commanded shut (`VAR_COMMAND` 0) only when the gate reports itself open
@@ -45,12 +45,12 @@ The reduced imported guest grid does not yet preserve every original cell type: 
   turned away, one head at a time (the fork's `FUN_004e0450`, `docs/exe/ride-operation.md`, "The closed
   ride"; not reproduced by `ParkGate`).
 - The gate stays open while any guest stands on a counted cell, and shuts only when the park is empty.
-- Opening reopens the attractions, but only those the may-open guard allows (`ECON-049`).
+- Opening reopens the attractions, but only those the may-open guard allows (`0xde654`, ORACLE.md F27: not broken down, condemned or upgrading, a coaster with a complete circuit; `ECON-049`).
 
 ## Approximations
 
-- `ECON-049`: the reopen guard checks only `VAR_BROKEN`. The upgrade and condemned states and the back-of-queue
-  path test (`FUN_004de4a0`) are not modelled.
+- `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test; the maintenance flag (no maintenance button in OpenTPW)
+  and the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) are not modelled.
 - `ECON-050`: the guest-grid import preserves paths, but not all original outside, approach-road and footprint cell types. The census predicate is traced; the imported type provenance is incomplete.
 - The ticket booth closes at once; the original's booth state and the closed-ride queue turn-away are not
   traced here.

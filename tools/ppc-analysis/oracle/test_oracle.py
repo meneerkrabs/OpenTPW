@@ -337,12 +337,38 @@ EXPECTED = {
     ('guest-exit-test', 'plan'): (181, {'happy': 1.0, 'exit': 120, 'closing': 0}),
     ('guest-exit-test', 'routine-reading'): AGREE,
     ('guest-exit-test', 'csharp'): AGREE,
+    # F27 (fixed in C#, ECON-049): 0xde654, the guard of the park door's opening walk and of the open buttons, reads the ride's state word
+    # (not 1 broken down, not 4 condemned, not 2 upgrading), the maintenance flag +96, the back of the queue and a coaster's circuit. The
+    # old rule (ParkGate.MayOpen: the script's VAR_BROKEN == 0) is the pinned "plan-var-broken": 264 of 517 inputs differ.
+    ('ride-may-open', 'plan'): AGREE,
+    ('ride-may-open', 'plan-var-broken'): (264, {'state': 1, 'maintenance': 0, 'queue': 1, 'track': 0, 'coaster': 1, 'broken': 0}),
+    ('ride-may-open', 'routine-reading'): AGREE,
+    ('ride-may-open', 'csharp'): AGREE,
+    # F27 (executed): CObject::SetState 0xe0c3c writes only the state word for 0 and 3; for 1, 2 and 4 it also runs the head-guest step once,
+    # clears the open word +100 and the pending guest +104, writes VAR_RIDECLOSED = 1 and sends the effect 1. Others assert and store.
+    ('ride-set-state', 'plan'): AGREE,
+    ('ride-set-state', 'plan-store-only'): (248, {'state': 1, 'previous': 0, 'head': 5, 'letmeon': 5, 'head_state': 14, 'open': 1, 'pending': 5}),
+    ('ride-set-state', 'routine-reading'): AGREE,
+    # F27 (executed, fixed in C#): a repair (0xdef2c, not an upgrade) writes 100.0 into the wear gauge, clears VAR_WORN, the mechanic
+    # reservation, the maintenance flag and VAR_BREAKSTAT, opens the ride whatever the guard says (VAR_RIDECLOSED 0, open word 1, SetState(0)) and
+    # closes an incomplete coaster again. The life gauge is not touched. The old rule only restored the gauge: 423 of 512 inputs differ.
+    ('ride-repair', 'plan'): AGREE,
+    ('ride-repair', 'plan-gauge-only'): (423, {'state': 1, 'gauge': 0.0, 'life': 40.0, 'mechanic': 17185, 'maintenance': 0, 'open': 0,
+                                               'pending': 0, 'queue': 1, 'track': 0, 'coaster': 1}),
+    ('ride-repair', 'routine-reading'): AGREE,
+    ('ride-repair', 'csharp'): AGREE,
+    # F27 (executed, fixed in C#): the ride update 0xe077c skips states 3 and 4, and runs the wear step and the breakdown check only for a ride
+    # that is not in state 1, is open (+100 != 0) and on a turn that is a multiple of 8; relief objects never break down (VAR_WORN below 25).
+    # The old rule (ParkEconomy.UpdateRides: no state, open or relief gate) differs on 280 of 530 inputs.
+    ('ride-breakdown-update', 'plan'): AGREE,
+    ('ride-breakdown-update', 'plan-before'): (280, {'state': 1, 'open': 1, 'tick': 64, 'flags': 4, 'life': 100.0, 'repair': 0.0, 'breakstat': 0}),
+    ('ride-breakdown-update', 'routine-reading'): AGREE,
+    ('ride-breakdown-update', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
-                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival', 'profit-ticket-hint',
+                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival', 'ride-set-state', 'profit-ticket-hint',
                   'calendar-first-update', 'park-turn-cadence', 'clock-speed-scale'}
-
 
 class Identity(unittest.TestCase):
     def test_unidentified_container_is_rejected(self):
@@ -665,6 +691,79 @@ class Oracle(unittest.TestCase):
         # The 32-bit product wraps before the unsigned division by 100.
         big = {**y, 'cost': [50_000_000, 1, 1]}
         self.assertEqual(targets.run_binary(targets.SCRAP, targets.SCRAP.sandbox(self.image), big), 7_050_327)
+
+    def test_ride_state(self):
+        for key in (('ride-may-open', 'plan'), ('ride-may-open', 'plan-var-broken'), ('ride-may-open', 'routine-reading'),
+                    ('ride-set-state', 'plan'), ('ride-set-state', 'plan-store-only'), ('ride-set-state', 'routine-reading'),
+                    ('ride-repair', 'plan'), ('ride-repair', 'plan-gauge-only'), ('ride-repair', 'routine-reading'),
+                    ('ride-breakdown-update', 'plan'), ('ride-breakdown-update', 'plan-before'),
+                    ('ride-breakdown-update', 'routine-reading')):
+            self.check(key)
+
+    def test_ride_state_csharp(self):
+        for key in (('ride-may-open', 'csharp'), ('ride-repair', 'csharp'), ('ride-breakdown-update', 'csharp')):
+            self.check(key)
+
+    def test_ride_readings_are_sharp(self):
+        # Every part of the four readings matters: each guard condition of 0xde654, each write of SetState, each repair effect and each gate
+        # of the breakdown check turns an agreement into mismatches when dropped.
+        import dataclasses
+        variants = [(targets.MAY_OPEN_TARGET, f'no-{drop}', lambda x, drop=drop: targets.may_open_reading(x, drop=drop))
+                    for drop in ('broken', 'condemned', 'maintenance', 'upgrading', 'queue', 'coaster')]
+        variants += [(targets.SET_STATE_TARGET, 'no-writes', lambda x: targets.set_state_reading(x, write=False)),
+                     (targets.SET_STATE_TARGET, 'no-head-step', lambda x: targets.set_state_reading(x, head_step=False)),
+                     (targets.REPAIR_TARGET, 'no-reopen', lambda x: targets.repair_reading(x, reopen=False)),
+                     (targets.REPAIR_TARGET, 'keeps-flags', lambda x: targets.repair_reading(x, clear_flags=False)),
+                     (targets.REPAIR_TARGET, 'no-coaster-recheck', lambda x: targets.repair_reading(x, coaster_recheck=False)),
+                     (targets.REPAIR_TARGET, 'gauge-99', lambda x: targets.repair_reading(x, full_gauge=99.0)),
+                     (targets.BREAKDOWN_TARGET, 'no-state-gate', lambda x: targets.breakdown_reading(x, gate_state=False)),
+                     (targets.BREAKDOWN_TARGET, 'no-open-gate', lambda x: targets.breakdown_reading(x, gate_open=False)),
+                     (targets.BREAKDOWN_TARGET, 'no-relief', lambda x: targets.breakdown_reading(x, relief=False)),
+                     (targets.BREAKDOWN_TARGET, 'no-breakstat', lambda x: targets.breakdown_reading(x, breakstat=False))]
+        for target, name, reading in variants:
+            mutated = dataclasses.replace(target, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'{target.key}: {name}')
+
+    def test_repair_example(self):
+        # A broken-down ride (state 1, wear gauge 0, life 40) after its mechanic has finished: the gauge is 100.0, the reservation and the
+        # maintenance flag are gone, the ride is open (VAR_RIDECLOSED 0) and idle (state 0), the life gauge stays 40, and the guard of
+        # 0xde654 still sees state 1: it logs its warning five times ("opening non-openable ride") and the repair opens the ride anyway.
+        target = targets.REPAIR_TARGET
+        sandbox = target.sandbox(self.image)
+        base = {'state': 1, 'gauge': 0.0, 'life': 40.0, 'mechanic': 0x4321, 'maintenance': 1, 'open': 0, 'pending': 0, 'queue': 1, 'track': 0,
+                'coaster': 1}
+        original = targets.run_binary(target, sandbox, base)
+        self.assertEqual({key: original[key] for key in ('gauge', 'life', 'mechanic', 'maintenance', 'open', 'state')},
+                         {'gauge': 100.0, 'life': 40.0, 'mechanic': 0, 'maintenance': 0, 'open': 1, 'state': 0})
+        self.assertEqual(original['calls'].count(('warn',)), 5)
+        self.assertIn(('var', 6, 0), original['calls'])        # VAR_RIDECLOSED := 0
+        self.assertIn(('var', 4, 0), original['calls'])        # VAR_BREAKSTAT := 0
+        self.assertIn(('var', 8, 0), original['calls'])        # VAR_WORN := 0
+        # A condemned ride (life gauge 0) is idle again after its repair, and the life gauge is still 0: its next ride update breaks it again.
+        condemned = targets.run_binary(target, sandbox, {**base, 'state': 4, 'life': 0.0})
+        self.assertEqual((condemned['state'], condemned['life']), (0, 0.0))
+        # A coaster whose circuit is not complete is closed again by its own repair.
+        coaster = targets.run_binary(target, sandbox, {**base, 'state': 0, 'track': 3, 'coaster': 0, 'open': 1})
+        self.assertEqual((coaster['open'], coaster['state']), (0, 0))
+
+    def test_breakdown_example(self):
+        # A ride whose wear gauge ran out (life 100) on a multiple-of-8 turn: the wear step runs, the life gauge pays 5 and VAR_BREAKSTAT is
+        # set. The same ride closed (open word 0), broken down already (state 1) or condemned (4) is left alone, and a relief object with a
+        # wear gauge of 20 is only marked worn.
+        target = targets.BREAKDOWN_TARGET
+        sandbox = target.sandbox(self.image)
+        base = {'state': 0, 'open': 1, 'tick': 64, 'flags': 0x4, 'life': 100.0, 'repair': 0.0, 'breakstat': 0}
+        self.assertEqual(targets.run_binary(target, sandbox, base), {'calls': [('wear',), ('var', 4, 1)], 'life': 95.0})
+        for change in ({'open': 0}, {'state': 1}, {'state': 4}, {'tick': 12}, {'breakstat': 1}):
+            result = targets.run_binary(target, sandbox, {**base, **change})
+            self.assertNotIn(('var', 4, 1), result['calls'], str(change))
+        relief = targets.run_binary(target, sandbox, {**base, 'flags': 1, 'repair': 20.0})
+        self.assertEqual(relief, {'calls': [('wear',), ('var', 8, 1)], 'life': 100.0})
+
+    def test_repair_constant_is_one_hundred(self):
+        # ECON-024: the "fixed constant from the data pool" a repair writes into the wear gauge is the float at TOC -11016, 100.0.
+        self.assertEqual(self.image.memory.u32(self.image.toc + targets.RIDE_GAUGE_SLOT), targets.bits(100.0))
 
     def test_loans(self):
         for key in (('loan-offers', 'plan'), ('loan-offers', 'routine-reading'), ('loan-month', 'routine-reading'),
@@ -1778,6 +1877,14 @@ class CSharpMutation(unittest.TestCase):
         ('golden-ticket-cadence', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'turn % GoldenTicketCheckInterval == 0 && ParkModeFeatures.For( mode ).GoldenTickets',
          'turn % GoldenTicketCheckInterval == 1 && ParkModeFeatures.For( mode ).GoldenTickets'),
+        ('ride-may-open', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         '&& queueConnected && (trackType != CoasterTrackType || coasterComplete);', '&& queueConnected;'),
+        ('ride-breakdown-update', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         '(GaugeByte( life ) == 0 || GaugeByte( repair ) == 0)', '(GaugeByte( life ) == 0 || GaugeByte( repair ) <= 1)'),
+        ('ride-breakdown-update', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         'return after > 100f ? 100f : after < 0f ? 0f : after;', 'return after > 100f ? 100f : after;'),
+        ('ride-repair', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
+         'public const float FullGauge = 100f;', 'public const float FullGauge = 99f;'),
     ]
 
     def test_mutations_are_detected(self):

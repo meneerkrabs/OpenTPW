@@ -80,10 +80,11 @@ class Target:
     equal: Callable = staticmethod(lambda a, b: a == b)
     notes: list[str] = field(default_factory=list)
     log: list = field(default_factory=list)
+    budget: int = 100_000   # instructions per call
 
     def sandbox(self, image: Image) -> Sandbox:
         self.log = []
-        return Sandbox(image, self.allowed, self.stubs(self))
+        return Sandbox(image, self.allowed, self.stubs(self), budget=self.budget)
 
 
 def run_binary(target: Target, sandbox: Sandbox, x):
@@ -5210,6 +5211,400 @@ DISMISS_TARGET = Target('staff-dismiss-charge', 'Dismissal charge (tail of 0xf33
                                'commands it queues) is not executed. "plan-free" is the rule before F28: dismissing is free.'])
 
 
+# ============================================================================== (o) PARK: the park rating 0xc7b24 and the park value 0xc1d4c (F29)
+# The thing list (list header at TOC -26704, thing array at TOC -30140, next ids through 0x1050a4) holds every thing of the park; the class byte +2 is 1
+# for a guest, 3 for an object (a ride, shop, sideshow, feature or add-on) and 4..8 for staff (4 mechanic, 5 handyman, 6 entertainer, 7 guard, 8
+# researcher), the staff byte +3 is 0 for a staff member that is not being removed. An object's type record (0x118018) carries Info.WhichUIType at
+# +1960 (0 ride, 1 shop, 2 sideshow, 3 feature, 4 not shown) and the upgrade level is the byte +76 of the thing.
+RATING = 0xC7B24                 # (this) -> the park rating: eleven capped counts added
+RATING_END_SLOTS = (-20404, -20336, -20300)   # TOC slots -> the u16 id that ends a list walk (zero in the file): objects, staff, guests
+RATING_CELLS_SLOT = -27300       # TOC slot -> variable holding the map cell array (game + 728), read by the guest's cell lookup 0xe6c6c
+RATING_TYPE_ID = 0x4400          # object type ids: RATING_TYPE_ID + Info.WhichUIType
+RATING_STAFF_CLASSES = (5, 4, 6, 7, 8)   # StaffType order: handyman, mechanic, entertainer, guard, researcher
+RATING_GUEST_TYPES = (0, 1, 3, 9, 10)    # the cell types the census counts (predicates 0x85258, 0x85190, 0x851ac, 0x851d0, 0x851ec)
+RATING_OTHER_TYPES = (2, 4, 5, 6, 7, 8, 11, 12, 30)
+RATING_STATE = type('RatingState', (), {})()
+RATING_ALLOWED = [(0xC7B24, 0xC8664), (0xC5864, 0xC5968), (0xC4064, 0xC41A4), (0xC3684, 0xC3758), (0x10507C, 0x105110), (0x10A9A4, 0x10A9BC),
+                  (0x10A9B0, 0x10A9BC), (0xFA9A4, 0xFA9B0), (0xE6C6C, 0xE6D20), (0x85190, 0x85294)]
+
+
+def rating_stubs(target: Target) -> dict:
+    state = RATING_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry:
+            raise AssertionError('0x118018 called without the registry')
+        m.gpr[3] = state.records[m.gpr[4] >> 16]
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+    return {TYPE_RECORD_LOOKUP: lookup, ASSERT: assertion}
+
+
+def thing_list_setup(sb: Sandbox, things: list[dict], fields) -> list[int]:
+    """Builds the global thing list in memory (header, thing array, next-id nodes); `fields(index, thing)` gives the thing struct's fields."""
+    table = toc_pointer(sb, POINTS_THINGS)
+    ids = [1 + n for n in range(len(things))]
+    addresses = []
+    for n, thing in enumerate(things):
+        following = ids[n + 1] if n + 1 < len(ids) else 0
+        node = sb.struct(16, {4: ('I', following)})
+        address = sb.struct(128, {0: ('H', ids[n]), **fields(n, thing)})
+        sb.write(table + 20 * ids[n], 'I', address)
+        sb.write(table + 20 * ids[n] + 8, 'I', node)
+        addresses.append(address)
+    header = sb.struct(16, {4: ('I', ids[0] if ids else 0)})
+    sb.write(toc_pointer(sb, TRAIN_LIST_HEADER), 'I', header)
+    return addresses
+
+
+def rating_binary(sb: Sandbox, x: dict, log) -> int:
+    state = RATING_STATE
+    for slot in RATING_END_SLOTS:
+        if sb.image.memory.u16(toc_pointer(sb, slot)) != 0:
+            raise AssertionError(f'the u16 behind TOC {slot} is not zero in the file')
+    game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', game)
+    cells = game + 728
+    sb.write(toc_pointer(sb, RATING_CELLS_SLOT), 'I', cells)
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    state.records = {RATING_TYPE_ID + ui: sb.struct(2048, {1960: ('i', ui)}) for ui in range(6)}
+    guests_so_far = [0]
+
+    def fields(n: int, thing: dict) -> dict:
+        cls = thing['cls']
+        if cls == 1:
+            index = guests_so_far[0]
+            guests_so_far[0] += 1
+            kind = rng_choice_type(thing, index)
+            sb.write(cells + 68 * (index % 128) + 8, 'I', kind)         # the guest stands at (index, 0): cell id index + 1
+            return {2: ('B', 1), 4: ('B', index % 128), 6: ('B', 0)}
+        if cls == 3:
+            return {2: ('B', 3), 14: ('H', RATING_TYPE_ID + thing['ui']), 76: ('B', thing['level'])}
+        return {2: ('B', cls), 3: ('B', thing.get('flag3', 0))}
+    thing_list_setup(sb, x['things'], fields)
+    r = sb.call(RATING, {3: sb.struct(16)})
+    if any(kind == 'assert' and value == 0 for kind, value in log):
+        raise AssertionError('an assertion failed (a ThingArray entry is not in use)')
+    return s32(r.r3)
+
+
+def rng_choice_type(thing: dict, index: int) -> int:
+    """The type word of the cell a guest stands on: one of the counted cell types for a counted guest, else another type (chosen from the guest's own key)."""
+    pool = RATING_GUEST_TYPES if thing['counted'] else RATING_OTHER_TYPES
+    return pool[thing.get('cell', 0) % len(pool)]
+
+
+def rating_count(x: dict, predicate) -> int:
+    return sum(1 for thing in x['things'] if predicate(thing))
+
+
+def rating_reading(x: dict, **variant) -> int:
+    """0xc7b24 as read: eleven terms added, each a count capped by a literal. Guests: the things of class 1 standing on a cell of type 0, 1, 3, 9 or 10
+    (the census 0xc3684: the same predicate as the inline count; at 1,000 the count is cut), times 20 / 1000, truncated. Objects (class 3) by the
+    type's Info.WhichUIType: rides (0) 3 / 2 each up to 20, shops (1) 2 each up to 10, sideshows (2) 2 each up to 10, features (3) 1 each up to 10, and
+    rides whose upgrade level +76 is at least 2, 1 each up to 10. Staff of class 5, 4, 6, 7 and 8 with the byte +3 clear, 1 each up to 4 per class.
+    The sum is not normalised. The keyword flags build the variants of the sharpness test."""
+    census = rating_count(x, lambda t: t['cls'] == 1 and (t['counted'] if variant.get('census', True) else t['in_park']))
+    cap_visitors = variant.get('cap_visitors', 1000)
+    visitors = min(census, cap_visitors) * 20 // 1000
+    objects = [t for t in x['things'] if t['cls'] == 3]
+    uis = variant.get('ui_of', lambda t: t['ui'])
+    rides = sum(1 for t in objects if uis(t) == 0)
+    shops, sideshows, features = (sum(1 for t in objects if uis(t) == ui) for ui in (1, 2, 3))
+    upgraded = sum(1 for t in objects if uis(t) == 0 and t['level'] >= variant.get('upgraded_level', 2))
+    total = visitors + min(rides * 3 // 2, 20) + min(shops * 2, 10) + min(sideshows * 2, 10) + min(features, 10) + min(upgraded, 10)
+    for cls in RATING_STAFF_CLASSES:
+        total += min(sum(1 for t in x['things'] if t['cls'] == cls and (not t['flag3'] or not variant.get('flag3', True))), variant.get('staff_cap', 4))
+    return total
+
+
+def rating_before(x: dict) -> int:
+    """The rule before F29 (ParkEconomy.ParkRating): guests in the park by state (not the census), the object's directory (rides, shops, sideshows,
+    features) instead of Info.WhichUIType, and every hired staff member whatever its byte +3."""
+    in_park = rating_count(x, lambda t: t['cls'] == 1 and t['in_park'])
+    objects = [t for t in x['things'] if t['cls'] == 3]
+    count = lambda directory: sum(1 for t in objects if t['dir'] == directory)
+    total = min(in_park, 1000) * 20 // 1000 + min(count('ride') * 3 // 2, 20) + min(count('shop') * 2, 10) + min(count('sideshow') * 2, 10)
+    total += min(count('feature'), 10) + min(sum(1 for t in objects if t['dir'] == 'ride' and t['level'] >= 2), 10)
+    for cls in RATING_STAFF_CLASSES:
+        total += min(sum(1 for t in x['things'] if t['cls'] == cls), 4)
+    return total
+
+
+def rating_request(x: dict) -> dict:
+    return {'fn': 'park_rating', 'in_park': rating_count(x, lambda t: t['cls'] == 1 and t['in_park']),
+            'objects': [{'ui': t['ui'], 'dir': t['dir'], 'level': t['level']} for t in x['things'] if t['cls'] == 3],
+            'staff': [sum(1 for t in x['things'] if t['cls'] == cls) for cls in RATING_STAFF_CLASSES]}
+
+
+def rating_result(x: dict, answer) -> int:
+    return answer
+
+
+def rating_inputs(rng: random.Random, n: int) -> list:
+    shipped = [(0, 'ride'), (0, 'ride'), (1, 'shop'), (2, 'sideshow'), (3, 'feature'), (3, 'feature'), (0, 'upgrade'), (4, 'fixed')]
+
+    def guest(**kw) -> dict:
+        counted = rng.random() < 0.8
+        t = {'cls': 1, 'counted': counted, 'in_park': counted if rng.random() < 0.9 else not counted, 'cell': rng.randrange(1000)}
+        t.update(kw)
+        return t
+
+    def obj(**kw) -> dict:
+        ui, directory = rng.choice(shipped)
+        t = {'cls': 3, 'ui': ui, 'dir': directory, 'level': rng.choice([0, 0, 0, 1, 2, 2, 3, rng.randrange(256)])}
+        t.update(kw)
+        return t
+
+    def staff(**kw) -> dict:
+        t = {'cls': rng.choice(RATING_STAFF_CLASSES), 'flag3': 0 if rng.random() < 0.92 else rng.choice([1, 2, 255])}
+        t.update(kw)
+        return t
+
+    def other() -> dict:
+        return {'cls': rng.choice([0, 2, 9, 12, 255])}
+
+    def make(**kw) -> dict:
+        things = ([guest() for _ in range(rng.choice([0, 0, 1, 5, 12, 52, rng.randrange(0, 20)]))]
+                  + [obj() for _ in range(rng.choice([0, 1, 2, 4, 8, rng.randrange(0, 24)]))]
+                  + [staff() for _ in range(rng.choice([0, 1, 3, 5, 8, rng.randrange(0, 16)]))]
+                  + [other() for _ in range(rng.choice([0, 0, 3]))])
+        rng.shuffle(things)
+        x = {'things': things}
+        x.update(kw)
+        return x
+    edges = [make(things=[]),
+             make(things=[obj(ui=0, dir='ride', level=0)]), make(things=[obj(ui=0, dir='ride', level=2)]),
+             make(things=[obj(ui=1, dir='shop', level=0)] * 5), make(things=[obj(ui=2, dir='sideshow', level=0)] * 5),
+             make(things=[obj(ui=3, dir='feature', level=0)] * 11),
+             make(things=[obj(ui=0, dir='ride', level=2)] * 14),                       # 21 -> 20 rides, 10 upgraded
+             make(things=[obj(ui=0, dir='upgrade', level=0)] * 3),                     # add-on objects have the ride UI type
+             make(things=[obj(ui=4, dir='fixed', level=0)] * 3),                       # fixed items have none of the counted types
+             make(things=[staff(cls=cls, flag3=0) for cls in RATING_STAFF_CLASSES for _ in range(5)]),
+             make(things=[staff(cls=5, flag3=1), staff(cls=5, flag3=0)]),              # a staff member with the byte +3 set does not count
+             make(things=[guest(counted=True, in_park=True)] * 10), make(things=[guest(counted=False, in_park=True)] * 10),
+             make(things=[guest(counted=True, in_park=False)] * 10),                   # standing on a counted cell, not in the park by state
+             make(things=[guest(counted=True, in_park=False, cell=n) for n in range(100)]),     # 100 counted guests: 2 points by the census, 0 by state
+             make(things=[guest(counted=False, in_park=True, cell=n) for n in range(100)]),
+             make(things=[guest(counted=True, in_park=True, cell=n) for n in range(999)]),
+             make(things=[guest(counted=True, in_park=True, cell=n) for n in range(1000)]),
+             make(things=[guest(counted=True, in_park=True, cell=n) for n in range(1100)]
+                  + [obj(ui=0, dir='ride', level=3)] * 20 + [obj(ui=1, dir='shop', level=0)] * 6 + [obj(ui=2, dir='sideshow', level=0)] * 6
+                  + [obj(ui=3, dir='feature', level=0)] * 12 + [staff(cls=cls, flag3=0) for cls in RATING_STAFF_CLASSES for _ in range(5)])]
+    return edges + [make() for _ in range(n)]
+
+
+RATING_TARGET = Target('park-rating', 'Park rating 0xc7b24', 'ECONOMY.md "Park rating" / ECON-027', RATING, RATING_ALLOWED, rating_stubs, rating_binary,
+                       rating_reading, rating_inputs, alternatives={'plan-before': rating_before},
+                       csharp=('park_rating', rating_request, rating_result), budget=3_000_000,
+                       notes=['C# hook: bridge function "park_rating" (ParkEconomy.ParkRating on a synthetic economy: one object per input object with its '
+                              'Info.WhichUIType and directory kind, the staff counts, and the guests in the park by state). The census (cell types) and the staff '
+                              'byte +3 have no C# counterpart (ECON-027): the C# mismatches are exactly the inputs with a guest whose cell type and in-park '
+                              'state disagree or a staff member with the byte set (test_park_rating_csharp_remainder).',
+                              'Executed: 0xc7b24 with its recount helpers 0xc5864 (objects), 0xc4064 (staff), 0xc3684 (the census), the list walkers 0x10507c / '
+                              '0x1050a4 / 0xfa9a4, the game getters, the guest cell test 0xe6c6c and the cell type predicates 0x85190..0x85258 over a real cell array. '
+                              'Stubs: 0x118018 type record (Info.WhichUIType at +1960) and the assertion 0xb678. The ends of the list walks (TOC -20404, -20336, '
+                              '-20300) are checked to be zero in the file.'])
+
+
+# ---- the park value 0xc1d4c: points per map cell, plus the cost of every object scaled by its state of repair
+VALUE_CELL, VALUE_CELL_STOP = 0xC1DD4, 0xC1E84      # the body of the 128 x 128 cell loop for one cell (r21 = the cell, r4 = the mask 0x40)
+VALUE_THING, VALUE_THING_STOP = 0xC1EF0, 0xC1F68    # the body of the thing loop for one thing (r27 = the thing)
+VALUE_ENTRY = 0xC1D4C            # (game, maximum age): the whole value, cached by 0xc9020
+VALUE_LINK_NULL_SLOT = -21032    # TOC slot -> the u16 "no link" id compared with a record's link
+VALUE_TYPE_ID = 0x4410
+VALUE_MAGIC = 0x51EB851F         # r23: the multiplier of the signed divide by 100
+VALUE_LINKED_TYPES = (11, 13, 16, 18, 25)   # record types that make a cell worth 50 (0x8b224)
+VALUE_FOLLOW_TYPES = (12, 17)               # record types whose link (+16) is followed first (0x8b2a0)
+VALUE_STATE = type('ValueState', (), {})()
+VALUE_ALLOWED = [(VALUE_CELL, 0xC1E88), (0x84A74, 0x84A98), (0x85174, 0x85294), (0x85418, 0x854A4), (0xCD324, 0xCD36C), (0x8B2A0, 0x8B2C4),
+                 (0x8B224, 0x8B260), (0x10A9B0, 0x10A9BC), (VALUE_THING, 0xC1F6C), (0xDFE20, 0xDFE34)]
+
+
+def value_stubs(target: Target) -> dict:
+    state = VALUE_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != VALUE_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the thing type id')
+        m.gpr[3] = state.record
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+    return {TYPE_RECORD_LOOKUP: lookup, ASSERT: assertion}
+
+
+def value_game(sb: Sandbox):
+    game = sb.alloc(0x1E0000)
+    for slot in TRAIN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', game)
+    sb.write(toc_pointer(sb, RATING_CELLS_SLOT), 'I', game + 728)
+    return game, game + 728
+
+
+def value_binary(sb: Sandbox, x: dict, log) -> int:
+    state = VALUE_STATE
+    game, cells = value_game(sb)
+    if x['kind'] == 'cell':
+        null_link = sb.read(toc_pointer(sb, VALUE_LINK_NULL_SLOT), 'H')
+        cell = cells + 68 * 5
+        sb.write(cell + 0, 'H', x['id'])
+        sb.write(cell + 8, 'I', x['type'])
+        sb.write(cell + 14, 'H', x['flags'])
+        records = cells + 0x110000
+        sb.write(records + 40 * (x['id'] - 1) + 8, 'I', x['rec_type'])
+        sb.write(records + 40 * (x['id'] - 1) + 16, 'H', null_link if x['link'] is None else x['link'])
+        if x['link'] is not None:
+            sb.write(records + 40 * (x['link'] - 1) + 8, 'I', x['link_type'])
+        return s32(sb.call(VALUE_CELL, {21: cell, 4: 0x40, 26: 0}, stop=VALUE_CELL_STOP).gpr[26])
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    fields = {440 + 64 * level: ('i', cost) for level, cost in enumerate(x['costs'])}
+    state.record = sb.struct(20000, fields)
+    thing = sb.struct(512, {14: ('H', VALUE_TYPE_ID), 64: ('f', x['gauge']), 76: ('B', x['level']), 408: ('i', x['state'])})
+    r = sb.call(VALUE_THING, {27: thing, 25: 0, 26: 0, 30: state.registry, 23: VALUE_MAGIC}, stop=VALUE_THING_STOP)
+    return s32(r.gpr[25])
+
+
+def value_cell_points(x: dict, mask: int = 0x40, weights: tuple = (1, 3, 5, 1, 1, 2, 50), follow: bool = True) -> int:
+    """The cell loop's body: a cell whose flags +14 have the bit 0x40 (not owned land) adds nothing; any other adds 1 for type 2, 3 for type 1, 5 for
+    type 3 or 9, 1 more for type 9, 1 for type 10 (the predicate 0x85208 never holds: its 10 points are not given), 2 for type 0, and 50 when the cell's
+    record (id +0 -> the 40-byte record, which for a type 12 or 17 record is replaced by the one its link +16 names) has a type in 11, 13, 16, 18 or 25.
+    The keyword arguments build the variants of the sharpness test."""
+    if x['flags'] & mask:
+        return 0
+    t = x['type']
+    w2, w1, w39, w9, w10, w0, wlink = weights
+    points = (w2 if t == 2 else 0) + (w1 if t == 1 else 0) + (w39 if t in (3, 9) else 0) + (w9 if t == 9 else 0) + (w10 if t == 10 else 0) + (w0 if t == 0 else 0)
+    if follow and x['rec_type'] in VALUE_FOLLOW_TYPES:
+        linked = x['link'] is not None and x['link_type'] in VALUE_LINKED_TYPES
+    else:
+        linked = x['rec_type'] in VALUE_LINKED_TYPES
+    return points + (wlink if linked else 0)
+
+
+def value_thing_points(x: dict, scale: bool = True, skip_condemned: bool = True, sum_levels: bool = True, byte: bool = True) -> int:
+    """The thing loop's body: a thing in state 4 (condemned) adds nothing; any other adds the costs of its levels 0..level (the type record's words
+    +440 + 64 * level, a 32-bit sum) times the truncated state of repair taken as a byte (a 32-bit product), divided by 100 toward zero."""
+    if skip_condemned and s32(x['state']) == 4:
+        return 0
+    total = 0
+    for level in (range(x['level'] + 1) if sum_levels else [x['level']]):
+        total = s32(total + (x['costs'][level] if level < len(x['costs']) else 0))
+    gauge = fctiwz(x['gauge'])
+    return trunc_div(s32(total * ((gauge & 0xFF) if byte else gauge) if scale else total * 100), 100)
+
+
+def value_reading(x: dict) -> int:
+    return value_cell_points(x) if x['kind'] == 'cell' else value_thing_points(x)
+
+
+def value_before(x: dict) -> int:
+    """The rule before F29 (ParkEconomy.ParkValue): the sum of the object's scrap values (the costs of its levels up to the current one times the scrap percent of its
+    age); there is no map term, no state-of-repair factor and condemned objects count."""
+    if x['kind'] == 'cell':
+        return 0
+    basis = sum(x['costs'][level] if level < len(x['costs']) else 0 for level in range(x['level'] + 1))
+    return basis * x['scrap'] // 100
+
+
+def value_request(x: dict) -> dict:
+    if x['kind'] == 'cell':
+        return {'fn': 'park_value_thing', 'skip': True}
+    return {'fn': 'park_value_thing', 'skip': False, 'state': s32(x['state']), 'level': x['level'], 'costs': x['costs'], 'gauge_bits': bits(x['gauge'])}
+
+
+def value_result(x: dict, answer):
+    return None if x['kind'] == 'cell' else answer
+
+
+def value_equal(original, other) -> bool:
+    return other is None or original == other
+
+
+def value_inputs(rng: random.Random, n: int) -> list:
+    def cell(**kw) -> dict:
+        x = {'kind': 'cell', 'type': rng.choice([0, 0, 1, 2, 3, 9, 10, 4, 7, 12, 30, rng.randrange(0, 40)]), 'flags': rng.choice([0, 0, 0x20, 0x40, 0x60, 0x80, rng.getrandbits(16)]),
+             'id': rng.choice([1, 2, 3, 7, rng.randrange(1, 50)]), 'rec_type': rng.choice([0, 11, 12, 13, 16, 17, 18, 25, 1, rng.randrange(0, 30)]),
+             'link': rng.choice([None, None, 4, 9, rng.randrange(1, 50)]), 'link_type': rng.choice([0, 11, 13, 16, 18, 25, 12, rng.randrange(0, 30)])}
+        x.update(kw)
+        if x['link'] == x['id']:
+            x['link'] = x['id'] + 1
+        return x
+
+    def thing(**kw) -> dict:
+        x = {'kind': 'thing', 'state': rng.choice([0, 0, 0, 1, 2, 3, 4, rng.randrange(-2, 7)]), 'level': rng.choice([0, 0, 1, 2, 2, 3, rng.randrange(0, 256)]),
+             'costs': [rng.choice([0, 100, 400, 3000, 12000, rng.randrange(0, 100000), rng.randrange(-5000, 5000)]) for _ in range(3)],
+             'gauge': rng.choice([100.0, 100.0, 99.5, 50.0, 0.0, 0.5, 25.0, random_float(rng, 0, 100), 255.0, 256.5, -3.0, 300.0, math.nan]),
+             'scrap': rng.choice([100, 75, 50, 25, 0])}
+        x.update(kw)
+        return x
+    edges = [cell(type=0, flags=0, rec_type=0, link=None), cell(type=0, flags=0x40, rec_type=0, link=None),      # an owned and an unowned empty cell
+             cell(type=1, flags=0, rec_type=0, link=None), cell(type=2, flags=0, rec_type=0, link=None), cell(type=3, flags=0, rec_type=0, link=None),
+             cell(type=9, flags=0, rec_type=0, link=None), cell(type=10, flags=0, rec_type=0, link=None), cell(type=7, flags=0, rec_type=0, link=None),
+             cell(type=0, flags=0, rec_type=11, link=None), cell(type=0, flags=0, rec_type=12, link=4, link_type=16),
+             cell(type=0, flags=0, rec_type=12, link=None, link_type=16), cell(type=0, flags=0, rec_type=12, link=4, link_type=12),
+             cell(type=0, flags=0, rec_type=17, link=9, link_type=25), cell(type=3, flags=0, rec_type=18, link=None),
+             thing(state=0, level=0, costs=[1000, 0, 0], gauge=100.0), thing(state=0, level=2, costs=[1000, 400, 300], gauge=100.0),
+             thing(state=0, level=0, costs=[1000, 0, 0], gauge=25.0), thing(state=4, level=0, costs=[1000, 0, 0], gauge=100.0),
+             thing(state=1, level=1, costs=[1000, 500, 0], gauge=60.0), thing(state=0, level=0, costs=[1000, 0, 0], gauge=0.9),
+             thing(state=0, level=0, costs=[1000, 0, 0], gauge=256.0), thing(state=0, level=0, costs=[1000, 0, 0], gauge=math.nan),
+             thing(state=0, level=0, costs=[-1000, 0, 0], gauge=50.0), thing(state=0, level=0, costs=[2 ** 31 - 1, 0, 0], gauge=100.0),
+             thing(state=0, level=255, costs=[100, 100, 100], gauge=100.0), thing(state=3, level=1, costs=[100, 100, 100], gauge=100.0)]
+    return edges + [(cell() if rng.random() < 0.5 else thing()) for _ in range(n)]
+
+
+VALUE_TARGET = Target('park-value', 'Park value 0xc1d4c (cell and thing loop bodies)', 'ECONOMY.md "Park value" / ECON-026', VALUE_CELL, VALUE_ALLOWED,
+                      value_stubs, value_binary, value_reading, value_inputs, equal=value_equal, alternatives={'plan-scrap-sum': value_before},
+                      csharp=('park_value_thing', value_request, value_result),
+                      notes=['C# hook: bridge function "park_value_thing" (ParkValueRules.ObjectValue and CountsForValue, which ParkEconomy.ParkValue applies); '
+                             'the cell term has no C# counterpart (the cell map has no ownership, PATH-007) and is not compared.',
+                             'Executed: the body of the cell loop for one cell (the mask test 0x84a74, the predicates 0x85174..0x85418 with the cell record helpers '
+                             '0xcd324 / 0x8b2a0 / 0x8b224) and the body of the thing loop for one thing (the state test 0xdfe20, the level costs, the state-of-repair '
+                             'scaling). The loops themselves (128 x 128 cells, then the thing list, then the cache 0xc9020) are executed once on a whole map in '
+                             'test_park_value_whole_function, because 16,384 iterations per input would take minutes.',
+                             'Stubs: 0x118018 type record (the costs at +440 + 64 * level), 0xb678. The "no link" id behind TOC -21032 is read from the file.'])
+
+
+VALUE_WHOLE_ALLOWED = [(VALUE_ENTRY, 0xC1FB4), (0xC9018, 0xC904C), (0x121098, 0x1210B0), (0x1210F8, 0x12113C), (0x10A9A4, 0x10A9BC)] + VALUE_ALLOWED[1:]
+VALUE_FIRST = 0x1E0000 - 22714   # game + 0x1da746: the first object of the chain (u16); the next is the u16 at thing +12
+VALUE_OBJECT_END = -20264        # TOC slot -> the u16 that ends the chain (zero in the file)
+
+
+def value_whole(image: Image, cells: dict, things: list[dict], elapsed: tuple[int, int, int] | None = None, records: dict | None = None) -> tuple[int, int]:
+    """Runs the whole 0xc1d4c once on a map of 128 x 128 cells (all zero: type 0, flags 0) with the given cell fields {(index): {offset: (fmt, value)}} and the
+    given objects, with the value cache invalid, and returns (value, instructions executed). `elapsed` = (valid byte, turn stamp, now) runs the cached path."""
+    target = VALUE_TARGET
+    target.log.clear()
+    sandbox = Sandbox(image, VALUE_WHOLE_ALLOWED, value_stubs(target), budget=6_000_000)
+    sandbox.reset()
+    game, base = value_game(sandbox)
+    if sandbox.image.memory.u16(toc_pointer(sandbox, VALUE_OBJECT_END)) != 0:
+        raise AssertionError('the u16 behind TOC -20264 is not zero in the file')
+    VALUE_STATE.registry = toc_pointer(sandbox, POINTS_REGISTRY)
+    VALUE_STATE.record = sandbox.struct(20000, {440: ('i', 1000), 504: ('i', 500), 568: ('i', 300)})
+    for index, fields in cells.items():
+        for offset, (fmt, value) in fields.items():
+            sandbox.write(base + 68 * index + offset, fmt, value)
+    for number, fields in (records or {}).items():     # the 40-byte records behind the cells: cells + 0x110000 + 40 * (id - 1)
+        for offset, (fmt, value) in fields.items():
+            sandbox.write(base + 0x110000 + 40 * (number - 1) + offset, fmt, value)
+    table = toc_pointer(sandbox, POINTS_THINGS)
+    for n, thing in enumerate(things, start=1):
+        following = n + 1 if n < len(things) else 0
+        address = sandbox.struct(512, {12: ('H', following), 14: ('H', VALUE_TYPE_ID), 64: ('f', thing['gauge']), 76: ('B', thing['level']), 408: ('i', thing['state'])})
+        sandbox.write(table + 20 * n, 'I', address)
+    sandbox.write(game + VALUE_FIRST, 'H', 1 if things else 0)
+    park = sandbox.alloc(0x20000 + 8192)
+    if elapsed is not None:
+        sandbox.write(park + 0x20000 - 3856, 'B', elapsed[0])
+        sandbox.write(park + 0x20000 - 3864, 'I', elapsed[1])
+        sandbox.write(park + 0x20000 - 3860, 'I', 77777)    # a cached value
+        sandbox.write(game + 0x1E0000 - 22772, 'I', elapsed[2])
+    result = sandbox.call(VALUE_ENTRY, {3: park, 4: 0})
+    return s32(result.r3), result.executed
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -5917,7 +6312,7 @@ SPEED_TARGET = Target('clock-speed-scale', 'Speed keys 0x11315c / 0x113184 / 0x1
 
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
            ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET,
-           MAY_OPEN_TARGET, SET_STATE_TARGET, REPAIR_TARGET, BREAKDOWN_TARGET, WAGE_MONTH_TARGET, DISMISS_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
+           MAY_OPEN_TARGET, SET_STATE_TARGET, REPAIR_TARGET, BREAKDOWN_TARGET, WAGE_MONTH_TARGET, DISMISS_TARGET, RATING_TARGET, VALUE_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
            CALENDAR_DATE, CALENDAR_UPDATE_TARGET, CALENDAR_FIRST_TARGET, CADENCE_TARGET, GOLDEN_TARGET,
            CADENCE_FRAMES_TARGET, SPEED_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

@@ -338,7 +338,7 @@ fact does not authorize silently removing a Windows approximation tag.
 | 023 | 64-turn inner wear gate, derived decrement and separate 2% life decrement proven; full runtime equation below. |
 | 024 | Full repair writes 100 at `+64`, not `+68`, proven. |
 | 025 | Proven sale `0xdbfa8 → 0xe25e8 → 0xe2424`: base cost only × age/upgrade percentage, initial unused-refund branch. |
-| 026 | Analyzer valuation includes infrastructure in addition to placed objects; `0xc1d4c` rather than sum of scrap values alone. |
+| 026 | Analyzer valuation includes infrastructure in addition to placed objects; `0xc1d4c` rather than sum of scrap values alone (executed in the oracle, ORACLE.md F29: cell points plus the object costs times the state of repair, no scrap values). |
 | 027 | Composite `0xc7b24` writes history `+0x213b0`, read by annual-summary value44450 aligned with UITEXT190 Park rating. Exact count formula below. |
 | 028 | Actual bank withdrawal allows negative balances `0xcbfdc`; build affordability belongs to callers `0x859b4`, `0x8ba34` and object purchase `0xda874`. |
 | 029 | Manual explicitly supports ticket spending; ticket controller `0xd31d0` and purchase `0xda874` next. |

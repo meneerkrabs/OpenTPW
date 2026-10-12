@@ -23,7 +23,7 @@ sys.path.insert(0, str(HERE))
 
 import bridge as bridge_module  # noqa: E402
 import targets  # noqa: E402
-from differential import DEFAULT_COUNT, compare  # noqa: E402
+from differential import DEFAULT_COUNT, compare, target_inputs  # noqa: E402
 from harness import Image, IdentityError, Sandbox, bin_root  # noqa: E402
 from ppc32 import UnknownCall, s32  # noqa: E402
 
@@ -375,6 +375,20 @@ EXPECTED = {
                                                   'balance': 1000000, 'active': True}),
     ('staff-dismiss-charge', 'routine-reading'): AGREE,
     ('staff-dismiss-charge', 'csharp'): AGREE,
+    # F29 (ECON-027, fixed in C# except the census and the staff byte): 0xc7b24 adds eleven capped counts: guests on a cell of type 0, 1, 3, 9 or 10 (the census), objects
+    # by the type's Info.WhichUIType (the shipped add-ons declare 0 and count as rides), rides at level 2 or more, and staff of the five classes whose byte +3 is clear.
+    # The rule before (the directory kind, guests in the park by state, every hired staff member) differs on 249 of 519 inputs. C# now differs only where a guest's cell
+    # type and in-park state disagree or a staff byte is set (test_park_rating_csharp_remainder): ECON-027.
+    ('park-rating', 'plan'): AGREE,
+    ('park-rating', 'plan-before'): (249, {'things': [{'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0}, {'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0},
+                                                       {'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0}]}),
+    ('park-rating', 'csharp'): (134, {'things': [{'cls': 5, 'flag3': 1}, {'cls': 5, 'flag3': 0}]}),
+    # F29 (ECON-026, fixed in C# for the object part): 0xc1d4c adds points per map cell (1 / 3 / 5 / 1 / 1 / 2 by type, 50 for a cell with a track record, none for unowned
+    # cells) and, per object that is not condemned, the costs of its levels times its state of repair byte / 100. The former rule (the sum of the scrap values) differs on
+    # 355 of 526 inputs; C# agrees on the object part (the cell term has no counterpart).
+    ('park-value', 'plan'): AGREE,
+    ('park-value', 'plan-scrap-sum'): (355, {'kind': 'cell', 'type': 0, 'flags': 0, 'id': 3, 'rec_type': 0, 'link': None, 'link_type': 18}),
+    ('park-value', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
@@ -436,6 +450,21 @@ class Oracle(unittest.TestCase):
         for target in targets.TARGETS:
             for comparison in compare(target, cls.image, DEFAULT_COUNT, csharp=cls.bridge is not None):
                 cls.results[(target.key, comparison.side)] = comparison
+
+    _runs: dict = {}
+
+    @classmethod
+    def cached_runs(cls, target):
+        """The inputs of a target and the original's answers, run once for the sharpness and remainder tests."""
+        if target.key not in cls._runs:
+            inputs = target_inputs(target, DEFAULT_COUNT, 'oracle-v1')
+            sandbox = target.sandbox(cls.image)
+            cls._runs[target.key] = (inputs, [targets.run_binary(target, sandbox, x) for x in inputs])
+        return cls._runs[target.key]
+
+    def reading_mismatches(self, target, reading) -> int:
+        inputs, originals = self.cached_runs(target)
+        return sum(1 for x, original in zip(inputs, originals) if not target.equal(original, reading(x)))
 
     def check(self, key):
         comparison = self.results[key]
@@ -883,6 +912,107 @@ class Oracle(unittest.TestCase):
                 tracked.discard(ra)
         self.assertTrue(loads.get(708) and loads.get(712), 'the scan must find the pool timing words')
         self.assertEqual((loads.get(700), loads.get(704)), (None, None))
+
+    # ------------------------------------------------------------------------- F29: the park rating and the park value
+    def test_park_rating(self):
+        for key in (('park-rating', 'plan'), ('park-rating', 'plan-before')):
+            self.check(key)
+
+    def test_park_rating_csharp(self):
+        self.check(('park-rating', 'csharp'))
+
+    def test_park_rating_csharp_remainder(self):
+        # C# has neither the census (the cell type under each guest) nor the staff byte +3, so it differs exactly where a guest's cell type and in-park state disagree
+        # and the crowd is large enough to move the visitor term, or a staff member has the byte set (ECON-027). Every other input, objects included, agrees.
+        if self.bridge is None:
+            self.skipTest('no .NET SDK')
+        target = targets.RATING_TARGET
+        inputs, originals = self.cached_runs(target)
+        answers = self.bridge.run([target.csharp[1](x) for x in inputs])
+        differing = [x for x, original, answer in zip(inputs, originals, answers) if not target.equal(original, target.csharp[2](x, answer))]
+        self.assertGreater(len(differing), 0)
+        for x in differing:
+            things = x['things']
+            explained = any(t['cls'] == 1 and t['counted'] != t['in_park'] for t in things) or any(t['cls'] in (4, 5, 6, 7, 8) and t['flag3'] for t in things)
+            self.assertTrue(explained, f'unexplained: {x}')
+        # ... and every input without such a guest or staff member agrees.
+        clean = [x for x in inputs if not any(t['cls'] == 1 and t['counted'] != t['in_park'] for t in x['things'])
+                 and not any(t['cls'] in (4, 5, 6, 7, 8) and t['flag3'] for t in x['things'])]
+        self.assertGreater(len(clean), 100)
+        self.assertFalse([x for x in clean if x in differing])
+
+    def test_park_rating_reading_is_sharp(self):
+        # Every part of the reading matters: the census (not the in-park state), the cap of 1,000 guests, the UI type of the object (not its directory), the level 2
+        # of the upgraded rides, the staff byte +3 and each cap.
+        directory_ui = {'ride': 0, 'shop': 1, 'sideshow': 2, 'feature': 3, 'upgrade': 5, 'fixed': 5}
+        variants = {'in-park-guests': lambda x: targets.rating_reading(x, census=False),
+                    'cap-999': lambda x: targets.rating_reading(x, cap_visitors=999), 'cap-1100': lambda x: targets.rating_reading(x, cap_visitors=1100),
+                    'directory-kind': lambda x: targets.rating_reading(x, ui_of=lambda t: directory_ui[t['dir']]),
+                    'level-1': lambda x: targets.rating_reading(x, upgraded_level=1), 'level-3': lambda x: targets.rating_reading(x, upgraded_level=3),
+                    'ignore-byte-3': lambda x: targets.rating_reading(x, flag3=False),
+                    'staff-cap-3': lambda x: targets.rating_reading(x, staff_cap=3), 'staff-cap-5': lambda x: targets.rating_reading(x, staff_cap=5)}
+        for name, reading in variants.items():
+            self.assertGreater(self.reading_mismatches(targets.RATING_TARGET, reading), 0, name)
+
+    def test_park_rating_example(self):
+        # Three "Jump" add-ons (the upgrades directory: Info.WhichUIType 0) count as rides, 3 x 3 / 2 = 4 points, where the directory rule gave nothing. A handyman
+        # whose byte +3 is set (being removed) does not count, and 999 counted guests give 19 points where 1,000 give 20.
+        target = targets.RATING_TARGET
+        sandbox = target.sandbox(self.image)
+        addons = {'things': [{'cls': 3, 'ui': 0, 'dir': 'upgrade', 'level': 0}] * 3}
+        self.assertEqual((targets.run_binary(target, sandbox, addons), targets.rating_before(addons)), (4, 0))
+        staff = {'things': [{'cls': 5, 'flag3': 1}, {'cls': 5, 'flag3': 0}]}
+        self.assertEqual((targets.run_binary(target, sandbox, staff), targets.rating_before(staff)), (1, 2))
+        for count, expected in ((999, 19), (1000, 20), (1100, 20)):
+            crowd = {'things': [{'cls': 1, 'counted': True, 'in_park': True, 'cell': n} for n in range(count)]}
+            self.assertEqual(targets.run_binary(target, sandbox, crowd), expected, count)
+
+    def test_park_value(self):
+        for key in (('park-value', 'plan'), ('park-value', 'plan-scrap-sum')):
+            self.check(key)
+
+    def test_park_value_csharp(self):
+        self.check(('park-value', 'csharp'))
+
+    def test_park_value_reading_is_sharp(self):
+        variants = {'owned-mask-0x20': lambda x: targets.value_cell_points(x, mask=0x20) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'no-link-points': lambda x: targets.value_cell_points(x, weights=(1, 3, 5, 1, 1, 2, 0)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'no-follow': lambda x: targets.value_cell_points(x, follow=False) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'empty-cell-1': lambda x: targets.value_cell_points(x, weights=(1, 3, 5, 1, 1, 1, 50)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'path-cell-2': lambda x: targets.value_cell_points(x, weights=(1, 2, 5, 1, 1, 2, 50)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'queue-cell-4': lambda x: targets.value_cell_points(x, weights=(1, 3, 4, 1, 1, 2, 50)) if x['kind'] == 'cell' else targets.value_thing_points(x),
+                    'no-repair-scale': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, scale=False),
+                    'count-condemned': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, skip_condemned=False),
+                    'current-level-only': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, sum_levels=False),
+                    'no-byte': lambda x: targets.value_cell_points(x) if x['kind'] == 'cell' else targets.value_thing_points(x, byte=False)}
+        for name, reading in variants.items():
+            self.assertGreater(self.reading_mismatches(targets.VALUE_TARGET, reading), 0, name)
+
+    def test_park_value_whole_function(self):
+        # The cell loop (128 x 128) and the thing loop of 0xc1d4c run once on a whole map: the value is the sum of the per-cell and per-thing readings, an empty map is
+        # worth 2 points per cell, and the cache (0xc9020) answers within the same four-turn window.
+        empty, executed = targets.value_whole(self.image, {}, [])
+        self.assertEqual(empty, 2 * 128 * 128)
+        self.assertGreater(executed, 2_000_000)
+        cells = {0: {14: ('H', 0x40)}, 5: {8: ('I', 1)}, 6: {8: ('I', 3)}, 7: {8: ('I', 9)}, 8: {8: ('I', 10)}, 9: {8: ('I', 2)},
+                 10: {0: ('H', 3)}, 11: {0: ('H', 4), 8: ('I', 3)}, 12: {0: ('H', 5)}}
+        records = {3: {8: ('I', 12), 16: ('H', 9)}, 9: {8: ('I', 25)}, 4: {8: ('I', 13)}, 5: {8: ('I', 17), 16: ('H', 7)}}
+        things = [{'gauge': 80.0, 'level': 1, 'state': 0}, {'gauge': 80.0, 'level': 1, 'state': 4}, {'gauge': 25.5, 'level': 0, 'state': 1}]
+        value, _ = targets.value_whole(self.image, cells, things, records=records)
+        base = {'type': 0, 'flags': 0, 'rec_type': 0, 'link': None, 'link_type': 0}
+        special = [{**base, 'flags': 0x40}, {**base, 'type': 1}, {**base, 'type': 3}, {**base, 'type': 9}, {**base, 'type': 10}, {**base, 'type': 2},
+                   {**base, 'rec_type': 12, 'link': 9, 'link_type': 25}, {**base, 'type': 3, 'rec_type': 13}, {**base, 'rec_type': 17, 'link': 7, 'link_type': 0}]
+        self.assertEqual([targets.value_cell_points(cell) for cell in special], [0, 3, 5, 6, 1, 1, 52, 55, 2])
+        expected = sum(targets.value_cell_points(cell) for cell in special) + 2 * (128 * 128 - len(special))
+        expected += targets.value_thing_points({**things[0], 'costs': [1000, 500, 300]}) + targets.value_thing_points({**things[1], 'costs': [1000, 500, 300]}) \
+            + targets.value_thing_points({**things[2], 'costs': [1000, 500, 300]})
+        self.assertEqual(expected - 2 * (128 * 128 - len(special)) - sum(targets.value_cell_points(cell) for cell in special), 1200 + 0 + 250)
+        self.assertEqual(value, expected)
+        # The cache: a valid value answers when the turn is in the stamp's four-turn window (the maximum age is 0), else the map is walked again.
+        cached, short = targets.value_whole(self.image, {}, [], elapsed=(1, 100, 101))
+        self.assertEqual((cached, short < 1000), (77777, True))
+        fresh, _ = targets.value_whole(self.image, {}, [], elapsed=(1, 100, 104))
+        self.assertEqual(fresh, 2 * 128 * 128)
 
     def test_loans(self):
         for key in (('loan-offers', 'plan'), ('loan-offers', 'routine-reading'), ('loan-month', 'routine-reading'),
@@ -2006,6 +2136,14 @@ class CSharpMutation(unittest.TestCase):
          'public const float FullGauge = 100f;', 'public const float FullGauge = 99f;'),
         ('staff-dismiss-charge', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'Post( LedgerCategory.StaffCosts, wage );', 'Post( LedgerCategory.StaffCosts, wage + 1 );'),
+        ('park-value', 'csharp', 'source/OpenTPW/Economy/ParkValueRules.cs',
+         'return unchecked( total * RideBreakdownRules.GaugeByte( stateOfRepair ) ) / 100;',
+         'return unchecked( total * RideBreakdownRules.GaugeByte( stateOfRepair ) ) / 101;'),
+        ('park-value', 'csharp', 'source/OpenTPW/Economy/ParkValueRules.cs',
+         'public static bool CountsForValue( int state ) => state != RideObjectStates.Condemned;',
+         'public static bool CountsForValue( int state ) => true;'),
+        ('park-rating', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'Math.Min( Count( 0, 2 ), 10 );', 'Math.Min( Count( 0, 3 ), 10 );'),
         ('staff-wage-month', 'csharp', 'source/OpenTPW/Economy/BalanceSettings.cs',
          'unchecked( BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier )',
          '(long)BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier'),

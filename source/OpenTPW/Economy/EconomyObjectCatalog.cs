@@ -48,10 +48,25 @@ public sealed record EconomyObjectInfo(
 	IReadOnlyList<int>? NewBonus = null,
 	int TrackType = 0,
 	bool IsChoosable = true,
-	bool ChillsYouOut = false )
+	bool ChillsYouOut = false,
+	int WhichUIType = -1 )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
+
+	/// <summary>
+	/// The type record's <c>Info.WhichUIType</c> (<c>+1960</c>) the park rating counts objects by (<c>0xc7b24</c>, ORACLE.md F29): 0 ride, 1 shop, 2 sideshow, 3 feature, 4 not
+	/// shown. The shipped add-ons (the "upgrades" directory: the karts' jumps and tunnels, the racers' teleport) declare 0, so they count as rides. An object without the
+	/// key (a synthetic one) takes the value of its directory.
+	/// </summary>
+	public int RatingType => WhichUIType >= 0 ? WhichUIType : Kind switch
+	{
+		ParkObjectKind.Ride or ParkObjectKind.Upgrade => 0,
+		ParkObjectKind.Shop => 1,
+		ParkObjectKind.Sideshow => 2,
+		ParkObjectKind.Feature => 3,
+		_ => 4
+	};
 }
 
 /// <summary>Source of object prices/costs for the economy. Implemented here from the original files; other slices may substitute their own.</summary>
@@ -134,7 +149,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			// An object file that declares neither the key nor a category default is read as choosable (the shipped category files always declare it).
 			settings.GetInt( "Info.IsChoosable", 1, optional: true ) != 0,
 			// [BIN:STP-PPC:0x100DABD0 object constructor] type record +0xFC (UsageInfo.ChillsYouOut) nonzero sets thing +46 bit 0x2, the only test of the rest-area search 0x100F47A0 (ORACLE.md F22): any such object is a rest area for staff
-			settings.GetInt( "UsageInfo.ChillsYouOut", 0, optional: true ) != 0 );
+			settings.GetInt( "UsageInfo.ChillsYouOut", 0, optional: true ) != 0,
+			// [DATA:<object>.sam:Info.WhichUIType] type record +1960, which 0xc7b24 counts objects by
+			settings.GetInt( "Info.WhichUIType", -1, optional: true ) );
 	}
 
 	/// <summary>

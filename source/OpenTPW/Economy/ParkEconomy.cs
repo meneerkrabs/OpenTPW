@@ -585,19 +585,21 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Park value (UITEXT 163): the sum over all objects of the catalogue costs up to the current level times the level's age
-	/// percentage, which was the scrap value before ORACLE.md F21 — an <b>approximation</b>.
+	/// Park value (UITEXT 163): the object part of the original's <c>0xc1d4c</c> (ORACLE.md F29): per object, unless it is condemned, the costs of its upgrade levels up to the
+	/// current one times its state of repair / 100. The original adds the map's cell points to it (2 per owned empty cell, 3 per path, 5 per queue, ...).
 	/// </summary>
-	// [APPROX:ECON-026] park value = sum of catalogue costs up to the current level times the age percentage (the scrap rule before ORACLE F21), not the sale refund — evidence needed: capture of the park value screen
-	public long ParkValue => objects.Values.Sum( item =>
+	// [BIN:STP-PPC:0x100C1D4C park value] the thing loop adds sum(Upgrades[0..level].CostOfUpgrade) × byte(state of repair) / 100 for every object that is not in state 4; the 128 × 128 cell loop adds 1, 3, 5, 1, 1, 2 and 50 points by cell type (the predicates 0x10085174..0x10085418) for cells without the unowned flag 0x40; both executed by the oracle target park-value
+	// [APPROX:ECON-026] the map's cell points are not added: the cell map has no ownership flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, and the scrap values are no longer part of it — evidence needed: the ownership of the starting park's cells and the original cell types
+	public long ParkValue => objects.Values.Sum( ObjectValue );
+
+	/// <summary>One object's share of the park value (<see cref="ParkValueRules.ObjectValue"/>); condemned objects count for nothing.</summary>
+	private long ObjectValue( ParkObjectState item )
 	{
-		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+		if ( !Catalog.TryGet( item.InfoId, out var info ) || !ParkValueRules.CountsForValue( ObjectState( item ) ) )
 			return 0;
-		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
-		var year = (int)Math.Min( 3, (ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick )) / (365 * ParkCalendar.SecondsPerDay) );
-		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
-		return info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade ) * percent / 100;
-	} );
+		var costs = Enumerable.Range( 0, item.Level + 1 ).Select( level => level < info.Upgrades.Count ? unchecked( (int)info.Upgrades[level].CostOfUpgrade ) : 0 );
+		return ParkValueRules.ObjectValue( costs, (float)item.Repair );
+	}
 
 	public int LitterItems => (int)(LitterScaled / LitterScale);
 
@@ -605,19 +607,20 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Park rating 0–100 (UITEXT 155): a sum of capped counts of guests, attractions and staff. It does
 	/// not use guest happiness, litter or whether an attraction is open.
 	/// </summary>
-	// [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4
+	// [BIN:STP-PPC:0x100C7B24 park rating] min(counted guests, 1000) × 20 / 1000; objects by Info.WhichUIType (type +1960): rides (0) × 3 / 2 up to 20, shops (1) and sideshows (2) × 2 up to 10 each, features (3) up to 10, rides at upgrade level 2 or more up to 10; each of the five staff classes with the thing byte +3 clear up to 4; executed by the oracle target park-rating (ORACLE.md F29)
 	public int ParkRating
 	{
 		get
 		{
+			// [APPROX:ECON-027] the visitor term counts the guests in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 (the census 0xc3684); every hired staff member counts, where the original skips a staff thing whose byte +3 is set — evidence needed: cell-type provenance for the census (ECON-050) and the writers of the staff byte +3
 			var guests = Math.Min( guestStatistics.PeopleInPark, 1000 ) * 20 / 1000;
-			// [APPROX:ECON-027] the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts — evidence needed: the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064
-			int Count( ParkObjectKind kind, int minimumLevel = 0 ) => objects.Values.Count( item => item.Kind == kind && item.Level >= minimumLevel );
-			var attractions = Math.Min( Count( ParkObjectKind.Ride ) * 3 / 2, 20 )
-				+ Math.Min( Count( ParkObjectKind.Shop ) * 2, 10 )
-				+ Math.Min( Count( ParkObjectKind.Sideshow ) * 2, 10 )
-				+ Math.Min( Count( ParkObjectKind.Feature ), 10 )
-				+ Math.Min( Count( ParkObjectKind.Ride, 2 ), 10 );
+			// An object counts by the type's Info.WhichUIType: the shipped add-ons (the upgrades directory) declare 0 and count as rides, fixed items declare 4 and count for nothing.
+			int Count( int uiType, int minimumLevel = 0 ) => objects.Values.Count( item => Catalog.TryGet( item.InfoId, out var info ) && info.RatingType == uiType && item.Level >= minimumLevel );
+			var attractions = Math.Min( Count( 0 ) * 3 / 2, 20 )
+				+ Math.Min( Count( 1 ) * 2, 10 )
+				+ Math.Min( Count( 2 ) * 2, 10 )
+				+ Math.Min( Count( 3 ), 10 )
+				+ Math.Min( Count( 0, 2 ), 10 );
 			var staff = Enum.GetValues<StaffType>().Sum( type => Math.Min( Staff.Members.Count( member => member.Type == type ), 4 ) );
 			return guests + attractions + staff;
 		}

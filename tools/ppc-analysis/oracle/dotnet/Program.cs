@@ -56,6 +56,8 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["ride_breakdown_update"] = RideBreakdownUpdate,
 	["staff_wage_month"] = StaffWageMonth,
 	["staff_dismiss"] = StaffDismiss,
+	["park_rating"] = ParkRating,
+	["park_value_thing"] = ParkValueThing,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -761,6 +763,47 @@ static JsonNode? StaffDismiss( JsonObject a )
 	return new JsonObject { ["balance"] = park.Balance - before, ["profit"] = profit - park.Ledger.ProfitThisYear };
 }
 
+// ParkEconomy.ParkRating (0xc7b24, ORACLE F29) on a synthetic economy: one type per (Info.WhichUIType, directory kind) pair of the input with one object per
+// input object at its upgrade level, the staff counts per role (AddImported, reflection) and the guests in the park by state as a fixed statistic. The census
+// (cell types) and the staff byte +3 have no C# counterpart.
+static JsonNode? ParkRating( JsonObject a )
+{
+	var kinds = new[] { "ride", "shop", "sideshow", "feature", "upgrade", "fixed" };
+	var parkKinds = new[] { ParkObjectKind.Ride, ParkObjectKind.Shop, ParkObjectKind.Sideshow, ParkObjectKind.Feature, ParkObjectKind.Upgrade, ParkObjectKind.FixedItem };
+	var infos = new Dictionary<int, EconomyObjectInfo>();
+	foreach ( var item in a["objects"]!.AsArray() )
+	{
+		var ui = (int)item!["ui"]!;
+		var directory = Array.IndexOf( kinds, (string)item["dir"]! );
+		var id = 5000 + ui * 10 + directory;
+		infos.TryAdd( id, new EconomyObjectInfo( id, $"Type {id}", parkKinds[directory], ResearchCategory.Ride, 0,
+			new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "synthetic.wad", WhichUIType: ui ) );
+	}
+	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( infos.Values ), ParkGameMode.FullSimulation, 1 );
+	foreach ( var item in a["objects"]!.AsArray() )
+		park.RegisterExisting( 5000 + (int)item!["ui"]! * 10 + Array.IndexOf( kinds, (string)item["dir"]! ) ).Level = (int)item["level"]!;
+	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingMethodException( "ParkStaff.AddImported" );
+	for ( var role = 0; role < 5; role++ )
+		for ( var count = 0; count < (int)a["staff"]![role]!; count++ )
+			add.Invoke( park.Staff, new object[] { (StaffType)role, 0, 0, 100, StaffState.Idle, 0L } );
+	park.GuestStatistics = new FixedGuestStatistics( (int)a["in_park"]! );
+	return JsonValue.Create( park.ParkRating );
+}
+
+// ParkValueRules (the thing loop body of 0xc1d4c, ORACLE F29): CountsForValue for the state, ObjectValue for the costs of the levels 0..level (0 past the
+// given costs) and the state of repair as single bits. The cell term has no C# counterpart: such inputs are skipped (null).
+static JsonNode? ParkValueThing( JsonObject a )
+{
+	if ( (bool)a["skip"]! )
+		return null;
+	if ( !ParkValueRules.CountsForValue( (int)a["state"]! ) )
+		return JsonValue.Create( 0 );
+	var costs = a["costs"]!.AsArray().Select( cost => (int)cost! ).ToArray();
+	var levels = Enumerable.Range( 0, (int)a["level"]! + 1 ).Select( level => level < costs.Length ? costs[level] : 0 );
+	return JsonValue.Create( ParkValueRules.ObjectValue( levels, BitConverter.Int32BitsToSingle( (int)(uint)a["gauge_bits"]! ) ) );
+}
+
 // 0xde654 (ORACLE F27): RideOpening.MayOpen, the guard of ParkGate.MayOpen, for the ride's state word, the maintenance flag, the back of the
 // queue (a chosen word on both sides) and the track type with the coaster's circuit.
 static JsonNode? RideMayOpen( JsonObject a ) =>
@@ -805,6 +848,16 @@ sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStati
 {
 	public int PeopleInPark => people;
 	public float AverageHappiness => average;
+	public int CountHappierThan( int happiness ) => 0;
+	public int KidsWithBalloonsPercent => 0;
+	public int KidsWithCostumesPercent => 0;
+}
+
+// The guests of the park rating bridge: a fixed number in the park, nobody else counted.
+sealed class FixedGuestStatistics( int inPark ) : IParkGuestStatistics
+{
+	public int PeopleInPark => inPark;
+	public int AverageHappiness => 0;
 	public int CountHappierThan( int happiness ) => 0;
 	public int KidsWithBalloonsPercent => 0;
 	public int KidsWithCostumesPercent => 0;

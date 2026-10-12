@@ -133,13 +133,17 @@ original save) gets its first group at once, while a new park waits one interval
 
 The group size is `(int)(1.2 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
 divides by 1), at least `MinPeople`, cut so that the guests in the park plus the group stay within 1,500;
-a bankrupt park gets none. With the shipped 20 and 6 a new park gets 4 guests per group.
+a bankrupt park gets none. With the shipped 20 and 6 a new park gets 4 guests per group. The PowerPC oracle
+ran this routine (docs/reverse/ORACLE.md, F9). It confirms the rule and adds three details. The factor is
+0.8 instead of 1.2 while the `+48` word of the thing at game `+0x1da734` is positive (ARRIVAL-002). Online
+parks (GameType 1) are cut at 500 instead of 1,500. A group cut with more guests than the limit becomes
+negative; OpenTPW stops at 0 (ARRIVAL-004).
 
 Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
 bonus from the fourth bracket on), divided by the number of objects of the same type, so copies of one
 type count once. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has 25 and bonuses
-10/7/4. Open points are ARRIVAL-001..003 (`ArrivalApproximations`).
+10/7/4. Open points are ARRIVAL-001..004 (`ArrivalApproximations`).
 
 ## Simulation
 

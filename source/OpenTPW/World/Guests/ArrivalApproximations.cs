@@ -9,7 +9,8 @@ public static class ArrivalApproximations
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
 		("ARRIVAL-001", "STEP-OFF: a group's guests appear every 0.4 s at the arrival lanes instead of at the stops of a bus sized by the group"),
-		("ARRIVAL-002", "MODE: the 500-guest limit and the 0.8 factor of the original's other states are not reproduced; groups use 1.2 and 1500"),
+		("ARRIVAL-002", "FACTOR: groups always use 1.2; the original uses 0.8 while the +48 word of the thing at game +0x1DA734 is positive (oracle F9); the 500 cut is online-only"),
 		("ARRIVAL-003", "POINTS: rides and sideshows count, aged from their build turn; the type kind, the second age source and the open-state test are not traced"),
+		("ARRIVAL-004", "FLOOR: a group cut by the 1500 limit stops at 0; the original keeps 1500 minus guests, negative above the limit (oracle F9)"),
 	};
 }

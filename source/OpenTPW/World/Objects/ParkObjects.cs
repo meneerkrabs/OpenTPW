@@ -139,21 +139,48 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
-	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true )
-	{
-		// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
-		// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
-		var placement = entry.IsFixedItem && !GameEditions.IsThemeParkInc
+	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open ) );
+
+	/// <summary>
+	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
+	/// with the record's own creation seed instead of the allocator's next value. Like Add it applies no build rules
+	/// and charges nothing; the allocator itself is restored separately with <see cref="RestoreSeedAllocator"/> so
+	/// objects placed after the load continue the saved seed sequence.
+	/// </summary>
+	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open ) );
+
+	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
+	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
+	private ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+		entry.IsFixedItem && !GameEditions.IsThemeParkInc
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin,
 				entry.IsFixedItem ? 0 : GetBaseHeight( entry, anchorX, anchorY, rotation ) );
-		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++ ^ scriptKey, open );
+
+	private OriginalObject Register( OriginalObject item )
+	{
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
 		ObjectPlaced?.Invoke( item );
 		return item;
 	}
+
+	/// <summary>The next seed <see cref="Add"/> draws (one past every placement ever made; removals do not rewind it).</summary>
+	internal int NextPlacementSeed => nextSeed;
+	/// <summary>The world seed's object-script key the placement seeds are XORed with (<see cref="WorldSeed.ObjectScriptKey"/>).</summary>
+	internal int ObjectScriptKey => scriptKey;
+	/// <summary>
+	/// The script world's next attraction id. Like the seed allocator it never rewinds, so a park that removed objects
+	/// has holes in both — <see cref="ParkLayoutSnapshot"/> captures and reproduces them with explicit ids, not by
+	/// renumbering the survivors.
+	/// </summary>
+	internal int NextAttractionId => ScriptWorld.NextAttractionId;
+
+	/// <summary>Restores the placement-seed allocator of a saved park (validation checked every saved seed against it).</summary>
+	internal void RestoreSeedAllocator( int value ) => nextSeed = value >= 1 ? value : throw new ArgumentOutOfRangeException( nameof( value ) );
 
 	/// <summary>
 	/// Base height: the mean ground height under the footprint. Rides flatten their ground in the original

@@ -66,6 +66,7 @@ public class OriginalObject : Entity
 			if ( !ObjectFootprint.IsValidRotation( placement.Rotation ) || !float.IsFinite( placement.BaseHeight ) )
 				throw new ArgumentOutOfRangeException( nameof( placement ) );
 			Placement = placement;
+			CreationSeed = seed;
 			Runtime = new OriginalObjectRuntime( entry, world, seed, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
@@ -82,6 +83,11 @@ public class OriginalObject : Entity
 	public ObjectCatalogEntry Entry => Runtime.Entry;
 	public OriginalObjectRuntime Runtime { get; } = null!;
 	public ObjectPlacement Placement { get; }
+	/// <summary>
+	/// The seed this object's script was created with — explicit for every <see cref="ParkObjects"/> placement, so a
+	/// layout snapshot can recreate the same script stream (null: created without one, not snapshottable).
+	/// </summary>
+	public int? CreationSeed { get; }
 	public RideVM? Script => Runtime.Script;
 	/// <summary>Visitor side of the script (guests slice).</summary>
 	public RideVisitorBridge Visitors => Runtime.Visitors;

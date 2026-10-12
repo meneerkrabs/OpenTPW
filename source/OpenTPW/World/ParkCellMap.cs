@@ -150,6 +150,13 @@ public sealed class ParkCellMap
 	public void Touch() => Version++;
 
 	/// <summary>
+	/// Sets the change counter a <see cref="ParkLayoutSnapshot"/> recorded: restoring writes every cell with the
+	/// normal setters (each bumping <see cref="Version"/>), then aligns the counter with the saved park so cached
+	/// state derived from it (the guests' walk graph) keeps the saved epoch.
+	/// </summary>
+	internal void RestoreVersion( int version ) => Version = version >= 0 ? version : throw new ArgumentOutOfRangeException( nameof( version ) );
+
+	/// <summary>
 	/// Cell-map part of <see cref="WorldStateHash"/>: every non-empty cell in row order with its type, flags,
 	/// placement counter, links and queue link (the cells guests walk and queue on, and the build tools read).
 	/// </summary>

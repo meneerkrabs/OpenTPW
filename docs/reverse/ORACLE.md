@@ -706,7 +706,8 @@ own.
   The paths come from `OPENTPW_TPW_EXE` and `OPENTPW_TPI_EXE` (outside the checkout); the runner
   sets or strips them from `--tpw-exe` / `--tpi-exe`, like the Mac variables.
 - **Loading.** Sections at the preferred base `0x400000` (relocated when another base is asked
-  for; neither executable needs it). Every import address table slot points at a per-import trap
+  for; neither executable needs it, but the TPI image lists 144,929 fixups, 16 of them past the end of its
+image, which a relocated load skips and counts in `Image.skipped_relocations`). Every import address table slot points at a per-import trap
   address, keyed `dll!name` (DLL case-insensitive).
 - **Sandbox.** Image sections (code read/execute, data read/write), a 16 MiB heap (the world object
   puts its RNG state about 2 MB in), a stack, an import trap page and a return sentinel page. Only
@@ -728,6 +729,8 @@ own.
 | Target | Routine (allowed code) | Stubs | Inputs | vs plan | vs routine reading |
 | --- | --- | --- | --- | --- | --- |
 | `tpw-exe-world-rng` | tp.exe `0x516330`..`0x516365` (thiscall, `ecx` = object; state at `+0x1da708`) | none | 508 (500 random + 8 boundaries) | **X1**: 507 differ from the Mac model `det_model.world_next` (first input 0: original returns 1694899337 and stores 2600067959, the plan 1013904223 for both) | **agree** 508/508 |
+
+| `tpi-exe-world-rng` | TPI `Game.exe` `0x6493e0`..`0x649415` (thiscall, `ecx` = object; state at `+0x1eab3c`) | none | 508 | **X2**: 507 differ from the Mac model (first input 0: the same pair as tp.exe, 1694899337 returned, 2600067959 stored) | **agree** 508/508 with the TPW PC reading |
 
 The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
 rotate the result right by 13 bits, store that, and return its signed absolute value (the
@@ -782,6 +785,50 @@ on the other. That choice needs its own decision, and the PC rotation must be in
 The same check applies to the weather generator and the sound seed, which are not examined on the
 PC. Whether the TPI `Game.exe` has the rotation is the next target.
 
+### 7.4a Finding X2: the Theme Park Inc Game.exe uses the TPW PC step, with the state slot moved
+
+Question: does the TPI `Game.exe` (the no-CD image with SHA-256
+`77ea0c41410aad7c94a5eda658e31cb4ac05f7253aaf6746ad5e8a90afbd967a`) have the Mac world
+generator, the TPW PC generator (rotation by 13), or a third one?
+
+Evidence (static reading with Capstone in a scratch directory, terminal only; plus execution):
+
+- Search: the multiplier 1664525 and the increment 1013904223 occur together 47 times in the image.
+  Six are the shared generator at `0x6493e0` and its five inline copies; the other 41 belong to
+  separate generators with their own state words (around `0x7992c1`, `0x7a4260`, `0x8a3776`) and were
+  not examined further (the one sampled, at `0x7992c1`, also rotates by 13).
+- Generator `0x6493e0`: reads a dword from object `+0x1eab3c`, multiplies by 1664525, adds
+  1013904223, stores the successor, rotates the result right by 13, stores that, and returns its
+  signed absolute value (wrapping negate). This is the same step in effect as tp.exe `0x516330`
+  (X1); only the slot moved (`+0x1da708` in tp.exe, `+0x1eab3c` here).
+- Neighbours in the same order as X1 and the Mac: setter `0x649430` (stores its stack argument at
+  `+0x1eab3c`) and tick `0x649450` (increments the dword at `+0x1eab40`, the game tick, then does
+  per-tick work). All three are reached through jump thunks (`0x40a92f`, `0x403508`, `0x4055bf`; the
+  image is incrementally linked), so direct `call` counts are on the thunks.
+- Users: 149 calls of the generator (tp.exe 139, Mac 142), five inline copies (`0x649a87`, `0x649c5b`,
+  `0x649cf9`, `0x649d67`, `0x64fcbb`; each rotates, one projects with modulo 3), seven calls of the
+  setter, each passing a zero-extended halfword read from the first field of a thing record (the
+  thing-ID reseed of DET-plan §2.3), through one global object pointer (`0xade6b0`). Three other
+  references to the slot (`0x64a781` and `0x64c10b` take its address; one near `0x648168`) were not
+  examined.
+- Executed: the routine run in the sandbox on 508 inputs (seed `oracle-v1`, 500 random plus
+  boundaries) agrees 508/508 with the TPW PC reading and differs from the Mac model in 507 (the one
+  agreement is again the state whose successor is 0). The identification as the shared gameplay RNG
+  rests on the static evidence above; the function itself is executed.
+
+Result: **TPI uses the TPW PC step (LCG, then rotate right by 13, rotated word stored and projected),
+not the Mac one and no third variant.** Both Windows executables carry the rotated generator and the
+Mac build is the odd one out. Only the object layout differs between the two Windows executables
+(state `+0x1da708` vs `+0x1eab3c`, tick `+0x1da70c` vs `+0x1eab40`).
+
+Consequence for OpenTPW. DET-plan and `det_model.world_next` (no rotation) follow the Mac build and
+OpenTPW has no world LCG yet (DET-I2), so the game is unchanged. If DET-I2 targets the Windows
+games, the rotated step is the one to port: it serves TPW PC and, unchanged, a future TPI mode (only
+an original-save import needs the other slot offset). The Mac step is correct only for Mac saves and
+traces, and a save or replay from one family does not continue on the other. The platform choice
+stays a decision of its own; X1 and X2 give it its inputs. The weather generator and the sound seed
+are still unexamined on both Windows builds.
+
 ### 7.5 Running and adding a target
 
 ```
@@ -793,7 +840,6 @@ OPENTPW_TPW_EXE=/path/tp.exe /tmp/oracle-venv/bin/python -I tools/ppc-analysis/o
 To add a target: read the routine with a disassembler in a scratch directory (never in the
 checkout), note every call and the code range, then add `binary`, `plan`, `inputs`, `allowed` and
 `stubs` (each stub justified) to `x86_targets.py`, and pin the result in
-`test_x86_oracle.EXPECTED` and in 7.3 here. Recommended next targets: the TPI `Game.exe`
-counterpart of the world RNG step (same object offset? rotation?), then the tp.exe counterparts of
+`test_x86_oracle.EXPECTED` and in 7.3 here. Recommended next targets: the tp.exe counterparts of
 the Mac targets already pinned (`arrival-group`, loans, park points), where a PC-vs-Mac divergence
 would matter most.

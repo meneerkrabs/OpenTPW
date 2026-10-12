@@ -31,7 +31,9 @@ from x86_harness import (IDENTIFIED, UNICORN_HINT, BudgetExceeded, IdentityError
 
 AGREE = 'agree'
 TPW = executable_path('tpw')
+TPI = executable_path('tpi')
 UNICORN = have_unicorn()
+NO_TPI = 'requires the identified TPI Game.exe (OPENTPW_TPI_EXE; tools/ppc-analysis/oracle_x86/README.md)'
 NO_TPW = 'requires the identified tp.exe (OPENTPW_TPW_EXE; tools/ppc-analysis/oracle_x86/README.md)'
 
 # (target, side) -> AGREE, or (mismatches, first counterexample input). Seed 'oracle-v1', 500 random + boundaries.
@@ -40,6 +42,9 @@ EXPECTED = {
     # state whose successor is 0 (a rotation fixed point) gives the same pair.
     ('tpw-exe-world-rng', 'plan'): (507, 0),
     ('tpw-exe-world-rng', 'routine-reading'): AGREE,
+    # X2: the TPI Game.exe 0x6493e0 is the same step as tp.exe 0x516330 (rotation included) at state slot +0x1eab3c.
+    ('tpi-exe-world-rng', 'plan'): (507, 0),
+    ('tpi-exe-world-rng', 'tpw-pc-reading'): AGREE,
 }
 
 BASE = 0x400000
@@ -59,9 +64,9 @@ def build_pe(code: bytes, data: bytes = b'', relocs: tuple[int, ...] = ()) -> by
     idata[0x70:0x70 + 15] = b'\0\0GetTickCount'
     idata[0x90:0x90 + 13] = b'KERNEL32.dll\0'
     reloc = bytearray()
-    if relocs:
-        entries = [(3 << 12) | (rva & 0xFFF) for rva in relocs]
-        reloc += struct.pack('<II', relocs[0] & ~0xFFF, 8 + 2 * len(entries)) + struct.pack(f'<{len(entries)}H', *entries)
+    for page in sorted({rva & ~0xFFF for rva in relocs}):   # one block per 4 KiB page, like a real .reloc
+        entries = [(3 << 12) | (rva & 0xFFF) for rva in relocs if rva & ~0xFFF == page]
+        reloc += struct.pack('<II', page, 8 + 2 * len(entries)) + struct.pack(f'<{len(entries)}H', *entries)
     sections = [(b'.text', TEXT, code, 0x60000020), (b'.data', DATA, data, 0xC0000040), (b'.idata', IDATA, bytes(idata), 0xC0000040)]
     if reloc:
         sections.append((b'.reloc', RELOC, bytes(reloc), 0x42000040))
@@ -121,6 +126,20 @@ class PeReader(unittest.TestCase):
         code = b'\xA1' + slot(DATA) + b'\xC3'     # mov eax, [data]
         image = Image(build_pe(code, relocs=(TEXT + 1,)), base=0x10000000, identity='synthetic')
         self.assertEqual(struct.unpack_from('<I', image.data, TEXT + 1)[0], 0x10000000 + DATA)
+
+    def test_fixups_past_the_image_end_are_skipped(self):
+        """The TPI image lists 16 fixups beyond its SizeOfImage; a relocated load must skip them, not crash."""
+        code = b'\xA1' + slot(DATA) + b'\xC3'
+        image = Image(build_pe(code, relocs=(TEXT + 1, 0x5000 + 0x202, 0x5000 + 0x207)), base=0x10000000,
+                      identity='synthetic')
+        self.assertEqual(struct.unpack_from('<I', image.data, TEXT + 1)[0], 0x10000000 + DATA)
+        self.assertEqual(image.skipped_relocations, 2)
+
+    def test_image_size_need_not_be_page_aligned(self):
+        raw = bytearray(build_pe(THISCALL))
+        struct.pack_into('<I', raw, 0x80 + 24 + 56, 0x4A9B)   # SizeOfImage like the TPI image (ends mid-page)
+        image = Image(bytes(raw), identity='synthetic')
+        self.assertEqual(len(image.data), 0x5000)
 
     def test_unknown_executable_is_refused(self):
         with self.assertRaises(IdentityError):
@@ -230,11 +249,15 @@ class SandboxSynthetic(unittest.TestCase):
 @unittest.skipUnless(UNICORN, UNICORN_HINT)
 @unittest.skipUnless(TPW, NO_TPW)
 class Oracle(unittest.TestCase):
+    exe, path = 'tpw', TPW
+
     @classmethod
     def setUpClass(cls):
-        cls.image = Image.load(TPW)
+        cls.image = Image.load(cls.path)
         cls.results = {}
         for target in targets.TARGETS:
+            if target.exe != cls.exe:
+                continue
             for comparison in compare(target, cls.image, DEFAULT_COUNT):
                 cls.results[(target.key, comparison.side)] = comparison
 
@@ -249,10 +272,10 @@ class Oracle(unittest.TestCase):
             self.assertEqual(comparison.first['input'], first_input, key)
 
     def test_every_comparison_is_pinned(self):
-        self.assertEqual(set(self.results), set(EXPECTED))
+        self.assertEqual(set(self.results), {key for key in EXPECTED if key[0].startswith(self.exe + '-')})
 
     def test_identity_is_pinned(self):
-        self.assertEqual(self.image.identity, 'tpw')
+        self.assertEqual(self.image.identity, self.exe)
 
     def test_world_rng_mac_plan_differs(self):
         self.check(('tpw-exe-world-rng', 'plan'))
@@ -289,6 +312,53 @@ class Oracle(unittest.TestCase):
         raw[0x1000] ^= 1
         with self.assertRaises(IdentityError):
             Image(bytes(raw))
+
+
+@unittest.skipUnless(UNICORN, UNICORN_HINT)
+@unittest.skipUnless(TPI, NO_TPI)
+class OracleTpi(unittest.TestCase):
+    """X2: the TPI Game.exe world RNG step (the image has a relocation directory and an .idata section)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.image = Image.load(TPI)
+        target = targets.TPI_WORLD_RNG_TARGET
+        cls.results = {(target.key, c.side): c for c in compare(target, cls.image, DEFAULT_COUNT)}
+
+    def test_identity_and_loader(self):
+        self.assertEqual(self.image.identity, 'tpi')
+        self.assertEqual(len(self.image.pe.imports), 393)
+        self.assertEqual(len(self.image.pe.relocations()), 144929)
+        self.assertEqual(self.image.skipped_relocations, 0)   # preferred base: nothing applied, nothing skipped
+
+    def test_tpi_matches_the_pc_reading_not_the_mac_plan(self):
+        for key, expected in (('plan', (507, 0)), ('tpw-pc-reading', AGREE)):
+            comparison = self.results[('tpi-exe-world-rng', key)]
+            self.assertEqual(EXPECTED[('tpi-exe-world-rng', key)], expected)
+            if expected == AGREE:
+                self.assertTrue(comparison.agrees, comparison.first)
+            else:
+                self.assertEqual((comparison.mismatches, comparison.first['input']), expected)
+
+    def test_tpi_state_slot_and_step_equal_the_tpw_pc_step(self):
+        """Moving the slot is the only difference: the same input gives the same (returned, stored) pair."""
+        target = targets.TPI_WORLD_RNG_TARGET
+        sandbox = target.sandbox(self.image)
+        inputs = targets.world_rng_inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        self.assertTrue(all(targets.run_binary(target, sandbox, x) == targets.world_rng_routine_reading(x)
+                            for x in inputs))
+        self.assertEqual((targets.TPI_WORLD_RNG, targets.WORLD_RNG), (0x1EAB3C, 0x1DA708))
+
+    def test_relocated_load_skips_the_fixups_past_the_image(self):
+        image = Image.load(TPI, base=0x10000000)
+        self.assertEqual(image.skipped_relocations, 16)
+
+    def test_overrun_of_the_allowed_range_aborts(self):
+        sandbox = Sandbox(self.image, [(targets.TPI_RNG_STEP, targets.TPI_RNG_STEP + 0x10)], {})
+        sandbox.reset()
+        obj = sandbox.object(targets.WORLD_OBJECT_SIZE)
+        with self.assertRaises(UnknownCall):
+            sandbox.call(targets.TPI_RNG_STEP, this=obj)
 
 
 if __name__ == '__main__':

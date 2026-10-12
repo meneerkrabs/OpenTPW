@@ -125,8 +125,12 @@ class Image:
         self.base = self.pe.preferred_base if base is None else base
         self.data = self.pe.layout()
         delta = (self.base - self.pe.preferred_base) & MASK32
+        self.skipped_relocations = 0   # fixups whose 4 bytes lie past the end of the image (the TPI image has 16)
         if delta:
             for rva in self.pe.relocations():
+                if rva + 4 > len(self.data):
+                    self.skipped_relocations += 1
+                    continue
                 value = struct.unpack_from('<I', self.data, rva)[0]
                 struct.pack_into('<I', self.data, rva, (value + delta) & MASK32)
         self.import_traps: dict[str, int] = {}

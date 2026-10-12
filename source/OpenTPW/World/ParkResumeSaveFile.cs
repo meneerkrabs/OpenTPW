@@ -489,7 +489,7 @@ internal static class ParkResumeSaveFile
 			Require( guest.Navigation != null && guest.Navigation.Route != null && guest.Navigation.AlsoOpen != null,
 				$"guest {guest.Id} has no navigation state" );
 			var navigation = guest.Navigation!;
-			Require( Math.Abs( navigation.VelocityX ) <= GuestSpeed.VelocityBound && Math.Abs( navigation.VelocityY ) <= GuestSpeed.VelocityBound,
+			Require( Math.Abs( (long)navigation.VelocityX ) <= GuestSpeed.VelocityBound && Math.Abs( (long)navigation.VelocityY ) <= GuestSpeed.VelocityBound,
 				$"guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap" );
 			Require( navigation.Cursor >= 0 && navigation.Cursor <= navigation.Route!.Length,
 				$"guest {guest.Id} navigation cursor {navigation.Cursor} is outside its {navigation.Route!.Length}-cell route" );

@@ -1844,7 +1844,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			error( $"Guest {guest.Id} navigation position ({navigation.X >> 16}, {navigation.Y >> 16}) is outside the map." );
 		if ( !Grid.InBounds( navigation.TargetX >> 16, navigation.TargetY >> 16 ) )
 			error( $"Guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the map." );
-		if ( Math.Abs( navigation.VelocityX ) > GuestSpeed.VelocityBound || Math.Abs( navigation.VelocityY ) > GuestSpeed.VelocityBound )
+		if ( Math.Abs( (long)navigation.VelocityX ) > GuestSpeed.VelocityBound || Math.Abs( (long)navigation.VelocityY ) > GuestSpeed.VelocityBound )
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
 		if ( navigation.Route == null )
 			error( $"Guest {guest.Id} has no route." );

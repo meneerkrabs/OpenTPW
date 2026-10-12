@@ -241,6 +241,7 @@ public class GuestSnapshotValidationReviewTests
 		{
 			Navigation = guest.Navigation with { VelocityX = GuestSpeed.VelocityBound + 1 }
 		} ), "navigation velocity above the cap" );
+		Rejects( target, WithJsonEdit( snapshot, root => root["Guests"]![0]!["Navigation"]!["VelocityX"] = int.MinValue ), "minimum navigation velocity from JSON" );
 		Rejects( target, WithGuest( snapshot, first, guest => guest with
 		{
 			Navigation = guest.Navigation with { Cursor = guest.Navigation.Route.Length + 1 }

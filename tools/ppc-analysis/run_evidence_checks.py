@@ -1,7 +1,7 @@
 """Run every ppc-analysis Python suite and the standalone .NET self-test harnesses, one lane at a time.
 
 Usage: python3 -I tools/ppc-analysis/run_evidence_checks.py [--repo CHECKOUT] [--mac-bin FERAL_BIN]
-           [--pc-data TPW_DATA] [--pc-fixture EASYMODE_TPWI] [--require-fixtures] [--dotnet DOTNET_EXE] [--json]
+           [--tpw-exe TP_EXE] [--tpi-exe GAME_EXE] [--pc-data TPW_DATA] [--pc-fixture EASYMODE_TPWI] [--require-fixtures] [--dotnet DOTNET_EXE] [--json]
 
 CI's `unittest discover -s tools/ppc-analysis` reaches only the top-level test files: lane
 directories (and oracle/) have no __init__.py, and several lanes import a module named `evidence`, so they cannot
@@ -18,7 +18,10 @@ paths are stat'ed; no directory is listed. --pc-fixture is the one identified PC
 name for the same save) and is passed as `--fixture` to
 harnesses registered in FIXTURE_ARGUMENTS. It is never derived from --pc-data. The runner checks only
 its shape (a regular .TPWI file outside the checkout, longer than the container header, within the
-8 MiB harness bound); the lanes check its identity. UI_EVIDENCE_* variables pass through unchanged.
+8 MiB harness bound); the lanes check its identity. --tpw-exe and --tpi-exe name the two identified
+Windows executables for the x86 oracle (oracle_x86/, OPENTPW_TPW_EXE / OPENTPW_TPI_EXE; outside the checkout, SHA-256
+pinned by the oracle). The x86 oracle also needs the dev-only `unicorn` package; without it, or without the files, its
+tests skip (run this script with the dev venv's python to execute them). UI_EVIDENCE_* variables pass through unchanged.
 
 Absent fixtures never fail by themselves. --require-fixtures turns any skipped test, any harness
 "NOT RUN:" fixture line, and any supplied fixture flag none of whose variables was actually used
@@ -53,7 +56,7 @@ import tempfile
 from pathlib import Path
 
 FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_BIN', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA',
-                     'OPENTPW_PC_FIXTURE', 'OPENTPW_PPC_SAVE_PATH')
+                     'OPENTPW_PC_FIXTURE', 'OPENTPW_PPC_SAVE_PATH', 'OPENTPW_TPW_EXE', 'OPENTPW_TPI_EXE')
 ORACLE_DOTNET = 'OPENTPW_ORACLE_DOTNET'
 ITEM = re.compile(r'<(Compile|ProjectReference|None|Content|EmbeddedResource)\s+[^>]*?Include="([^"]+)"')
 PROJECT_DIRECTORY = re.compile(r'^\$\((?:MSBuildThisFileDirectory|MSBuildProjectDirectory)\)[\\/]?')
@@ -61,6 +64,8 @@ FIXTURE_FLAGS = {
     '--mac-bin': ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_BIN', 'OPENTPW_MAC_APP'),
     '--pc-data': ('OPENTPW_PC_DATA',),
     '--pc-fixture': ('OPENTPW_PC_FIXTURE', 'OPENTPW_PPC_SAVE_PATH'),
+    '--tpw-exe': ('OPENTPW_TPW_EXE',),
+    '--tpi-exe': ('OPENTPW_TPI_EXE',),
 }
 APP_NAME = 'SimThemePark.data'
 PC_FIXTURE_SUFFIX = '.tpwi'
@@ -106,8 +111,18 @@ def check_pc_fixture(path: Path, repo: Path | None) -> Path:
     return resolved
 
 
+def check_executable(flag: str, path: Path, repo: Path | None) -> Path:
+    if not path.is_file():
+        raise FixtureError(f'{flag} is not a regular file: {path}')
+    resolved = path.resolve()
+    if repo is not None and resolved.is_relative_to(repo.resolve()):
+        raise FixtureError(f'{flag} lies inside the checkout; original binaries stay outside Git: {path}')
+    return resolved  # identity (SHA-256) is checked by the x86 oracle, which refuses any other file
+
+
 def fixture_environment(base: dict, mac_bin: Path | None, pc_data: Path | None,
-                        pc_fixture: Path | None = None, repo: Path | None = None) -> dict:
+                        pc_fixture: Path | None = None, repo: Path | None = None,
+                        tpw_exe: Path | None = None, tpi_exe: Path | None = None) -> dict:
     env = {key: value for key, value in base.items() if key not in FIXTURE_VARIABLES}
     if mac_bin is not None:
         app = mac_bin / APP_NAME
@@ -124,6 +139,10 @@ def fixture_environment(base: dict, mac_bin: Path | None, pc_data: Path | None,
     if pc_fixture is not None:
         # Rides and economy read OPENTPW_PC_FIXTURE; clock's saved-epoch witnesses read OPENTPW_PPC_SAVE_PATH.
         env['OPENTPW_PC_FIXTURE'] = env['OPENTPW_PPC_SAVE_PATH'] = str(check_pc_fixture(pc_fixture, repo))
+    if tpw_exe is not None:
+        env['OPENTPW_TPW_EXE'] = str(check_executable('--tpw-exe', tpw_exe, repo))
+    if tpi_exe is not None:
+        env['OPENTPW_TPI_EXE'] = str(check_executable('--tpi-exe', tpi_exe, repo))
     return env
 
 
@@ -154,7 +173,7 @@ def used_fixture(item: dict) -> bool:
 def python_suites(tools: Path) -> list[Path]:
     lanes = sorted(path for path in (tools / 'lanes').iterdir() if path.is_dir() and any(path.glob('test_*.py')))
     # The differential oracle (docs/reverse/ORACLE.md) is a suite of its own next to the lanes.
-    oracle = [tools / 'oracle'] if any((tools / 'oracle').glob('test_*.py')) else []
+    oracle = [tools / name for name in ('oracle', 'oracle_x86') if any((tools / name).glob('test_*.py'))]
     return [tools, *lanes, *oracle]
 
 
@@ -304,6 +323,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--mac-bin', type=Path)
     parser.add_argument('--pc-data', type=Path)
     parser.add_argument('--pc-fixture', type=Path, help='identified Data/levels/jungle/Easymode.TPWI (outside Git)')
+    parser.add_argument('--tpw-exe', type=Path, help='identified decrypted TPW v2.0 tp.exe (outside Git); x86 oracle, needs unicorn')
+    parser.add_argument('--tpi-exe', type=Path, help='identified TPI no-CD Game.exe (outside Git); x86 oracle, needs unicorn')
     parser.add_argument('--require-fixtures', action='store_true')
     parser.add_argument('--dotnet', type=Path)
     parser.add_argument('--json', action='store_true')
@@ -311,7 +332,8 @@ def main(argv: list[str] | None = None) -> int:
 
     tools = args.repo.resolve() / 'tools' / 'ppc-analysis'
     try:
-        env = fixture_environment(dict(os.environ), args.mac_bin, args.pc_data, args.pc_fixture, args.repo)
+        env = fixture_environment(dict(os.environ), args.mac_bin, args.pc_data, args.pc_fixture, args.repo,
+                                 args.tpw_exe, args.tpi_exe)
     except FixtureError as error:
         print(f'fixture error: {error}', file=sys.stderr)
         return 2

@@ -157,6 +157,20 @@ original bytes in git. Policy, targets and findings are in
 `docs/reverse/ORACLE.md`. Executed agreement is evidence about that routine only,
 not about callers or game state that the stubs replace.
 
+A decision of the project owner on October 12, 2026 extends the differential oracle
+to the two analysable Windows executables (the decrypted TPW v2.0 `tp.exe` above
+and the TPI no-CD `Game.exe`, SHA-256
+`77ea0c41410aad7c94a5eda658e31cb4ac05f7253aaf6746ad5e8a90afbd967a`, 6,742,016
+bytes) with the **Unicorn** CPU emulator as a dev-only tool dependency (scope:
+oracle tooling under `tools/ppc-analysis/oracle_x86/`). This is an explicit
+exception to the rule against new pip dependencies: Unicorn is never shipped with
+the game and never required, a developer installs it in a separate venv, and every
+test that needs it skips when `import unicorn` fails or the private executable path
+is not set. The same limits as for the PowerPC oracle apply (no OS calls, explicit
+stubs, bounded execution, no executable bytes or disassembly in Git, identity
+pinned by SHA-256). The licence check and the method are in
+`docs/reverse/ORACLE.md` section 7.
+
 ### Evidence and determinism contract (requirements, not yet delivered)
 
 `docs/REFERENCE-CORPUS.md` specifies the selected corpus and the trace fields.

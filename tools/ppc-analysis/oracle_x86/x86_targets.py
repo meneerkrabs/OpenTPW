@@ -641,4 +641,413 @@ POINTS_TARGET = Target(
            'Fields as on the Mac except the kind word (+0x4ac). Park record +0x18 is the number of listed copies and +0x1c '
            'follows the Mac 0xda874 write rule (points_first).'])
 
-TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET]
+# ============================================================================== TPI Game.exe: the same four rules
+# Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
+# The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
+# world state +0x1eab78, first thing +0x1eab88) and is reached through two globals (0xade6b0, and 0xaa1484 in the bank).
+# Calls go through the image's incremental-link jump thunks; the stubs below sit on the thunk addresses.
+TPI_GAME_POINTER = 0xADE6B0
+TPI_GAME_POINTER_BANK = 0xAA1484
+TPI_GAME_SIZE = 0x200000
+TPI_DEBUG_PRINT = 0x403E45          # cdecl (level, format, ...): logs; the release build has no assertion calls
+TPI_FTOL = (0x86FAB0, 0x86FAD7)     # float -> int64 by fistp with the rounding bits forced to truncate (the TPW 0x67a830)
+TPI_S64_DIV = (0x871A30, 0x871ADA)  # signed 64-bit divide, ret 0x10 (the TPW 0x67c320)
+TPI_U64_MUL = (0x871E20, 0x871E52)  # 64-bit multiply, ret 0x10 (the TPW 0x67c7f0)
+
+
+def tpi_bind_game(sb: Sandbox, fields: dict | None = None) -> int:
+    game = sb.object(TPI_GAME_SIZE, fields)
+    sb.write(TPI_GAME_POINTER, 'I', game)
+    sb.write(TPI_GAME_POINTER_BANK, 'I', game)
+    return game
+
+
+# ------------------------------------------------------------------------------ TPI arrival group size 0x5bcd60
+TPI_ARRIVAL_ENTRY = 0x5BCD60       # thiscall (arrival object, unused); the TPW 0x4cf5b0 and the Mac 0xcb4e8
+TPI_ARRIVAL_RANGE = (0x5BCD60, 0x5BCF05)
+TPI_ARRIVAL_THUNKS = [(0x403A99, 0x403A9E), (0x42A340, 0x42A344)]   # 0x403a99 -> 0x42a340: eax = [ecx + 0x14], run for real
+TPI_ARRIVAL_PARK = 0x40144C        # thunk -> 0x64eac0, game -> park (thing at the u16 handle game+0x1eab54); stubbed
+TPI_ARRIVAL_COUNTED = 0x40461F     # thunk -> 0x5b0210, thiscall (park, 20) -> counted guests, ret 4; stubbed
+TPI_ARRIVAL_POINTS = 0x402BD5      # thunk -> 0x5b05d0, thiscall (park) -> park points; stubbed (target tpi-exe-park-points)
+TPI_ARRIVAL_WEATHER = 0x4019B5     # thunk -> 0x64eb80, game -> the thing at the u16 handle game+0x1eab58 (mWeather); stubbed
+TPI_ARRIVAL_MODE_OBJECT = 0xA06558  # an object whose dword +0x14 equal to 3 gives no group (not in tp.exe)
+TPI_ARRIVAL_SETTINGS = {'min_people': 0xA02230, 'bonus': 0xA0223C, 'per_visitor': 0xA02240}   # settings-table order
+TPI_ARRIVAL_PCT = 0xA02244         # Rain, Storm, Snow, Heatwave PercentageModifier (four dwords)
+TPI_ARRIVAL_LIMIT_MODE = 0xC65B80  # GameType object word 0 (the TPW 0xfb3b7c); 1 = online, the 500 cut
+TPI_ARRIVAL_LIMIT_GUARD = 0xC64F00  # bit 0: the GameType object is constructed (its constructor 0x40ce50 must not run)
+TPI_WORLD_MODE = 0x1EAB78          # game: bankrupt world mode 4 (mWorldState; the TPW 0x1da738)
+TPI_WEATHER_STATE = 0x70           # weather thing word: 1 to 4 pick the percentage (TPW: the word at +0x30, positive or not)
+TPI_WEATHER_SLOT = (3, 0, 1, 2)    # jump table: state 1 -> the word at 0xa02250 (Heatwave), 2 -> 0xa02244 (Rain), 3 -> Storm, 4 -> Snow
+TPI_ARRIVAL_STATE = type('TpiArrivalState', (), {})()
+TPI_FACTOR_SINGLE = struct.unpack('<f', struct.pack('<f', 0.01))[0]   # the single-precision constant at 0x93ad04
+
+
+def tpi_arrival_stubs(target: Target) -> dict:
+    state = TPI_ARRIVAL_STATE
+
+    def park(sb):
+        thiscall_check(sb, state.game, '0x40144c')
+        return state.park, 0
+
+    def counted(sb):
+        thiscall_check(sb, state.park, '0x40461f')
+        if sb.arg(0) != 20:
+            raise AssertionError('0x40461f called with an unexpected argument')
+        return state.guests & MASK32, 4
+
+    def points(sb):
+        thiscall_check(sb, state.park, '0x402bd5')
+        return state.points & MASK32, 0
+
+    def weather(sb):
+        thiscall_check(sb, state.game, '0x4019b5')
+        return state.thing, 0
+
+    def log(sb):
+        target.log.append(('log', sb.arg(0), sb.arg(1)))
+        return 0, 0
+
+    return {TPI_ARRIVAL_PARK: park, TPI_ARRIVAL_COUNTED: counted, TPI_ARRIVAL_POINTS: points,
+            TPI_ARRIVAL_WEATHER: weather, TPI_DEBUG_PRINT: log}
+
+
+def tpi_arrival_binary(sb: Sandbox, x: dict, log, fpcw: int | None = None) -> int:
+    state = TPI_ARRIVAL_STATE
+    state.game = tpi_bind_game(sb, fields={TPI_WORLD_MODE: ('i', x['world_mode'])})
+    state.park = sb.object(16)
+    state.thing = sb.object(0x80, {TPI_WEATHER_STATE: ('i', x['weather'])})
+    state.guests, state.points = x['guests'], x['points']
+    for key, address in TPI_ARRIVAL_SETTINGS.items():
+        sb.write(address, 'i', x[key])
+    for index, value in enumerate(x['pct']):
+        sb.write(TPI_ARRIVAL_PCT + 4 * index, 'i', value)
+    sb.write(TPI_ARRIVAL_MODE_OBJECT + 0x14, 'i', x['mode'])
+    sb.write(TPI_ARRIVAL_LIMIT_MODE, 'i', x['limit_mode'])
+    sb.write(TPI_ARRIVAL_LIMIT_GUARD, 'B', 1)
+    sb.set_fpcw(X87_CONTROL_WORD if fpcw is None else fpcw)
+    return s32(sb.call(TPI_ARRIVAL_ENTRY, this=state.park).eax)
+
+
+def tpi_arrival_percentage(x: dict) -> int:
+    """The factor in percent: the weather thing's state word, 1 to 4 (unsigned compare after the decrement), picks one of the
+    four settings words through a jump table, state 1 the Heatwave word, 2 Rain, 3 Storm, 4 Snow; any other state,
+    including none, gives the constant 100."""
+    state = (x['weather'] - 1) & MASK32
+    return x['pct'][TPI_WEATHER_SLOT[state]] if state <= 3 else 100
+
+
+def tpi_arrival_reading(x: dict, precision: int = 53) -> int:
+    """What 0x5bcd60 does, with the x87 arithmetic: no group in world mode 4 or when the mode object's +0x14 word is 3; the
+    divisor is PointsPerVisitor, 1 unless above 1 (signed); total = points + NewParkBonus (32-bit wrap, `fild` signed); the
+    factor percentage (integer) is multiplied by the single-precision 0.01, then the exact integer total, then divided by the
+    divisor, each step rounded to a `precision`-bit significand (53 under the control word 0x27F), and the quotient is
+    truncated by fistp with only the low word kept (no integer divide); at least MinPeople (signed); then the online cut
+    (mode word 1: 500, unsigned compare) or the 1500 cut, both without a floor."""
+    if x['world_mode'] == 4 or x['mode'] == 3:
+        return 0
+    per_visitor = x['per_visitor'] if x['per_visitor'] > 1 else 1
+    total = s32(x['points'] + x['bonus'])
+    factor = x87_round(Fraction(tpi_arrival_percentage(x)) * Fraction(TPI_FACTOR_SINGLE), precision)
+    product = x87_round(Fraction(total) * factor, precision)
+    quotient = x87_round(product / per_visitor, precision)
+    count = max(s32(fistp_low32(quotient)), x['min_people'])
+    guests = x['guests']
+    if x['limit_mode'] == 1 and (guests + count) & MASK32 > 500:
+        count = s32(500 - guests)
+    if x['limit_mode'] != 1 and (guests + count) & MASK32 > 1500:
+        count = s32(1500 - guests)
+    return count
+
+
+def tpi_arrival_exact_reading(x: dict) -> int:
+    """The same rules with exact arithmetic: trunc(total x percentage / 100 / divisor). Shows what the single-precision 0.01
+    does."""
+    if x['world_mode'] == 4 or x['mode'] == 3:
+        return 0
+    per_visitor = x['per_visitor'] if x['per_visitor'] > 1 else 1
+    total = s32(x['points'] + x['bonus'])
+    value = Fraction(total * tpi_arrival_percentage(x), 100 * per_visitor)
+    count = max(s32(fistp_low32(value)), x['min_people'])
+    guests = x['guests']
+    if x['limit_mode'] == 1 and (guests + count) & MASK32 > 500:
+        count = s32(500 - guests)
+    if x['limit_mode'] != 1 and (guests + count) & MASK32 > 1500:
+        count = s32(1500 - guests)
+    return count
+
+
+def tpi_arrival_tpw_plan(x: dict) -> int:
+    """The TPW / Mac rule (F9, `arrival_full`) on the same world state: the factor is 0.8 when the weather word is positive,
+    else 1.2, then an integer divide; the TPI-only exit on the mode object does not exist there."""
+    return mac().arrival_full({'world_mode': x['world_mode'], 'guests': x['guests'], 'points': x['points'],
+                               'bonus': x['bonus'], 'per_visitor': x['per_visitor'], 'min_people': x['min_people'],
+                               'obj48': x['weather'], 'limit_mode': x['limit_mode']})
+
+
+TPI_SHIPPED_PCT = (90, 80, 75, 120)
+
+
+def tpi_arrival_inputs(rng: random.Random, n: int) -> list:
+    shipped = dict(world_mode=0, mode=0, guests=0, points=0, bonus=20, per_visitor=25, min_people=1, weather=0,
+                   pct=TPI_SHIPPED_PCT, limit_mode=0)
+
+    def make(**kw):
+        x = {**shipped, 'world_mode': rng.choice([0, 0, 1, 2, 3, 4, 5]), 'mode': rng.choice([0, 0, 0, 1, 2, 3, 4]),
+             'guests': rng.choice([0, rng.randrange(0, 1600)]),
+             'points': rng.choice([0, rng.randrange(0, 2000), rng.randrange(-500, 0), rng.randrange(0, 1 << 20)]),
+             'bonus': rng.choice([20, rng.randrange(0, 200)]), 'per_visitor': rng.choice([25, 6, 1, rng.randrange(-2, 60)]),
+             'min_people': rng.choice([1, 2, rng.randrange(0, 40)]),
+             'weather': rng.choice([0, 0, 1, 2, 3, 4, 5, -1, rng.randrange(-5, 9)]),
+             'pct': tuple(rng.choice([base, 100, rng.randrange(0, 300), 0, -20]) for base in TPI_SHIPPED_PCT),
+             'limit_mode': rng.choice([0, 0, 0, 1, 2])}
+        x.update(kw)
+        return x
+    edges = [dict(shipped), {**shipped, 'world_mode': 4}, {**shipped, 'mode': 3}, {**shipped, 'mode': 2},
+             # points 80 + bonus 20 = 100 over 25: exact arithmetic gives 4, 0.01f and the x87 give 3 (no weather)
+             {**shipped, 'points': 80}, {**shipped, 'points': 80, 'weather': 1}, {**shipped, 'points': 80, 'weather': 4},
+             {**shipped, 'points': 180, 'weather': 4}, {**shipped, 'points': 0, 'weather': 2},
+             {**shipped, 'points': 480, 'weather': 3}, {**shipped, 'points': 1000, 'weather': 0}]
+    edges += [{**shipped, 'points': 1000, 'weather': w} for w in (-1, 0, 1, 2, 3, 4, 5, 0x7FFFFFFF)]
+    edges += [{**shipped, 'limit_mode': 1, 'guests': 499}, {**shipped, 'limit_mode': 1, 'guests': 600},
+              {**shipped, 'guests': 1499}, {**shipped, 'guests': 1500}, {**shipped, 'guests': 1700},
+              {**shipped, 'points': 0x7FFFFFFF}, {**shipped, 'points': -0x80000000, 'bonus': -1},
+              {**shipped, 'points': 16777217}, {**shipped, 'per_visitor': 1}, {**shipped, 'per_visitor': -7},
+              {**shipped, 'min_people': -5, 'bonus': -100}, {**shipped, 'per_visitor': 6, 'points': 100, 'weather': 0},
+              {**shipped, 'per_visitor': 6, 'points': 100, 'weather': 1}]
+    return edges + [make() for _ in range(n)]
+
+
+TPI_ARRIVAL_TARGET = Target(
+    'tpi-exe-arrival-group', 'tpi', 'Game.exe arrival group size 0x5bcd60',
+    'GUESTS.md "Arrivals" / ORACLE.md F9, X3 (TPW 0x4cf5b0, Mac 0xcb4e8)', TPI_ARRIVAL_ENTRY,
+    [TPI_ARRIVAL_RANGE, TPI_FTOL] + TPI_ARRIVAL_THUNKS, tpi_arrival_stubs, tpi_arrival_binary, tpi_arrival_tpw_plan,
+    tpi_arrival_inputs, alternatives={'routine-reading': tpi_arrival_reading, 'exact-arithmetic': tpi_arrival_exact_reading},
+    notes=['Stubs on the jump thunks: 0x40144c game -> park (sentinel, checked), 0x40461f counted guests (argument 20 checked), '
+           '0x402bd5 park points (chosen), 0x4019b5 weather thing (synthetic, dword +0x70 chosen), 0x403e45 debug print '
+           '(logged). The mode object word (0x403a99 -> 0x42a340) and _ftol 0x86fab0 are executed. The GameType object is '
+           'marked constructed. The percentage replaces the TPW 0.8 / 1.2 factor and the integer divide became a '
+           'floating divide.'])
+
+
+# ------------------------------------------------------------------------------ TPI loan offers 0x5bfb70
+TPI_LOAN_CTOR = 0x5BFB70           # thiscall (bank object): the bank constructor; the TPW 0x4cf7c0 and the Mac 0xcb7a8
+TPI_LOAN_CTOR_STOP = 0x5BFC73      # end of the 8-offer loop
+TPI_LOAN_BASE_CTOR = 0x403D19      # thunk -> 0x637100, thiscall (bank, u16 1, 0x10) base constructor, ret 8; stubbed
+TPI_LOAN_CASH = 0xA020BC           # settings: BankAccountInfo.InitialCash; the offers follow from 0xA020C4, 16 bytes each
+TPI_LOAN_OFFERS_AT = 0xA020C4
+# pow is the runtime's own x87 routine here too (0x871c00 with helpers 0x87c410..), the TPW 0x67c5d0.
+TPI_LOAN_POW_RANGES = [(0x871C00, 0x871E1D), (0x87C410, 0x87C498), (0x87C4AE, 0x87C5A0)]
+TPI_LOAN_RECORDS = 0x1C            # eight 32-byte records from bank + 0x1c (the TPW +0x14)
+TPI_LOAN_BANK_WORDS = (0x14, 0x18, 0x11C, 0x120, 0x124, 0x128, 0x12C)   # the TPW words, 8 higher
+
+
+def tpi_loan_stubs(target: Target) -> dict:
+    def base_constructor(sb):
+        target.log.append(('base-ctor', sb.reg('ecx'), sb.arg(0) & 0xFFFF, sb.arg(1)))
+        return 0, 8
+
+    return {TPI_LOAN_BASE_CTOR: base_constructor}
+
+
+def tpi_loan_offers_binary(sb: Sandbox, x: dict, log, fpcw: int | None = None) -> dict:
+    bank = sb.object(0x200)
+    sb.write(TPI_LOAN_CASH, 'I', x['cash'])
+    for index, offer in enumerate(x['offers']):
+        for word, value in enumerate(offer):
+            sb.write(TPI_LOAN_OFFERS_AT + 16 * index + 4 * word, 'I', value)
+    sb.set_fpcw(X87_CONTROL_WORD if fpcw is None else fpcw)
+    sb.call(TPI_LOAN_CTOR, this=bank, stop=TPI_LOAN_CTOR_STOP)
+    if [entry for entry in log if entry[0] == 'base-ctor'] != [('base-ctor', bank, 1, 0x10)]:
+        raise AssertionError('the base constructor was not called once with the bank object, the word 1 and 0x10')
+    records = [tuple((sb.read(bank + TPI_LOAN_RECORDS + 32 * i + 4 * w, 'I') for w in range(8))) for i in range(8)]
+    return {'monthly': [record[4] for record in records],
+            'records': [(r[0], r[1], r[2], r[3], r[5], r[6], r[7]) for r in records],
+            'bank': tuple(sb.read(bank + offset, 'I') for offset in TPI_LOAN_BANK_WORDS)}
+
+
+TPI_LOAN_OFFERS_TARGET = Target(
+    'tpi-exe-loan-offers', 'tpi', 'Game.exe loan offer setup 0x5bfb70', 'ECONOMY.md / ORACLE.md F12, X4 (TPW 0x4cf7c0, Mac 0xcb7a8)',
+    TPI_LOAN_CTOR, [(TPI_LOAN_CTOR, TPI_LOAN_CTOR_STOP), TPI_FTOL] + TPI_LOAN_POW_RANGES, tpi_loan_stubs,
+    tpi_loan_offers_binary, loan_offers_plan, loan_offers_inputs,
+    alternatives={'mac-reading': loan_offers_mac_reading, 'routine-reading': loan_offers_reading}, equal=loan_offers_equal,
+    notes=['Fragment 0x5bfb70..0x5bfc73 (the 8-offer loop) run from the constructor entry. Stub: 0x403d19 base constructor '
+           '(header only, arguments checked). pow is the runtime routine 0x871c00 and its helpers, executed.'])
+
+
+# ------------------------------------------------------------------------------ TPI loan monthly step 0x5c0b10
+TPI_LOAN_STEP_ENTRY = 0x5C0B25     # inside the monthly handler 0x5c0b10, after its exception-frame set-up
+TPI_LOAN_STEP_STOP = 0x5C0C49      # end of the loan loop; the tail (a bank in the red for a month) sends a message
+TPI_LOAN_STEP_RANGE = (0x5C0B25, 0x5C0C49)
+TPI_LOAN_PARK = 0x40144C           # the same thunk as the arrival's: game (global 0xaa1484) -> park
+TPI_LOAN_ACC_IN, TPI_LOAN_ACC_OUT = 0x1FEF8, 0x1F808
+TPI_LOAN_TURN = 0x1EAB40
+TPI_LOAN_MESSAGES = {0x9CCDD8: 'log465', 0x9CCD94: 'log587'}   # the instalment line, the paid-off line
+
+
+def tpi_loan_step_stubs(target: Target) -> dict:
+    state = LOAN_STATE
+
+    def park(sb):
+        thiscall_check(sb, state.game, '0x40144c')
+        return state.park, 0
+
+    def debug(sb):
+        kind = TPI_LOAN_MESSAGES.get(sb.arg(1))
+        if kind is None:
+            raise AssertionError(f'unexpected debug message {sb.arg(1):#x}')
+        if kind == 'log465':
+            target.log.append(('log465', sb.arg(2), sb.arg(3), sb.arg(4)))   # months repaid + 1, loan index, instalment
+        else:
+            target.log.append(('log587', sb.arg(2)))                         # loan index
+        return 0, 0
+
+    return {TPI_LOAN_PARK: park, TPI_DEBUG_PRINT: debug}
+
+
+def tpi_loan_step_binary(sb: Sandbox, x: dict, log) -> dict:
+    """The TPW bank layout with every bank offset 8 higher (balance +0x14, batch +0x18, withdrawals +0x11c, last balance
+    +0x124, turn entered red +0x128, year profit +0x12c, eight 32-byte records from +0x1c); the loan loop of the monthly
+    handler is called once per month in one sandbox."""
+    state = LOAN_STATE
+    state.game = tpi_bind_game(sb)
+    state.park = sb.object(0x21000)
+    sb.set_fpcw(X87_CONTROL_WORD)
+    bank = sb.object(512)
+    m = mac()
+    shift = 8
+    for offset, key in ((m.BANK_BALANCE, 'bal'), (m.BANK_BATCH, 'batch'), (m.BANK_WITHDRAW, 'wd'), (m.BANK_LAST, 'last'),
+                        (m.BANK_RED, 'red'), (m.BANK_PROFIT, 'profit')):
+        sb.write(bank + offset + shift, 'I', x[key] & MASK32)
+    for index, loan in enumerate(x['loans']):
+        base = bank + shift + 32 * index
+        for offset, key in ((24, 'amount'), (28, 'apr'), (32, 'months'), (36, 'monthly'), (40, 'bought'), (44, 'repaid')):
+            sb.write(base + offset, 'I', loan[key] & MASK32)
+    out = {key: [] for key in m.LOAN_OUT_KEYS}
+    for turn in x['turns']:
+        sb.write(state.game + TPI_LOAN_TURN, 'I', turn)
+        mark = len(log)
+        sb.call(TPI_LOAN_STEP_ENTRY, this=bank, stop=TPI_LOAN_STEP_STOP)
+        out['balance'].append(sb.read(bank + m.BANK_BALANCE + shift, 'i'))
+        out['profit'].append(sb.read(bank + m.BANK_PROFIT + shift, 'i'))
+        out['batch'].append(sb.read(bank + m.BANK_BATCH + shift, 'I'))
+        out['last'].append(sb.read(bank + m.BANK_LAST + shift, 'i'))
+        out['red'].append(sb.read(bank + m.BANK_RED + shift, 'I'))
+        out['acc_in'].append(sb.read(state.park + TPI_LOAN_ACC_IN, 'I'))
+        out['acc_out'].append(sb.read(state.park + TPI_LOAN_ACC_OUT, 'I'))
+        loans = [(sb.read(bank + shift + 32 * i + 40, 'I'), sb.read(bank + shift + 32 * i + 44, 'I')) for i in range(8)]
+        out['loans'].append(loans)
+        out['active'].append(sum(1 for bought, _ in loans if bought))
+        out['events'].append([tuple(entry) for entry in log[mark:]])
+    return out
+
+
+def tpi_loan_step_reading(x: dict) -> dict:
+    """The Mac reading without its two assertion kinds (the batch below one million, a non-zero term): the release build of
+    the TPI executable has no assertion calls, so its event list holds only the instalment and paid-off lines."""
+    out = mac().loan_step_reading(x)
+    out['events'] = [[event for event in events if event[0] != 'assert'] for events in out['events']]
+    return out
+
+
+TPI_LOAN_TERM_TARGET = Target(
+    'tpi-exe-loan-term', 'tpi', 'Game.exe loan monthly step 0x5c0b10 over a loan term',
+    'ECONOMY.md / ORACLE.md F12, F13, X5 (TPW 0x4d0370, Mac 0xcc21c)', TPI_LOAN_STEP_ENTRY, [TPI_LOAN_STEP_RANGE],
+    tpi_loan_step_stubs, tpi_loan_step_binary, loan_term_plan, loan_term_inputs,
+    alternatives={'routine-reading': tpi_loan_step_reading}, equal=loan_step_equal,
+    notes=['Loop of the monthly handler 0x5c0b10 run from 0x5c0b25 to 0x5c0c49, once a month over a whole term. Stubs: '
+           '0x40144c game -> park (sentinel, checked) and 0x403e45 debug print (logged by message). The handler has no '
+           'assertion calls. The tail (a bank in the red for a month) is not run.'])
+TPI_LOAN_MONTH_TARGET = Target(
+    'tpi-exe-loan-month', 'tpi', 'Game.exe loan monthly step 0x5c0b10, one to three months on any bank state',
+    'ECONOMY.md / ORACLE.md F13, X5 (TPW 0x4d0370, Mac 0xcc21c)', TPI_LOAN_STEP_ENTRY, [TPI_LOAN_STEP_RANGE],
+    tpi_loan_step_stubs, tpi_loan_step_binary, None, loan_month_inputs, alternatives={'routine-reading': tpi_loan_step_reading},
+    equal=loan_step_equal, notes=['The same fragment on random bank states.'])
+
+
+# ------------------------------------------------------------------------------ TPI park points 0x5b05d0
+TPI_POINTS_ENTRY = 0x5B05D0        # thiscall (park, unused); the TPW 0x4c8240 and the Mac 0xc24c0
+TPI_POINTS_RANGES = [(0x5B05D0, 0x5B07A7),      # the routine
+                     (0x5CFD70, 0x5CFDB7),      # park record search (the TPW 0x4d3d80)
+                     (0x5CFCF0, 0x5CFD44),      # park record search, writes the cache (the TPW 0x4d3d10)
+                     (0x409C41, 0x409C46), (0x403CD8, 0x403CDD), (0x4017EE, 0x4017F3),   # their thunks and the turn conversion's
+                     (0x608D50, 0x608D94),      # turns -> 100 ns units (the TPW 0x4f88b0)
+                     TPI_S64_DIV, TPI_U64_MUL]
+TPI_POINTS_TYPE_RECORD = 0x40C1D0  # thunk -> 0x43c700, thiscall (registry 0xa09ac8, u16 id) -> type record, ret 4; stubbed
+TPI_POINTS_REGISTRY = 0xA09AC8
+TPI_POINTS_COUNTS_TEST = 0x40998A  # thunk -> 0x5dfc90, thiscall (thing) -> nonzero when it counts; stubbed (chosen flag)
+TPI_POINTS_OWN_AGE = 0x403BB6      # thunk -> 0x5df8d0, thiscall (thing) -> days since its purchase timestamp; stubbed
+TPI_POINTS_THINGS = 0xAA18B0       # ThingArray: 20-byte entries, word 0 = the thing
+TPI_POINTS_FIRST = 0x1EAB88        # game: index of the first thing in the list (u16; mFirstObject)
+TPI_POINTS_CLOCK = 0x428           # game + 0x428: the clock; its +0x1c word is the rate
+TPI_POINTS_TYPE_TABLE = 0x1E9618   # game: per-type park records, 0x24 bytes: +0 id, +0x18 copies, +0x1c first purchase turn
+TPI_POINTS_RECORD_SIZE = 0x24
+TPI_POINTS_STATE = type('TpiPointsState', (), {})()
+# type record fields (TPI): +0x80 value, +0x84 decay, +0x14c the track-type word, +0x370 bonus[3], +0x600 kind
+TPI_POINTS_FIELDS = {'value': 0x80, 'decay': 0x84, 'f9c': 0x14C, 'bonus': 0x370, 'kind': 0x600}
+
+
+def tpi_points_stubs(target: Target) -> dict:
+    state = TPI_POINTS_STATE
+
+    def lookup(sb):
+        thiscall_check(sb, TPI_POINTS_REGISTRY, '0x40c1d0')
+        return state.records[sb.arg(0) & 0xFFFF], 4
+
+    def thing_of(sb) -> dict:
+        address = sb.reg('ecx')
+        if address not in state.things:
+            raise AssertionError('called without a thing')
+        return state.things[address]
+
+    def counts(sb):
+        return (1 if thing_of(sb)['open'] else 0), 0
+
+    def age(sb):
+        thing = thing_of(sb)
+        return mac().points_own_days(state.x['now'], thing['built'], state.x['scale']) & MASK32, 0
+
+    return {TPI_POINTS_TYPE_RECORD: lookup, TPI_POINTS_COUNTS_TEST: counts, TPI_POINTS_OWN_AGE: age}
+
+
+def tpi_points_binary(sb: Sandbox, x: dict, log) -> int:
+    state = TPI_POINTS_STATE
+    state.x = x
+    game = tpi_bind_game(sb)
+    sb.write(game + TPI_LOAN_TURN, 'I', x['now'] & MASK32)
+    sb.write(game + TPI_POINTS_CLOCK + 0x1C, 'I', x['scale'] & MASK32)
+    state.records = {}
+    table = game + TPI_POINTS_TYPE_TABLE
+    m = mac()
+    size = TPI_POINTS_RECORD_SIZE
+    for n, kind in enumerate(x['types']):
+        fields = {TPI_POINTS_FIELDS['value']: ('i', kind['value']), TPI_POINTS_FIELDS['decay']: ('i', kind['decay']),
+                  TPI_POINTS_FIELDS['f9c']: ('i', kind['f9c']), TPI_POINTS_FIELDS['kind']: ('i', kind['kind'])}
+        fields.update({TPI_POINTS_FIELDS['bonus'] + 4 * k: ('i', bonus) for k, bonus in enumerate(kind['bonus'])})
+        state.records[kind['id']] = sb.object(2048, fields)
+        sb.write(table + size * n, 'H', kind['id'])
+        sb.write(table + size * n + 0x18, 'i', m.points_count(x, kind['id']))
+        sb.write(table + size * n + 0x1C, 'I', kind['first'] & MASK32)
+    sb.write(table + 0x1518, 'i', len(x['types']))   # +0x151c (cached id 0, never a type id) and +0x1520 stay 0
+    state.things = {}
+    for index, thing in enumerate(x['things'], start=1):
+        following = index + 1 if index < len(x['things']) else 0
+        address = sb.object(64, {0x14: ('H', following), 0x16: ('H', thing['type'])})
+        sb.write(TPI_POINTS_THINGS + 20 * index, 'I', address)
+        state.things[address] = thing
+    sb.write(game + TPI_POINTS_FIRST, 'H', 1 if x['things'] else 0)
+    sb.set_fpcw(X87_CONTROL_WORD)
+    return s32(sb.call(TPI_POINTS_ENTRY, this=sb.object(16)).eax)
+
+
+TPI_POINTS_TARGET = Target(
+    'tpi-exe-park-points', 'tpi', 'Game.exe park points 0x5b05d0', 'GUESTS.md "Arrivals" / ORACLE.md F10, X6 (TPW 0x4c8240, Mac 0xc24c0)',
+    TPI_POINTS_ENTRY, TPI_POINTS_RANGES, tpi_points_stubs, tpi_points_binary, points_plan, points_inputs,
+    notes=['Executed: 0x5b05d0, the park record searches 0x5cfd70 / 0x5cfcf0 (through their thunks), 0x608d50 (turns -> 100 ns '
+           'units) and the 64-bit helpers 0x871a30 / 0x871e20. Stubs on the thunks: 0x40c1d0 type record, 0x40998a counts-test '
+           '(chosen flag), 0x403bb6 own age (signed timestamp difference in days, as on the Mac). There is no assertion '
+           'call. Fields as the TPW ones at other offsets: value +0x80, decay +0x84, track-type word +0x14c, brackets +0x370, '
+           'kind +0x600; thing next +0x14 and type +0x16; park record 0x24 bytes.'])
+
+
+TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET]

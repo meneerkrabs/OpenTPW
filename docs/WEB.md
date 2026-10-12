@@ -93,6 +93,30 @@ copy that theme's folder and shows *Loading the park* while the lobby keeps runn
 desktop `LevelDataReady` is null and parks start at once. Each theme's saved park
 (`Easymode.TPWI`) is copied at start, so the Load list is complete.
 
+### Languages
+
+A game folder copied from the CD keeps the other languages beside `Data`
+(`Dutch/data/Language/Dutch`, `Dutch/Meshes/Dutch`, likewise Italian, Polish). For every
+top-level folder that holds its own `data/Language/<same name>` (detected by structure, not a
+fixed list) the page copies those two trees at once: about 1 to 3 MB per language, so the
+Options -> OpenTPW -> Language toggle can list and switch them. Polish is not offered because
+its character table is not decoded (docs/LANGUAGES.md).
+
+The advisor's voice is copied when the language is chosen, like a theme folder: the language's
+`data/global/speech` (`speechHD.SDT`, 27.5 MB on the real Dutch folder, and `lips.WAD`) and each
+level's `speech` folder (0.6 MB), all together so bank and lip marks never mismatch.
+`GameFlow.LanguageDataReady` (the counterpart of `LevelDataReady`) asks the page through
+`Page.RequestLanguage`; the page shows *Loading the language* and calls `Program.LanguageLoaded`.
+A switch in the options waits for it (the choice stays pending, the text changes together with
+the voice), a park does not start before the current language's speech is in, and a saved
+language is requested at start-up. The cost of one language is that download (the local copy of
+27.5 MB plus a short-lived second copy while it is written, about 56 MB more JavaScript heap at
+the peak in Chrome), kept in memory for the visit. The installed language needs no request.
+
+At start the game reads the saved choice from `/config/language.json` (kept in browser storage
+like the other settings), offers the CD languages with `LanguageStartup` (the code the desktop
+uses) and, when the saved language is no longer in the folder, warns and uses the default.
+
 ### Sound
 
 `Browser/WebAudioOutput.cs` answers to the desktop's `SdlMovieAudioOutput` name, so the game's

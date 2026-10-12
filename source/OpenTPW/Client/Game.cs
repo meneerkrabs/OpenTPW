@@ -103,17 +103,9 @@ internal static class Game
 		var languageData = LanguageSettings.Choose( GetOption( args, "--language-data", "a directory with the original CD's language data" ),
 			Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ), languageSettings.LanguageDataPath, Settings.Default.LanguageDataPath );
 		// The CD chosen in Game files (or --cd-data) also holds the other shipped languages: without separate
-		// language data, offer those too.
-		if ( string.IsNullOrWhiteSpace( languageData ) && CdLanguageOverlay( args, dataDirectory ) is { } cdLanguages )
-			languageData = cdLanguages;
-		GameLanguage.AvailableOverlay = string.IsNullOrWhiteSpace( languageData ) ? null : languageData;
-		if ( !string.IsNullOrWhiteSpace( language ) || !string.IsNullOrWhiteSpace( languageData ) )
-			GameLanguage.Current = GameLanguage.Resolve( dataDirectory, language, languageData );
-		else
-		{
-			try { GameLanguage.Current = GameLanguage.Resolve( dataDirectory, null, null ); }
-			catch ( DirectoryNotFoundException exception ) { Log.Warning( exception.Message ); }
-		}
+		// language data, offer those too (the folder beside Data, as on the CD itself, unless --cd-data names one).
+		LanguageStartup.Apply( dataDirectory, language, languageData,
+			GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ), false, Log.Warning );
 		if ( GameLanguage.IsSelected )
 			Log.Trace( $"Language: {GameLanguage.Current}" );
 
@@ -583,24 +575,6 @@ internal static class Game
 		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Choose the pack '{packName}' under Game Options -> OpenTPW -> Enhanced textures (or set \"TexturePack\": \"{packName}\" in graphics.json)." );
 		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.PackDirectory( packName ) ), StringComparison.Ordinal ) )
 			Log.Warning( $"The game only loads packs under {TexturePack.PacksDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );
-	}
-
-	/// <summary>The --cd-data / OPENTPW_CD_DATA folder when it adds languages to the installation, else null.</summary>
-	private static string? CdLanguageOverlay( string[] args, string dataDirectory )
-	{
-		// A game folder copied from the CD keeps the other languages in <Lang>/data beside Data, as on the CD itself.
-		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" )
-			?? Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( Path.GetFullPath( dataDirectory ) ) );
-		if ( string.IsNullOrWhiteSpace( cd ) || !Directory.Exists( cd ) )
-			return null;
-		try
-		{
-			return GameLanguage.FindLanguages( dataDirectory, cd ).Count > GameLanguage.FindLanguages( dataDirectory, null ).Count ? cd : null;
-		}
-		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
-		{
-			return null;
-		}
 	}
 
 	/// <summary>

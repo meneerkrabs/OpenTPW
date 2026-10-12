@@ -90,6 +90,13 @@ internal sealed partial class GameFlow : IDisposable
 	public static Func<string, bool>? LevelDataReady { get; set; }
 
 	/// <summary>
+	/// Whether the speech files of a language can be read now. The browser copies them from the player's files when the
+	/// language is first chosen and answers false until they are in; a language switch waits for it, so the advisor
+	/// changes its voice together with the text. Null on the desktop.
+	/// </summary>
+	public static Func<string, bool>? LanguageDataReady { get; set; }
+
+	/// <summary>
 	/// Records the keys and buttons held right now as already seen, so a press that skipped the start-up movies
 	/// (Space also activates a menu button) does not act on the front end's first frame.
 	/// </summary>
@@ -158,6 +165,8 @@ internal sealed partial class GameFlow : IDisposable
 		ApplyLanguage = language =>
 		{
 			pendingLanguage = string.Equals( language, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) ? null : language;
+			// Starts the browser's copy of the language's speech while the options are still open.
+			if ( pendingLanguage != null ) LanguageDataReady?.Invoke( pendingLanguage );
 			return Level == null;
 		},
 		SaveOptions = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
@@ -418,7 +427,7 @@ internal sealed partial class GameFlow : IDisposable
 			entity.Update();
 		// After the frame's input and once every dialog is closed (a display change may still wait for confirmation), so the
 		// options screen that asked for it is not torn down while it runs.
-		if ( pendingLanguage != null && Level == null && Menu != null && Menu.Stack.Top == Menu.Main )
+		if ( pendingLanguage != null && Level == null && Menu != null && Menu.Stack.Top == Menu.Main && LanguageDataReady?.Invoke( pendingLanguage ) != false )
 		{
 			var selected = Menu.Selected.Level;
 			ShowFrontEnd( selected );
@@ -433,6 +442,9 @@ internal sealed partial class GameFlow : IDisposable
 	private void ApplyPendingLanguage()
 	{
 		var name = pendingLanguage;
+		// The speech files are not in yet (browser): keep the choice, the frame update applies it once they are.
+		if ( name != null && LanguageDataReady?.Invoke( name ) == false )
+			return;
 		pendingLanguage = null;
 		if ( name == null || string.Equals( name, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) )
 			return;

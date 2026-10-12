@@ -16,6 +16,9 @@ public static partial class Program
 	private static GameFlow? flow;
 	private static readonly HashSet<string> loadedLevels = new( StringComparer.OrdinalIgnoreCase );
 	private static readonly HashSet<string> requestedLevels = new( StringComparer.OrdinalIgnoreCase );
+	private static readonly HashSet<string> loadedLanguages = new( StringComparer.OrdinalIgnoreCase );
+	private static readonly HashSet<string> requestedLanguages = new( StringComparer.OrdinalIgnoreCase );
+	private static string[] installedLanguages = Array.Empty<string>();
 	private const string ClarityPackRoot = "/config/texture-packs/clarity-enhanced";
 	private const int MaximumTextureBytes = 25 * 1024 * 1024;
 	private const long TextureCacheBytes = 128 * 1024 * 1024;
@@ -73,14 +76,14 @@ public static partial class Program
 		FileSystem = new BaseFileSystem( dataDirectory );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
-		try
-		{
-			GameLanguage.Current = GameLanguage.Resolve( dataDirectory, null, null );
-		}
-		catch ( DirectoryNotFoundException exception )
-		{
-			Log.Warning( exception.Message );
-		}
+		// Like the desktop: the saved choice (/config/language.json, kept by the page) and the CD's other languages
+		// beside Data (the page copies their text, docs/WEB.md). A saved language the folder lacks falls back to the default.
+		var languageDiagnostics = new List<string>();
+		var saved = LanguageSettings.Load( LanguageSettings.GetDefaultPath(), languageDiagnostics );
+		foreach ( var diagnostic in languageDiagnostics )
+			Log.Warning( diagnostic );
+		LanguageStartup.Apply( dataDirectory, saved.Language, null, GameRoot, true, Log.Warning );
+		installedLanguages = GameLanguage.FindLanguages( dataDirectory, null ).ToArray();
 		Directory.CreateDirectory( "/save" );
 		Directory.CreateDirectory( "/cache" );
 		SaveFileSystem = new BaseFileSystem( "/save" );
@@ -96,14 +99,20 @@ public static partial class Program
 		Render = renderer;
 		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };
 		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
+		// A language other than the installed one needs its speech files (about 27 MB) beside the text; they are copied when the
+		// language is chosen, at once for a saved choice, and a park or a switch waits for them so the advisor never mixes voices.
+		GameFlow.LanguageDataReady = LanguageDataReady;
 		GameFlow.LevelDataReady = level =>
 		{
+			if ( !LanguageDataReady( GameLanguage.Current.Name ) )
+				return false;
 			if ( loadedLevels.Contains( level ) )
 				return true;
 			if ( requestedLevels.Add( level ) )
 				Page.RequestLevel( level );
 			return false;
 		};
+		LanguageDataReady( GameLanguage.Current.Name );
 		renderer.OnUpdate += flow.Update;
 		renderer.OnRender += flow.Render;
 		flow.ShowFrontEnd();
@@ -215,6 +224,20 @@ public static partial class Program
 			textureCacheSize -= old.Size;
 		}
 	}
+
+	/// <summary>Whether the speech files of <paramref name="language"/> are in memory; asks the page for them the first time.</summary>
+	private static bool LanguageDataReady( string language )
+	{
+		if ( installedLanguages.Contains( language, StringComparer.OrdinalIgnoreCase ) || loadedLanguages.Contains( language ) )
+			return true;
+		if ( requestedLanguages.Add( language ) )
+			Page.RequestLanguage( language );
+		return false;
+	}
+
+	/// <summary>The page has copied a language's speech files (or given up; the advisor then falls back to the installed speech).</summary>
+	[JSExport]
+	public static void LanguageLoaded( string language ) => loadedLanguages.Add( language );
 
 	/// <summary>The page has copied a level's folder (or given up; the level then reports what is missing).</summary>
 	[JSExport]

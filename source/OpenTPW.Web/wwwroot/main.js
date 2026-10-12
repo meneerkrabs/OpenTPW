@@ -9,7 +9,7 @@ import { createTextureDownloads } from './opentpw-textures.js';
 const status = document.getElementById('status');
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = await dotnet.create();
 setModuleImports('opentpw-gl', webgl);
-setModuleImports('opentpw-page', { requestLevel, requestTexture });
+setModuleImports('opentpw-page', { requestLevel, requestLanguage, requestTexture });
 setModuleImports('opentpw-audio', audio);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
@@ -22,6 +22,8 @@ const notCopied = /\/data\/(movies|init)\/|\.(sf2|mpg)$/i;
 // music). Their saved park (Easymode.TPWI) comes at once, for the Load list.
 const deferred = /^\/data\/levels\/[^/]+\/(?!easymode\.tpwi$)/i;
 let levelSources = [];
+let speechSources = new Map();
+let languageLoadingText = '';
 let textureDownloads;
 let gameRunning = false;
 let parkLoadingText = '';
@@ -29,8 +31,8 @@ let textureLoading = false;
 
 function updateLoading() {
 	const loading = document.getElementById('loading');
-	loading.hidden = !parkLoadingText && !textureLoading;
-	loading.textContent = parkLoadingText || 'Enhancing textures…';
+	loading.hidden = !parkLoadingText && !languageLoadingText && !textureLoading;
+	loading.textContent = parkLoadingText || languageLoadingText || 'Enhancing textures…';
 }
 
 // Called from TexturePack.Find. Requests are deduplicated and bounded; the original draws while
@@ -56,10 +58,38 @@ async function copyFiles(sources, progress) {
 	}
 }
 
+// The CD keeps the other languages beside Data: <Lang>/data/Language/<Lang> (text, fonts) and <Lang>/Meshes/<Lang>
+// (banners), about 2 to 3 MB per language, copied at once so the language can be listed and switched. The advisor's
+// speech of a language (<Lang>/data/global/speech/speechHD.SDT, about 27 MB, and lips.WAD, plus each level's speech folder, about 0.6 MB) is copied when that language
+// is chosen (requestLanguage), both files together. A folder counts as a language by that structure, not by name, so
+// every CD folder that holds its own text is offered.
+function languageFolders(sources) {
+	const found = new Set();
+	for (const [relative] of sources) {
+		const match = /^([^/]+)\/data\/language\/([^/]+)\//i.exec(relative);
+		if (match && match[1].toLowerCase() === match[2].toLowerCase() && match[1].toLowerCase() !== 'data')
+			found.add(match[1].toLowerCase());
+	}
+	return found;
+}
+
 // Each source is [path below the game folder, () => Promise<ArrayBuffer>].
 async function copy(sources) {
-	sources = sources.filter(([relative]) => /^data\//i.test(relative) && !notCopied.test(`/${relative}`));
-	if (!sources.length) {
+	const languages = languageFolders(sources);
+	const wanted = relative => {
+		if (/^data\//i.test(relative))
+			return !notCopied.test(`/${relative}`);
+		const match = /^([^/]+)\/(data\/language|meshes)\//i.exec(relative);
+		return match != null && languages.has(match[1].toLowerCase());
+	};
+	speechSources = new Map();
+	for (const source of sources) {
+		const match = /^([^/]+)\/data\/(global\/speech\/(speechHD\.SDT|lips\.wad)|levels\/[^/]+\/speech\/.+)$/i.exec(source[0]);
+		if (match && languages.has(match[1].toLowerCase()))
+			speechSources.set(match[1].toLowerCase(), [...(speechSources.get(match[1].toLowerCase()) ?? []), source]);
+	}
+	sources = sources.filter(([relative]) => wanted(relative));
+	if (!sources.some(([relative]) => /^data\//i.test(relative))) {
 		status.textContent = 'No Data folder in that folder.';
 		return;
 	}
@@ -80,6 +110,21 @@ function requestLevel(level) {
 			parkLoadingText = '';
 			updateLoading();
 			program.LevelLoaded(level);
+		});
+}
+
+// Called by the game (GameFlow.LanguageDataReady) when a language is chosen: copies its speech bank and lip marks
+// together, then tells the game, which switches the advisor's voice only once both are in.
+function requestLanguage(language) {
+	const files = speechSources.get(language.toLowerCase()) ?? [];
+	languageLoadingText = 'Loading the language…';
+	updateLoading();
+	copyFiles(files, text => { languageLoadingText = `Loading the language: ${text}`; updateLoading(); })
+		.catch(error => console.error(`Copying the ${language} speech failed`, error))
+		.finally(() => {
+			languageLoadingText = '';
+			updateLoading();
+			program.LanguageLoaded(language);
 		});
 }
 

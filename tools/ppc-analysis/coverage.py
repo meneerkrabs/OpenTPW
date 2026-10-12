@@ -5,7 +5,8 @@ Usage: python3 -I tools/ppc-analysis/coverage.py --mac-bin FERAL_BIN [--repo CHE
 FERAL_BIN is the Feral `bin` directory (the one holding SimThemePark.data and libraries/). The
 script analyses the main container with analyze.py (function starts, names from exports, traceback
 tables and RTTI virtual tables, string references), collects every Mac address the repository
-cites (`0x10xxxxxx`, and `STP-PPC:0x...` short forms as code offsets), and writes
+cites (`0x10xxxxxx`, and `STP-PPC:0x...` or `code:0x...` short forms as code offsets; bare short
+offsets in docs/reverse and the analysis lanes only at a function's start), and writes
 docs/reverse/COVERAGE.md:
 
 * totals: functions and code bytes inside a cited function;
@@ -33,16 +34,31 @@ sys.path.insert(0, HERE)
 MAC_BASE = 0x10000000
 MIN_SIZE = 600
 OUTPUT = os.path.join("docs", "reverse", "COVERAGE.md")
+# Generated maps list uncited addresses and class names; reading them back would mark everything cited.
+GENERATED = (OUTPUT, os.path.join("docs", "reverse", "AREAS.md"))
+# Files whose addresses and names are inputs of these tools, not citations (areas.json pins functions).
+NOT_CITATIONS = GENERATED + (os.path.join("tools", "ppc-analysis", "areas.json"),)
 LONG_ADDRESS = re.compile(r"0x10[0-9a-fA-F]{6}\b")
-SHORT_ADDRESS = re.compile(r"STP-PPC:?\s*0x([0-9a-fA-F]{4,6})\b")
+SHORT_ADDRESS = re.compile(r"(?:STP-PPC:?|\bcode:)\s*0x([0-9a-fA-F]{4,6})\b")
 VIRTUAL = re.compile(r"(.+)::vf\d+$")
+# Research notes and analysis lanes also cite code-section offsets in short form (`0x84ea4`). Data and table
+# offsets look the same, so a short value counts only when it is exactly a function's start (see resolve);
+# values after ':', '+', '-' or '.' (`data:0x…`, `+0x…`) and past the 2 MiB code section are never read.
+SHORT_OFFSET = re.compile(r"(?<![\w:+\-.−])0x([0-9a-fA-F]{5,6})\b")
+RESEARCH_FILE = re.compile(r"^(docs/reverse/|tools/ppc-analysis/lanes/)")
+CODE_LIMIT = 0x200000
 
 
 def cited_addresses(text: str) -> set[int]:
-    """Mac addresses cited in repository text: full 0x10xxxxxx values and STP-PPC code offsets."""
+    """Mac addresses cited in repository text: full 0x10xxxxxx values and code offsets marked STP-PPC or code:."""
     found = {int(m.group(0), 16) for m in LONG_ADDRESS.finditer(text)}
     found |= {MAC_BASE + int(m.group(1), 16) for m in SHORT_ADDRESS.finditer(text)}
     return found
+
+
+def short_offsets(text: str) -> set[int]:
+    """Bare 5-6 digit code-section offsets in research text, as Mac addresses (candidates only; see resolve)."""
+    return {MAC_BASE + value for value in (int(m.group(1), 16) for m in SHORT_OFFSET.finditer(text)) if value < CODE_LIMIT}
 
 
 def containing(starts: list[int], ends: list[int], address: int) -> int | None:
@@ -61,18 +77,51 @@ def clean(text: str, limit: int = 60) -> str | None:
 
 
 def repository_text(repo: str) -> str:
-    # The generated map itself lists uncited addresses; counting them would mark everything cited.
-    out = subprocess.run(["git", "-C", repo, "grep", "-h", "-I", "-e", "0x", "--", "source", "docs", "tools",
-                          ":!" + OUTPUT],
-                         capture_output=True, text=True, check=True).stdout
-    return out
+    result = subprocess.run(["git", "-C", repo, "grep", "-h", "-I", "-e", "0x", "--", "source", "docs", "tools",
+                             *(":!" + path for path in NOT_CITATIONS)],
+                            capture_output=True, text=True)
+    if result.returncode not in (0, 1):  # 1: nothing matched
+        raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
+    return result.stdout
+
+
+def citations_by_file(repo: str) -> dict[str, tuple[set[int], set[int]]]:
+    """Per tracked file (checkout-relative, '/' separated): the Mac addresses it cites, and the short code-offset
+    candidates of research notes and lanes."""
+    result = subprocess.run(["git", "-C", repo, "grep", "-I", "--full-name", "-e", "0x", "--", "source", "docs", "tools",
+                             *(":!" + path for path in NOT_CITATIONS)],
+                            capture_output=True, text=True)
+    if result.returncode not in (0, 1):  # 1: nothing matched
+        raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
+    out = result.stdout
+    found: dict[str, tuple[set[int], set[int]]] = {}
+    for line in out.splitlines():
+        path, _, text = line.partition(":")
+        full = cited_addresses(text)
+        short = short_offsets(text) if RESEARCH_FILE.match(path) else set()
+        if full or short:
+            entry = found.setdefault(path, (set(), set()))
+            entry[0].update(full)
+            entry[1].update(short)
+    return found
+
+
+def resolve(citations: tuple[set[int], set[int]], starts: list[int], ends: list[int]) -> set[int]:
+    """Indices of the functions a file cites: any address inside a function, or a short offset at its start."""
+    full, short = citations
+    hit = {i for i in (containing(starts, ends, address) for address in full) if i is not None}
+    for address in short:
+        i = containing(starts, ends, address)
+        if i is not None and starts[i] == address:
+            hit.add(i)
+    return hit
 
 
 def repository_words(repo: str, names: list[str]) -> set[str]:
     if not names:
         return set()
     out = subprocess.run(["git", "-C", repo, "grep", "-h", "-o", "-w", "-F", *sum((["-e", n] for n in names), []),
-                          "--", "source", "docs", "tools", ":!docs/reverse/COVERAGE.md"],
+                          "--", "source", "docs", "tools", *(":!" + path for path in NOT_CITATIONS)],
                          capture_output=True, text=True).stdout
     return set(out.split())
 
@@ -85,10 +134,8 @@ def build(mac_bin: str, repo: str) -> str:
     starts = [MAC_BASE + f.start for f in functions]
     ends = [MAC_BASE + f.end for f in functions]
     hit: set[int] = set()
-    for address in cited_addresses(repository_text(repo)):
-        i = containing(starts, ends, address)
-        if i is not None:
-            hit.add(i)
+    for citations in citations_by_file(repo).values():
+        hit |= resolve(citations, starts, ends)
     total_bytes = sum(f.size for f in functions)
     hit_bytes = sum(functions[i].size for i in hit)
 
@@ -107,9 +154,10 @@ def build(mac_bin: str, repo: str) -> str:
         "",
         "Generated by `python3 -I tools/ppc-analysis/coverage.py --mac-bin <Feral bin> --write`; do not edit by hand.",
         "A function counts as cited when any Mac address inside it appears in `source/`, `docs/` or `tools/`",
-        "(`0x10xxxxxx`, or `STP-PPC:0x...` as a code offset). Cited is not the same as implemented: a citation",
+        "(`0x10xxxxxx`, or `STP-PPC:0x...` as a code offset), or when `docs/reverse/` or an analysis lane cites its",
+        "start as a bare 5–6 digit code offset. Cited is not the same as implemented: a citation",
         "can be a note that something is not done. Uncited is a lead, not proof of a gap: small helpers are",
-        "often covered through their callers.",
+        "often covered through their callers. [AREAS.md](AREAS.md) groups the same functions by game area.",
         "",
         "## Totals",
         "",

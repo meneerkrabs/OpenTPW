@@ -338,6 +338,20 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void TheExcitementRefusalGatesRidesAndSideshowsAtFortyFive()
+	{
+		// The original's 0xe9a84 difference is ride minus preferred; the helper takes preferred minus ride (QUEUE-004, ORACLE.md F16).
+		foreach ( var kind in new[] { RideVisitorKind.Ride, RideVisitorKind.Sideshow } )
+		{
+			Assert.IsNull( RideVisitorBridge.ExcitementRefusal( kind, 44 ), "|44| passes" );
+			Assert.IsNull( RideVisitorBridge.ExcitementRefusal( kind, -44 ) );
+			Assert.AreEqual( QueueJoinResult.NotExcitingEnough, RideVisitorBridge.ExcitementRefusal( kind, 45 ), "the ride is 45 below the preference: thought 12 (Bored)" );
+			Assert.AreEqual( QueueJoinResult.TooExciting, RideVisitorBridge.ExcitementRefusal( kind, -45 ), "45 above: thought 15 (Scared)" );
+		}
+		Assert.IsNull( RideVisitorBridge.ExcitementRefusal( RideVisitorKind.Facility, 90 ), "facilities are not gated" );
+	}
+
+	[TestMethod]
 	public void JoiningChecksRoomThenExcitementThenTheLimit()
 	{
 		// One queue cell: room 4.

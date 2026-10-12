@@ -439,9 +439,12 @@ numbers, as the original does (`fctiwz`): "> 80" means at least 81.
 **Breakdown.** While `VAR_BROKEN ≠ 0`, queued guests leave on their next
 state-11 turn (QUEUE-008), and nobody new joins: walking guests do not choose
 the ride (QUEUE-017), joins are refused as if it were closed (QUEUE-018), and
-admission does not call the head (QUEUE-019). Only the leaving is traced
-(step 3 of state 11); the other three are approximations, because the ride
-`+408` state is not traced.
+admission does not call the head (QUEUE-019). All four are approximations.
+The original's state-11 exit at `0xed424` is `0xdfe34`, which executed turns out
+to be a relief object (toilet) whose wear gauge is below 25, not `VAR_BROKEN`
+(ORACLE.md F15): a broken ride has no such exit, and `SetState(1)` instead closes
+the ride and handles the head guest (static; what happens to the rest of the queue
+is not traced). The admission skip rests on the ride `+408` state.
 
 **Admission** (§6, once per park turn per ride). The front guest is called when
 all of these hold:
@@ -492,10 +495,10 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-001 | The queue link (+13) uses the connection bits' compass: 1/4/16/64 = −Y/+X/+Y/−X (verified for +12 on 78 Easymode cells) | Run-time neighbour offset tables (data `0xec52c..0xec5a4`) |
 | QUEUE-002 | The next queue cell is searched in grid direction order | Same tables; the order paired with links 16, 1, 64, 4 |
 | QUEUE-003 | Guests step onto the back cell from its first walkable neighbour | `0xdd744` and the state-10 walk to the back cell |
-| QUEUE-004 | Excitement gate for rides and sideshows, using \|preferred − excitement\| | `0xe02ec`, `0xe9a84` |
+| QUEUE-004 | Excitement gate for rides and sideshows, using \|preferred − static excitement\|. Executed (ORACLE.md F16): the original gates on the type's `ExcitementLevel` byte and compares a live excitement (sideshow formula, speed and duration ratios, coaster) clamped to ±50 | What the live inputs are in play (ride `+36`, `+84`, `+88`, sideshow goods, price and win) |
 | QUEUE-005 | Queue-edit exits: beyond 4 × cells, or standing cell removed | `0xee8f8` in detail |
 | QUEUE-006 | Depth from the cell's front edge; the 4th position stays in its cell | `0xdde74` and the sub-cell axis selection |
-| QUEUE-008 | Ride failure = `VAR_BROKEN ≠ 0` | Predicate `0xdfe34` |
+| QUEUE-008 | Ride failure = `VAR_BROKEN ≠ 0`. Executed (ORACLE.md F15): `0xdfe34` is a relief object's wear gauge below 25 | What empties a broken ride's queue (`SetState(1)`, `0xe0ec4`), and the toilet gauge |
 | QUEUE-009 | Facing-change sign from the 1-in-10 draw | The sign selection in `0xed244` |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once | The state-6 transition after a queue exit |
 | QUEUE-011 | Upgrade level 0 for QWTC/InitSpeed | None (OpenTPW does not apply upgrade levels to objects) |

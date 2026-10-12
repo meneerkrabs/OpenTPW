@@ -22,7 +22,7 @@ import bridge as bridge_module  # noqa: E402
 import targets  # noqa: E402
 from differential import DEFAULT_COUNT, compare  # noqa: E402
 from harness import Image, IdentityError, Sandbox, bin_root  # noqa: E402
-from ppc32 import UnknownCall  # noqa: E402
+from ppc32 import UnknownCall, s32  # noqa: E402
 
 ROOT = bin_root()
 REPO = HERE.parents[2]
@@ -119,9 +119,36 @@ EXPECTED = {
     ('loan-payoff', 'plan'): AGREE,
     ('loan-payoff', 'routine-reading'): AGREE,
     ('loan-payoff', 'csharp'): AGREE,
+    # F15: 0xdfe34 never reads the script. It is "relief object (ride +46 bit 0x1, type UsageInfo.ProvidesRelief) whose gauge +64,
+    # truncated to a byte, is below 25". QUEUE-008's reading, VAR_BROKEN != 0, differs wherever a broken ride is no relief object
+    # (and the reverse); the routine reading agrees on all inputs.
+    ('queue-failure-predicate', 'plan'): (310, {'flags': 0, 'gauge': 100.0, 'broken': 1}),
+    ('queue-failure-predicate', 'routine-reading'): AGREE,
+    # F16: 0xe9a84 is 100 while 0xdfe34 holds, else clamp(excitement byte - preferred byte, -50, 50) with the excitement of
+    # 0xe02ec(ride, 0): sideshows 20 + trunc(0.8 * win * sqrt(clamp(goods - price, 0, 100)) / 10), coasters trunc(0.5 E + 50),
+    # other types ExcitementLevel scaled by the speed and duration ratios (clamped to 0.75..1.25) and, with a thing behind +36,
+    # 60 % of it plus up to 40. The plan's static "ride minus preferred" differs on most inputs (clamp, relief, dynamic values).
+    ('queue-join-difference', 'plan'): (387, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                                                 'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
+                                                 'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
+                                                 'coaster_e': 40.0}),
+    ('queue-join-difference', 'routine-reading'): AGREE,
+    # F16: the gate applies when the low byte of the type's UsageInfo.ExcitementLevel is nonzero (0xe02ec(ride, 1)), not by kind;
+    # QUEUE-plan and C# gate rides and sideshows on the static level. The outcome (pass, thought 12 or 15 with its message) differs
+    # on 155 of 524 inputs, the same inputs in the plan and in C# (RideVisitorBridge.ExcitementRefusal).
+    ('queue-join-gate', 'plan'): (155, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                                                 'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
+                                                 'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
+                                                 'coaster_e': 40.0}),
+    ('queue-join-gate', 'routine-reading'): AGREE,
+    ('queue-join-gate', 'csharp'): (155, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                                                 'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
+                                                 'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
+                                                 'coaster_e': 40.0}),
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month'}
+                  'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
+                  'queue-failure-predicate', 'queue-join-difference'}
 
 
 class Identity(unittest.TestCase):
@@ -466,6 +493,96 @@ class Oracle(unittest.TestCase):
             mutated = dataclasses.replace(targets.LOAN_TAKE, plan=reading, alternatives={})
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
+    def test_queue_failure(self):
+        for key in (('queue-failure-predicate', 'plan'), ('queue-failure-predicate', 'routine-reading')):
+            self.check(key)
+
+    def test_queue_failure_reading_is_sharp(self):
+        # Every part of the reading matters: the relief flag, the byte wrap of the truncated gauge and the limit of 25.
+        import dataclasses
+        variants = {
+            'relief-flag': lambda x: targets.failure_reading({**x, 'flags': 1}),
+            'byte-wrap': lambda x: int(bool(x['flags'] & 1) and targets.fctiwz(x['gauge']) < 25),
+            'limit': lambda x: int(bool(x['flags'] & 1) and (targets.fctiwz(x['gauge']) & 0xFF) < 26),
+            'not-flag': lambda x: targets.failure_reading({**x, 'flags': x['flags'] ^ 1}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.FAILURE, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_queue_join(self):
+        for key in (('queue-join-difference', 'plan'), ('queue-join-difference', 'routine-reading'),
+                    ('queue-join-gate', 'plan'), ('queue-join-gate', 'routine-reading')):
+            self.check(key)
+
+    def test_queue_join_csharp(self):
+        self.check(('queue-join-gate', 'csharp'))
+
+    def test_queue_join_reading_is_sharp(self):
+        # Every part of the reading matters, for the gate (outcome and difference) and the difference alone.
+        import dataclasses
+        read = targets.join_gate_reading
+
+        def gate(difference_of, flag_of):
+            def reading(x):
+                d = difference_of(x)
+                far = flag_of(x) and abs(d) >= 45
+                return {'outcome': ('bored' if d < 0 else 'scared') if far else 'pass', 'difference': d}
+            return reading
+        plain = targets.join_difference_reading
+        unclamped = lambda x: (targets.join_excitement_reading(x) & 0xFF) - (x['pref'] & 0xFF)
+        unmasked_pref = lambda x: max(-50, min(50, (targets.join_excitement_reading(x) & 0xFF) - x['pref']))
+        unmasked_exc = lambda x: max(-50, min(50, targets.join_excitement_reading(x) - (x['pref'] & 0xFF)))
+        gate_variants = {
+            'relief': lambda x: read({**x, 'flags': x['flags'] & ~1}),
+            'sideshow': lambda x: read({**x, 'kind': 0 if x['kind'] == 2 else x['kind']}),
+            'coaster': lambda x: read({**x, 'track': 0}),
+            'pieces': lambda x: read({**x, 'thing36': 0}),
+            'speed-ratio': lambda x: read({**x, 'speed': x['init_speed']}),
+            'duration-ratio': lambda x: read({**x, 'dur': x['init_dur']}),
+            'gate-by-word': gate(plain, lambda x: s32(x['level']) != 0),
+            'gate-always': gate(plain, lambda x: True),
+            'gate-by-kind': gate(plain, lambda x: x['kind'] in (0, 2)),
+            'threshold': lambda x: {**read(x), 'outcome': 'pass' if abs(plain(x)) < 46 else read(x)['outcome']},
+            'sign': lambda x: {**read(x), 'outcome': {'bored': 'scared', 'scared': 'bored'}.get(read(x)['outcome'], 'pass')},
+            'no-clamp': gate(unclamped, lambda x: targets.join_excitement_reading(x, 1)),
+            'pref-unmasked': gate(unmasked_pref, lambda x: targets.join_excitement_reading(x, 1)),
+            'excitement-unmasked': gate(unmasked_exc, lambda x: targets.join_excitement_reading(x, 1)),
+        }
+        for name, reading in gate_variants.items():
+            mutated = dataclasses.replace(targets.JOIN_GATE, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+        difference_variants = {
+            'relief': lambda x: plain({**x, 'flags': x['flags'] & ~1}),
+            'sideshow': lambda x: plain({**x, 'kind': 0 if x['kind'] == 2 else x['kind']}),
+            'coaster': lambda x: plain({**x, 'track': 0}),
+            'pieces': lambda x: plain({**x, 'thing36': 0}),
+            'speed-ratio': lambda x: plain({**x, 'speed': x['init_speed']}),
+            'duration-ratio': lambda x: plain({**x, 'dur': x['init_dur']}),
+            'no-clamp': unclamped, 'pref-unmasked': unmasked_pref, 'excitement-unmasked': unmasked_exc,
+            'level-zero': lambda x: plain({**x, 'level': x['level'] or 1}),
+        }
+        for name, reading in difference_variants.items():
+            mutated = dataclasses.replace(targets.JOIN_DIFFERENCE_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_queue_join_refusal_trace(self):
+        # The refusal path: thought 12 with "ride is not exciting enough!" and reason 5 when the ride is below the preference,
+        # thought 15 with "ride is too exciting!" and reason 4 above it (join_gate_binary raises on any other trace).
+        target = targets.JOIN_GATE
+        sandbox = target.sandbox(self.image)
+        base = {'idx': 0, 'pref': 80, 'kind': 0, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0, 'pieces': [0, 0, 0, 0], 'goods': 0,
+                'price': 0, 'win': 0, 'ctrl': 0, 'coaster_e': 0.0}
+        self.assertEqual(targets.run_binary(target, sandbox, base), {'outcome': 'bored', 'difference': -50})
+        self.assertEqual(targets.run_binary(target, sandbox, {**base, 'pref': 20, 'level': 90}),
+                         {'outcome': 'scared', 'difference': 50})
+        self.assertEqual(targets.run_binary(target, sandbox, {**base, 'pref': 0, 'level': 90, 'flags': 1, 'gauge': 3.0}),
+                         {'outcome': 'scared', 'difference': 100})
+        self.assertEqual(targets.run_binary(target, sandbox, {**base, 'level': 0}), {'outcome': 'pass', 'difference': -50})
 
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})
@@ -515,6 +632,9 @@ class CSharpMutation(unittest.TestCase):
          '(3f * previous + (baseSpeed + bonus + boost) / (float)Divisor) * 0.25f'),
         ('walk-speed-setter', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
          'public const int Floor = 655;', 'public const int Floor = 654;'),
+        ('queue-join-gate', 'csharp', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
+         'return excitementDifference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;',
+         'return excitementDifference < 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;'),
         ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          '!item.ScriptBroken && item.IsOpen;', '!item.ScriptBroken;'),
         ('loan-offers', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',

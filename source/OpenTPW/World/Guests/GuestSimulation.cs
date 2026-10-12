@@ -1159,7 +1159,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			return;
 		}
 		// 3. The ride failed.
-		// [APPROX:QUEUE-008] the ride-failure exit (0xdfe34 set → thought 14, leave) is read as VAR_BROKEN ≠ 0 — evidence needed: the predicate 0x100DFE34
+		// [APPROX:QUEUE-008] the ride-failure exit (0xdfe34 set → thought 14, leave) is read as VAR_BROKEN ≠ 0; executed (ORACLE.md F15): 0xdfe34 never reads the script, it is true for a relief object (type ProvidesRelief) whose gauge +64, truncated to a byte, is below 25, so the original has no such exit for a broken ride — evidence needed: what empties the rest of a broken ride's queue (SetState(1) closes the ride and handles the head guest, static) and the toilet gauge, which C# does not simulate
 		if ( attraction.IsBroken )
 		{
 			LeaveQueue( guest, attraction, GuestThought.FeelingSick );

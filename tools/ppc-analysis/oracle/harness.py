@@ -178,9 +178,9 @@ class Sandbox:
         m.executed = 0
 
     def call(self, entry: int, gpr: dict[int, int] | None = None, fpr: dict[int, float] | None = None,
-             stop: int | None = None) -> Result:
+             stop: int | tuple[int, ...] | None = None) -> Result:
         """Call code offset `entry` with the given argument registers; memory must be prepared after reset().
-        With `stop` (a code offset) the run ends when execution reaches it: a fragment inside a larger routine."""
+        With `stop` (a code offset, or several) the run ends when execution reaches one: a fragment inside a larger routine."""
         m = self.machine
         m.gpr[1] = STACK_BASE + STACK_SIZE - 0x100
         m.gpr[2] = self.image.toc
@@ -188,7 +188,8 @@ class Sandbox:
             m.gpr[r] = value & MASK32
         for r, value in (fpr or {}).items():
             m.fpr[r] = double_to_bits(value)
-        m.call(self.image.code(entry), stop=frozenset() if stop is None else frozenset({self.image.code(stop)}))
+        stops = () if stop is None else (stop,) if isinstance(stop, int) else tuple(stop)
+        m.call(self.image.code(entry), stop=frozenset(self.image.code(s) for s in stops))
         return Result(list(m.gpr), list(m.fpr), m.cr, m.executed)
 
 

@@ -1105,6 +1105,10 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpi-exe-loan-offers` | TPI `0x5bfb70`..`0x5bfc73` (bank constructor, the 8-offer loop; the TPW `0x4cf7c0`), the runtime's own `pow` (`0x871c00`, `0x87c410`..) and `_ftol`, executed | `0x403d19` base constructor (header only, arguments checked) | 506 offer sets (the TPW target's inputs, seeded by this key) | **X8**: 505/506 **agree** with the Mac plan, records and bank words included; the one set is the same out-of-range set as in tp.exe | **agree** 506/506 |
 | `tpi-exe-loan-term`, `tpi-exe-loan-month` | TPI `0x5c0b25`..`0x5c0c49` (the loan loop of the monthly handler `0x5c0b10`; the TPW `0x4d0370`) | `0x40144c` game to park (sentinel, checked), `0x403e45` print (logged by message) | 503 whole terms, 506 random bank states | **X9**: **agree** 503/503 with the Mac plan | **agree** 503/503 and 506/506 (the Mac reading minus its two assertion events, which this build lacks) |
 | `tpi-exe-park-points` | TPI `0x5b05d0`, park record searches `0x5cfd70`/`0x5cfcf0` and their thunks, `0x608d50` (turns to 100 ns), the 64-bit divide and multiply helpers (the TPW `0x4c8240`) | `0x40c1d0` type record (registry checked), `0x40998a` counts-test (chosen flag), `0x403bb6` own age (signed timestamp difference in days) | 507 | **X10**: **agree** 507/507 | (the plan is the Mac routine reading) |
+| `tpw-exe-coast-rating-step` | tp.exe `0x43dc50`..`0x43df8f` (cdecl; reset `0x43dbf0`; the Mac `0x415b4`) | none (the routine calls nothing); static state block `0x7923a8`..`0x7923dc` written before the call | 509 (the Mac target's inputs) | **X11**: 469 differ from the Mac routine (F7, the stale term = Fz, what C# follows); 229 from COAST-plan 6.3 (term 0). With the Windows term (u) in the Mac plan: 190 left, rounding only (at most 3 ulps) | **agree** 509/509 (x87 reading, 53-bit sums) |
+| `tpw-exe-coast-rating-final` | tp.exe `0x43df90`..`0x43e0a7` (cdecl; the Mac `0x41900`) | none | 506 | **X12**: 23 differ from the Mac routine (F8, what C# follows), all in the last bit of the excitement; 315 from COAST-plan 6.4 (section count). **Agree** 506/506 at the single-precision word `0x7F` | **agree** 506/506 |
+| `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
+| `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
 
 The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
 rotate the result right by 13 bits, store that, and return its signed absolute value (the
@@ -1478,3 +1482,82 @@ truncate-then-integer-divide, add the exit for the mode object word 3 (meaning u
 at moved offsets. A TPI mode also has the shifted world-object and bank layouts above if it ever imports original saves.
 Not examined: the arrival update loop and the timer settings, loan payoff and take, the counts-test, the TPI-only systems
 the settings table lists, and which x87 control word is live at run time.
+### 7.8 Findings X11 and X12: the coaster rating on tp.exe and on the Theme Park Inc Game.exe
+
+(Numbers X7 to X10 are the Theme Park Inc arrival, loan and park-points findings of section 7.7.)
+
+Question: do the Windows executables run the Mac coaster rating that C# follows (`CoasterRating.Step` and
+`FinalFor`: the step `0x415b4` with the stale term Fz, F7, and the final `0x41900` with the both-flags section count, F8)? A
+Theme Park Inc mode is a coaster game, so this is the rule that matters most for it. Method as in 7.6: find the routines by
+constants, record layout and call structure (static, Capstone in a scratch directory, terminal only), execute them with the
+inputs of the Mac targets (`oracle/targets.py`: plans, inputs and equality are imported, not copied) and compare. Addresses are virtual
+addresses at the preferred base.
+
+**Identification (high confidence for both executables).** The step, the reset and the final sit next to each other, as on the Mac
+(Mac reset `0x41510`, step `0x415b4`, final `0x41900`):
+
+| | tp.exe (TPW v2.0) | Game.exe (TPI no-CD) |
+| --- | --- | --- |
+| reset | `0x43dbf0` | `0x4803a0` |
+| step (per sample) | `0x43dc50` | `0x480630` |
+| final | `0x43df90` | `0x4809c0` |
+| static state block (S, E, peaks, previous force and bank, scream words) | `0x7923a8`..`0x7923dc` | `0xa191f0`..`0xa19224` |
+
+- The step reads exactly the Mac's definition offsets in the Mac's roles: `+0x32c` g-force sickness, `+0x330` upside-down
+  sickness, `+0x334` speed, `+0x338` g-force excitement, `+0x340` bank excitement, `+0x344` X-g uncomfortableness, `+0x348` inverted
+  uncomfortableness, `+0x34c`/`+0x350` normal and terror scream start, `+0x354`/`+0x358` their sustain; `+0x33c` (the
+  unread upside-down excitement weight) is not touched. The reset reads `+0x320`/`+0x324` (initial sickness and excitement) for S, E and the previous
+  excitement and zeroes the rest.
+- The constants are the Mac's: pi/2 and 0.1 and 3.0 as singles, the decay 1/2 (in tp.exe as a negated half), 1.7, 100.0 and 0.0
+  in the final, and the 1.0 of `u = U + (U != 0)`.
+- The controller layout is the Mac's: definition `+4`, samples `+0x9c` (56-byte records, flags at sample `+0`, forces `+32..+40`, bank
+  `+24`, speed `+28` as arguments), the section list head `+0x54` with next at `+0x64` and flags at `+8`, and the final's
+  results at `+0x100` sickness, `+0x104` excitement, `+0x108` counted sections, `+0x10c` length (`+0xa8` times `+0xac`),
+  `+0x110` max Y, `+0x114` max speed. Two getters read the result fields by controller id (tp.exe `0x43e0b0` and `0x43e0e0`).
+- Call structure (the rating pass, tp.exe near `0x43c4bb`; Game.exe near `0x47e605`): the reset once, then the step for samples 1 to n-2
+  with the speed, bank and force just computed, then the final with the maximum Y and speed. In each executable the static block is
+  referenced only by the reset, the step and the final (scan of absolute operands), so the previous force and bank words are read
+  by the step, zero from the reset and never written: the Mac's OV-7 situation, and "magnitude equals change" holds on the PC.
+
+**X11, the rating step differs in one rule and in rounding.** Executed on the Mac target's 509 inputs; both executables give the same
+rule, so the numbers are for both.
+
+- *The rule.* When the inverted arm does not apply (u = 0, or Fy is 0.1 or more) the Mac adds the stale register f0 = Fz to the
+  uncomfortableness (F7). The Windows step adds **u itself**, the single stored for 1 + U (U the part of |bank| beyond pi/2; 0 when
+  U is 0), in both executables. Where the inverted arm applies (u not 0 and Fy below 0.1: u times the inverted weight, tripled for
+  negative Fy) the rules agree. So an ordinary upright sample (u = 0) loses nothing on the PC where the Mac subtracts Fz, and a track
+  that is upside down while pitched upright (Fy at least 0.1) loses u (above 1) where the Mac loses Fz. Neither equals the term 0
+  of COAST-plan 6.3. Example, default weights (0.5, 3.0, 0.1, 1.0, 5.0, 1.0, 2.0), force (0.4, 1.3, 0.5), speed 20, bank 0.2, E = 1:
+  Windows E = 5.3 (executed on both), Mac 4.8; with force (0.4, 0.5, 0.5) and bank 3.0: Windows 16.0708, Mac 18.0; with
+  Fy = 0.05 or -0.5 (inverted arm): both 13.19 and 3.92. S is unaffected (S 1.1 / 7.9876 in all of these). Of the 509 inputs 445 (tp.exe) and 439
+  (Game.exe) take the non-inverted arm, and u differs from Fz in all but one of them; 469 and 470 inputs differ from C# in S or E or in what follows (peaks, scream
+  flags and states: 25 flag words differ on tp.exe).
+- *Rounding (precision only).* With the Windows term put into the Mac plan 190 (tp.exe) and 181 (Game.exe) inputs are left, all within 3
+  ulps in S, E and the peaks and with no scream decision changed on these inputs. The x87 builds the sums in a different order
+  (g-force part, then bank, then speed) in the wider register and rounds to single at different points than the Mac's single-by-single
+  chain, and the two Windows builds round differently from each other: tp.exe rounds the g-force sickness term to single and never the
+  excitement sum, Game.exe rounds the whole sickness delta and the excitement sum to single and not the g-force sickness term. On the same
+  inputs 89 of 509 step results differ between tp.exe and Game.exe (last bits of S and E), the final not at all. Control words `0x27F` and `0x37F` give the same results
+  on every input; the 24-bit word `0x7F` changes only the rounding. These are routine-reading differences, not rule differences, and each
+  reading agrees with its own executable on 509/509.
+
+**X12, the final is the Mac's rule with a wider sum.** Sickness = clamp(S + peak S), excitement = clamp(1/2 E + 1.7 peak E), 0 to 100, the section count at `+0x108` of
+sections with **both** flags `0x40` and `0x80` (F8), the length `+0xa8 * +0xac`, max Y and max speed stored unchanged. All of
+it is identical to the Mac routine and to C# except the excitement's last bit: the x87 adds the exact product 1.7 * peak E to E/2 and rounds once, the Mac rounds the
+product to single before its fused add. 23 of 506 (tp.exe) and 30 of 506 (Game.exe) differ, by 1 ulp
+where the result is large (7.6e-6 at most in absolute value); the Game.exe maximum of 78 ulps is a near-cancellation (result 0.092, off by 5.8e-7). At the
+single-precision word `0x7F` all 506 agree. Example: S 30, peak S 40, E 20, peak E 30 gives sickness 70 and excitement 61 on both executables and on the Mac. No third rating (intensity) is stored by
+either final: TPW's excitement and sickness are what the Windows executables compute, uncomfortableness folded into excitement. The
+documented COAST-plan 6.4 count (neither flag set) differs from both executables, 315 and 271 inputs, as it does from the Mac (F8).
+
+**What a Theme Park Inc coaster mode would need.** The rating step and final exist in TPI with the same record layout and definition offsets
+as TPW, so the machinery C# already has (`CoasterRating.Step` and `FinalFor`, the 56-byte samples, the definition fields) carries over; no TPI-only rating
+term was found. Two decisions follow. First, which step rule: C# follows the Mac (Fz); both Windows executables add u, so a mode that
+reproduces the Windows games (and a TPW PC mode) must change that one term in the non-inverted arm, which does not exist as a decision yet and changes the
+excitement of every sample with a non-zero Fz. Second, precision: the Windows builds round at different points and differ from each other
+and from the Mac's single arithmetic in the last bits of S and E (the final's excitement too); a "bit-exact" claim for one executable
+needs that executable's rounding points (the readings in `x86_targets.py`), and the two Windows builds differ from each other. Not examined: the
+rest of the rating pass (the speed model and force computation that feed the step; the Windows counterpart of `0x3fc18`), the defaults of the
+definition weights in TPI (its coaster definition files and loader at `0x46d6bc`/`0x48044e` carry the same offsets but their values were not read),
+the TPI build rules and curve fit, any TPI-specific rating (for example a separate intensity or an effect of the new coaster types), and which control
+word is live while the game runs. No C# behaviour was changed.

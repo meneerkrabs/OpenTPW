@@ -323,6 +323,7 @@ public class GuestSnapshotTests
 		public bool HasQueue => false;
 		public bool ProvidesRelief => false;
 		public bool IsBroken => false;
+		public bool ReliefWornOut => false;
 		public bool IsRunning => false;
 		public int RidersOnBoard => 0;
 		public int Speed => 0;
@@ -332,7 +333,7 @@ public class GuestSnapshotTests
 		public int QueueEditCount => 0;
 		public int CalledGuest => 0;
 		public bool TryJoinQueue( int guestId ) => false;
-		public QueueJoinResult JoinQueue( int guestId, int excitementDifference ) => QueueJoinResult.Closed;
+		public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null ) => QueueJoinResult.Closed;
 		public int GetQueuePosition( int guestId ) => -1;
 		public bool LeaveQueue( int guestId ) => false;
 		public bool RecomputeQueue( GuestPathGrid grid ) => false;

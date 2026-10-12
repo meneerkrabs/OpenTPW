@@ -454,7 +454,7 @@ one guest per park turn: the ride update (`0xe0a8c`, executed in the oracle for 
 and 4) removes the head from the queue and sends it away (`0xdcebc`, `0xee804`: reason 6, no
 thought, happiness down by `PeepInfo.MediumHappinessChange`, back to wandering). A head the script
 has already taken is forced aboard instead. The guests behind keep their places and wait, and a
-repaired ride keeps whoever is left. Nobody new joins: walking guests do not choose the ride
+repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new joins: walking guests do not choose the ride
 (QUEUE-017) and joins are refused as if it were closed (QUEUE-018), and admission does not call
 the head (QUEUE-019); these three are approximations. Queued guests no longer leave "feeling sick" for
 a breakdown: state 11's exit at `0xed424` is `0xdfe34`, a relief object (toilet) whose wear gauge
@@ -527,7 +527,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-019 | A breakdown is read from `VAR_BROKEN ≠ 0` at once: the broken ride skips admission and dismisses its queue head each park turn. The original admits on the turn it notices, `SetState(1)` also writes `VAR_RIDECLOSED` and the open word, and what reopens it is not traced | The callers of `SetState(0)` (`0xdad24`, `0xde8e4`, `0xdf4d4`, `0xdf90c`, `0xdfb08`) |
 | QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; the original calls its millisecond clock twice (`0xadfb0`, `0xadfcc`), so its start can lie 1 ms later | None for the reading; OpenTPW's stepped script clock cannot tick between the two calls |
 | QUEUE-021 | A left click on a queue cell (help 444, "Left-click to edit this queue") starts the queue tool at that ride's back cell; the click handler is not traced | None: `Level.EditQueueAt` follows the help text and `EnterQueueTool` |
-| QUEUE-022 | A bridge without any queue parameters (a synthetic object; every original object has `InitSpeed` and `InitDuration`) is read at its design speed and duration, where the original would divide 0 by 0 and score 0 | None |
+| QUEUE-022 | A bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object; every original object has `InitSpeed` and `InitDuration`) is read at its design speed and duration, where the original would divide 0 by 0 and score 0 | None |
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand

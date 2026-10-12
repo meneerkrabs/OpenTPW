@@ -597,10 +597,13 @@ public class QueueTests
 		var before = guests.Select( guest => (guest.Happiness, guest.Thought) ).ToList();
 		var medium = rig.Simulation.Settings.MediumHappinessChange;
 
+		var placesBefore = guests.Select( guest => (guest.QueuePosition, guest.Cell) ).ToList();
 		rig.Script[RideVariables.VAR_BROKEN] = 1;
 		for ( var gone = 1; gone <= guests.Count; gone++ )
 		{
 			rig.RunTurns( 1 );
+			for ( var index = gone; index < guests.Count; index++ )
+				Assert.AreEqual( placesBefore[index], (guests[index].QueuePosition, guests[index].Cell), $"guest {index} keeps its physical place while the ride is broken (0xed4b0)" );
 			Assert.AreEqual( guests.Count - gone, rig.Ride.QueueLength, $"{gone} turns after the breakdown" );
 			Assert.IsTrue( guests.Take( gone ).All( guest => !guest.IsInQueue ), "the head leaves first" );
 			Assert.IsTrue( guests.Skip( gone ).All( guest => guest.IsInQueue ), "the others keep their place and wait" );
@@ -612,6 +615,29 @@ public class QueueTests
 			Assert.AreEqual( before[index].Thought, guests[index].Thought, "dismissal sets no thought, in particular not 'feeling sick'" );
 			Assert.AreEqual( before[index].Happiness - medium, guests[index].Happiness, 0.01f, "0xeb6f4 with selector 1 (PeepInfo.MediumHappinessChange)" );
 		}
+	}
+
+	[TestMethod]
+	public void ABrokenRideDrainsEvenWhenItsScriptClosedIt()
+	{
+		// SetState(1) writes VAR_RIDECLOSED = 1 itself; the queue still drains head first instead of emptying at once.
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		rig.Open = false;
+		rig.Script[RideVariables.VAR_BROKEN] = 1;
+		rig.RunTurns( 1 );
+		Assert.AreEqual( 5, rig.Ride.QueueLength, "one head dismissed" );
+		Assert.IsTrue( guests.Skip( 1 ).All( guest => guest.IsInQueue ) );
+	}
+
+	[TestMethod]
+	public void OperatingValuesAreDetectedExplicitly()
+	{
+		foreach ( var parameters in new[] { QueueParameters.Default, QueueParameters.Default with { RunsContinuously = true }, QueueParameters.Default with { HasQueue = true, Capacity = 4 } } )
+			Assert.AreEqual( 60, new RideVisitorBridge( 1, "Synthetic", RideVisitorKind.Ride, 1, 60, 10 ) { Parameters = parameters }.LiveExcitement, "no operating values: the static level" );
+		Assert.AreEqual( 0, new RideVisitorBridge( 1, "Zero", RideVisitorKind.Ride, 1, 60, 10 ) { Parameters = QueueParameters.Default with { Duration = 30, InitDuration = 30 } }.LiveExcitement & 0xFF, "a zero design speed with a duration is the original's 0 / 0" );
 	}
 
 	[TestMethod]

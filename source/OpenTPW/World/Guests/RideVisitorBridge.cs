@@ -570,8 +570,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				return QueueJoinRules.SideshowExcitement( Sideshow );
 			if ( ExcitementSource is { } source )
 				return source();
-			// [APPROX:QUEUE-022] a bridge without queue parameters (a synthetic object: every original object has InitSpeed and InitDuration) is read at its design speed and duration; the original would divide 0 by 0 (NaN, excitement 0) — evidence needed: none, no original object lacks them
-			if ( Parameters == QueueParameters.Default )
+			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; the original would divide 0 by 0 (NaN, excitement 0) — evidence needed: none, no original object lacks them
+			if ( Parameters is { Speed: 0, InitSpeed: 0, Duration: 0, InitDuration: null or 0 } )
 				return excitementLevel;
 			return QueueJoinRules.ScaledExcitement( excitementLevel, Parameters.Speed, Parameters.InitSpeed, Parameters.Duration, Parameters.InitDuration ?? Parameters.Duration );
 		}
@@ -689,7 +689,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
 			MarkBoarded( called );
 
-		if ( !isOpen() )
+		// A breakdown takes precedence over a closed ride: SetState(1) writes VAR_RIDECLOSED = 1 itself, and the original still drains the
+		// queue head first (0xe0aec) instead of emptying it at once.
+		if ( !isOpen() && !IsBroken )
 		{
 			if ( called != 0 )
 			{

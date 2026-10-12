@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **351 unresolved unique APPROX IDs**, 400 APPROX occurrences, 138 EXT occurrences, 160 DATA occurrences and 461 BIN occurrences.
+Current inventory: **351 unresolved unique APPROX IDs**, 400 APPROX occurrences, 140 EXT occurrences, 160 DATA occurrences and 461 BIN occurrences.
 
 Of these, 327 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -498,19 +498,19 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-002 | `source/OpenTPW/Audio/SoundEvents.cs:66` | [APPROX:AUDIO-002] banks resolve to &lt;map folder's parent&gt;/&lt;name&gt;HD.sdt, then to global/&lt;name&gt;HD.sdt — evidence needed: TbMapStreamer::BankDoesNotExist (0x10015234) and the quality suffix rule |
 | AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:300` | [APPROX:AUDIO-003] pitch, delay and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
 | AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:547` | [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control, so the view always plays 0x1F — evidence needed: the meaning of the flag bits in the control's +0x44 word |
-| AUDIO-004 | `source/OpenTPW/UI/Original/UiWidgets.cs:423` | [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control — evidence needed: the meaning of the flag bits in control+0x44 |
+| AUDIO-004 | `source/OpenTPW/UI/Original/UiWidgets.cs:429` | [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control — evidence needed: the meaning of the flag bits in control+0x44 |
 | AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:478` | [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample |
-| AUDIO-006 | `source/OpenTPW/Client/GameFlow.cs:321` | [APPROX:AUDIO-006] cells are counted by rectangle (Chebyshev distance); the original's area shape inside the radius is not traced |
+| AUDIO-006 | `source/OpenTPW/Client/GameFlow.cs:327` | [APPROX:AUDIO-006] cells are counted by rectangle (Chebyshev distance); the original's area shape inside the radius is not traced |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:52` | [APPROX:AUDIO-007] the sound plays when the map window opens; the original slides a drawer out of the main panel |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:65` | [APPROX:AUDIO-007] the sound plays when the map window closes; the original slides a drawer back into the main panel |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:53` | [APPROX:AUDIO-007] the sound plays when the research window opens; the original slides a drawer out of the main panel |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:66` | [APPROX:AUDIO-007] the sound plays when the research window closes; the original slides a drawer back into the main panel |
 | AUDIO-008 | `source/OpenTPW/Audio/GameAudio.cs:562` | [APPROX:AUDIO-008] the repair-start event stays 75 (family 1, index 0); the original picks among 75–90 by the object's repair-level field (+20) and two float operands — evidence needed: the repair-level field's source in the object runtime |
 | AUDIO-009 | `source/OpenTPW/Hud/ParkHud.cs:540` | [APPROX:AUDIO-009] the traced 0x1D callers are the buy window and dialog errors; the placement rejection plays it too — evidence needed: the original's build-tool rejection path |
-| AUDIO-010 | `source/OpenTPW/Client/GameFlow.cs:137` | [APPROX:AUDIO-010] the sentences restart on every island selection; when the original switches them is not traced |
+| AUDIO-010 | `source/OpenTPW/Client/GameFlow.cs:143` | [APPROX:AUDIO-010] the sentences restart on every island selection; when the original switches them is not traced |
 | AUDIO-011 | `source/OpenTPW.Tests/AudioTriggerTests.cs:266` | [APPROX:AUDIO-011] a level category falls back to the global one of the same name (incagod.RSE's EVENT 3 id 43 is only in the global cat_rides) |
 | AUDIO-011 | `source/OpenTPW/Audio/GameAudio.cs:528` | [APPROX:AUDIO-011] the level-to-global category fallback mirrors the bank fallback (AUDIO-002); the sound library's own fallback rule is not traced |
-| AUDIO-012 | `source/OpenTPW/UI/Original/UiWidgets.cs:424` | [APPROX:AUDIO-012] every activated button plays it, front end included; the traced witness is the park view's handler |
+| AUDIO-012 | `source/OpenTPW/UI/Original/UiWidgets.cs:430` | [APPROX:AUDIO-012] every activated button plays it, front end included; the traced witness is the park view's handler |
 | AUDIO-013 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:346` | [APPROX:AUDIO-013] the standards specify only the analogue de-emphasis characteristic; this realization is the |
 | AUDIO-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:149` | [APPROX:AUDIO-014] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only |
 | AUDIO-015 | `source/OpenTPW/Audio/GameAudio.cs:326` | [APPROX:AUDIO-015] only the level-driven rain voice is built; the weather thing's own +0x54 voice (0x10103C4C mode 0) is not — whether the original's second voice is audible is not established |
@@ -677,7 +677,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-012 | `source/OpenTPW/Online/OnlineGlobeScreen.cs:50` | [APPROX:ONLINE-012] edge steering starts once the cursor has moved on this screen, so a cursor resting in a corner |
 | ONLINE-013 | `source/OpenTPW/World/Lobby/GlobeScene.cs:20` | [APPROX:ONLINE-013] pins are drawn twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7) |
 | ONLINE-015 | `source/OpenTPW/Online/OnlineScreens.cs:176` | [APPROX:ONLINE-015] f_lobbutbg as the button background in the panel's second rectangle (67,1273,438,1484), as in the island lobby — evidence needed: the table field that names it |
-| ONLINE-016 | `source/OpenTPW/Client/GameFlow.cs:642` | [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry |
+| ONLINE-016 | `source/OpenTPW/Client/GameFlow.cs:663` | [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry |
 | ONLINE-017 | `source/OpenTPW/Online/OnlineScreens.cs:734` | [APPROX:ONLINE-017] the publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top — evidence needed: the publish globe's layout table |
 | ONLINE-018 | `source/OpenTPW/Online/OnlineScreens.cs:85` | [APPROX:ONLINE-018] the count is drawn at the satellite's bottom-right corner; the original wrote it |
 | ONLINE-019 | `source/OpenTPW/Online/ChatParkView.cs:11` | [APPROX:ONLINE-019] a flat overhead view with markers stands in for the original's chat-park scene and avatars |
@@ -778,10 +778,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:79` | bank ([APPROX:UI-002] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files |
 | UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:68` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
 | UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:138` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
-| UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:102` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
+| UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:108` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:162` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:439` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:445` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:275` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
 | UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:265` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
@@ -792,7 +792,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:127` | [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:84` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:676` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:697` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:100` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-021 | `source/OpenTPW/Hud/ParkHud.cs:85` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
@@ -802,7 +802,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-023 | `source/OpenTPW/Hud/HudStubs.cs:9` | [APPROX:UI-023] test-only calendar (2 s/day, 30-day months) — not used by the game |
 | UI-024 | `source/OpenTPW/Hud/ParkHud.cs:172` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
 | UI-025 | `source/OpenTPW/Hud/ParkHud.cs:33` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
-| UI-026 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:240` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
+| UI-026 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:264` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
 | UI-026 | `source/OpenTPW/Hud/PreviewIcon.cs:14` | [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu |
 | UI-027 | `source/OpenTPW/Hud/ParkHud.cs:559` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
 | UI-028 | `source/OpenTPW/Hud/ParkHud.cs:271` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
@@ -810,24 +810,24 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:30` | [APPROX:UI-030] 0..10 volume steps, default 8; the original copies its volume defaults from fields +0x38..+0x44 of the object at 0x101EC828 (0x10125B7C) — evidence needed: that object's initializer |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:42` | [APPROX:UI-030] rotation 90 degs (as in the supplied capture; the defaults set IsometricOn +0x3A to 1, not proven to be this option) |
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:322` | [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation |
-| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
-| UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:68` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots |
+| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:291` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
+| UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:74` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:34` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
-| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:508` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
+| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:514` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
 | UI-037 | `source/OpenTPW/UI/Original/UiText.cs:171` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
 | UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:263` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
-| UI-041 | `source/OpenTPW/Client/GameFlow.cs:261` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
+| UI-041 | `source/OpenTPW/Client/GameFlow.cs:267` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
 | UI-042 | `source/OpenTPW/Hud/ParkHud.cs:151` | [APPROX:UI-042] camera button cycles host park views; original camera-view action remains unqualified |
 | UI-043 | `source/OpenTPW/UI/Original/FontSmoothing.cs:15` | [APPROX:UI-043] text drawn above 1× is magnified per glyph (Catmull-Rom, contrast min(2, 0.8 × factor)) instead of doubling pixels — OpenTPW choice; the original only drew its fonts at 1× |
 | UI-044 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:20` | [APPROX:UI-044] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list |
 | UI-045 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:22` | [APPROX:UI-045] a header click sorts by that column (ascending, again for descending; the list starts by name ascending as the original's sort word does); the table only gives column header buttons 16/17 without a model — evidence needed: the original header handler |
-| UI-046 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:127` | [APPROX:UI-046] gauge rows: excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10'), working life has no catalogue value and stays empty; safe capacity is Upgrades[0].InitCapacity — evidence needed: capture of the original buy window |
-| UI-046 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:264` | [APPROX:UI-046] the type-9 value cells are drawn as a plain bar gauge; the original gauge art is not identified |
+| UI-046 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:151` | [APPROX:UI-046] gauge rows: excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10'), working life has no catalogue value and stays empty; safe capacity is Upgrades[0].InitCapacity — evidence needed: capture of the original buy window |
+| UI-046 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:288` | [APPROX:UI-046] the type-9 value cells are drawn as a plain bar gauge; the original gauge art is not identified |
 | UI-047 | `source/OpenTPW/Hud/BuyListModel.cs:103` | [APPROX:UI-047] the change text stays 4 s after the last balance change and sums the changes within that time — evidence needed: capture of the original cash trend display |
-| UI-048 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:156` | [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048]) |
-| UI-049 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:304` | [APPROX:UI-049] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends |
+| UI-048 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:180` | [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048]) |
+| UI-049 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:328` | [APPROX:UI-049] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends |
 | UI-050 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:35` | [APPROX:UI-050] the third column (1673,1724) has no known content and stays empty; the unnamed controls 491 and 512 are not drawn — evidence needed: capture of the original buy window |
 | UI-051 | `source/OpenTPW/Hud/ParkHud.cs:136` | [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display |
 | UI-060 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:182` | [APPROX:UI-060] line colours, plot scaling and the default selected series are OpenTPW choices; original graph samples/style need a capture. |
@@ -949,7 +949,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:514` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | language-settings | `source/OpenTPW/Client/LanguageSettings.cs:10` | [EXT:language-settings] where the choice is stored is an OpenTPW matter; the original read its language from the install |
 | language-settings | `source/OpenTPW/Client/LanguageStartup.cs:7` | [EXT:language-settings] where the choice is stored and offered is an OpenTPW matter; the original read its language from the install |
-| live-language | `source/OpenTPW/Client/GameFlow.cs:453` | [EXT:live-language] Switches to &lt;see cref="pendingLanguage"/&gt;: the language, the string table and the fonts. Caches of |
+| live-language | `source/OpenTPW/Client/GameFlow.cs:474` | [EXT:live-language] Switches to &lt;see cref="pendingLanguage"/&gt;: the language, the string table and the fonts. Caches of |
 | live-language | `source/OpenTPW/Client/PendingLanguage.cs:9` | [EXT:live-language] where the files of a language come from is an OpenTPW matter |
 | live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:945` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
 | live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1016` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
@@ -969,27 +969,29 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | online-email | `source/OpenTPW/Online/OnlineSession.cs:268` | &lt;summary&gt;[EXT:online-email] Sets a new password with the recovery code; then log in as usual.&lt;/summary&gt; |
 | online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:367` | [EXT:online-two-step] accounts without two-step login leave the code empty. |
 | online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:428` | [EXT:online-two-step] Shows the authenticator secret of &lt;see cref="OnlineSession.Enrollment"/&gt; as a QR code and as |
-| online-two-step | `source/OpenTPW/UI/Original/UiWidgets.cs:320` | [EXT:online-two-step] A QR code (for an authenticator app's &lt;c&gt;otpauth://&lt;/c&gt; URI): black modules on a white panel with |
-| online-visit | `source/OpenTPW/Client/GameFlow.cs:288` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
+| online-two-step | `source/OpenTPW/UI/Original/UiWidgets.cs:326` | [EXT:online-two-step] A QR code (for an authenticator app's &lt;c&gt;otpauth://&lt;/c&gt; URI): black modules on a white panel with |
+| online-visit | `source/OpenTPW/Client/GameFlow.cs:294` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:406` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:435` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
-| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:586` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
+| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:592` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | park-summary | `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:14` | [EXT:park-summary] functional host summary; original information-screen layout remains unqualified |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
-| sandbox | `source/OpenTPW/Client/GameFlow.cs:289` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
+| sandbox | `source/OpenTPW/Client/GameFlow.cs:295` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:132` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Client/Game.cs:256` | [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options. |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:388` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:418` | [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused. |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:694` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:394` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:439` | [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused. |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:715` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default); |
 | texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:147` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
 | texture-pack | `source/OpenTPW/Render/Assets/Material.cs:25` | [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object. |
+| texture-pack | `source/OpenTPW/Render/Assets/PredecodedUiArt.cs:16` | [EXT:texture-pack] predecoded interface art is an OpenTPW build option, not original behaviour. |
 | texture-pack | `source/OpenTPW/Render/Assets/Texture.cs:19` | [EXT:texture-pack] Textures made from a game &#96;.wct&#96; remember their source so a pack switch can reload them in place. |
 | texture-pack | `source/OpenTPW/Render/Assets/Texture.cs:123` | [EXT:texture-pack] pack lookup; a missing file falls back to the original. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
+| texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:115` | [EXT:texture-pack] the browser build ships predecoded siblings instead of the PNGs (docs/WEB.md); only the shipped art can be one. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:79` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePackDownload.cs:10` | [EXT:texture-pack] Clarity is optional replacement art; downloads never change the original installation. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePackSwitch.cs:25` | [EXT:texture-pack] Runtime switch of the optional local texture pack (docs/TEXTURE-PACKS.md). |
@@ -998,14 +1000,14 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:498` | [EXT:texture-pack] Original, Clarity, the legacy Enhanced choice, then every other usable pack. |
 | texture-pack | `source/OpenTPW/UI/Original/Options/TexturePackDownloadScreen.cs:4` | [EXT:texture-pack] A release download, not an original-game dialog. |
 | texture-pack | `source/OpenTPW/UI/Original/UiImages.cs:29` | [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in. |
-| texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:175` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
+| texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:177` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:57` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:101` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:81` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:119` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:584` | [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
-| tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:59` | [EXT:tpi-viewer] viewing aid, not original behaviour |
-| tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:277` | [EXT:tpi-viewer] Theme Park Inc worlds are viewed without economy, HUD or advisor (the camera, Esc and P only). |
+| tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
+| tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:283` | [EXT:tpi-viewer] Theme Park Inc worlds are viewed without economy, HUD or advisor (the camera, Esc and P only). |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:33` | [EXT:tpi-viewer] Theme Park Inc is an experimental level viewer, not a supported game. |
 | tpi-viewer | `source/OpenTPW/Render/Assets/Texture.cs:88` | [EXT:tpi-viewer] &#96;.fsh&#96; textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014. |
 | tpi-viewer | `source/OpenTPW/World/Level.cs:96` | [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md). |
@@ -1080,16 +1082,16 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | Mac UI table data:0x508bc | `source/OpenTPW/Online/OnlineScreens.cs:876` | [DATA:Mac UI table data:0x508bc] the four columns (ids 16-19); the send/delete columns are narrow |
 | Mac UI table data:0x50f84 | `source/OpenTPW/Online/OnlineScreens.cs:561` | [DATA:Mac UI table data:0x50f84] the six column headers (ids 16-21) at their authored x extents |
 | Mac UI table data:0x523f0 | `source/OpenTPW/Online/OnlineScreens.cs:64` | [DATA:Mac UI table data:0x523f0] root 90111 worldlob (9,620,510,1531); buttons b_findprk 90115 (49,731,202,885) help 435, b_bck2lob 90112 (49,898,202,1051) help 431, b_zoom 90118 (41,1070,143,1173) help 428/429, b_lobup 90117 (182,1077,336,1231) help 426, b_lobleft 90114 (61,1201,214,1355) help 424, b_lobright 90116 (307,1201,460,1355) help 425, b_lobdown 90113 (184,1327,337,1481) help 427; i_sat 90120–90124 help 423 |
-| Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:200` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window. |
-| Mac buy table 0x4cd94:1,2 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:188` | [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles |
-| Mac buy table 0x4cd94:16,17 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:185` | [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action |
-| Mac buy table 0x4cd94:489,490,493,504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:150` | [DATA:Mac buy table 0x4cd94:489,490,493,504] w_big root window4, two !frame panels and the f_buyitem list frame at their authored rectangles |
-| Mac buy table 0x4cd94:490 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:168` | [DATA:Mac buy table 0x4cd94:490] preview content region (437,202)-(797,565) |
-| Mac buy table 0x4cd94:492 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:162` | [DATA:Mac buy table 0x4cd94:492] item name line at the top of the preview frame |
+| Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:224` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window. |
+| Mac buy table 0x4cd94:1,2 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:212` | [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles |
+| Mac buy table 0x4cd94:16,17 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:209` | [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action |
+| Mac buy table 0x4cd94:489,490,493,504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:174` | [DATA:Mac buy table 0x4cd94:489,490,493,504] w_big root window4, two !frame panels and the f_buyitem list frame at their authored rectangles |
+| Mac buy table 0x4cd94:490 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:192` | [DATA:Mac buy table 0x4cd94:490] preview content region (437,202)-(797,565) |
+| Mac buy table 0x4cd94:492 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:186` | [DATA:Mac buy table 0x4cd94:492] item name line at the top of the preview frame |
 | Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:37` | [DATA:Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496] label/value rows of the stats frame (493) |
 | Mac buy table 0x4cd94:504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:33` | [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11) |
 | Mac buy table 0x4cd94:507,506,509,508 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:24` | [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143) |
-| Mac buy table 0x4cd94:510 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:156` | [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048]) |
+| Mac buy table 0x4cd94:510 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:180` | [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048]) |
 | Mac finance table 0x49ee4:74352,74354 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:123` | [DATA:Mac finance table 0x49ee4:74352,74354] w_park/window3 and f_graph/graph at their authored rectangles. |
 | Mac finance table 0x49ee4:74356-74358 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:129` | [DATA:Mac finance table 0x49ee4:74356-74358] three b_stoggle period buttons, 1 / 3 / 12 years. |
 | Mac finance table 0x49ee4:74359-74366 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:13` | [DATA:Mac finance table 0x49ee4:74359-74366] toggle controls; labels are confirmed by docs/reverse/UI-MAP.md. |
@@ -1133,7 +1135,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UIHELPTEXT 193/194 | `source/OpenTPW/Hud/ParkHud.Management.cs:93` | [DATA:ui.wad b_door] [DATA:UIHELPTEXT 193/194] the help names the action the click performs (open when closed, close when open) |
 | UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it" | `source/OpenTPW/World/Level.Objects.cs:175` | [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1) |
 | UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:49` | [DATA:UITEXT.str:125-133] stats-frame labels per category (the enum names these by their other uses) |
-| UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:121` | [DATA:UITEXT.str:125-133] the labels per category (rides list five values, as the five rows of frame 493) |
+| UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:145` | [DATA:UITEXT.str:125-133] the labels per category (rides list five values, as the five rows of frame 493) |
 | UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:85` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | coaster.sam:asPylonControls[1] | `source/OpenTPW/World/Coasters/CoasterDefinition.cs:288` | [DATA:coaster.sam:asPylonControls[1]] only coasters whose settings name a second pylon control offer loop pylons (9 of the 12 PC coasters) |
 | coaster.sam:sCoasterType.fInitialPylonLoftHeight | `source/OpenTPW/World/Coasters/CoasterBuilder.cs:34` | [DATA:coaster.sam:sCoasterType.fInitialPylonLoftHeight] the height a new pylon starts at (10 by default, 20 for several PC coasters) |
@@ -1156,7 +1158,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | levels/Standard.sam:PerGradeStaffConsts[g].RecuperationRate/HappinessRecuperationRate, AllStaffConstants.RestLevel/HappyHitCosNoRestArea | `source/OpenTPW/Economy/BalanceSettings.cs:79` | [DATA:levels/Standard.sam:PerGradeStaffConsts[g].RecuperationRate/HappinessRecuperationRate, AllStaffConstants.RestLevel/HappyHitCosNoRestArea] read as singles: the rest step 0x100F3D8C adds the two rates at settings +756/+760 + 16 g to a staff member's energy and happiness, RestLevel (+740) and the missing-rest-area happiness hit (+744) are the words 0x100F4900 compares and subtracts |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:84` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:676` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:697` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:globe/globe.MD2 + Lo_glo1–24 | `source/OpenTPW/World/Lobby/GlobeScene.cs:56` | [DATA:lobby.wad:globe/globe.MD2 + Lo_glo1–24] tile i covers column (i − 1) mod 6 and row (i − 1) div 6 of a world map; vertex UVs put column c at atan2(x, z) = 180° − 60°·c and row r between 90° − 45°·r and 45° − 45°·r latitude |
 | lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:36` | [DATA:lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN] the online globe's two camera distances; defaults equal the shipped values |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
@@ -1347,7 +1349,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x10094474 slope and deviance | `source/OpenTPW/World/Coasters/CoasterTrack.cs:234` | [BIN:STP-PPC:0x10094474 slope and deviance] slope (fMaxHeightDiffPerGSquareDist, pylon +112), loop rotation deviance (+152) and loop height difference (+172) are loaded but never read by the coaster code; fMaxRotnAngleDeviance (+148) only bounds the rotate slider 0x10046508 |
 | STP-PPC:0x100953F8-0x10095450 lobby one-shots | `source/OpenTPW/Audio/GameAudio.cs:267` | [BIN:STP-PPC:0x100953F8-0x10095450 lobby one-shots] cat_locallobbysfx 3, 4 and 5 play off random timers beside the looping ambience (event 2) |
 | STP-PPC:0x1009598C lobby audio start | `source/OpenTPW/Audio/GameAudio.cs:226` | [BIN:STP-PPC:0x1009598C lobby audio start] the lobby component stops the old handles, starts cat_locallobbymusic event 1 (handle kept) and cat_locallobbysfx event 2 (handle kept) of the current island's theme |
-| STP-PPC:0x1009598C lobby audio start | `source/OpenTPW/Client/GameFlow.cs:136` | [BIN:STP-PPC:0x1009598C lobby audio start] the front end starts the selected island's theme lobby music (cat_locallobbymusic 1) and looping ambience (cat_locallobbysfx 2) |
+| STP-PPC:0x1009598C lobby audio start | `source/OpenTPW/Client/GameFlow.cs:142` | [BIN:STP-PPC:0x1009598C lobby audio start] the front end starts the selected island's theme lobby music (cat_locallobbymusic 1) and looping ambience (cat_locallobbysfx 2) |
 | STP-PPC:0x10095A24/0x10095A50 lobby audio start | `source/OpenTPW.Tests/AudioTriggerTests.cs:61` | [BIN:STP-PPC:0x10095A24/0x10095A50 lobby audio start] cat_locallobbymusic event 1 and cat_locallobbysfx event 2 |
 | STP-PPC:0x1009B1DC movie box | `source/OpenTPW/Client/Movie/MoviePresenter.cs:44` | shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md). |
 | STP-PPC:0x100A3CC8 sine table | `source/OpenTPW/World/Coasters/CoasterCurve.cs:275` | [BIN:STP-PPC:0x100A3CC8 sine table] 4096 entries sin(f32(f32(k / 4096) × 2π)) rounded to single; index trunc(a × 4096/2π) & 4095 (built from 0x1004B72C, size at 0x1004B720) |
@@ -1572,7 +1574,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:64` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:66` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
 | STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:546` | [BIN:STP-PPC:0x10137FD0 park view input] a 0x100 (activated) message in the park view plays cat_ui event 0x1F (0xBD when the message's control flag word, read at 0x1017F618, has a bit set outside 24-26) |
-| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/UI/Original/UiWidgets.cs:422` | [BIN:STP-PPC:0x10137FD0 park view input] a control's 0x100 (activated) message plays cat_ui event 0x1F (0xBD when the control's flag word 0x1017F618 has a bit set outside 24-26) |
+| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/UI/Original/UiWidgets.cs:428` | [BIN:STP-PPC:0x10137FD0 park view input] a control's 0x100 (activated) message plays cat_ui event 0x1F (0xBD when the control's flag word 0x1017F618 has a bit set outside 24-26) |
 | STP-PPC:0x10139A40 error feedback | `source/OpenTPW/Hud/ParkHud.cs:300` | [BIN:STP-PPC:0x10139A40 error feedback] the buy window's rejected purchase plays cat_ui event 0x1D (buy window callers 0x10163AFC/0x10163BFC) |
 | STP-PPC:0x10139A40 error feedback | `source/OpenTPW/Hud/ParkHud.cs:539` | [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4) |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/CellBuildTool.cs:136` | [BIN:STP-PPC:0x10139C64 park-view hover] the cell under the cursor picks the help line: empty (0x85258) 441, type 1 442, type 3 444; inside the tools 443 and 445 |
@@ -1601,7 +1603,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x101C22E0 scheduler | `source/OpenTPW/Economy/ParkCalendar.cs:56` | [BIN:STP-PPC:0x101C22E0 scheduler] eight 31 ms substeps make one park turn (248 ms of scaled time); the turn counter is world +0x1DA70C (0x10105398) |
 | STP-PPC:0x101C2444 park turn | `source/OpenTPW/Audio/GameAudio.cs:580` | [BIN:STP-PPC:0x101C2444 park turn] music parameter = min(min(guests in park / 2, 100), 89), or 0 when the world state is 4 |
 | STP-PPC:0x101C2490 park turn | `source/OpenTPW/Audio/GameAudio.cs:287` | [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) and capped at 100 (0x101C2498) |
-| STP-PPC:0x101C2490 park turn | `source/OpenTPW/Client/GameFlow.cs:320` | [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) for the crowd sentence |
+| STP-PPC:0x101C2490 park turn | `source/OpenTPW/Client/GameFlow.cs:326` | [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) for the crowd sentence |
 | STP-PPC:0x101C3FBC float to unsigned | `source/OpenTPW/World/Coasters/CoasterTrack.cs:508` | [BIN:STP-PPC:0x101C3FBC float to unsigned] truncation; a negative value gives 0 |
 | STP-PPC:0x101C5C4C TbTimeStamp::GetTime | `source/OpenTPW/Economy/ParkCalendar.cs:65` | [BIN:STP-PPC:0x101C5C4C TbTimeStamp::GetTime] the hour comes from the OS LongDateRec hour field (0–23) |
 | STP-PPC:0x1022C374 dynamic texture table | `source/OpenTPW/World/Original/BlueprintMarkers.cs:4` | [BIN:STP-PPC:0x1022C374 dynamic texture table] 16-byte records "blue.tga", "red.tga", "orange.tga", "m_enter.tga", … from Data:Generic:Dynamic:Textures; a face's texture is its index in this table (docs/reverse/BLUEPRINT.md) |
@@ -1640,5 +1642,5 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPW-EXE:0x005DC860 globe pick | `source/OpenTPW/World/Lobby/GlobeScene.cs:17` | [BIN:TPW-EXE:0x005DC860 globe pick] the cursor ray meets a sphere of radius 116 (r² 13456); a city within 10 units (d² &lt; 100) of that point is hovered |
 | TPW-EXE:0x005DC860 globe right button | `source/OpenTPW/Online/OnlineGlobeScreen.cs:56` | [BIN:TPW-EXE:0x005DC860 globe right button] holding the right button steers by the cursor's offset from the screen centre |
 | TPW-EXE:0x005DD530 online globe input | `source/OpenTPW/Online/OnlineGlobeScreen.cs:66` | [BIN:TPW-EXE:0x005DD530 online globe input] a click (event 0x10005) on a hovered pin selects that city (DAT_00f82888) and switches to its lobby, whose top-10 request reads it (0x005E23F0); zooming is the zoom button (event 0x10006, param 2) |
-| TPW-EXE:0x005E27B0 city islands | `source/OpenTPW/Client/GameFlow.cs:641` | [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter |
+| TPW-EXE:0x005E27B0 city islands | `source/OpenTPW/Client/GameFlow.cs:662` | [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter |
 | TPW-EXE:0x005E3210 lobby island | `source/OpenTPW/World/Lobby/LobbyScene.cs:25` | [BIN:TPW-EXE:0x005E3210 lobby island] islands are built from a theme's ISLAND entry at the caller's slot counter, at that slot's ISLANDCAMERAPOSITION and the ISLAND height and angle |

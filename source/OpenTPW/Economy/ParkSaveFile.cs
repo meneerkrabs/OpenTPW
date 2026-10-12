@@ -151,6 +151,17 @@ public static class ParkSaveFile
 		public required List<long> TrainingBudgets { get; init; }
 		public required int NextId { get; init; }
 		public required long NextPoolUpdateTick { get; init; }
+		/// <summary>The strike levels (ECON-014); absent in saves written before strikes and while no role has ever been considered.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public StrikeData? Strikes { get; init; }
+	}
+
+	/// <summary>The staff manager's five per-role records: strike level 0–4, the active flag and the park turn the role was last considered at.</summary>
+	public sealed class StrikeData
+	{
+		public required List<int> Levels { get; init; }
+		public required List<bool> Active { get; init; }
+		public required List<uint> LastConsidered { get; init; }
 	}
 
 	public sealed class StaffMemberData
@@ -161,7 +172,9 @@ public static class ParkSaveFile
 		public required int Grade { get; init; }
 		public required int TrainingPoints { get; init; }
 		public required long HiredTick { get; init; }
-		public required int Happiness { get; init; }
+		public required float Happiness { get; init; }
+		/// <summary>Energy, 0–100; saves written before staff vitals have none and read as 100.</summary>
+		public float Energy { get; init; } = StaffVitals.Maximum;
 		public required StaffState State { get; init; }
 		/// <summary>Park turns until the job completes (ORACLE.md F19). Written by this version.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
@@ -286,6 +299,7 @@ public static class ParkSaveFile
 					TrainingPoints = member.TrainingPoints,
 					HiredTick = member.HiredTick,
 					Happiness = member.Happiness,
+					Energy = member.Energy,
 					State = member.State,
 					BusyTurns = member.BusyTicks,
 					AssignedInstanceId = member.AssignedInstanceId,
@@ -296,7 +310,8 @@ public static class ParkSaveFile
 				Candidates = park.Staff.Candidates.ToList(),
 				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 				NextId = park.Staff.NextId,
-				NextPoolUpdateTick = park.Staff.NextPoolUpdateTick
+				NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
+				Strikes = CaptureStrikes( park.Staff.Strikes )
 			},
 			Research = new ResearchData
 			{
@@ -321,6 +336,19 @@ public static class ParkSaveFile
 	}
 
 	public static string Serialize( ParkEconomy park, WorldRandomState? world = null ) => JsonSerializer.Serialize( Capture( park, world ), Options );
+
+	private static StrikeData? CaptureStrikes( StaffStrikeBoard board )
+	{
+		var roles = Enum.GetValues<StaffType>();
+		if ( roles.All( role => board.Level( role ) == 0 && !board.IsActive( role ) && board.LastConsidered( role ) == 0 ) )
+			return null;
+		return new StrikeData
+		{
+			Levels = roles.Select( board.Level ).ToList(),
+			Active = roles.Select( board.IsActive ).ToList(),
+			LastConsidered = roles.Select( board.LastConsidered ).ToList()
+		};
+	}
 
 	/// <summary>Parses and validates a save; the result still needs <see cref="Restore"/> with matching settings.</summary>
 	public static Data Deserialize( ReadOnlySpan<byte> json )
@@ -378,12 +406,16 @@ public static class ParkSaveFile
 		{
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
+			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.CellX.HasValue == member.CellY.HasValue && (!member.CellX.HasValue || (float.IsFinite( member.CellX.Value ) && float.IsFinite( member.CellY!.Value ))) && double.IsFinite( member.TravelSeconds ) && member.TravelSeconds >= 0 && member.TravelSeconds < StaffWorldSimulation.SecondsPerCell, $"staff {member.Id} position" );
 		}
 		foreach ( var candidate in data.Staff.Candidates )
 			Require( candidate.Id > 0 && candidate.Id < data.Staff.NextId && staffIds.Add( candidate.Id ) && candidate.Grade is >= 0 and < BalanceSettings.GradeCount, $"candidate {candidate.Id}" );
 		Require( data.Staff.TrainingBudgets.Count == BalanceSettings.StaffTypeCount && data.Staff.TrainingBudgets.All( value => value >= 0 ), "training budgets" );
+		if ( data.Staff.Strikes is { } strikes )
+			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
+				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
@@ -441,6 +473,7 @@ public static class ParkSaveFile
 			TrainingPoints = member.TrainingPoints,
 			HiredTick = member.HiredTick,
 			Happiness = member.Happiness,
+			Energy = member.Energy,
 			State = member.State,
 			BusyTicks = BusyTurnsOf( member ),
 			AssignedInstanceId = member.AssignedInstanceId,
@@ -448,6 +481,8 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		if ( data.Staff.Strikes is { } strikes )
+			park.Staff.Strikes.Restore( strikes.Levels, strikes.Active, strikes.LastConsidered );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
 			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ) );

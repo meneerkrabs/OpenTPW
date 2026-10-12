@@ -189,7 +189,7 @@ public sealed class ParkResearch
 
 	/// <summary>Whether a researcher in this state does research (the original skips states 3, 4 and 5 of 0x100F4170).</summary>
 	// [APPROX:ECON-015] researchers on strike or picked up are the original's excluded states 3, 4 and 5 — evidence needed: the staff state values behind 0x100F4170
-	public static bool CanResearch( StaffMember member ) => member.State is not (StaffState.OnStrike or StaffState.PickedUp);
+	public static bool CanResearch( StaffMember member ) => member.State is not (StaffState.Resting or StaffState.OnStrike or StaffState.PickedUp);
 
 	/// <summary>Adds one researcher's contribution of <paramref name="ability"/> points; returns the items completed.</summary>
 	// [BIN:STP-PPC:0x100F0DF0 research points] for each category with effort and a current item: progress += (float)(ability × (effort / Σ effort of categories with an unfinished current item) × work load) / 100, in single precision

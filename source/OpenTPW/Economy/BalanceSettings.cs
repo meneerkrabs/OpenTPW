@@ -76,6 +76,11 @@ public sealed class BalanceSettings
 			standard.GetLong( $"LoanInfo[{index}].LoanAmount" ), standard.GetInt( $"LoanInfo[{index}].APRInPercent" ),
 			standard.GetInt( $"LoanInfo[{index}].RepaymentPeriodInMonths" ), standard.GetInt( $"LoanInfo[{index}].Lendername" ) ) ).ToList();
 		BaseWage = Grades( grade => standard.GetInt( $"PerGradeStaffConsts[{grade}].BaseWage" ) );
+		// [DATA:levels/Standard.sam:PerGradeStaffConsts[g].RecuperationRate/HappinessRecuperationRate, AllStaffConstants.RestLevel/HappyHitCosNoRestArea] read as singles: the rest step 0x100F3D8C adds the two rates at settings +756/+760 + 16 g to a staff member's energy and happiness, RestLevel (+740) and the missing-rest-area happiness hit (+744) are the words 0x100F4900 compares and subtracts
+		RecuperationRate = Grades( grade => (float)standard.GetDouble( $"PerGradeStaffConsts[{grade}].RecuperationRate" ) );
+		HappinessRecuperationRate = Grades( grade => (float)standard.GetDouble( $"PerGradeStaffConsts[{grade}].HappinessRecuperationRate" ) );
+		RestLevel = standard.GetInt( "AllStaffConstants.RestLevel" );
+		HappyHitCosNoRestArea = standard.GetInt( "AllStaffConstants.HappyHitCosNoRestArea" );
 		ResearchAbility = Grades( grade => standard.GetInt( $"ResearcherConstsPerGrade[{grade}].ResearchAbility" ) );
 		ResearchEffort = Enumerable.Range( 0, 5 ).Select( index => standard.GetInt( $"ResearchCategories[{index}].Effort" ) ).ToArray();
 		ResearchTechPercentage = Grades( group => standard.GetInt( $"ResearchTech[{group}].PercentageForThisTech" ) );
@@ -134,7 +139,7 @@ public sealed class BalanceSettings
 		}
 	}
 
-	private static int[] Grades( Func<int, int> read ) => Enumerable.Range( 0, GradeCount ).Select( read ).ToArray();
+	private static T[] Grades<T>( Func<int, T> read ) => Enumerable.Range( 0, GradeCount ).Select( read ).ToArray();
 
 	public string Theme { get; }
 	public bool IsEasy { get; }
@@ -143,6 +148,14 @@ public sealed class BalanceSettings
 	public int InitialAdmissionFee { get; }
 	public IReadOnlyList<LoanOffer> Loans { get; }
 	public IReadOnlyList<int> BaseWage { get; }
+	/// <summary>Energy a resting staff member regains per park turn, by grade (<c>PerGradeStaffConsts[g].RecuperationRate</c>).</summary>
+	public IReadOnlyList<float> RecuperationRate { get; }
+	/// <summary>Happiness a resting staff member regains per park turn, by grade (<c>PerGradeStaffConsts[g].HappinessRecuperationRate</c>).</summary>
+	public IReadOnlyList<float> HappinessRecuperationRate { get; }
+	/// <summary><c>AllStaffConstants.RestLevel</c>: a staff member whose truncated energy byte is at most this seeks a rest area.</summary>
+	public int RestLevel { get; }
+	/// <summary><c>AllStaffConstants.HappyHitCosNoRestArea</c>: the happiness a tired staff member without a rest area to go to loses (one draw in sixteen).</summary>
+	public int HappyHitCosNoRestArea { get; }
 	public IReadOnlyList<int> ResearchAbility { get; }
 	public IReadOnlyList<int> ResearchEffort { get; }
 	public IReadOnlyList<int> ResearchTechPercentage { get; }

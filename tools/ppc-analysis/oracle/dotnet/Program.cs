@@ -33,6 +33,10 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["shop_sale_litter"] = ShopSaleLitter,
 	["staff_training"] = StaffTraining,
 	["repair_timer"] = RepairTimer,
+	["staff_vitals"] = StaffVitalsStep,
+	["staff_rest_seek"] = StaffRestSeek,
+	["staff_grievance"] = StaffGrievance,
+	["staff_strike_month"] = StaffStrikeMonth,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -382,7 +386,7 @@ static JsonNode? StaffTraining( JsonObject a )
 	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
 		?? throw new MissingMethodException( "ParkStaff.AddImported" );
 	var members = a["staff"]!.AsArray().Select( member => (StaffMember)add.Invoke( staff, new object[]
-		{ (StaffType)(int)member!["role"]!, (int)member["grade"]!, (int)member["points"]!, 100, StaffState.Idle, 0L } )! ).ToList();
+		{ (StaffType)(int)member!["role"]!, (int)member["grade"]!, (int)member["points"]!, 100f, StaffState.Idle, 0L, 100f } )! ).ToList();
 	for ( var role = 0; role < 5; role++ )
 		staff.SetTrainingBudget( (StaffType)role, (long)(int)a["budgets"]![role]! );
 	var spent = staff.Train();
@@ -396,4 +400,70 @@ static JsonNode? RepairTimer( JsonObject a )
 	var gauge = BitConverter.Int32BitsToSingle( (int)(uint)a["gauge_bits"]! );
 	int? upgrade = a["upgrade"] is null ? null : (int)a["upgrade"]!;
 	return JsonValue.Create( ParkEconomy.RepairTimer( (int)a["work"]!, gauge, upgrade ) );
+}
+
+static StaffMember StaffMemberOf( int grade, double energy, double happiness ) =>
+	new() { Id = 1, Type = StaffType.Mechanic, NameIndex = 0, Grade = grade, Energy = (float)energy, Happiness = (float)happiness };
+
+static uint SingleBits( float value ) => (uint)BitConverter.SingleToInt32Bits( value );
+
+// StaffVitals.Walk / Work / Rest / IsBelowRestLevel (0xf44c0, 0xf459c, 0xf3d8c, 0xf448c) on a staff member; the rates come from the settings
+// block in the original, so they are passed as the settings' singles.
+static JsonNode? StaffVitalsStep( JsonObject a )
+{
+	var member = StaffMemberOf( (int)a["grade"]!, (double)a["energy"]!, (double)a["happiness"]! );
+	var finished = false;
+	var below = false;
+	switch ( (string)a["op"]! )
+	{
+		case "walk": StaffVitals.Walk( member ); break;
+		case "work": StaffVitals.Work( member ); break;
+		case "rest": finished = StaffVitals.Rest( member, (float)(double)a["rate_energy"]!, (float)(double)a["rate_happiness"]! ); break;
+		case "below": below = StaffVitals.IsBelowRestLevel( member.Energy, (int)a["level"]! ); break;
+	}
+	return new JsonObject { ["energy_bits"] = SingleBits( member.Energy ), ["happiness_bits"] = SingleBits( member.Happiness ), ["finished"] = finished, ["below"] = below };
+}
+
+// StaffVitals.SeekRest (the tail of 0xf4900): the world draw is passed in (OpenTPW's economy draws from its own stream).
+static JsonNode? StaffRestSeek( JsonObject a )
+{
+	var member = StaffMemberOf( 0, (double)a["energy"]!, (double)a["happiness"]! );
+	var sets = StaffVitals.SeekRest( member, (int)a["level"]!, (int)a["hit"]!, (bool)a["found"]!, () => (uint)(long)a["draw"]! );
+	return new JsonObject { ["ret"] = sets ? 1 : 0, ["happiness_bits"] = SingleBits( member.Happiness ) };
+}
+
+static List<StaffVital>[] StaffRoster( JsonNode? staff ) =>
+	staff!.AsArray().Select( role => role!.AsArray().Select( member => new StaffVital( (float)(double)member![0]!, (float)(double)member[1]! ) ).ToList() ).ToArray();
+
+// StaffStrikeBoard.Grievance (0xf8410) for one role of the lists.
+static JsonNode? StaffGrievance( JsonObject a )
+{
+	var roster = StaffRoster( a["staff"] );
+	var role = (StaffType)(int)a["role"]!;
+	var strike = StaffStrikeBoard.Grievance( role, roster[(int)role], (long)a["forced"]! != 0, new LitterStatistic( (int)a["litter_den"]!, (int)a["litter_num"]! ) );
+	return new JsonObject { ["strike"] = strike ? 1 : 0 };
+}
+
+// StaffStrikeBoard.ConsiderMonth (0xf7e18 with 0xf7fe0): the saved levels are restored, then one call per month.
+static JsonNode? StaffStrikeMonth( JsonObject a )
+{
+	var roster = StaffRoster( a["staff"] );
+	var board = new StaffStrikeBoard();
+	board.Restore( a["levels"]!.AsArray().Select( value => (int)value! ).ToList(), a["flags"]!.AsArray().Select( value => (int)value! != 0 ).ToList(),
+		a["ticks"]!.AsArray().Select( value => (uint)(long)value! ).ToList() );
+	var roles = Enum.GetValues<StaffType>();
+	var levels = new JsonArray();
+	var flags = new JsonArray();
+	var ticks = new JsonArray();
+	var messages = new JsonArray();
+	foreach ( var month in a["months"]!.AsArray() )
+	{
+		var sent = board.ConsiderMonth( (long)month!["turn"]!, (long)a["forced"]! != 0, !(bool)month["closed"]!, (int)month["guests"]!, (long)month["stamp"]!,
+			role => roster[(int)role], new LitterStatistic( (int)a["litter_den"]!, (int)a["litter_num"]! ) );
+		levels.Add( new JsonArray( roles.Select( role => (JsonNode)JsonValue.Create( board.Level( role ) )! ).ToArray() ) );
+		flags.Add( new JsonArray( roles.Select( role => (JsonNode)JsonValue.Create( board.IsActive( role ) ? 1 : 0 )! ).ToArray() ) );
+		ticks.Add( new JsonArray( roles.Select( role => (JsonNode)JsonValue.Create( board.LastConsidered( role ) )! ).ToArray() ) );
+		messages.Add( new JsonArray( sent.Select( message => (JsonNode)new JsonArray( (int)message.Role, (int)message.Kind ) ).ToArray() ) );
+	}
+	return new JsonObject { ["levels"] = levels, ["flags"] = flags, ["ticks"] = ticks, ["messages"] = messages };
 }

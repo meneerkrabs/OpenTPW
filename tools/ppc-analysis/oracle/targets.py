@@ -3197,6 +3197,656 @@ def scrap_domain(x: dict) -> bool:
     return x['built'] <= x['now']
 
 
+# ============================================================================== (n) STAFF: vitals, rest, strikes (ECON-014)
+STAFF_GAME_POINTER = ARRIVAL_GAME_POINTER  # TOC slot -> data word holding the game pointer
+STAFF_THINGS = POINTS_THINGS               # TOC slot -> ThingArray (20-byte entries, word 0 = the thing)
+STAFF_STRINGS = -19104                     # TOC slot -> string table of the strike routines (log texts are offsets from it)
+STAFF_SETTINGS = -30084                    # TOC slot -> settings block (+740 RestLevel, +744 HappyHitCosNoRestArea,
+                                           # +756 / +760 + 16 g the energy / happiness recuperation of grade g)
+STAFF_END_SLOTS = tuple(range(-19168, -19128, 4))  # ten TOC slots -> the u16 that ends each role's staff chain
+STAFF_HEADS = {0: -22724, 1: -22722, 2: -22720, 3: -22716, 4: -22718}  # game + 0x1E0000 + d: first staff of each role (u16)
+STAFF_TURN, STAFF_CLOSED, STAFF_CLOCK = 0x1E0000 - 22772, 0x1E0000 - 22768, 672
+STAFF_MESSAGE_QUEUE = -30100               # TOC slot -> word holding the message queue (nonzero: no allocation)
+STAFF_CLOCK_CHAIN = -30076                 # TOC slot -> pointer to a pointer to the game (0xf7fe0 builds clock = game + 672)
+STAFF_REST_TABLE = -27232                  # TOC slot -> u16 table (walking-speed tiers by energy, written to staff +192)
+STAFF_NO_AREA = -19232                     # TOC slot -> u16 that 0xf4c18 stores when it finds no rest area
+STAFF_REST_STRINGS = -19220                # TOC slot -> string table of 0xf4900 and 0xf3d8c
+STAFF_STATE = type('StaffState', (), {})()
+STAFF_MONTH = 25_920_000_000_000           # one fixed 30-day unit in 100 ns units: the divisor (6034 << 32 | 0xf8648000)
+STAFF_LITTER_DENOMINATOR, STAFF_LITTER_NUMERATOR = 0xC21F4, 0xC2264   # (park, 1): two analyser sums; their meaning is not traced
+
+
+def fbits(value: float):
+    """A single's bit pattern, 'nan' for any NaN (a comparable representation of a float outcome)."""
+    return 'nan' if math.isnan(value) else bits(value)
+
+
+def vital_byte(value: float) -> int:
+    """fctiwz then rlwinm 0,24,31: the truncated 32-bit integer's low byte (NaN: 0x80000000, saturating)."""
+    return fctiwz32(value) & 0xFF
+
+
+def vital_clamp(value: float) -> float:
+    """The clamp every vitals step ends with: above 100 stores 100.0, below 0 stores 0.0, anything else (NaN too) the value."""
+    if value > 100.0:
+        return 100.0
+    if value < 0.0:
+        return 0.0
+    return value
+
+
+# ---------------------------------------------------------------------------- vitals: 0xf44c0, 0xf459c, 0xf3d8c, 0xf448c
+VITALS_WALK, VITALS_WORK, VITALS_REST, VITALS_BELOW = 0xF44C0, 0xF459C, 0xF3D8C, 0xF448C
+REST_RELEASE = 0xF4D00                     # (staff) frees the rest-area association; stubbed
+REST_NEXT = {4: 0xD99AC, 5: 0xD5A3C, 6: 0xD2B04, 7: 0xD4B74, 8: 0xF0380}  # staff type byte +2 -> the role's next action; stubbed
+STAFF_TYPE_ROLE = {5: 0, 4: 1, 6: 2, 7: 3, 8: 4}  # staff type byte +2 -> role (0xf4900: 5 handyman, 4 mechanic, 6 entertainer, 7 guard, 8 researcher)
+
+
+def vitals_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+
+    def release(m: Machine) -> None:
+        target.log.append(('release', m.gpr[3] == state.staff))
+
+    def following(name: str):
+        def stub(m: Machine) -> None:
+            target.log.append((name, m.gpr[3] == state.staff))
+        return stub
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert', (m.gpr[4] - state.strings) & MASK32))
+
+    stubs = {REST_RELEASE: release, ASSERT: assertion}
+    stubs.update({address: following(f'next-{kind}') for kind, address in REST_NEXT.items()})
+    return stubs
+
+
+def vitals_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = STAFF_STATE
+    state.strings = toc_pointer(sb, STAFF_REST_STRINGS)
+    settings = toc_pointer(sb, STAFF_SETTINGS)
+    sb.write(settings + 740, 'i', x['level'])
+    sb.write(settings + 756 + 16 * x['grade'], 'f', x['rate_e'])
+    sb.write(settings + 760 + 16 * x['grade'], 'f', x['rate_h'])
+    state.staff = sb.struct(1024, {2: ('B', x['type']), 484: ('I', x['grade']), 500: ('f', x['happiness']), 504: ('f', x['energy'])})
+    entry = {'walk': VITALS_WALK, 'work': VITALS_WORK, 'rest': VITALS_REST, 'below': VITALS_BELOW}[x['op']]
+    result = sb.call(entry, {3: state.staff})
+    out = {'energy': fbits(sb.read(state.staff + 504, 'f')), 'happiness': fbits(sb.read(state.staff + 500, 'f')),
+           'events': [tuple(e) for e in log]}
+    if x['op'] == 'below':
+        out['below'] = result.r3 & 0xFF
+    if x['op'] == 'rest':
+        out['finished'] = int(any(event[0] == 'release' for event in log))
+    return out
+
+
+def vitals_reading(x: dict) -> dict:
+    """The four routines as read. Walking (0xf44c0, a moving staff member) takes 0.012 (6 - grade) off the energy and 0.005 (6 -
+    grade) off the happiness, the products in binary64 then rounded to single; working (0xf459c) takes 0.025f (6 - grade) off the
+    energy (single product) and 0.01 (6 - grade) off the happiness; resting (0xf3d8c) adds the grade's recuperation rates (single
+    sums); every result is clamped to 0..100. A rest that ends with the truncated energy byte at 100 frees the rest area (0xf4d00)
+    and calls the role's next action by the type byte +2 (4..8), anything else asserts. 0xf448c is the signed test
+    energy byte < RestLevel."""
+    energy, happiness, grade = x['energy'], x['happiness'], x['grade']
+    events: list = []
+    out = {'energy': fbits(energy), 'happiness': fbits(happiness), 'events': events}
+    if x['op'] == 'walk':
+        out['energy'] = fbits(vital_clamp(f32(energy - f32(0.012 * (6 - grade)))))
+        out['happiness'] = fbits(vital_clamp(f32(happiness - f32(0.005 * (6 - grade)))))
+    elif x['op'] == 'work':
+        out['energy'] = fbits(vital_clamp(f32(energy - f32(f32(0.025) * f32(float(6 - grade))))))
+        out['happiness'] = fbits(vital_clamp(f32(happiness - f32(0.01 * (6 - grade)))))
+    elif x['op'] == 'rest':
+        new_energy = vital_clamp(f32(x['rate_e'] + energy))
+        out['energy'] = fbits(new_energy)
+        out['happiness'] = fbits(vital_clamp(f32(x['rate_h'] + happiness)))
+        out['finished'] = int(vital_byte(new_energy) == 100)
+        if out['finished']:
+            events.append(('release', True))
+            events.append((f'next-{x["type"]}', True) if x['type'] in REST_NEXT else ('assert', 720))
+    else:
+        out['below'] = int(s32(vital_byte(energy)) < s32(x['level']))
+    return out
+
+
+def vitals_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: happiness starts at 100 and never changes, there is no energy, a member never needs rest."""
+    out = {'energy': fbits(x['energy']), 'happiness': fbits(x['happiness'])}
+    if x['op'] == 'below':
+        out['below'] = 0
+    if x['op'] == 'rest':
+        out['finished'] = 0
+    return out
+
+
+def vitals_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def vitals_request(x: dict) -> dict:
+    return {'fn': 'staff_vitals', 'op': x['op'], 'grade': x['grade'], 'energy': x['energy'], 'happiness': x['happiness'],
+            'rate_energy': x['rate_e'], 'rate_happiness': x['rate_h'], 'level': x['level']}
+
+
+def vitals_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'energy_bits' not in answer:
+        return {'exception': str(answer)}
+    out = {'energy': fbits(from_bits(answer['energy_bits'])), 'happiness': fbits(from_bits(answer['happiness_bits']))}
+    if x['op'] == 'below':
+        out['below'] = int(answer['below'])
+    if x['op'] == 'rest':
+        out['finished'] = int(answer['finished'])
+    return out
+
+
+def vitals_value(rng: random.Random) -> float:
+    return rng.choice([lambda: 100.0, lambda: 0.0, lambda: random_float(rng, 0, 100), lambda: random_float(rng, 0, 100),
+                       lambda: random_float(rng, -5, 110), lambda: random_float(rng, 90, 101), lambda: random_float(rng, 0, 3),
+                       lambda: f32(rng.choice([1.0, 1.5, 99.5, 99.99, 100.01, 255.9, 256.0, 300.5, -0.5, -1.0, 0.05]))])()
+
+
+def vitals_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        op = rng.choice(['walk', 'work', 'rest', 'rest', 'below'])
+        x = {'op': op, 'grade': rng.randrange(0, 5) if op not in ('walk', 'work') or rng.random() < 0.9 else rng.randrange(5, 8),
+             'energy': vitals_value(rng), 'happiness': vitals_value(rng),
+             'rate_e': rng.choice([0.2, 0.3, 0.4, 0.5, 0.75, random_float(rng, 0, 3), random_float(rng, 0, 100)]),
+             'rate_h': rng.choice([1.0, 2.0, 3.0, random_float(rng, 0, 5)]), 'type': rng.choice([4, 5, 6, 7, 8, 8, 3, 9]),
+             'level': rng.choice([1, 1, 1, 0, 2, rng.randrange(0, 120), -1])}
+        x.update(kw)
+        return {key: f32(value) if isinstance(value, float) else value for key, value in x.items()}
+    shipped = [(0.2, 1.0), (0.3, 2.0), (0.4, 2.0), (0.5, 3.0), (0.75, 3.0)]
+    edges = [make(op='walk', grade=0, energy=100.0, happiness=100.0), make(op='work', grade=0, energy=100.0, happiness=100.0),
+             make(op='walk', grade=4, energy=0.01, happiness=0.001), make(op='work', grade=4, energy=0.01, happiness=0.001),
+             make(op='walk', grade=7, energy=100.0, happiness=99.99),
+             make(op='rest', grade=2, energy=99.7, happiness=99.0, rate_e=0.4, rate_h=2.0, type=6),
+             make(op='rest', grade=4, energy=99.2, happiness=50.0, rate_e=0.75, rate_h=3.0, type=8),
+             make(op='rest', grade=0, energy=99.9, happiness=10.0, rate_e=0.1, rate_h=1.0, type=4),
+             make(op='rest', grade=1, energy=100.0, happiness=100.0, rate_e=0.3, rate_h=2.0, type=5),
+             make(op='rest', grade=1, energy=50.0, happiness=100.0, rate_e=0.3, rate_h=2.0, type=5),
+             make(op='below', energy=0.0, level=1), make(op='below', energy=1.0, level=1), make(op='below', energy=1.99, level=1),
+             make(op='below', energy=2.0, level=1), make(op='below', energy=256.0, level=1), make(op='below', energy=-1.0, level=1)]
+    edges += [make(op='rest', grade=g, energy=e, happiness=60.0, rate_e=re, rate_h=rh, type=6)
+              for g, (re, rh) in enumerate(shipped) for e in (95.0, 99.9)]
+    return edges + [make() for _ in range(n)]
+
+
+# ---------------------------------------------------------------------------- rest seeking: the tail of 0xf4900 (0xf4a60..0xf4c04)
+SEEK_ENTRY, SEEK_END = 0xF4A60, 0xF4C04
+SEEK_THOUGHT, SEEK_NAVIGATE, SEEK_STATE = 0xFB54C, 0xF4C18, 0xF311C
+
+
+def seek_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+
+    def thought(m: Machine) -> None:
+        if m.gpr[3] != state.staff + 48 or m.gpr[5] != 0:
+            raise AssertionError('0xfb54c called without the staff +48 object and 0')
+        target.log.append(('thought', m.gpr[4]))
+
+    def navigate(m: Machine) -> None:
+        if m.gpr[4] != state.staff:
+            raise AssertionError('0xf4c18 called without the staff member')
+        target.log.append(('seek',))
+        m.memory.w16(m.gpr[3], state.no_area if not state.x['found'] else (state.no_area ^ 0x00FF) & 0xFFFF)
+
+    def set_state(m: Machine) -> None:
+        if m.gpr[3] != state.staff:
+            raise AssertionError('0xf311c called without the staff member')
+        target.log.append(('state', m.gpr[4]))
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', (m.gpr[4] - state.strings) & MASK32))
+
+    return {SEEK_THOUGHT: thought, SEEK_NAVIGATE: navigate, SEEK_STATE: set_state, DEBUG_LOG: log}
+
+
+def seek_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = STAFF_STATE
+    state.x = x
+    state.game = sb.alloc(0x1E0000)
+    game_word = toc_pointer(sb, STAFF_GAME_POINTER)
+    sb.write(game_word, 'I', state.game)
+    sb.write(state.game + WORLD_RNG, 'I', x['rng'])
+    state.strings = toc_pointer(sb, STAFF_REST_STRINGS)
+    state.no_area = sb.read(toc_pointer(sb, STAFF_NO_AREA), 'H')
+    settings = toc_pointer(sb, STAFF_SETTINGS)
+    sb.write(settings + 740, 'i', x['level'])
+    sb.write(settings + 744, 'i', x['hit'])
+    state.staff = sb.struct(1024, {500: ('f', x['happiness']), 504: ('f', x['energy'])})
+    result = sb.call(SEEK_ENTRY, {27: state.staff, 28: settings, 29: toc_pointer(sb, STAFF_REST_TABLE), 30: game_word,
+                                  31: state.strings}, stop=SEEK_END)
+    return {'ret': result.r3 & 0xFF, 'happiness': fbits(sb.read(state.staff + 500, 'f')),
+            'energy': fbits(sb.read(state.staff + 504, 'f')), 'rng': sb.read(state.game + WORLD_RNG, 'I'),
+            'events': [tuple(e) for e in log]}
+
+
+def seek_reading(x: dict, strict: bool = False, always_hit: bool = False) -> dict:
+    """The tail of 0xf4900 as read. The truncated energy byte above RestLevel (signed compare) is the comfortable branch: the
+    happiness byte at most 10 gives thought 19 (no draw); above 97 a world draw with (draw & 15) == 0 gives thought 18. At or below
+    RestLevel the member thinks 20 ('tired') and seeks a rest area; found: state 2 and the result 1. Not found: a world draw, and
+    with (draw & 15) == 0 the happiness falls by HappyHitCosNoRestArea (clamped 0..100); the result is 0."""
+    events: list = []
+    rng = x['rng']
+    happiness = x['happiness']
+
+    def draw() -> int:
+        nonlocal rng
+        rng, returned = det_model.world_next(rng)
+        return returned
+    byte = vital_byte(x['energy'])
+    out = {'ret': 0}
+    below = byte < x['level'] if strict else byte <= x['level']
+    if not below:
+        hb = vital_byte(happiness)
+        if hb <= 10:
+            events.append(('thought', 19))
+        elif hb > 97 and draw() & 15 == 0:
+            events.append(('thought', 18))
+    else:
+        events.append(('thought', 20))
+        events.append(('seek',))
+        if x['found']:
+            events.append(('state', 2))
+            out['ret'] = 1
+        else:
+            events.append(('log', 985))
+            if always_hit or draw() & 15 == 0:
+                happiness = vital_clamp(f32(happiness - f32(float(x['hit']))))
+    out.update({'happiness': fbits(happiness), 'energy': fbits(x['energy']), 'rng': rng, 'events': events})
+    return out
+
+
+def seek_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: nothing changes, nothing is sought, no draw is taken."""
+    return {'ret': 0, 'happiness': fbits(x['happiness'])}
+
+
+def seek_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def seek_request(x: dict) -> dict:
+    return {'fn': 'staff_rest_seek', 'energy': x['energy'], 'happiness': x['happiness'], 'level': x['level'], 'hit': x['hit'],
+            'found': bool(x['found']), 'draw': det_model.world_next(x['rng'])[1]}
+
+
+def seek_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'ret' not in answer:
+        return {'exception': str(answer)}
+    return {'ret': int(answer['ret']), 'happiness': fbits(from_bits(answer['happiness_bits']))}
+
+
+def seek_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'energy': vitals_value(rng), 'happiness': vitals_value(rng), 'level': rng.choice([1, 1, 1, 0, 2, rng.randrange(0, 120)]),
+             'hit': rng.choice([2, 2, 0, 5, rng.randrange(-3, 60)]), 'found': rng.randrange(2),
+             'rng': rng.choice([rng.getrandbits(32), rng.getrandbits(32), 0, 1, MASK32])}
+        x.update(kw)
+        return {key: f32(value) if isinstance(value, float) else value for key, value in x.items()}
+    seeds = random.Random(7)
+    unlucky = next(s for s in iter(lambda: seeds.getrandbits(32), None) if det_model.world_next(s)[1] & 15 != 0)
+    lucky = next(s for s in iter(lambda: seeds.getrandbits(32), None) if det_model.world_next(s)[1] & 15 == 0)
+    edges = [make(energy=1.0, level=1, found=0, rng=lucky, happiness=50.0, hit=2),     # at RestLevel: seeks (tired), no area, the hit
+             make(energy=1.0, level=1, found=0, rng=unlucky, happiness=50.0, hit=2),   # no hit: the draw is not 0 mod 16
+             make(energy=2.0, level=1, found=0, rng=lucky, happiness=50.0, hit=2),     # above RestLevel: comfortable
+             make(energy=0.9, level=1, found=1, rng=lucky, happiness=50.0, hit=2),     # an area is found: state 2
+             make(energy=0.0, level=1, found=0, rng=lucky, happiness=1.0, hit=2),      # the hit clamps at 0
+             make(energy=50.0, level=1, found=0, rng=lucky, happiness=98.0, hit=2),    # comfortable and happy: thought 18 on a lucky draw
+             make(energy=50.0, level=1, found=0, rng=unlucky, happiness=98.0, hit=2),
+             make(energy=50.0, level=1, found=0, rng=lucky, happiness=10.9, hit=2),    # unhappy: thought 19
+             make(energy=50.0, level=1, found=0, rng=lucky, happiness=97.9, hit=2)]
+    return edges + [make() for _ in range(n)]
+
+
+# ---------------------------------------------------------------------------- the staff world shared by the strike routines
+def staff_world(sb: Sandbox, x: dict) -> None:
+    """The game block, the ThingArray with one chain of staff per role, the chain ends, the manager and the stub state."""
+    state = STAFF_STATE
+    state.x = x
+    state.game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, STAFF_GAME_POINTER), 'I', state.game)
+    state.park = sb.struct(16)
+    state.strings = toc_pointer(sb, STAFF_STRINGS)
+    for slot in STAFF_END_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'H', 0)
+    table = toc_pointer(sb, STAFF_THINGS)
+    index = 1
+    for role in range(5):
+        members = x['roles'][role]
+        first = 0
+        for position, (energy, happiness) in enumerate(members):
+            following = index + 1 if position + 1 < len(members) else 0
+            address = sb.struct(1024, {500: ('f', happiness), 504: ('f', energy), 524: ('H', following)})
+            sb.write(table + 20 * index, 'I', address)
+            first = first or index
+            index += 1
+        sb.write(state.game + 0x1E0000 + STAFF_HEADS[role], 'H', first)
+    state.manager = sb.struct(256, {100: ('I', x['forced'] & MASK32)})
+
+
+def staff_world_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    def statistic(value_key: str):
+        def stub(m: Machine) -> None:
+            if m.gpr[3] != state.park or m.gpr[4] != 1:
+                raise AssertionError('the analyser statistic was called without (park, 1)')
+            m.gpr[3] = state.x[value_key] & MASK32
+        return stub
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert', (m.gpr[4] - state.strings) & MASK32))
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', (m.gpr[4] - state.strings) & MASK32))
+
+    return {PARK_OF_GAME: park, STAFF_LITTER_DENOMINATOR: statistic('litter_den'), STAFF_LITTER_NUMERATOR: statistic('litter_num'),
+            ASSERT: assertion, DEBUG_LOG: log}
+
+
+# ---------------------------------------------------------------------------- the strike test 0xf8410
+STAFF_GRIEVANCE = 0xF8410
+
+
+def grievance_binary(sb: Sandbox, x: dict, log) -> dict:
+    staff_world(sb, x)
+    state = STAFF_STATE
+    result = sb.call(STAFF_GRIEVANCE, {3: state.manager, 4: x['role']})
+    return {'strike': int(result.r3 != 0), 'ret': result.r3, 'events': [tuple(e) for e in log]}
+
+
+def grievance_reading(x: dict, count: int = 3, limit: int = 15, fatigue: bool = True, happiness: bool = True,
+                      litter: bool = True, byte_wrap: bool = True) -> dict:
+    """0xf8410 as read. A nonzero word at manager +100 (the forced flag, any value) returns 1 at once. A role outside 0..4 asserts and returns 0.
+    Handymen (role 0) first test the ratio of the two analyser sums (single precision, quotient above 0.2f). Then the role's staff
+    chain (the first index at game +0x1da73c.. per role, next at staff +524, ended by the role's end word) is walked twice: the
+    low bytes of the truncated energies (+504), then of the happinesses (+500), each added into an unsigned sum; more than `count`
+    members with floor(sum / members) below `limit` strike ('fatigue' log 705, 'unhappiness' log 746). No strike returns 0."""
+    events: list = []
+    forced = x['forced'] & MASK32
+    if forced:
+        return {'strike': 1, 'ret': 1, 'events': events}
+    role = x['role']
+    if role not in range(5):
+        return {'strike': 0, 'ret': 0, 'events': [('assert', 784)]}
+    if role == 0 and litter:
+        den, num = f32(float(s32(x['litter_den']))), f32(float(s32(x['litter_num'])))
+        quotient = f32(num / den) if den != 0.0 else (math.nan if num == 0.0 else math.copysign(math.inf, num))
+        if quotient > f32(0.2):
+            return {'strike': 1, 'ret': 1, 'events': events}
+    members = x['roles'][role]
+    for index, message, enabled in ((0, 705, fatigue), (1, 746, happiness)):
+        if not enabled:
+            continue
+        values = [vital_byte(member[index]) if byte_wrap else max(0, min(255, int(member[index]))) for member in members]
+        if len(values) > count and (sum(values) & MASK32) // len(values) < limit:
+            events.append(('log', message))
+            return {'strike': 1, 'ret': 1, 'events': events}
+    return {'strike': 0, 'ret': 0, 'events': events}
+
+
+def grievance_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: no strikes."""
+    return {'strike': 0}
+
+
+def grievance_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def grievance_request(x: dict) -> dict:
+    return {'fn': 'staff_grievance', 'role': x['role'], 'forced': x['forced'] & MASK32,
+            'staff': [[list(member) for member in members] for members in x['roles']],
+            'litter_den': s32(x['litter_den']), 'litter_num': s32(x['litter_num'])}
+
+
+def grievance_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'strike' not in answer:
+        return {'exception': str(answer)}
+    return {'strike': int(answer['strike'])}
+
+
+def staff_lists(rng: random.Random) -> list:
+    """One role's staff: (energy, happiness) pairs hovering around a level near the strike threshold of 15."""
+    size = rng.choice([0, 1, 2, 3, 4, 4, 5, 6, 8])
+    base = rng.choice([0.0, 5.0, 14.0, 14.5, 15.0, 15.5, 20.0, 60.0, 100.0])
+    spread = rng.choice([0.0, 0.5, 3.0, 10.0])
+
+    def vital() -> float:
+        if rng.random() < 0.9:
+            return f32(max(-3.0, rng.gauss(base, spread)))
+        return f32(rng.choice([256.0, 300.0, -1.0, 15.0, 14.99]))
+    return [(vital(), vital()) for _ in range(size)]
+
+
+def grievance_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'role': rng.choice([0, 1, 2, 3, 4, 4, 0]), 'forced': rng.choice([0, 0, 0, 0, 1, 7, MASK32]),
+             'roles': [staff_lists(rng) for _ in range(5)],
+             'litter_den': rng.choice([0, 1, 10, 100, rng.randrange(0, 1000), -5, 0x7FFFFFFF]),
+             'litter_num': rng.choice([0, 0, 1, 3, 20, 21, rng.randrange(0, 1000), -1])}
+        x.update(kw)
+        x['roles'] = [[(f32(energy), f32(happiness)) for energy, happiness in members] for members in x['roles']]
+        return x
+    zero = lambda size: [(0.0, 0.0)] * size
+    full = lambda size: [(100.0, 100.0)] * size
+    edges = [make(role=1, forced=0, roles=[zero(5)] * 5, litter_den=10, litter_num=0),                       # fatigue average 0
+             make(role=1, forced=0, roles=[zero(5), zero(3), zero(5), zero(5), zero(5)]),                     # only three members: no strike
+             make(role=1, forced=0, roles=[zero(5), zero(4), zero(5), zero(5), zero(5)]),                     # four members: strikes
+             make(role=2, forced=0, roles=[full(5), full(5), [(100.0, 14.9)] * 4, zero(5), zero(5)]),         # unhappiness
+             make(role=2, forced=0, roles=[zero(5), zero(5), [(15.0, 15.0)] * 4, zero(5), zero(5)]),          # average exactly 15
+             make(role=3, forced=0, roles=[zero(5), zero(5), zero(5), [(15.0, 15.0)] * 3 + [(14.0, 14.0)], zero(5)]),  # sum 59 / 4 = 14
+             make(role=4, forced=0, roles=[zero(5), zero(5), zero(5), zero(5), [(256.0, 100.0)] * 4]),        # 256.0 wraps to byte 0
+             make(role=4, forced=0, roles=[zero(5), zero(5), zero(5), zero(5), [(-1.0, 100.0)] * 4]),         # -1.0 is byte 255
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=10, litter_num=3),            # handymen: 0.3 > 0.2
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=10, litter_num=2),            # 0.2f: not above
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=0, litter_num=1),             # x / 0 = inf
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=0, litter_num=0),             # 0 / 0 = NaN
+             make(role=1, forced=0, roles=[full(5)] * 5, litter_den=10, litter_num=9),                        # only handymen test it
+             make(role=3, forced=1, roles=[full(5)] * 5), make(role=3, forced=MASK32, roles=[full(5)] * 5),
+             ]
+    return edges + [make() for _ in range(n)]
+
+
+# ---------------------------------------------------------------------------- the month consideration 0xf7e18 (with the escalation 0xf7fe0)
+MONTH_ENTRY = 0xF7E18
+MONTH_TRAINING, MONTH_CLOCK, MONTH_GUESTS = 0xFC1C4, 0xE4628, 0xC1FB4
+MONTH_MESSAGE, MONTH_POST = 0x116590, 0x11688C
+MONTH_ALLOWED = [(0xF7E18, 0xF83C4), (0xF8410, 0xF8BE4), (0x1091AC, 0x1091B8), (0x1C4100, 0x1C4230)]
+LEVEL_BASE, LEVEL_STRIDE = 36, 12      # the manager's per-role records: +36 level, +40 active flag, +44 turn last considered
+
+
+def month_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+    stubs = staff_world_stubs(target)
+
+    def training(m: Machine) -> None:
+        target.log.append(('training',))
+
+    def guests(m: Machine) -> None:
+        if m.gpr[3] != state.park or m.gpr[4] != 5:
+            raise AssertionError('0xc1fb4 called without (park, 5)')
+        m.gpr[3] = state.step['guests'] & MASK32
+
+    def clock(m: Machine) -> None:
+        if m.gpr[4] != state.game + STAFF_CLOCK:
+            raise AssertionError('0xe4628 called without the game clock')
+        stamp = state.step['stamp'] & ((1 << 64) - 1)
+        m.memory.w32(m.gpr[3], stamp >> 32)
+        m.memory.w32(m.gpr[3] + 4, stamp & MASK32)
+
+    def message(m: Machine) -> None:
+        target.log.append(('message', m.gpr[4], m.gpr[5]))   # (role, kind)
+
+    def post(m: Machine) -> None:
+        pass
+
+    stubs.update({MONTH_TRAINING: training, MONTH_GUESTS: guests, MONTH_CLOCK: clock, MONTH_MESSAGE: message, MONTH_POST: post})
+    return stubs
+
+
+def month_binary(sb: Sandbox, x: dict, log) -> dict:
+    staff_world(sb, x)
+    state = STAFF_STATE
+    sb.write(toc_pointer(sb, STAFF_MESSAGE_QUEUE), 'I', 1)
+    chain = sb.alloc(8)
+    sb.write(chain, 'I', state.game)
+    sb.write(toc_pointer(sb, STAFF_CLOCK_CHAIN), 'I', chain)
+    for role in range(5):
+        base = state.manager + LEVEL_BASE + LEVEL_STRIDE * role
+        sb.write(base, 'I', x['levels'][role])
+        sb.write(base + 4, 'I', x['flags'][role])
+        sb.write(base + 8, 'I', x['ticks'][role])
+    out = {'levels': [], 'flags': [], 'ticks': [], 'messages': [], 'events': []}
+    for step in x['months']:
+        state.step = step
+        sb.write(state.game + STAFF_TURN, 'I', step['turn'] & MASK32)
+        sb.write(state.game + STAFF_CLOSED, 'I', step['closed'] & MASK32)
+        mark = len(log)
+        sb.call(MONTH_ENTRY, {3: state.manager})
+        bases = [state.manager + LEVEL_BASE + LEVEL_STRIDE * role for role in range(5)]
+        out['levels'].append([sb.read(base, 'I') for base in bases])
+        out['flags'].append([sb.read(base + 4, 'I') for base in bases])
+        out['ticks'].append([sb.read(base + 8, 'I') for base in bases])
+        out['events'].append([tuple(e) for e in log[mark:]])
+        out['messages'].append([(e[1], e[2]) for e in out['events'][-1] if e[0] == 'message'])
+    return out
+
+
+def months_of(stamp: int) -> int:
+    """0xf7ff8..0xf805c: the signed 64-bit stamp divided toward zero by 25.92e12 (30 days in 100 ns); the low word, signed."""
+    stamp = s64(stamp)
+    quotient = abs(stamp) // STAFF_MONTH * (1 if stamp >= 0 else -1)
+    return s32(quotient & MASK32)
+
+
+def month_reading(x: dict, age_gate: int = 24, drop: str = '') -> dict:
+    """0xf7e18 and 0xf7fe0 as read. Training first (0xfc1c4). Unless the manager's forced word is set the month is skipped, with log
+    389, while the park is closed (game +0x1da710 nonzero) or any guest stands in the park (0xc1fb4(park, 5) nonzero). Each role with a
+    nonempty staff chain not yet considered this turn (+44) is marked, then: an active strike (+40) is simply ended; otherwise the
+    escalation runs. It logs 442, then needs the clock stamp / 25.92e12 to be at least 24 (signed low word) and the strike test (0xf8410).
+    A grievance: level 0 -> 1 (log 475, message kind 0: a warning); 1 -> 2 (log 546), 2 -> 3 (log 599), 3 -> 4 (log 653) and 4 -> 4, each
+    setting the active flag and sending kind 2 (the strike); any other level does nothing. No grievance: level 1 sends kind 3 (called
+    off); the level and the active flag clear. Messages are (role, kind)."""
+    levels, flags, ticks = list(x['levels']), list(x['flags']), list(x['ticks'])
+    out = {'levels': [], 'flags': [], 'ticks': [], 'messages': [], 'events': []}
+    for step in x['months']:
+        events: list = [('training',)]
+        skipped = False
+        if x['forced'] & MASK32 == 0 and (step['closed'] != 0 or step['guests'] != 0):
+            events.append(('log', 389))
+            skipped = True
+        for role in () if skipped else range(5):
+            if not x['roles'][role] or ticks[role] == step['turn'] & MASK32:
+                continue
+            ticks[role] = step['turn'] & MASK32
+            if flags[role] and drop != 'end':
+                flags[role] = 0
+                continue
+            events.append(('log', 442))
+            if months_of(step['stamp']) < age_gate:
+                continue
+            verdict = grievance_reading({**x, 'role': role})
+            events.extend(verdict['events'])
+            if verdict['strike']:
+                level = levels[role]
+                if level == 0:
+                    events += [('log', 475), ('message', role, 0)]
+                    levels[role] = 1
+                elif level in (1, 2, 3):
+                    events += [('log', {1: 546, 2: 599, 3: 653}[level]), ('message', role, 2)]
+                    levels[role] = level + 1
+                    flags[role] = 1
+                elif level == 4:
+                    events.append(('message', role, 2))
+                    flags[role] = 1
+            else:
+                if levels[role] == 1:
+                    events.append(('message', role, 3))
+                levels[role] = 0
+                flags[role] = 0
+        out['levels'].append(list(levels))
+        out['flags'].append(list(flags))
+        out['ticks'].append(list(ticks))
+        out['events'].append(events)
+        out['messages'].append([(e[1], e[2]) for e in events if e[0] == 'message'])
+    return out
+
+
+def month_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: no strikes, so no level or flag ever changes."""
+    count = len(x['months'])
+    return {'levels': [list(x['levels'])] * count, 'flags': [list(x['flags'])] * count, 'messages': [[]] * count}
+
+
+def month_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def month_request(x: dict) -> dict:
+    return {'fn': 'staff_strike_month', 'staff': [[list(member) for member in members] for members in x['roles']], 'forced': x['forced'] & MASK32,
+            'levels': list(x['levels']), 'flags': list(x['flags']), 'ticks': list(x['ticks']),
+            'litter_den': x['litter_den'], 'litter_num': x['litter_num'],
+            'months': [{'turn': step['turn'], 'closed': step['closed'] != 0, 'guests': step['guests'], 'stamp': step['stamp']}
+                       for step in x['months']]}
+
+
+def month_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'levels' not in answer:
+        return {'exception': str(answer)}
+    return {'levels': answer['levels'], 'flags': answer['flags'], 'ticks': answer['ticks'],
+            'messages': [[tuple(message) for message in month] for month in answer['messages']]}
+
+
+def month_inputs(rng: random.Random, n: int) -> list:
+    def months(count: int) -> list:
+        turn = 100
+        steps = []
+        for _ in range(count):
+            turn += rng.choice([500, 700, 17, 1])
+            steps.append({'turn': turn, 'closed': rng.choice([0, 0, 0, 0, 1]), 'guests': rng.choice([0, 0, 0, 3]),
+                          'stamp': rng.choice([30 * STAFF_MONTH, 25 * STAFF_MONTH, 24 * STAFF_MONTH, 24 * STAFF_MONTH - 1,
+                                               23 * STAFF_MONTH, rng.randrange(0, 40 * STAFF_MONTH), 1217 * STAFF_MONTH,
+                                               -1 * STAFF_MONTH, (1 << 63) - 1, -(1 << 63), 24 * STAFF_MONTH + STAFF_MONTH // 2])})
+        return steps
+
+    def make(**kw) -> dict:
+        unhappy = [(0.0, 0.0)] * 5
+        content = [(100.0, 100.0)] * 5
+        x = {'roles': [rng.choice([unhappy, content, [], staff_lists(rng)]) for _ in range(5)],
+             'forced': rng.choice([0, 0, 0, 0, 1]), 'levels': [rng.choice([0, 0, 0, 1, 2, 3, 4, 5, 9]) for _ in range(5)],
+             'flags': [rng.choice([0, 0, 0, 1, 1]) for _ in range(5)], 'ticks': [rng.choice([0, 0, 0, 99, 100]) for _ in range(5)],
+             'litter_den': 10, 'litter_num': rng.choice([0, 0, 3]), 'months': months(rng.randrange(1, 7))}
+        x.update(kw)
+        x['roles'] = [[(f32(energy), f32(happiness)) for energy, happiness in members] for members in x['roles']]
+        return x
+    unhappy, content = [(0.0, 0.0)] * 5, [(100.0, 100.0)] * 5
+    clean = lambda count, **kw: [{'turn': 1000 * (i + 1), 'closed': 0, 'guests': 0, 'stamp': 30 * STAFF_MONTH, **kw} for i in range(count)]
+    zeros = {'levels': [0] * 5, 'flags': [0] * 5, 'ticks': [0] * 5, 'forced': 0, 'litter_den': 10, 'litter_num': 0}
+    edges = [make(**zeros, roles=[unhappy, unhappy, content, content, content], months=clean(6)),    # warning, strike, ended, strike, ended, strike
+             make(**zeros, roles=[content] * 5, months=clean(3)),
+             make(**zeros, roles=[unhappy] * 5, months=clean(8)),
+             make(**zeros, roles=[unhappy, [], content, content, content], months=clean(3)),         # an empty role is skipped
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, guests=2)),                           # guests in the park: skipped, log 389
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, closed=1)),                           # park closed
+             make(**{**zeros, 'forced': 1}, roles=[content] * 5, months=clean(2, guests=5, closed=1)),  # forced: no gates, always a grievance
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, stamp=24 * STAFF_MONTH - 1)),        # younger than 24 units
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, stamp=24 * STAFF_MONTH)),
+             make(**{**zeros, 'ticks': [1000] * 5}, roles=[unhappy] * 5, months=clean(2)),           # already considered this turn
+             make(**{**zeros, 'levels': [1] * 5}, roles=[content] * 5, months=clean(2)),             # called off from level 1
+             make(**{**zeros, 'levels': [2] * 5}, roles=[content] * 5, months=clean(2)),             # no grievance from level 2: cleared silently
+             make(**{**zeros, 'levels': [4] * 5, 'flags': [1] * 5}, roles=[unhappy] * 5, months=clean(3))]
+    return edges + [make() for _ in range(n)]
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -3390,6 +4040,47 @@ SCRAP = Target('object-scrap-value', 'Object scrap value 0xe25e8 (the sale refun
                       '(TbTimeStamp subtraction, as at 0xdc520).',
                       'Domain: no thing bought after the current turn.'])
 
+VITALS = Target('staff-vitals', 'Staff vitals steps 0xf44c0, 0xf459c, 0xf3d8c, 0xf448c', 'ECONOMY.md ECON-014', VITALS_WALK,
+                [(0xF3D8C, 0xF3EE0), (0xF448C, 0xF4674)], vitals_stubs, vitals_binary, vitals_plan, vitals_inputs,
+                equal=vitals_equal, alternatives={'routine-reading': vitals_reading},
+                csharp=('staff_vitals', vitals_request, vitals_result),
+                notes=['C# hook: bridge function "staff_vitals" (StaffVitals.Walk, Work, Rest and BelowRestLevel on a staff member).',
+                       'Executed whole: 0xf44c0 (a moving staff member), 0xf459c (a working one), 0xf3d8c (resting) and 0xf448c (energy byte '
+                       'below RestLevel). Stubs: 0xf4d00 (frees the rest area) and the role actions 0xd99ac, 0xd5a3c, 0xd2b04, 0xd4b74, 0xf0380 '
+                       '(called when the truncated energy byte reaches 100; logged), 0xb678 assertion. The settings block (RestLevel, the '
+                       'recuperation rates of the grade) is written in the data section.'])
+
+SEEK = Target('staff-rest-seek', 'Rest seeking, the tail of 0xf4900 (0xf4a60..0xf4c04)', 'ECONOMY.md ECON-014', SEEK_ENTRY,
+              [(SEEK_ENTRY, SEEK_END + 4), (0x105328, 0x10536C)], seek_stubs, seek_binary, seek_plan, seek_inputs,
+              equal=seek_equal, alternatives={'routine-reading': seek_reading},
+              csharp=('staff_rest_seek', seek_request, seek_result),
+              notes=['C# hook: bridge function "staff_rest_seek" (StaffVitals.SeekRest): the world draw is passed in.',
+                     'A fragment run from 0xf4a60 with the registers 0xf4900 holds there (r27 staff, r28 settings, r29 speed table, r30 game word, '
+                     'r31 strings) up to its epilogue 0xf4c04. Executed: the energy test, the speed tiers, the happiness thoughts and the '
+                     'no-rest-area happiness hit with the world LCG 0x105328. Stubs: 0xfb54c thought, 0xf4c18 navigation (found or not, '
+                     'through the u16 behind TOC -19232), 0xf311c state change, 0x5fbcc log.'])
+
+GRIEVANCE = Target('staff-strike-grievance', 'Strike test 0xf8410', 'ECONOMY.md ECON-014', STAFF_GRIEVANCE, [(0xF8410, 0xF8BC0)],
+                   staff_world_stubs, grievance_binary, grievance_plan, grievance_inputs, equal=grievance_equal,
+                   alternatives={'routine-reading': grievance_reading},
+                   csharp=('staff_grievance', grievance_request, grievance_result),
+                   notes=['C# hook: bridge function "staff_grievance" (StaffStrikes.Grievance). The handymen analyser ratio (0xc21f4, 0xc2264) is '
+                          'passed; OpenTPW has no such statistics, so ParkEconomy never supplies it (ECON-014).',
+                          'Whole routine. Stubs: 0x1082b4 game -> park, the two analyser sums 0xc21f4 / 0xc2264 (chosen words; arguments '
+                          'checked), 0xb678 assertion, 0x5fbcc log. The ThingArray holds one chain of staff per role; the other roles hold '
+                          'decoys, so a wrong chain head would show.'])
+
+STRIKE_MONTH = Target('staff-strike-month', 'Strike consideration 0xf7e18 with the escalation 0xf7fe0', 'ECONOMY.md ECON-014', MONTH_ENTRY,
+                      MONTH_ALLOWED, month_stubs, month_binary, month_plan, month_inputs, equal=month_equal,
+                      alternatives={'routine-reading': month_reading},
+                      csharp=('staff_strike_month', month_request, month_result),
+                      notes=['C# hook: bridge function "staff_strike_month" (StaffStrikeBoard.ConsiderMonth).',
+                             'Replays several month-end calls of 0xf7e18 in one sandbox (state in the manager block persists).',
+                             'Executed: 0xf7e18, 0xf7fe0, 0xf8410 with the strike test above, 0xf8bc0 / 0xf8bd0 (active flag), 0x1091ac (park '
+                             'closed word) and the signed 64-bit divide 0x1c4100. Stubs: 0xfc1c4 training, 0xc1fb4 guests in the park (chosen), '
+                             '0xe4628 clock stamp (chosen; its epoch is not traced), 0x116590 / 0x11688c message construction and posting '
+                             '(logged as role and kind), the world-stub set of staff-strike-grievance.'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH]
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

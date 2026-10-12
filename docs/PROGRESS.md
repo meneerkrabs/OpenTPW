@@ -250,6 +250,12 @@ preview; original runtime fidelity and the complete offline scope remain open.
   `ParkObjectState.TimesUsed` counter (raised when a guest leaves, imported from a save's customer count) is saved and hashed, so the
   hash schema is 11 and the determinism pin re-pinned (behaviour unchanged);
   the Windows `tp.exe` counterpart is not executed yet.
+- The oracle executed the staff vitals, rest and strike routines (F22 in [ORACLE.md](reverse/ORACLE.md), ECON-014: the old claim "happiness never
+  changes, no strikes" is refuted). Staff energy and happiness (singles, start 100) fall every park turn while a member walks (0.012 / 0.005 x (6 - grade))
+  or works (0.025 / 0.01 x (6 - grade)) and rise while it rests at a Staff Room (the one `ChillsYouOut` object; 0.2..0.75 energy and 1..3 happiness a turn);
+  without a room a tired member loses 2 happiness one turn in 16. At a month end of an open, guest-free park a role of more than three whose average energy or
+  happiness is below 15 is warned, then strikes (TAG_SYSTEM 38-62, no dispatch or research until the next month end). C#: `StaffVitals`, `StaffStrikeBoard`,
+  saves carry energy and the strike board; the oracle agrees on all four targets. Open: the staff state machine, the handymen's litter statistics and the stamp epoch.
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

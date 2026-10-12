@@ -24,9 +24,12 @@ internal static class EconomyTestData
 		for ( var grade = 0; grade < 5; grade++ )
 		{
 			text.Append( $"PerGradeStaffConsts[{grade}].BaseWage\t{wages[grade]}\t\t\t// Grade {grade}\n" );
+			text.Append( $"PerGradeStaffConsts[{grade}].RecuperationRate\t{new[] { "0.2", "0.3", "0.4", "0.5", "0.75" }[grade]}\t\t// Grade {grade}\n" );
+			text.Append( $"PerGradeStaffConsts[{grade}].HappinessRecuperationRate\t{new[] { 1, 2, 2, 3, 3 }[grade]}\t\t// Grade {grade}\n" );
 			text.Append( $"ResearcherConstsPerGrade[{grade}].ResearchAbility\t{ability[grade]}\n" );
 			text.Append( $"ResearchTech[{grade}].PercentageForThisTech\t{tech[grade]}\n" );
 		}
+		text.Append( "AllStaffConstants.RestLevel\t1\nAllStaffConstants.HappyHitCosNoRestArea\t2\n" );
 		var effort = new[] { 100, 15, 30, 15, 10 };
 		for ( var category = 0; category < 5; category++ )
 			text.Append( $"ResearchCategories[{category}].Effort\t{effort[category]}\t\t#comment\n" );

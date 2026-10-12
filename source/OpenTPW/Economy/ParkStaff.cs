@@ -21,8 +21,11 @@ public sealed class StaffMember
 	/// <summary>Training progress towards the next grade, 0–99 ("raise the training level by 1%").</summary>
 	public int TrainingPoints { get; set; }
 	public long HiredTick { get; init; }
-	// [APPROX:ECON-014] staff start at happiness 100 and it never changes (no strikes) — evidence needed: staff happiness rules (binary/captures)
-	public int Happiness { get; set; } = 100;
+	// [BIN:STP-PPC:0x100F29FC staff constructor] happiness (+500) and energy (+504) are singles that start at 100.0; ECON-014 / ORACLE.md F22 (StaffVitals) moves them every park turn
+	/// <summary>Happiness, 0–100, a single as in the original (+500): it falls while the member walks or works and without a rest area, and rises while resting.</summary>
+	public float Happiness { get; set; } = StaffVitals.Maximum;
+	/// <summary>Energy, 0–100, a single (+504): it falls while the member walks or works and rises while resting; at the rest level the member seeks a rest area.</summary>
+	public float Energy { get; set; } = StaffVitals.Maximum;
 	public StaffState State { get; set; } = StaffState.Idle;
 	/// <summary>Remaining ticks of the current job (repair, cleaning), 0 when free.</summary>
 	public long BusyTicks { get; set; }
@@ -33,7 +36,7 @@ public sealed class StaffMember
 	public float? CellY { get; set; }
 	/// <summary>Fraction of the host's next one-cell movement interval, persisted across loads.</summary>
 	public double TravelSeconds { get; set; }
-	public bool IsAvailable => BusyTicks == 0 && State != StaffState.OnStrike && State != StaffState.PickedUp;
+	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
 }
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>
@@ -60,6 +63,9 @@ public sealed class ParkStaff
 	private readonly long[] trainingBudget = new long[BalanceSettings.StaffTypeCount];
 
 	public ParkStaff( BalanceSettings settings ) => this.settings = settings;
+
+	/// <summary>The five roles' strike levels, flags and last-considered turns (the staff manager's per-role records, ECON-014).</summary>
+	public StaffStrikeBoard Strikes { get; } = new();
 
 	public IReadOnlyList<StaffMember> Members => members;
 	public IReadOnlyList<StaffCandidate> Candidates => candidates;
@@ -201,6 +207,8 @@ public sealed class ParkStaff
 				{
 					member.Grade++;
 					member.TrainingPoints = total - TrainingPointsPerGrade;
+					// [BIN:STP-PPC:0x100F36E4 training promotion] a promotion stores the single 100.0 into the member's happiness (+500); the energy is untouched
+					member.Happiness = StaffVitals.Maximum;
 				}
 				else
 					member.TrainingPoints = total;
@@ -224,9 +232,9 @@ public sealed class ParkStaff
 	internal int AllocateId() => NextId++;
 
 	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
-	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, int happiness, StaffState state, long hiredTick )
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum )
 	{
-		var member = new StaffMember { Id = AllocateId(), Type = type, NameIndex = 0, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), Type = type, NameIndex = 0, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		members.Add( member );
 		return member;
 	}

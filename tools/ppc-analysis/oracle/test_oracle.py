@@ -207,6 +207,29 @@ EXPECTED = {
                                            'pct': [[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]]}),
     ('object-scrap-value', 'routine-reading'): AGREE,
     ('object-scrap-value', 'csharp'): AGREE,
+    # F22 (ECON-014, fixed in C#): a staff member's energy (+504) and happiness (+500) are singles that start at 100 and move every park turn:
+    # a moving member (0xf44c0) loses 0.012 (6 - grade) energy and 0.005 (6 - grade) happiness, a working one (0xf459c) 0.025f (6 - grade)
+    # and 0.01 (6 - grade), a resting one (0xf3d8c) gains the grade's RecuperationRate and HappinessRecuperationRate, all clamped to 0..100;
+    # a rest ends when the truncated energy byte reaches 100. OpenTPW had happiness fixed at 100 and no energy ("plan").
+    ('staff-vitals', 'plan'): (427, {'op': 'walk', 'grade': 0, 'energy': 100.0, 'happiness': 100.0, 'rate_e': 42.81186294555664,
+                                     'rate_h': 1.053891658782959, 'type': 8, 'level': -1}),
+    ('staff-vitals', 'routine-reading'): AGREE,
+    ('staff-vitals', 'csharp'): AGREE,
+    # F22: the tail of 0xf4900. A member whose truncated energy byte is at most RestLevel (signed) is tired and seeks a rest area; with none
+    # a world draw with (draw & 15) == 0 costs it HappyHitCosNoRestArea happiness (clamped), one turn in sixteen. The plan never does.
+    ('staff-rest-seek', 'plan'): (81, {'energy': 1.0, 'happiness': 50.0, 'level': 1, 'hit': 2, 'found': 0, 'rng': 249103477}),
+    ('staff-rest-seek', 'routine-reading'): AGREE,
+    ('staff-rest-seek', 'csharp'): AGREE,
+    # F22: 0xf8410. More than three members of a role whose truncated energy bytes, or happiness bytes, average (unsigned floor) below 15
+    # have a grievance; handymen also when the analyser quotient exceeds 0.2f; a nonzero forced word at manager +100 is one. The plan has none.
+    ('staff-strike-grievance', 'plan'): 313,
+    ('staff-strike-grievance', 'routine-reading'): AGREE,
+    ('staff-strike-grievance', 'csharp'): AGREE,
+    # F22: 0xf7e18 with 0xf7fe0, replayed over several month ends. A grievance climbs a role's level 0 -> 1 (a warning), then 2, 3, 4 (a strike each
+    # time, ended at the next month end); no grievance clears it. The plan has no strikes.
+    ('staff-strike-month', 'plan'): 442,
+    ('staff-strike-month', 'routine-reading'): AGREE,
+    ('staff-strike-month', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
@@ -915,6 +938,143 @@ class Oracle(unittest.TestCase):
             sandbox.call(targets.SALE_FRAGMENT, {3: shop, 25: targets.toc_pointer(sandbox, targets.SALE_GLOBALS),
                                                  28: targets.SALE_STATE.guest, 30: targets.toc_pointer(sandbox, targets.SALE_STRINGS)},
                          stop=targets.SALE_STOP)
+    def test_staff_vitals(self):
+        for key in (('staff-vitals', 'plan'), ('staff-vitals', 'routine-reading')):
+            self.check(key)
+
+    def test_staff_vitals_csharp(self):
+        self.check(('staff-vitals', 'csharp'))
+
+    def test_staff_rest_seek(self):
+        for key in (('staff-rest-seek', 'plan'), ('staff-rest-seek', 'routine-reading')):
+            self.check(key)
+
+    def test_staff_rest_seek_csharp(self):
+        self.check(('staff-rest-seek', 'csharp'))
+
+    def test_staff_strike_grievance(self):
+        for key in (('staff-strike-grievance', 'plan'), ('staff-strike-grievance', 'routine-reading')):
+            self.check(key)
+
+    def test_staff_strike_grievance_csharp(self):
+        self.check(('staff-strike-grievance', 'csharp'))
+
+    def test_staff_strike_month(self):
+        for key in (('staff-strike-month', 'plan'), ('staff-strike-month', 'routine-reading')):
+            self.check(key)
+
+    def test_staff_strike_month_csharp(self):
+        self.check(('staff-strike-month', 'csharp'))
+
+    def _sharp(self, target, variants, side='plan'):
+        import dataclasses
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(target, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_staff_constants(self):
+        # The constants the vitals reading hard-codes are the binary's: the clamp 100.0 and 0.0, 0.012, 0.005, 0.01 (binary64), the single
+        # 0.025 and the handymen's single 0.2 (TOC -10696, -10692, -10736, -10744, -10760, -10752, -10680).
+        import struct
+        memory, toc = self.image.memory, self.image.toc
+        single = lambda d: struct.unpack('>f', memory.read(toc + d, 4))[0]
+        double = lambda d: struct.unpack('>d', memory.read(toc + d, 8))[0]
+        self.assertEqual((single(-10696), single(-10692), single(-10752), single(-10680)), (100.0, 0.0, targets.f32(0.025), targets.f32(0.2)))
+        self.assertEqual((double(-10736), double(-10744), double(-10760)), (0.012, 0.005, 0.01))
+        self.assertEqual((6034 << 32) | 0xF8648000, targets.STAFF_MONTH)
+
+    def test_staff_vitals_reading_is_sharp(self):
+        # Walking and working differ, the grade enters as 6 - grade, the clamp matters, the rest threshold is the byte 100 and the
+        # rest-level test is strict (below), each bringing mismatches back when changed.
+        read = targets.vitals_reading
+        swap = {'walk': 'work', 'work': 'walk'}
+        self._sharp(targets.VITALS, {
+            'walk-as-work': lambda x: read({**x, 'op': swap.get(x['op'], x['op'])}),
+            'grade': lambda x: read({**x, 'grade': x['grade'] + 1}) if x['op'] in swap else read(x),
+            'rates-swapped': lambda x: read({**x, 'rate_e': x['rate_h'], 'rate_h': x['rate_e']}),
+            'below-or-equal': lambda x: {**read(x), 'below': int(targets.vital_byte(x['energy']) <= x['level'])} if x['op'] == 'below' else read(x),
+            'finished-at-99': lambda x: {**read(x), 'finished': int(targets.vital_byte(min(100.0, max(0.0, targets.f32(x['rate_e'] + x['energy'])))) >= 99)}
+            if x['op'] == 'rest' else read(x),
+        })
+
+    def test_staff_rest_seek_reading_is_sharp(self):
+        read = targets.seek_reading
+        self._sharp(targets.SEEK, {
+            'strict': lambda x: read(x, strict=True),
+            'always-hit': lambda x: read(x, always_hit=True),
+            'hit-sign': lambda x: read({**x, 'hit': -x['hit']}),
+            'found-ignored': lambda x: read({**x, 'found': 0}),
+            'level': lambda x: read({**x, 'level': x['level'] + 1}),
+        })
+
+    def test_staff_grievance_reading_is_sharp(self):
+        read = targets.grievance_reading
+        self._sharp(targets.GRIEVANCE, {
+            'count-3': lambda x: read(x, count=2),
+            'count-5': lambda x: read(x, count=4),
+            'limit-14': lambda x: read(x, limit=14),
+            'limit-16': lambda x: read(x, limit=16),
+            'fatigue-only': lambda x: read(x, happiness=False),
+            'happiness-only': lambda x: read(x, fatigue=False),
+            'litter': lambda x: read(x, litter=False),
+            'byte-wrap': lambda x: read(x, byte_wrap=False),
+            'forced': lambda x: read({**x, 'forced': 0}),
+        })
+
+    def test_staff_strike_month_reading_is_sharp(self):
+        read = targets.month_reading
+        self._sharp(targets.STRIKE_MONTH, {
+            'age-23': lambda x: read(x, age_gate=23),
+            'age-25': lambda x: read(x, age_gate=25),
+            'active-not-ended': lambda x: read(x, drop='end'),
+            'guests-ignored': lambda x: read({**x, 'months': [{**step, 'guests': 0} for step in x['months']]}),
+            'closed-ignored': lambda x: read({**x, 'months': [{**step, 'closed': 0} for step in x['months']]}),
+            'turn-guard': lambda x: read({**x, 'ticks': [0] * 5}),
+        })
+
+    def test_staff_grievance_rejects_a_role_outside_the_five(self):
+        # Roles 5 and -1 assert (message 784) and give 0; OpenTPW's StaffType has no such value, so they are not in the comparison inputs.
+        target = targets.GRIEVANCE
+        sandbox = target.sandbox(self.image)
+        base = {'forced': 0, 'roles': [[(0.0, 0.0)] * 5] * 5, 'litter_den': 10, 'litter_num': 9}
+        for role in (5, -1):
+            self.assertEqual(targets.run_binary(target, sandbox, {**base, 'role': role}),
+                             {'strike': 0, 'ret': 0, 'events': [('assert', 784)]})
+            self.assertEqual(targets.grievance_reading({**base, 'role': role}), {'strike': 0, 'ret': 0, 'events': [('assert', 784)]})
+
+    def test_staff_strike_story(self):
+        # The executed sequence for two roles with unhappy staff (four to five members at 0): the first month end is a warning, the second a
+        # strike that the third month end only ends (no new strike), the fourth strikes again at level 3, and so on up to level 4.
+        target = targets.STRIKE_MONTH
+        sandbox = target.sandbox(self.image)
+        unhappy, content = [(0.0, 0.0)] * 5, [(100.0, 100.0)] * 5
+        months = [{'turn': 1000 * (i + 1), 'closed': 0, 'guests': 0, 'stamp': 30 * targets.STAFF_MONTH} for i in range(6)]
+        x = {'roles': [unhappy, unhappy, content, content, content], 'forced': 0, 'levels': [0] * 5, 'flags': [0] * 5, 'ticks': [0] * 5,
+             'litter_den': 10, 'litter_num': 0, 'months': months}
+        out = targets.run_binary(target, sandbox, x)
+        self.assertEqual([levels[:2] for levels in out['levels']], [[1, 1], [2, 2], [2, 2], [3, 3], [3, 3], [4, 4]])
+        self.assertEqual([flags[:2] for flags in out['flags']], [[0, 0], [1, 1], [0, 0], [1, 1], [0, 0], [1, 1]])
+        self.assertEqual(out['messages'], [[(0, 0), (1, 0)], [(0, 2), (1, 2)], [], [(0, 2), (1, 2)], [], [(0, 2), (1, 2)]])
+        # Contented staff: nothing happens and the roles are marked as considered.
+        calm = targets.run_binary(target, sandbox, {**x, 'roles': [content] * 5})
+        self.assertEqual((calm['levels'][-1], calm['flags'][-1], calm['messages'][-1]), ([0] * 5, [0] * 5, []))
+
+    def test_staff_vitals_shipped_turns(self):
+        # One turn of a grade 0 member at full vitals: walking 100 - 0.072 and 100 - 0.03, working 100 - 0.15 and 100 - 0.06; a grade 4
+        # member walking loses 0.024 and 0.01, resting a grade 0 member at 99.9 energy ends the rest (0.2 per turn).
+        target = targets.VITALS
+        sandbox = target.sandbox(self.image)
+        f32, fbits = targets.f32, targets.fbits
+        base = {'type': 6, 'level': 1, 'rate_e': 0.2, 'rate_h': 1.0}
+        walk = targets.run_binary(target, sandbox, {**base, 'op': 'walk', 'grade': 0, 'energy': 100.0, 'happiness': 100.0})
+        self.assertEqual((walk['energy'], walk['happiness']), (fbits(f32(100.0 - f32(0.012 * 6))), fbits(f32(100.0 - f32(0.005 * 6)))))
+        self.assertAlmostEqual(targets.from_bits(walk['energy']), 99.928, places=3)
+        work = targets.run_binary(target, sandbox, {**base, 'op': 'work', 'grade': 0, 'energy': 100.0, 'happiness': 100.0})
+        self.assertAlmostEqual(targets.from_bits(work['energy']), 99.85, places=3)
+        self.assertAlmostEqual(targets.from_bits(work['happiness']), 99.94, places=3)
+        rest = targets.run_binary(target, sandbox, {**base, 'op': 'rest', 'grade': 0, 'energy': f32(99.9), 'happiness': 50.0})
+        self.assertEqual((rest['finished'], rest['events']), (1, [('release', True), ('next-6', True)]))
 
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})
@@ -1004,6 +1164,14 @@ class CSharpMutation(unittest.TestCase):
          'return year is 1 or 2 ? Row( (int)year ) : Row( 3 );', 'return year is 1 or 2 ? Row( (int)year ) : Row( 2 );'),
         ('loan-take', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'Post( LedgerCategory.LoanReceived, offer.Amount );', 'Post( LedgerCategory.OtherIncome, offer.Amount );'),
+        ('staff-vitals', 'csharp', 'source/OpenTPW/Economy/StaffVitals.cs',
+         'member.Energy - 0.025f * (float)factor', 'member.Energy - 0.026f * (float)factor'),
+        ('staff-rest-seek', 'csharp', 'source/OpenTPW/Economy/StaffVitals.cs',
+         'if ( Byte( member.Energy ) > restLevel )', 'if ( Byte( member.Energy ) >= restLevel )'),
+        ('staff-strike-grievance', 'csharp', 'source/OpenTPW/Economy/StaffStrikes.cs',
+         'return sum / (uint)members.Count < GrievanceBelow;', 'return sum / (uint)members.Count <= GrievanceBelow;'),
+        ('staff-strike-month', 'csharp', 'source/OpenTPW/Economy/StaffStrikes.cs',
+         '< EscalationUnits )', '<= EscalationUnits )'),
     ]
 
     def test_mutations_are_detected(self):

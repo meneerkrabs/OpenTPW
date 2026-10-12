@@ -66,6 +66,7 @@ public sealed partial class ParkHud
 		hud = new UiScreen( "hud" ) { Modal = false };
 		Stack.Push( hud );
 		Build();
+		HookStaffStrikeMessages();
 	}
 
 	public UiScreenStack Stack { get; } = new();

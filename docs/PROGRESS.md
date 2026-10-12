@@ -189,6 +189,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   a repair takes `WorkDuration x (100 - state of repair) / 100` park turns (a grade-0 mechanic on a ride at 40 %: 48, not a flat 80 hours;
   the ride's level does not matter) and an upgrade `WorkDuration x DurationOfUpgrade` of the level it installs, without a minimum. Mechanic job
   time now counts park turns (saved as `BusyTurns`; older saves' `BusyTicks` convert from tenths of an hour, rounded up). The walk to the ride stays an approximation (ECON-021).
+- The guest speed boost is settled (ORACLE.md F20, WALK-001). `0xeb0f4` is the store at the end of a block in the outcome routine `0xeaaf8`
+  (one call site, the guest leaving an object): only the Sugar ingredient raises it, by trunc(6 x amount / 100) with the ride build's amount 50, so a guest
+  leaving an Ice Cream Shop walks about one percent faster for three turns (at most +15 per use, so the u16 wrap above 661 never happens in play). The oracle
+  target `walk-boost` executes the routine (521/521); `GuestSpeed.RaiseBoost` does the same in `ApplyVisit` and agrees. WALK-001 now only keeps the shop screen's
+  amount and its saved field.
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).

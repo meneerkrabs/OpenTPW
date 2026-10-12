@@ -386,7 +386,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// </summary>
 	private static void UpdateSpeed( Guest guest )
 	{
-		// [APPROX:WALK-001] nothing raises the boost +196: the event-dependent increments of 0xeb0f4 are not traced, so it stays 0 and only its decay runs — evidence needed: the callers of 0xeb0f4 and their amounts
+		// The boost +196 is raised when a guest leaves an object whose type has the special ingredient Sugar (ApplyVisit, 0xeb0cc..0xeb0f4); here it only decays.
 		(guest.SmoothedSpeed, guest.Boost, guest.MaxSpeed, guest.MaxForce) = GuestSpeed.Update( guest.SmoothedSpeed, guest.BaseSpeed, guest.ToiletBonus, guest.Boost );
 	}
 
@@ -1391,6 +1391,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// </summary>
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
+		// The outcome routine 0xeaaf8 (its sole caller 0xe9ff8 runs when a guest leaves the object) switches on the type's special ingredient: Sugar raises the speed boost.
+		guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
 		if ( ride.Satisfies.HasFlag( GuestNeeds.Hunger ) ) guest.Hunger = 0;
 		if ( ride.Satisfies.HasFlag( GuestNeeds.Thirst ) ) guest.Thirst = 0;
 		if ( ride.Satisfies.HasFlag( GuestNeeds.Toilet ) ) guest.Toilet = 0;

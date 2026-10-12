@@ -19,6 +19,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["bounce"] = Bounce,
 	["guest_speed_limits"] = GuestSpeedLimits,
 	["guest_speed_smoothing"] = GuestSpeedSmoothing,
+	["guest_ingredient_boost"] = GuestIngredientBoost,
 	["arrival_group"] = ArrivalGroup,
 	["park_points"] = ParkPoints,
 	["loan_offers"] = LoanOffers,
@@ -134,6 +135,14 @@ static JsonNode? GuestSpeedSmoothing( JsonObject a )
 	var (s, boost, speed, force) = GuestSpeed.Update( BitConverter.Int32BitsToSingle( (int)(uint)a["s_bits"]! ), (int)a["base"]!,
 		(int)a["bonus"]!, (ushort)(int)a["boost"]! );
 	return new JsonObject { ["s_bits"] = (uint)BitConverter.SingleToInt32Bits( s ), ["boost"] = (int)boost, ["force"] = force, ["speed"] = speed };
+}
+
+// GuestSpeed.RaiseBoost (0xeb0cc..0xeb0f4 in the outcome routine 0xeaaf8): the boost after a use of an object with the given
+// special ingredient (type +344) and amount byte (ride +404).
+static JsonNode? GuestIngredientBoost( JsonObject a )
+{
+	var boost = GuestSpeed.RaiseBoost( (ushort)(int)a["boost"]!, (int)a["ingredient"]!, (int)a["amount"]! );
+	return new JsonObject { ["boost"] = (int)boost };
 }
 
 // GuestSimulation.ArrivalGroupSize (0xcb4e8) on a fresh simulation. World mode 4 halts arrivals; the counted guests fill

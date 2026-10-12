@@ -10,7 +10,7 @@ public static class WalkApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("WALK-001", "nothing raises the speed boost +196; only its traced decay runs"),
+		("WALK-001", "the speed boost +196 comes from the Sugar ingredient only, with the ride build's amount 50 (+3 per visit); the original's per-object amount (ride +404, set from the shop screen and saved) is not modelled"),
 		("WALK-002", "avoid_walls models only its edge branch (the first pushing edge of +x, -x, +y, -y); the diagonal-corner branches tried when no edge pushes are left out"),
 		("WALK-003", "separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists; the original's query 0x10087c also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW"),
 		("WALK-004", "routes are OpenTPW's cell sequences, refilled five waypoints at a time; the stuck reroute prepends the current cell to the rest"),

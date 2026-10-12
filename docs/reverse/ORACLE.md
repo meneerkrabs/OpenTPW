@@ -128,6 +128,7 @@ Mutation checks (`test_oracle.py`):
 | `board-bounce` | `0xadf40` | `0x10e844` clock (returns the chosen `now`) | 505 (incl. a full table and holes) | **agree** (BOARD-plan §5) | **agree** (OV2-6 fixed: `TakeBounceSlot`) |
 | `walk-speed-setter` | `0xffe38` | none | 518 | **agree** (WALK-plan §1, incl. NaN/±inf/huge) | **agree** (`GuestSpeed.Caps`, wired in WALK-F) |
 | `walk-smoothing` | `0xe6b28` + `0xffe38` | `0xffd4c`, `0xd2394` (later movement updates, no value used) | 507 | **F6**: 99 differ (98 in the last bit of `s`, 2 in the boost wrap, one input both). Fused reading: 2 (wrap) | **agree** (`GuestSpeed.Update`: fused multiply-add and the u16 product, F6 fixed in WALK-I; wired in WALK-F) |
+| `walk-boost` | `0xeaaf8` (the outcome routine of one completed use; its `0xeb0cc..0xeb0f4` stores the boost), `0xdc320` (type lookup), `0xe2384` (amount byte), `0x105328` (world LCG) | `0x118018` type record (synthetic, registry and type id checked), `0xfa9a4` thing id, `0xfb7b4` thought, `0xea318` ride outcome (checked: called once), `0xe1f78`/`0xe2094` goods, `0xe1e58` charge, `0xeb6f4` happiness change, `0xe6d20` and the log `0x5fbcc` (all recorded). Appearance word `+348` 0 and the toilet flag clear: the balloon and costume blocks are not entered | 521 | **F20**: **agree** 521/521 with the reading (type `+344` 4 Sugar: boost += trunc(6 x amount byte / 100), u16; 1 Fat, 2 Salt, 3 Ice change the toilet and thirst floats; nothing else touches the boost). The old claim (nothing raises it) differs wherever the ingredient is 4 | `GuestSpeed.RaiseBoost` through `guest_ingredient_boost`: **agree** 521/521 (boost only) |
 | `coast-rating-step` | `0x415b4` | none | 509 | **F7**: 440 differ with the stale term = 0. **Agree** 509/509 with the stale term = Fz. Previous force and bank are 0 in every input (OV-7, F7) | COAST-I not on main (hook `coaster_rating_step`) |
 | `coast-rating-final` | `0x41900` | none | 506 | **F8**: 280 differ. **Agree** 506/506 with the corrected count | hook `coaster_rating_final` |
 | `arrival-group` | `0xcb4e8` | `0x1082b4` game → park (sentinel, checked), `0xc1fb4` counted guests (chosen count; argument 20 checked), `0xc24c0` park points (chosen), `0x1083c8` thing lookup (synthetic thing, `+48` chosen: the weather's mCurrentDrops), `0x5fbcc` debug print (logged). The GameType object is marked constructed, so its constructor `0x12bb64` must not run | 515 | **F9** (factor and online cut fixed): 49 differ from GUESTS.md, all from the missing floor. **Agree** 515/515 with the routine reading | **F9**: 49 differ, the same inputs as the plan (`arrival_group`: `GuestSimulation.ArrivalGroupSize`) |
@@ -159,7 +160,8 @@ The C# comparisons use these seams:
 - `RideVisitorBridge.TakeUnbounced` and `RideVisitorBridge.TakeBounceSlot`, called by reflection because they are
   internal.
 - `GuestSpeed.Caps` and `GuestSpeed.Update` (`guest_speed_limits`, `guest_speed_smoothing`), with s passed and
-  returned as single bits. `CSharpMutation` flips the fused multiply-add to a plain one and the floor 655 to 654.
+  returned as single bits. `GuestSpeed.RaiseBoost` (`guest_ingredient_boost`): the boost, the ingredient and the amount byte; the
+  thirst and toilet words of the other ingredients have no C# model and are compared with the plan only. `CSharpMutation` flips the fused multiply-add to a plain one, the floor 655 to 654 and the Sugar factor 6 to 5 (`walk-boost`).
 - `GuestSimulation.ArrivalGroupSize` (`arrival_group`) on a fresh simulation: world mode 4 sets `ArrivalsHalted`, and
   the counted guests fill the simulation's guest list (a field) by reflection. The weather thing's `+48` word is passed as
   `WeatherDropsFalling` (word > 0) and the GameType mode word 1 as `OnlineVisit` (the 500 cut).
@@ -319,7 +321,7 @@ table, free slots included.
   equivalent.
 - `0xe6bbc..0xe6bd8` stores `boost · 99` as a **u16** (`sth`) before the `/100`. For a boost
   above 661 the product wraps: boost 662 gives 0, not 655. Whether a boost above 661 can occur
-  depends on `0xeb0f4`'s amounts (not traced).
+  depends on `0xeb0f4`'s amounts: answered in F20 (one use adds at most 15, so it cannot happen in play).
 
 The speed setter `0xffe38` agrees with WALK-plan §1 on all 518 inputs, including NaN → 655,
 ±inf and negative s.
@@ -813,6 +815,52 @@ saved job is written as `BusyTurns`; an older save with only `BusyTicks` (tenths
 
 The reading is sharp (`test_repair_duration_reading_is_sharp`): the flat claim differs on 352 inputs, dropping the byte on 17, the division by 100 on 353, the
 upgrade branch on state 1 on 246.
+
+**F20, the speed boost (WALK-001, `GuestSpeed.RaiseBoost`, `0xeaaf8`; fixed in C#).** `0xeb0f4` is not a routine but the `sth r0,196(r28)`
+that ends a four-instruction block at `0xeb0cc` inside `0xeaaf8(guest, ride)`, the outcome of one completed use of an object (shop, sideshow or ride).
+Scanning the whole code section for `bl 0xeaaf8` finds one call site, `0xe9ff8` in `0xe9fa4`, which `0xeec78` in the ride's release step `0xeeb30` calls
+when the guest leaves the object (state 15). `0xe9fa4` calls `0xeaaf8` when the guest's byte `+497` is nonzero. `+497` is the result of the win draw `0xe2940` (`rand % 100 <= chance byte`, ride `+396`, 100 minus
+`InitChanceOfLoosing`) made when the guest enters state 14 (`0xef8e0`, `0xef920`: called aboard); it is always 1 for rides and shops (chance 100, the routine asserts it
+for every type but sideshows). A lost sideshow goes to `0xeb49c` (happiness down) instead. After the type's need effects (`+324` thirst and `+328` hunger subtracted, `+332` vomit and `+336` happiness added, all
+clamped to 0..100), `0xeaf44` switches on type `+344` (`UsageInfo.SpecialIngredient`: 0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar) with the amount byte of the ride
+(`+404`, `mAmountOfSpecialIngredient`, getter `0xe2384`):
+
+| `+344` | Ingredient | Effect (single precision, clamped to 0..100 unless said) |
+| --- | --- | --- |
+| 1 | Fat | toilet `+428` += amount |
+| 2 | Salt | thirst `+420` += amount |
+| 3 | Ice | thirst `+420` += trunc(type `+324` x amount / 100) |
+| 4 | Sugar | **boost `+196` += trunc(6 x amount / 100)**, stored as a u16 (`0xeb0cc..0xeb0f4`; no clamp, wraps at 65,536) |
+| other | | nothing |
+
+The next block (`0xeb0f8`, the lead's list of callees `0x105360`, `0x6a730`, `0x6a7a8`, `0xb882c`, `0xe234c`) switches on `+348` (`UsageInfo.AppearanceEffect`:
+1 balloon, 2 costume): the balloon and costume use (ECON-044), which draws random numbers and creates objects; it does not touch the boost.
+The only other writers of `+196` are the constructor (0, `0xe4878`) and the decay of `0xe6b28`. `walk-boost` executes the whole `0xeaaf8` on 521 inputs
+(ingredient 0..5, -1 and 9, amount word 0..255 and above, boost 0..65,535, thirst effect, ride and shop type words): the reading above **agrees** 521/521
+(boost, thirst and toilet). It is sharp: a factor 5 or 7, an unmasked amount, a clamped sum, Sugar read as Ice or Fat as Salt each differ
+(`test_walk_boost_reading_is_sharp`).
+
+*Which event, how much.* Only a guest leaving an object whose type has Sugar, which is the Ice Cream Shop of every theme (executed data check:
+`ShopType` 2, ingredient 4; the burger shop has Fat, the fries shop Salt, the drinks shop Ice, nothing else has an ingredient; `GuestAssetTests.OnlyTheIceCreamShopsCarrySugar`).
+The ride build `0xdab58` stores 50 in `+404` (and 50 in the quality byte `+392`), so an ice cream adds trunc(6 x 50 / 100) = **3** to the boost. The only code
+that changes `+404` is the setter `0xe237c`, called from two UI handlers (`0x1685b4`, `0x168640`; the shop screen: they also store x 50 in `+392`), whose range is
+not traced; as a byte the amount is at most 255, so one use adds at most 15 (6 at an amount of 100). The boost decays by trunc(x 99 / 100) per park turn
+(3 -> 2 -> 1 -> 0), and the smoothed speed `s <- (3 s + sum / 100) / 4` moves by about 0.01 (one percent of a speed of 1.0) for those turns. The "sugar rush" is
+real but almost invisible.
+
+*The F6 question (can the boost exceed 661?).* No, not in play. One use adds at most 15, so the u16 wrap of `boost x 99` (662 or more) needs 45 or more uses in
+quick succession: with the decay of at least one point per turn a boost stays under 15 unless a guest leaves a Sugar shop every turn, and the walk to the next shop
+takes tens of turns. (Used every single turn the boost would settle near 1,485, which is why the wrap is not formally excluded, but no guest can do that.)
+No other writer of `+196` exists in the code (a scan of every `sth` to that offset).
+
+*Not traced.* The shop screen that sets `+404` (and the range it allows), and the amount saved as `mAmountOfSpecialIngredient` (no OpenTPW field). Fat, Salt and Ice
+change toilet and thirst in the original but not in OpenTPW (the visit still resets the satisfied needs to 0, GUESTS.md); they are a separate gap (the need effects of
+`0xeaaf8`, `+324..+340`), not part of WALK-001.
+
+**Fixed in C#** (before -> after: the boost stayed 0 in every game; now `ApplyVisit` adds `GuestSpeed.RaiseBoost( boost, ingredient, amount )` when a guest leaves an
+object; `RideVisitorBridge.SpecialIngredient` comes from `UsageInfo.SpecialIngredient` through `OriginalObjectRuntime.CreateVisitorBridge`, the amount is the build default
+50 (`[APPROX:WALK-001]` keeps the missing shop screen and save field). `walk-boost` C# 521/521; the factor 6 -> 5 mutation is detected. The determinism hash does not change: its
+scenes have no Sugar shop.
 
 ## 6. Adding a target or a C# hook
 

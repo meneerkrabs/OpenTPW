@@ -170,6 +170,32 @@ public class GuestAssetTests
 	}
 
 	/// <summary>
+	/// The special ingredient of shipped objects (<c>UsageInfo.SpecialIngredient</c>, type +344): only the Ice Cream Shop of every theme has Sugar (4),
+	/// the one ingredient that raises the guests' speed boost (ORACLE.md F20); the burger, fries and drinks shops carry Fat, Salt and Ice.
+	/// </summary>
+	[TestMethod]
+	public void OnlyTheIceCreamShopsCarrySugar()
+	{
+		var ingredients = new SortedSet<string>();
+		foreach ( var theme in ObjectCatalog.Themes )
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				var bridge = OriginalObjectRuntime.CreateVisitorBridge( entry, 1 );
+				if ( bridge.SpecialIngredient != 0 )
+					ingredients.Add( $"{bridge.SpecialIngredient} {entry.DisplayName}" );
+				Assert.AreEqual( GuestSpeed.DefaultIngredientAmount, bridge.IngredientAmount, $"{theme} {entry.DisplayName}" );
+			}
+		CollectionAssert.AreEqual( new[] { "1 Burger Shop", "2 Fries Shop", "3 Drinks Shop", "4 Ice Cream Shop" }, ingredients.ToArray(), string.Join( "; ", ingredients ) );
+		var iceCream = OriginalObjectRuntime.CreateVisitorBridge( ObjectCatalog.Load( "jungle" ).Entries.First( entry => entry.DisplayName == "Ice Cream Shop" ), 1 );
+		var (grid, settings) = LoadJungle();
+		var simulation = new GuestSimulation( grid, settings, 4 ) { ArrivalsEnabled = false };
+		var entrance = settings.ArrivalLaneA![^1];
+		var guest = simulation.SpawnInPark( entrance.X, entrance.Y );
+		( (IRideVisitorHost)simulation ).OnVisitorReleased( iceCream, guest.Id );
+		Assert.AreEqual( (ushort)3, guest.Boost, "an ice cream at the default amount 50: trunc(6 x 50 / 100)" );
+	}
+
+	/// <summary>
 	/// The original Belly Bounce (Bouncy.RSE) with a queue path laid beside the Easymode paths: guests walk the
 	/// queue cells, stand four to a cell, are called forward through the traced gates and ride.
 	/// </summary>

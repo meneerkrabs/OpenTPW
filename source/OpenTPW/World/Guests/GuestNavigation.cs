@@ -420,6 +420,10 @@ public static class GuestSpeed
 	public const int ToiletBonus = 25;
 	public const int ToiletBonusLevel = 80;
 	public const int Divisor = 100;
+	/// <summary><c>UsageInfo.SpecialIngredient</c> 4 (Sugar, the ice cream shops): the only value that raises the speed boost.</summary>
+	public const int SugarIngredient = 4;
+	/// <summary>The ride build stores 50 as the amount of the special ingredient (<c>0xdab58</c>: ride +404, <c>mAmountOfSpecialIngredient</c>); the only way to change it is the original's shop screen.</summary>
+	public const int DefaultIngredientAmount = 50;
 	public const int Floor = 655;
 	public const float InputCap = 2f;
 	public const double MaxSpeedFactor = 0.2;
@@ -448,6 +452,17 @@ public static class GuestSpeed
 		var s = Math.Min( speed, InputCap );
 		return (Math.Max( Floor, (int)(s * MaxSpeedFactor * 65536.0) ), Math.Max( Floor, (int)(s * MaxForceFactor * 65536.0) ));
 	}
+
+	/// <summary>
+	/// <c>0xeb0cc..0xeb0f4</c> in the outcome of a completed use (<c>0xeaaf8</c>, called once from <c>0xe9ff8</c> when the guest leaves
+	/// the object): an object whose type has special ingredient 4 (Sugar) adds trunc(6 × amount / 100) to the boost <c>+196</c>,
+	/// a u16 store that wraps. The amount is the low byte of ride <c>+404</c> (<c>0xe2384</c>), 0..255, so one use adds at most 15
+	/// (6 at the amount 100 the original's slider is thought to stop at). Any other ingredient leaves the boost alone (PPC oracle
+	/// finding F20, <c>walk-boost</c>).
+	/// </summary>
+	// [BIN:STP-PPC:0x100EB0CC sugar boost] type +344 == 4: boost (+196, u16) += trunc((amount byte × 6) / 100) (multiply by the 0x51eb851f magic, shift 5)
+	public static ushort RaiseBoost( ushort boost, int ingredient, int amount ) =>
+		ingredient == SugarIngredient ? unchecked( (ushort)(boost + (amount & 0xFF) * 6 / Divisor) ) : boost;
 
 	/// <summary>
 	/// <c>0xe6bbc..0xe6bd8</c>: the boost decays by trunc(× 99 / 100) every update. The product is stored as a u16

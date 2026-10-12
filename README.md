@@ -12,9 +12,9 @@
     </p>
 </p>
 
-![OpenTPW running with the bundled Enhanced HUD and icons](website/images/shot-current.png)
+![A resumed Jungle park with fixed rides, shops and the bundled Enhanced HUD](website/images/shot-current.png)
 
-Actual OpenTPW gameplay with the bundled Enhanced HUD and icons.
+Actual browser gameplay after loading an own-format park save, with the bundled Enhanced HUD and icons.
 
 ## About this fork
 

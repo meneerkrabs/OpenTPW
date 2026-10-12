@@ -131,5 +131,7 @@ separate processes on real Metal with identical section hashes throughout the co
 browser build saved from the real pause menu, kept the park across a page and WebAssembly reload
 with the game folder chosen again, and resumed with identical save bytes, stable ids, visitors and
 income still arriving; an invalid-version save and a late script-identity failure were both
-rejected with the running park's state unchanged. A richer browser fixture was still being verified
-when this page was written, so browser evidence is not summed up as a fixed tick count here.
+rejected with the running park's state unchanged. The browser also re-saved and reloaded the richer
+park with eight placed objects, fourteen visitors, two staff and two same-type shops priced at
+$60/$120. The save bytes, object/guest/staff ids, prices and closed-park state survived the page and
+WebAssembly restart. The 600-tick equality check above was performed in the native processes.

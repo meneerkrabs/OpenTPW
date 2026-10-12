@@ -135,16 +135,17 @@ preview; original runtime fidelity and the complete offline scope remain open.
   Both differ from GUESTS.md and the C# rule; the routine readings agree on every
   input. `GuestSimulation.ArrivalGroupSize` is compared through the C# bridge
   (the same 125 differences); C# behavior is unchanged and the differences are
-  tracked as ARRIVAL-002..004. `ParkEconomy.ParkPoints` is compared the same way
-  (`park_points`): the same 214 differences, equal to the GUESTS.md plan on all
-  507 inputs; C# behavior is unchanged.
+  tracked as ARRIVAL-002..004. `ParkEconomy.ParkPoints` now follows F10's track
+  type rule: an untracked type is aged from its first purchase and divided by
+  its copies, every copy of a kart, water ride or coaster counts in full. Only
+  the counts-test `0xdc834` remains (121 differences, ARRIVAL-003).
 - The oracle also executed the arrival update `0xcb2ac` over scripts of repeated
   calls (F11, ARRIVAL-004). A negative group (1700 guests: -200) behaves like an
   empty one: no guest, timer restart and cleared active byte at the next stop,
   so nothing holds (the static reading was wrong). Only the stored group word
   and one arrival-vehicle step differ; C# behavior is unchanged.
-- [Fidelity register](FIDELITY-REGISTER.md): **314 original fidelity items** plus
-  **24 online extension** IDs (338 total) remain open. CI checks explicit tags and
+- [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
+  **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.
   Windows/Linux GPU/input/audio, original captures, coaster controllers, missing
   script effects, and further scenario acceptance remain release blockers.

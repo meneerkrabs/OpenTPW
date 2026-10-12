@@ -1172,18 +1172,11 @@ def points_bonus(kind: dict, days: int) -> int:
 
 
 def points_plan(x: dict) -> int:
-    """GUESTS.md "Arrivals" and ParkEconomy.ParkPoints: per ride or sideshow (type kind 0 or 2), (Attraction NewBonus
-    of the age bracket + AttractionValue) / copies of that type, each copy aged from its own build turn (never below
-    0, 3750 s per turn); no bonus for a bracket outside 0..2."""
-    types = {kind['id']: kind for kind in x['types']}
-    points = 0
-    for thing in x['things']:
-        kind = types[thing['type']]
-        if kind['kind'] not in (0, 2):
-            continue
-        days = max(0, x['now'] - thing['built']) * (x['scale'] // 4) // 86400
-        points = s32(points + trunc_div(points_bonus(kind, days) + kind['value'], points_count(x, thing['type'])))
-    return points
+    """GUESTS.md "Arrivals" and ParkEconomy.ParkPoints: per ride or sideshow (type kind 0 or 2), AttractionValue plus the
+    NewBonus of the age bracket (none outside 0..2). A type without a track (+0x9C, Bumper.WhichTrackType, 0) is aged
+    from its first purchase after turn 0 and divided by its copies; a tracked type is aged per copy and counts in full.
+    Every thing counts (the 0xdc834 counts-test is ARRIVAL-003)."""
+    return points_full({**x, 'things': [{**thing, 'open': True} for thing in x['things']]})
 
 
 def points_full(x: dict) -> int:
@@ -1211,9 +1204,11 @@ def points_first(builds: list[int], sold: list[int]) -> int:
 
 
 def points_csharp_request(x: dict) -> dict:
-    # The open flag, type +0x9C word and park record +28 (first) have no C# counterpart (F10): not passed.
+    # The open flag (the 0xdc834 counts-test) has no C# counterpart (ARRIVAL-003): not passed. Type +0x9C is
+    # Bumper.WhichTrackType; park record +28 is the first-purchase turn counter.
     return {'fn': 'park_points', 'now': x['now'],
-            'types': [{k: kind[k] for k in ('id', 'kind', 'value', 'decay', 'bonus')} for kind in x['types']],
+            'types': [{'id': kind['id'], 'kind': kind['kind'], 'value': kind['value'], 'decay': kind['decay'],
+                       'bonus': kind['bonus'], 'track_type': kind['f9c'], 'first': kind['first']} for kind in x['types']],
             'things': [{k: thing[k] for k in ('type', 'built')} for thing in x['things']]}
 
 
@@ -1337,8 +1332,8 @@ POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0x
                  (0x1C4100, 0x1C4230)], points_stubs, points_binary, points_plan, points_inputs,
                 alternatives={'routine-reading': points_full},
                 csharp=('park_points', points_csharp_request, lambda x, r: r),
-                notes=['C# hook: bridge function "park_points" (ParkEconomy.ParkPoints); the open flag, the type +0x9C word '
-                       'and the park record +28 are not passed (no C# counterpart).',
+                notes=['C# hook: bridge function "park_points" (ParkEconomy.ParkPoints): track type and first-purchase turn '
+                       'are passed; the open flag (0xdc834) has no C# counterpart.',
                        'Executed: 0xc5828 (type count = park record +24), 0xd1be8 / 0xd1c88 (park record search over a '
                        'built table), 0xe4750 (turns -> 100 ns units), 0x10a9a4 (game pointer), 0x1c4100 (64-bit divide). '
                        'Stubs: 0x118018 type record, 0xb678 assert (a zero condition fails the run), 0xdc834 counts-test '

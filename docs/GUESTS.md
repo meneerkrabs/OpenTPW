@@ -144,13 +144,15 @@ holds. Only the stored group word and one vehicle step for an exactly empty grou
 
 Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
-bonus from the fourth bracket on), divided by the number of objects of the same type, so copies of one
-type count once. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has 25 and bonuses
-10/7/4. The PowerPC oracle ran the points routine as well (docs/reverse/ORACLE.md, F10). Only things that
-pass the test at `0xdc834` count. A type whose record word `+0x9C` is 0 is aged from the first purchase of
-that type after turn 0, so all its copies share one age, and is divided by its count. Any other type is aged
-per copy and every copy counts in full. OpenTPW ages every object from its own build and always divides
-(ARRIVAL-003). Open points are ARRIVAL-001..004 (`ArrivalApproximations`).
+bonus from the fourth bracket on). The PowerPC oracle ran this routine (docs/reverse/ORACLE.md, F10). A type
+without a track (`Bumper.WhichTrackType` 0) is aged from its first purchase after turn 0, so all its copies
+share one age, and is divided by the number of its objects, so its copies count once; selling does not reset
+that first purchase. Every copy of a tracked type (karts 1, water rides 2, coasters and flumes 3) is aged
+from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has
+25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (a working ride, no
+riders on a coaster being edited, a built kart or water track, and further untraced tests); OpenTPW counts
+every one (ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
+purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`). Open points are ARRIVAL-001..004 (`ArrivalApproximations`).
 
 ## Simulation
 

@@ -23,6 +23,36 @@ with 292.8 ms before. Terrain, rides, guests and HUD remained visible and animat
 These figures measure the page's main thread, not all Chrome processes or GPU time,
 and do not promise the same numbers on another device.
 
+## First build-menu selections
+
+On 12 October, the first selection of an attraction or shop stalled a browser frame
+for 422–1,011 ms. Profiling traced most of that time to LZSS texture decompression:
+each backreference read its entire lookback window, up to 4,095 bytes, even for a
+short copy. The decoder now copies forward directly into a growing output array,
+including overlapping references. Texture scratch storage is quadratic rather than
+cubic, decoded planes use arrays, and previews resolve each used material once and
+reuse parsed models. Unused sign materials still do no work.
+
+Matched cold selections used the same original files, Full Simulation Jungle,
+Original world textures, Enhanced HUD and a 1280×800 browser viewport. These numbers
+measure wall time inside the actual exported `Program.Frame`, not network loading,
+GPU time or overall FPS. The baseline is deployed v0.7.12; the after column is the
+optimized local build.
+
+| First action | Before | After |
+| --- | ---: | ---: |
+| Open buy menu / Aztec Mayhem | 710 ms | 172 ms |
+| Belly Bounce | 478 ms | 75 ms |
+| Balloon Shop | 422 ms | 42 ms |
+| Burger Shop | 649 ms | 35 ms |
+| Drinks Shop | 1,011 ms | 42 ms |
+
+Selections are substantially shorter, but first-use work remains: opening the menu
+still takes about 172 ms in this sample, and Belly Bounce takes 75 ms. Warm preview
+frames remain around 4–6 ms. Device and runtime differences affect these timings.
+The complete original texture corpus retains identical pixels: 8,412 successful
+RGBA hashes and the same four malformed-file errors, plus 31 synthetic cases.
+
 ## Changes
 
 - Model uniforms are recorded in draw order in the existing frame command list.
@@ -46,9 +76,12 @@ and do not promise the same numbers on another device.
 
 ## Remaining stalls
 
-After removing the archive collections, cold Jungle construction still occupied one
-callback for roughly 16.5 seconds (17.9 seconds before). Advisor response 587 now
-prepares in 87.9 ms, including 76.6 ms synchronous PCM decode; the first response
+In the earlier 11 October sample, after removing archive collections, cold Jungle
+construction still occupied one callback for roughly 16.5 seconds (17.9 before).
+The 12 October build-selection run measured 3.2 seconds for its initial Jungle
+construction frame, versus 10.8 seconds in its v0.7.12 baseline; loading the original
+folder and copying theme files are outside that frame. Advisor response 587
+prepared in 87.9 ms, including 76.6 ms synchronous PCM decode; the first response
 measured 223.5 ms of PCM decoding. Those first-use costs are outside the matched steady
 windows and are not claimed as eliminated. Occasional smaller frame gaps remain as well. Broad visibility culling, ahead-of-time compilation
 and full scene-material lifetime work are separate optimization opportunities.

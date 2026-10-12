@@ -2,8 +2,10 @@
 
 internal static class LZSS
 {
-	public static bool Decompress( BitReader inputBuffer, BinaryWriter outputBuffer )
+	public static byte[] Decompress( BitReader inputBuffer )
 	{
+		var output = new byte[4096];
+		var position = 0;
 		while ( true )
 		{
 			var isDelta = inputBuffer.GetBits( 1 );
@@ -12,7 +14,9 @@ internal static class LZSS
 			if ( isDelta == 0 )
 			{
 				var literalValue = inputBuffer.GetBits( 8 );
-				outputBuffer.Write( (byte)literalValue );
+				if ( position == output.Length )
+					Array.Resize( ref output, output.Length * 2 );
+				output[position++] = (byte)literalValue;
 			}
 			else
 			{
@@ -23,33 +27,21 @@ internal static class LZSS
 
 				int length = (int)(inputBuffer.GetBits( 7 )) + 1;
 
-				if ( offset > outputBuffer.BaseStream.Length )
+				if ( offset > position )
 					throw new Exception( "Offset > stream length" );
 
-				long initialPosition = outputBuffer.BaseStream.Position;
-
-				outputBuffer.BaseStream.Seek( initialPosition - offset, SeekOrigin.Begin );
-
-				var window = new byte[offset];
-				for ( int i = 0; i < offset; ++i )
-				{
-					window[i] = (byte)outputBuffer.BaseStream.ReadByte();
-				}
-
-				// Resize window to fit length
-				var buffer = new byte[length];
+				if ( length > output.Length - position )
+					Array.Resize( ref output, Math.Max( output.Length * 2, position + length ) );
+				// Forward copying also handles overlap: later bytes repeat those just written.
 				for ( int i = 0; i < length; ++i )
 				{
-					buffer[i] = window[i % offset];
+					output[position] = output[position - offset];
+					position++;
 				}
-
-				outputBuffer.BaseStream.Seek( initialPosition, SeekOrigin.Begin );
-
-				for ( int i = 0; i < length; ++i )
-					outputBuffer.Write( buffer[i] );
 			}
 		}
 
-		return true;
+		Array.Resize( ref output, position );
+		return output;
 	}
 }

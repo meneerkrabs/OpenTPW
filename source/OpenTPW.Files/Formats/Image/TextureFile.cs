@@ -82,24 +82,27 @@ public partial class TextureFile : BaseFormat
 		//
 		var size = (int)Math.Max( GetAlignedSize( (uint)Math.Max( fileData.Height, fileData.Width ) ), 8 );
 
-		var outputY = Enumerable.Repeat( 0f, size * size ).ToList();
-		var outputCb = Enumerable.Repeat( 0f, size * size ).ToList();
-		var outputCr = Enumerable.Repeat( 0f, size * size ).ToList();
-		var outputA = Enumerable.Repeat( 255f, size * size ).ToList();
+		var outputY = new float[size * size];
+		var outputCb = new float[size * size];
+		var outputCr = new float[size * size];
+		var outputA = new float[size * size];
+		Array.Fill( outputA, 255f );
 
 		var isHalfScale = !fileData.Flags.HasFlag( TextureFlags.FullScale );
 		var state = new ImageDecodeState( size );
-		DecodeChannel( ref state, size, ref colorData, ref outputY, ComputeDequantizationScaleY( fileData.YChannelQuantizationScale ), isHalfScale );
-		DecodeChannel( ref state, size / 2, ref colorData, ref outputCb, ComputeDequantizationScaleCbCr( fileData.CbChannelQuantizationScale ), isHalfScale );
-		DecodeChannel( ref state, size / 2, ref colorData, ref outputCr, ComputeDequantizationScaleCbCr( fileData.CrChannelQuantizationScale ), isHalfScale );
+		DecodeChannel( ref state, size, ref colorData, outputY, ComputeDequantizationScaleY( fileData.YChannelQuantizationScale ), isHalfScale );
+		DecodeChannel( ref state, size / 2, ref colorData, outputCb, ComputeDequantizationScaleCbCr( fileData.CbChannelQuantizationScale ), isHalfScale );
+		DecodeChannel( ref state, size / 2, ref colorData, outputCr, ComputeDequantizationScaleCbCr( fileData.CrChannelQuantizationScale ), isHalfScale );
 
 		if ( fileData.HasAlphaChannel )
-			DecodeChannel( ref state, size, ref alphaData, ref outputA, ComputeDequantizationScaleA( fileData.AChannelQuantizationScale ), isHalfScale, true );
+			DecodeChannel( ref state, size, ref alphaData, outputA, ComputeDequantizationScaleA( fileData.AChannelQuantizationScale ), isHalfScale, true );
 
-		uint alignedWidth = GetAlignedSize( (uint)fileData.Width );
-		uint alignedHeight = GetAlignedSize( (uint)fileData.Height );
-
-		var outputBytes = Enumerable.Repeat( 0f, fileData.Width * fileData.Height * 4 ).ToList();
+		// The colour conversion is the other browser cold path next to the wavelet
+		// loops, so it reads the decoded planes straight into the final byte
+		// array. Storing a float into the old List<float> staging buffer and
+		// reading it back was value-preserving, so clamping the same float here
+		// yields bit-identical bytes - and drops two full-size intermediates.
+		var textureData = new byte[fileData.Width * fileData.Height * 4];
 
 		for ( int y = 0; y < fileData.Height; y++ )
 		{
@@ -117,20 +120,15 @@ public partial class TextureFile : BaseFormat
 				// Alpha channel remains untouched..
 				float a = outputA[y * size + x];
 
-				outputBytes[((y * fileData.Width + x) * 4)] = r;
-				outputBytes[((y * fileData.Width + x) * 4) + 1] = g;
-				outputBytes[((y * fileData.Width + x) * 4) + 2] = b;
-				outputBytes[((y * fileData.Width + x) * 4) + 3] = a;
+				int dst = (y * fileData.Width + x) * 4;
+				textureData[dst] = (byte)r.Clamp( 0, 255 );
+				textureData[dst + 1] = (byte)g.Clamp( 0, 255 );
+				textureData[dst + 2] = (byte)b.Clamp( 0, 255 );
+				textureData[dst + 3] = (byte)a.Clamp( 0, 255 );
 			}
 		}
 
-		List<byte> textureData = Enumerable.Repeat( (byte)0, fileData.Width * fileData.Height * 4 ).ToList();
-		for ( int i = 0; i < outputBytes.Count; i++ )
-		{
-			textureData[i] = (byte)outputBytes[i].Clamp( 0, 255 );
-		}
-
-		Data = new TextureData( fileData.Width, fileData.Height, textureData.ToArray() );
+		Data = new TextureData( fileData.Width, fileData.Height, textureData );
 	}
 
 	private static byte[] Decompress( byte[] data )
@@ -175,17 +173,6 @@ public partial class TextureFile : BaseFormat
 
 	private static byte[] DecompressLZSS( byte[] data )
 	{
-		/*					Y (full)      + Cb (half)     + Cr (half)     + Alpha (full) */
-		const int maxSize = 256 * 256 * 3 + 128 * 128 * 3 + 128 * 128 * 3 + 256 * 256 * 3;
-		using var outputStream = new MemoryStream( maxSize );
-		using var outputWriter = new BinaryWriter( outputStream );
-
-		var blockReader = new BitReader( data );
-		if ( !LZSS.Decompress( blockReader, outputWriter ) )
-		{
-			throw new Exception( "LZSS failed to decompress" );
-		}
-
-		return outputStream.ToArray();
+		return LZSS.Decompress( new BitReader( data ) );
 	}
 }

@@ -126,6 +126,13 @@ second remain approximations. Exact rates need counter advancement/caller
 frequency, map-cell value initialization, and park
 clock conversion. The OS timer witness alone cannot close these dependencies.
 
+**Update (oracle F25, [ORACLE.md](ORACLE.md)).** The needs function `0xeece4` and the constructor `0xe7644` are now executed in the PowerPC oracle (529 and 517 inputs) and
+implemented in C# (`NeedsUpdate`, `GuestStart`). The unresolved dependencies named above are settled as follows: the three signed cell words go to happiness (`+0`), illness (`+2`) and hunger
+(`+4`); the fixed increments are toilet 1.0, hunger 2.0, thirst 2.0 (floats at TOC -10812 and -10828), the penalty for a need at a byte of exactly 100 is 1.0 happiness (TOC -10832); one count of the
+exit counter is one needs phase, 4 park turns or 0.992 s. The constructor's draws come from the world generator in the order exit counter, type, cash, thirst, hunger, toilet, a dropped one, prankery.
+What stays open: the environment grid itself (Phase 2 below), the thought pick that shares the function, and why the fixed growth is confined to phase-zero ids.
+The exit counter's readers are settled in finding F26: the state-6 handler `0xebbd0` leaves at a happiness byte of 0, a counter of exactly 0 or `mParkClosed`; nothing adds to the counter.
+
 ### Thing-ID allocation and scheduling follow-up
 
 High confidence: guest constructor `0xe7644` sets category argument 1 and calls
@@ -233,6 +240,18 @@ at `0xe9d2c`. Unresolved: full candidate prefilters and visibility radius,
 major/minor decision cadence, runtime weight binding, flag classification,
 history expiration, and price eligibility. These prevent a drop-in scoring
 replacement even though the current formula is demonstrably different.
+
+**Update (oracle F24, [ORACLE.md](ORACLE.md)).** The score, the choice loop `0xe8ff4` and the use outcome `0xea318` are now executed in the
+PowerPC oracle (593, 515 and 561 inputs) and implemented in C# (`AttractionScore`, `AttractionChoice`, `RideOutcome`). What this lane left open is
+settled as follows. The weights: the settings block holds the `PeepInfo.*` values in schema order, four bytes per key from word `+12`, so `+80..+88` are
+`DecisionVariable1..3` (days a ride is new, new-ride multiplier, indoor-in-rain multiplier), `+112..+136` the seven weights; the loader's store itself is
+not traced, but the constructor, `0xeb6f4` and `0xea318` read `+12`, `+16`, `+20`, `+24..+32`, `+36..+48` and `+156` in the same order. The need tables: the 11 × 11
+table is exactly `trunc(n² sqrt(e / 10))` for need and effect in tens; the 21-byte toilet and illness curve has no formula. The multipliers after the quotient:
+age up to `DecisionVariable1` days times `DecisionVariable2`; indoor type (`+276`) in rain times `DecisionVariable3`; `+196` (`GoldenTicketCost`) above 0 times
+`1 + (cost + 1) / 10`, else `+440` (`Upgrades[0].CostOfUpgrade`) above 3000 times `1 + cost / 30000`. The candidate loop: a thing with `+46` bit 0x4, scores below 10
+dropped (unsigned), strictly better or equal on an odd world turn, then the counts-test and the path test; no random bonus. History: the used history (guest `+480..`) is
+pushed when a use ends, the temporary history (`+488..`) on a refused join, and a 0 shifts into the latter on every 20th park turn for every guest. Two statements above
+need care: the used slot 0 never divides an existing attraction (the same-type test returns 0 first), and `0xea318` gates on the live excitement byte, not the type's level.
 
 ## Queue behavior and states
 

@@ -29,6 +29,12 @@ public sealed class GuestSettings
 	public int DecisionHungerWeight { get; set; } = 2;
 	public int DecisionToiletWeight { get; set; } = 2;
 	public int DecisionIllnessWeight { get; set; } = 2;
+	/// <summary><c>PeepInfo.DecisionVariable1</c>: days below which a ride is new (settings word <c>+80</c>).</summary>
+	public int DecisionNewRideDays { get; set; } = 7;
+	/// <summary><c>PeepInfo.DecisionVariable2</c>: the score multiplier of a new ride (<c>+84</c>).</summary>
+	public int DecisionNewRideMultiplier { get; set; } = 5;
+	/// <summary><c>PeepInfo.DecisionVariable3</c>: the score multiplier of an indoor ride while it rains (<c>+88</c>).</summary>
+	public int DecisionIndoorRainMultiplier { get; set; } = 5;
 	public int PerfectRide { get; set; } = 25;
 	public int GoodRide { get; set; } = 15;
 	public int OkRide { get; set; } = 5;
@@ -46,17 +52,20 @@ public sealed class GuestSettings
 	public (int X, int Y)[]? ArrivalLaneA { get; set; }
 	public (int X, int Y)[]? ArrivalLaneB { get; set; }
 
-	// approximation: no original source (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md)
-	public float HungerPerSecond { get; set; } = 0.35f;
-	public float ThirstPerSecond { get; set; } = 0.45f;
-	public float ToiletPerSecond { get; set; } = 0.3f;
+	// approximation: no original source (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md; the needs, starting values and
+	// the exit counter are traced: NeedsUpdate, GuestStart, docs/reverse/ORACLE.md F25)
 	public float EnergyDrainPerSecond { get; set; } = 0.15f;
 	public float EnergyRecoveryPerSecond { get; set; } = 1.0f;
-	public float NauseaDecayPerSecond { get; set; } = 0.2f;
 	public float NeedThoughtLevel { get; set; } = 70;
 	public float DecisionIntervalSeconds { get; set; } = 3;
-	public int StartingHappiness { get; set; } = 60;
 	public int MaximumGuests { get; set; } = 1000;
+
+	/// <summary>The seven decision weights in the order of the original's settings words.</summary>
+	public DecisionWeights DecisionWeights => new( (uint)DecisionDistanceWeight, (uint)DecisionQueueWeight, (uint)DecisionExcitementWeight,
+		(uint)DecisionThirstWeight, (uint)DecisionHungerWeight, (uint)DecisionToiletWeight, (uint)DecisionIllnessWeight );
+
+	/// <summary>The three decision variables (new-ride days, new-ride multiplier, indoor-in-rain multiplier).</summary>
+	public DecisionVariables DecisionVariables => new( (uint)DecisionNewRideDays, (uint)DecisionNewRideMultiplier, (uint)DecisionIndoorRainMultiplier );
 
 	/// <summary>Loads the theme balance: <c>levels/Standard.sam</c> overridden by <c>levels/&lt;theme&gt;/Standard.sam</c>.</summary>
 	public static GuestSettings Load( string levelName )
@@ -105,6 +114,9 @@ public sealed class GuestSettings
 		settings.DecisionHungerWeight = Get( "PeepInfo.DecisionVarHungerWeight", settings.DecisionHungerWeight );
 		settings.DecisionToiletWeight = Get( "PeepInfo.DecisionVarToiletWeight", settings.DecisionToiletWeight );
 		settings.DecisionIllnessWeight = Get( "PeepInfo.DecisionVarIllnessWeight", settings.DecisionIllnessWeight );
+		settings.DecisionNewRideDays = Get( "PeepInfo.DecisionVariable1", settings.DecisionNewRideDays );
+		settings.DecisionNewRideMultiplier = Get( "PeepInfo.DecisionVariable2", settings.DecisionNewRideMultiplier );
+		settings.DecisionIndoorRainMultiplier = Get( "PeepInfo.DecisionVariable3", settings.DecisionIndoorRainMultiplier );
 		settings.PerfectRide = Get( "PeepInfo.PerfectRide", settings.PerfectRide );
 		settings.GoodRide = Get( "PeepInfo.GoodRide", settings.GoodRide );
 		settings.OkRide = Get( "PeepInfo.OKRide", settings.OkRide );

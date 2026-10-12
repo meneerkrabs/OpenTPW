@@ -106,12 +106,12 @@ fields, so a resumed park continues the same streams this page describes.
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 11 (version 1 also hashed the sound seed; versions 3 and 4 added the
+version 12 (version 1 also hashed the sound seed; versions 3 and 4 added the
 queue state, version 5 the cell map, version 6 the bounce slots' start time on one
 branch, the guests' walk state on another and the coasters on a third, version 7
 the first two on one branch and the scheduler clock and per-script clock origins
 on another, version 8 all of those but the coasters, version 9 everything, version 10 the guest
-arrival timer's start turn and group flag instead of its countdown, version 11 the economy objects' use counts, see Tests):
+arrival timer's start turn and group flag instead of its countdown, version 11 the economy objects' use counts, version 12 the guests' used and temporary attraction histories and an integer exit counter, see Tests):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -196,7 +196,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x373368AA3A0DB3A0`, schema 11: the saved economy hashed by the schema gains each object's use count (`TimesUsed`, the original's object word +412, PPC oracle F21), so the schema is bumped; the run's behaviour is unchanged. Before that:
+  (`0xC028F4EF0BED9D1C`, schema 12: the guests' used and temporary attraction histories and an integer exit counter join the hash, so the schema is bumped,
+  and the run changes: guests choose and rate attractions by the original's score (PPC oracle F24), start and grow by the traced needs update and constructor
+  (F25) and leave by the traced test (F26: happiness below 1, an exit counter of exactly 0 or a closed park, tested every park turn). Before that:
+  `0x373368AA3A0DB3A0`, schema 11: the saved economy hashed by the schema gains each object's use count (`TimesUsed`, the original's object word +412, PPC oracle F21), so the schema is bumped; the run's behaviour is unchanged. Before that:
   `0x523D1494D867C0AC`, schema 10 (the same field added without the bump, never released): each economy object's use count (`TimesUsed`, the original's object word +412, PPC oracle F21) is saved and so hashed; the run's behaviour is unchanged and without the field it still gives `0xA51B682C587D0689`. Before that:
   `0xA51B682C587D0689`, schema 10: the economy counters, already hashed, gain each type's first-purchase turn
   (`firstturn:<Info.Id>`, PPC oracle F10); the synthetic park's shop adds one, so the run's hash changes. Before that:

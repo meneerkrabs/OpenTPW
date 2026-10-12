@@ -105,6 +105,32 @@ public interface IRideVisitorBridge
 	int ExcitementLevel { get; }
 	/// <summary>.sam <c>Info.AttractionValue</c>.</summary>
 	int AttractionValue { get; }
+	/// <summary>
+	/// The excitement the original's <c>0xe02ec(ride, 0)</c> gives (the score, the join gate and the ride outcome read it): 0 when the type's level is 0,
+	/// else the sideshow formula, a coaster's guest value, or the level scaled by the ride's speed and duration (<see cref="QueueJoinRules"/>).
+	/// Hosts without a live value report <see cref="ExcitementLevel"/>.
+	/// </summary>
+	int LiveExcitement => ExcitementLevel;
+	/// <summary>The type's <c>UsageInfo.ExcitementLevel</c> word (type <c>+316</c>); its low byte decides whether the score counts the excitement weight (<c>0xe02ec(ride, 1)</c>).</summary>
+	int StaticExcitementLevel => ExcitementLevel;
+	/// <summary>Type <c>UsageInfo.ThirstEffect</c> (<c>+324</c>): how much thirst a visit deducts; the score's thirst match reads it.</summary>
+	int ThirstEffect => 0;
+	/// <summary>Type <c>UsageInfo.HungerEffect</c> (<c>+328</c>).</summary>
+	int HungerEffect => 0;
+	/// <summary>Type <c>UsageInfo.VomitEffect</c> (<c>+332</c>): how much illness a visit adds.</summary>
+	int VomitEffect => 0;
+	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>): how much happiness a visit adds.</summary>
+	int HappinessEffect => 0;
+	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>): above 0 raises the score by <c>1 + (cost + 1) / 10</c>.</summary>
+	int GoldenTicketCost => 0;
+	/// <summary>Type <c>+440</c>, <c>Upgrades[0].CostOfUpgrade</c>: above 3000 raises the score of a ride without a golden-ticket cost.</summary>
+	int UpgradeCost => 0;
+	/// <summary>Type <c>UsageInfo.ISIndoors</c> (<c>+276</c>): a shelter from the rain; its score is multiplied while drops fall.</summary>
+	bool IsIndoors => false;
+	/// <summary>The object type (<c>Info.Id</c>); a guest that just used one attraction scores every other of the same type 0.</summary>
+	int TypeId => AttractionId;
+	/// <summary>Days since the attraction was bought (<c>0xdc520</c>); a ride up to <c>DecisionVariable1</c> days old is new. <see cref="uint.MaxValue"/> when unknown.</summary>
+	uint AgeDays => uint.MaxValue;
 	/// <summary>Needs a visit satisfies (shops, toilets).</summary>
 	GuestNeeds Satisfies { get; }
 	/// <summary>Price per visit charged to the guest (0 for rides: TPW charges admission).</summary>

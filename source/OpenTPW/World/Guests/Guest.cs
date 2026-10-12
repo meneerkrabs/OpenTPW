@@ -88,14 +88,23 @@ public sealed class Guest
 	public float Nausea { get; internal set; }
 	public float Happiness { get; internal set; }
 	public int Money { get; internal set; }
-	/// <summary>Seconds left before the guest heads home (.sam PeepInfo.ExitLevel ± ExitLevelVar).</summary>
-	public float ExitLevel { get; internal set; }
+	/// <summary>
+	/// The exit counter (guest <c>+444</c>, saved as <c>mExitLevel</c>): <c>PeepInfo.ExitLevel</c> plus a draw within ±<c>ExitLevelVar</c> at creation, one less on every
+	/// needs phase of the guest (every fourth park turn, 0.992 s: the .sam's "seconds"), in every state. It is a signed word and runs negative after 0.
+	/// </summary>
+	public int ExitLevel { get; internal set; }
 	public float SecondsSinceRide { get; internal set; }
 	public int RidesTaken { get; internal set; }
 	public GuestThought Thought { get; internal set; }
 	/// <summary>Attraction the guest is heading to, queueing for or riding (0 = none).</summary>
 	public int AttractionId { get; internal set; }
 	public int LastAttractionId { get; internal set; }
+	/// <summary>The attractions the guest used last, newest first (guest <c>+480..+486</c>); the score divides by 5, 4, 3 or 2 for the first match. 0 = empty slot.</summary>
+	public int[] UsedHistory { get; } = new int[HistorySlots];
+	/// <summary>The attractions the guest recently turned away from (queue too long, too boring or too exciting), newest first (guest <c>+488..+494</c>); a 0 is shifted in every 20 park turns. 0 = empty slot.</summary>
+	public int[] TemporaryHistory { get; } = new int[HistorySlots];
+	/// <summary>Slots of each history array (four).</summary>
+	public const int HistorySlots = 4;
 
 	// Queue (docs/reverse/QUEUE-plan.md §3.2; original guest offsets in brackets)
 	/// <summary>True while the guest is in an attraction's queue list (walking up, standing, called or waiting to be taken).</summary>

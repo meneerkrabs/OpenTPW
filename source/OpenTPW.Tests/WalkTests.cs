@@ -246,13 +246,12 @@ public class WalkTests
 
 	// ---- The simulation -----------------------------------------------------------------------------------------------
 
-	private static GuestSimulation Corridor( ulong seed = 3, float? toiletPerSecond = null )
+	private static GuestSimulation Corridor( ulong seed = 3 )
 	{
 		var grid = new GuestPathGrid( 30, 3 );
 		for ( var x = 0; x < 30; x++ )
 			grid.SetPath( x, 1, true );
 		var settings = GuestTests.CreateSettings();
-		settings.ToiletPerSecond = toiletPerSecond ?? settings.ToiletPerSecond;
 		return new GuestSimulation( grid, settings, seed ) { ArrivalsEnabled = false };
 	}
 
@@ -301,7 +300,7 @@ public class WalkTests
 	public void TheToiletTermAddsSpeedOnTheGuestsNeedsPhase()
 	{
 		// +194 is written in the needs block, which runs only when park turn & 3 == the guest's id & 3 (0xeed40, review WV-8).
-		var simulation = Corridor( toiletPerSecond: 0 );
+		var simulation = Corridor();
 		var guest = simulation.SpawnInPark( 1, 1 );
 		void RunUntilPhase( int phase )
 		{

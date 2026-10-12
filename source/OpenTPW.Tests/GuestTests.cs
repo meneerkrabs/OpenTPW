@@ -438,25 +438,39 @@ public class GuestTests
 	}
 
 	[TestMethod]
-	public void ShopsSatisfyNeedsAndNeedsGrowOverTime()
+	public void NeedsGrowOnlyOnTheGuestsPhaseAndAShopServesThem()
 	{
 		var drinks = CreateShop( 2, (0, 5), satisfies: GuestNeeds.Thirst );
+		drinks.Bridge.ThirstEffect = 100;
 		var settings = CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
 		var simulation = new GuestSimulation( CreateCross(), settings, 9 ) { ArrivalsEnabled = false };
-		var guest = simulation.SpawnInPark( 19, 5 );
-		Run( simulation, Array.Empty<ScriptedAttraction>(), 10 * 60 );
-		Assert.AreEqual( 10 * settings.ThirstPerSecond, guest.Thirst, 0.05 );
-		Assert.AreEqual( 10 * settings.HungerPerSecond, guest.Hunger, 0.05 );
-		Assert.IsTrue( guest.Energy < 100 );
-		guest.Thirst = 120;
+		var guests = Enumerable.Range( 0, 4 ).Select( _ => simulation.SpawnInPark( 19, 5 ) ).ToList();
+		foreach ( var guest in guests )
+			guest.Hunger = guest.Thirst = guest.Toilet = 0;
+		// 32 park turns hold two turns that are multiples of 16: only the guest with id & 3 == 0 meets them on its phase (0xeed24, 0xeeebc)
+		var start = simulation.ParkTurn;
+		while ( simulation.ParkTurn < start + 33 )
+			Run( simulation, Array.Empty<ScriptedAttraction>(), 1 );
+		var fixedSteps = Enumerable.Range( (int)start + 1, 33 ).Count( turn => turn % 16 == 0 );
+		foreach ( var guest in guests )
+		{
+			var phaseZero = (guest.Id & 3) == 0;
+			Assert.AreEqual( phaseZero ? 2f * fixedSteps : 0f, guest.Hunger, $"guest {guest.Id} hunger" );
+			Assert.AreEqual( phaseZero ? 2f * fixedSteps : 0f, guest.Thirst, $"guest {guest.Id} thirst" );
+			Assert.AreEqual( phaseZero ? 1f * fixedSteps : 0f, guest.Toilet, $"guest {guest.Id} toilet" );
+			Assert.IsTrue( guest.Energy < 100 );
+		}
+		var thirsty = guests[0];
+		thirsty.Thirst = 90;
 		simulation.Register( drinks.Bridge );
-		var thirsty = true;
-		for ( var tick = 0; tick < 60 * 60 && thirsty; tick++ )
+		var served = false;
+		for ( var tick = 0; tick < 60 * 60 && !served; tick++ )
 		{
 			Run( simulation, new[] { drinks }, 1 );
-			thirsty = guest.Thirst > 1;
+			served = thirsty.Thirst < 1;
 		}
-		Assert.IsFalse( thirsty, "the guest walked to the drinks shop and drank" );
+		Assert.IsTrue( served, "the thirsty guest walked to the drinks shop and its ThirstEffect emptied the meter" );
 	}
 
 	/// <summary>
@@ -534,6 +548,160 @@ public class GuestTests
 		}
 		Assert.IsNull( simulation.Find( guest.Id ) );
 		Assert.IsTrue( states.Contains( GuestState.LeavingPark ) && states.Contains( GuestState.CrossingRoadHome ) && states.Contains( GuestState.WaitingToGoHome ) );
+	}
+
+	// ---- Lifecycle (ORACLE.md F26) --------------------------------------------------------------
+
+	[TestMethod]
+	public void TheLeavingTestIsAHappinessByteOfZeroAnExactZeroCounterOrAClosedPark()
+	{
+		Assert.IsTrue( GuestLifecycle.ShouldLeave( 0f, 120, false ) );
+		Assert.IsTrue( GuestLifecycle.ShouldLeave( 0.99f, 120, false ), "the byte of 0.99 is 0: happiness below 1" );
+		Assert.IsFalse( GuestLifecycle.ShouldLeave( 1f, 120, false ) );
+		Assert.IsFalse( GuestLifecycle.ShouldLeave( 10f, 120, false ), "no rule at 10 or 5" );
+		Assert.IsFalse( GuestLifecycle.ShouldLeave( 5f, 120, false ) );
+		Assert.IsTrue( GuestLifecycle.ShouldLeave( 50f, 0, false ) );
+		Assert.IsFalse( GuestLifecycle.ShouldLeave( 50f, -1, false ), "the counter compares for equality: a counter below 0 never leaves" );
+		Assert.IsFalse( GuestLifecycle.ShouldLeave( 50f, 1, false ) );
+		Assert.IsTrue( GuestLifecycle.ShouldLeave( 50f, 120, true ), "a closed park sends everyone home" );
+		Assert.IsTrue( GuestLifecycle.ShouldLeave( float.NaN, 120, false ), "NaN truncates to 0x80000000, whose low byte is 0" );
+	}
+
+	[TestMethod]
+	public void TheStateEighteenRecallWantsAPositiveCounterANonzeroHappinessByteAndAnOpenPark()
+	{
+		Assert.IsTrue( GuestLifecycle.ShouldRecall( 50f, 100, false ) );
+		Assert.IsTrue( GuestLifecycle.ShouldRecall( 1f, 1, false ), "the happiness byte of exactly 1 is nonzero" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 0.99f, 100, false ), "the byte of 0.99 is 0" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 50f, 0, false ), "the counter must be above 0, not equal" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 50f, -1, false ), "a counter run negative stays leaving" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 50f, 100, true ), "a closed park keeps everyone on the way home" );
+	}
+
+	/// <summary>
+	/// The state-18 recall (0xedc98) unwinds a closed-park dismissal: a guest whose counter is still positive and whose
+	/// happiness byte is nonzero turns back to deciding the turn after the park reopens. A guest that left on an empty
+	/// counter or below happiness 1 is past recalling and stays on its way home.
+	/// </summary>
+	[TestMethod]
+	public void ReopeningTheParkRecallsALeavingGuestWhoseCounterAndHappinessStillHold()
+	{
+		// The dismissal: a walking guest with a fresh counter and healthy happiness is sent home by the closing word alone.
+		var rig = new QueueTests.Rig();
+		var guest = rig.Simulation.SpawnInPark( 5, 0 );
+		guest.Happiness = 50f;
+		guest.ExitLevel = 100;
+		var payments = new QueueTests.ClosedPayments();
+		rig.Simulation.Payments = payments;
+		payments.Closed = true;
+		for ( var steps = 0; steps < 200 && guest.State != GuestState.LeavingPark; steps++ )
+			rig.Step();
+		Assert.AreEqual( GuestState.LeavingPark, guest.State, "the closed park sent the guest home" );
+		Assert.AreEqual( 25f, guest.Happiness, 0.0001f, "the dismissal lost the big happiness change and the byte stays nonzero" );
+
+		// The recall: the same guest, one turn after the park reopens, walks around again.
+		payments.Closed = false;
+		rig.RunTurns( 1 );
+		Assert.AreEqual( GuestState.WalkingAround, guest.State, "the recall returns the guest to deciding" );
+
+		// Past recalling: a guest that left when its counter read 0 keeps a counter at or below 0 (it loses one per needs
+		// phase in every state) and is never recalled, and a guest below happiness 1 has a zero happiness byte for good.
+		var counterRig = new QueueTests.Rig();
+		var counterGuest = counterRig.Simulation.SpawnInPark( 5, 0 );
+		counterGuest.Happiness = 50f;
+		counterGuest.ExitLevel = 0;
+		counterRig.RunTurns( 3 );
+		Assert.AreNotEqual( GuestState.WalkingAround, counterGuest.State, "the empty counter leaves for good" );
+		var sadRig = new QueueTests.Rig();
+		var sadGuest = sadRig.Simulation.SpawnInPark( 5, 0 );
+		sadGuest.Happiness = 0.5f;
+		sadGuest.ExitLevel = 100;
+		sadRig.RunTurns( 3 );
+		Assert.AreNotEqual( GuestState.WalkingAround, sadGuest.State, "a happiness byte of zero leaves for good" );
+	}
+
+	[TestMethod]
+	public void AGuestLeavesWhenItsCounterReadsZeroAndLosesTheBigHappinessChangeOnTheWay()
+	{
+		var settings = CreateSettings();
+		settings.ExitLevelSeconds = 3;
+		settings.ExitLevelVarSeconds = 1;
+		var simulation = new GuestSimulation( CreateCross(), settings, 4 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 10, 0 );
+		guest.Happiness = 60;
+		var states = new List<GuestState>();
+		for ( var tick = 0; tick < 60 * 60 && guest.State is not (GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone); tick++ )
+			simulation.Tick( Tick );
+		Assert.IsTrue( guest.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone, $"{guest.State}" );
+		Assert.AreEqual( 0, guest.ExitLevel, "it went home the turn its counter read 0" );
+		Assert.AreEqual( 60f - settings.BigHappinessChange, guest.Happiness, 0.0001f, "0xeb6f4 with selector 2 on the way out" );
+	}
+
+	[TestMethod]
+	public void AnUnhappyGuestKeepsWalkingUntilItsHappinessIsBelowOne()
+	{
+		var settings = CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
+		var simulation = new GuestSimulation( CreateCross(), settings, 4 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 10, 0 );
+		guest.Happiness = 5;
+		for ( var tick = 0; tick < 10 * 60; tick++ )
+			simulation.Tick( Tick );
+		Assert.IsTrue( guest.State is GuestState.WalkingAround or GuestState.DoingNothing, $"happiness 5 did not send the guest home ({guest.State})" );
+		guest.Happiness = 0.5f;
+		for ( var tick = 0; tick < 5 * 60 && guest.State is GuestState.WalkingAround or GuestState.DoingNothing; tick++ )
+			simulation.Tick( Tick );
+		Assert.AreEqual( GuestState.LeavingPark, guest.State );
+	}
+
+	private sealed class ClosedParkPayments : IGuestPayments
+	{
+		public bool Closed;
+		public int AdmissionFee => 0;
+		public bool ParkClosed => Closed;
+		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return !Closed; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
+	}
+
+	[TestMethod]
+	public void ClosingTheParkSendsEveryWalkingGuestHome()
+	{
+		var settings = CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
+		var payments = new ClosedParkPayments();
+		var simulation = new GuestSimulation( CreateCross(), settings, 4 ) { ArrivalsEnabled = false, Payments = payments };
+		var guests = Enumerable.Range( 0, 5 ).Select( _ => simulation.SpawnInPark( 10, 0 ) ).ToList();
+		for ( var tick = 0; tick < 5 * 60; tick++ )
+			simulation.Tick( Tick );
+		Assert.IsTrue( guests.All( guest => guest.State is GuestState.WalkingAround or GuestState.DoingNothing ), "an open park keeps them" );
+		payments.Closed = true;
+		for ( var tick = 0; tick < 5 * 60; tick++ )
+			simulation.Tick( Tick );
+		Assert.IsTrue( guests.All( guest => guest.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone ),
+			string.Join( ", ", guests.Select( guest => guest.State ) ) );
+	}
+
+	[TestMethod]
+	public void ARideDoesNotExtendTheExitCounter()
+	{
+		var ride = CreateShop( 1, (10, 9), excitement: 70 );
+		var settings = CreateSettings();
+		settings.Types = new() { new GuestType( 70, 300, 1000 ) };
+		settings.ExitLevelSeconds = 10_000;
+		settings.ExitLevelVarSeconds = 0;
+		var simulation = new GuestSimulation( CreateCross(), settings, 5 ) { ArrivalsEnabled = false };
+		simulation.Register( ride.Bridge );
+		var guest = simulation.SpawnInPark( 6, 5 );
+		var before = guest.ExitLevel;
+		long ridden = -1;
+		for ( var tick = 0; tick < 40 * 60 && guest.RidesTaken == 0; tick++ )
+		{
+			Run( simulation, new[] { ride }, 1 );
+			ridden = simulation.ParkTurn;
+		}
+		Assert.AreEqual( 1, guest.RidesTaken );
+		// a perfect ride gave +25 happiness; the former rule added it to the counter. The counter only ever counted down: one per needs phase.
+		Assert.IsTrue( guest.ExitLevel < before && guest.ExitLevel >= before - ridden / 4 - 1, $"{before} -> {guest.ExitLevel} after {ridden} turns" );
 	}
 
 	[TestMethod]
@@ -662,6 +830,107 @@ public class GuestTests
 		}
 		Assert.AreEqual( RunPark( 42 ), RunPark( 42 ) );
 		Assert.AreNotEqual( RunPark( 42 ), RunPark( 43 ) );
+	}
+
+	// ---- Attraction choice (ORACLE.md F24) -----------------------------------------------------
+
+	[TestMethod]
+	public void AGuestScoresAnAttractionWithTheOriginalNormalisedFormula()
+	{
+		var ride = CreateShop( 1, (10, 9), excitement: 60 );
+		var settings = CreateSettings();
+		settings.Types = new() { new GuestType( 60, 300, 1000 ) };
+		var simulation = new GuestSimulation( CreateCross(), settings, 5 ) { ArrivalsEnabled = false };
+		simulation.Register( ride.Bridge );
+		var guest = simulation.SpawnInPark( ride.Bridge.JoinCell!.Value.X, ride.Bridge.JoinCell!.Value.Y );
+		// next to the queue back cell, an empty queue, matching excitement, a guest without needs: (100 + 100 + 100) / 11 weights
+		Assert.AreEqual( 27u, simulation.ScoreAttraction( guest, ride.Bridge ) );
+		ride.Bridge.AgeDays = 3;
+		Assert.AreEqual( 135u, simulation.ScoreAttraction( guest, ride.Bridge ), "a ride up to 7 days old is new: times DecisionVariable2" );
+		ride.Bridge.AgeDays = 100;
+		guest.UsedHistory[0] = ride.Bridge.AttractionId;
+		Assert.AreEqual( 0u, simulation.ScoreAttraction( guest, ride.Bridge ), "the ride just used (an attraction of the type used last) scores 0 outright" );
+		guest.UsedHistory[0] = 99; // a ride that is gone: no type to compare
+		guest.UsedHistory[1] = ride.Bridge.AttractionId;
+		Assert.AreEqual( 6u, simulation.ScoreAttraction( guest, ride.Bridge ), "used one ride before: divided by 4" );
+		guest.UsedHistory[1] = 0;
+		guest.TemporaryHistory[1] = ride.Bridge.AttractionId;
+		Assert.AreEqual( 6u, simulation.ScoreAttraction( guest, ride.Bridge ), "turned away second most recently: divided by 4" );
+	}
+
+	[TestMethod]
+	public void TheScoreMeasuresTheGuestAgainstTheBackOfTheQueueNotTheJoinCell()
+	{
+		// F24: both the distance match and the queue term's d² ≤ 8 range read the back-of-queue cell (0xdd3f4), never the path cell
+		// guests step from. The guest stands diagonally beside the back (d² 4 + 4 = 8, in range) while the join cell beyond it is
+		// d² 9 + 4 = 13 away: with the back cell the score is (distance 99 + queue 50 + excitement 70) / 11 weights = 19, and the
+		// join cell would drop the queue term and its weight entirely: (98 + 70) / 10 = 16.
+		var grid = new GuestPathGrid( 12, 12 );
+		grid.SetPath( 0, 1, true );
+		grid.SetPath( 3, 3, true );
+		var ride = new RideVisitorBridge( 1, "Queue ride", RideVisitorKind.Ride, 5, 55, 30, GuestNeeds.None )
+		{
+			EntranceCell = (2, 6),
+			ExitCell = (2, 6),
+			QueueFrontCell = (2, 5),
+			QueueEntranceDirection = 2,
+			Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
+		};
+		ride.Attach( CreateShopScript( new VisitorRideScriptEffects( ride, UnimplementedRideScriptEffects.Instance ) ), () => true );
+		Assert.AreEqual( 3, QueuePaths.TryExtend( grid, ride, new[] { (2, 5), (2, 4), (2, 3) } ) );
+		Assert.AreEqual( (2, 3), ride.QueueBackCell );
+		Assert.AreEqual( (3, 3), ride.JoinCell, "the only walkable neighbour of the back cell, away from the guest" );
+		for ( var queued = 1; queued <= 6; queued++ )
+			Assert.IsTrue( ride.TryJoinQueue( queued ), "six of the twelve physical places fill" );
+		var simulation = new GuestSimulation( grid, CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		simulation.Register( ride );
+		var guest = simulation.SpawnInPark( 0, 1 );
+		Assert.AreEqual( 19u, simulation.ScoreAttraction( guest, ride ), "d² 8 to the back keeps the queue term: (99 + 50 + 70) / 11" );
+	}
+
+	[TestMethod]
+	public void ARideTheGuestJustUsedIsRememberedAndTurnedAwayRidesFadeAfterTwentyTurns()
+	{
+		var ride = CreateShop( 1, (10, 9), excitement: 70 );
+		var settings = CreateSettings();
+		settings.Types = new() { new GuestType( 70, 300, 1000 ) };
+		settings.ExitLevelSeconds = 10_000;
+		var simulation = new GuestSimulation( CreateCross(), settings, 5 ) { ArrivalsEnabled = false };
+		simulation.Register( ride.Bridge );
+		var guest = simulation.SpawnInPark( 6, 5 );
+		for ( var tick = 0; tick < 40 * 60 && guest.RidesTaken == 0; tick++ )
+			Run( simulation, new[] { ride }, 1 );
+		Assert.AreEqual( 1, guest.RidesTaken );
+		Assert.AreEqual( ride.Bridge.AttractionId, guest.UsedHistory[0], "the use pushed the attraction into the used history" );
+		// a refusal is remembered for four multiples of 20 park turns: a 0 is shifted into the temporary history every 20th turn
+		guest.TemporaryHistory[0] = 99;
+		var start = simulation.ParkTurn;
+		while ( simulation.ParkTurn % 20 != 0 || simulation.ParkTurn == start )
+			Run( simulation, Array.Empty<ScriptedAttraction>(), 1 );
+		CollectionAssert.AreEqual( new[] { 0, 99, 0, 0 }, guest.TemporaryHistory );
+	}
+
+	[TestMethod]
+	public void AGuestTurnedAwayAsTooBoredIsNotAttractedAgainRightAway()
+	{
+		// a ride of excitement 100 for a guest preferring 20: the join gate refuses it (|80| >= 45), and the refusal enters the temporary history,
+		// which divides that ride's score by 5 (about 20 s) instead of leaving the guest to choose it again at once.
+		var ride = CreateShop( 1, (10, 9), excitement: 100 );
+		var settings = CreateSettings();
+		settings.Types = new() { new GuestType( 20, 300, 1000 ) };
+		settings.ExitLevelSeconds = 10_000;
+		var simulation = new GuestSimulation( CreateCross(), settings, 5 ) { ArrivalsEnabled = false };
+		simulation.Register( ride.Bridge );
+		var guest = simulation.SpawnInPark( 6, 5 );
+		var refused = false;
+		for ( var tick = 0; tick < 60 * 60 && !refused; tick++ )
+		{
+			Run( simulation, new[] { ride }, 1 );
+			refused = guest.TemporaryHistory[0] == ride.Bridge.AttractionId;
+		}
+		Assert.IsTrue( refused, "the refusal pushed the ride's id into the temporary history" );
+		Assert.AreEqual( 0, guest.RidesTaken );
+		Assert.IsTrue( simulation.ScoreAttraction( guest, ride.Bridge ) < AttractionScore.CandidateFloor, "so its score fell below the choice floor" );
 	}
 
 	[TestMethod]

@@ -47,13 +47,22 @@ public sealed record GuestSnapshot
 	public required float Nausea { get; init; }
 	public required float Happiness { get; init; }
 	public required int Money { get; init; }
-	public required float ExitLevel { get; init; }
+	/// <summary>The exit counter as the guest holds it (an integer count). Held as a double because saves written by
+	/// schema 1 store the former seconds-based value as a fraction; the restore truncates it toward zero, and the two
+	/// units nearly agree (one count per 0.992 s, ORACLE.md F26).</summary>
+	public required double ExitLevel { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
 	public required GuestThought Thought { get; init; }
 	public required int AttractionId { get; init; }
 	/// <summary>May name an attraction that is no longer registered (a demolished ride the guest remembers).</summary>
 	public required int LastAttractionId { get; init; }
+	/// <summary>The four attractions the guest used last, newest first (guest <c>+480..+486</c>); 0 = empty. Absent in
+	/// saves written by schema 1, which then start empty.</summary>
+	public int[]? UsedHistory { get; init; }
+	/// <summary>The four attractions the guest recently turned away from, newest first (guest <c>+488..+494</c>); 0 = empty.
+	/// Absent in saves written by schema 1, which then start empty.</summary>
+	public int[]? TemporaryHistory { get; init; }
 
 	// Queue bookkeeping (docs/reverse/QUEUE-plan.md §3.2).
 	public required int QueuePosition { get; init; }
@@ -170,8 +179,12 @@ public sealed record RideVisitorBridgeSnapshot
 /// </summary>
 public sealed record GuestSimulationSnapshot
 {
-	/// <summary>Bumped whenever the DTO fields or their meaning change; restore refuses other versions.</summary>
-	public const int CurrentSchemaVersion = 1;
+	/// <summary>Bumped whenever the DTO fields or their meaning change; restore refuses other versions. Version 1
+	/// (before the histories and the integer exit counter) is still accepted and converted: the missing histories start
+	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero.</summary>
+	public const int CurrentSchemaVersion = 2;
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 2 as written now, 1 as written before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>

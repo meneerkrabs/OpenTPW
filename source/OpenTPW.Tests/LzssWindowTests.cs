@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -10,21 +9,12 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class LzssWindowTests
 {
-	private sealed class CountingStream : MemoryStream
+	private static byte[] Decode( byte[] compressed )
 	{
-		public int BytesRead { get; private set; }
-		public override int ReadByte() { BytesRead++; return base.ReadByte(); }
-	}
-
-	private static CountingStream Decode( byte[] compressed )
-	{
-		var output = new CountingStream();
-		using var writer = new BinaryWriter( output, System.Text.Encoding.UTF8, leaveOpen: true );
 		// Exercise the production internal codec without adding a public format API for tests.
 		var codec = typeof( TextureFile ).Assembly.GetType( "OpenTPW.LZSS" )!;
-		codec.GetMethod( "Decompress", BindingFlags.Public | BindingFlags.Static )!
-			.Invoke( null, new object[] { new BitReader( compressed ), writer } );
-		return output;
+		return (byte[])codec.GetMethod( "Decompress", BindingFlags.Public | BindingFlags.Static )!
+			.Invoke( null, new object[] { new BitReader( compressed ) } )!;
 	}
 
 	private static byte[] Encode( byte[] seed, params (int Offset, int Length)[] copies )
@@ -43,6 +33,14 @@ public class LzssWindowTests
 	}
 
 	[TestMethod]
+	public void LiteralsAndAnUnalignedEndMarkerPreserveAllBytes()
+	{
+		var seed = new byte[] { 0, 255, 1, 128, 127, 4, 90 };
+		CollectionAssert.AreEqual( seed, Decode( Encode( seed ) ) );
+		CollectionAssert.AreEqual( Array.Empty<byte>(), Decode( Encode( Array.Empty<byte>() ) ) );
+	}
+
+	[TestMethod]
 	public void CopiesPreserveLiteralBytesAndOverlappingRepetition()
 	{
 		var seed = Enumerable.Range( 0, 4095 ).Select( i => (byte)(i * 37) ).ToArray();
@@ -54,18 +52,20 @@ public class LzssWindowTests
 				copies.Add( (offset, length) );
 				for ( var index = 0; index < length; index++ ) expected.Add( expected[expected.Count - offset] );
 			}
-		using var decoded = Decode( Encode( seed, copies.ToArray() ) );
-		CollectionAssert.AreEqual( expected.ToArray(), decoded.ToArray() );
-		Assert.AreEqual( decoded.Length, decoded.Position );
+		CollectionAssert.AreEqual( expected.ToArray(), Decode( Encode( seed, copies.ToArray() ) ) );
 	}
 
 	[TestMethod]
-	public void ShortCopyReadsOnlyTheReferencedPrefixOfTheWindow()
+	public void ShortCopiesNeedNoAllocationPerReferenceAndGrowTheOutput()
 	{
 		var seed = Enumerable.Range( 0, 4095 ).Select( i => (byte)i ).ToArray();
-		using var decoded = Decode( Encode( seed, (4095, 3) ) );
-		CollectionAssert.AreEqual( seed.Concat( seed.Take( 3 ) ).ToArray(), decoded.ToArray() );
-		Assert.AreEqual( 3, decoded.BytesRead, "A three-byte copy must not read the entire 4095-byte lookback window." );
+		var compressed = Encode( seed, Enumerable.Repeat( (1, 1), 50000 ).ToArray() );
+		Decode( compressed ); // Exclude reflection/JIT setup from the allocation measurement.
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		var decoded = Decode( compressed );
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		CollectionAssert.AreEqual( seed.Concat( Enumerable.Repeat( seed[^1], 50000 ) ).ToArray(), decoded );
+		Assert.IsTrue( allocated < 1024 * 1024, $"50,000 references allocated {allocated} bytes; only output growth should allocate." );
 	}
 
 	[TestMethod]

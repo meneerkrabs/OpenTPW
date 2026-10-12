@@ -173,17 +173,6 @@ public partial class TextureFile : BaseFormat
 
 	private static byte[] DecompressLZSS( byte[] data )
 	{
-		/*					Y (full)      + Cb (half)     + Cr (half)     + Alpha (full) */
-		const int maxSize = 256 * 256 * 3 + 128 * 128 * 3 + 128 * 128 * 3 + 256 * 256 * 3;
-		using var outputStream = new MemoryStream( maxSize );
-		using var outputWriter = new BinaryWriter( outputStream );
-
-		var blockReader = new BitReader( data );
-		if ( !LZSS.Decompress( blockReader, outputWriter ) )
-		{
-			throw new Exception( "LZSS failed to decompress" );
-		}
-
-		return outputStream.ToArray();
+		return LZSS.Decompress( new BitReader( data ) );
 	}
 }

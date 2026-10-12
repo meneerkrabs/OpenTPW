@@ -26,11 +26,7 @@ public partial class TextureFile
 	// alpha wavelet plane reads them, so they affect the decoded output.
 	// (The original allocation was N*N*N entries per buffer; only the N*N and
 	// 1.5*N*N prefixes above are ever touched.)
-	// Plain arrays rather than lists: the decode loops are the browser's cold
-	// path, where every List indexer read/write is a method call (and the WASM
-	// interpreter never tiers it up), while array element access stays an
-	// opcode. New arrays are zero-filled, exactly like the Repeat( 0f )
-	// lists they replace - the zeros the half-scale alpha plane reads depend on.
+	// Arrays avoid List indexer calls and preserve the zero-filled alpha tail.
 	struct ImageDecodeState
 	{
 		public float[] DequantizationBuffer;

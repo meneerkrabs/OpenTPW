@@ -179,6 +179,8 @@ public sealed class ParkObjectState
 	// [BIN:STP-PPC:0x100DAB1C object constructor] every built object starts at 100.0 (TOC −0x2B08) in +0x40, +0x44 and +0x48; the earlier 0.0 store (0x100DA90C) is overwritten on every path
 	public double LifeGauge { get; set; } = 100;
 	public bool IsBrokenDown { get; set; }
+	/// <summary>The ride script reports VAR_BROKEN, which the original's ride update turns into ride state 1 or 4; mirrored each tick by the level, not saved.</summary>
+	public bool ScriptBroken { get; set; }
 	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
 	public int MechanicId { get; set; }
 	public long CustomersThisMonth { get; set; }

@@ -611,9 +611,9 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// The part of the original's park points counts-test (0x100DC834) that OpenTPW has state for: the type is choosable, and the
-	/// object is neither broken down nor closed. The test's world conditions are listed at <see cref="ParkPoints"/>.
+	/// object is neither broken down (in the economy or by its script) nor closed. The test's world conditions are listed at <see cref="ParkPoints"/>.
 	/// </summary>
-	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && item.IsOpen;
+	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen;
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
 	public ParkObjectState RegisterExisting( int infoId )

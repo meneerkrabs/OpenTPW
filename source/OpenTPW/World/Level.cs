@@ -502,7 +502,20 @@ public partial class Level : IDisposable
 	public void SavePark( string path ) => Streams.SavePark( path );
 
 	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
-	public void LoadPark( string path ) => Streams.LoadPark( path );
+	public void LoadPark( string path )
+	{
+		Streams.LoadPark( path );
+		// The saved open state goes back into the running scripts; SyncObjectEconomy would otherwise overwrite it with the live one on the next tick (park points count only open rides, ARRIVAL-003).
+		foreach ( var (item, instance) in economyInstances )
+		{
+			if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.IsOpen == item.IsOpen )
+				continue;
+			if ( state.IsOpen )
+				item.Open();
+			else
+				item.Close();
+		}
+	}
 
 	private void RequireSandbox()
 	{

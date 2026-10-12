@@ -288,6 +288,7 @@ class Oracle(unittest.TestCase):
             'choosable': lambda x: targets.counts_plan({**x, 'flags': x['flags'] | 4}),
             'broken-down': lambda x: targets.counts_plan({**x, 'state': 0 if x['state'] == 1 else x['state']}),
             'condemned': lambda x: targets.counts_plan({**x, 'state': 0 if x['state'] == 4 else x['state']}),
+            'call-order': lambda x: {**targets.counts_plan(x), 'calls': []},
             'open': without(open=1),
             'cell': without(cell=1),
             'queue-room': without(count=0, cells=1),
@@ -349,7 +350,7 @@ class CSharpMutation(unittest.TestCase):
         ('walk-speed-setter', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
          'public const int Floor = 655;', 'public const int Floor = 654;'),
         ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
-         'info.IsChoosable && !item.IsBrokenDown && item.IsOpen;', 'info.IsChoosable && !item.IsBrokenDown;'),
+         '!item.ScriptBroken && item.IsOpen;', '!item.ScriptBroken;'),
     ]
 
     def test_mutations_are_detected(self):

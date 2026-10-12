@@ -157,10 +157,21 @@ EXPECTED = {
                                       'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 5,
                                       'pieces': [3, 2, 1, 7], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
                                       'coaster_e': 40.0}),
+    # F18 (ECON-020, C# unchanged): the sale routine 0xeaaf8 adds the shop type's five UsageInfo effects to the GUEST's need meters
+    # (thirst +0x1a4 and hunger +0x1a8 subtracted, vomit +0x1b0, happiness +0x19c and litter +0x1b4 added), each in single precision and
+    # clamped to 0..100. Litter is the raw LitterEffect (type +0x154) with no division by 100, but it fills a meter that the guest drops
+    # at a byte value of 90 or more (guest-litter-trigger), so the claim "unscaled, up to 100x" of the static trace is a misreading of
+    # the unit. The old rule (the park's store grows by LitterEffect, no floor and no ceiling) differs only where the meter clamps.
+    ('shop-sale-litter', 'plan'): (213, {'meters': {'thirst': 40.0, 'hunger': 40.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0},
+                                         'effects': [20, 30, 5, 10, 50]}),
+    ('shop-sale-litter', 'routine-reading'): AGREE,
+    ('shop-sale-litter', 'csharp'): (213, {'meters': {'thirst': 40.0, 'hunger': 40.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0},
+                                           'effects': [20, 30, 5, 10, 50]}),
+    ('guest-litter-trigger', 'routine-reading'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
-                  'queue-ride-update'}
+                  'queue-ride-update', 'guest-litter-trigger'}
 
 
 class Identity(unittest.TestCase):
@@ -639,6 +650,88 @@ class Oracle(unittest.TestCase):
         self.assertEqual(targets.run_binary(target, sandbox, {**base, 'pref': 0, 'level': 90, 'flags': 1, 'gauge': 3.0}),
                          {'outcome': 'scared', 'difference': 100})
         self.assertEqual(targets.run_binary(target, sandbox, {**base, 'level': 0}), {'outcome': 'pass', 'difference': -50})
+
+    def test_shop_sale_litter(self):
+        for key in (('shop-sale-litter', 'plan'), ('shop-sale-litter', 'routine-reading'), ('guest-litter-trigger', 'routine-reading')):
+            self.check(key)
+
+    def test_shop_sale_litter_csharp(self):
+        self.check(('shop-sale-litter', 'csharp'))
+
+    def test_shop_sale_litter_rule_differs_only_where_the_meter_clamps(self):
+        # ECON-020: the old rule (store + LitterEffect) and C# agree with the routine wherever the meter stays inside 0..100; every
+        # mismatch is a sum outside that range (a NaN meter agrees: the clamp lets it through).
+        for side in ('plan', 'csharp'):
+            if side == 'csharp' and self.bridge is None:
+                continue
+            [comparison] = [c for c in compare(targets.ECON_SALE, self.image, DEFAULT_COUNT, keep=10**6, bridge=self.bridge)
+                            if c.side == side]
+            self.assertEqual(comparison.mismatches, 213, side)
+            for example in comparison.examples:
+                x = example['input']
+                total = targets.f32(float(x['meters']['litter']) + targets.f32(float(x['effects'][4])))  # jsonable turns nan/inf into text
+                self.assertTrue(total > 100.0 or total < 0.0, f'{side}: unexplained {example}')
+
+    def test_shop_sale_litter_reading_is_sharp(self):
+        # Every part of the reading matters: the sign, the effect slot and the clamp of each of the five meters, and the log test.
+        import dataclasses
+        names = [name for name, _, _, _ in targets.SALE_METERS]
+        variants = {'log-threshold': lambda x: targets.sale_reading(x, log_threshold=10),
+                    'log-always': lambda x: targets.sale_reading(x, log_threshold=-2 ** 31),
+                    'swap-vomit-happy': lambda x: targets.sale_reading(x, slots={'vomit': 3, 'happy': 2}),
+                    'swap-thirst-hunger': lambda x: targets.sale_reading(x, slots={'thirst': 1, 'hunger': 0}),
+                    'litter-slot-hunger': lambda x: targets.sale_reading(x, slots={'litter': 1})}
+        for name in names:
+            variants[f'sign-{name}'] = lambda x, name=name: targets.sale_reading(
+                x, signs={name: -dict((n, g) for n, _, _, g in targets.SALE_METERS)[name]})
+            variants[f'no-clamp-{name}'] = lambda x, name=name: targets.sale_reading(x, unclamped=(name,))
+        variants['no-clamp-floor'] = lambda x: {**targets.sale_reading(x), 'meters': {
+            **targets.sale_reading(x)['meters'], 'litter': min(100.0, targets.f32(x['meters']['litter'] + float(x['effects'][4])))}}
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.ECON_SALE, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+        # the drop threshold: 90 and not 89 or 91, byte-wrapped
+        for name, reading in {'89': lambda x: (targets.fctiwz(x['litter']) & 0xFF) >= 89,
+                              '91': lambda x: (targets.fctiwz(x['litter']) & 0xFF) >= 91,
+                              'no-byte': lambda x: targets.fctiwz(x['litter']) >= 90,
+                              'rounded': lambda x: (round(x['litter']) & 0xFF) >= 90 if x['litter'] == x['litter'] and abs(x['litter']) < 1e9 else False,
+                              }.items():
+            mutated = dataclasses.replace(targets.ECON_TRIGGER, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'trigger {name}')
+
+    def test_shop_sale_litter_items_per_sale(self):
+        # What the number means, executed: a guest who keeps buying from one shop gains LitterEffect on the litter meter per sale, and the
+        # drop test (byte >= 90) fires after ceil(90 / LitterEffect) sales. The executed routine and test give, for the shipped
+        # LitterEffect values (0, 10, 25, 50), 0, 1/9, 1/4 and 1/2 litter items per sale; the old rule gave 0, 1/10, 1/4 and 1/2.
+        sale, trigger = targets.ECON_SALE, targets.ECON_TRIGGER
+        sale_box, trigger_box = sale.sandbox(self.image), trigger.sandbox(self.image)
+        sales_per_drop = {}
+        for effect in (0, 5, 10, 25, 50):
+            meter, sales = 0.0, 0
+            while sales < 200:
+                x = {'meters': {'thirst': 0.0, 'hunger': 0.0, 'vomit': 0.0, 'happy': 50.0, 'litter': meter}, 'effects': [0, 0, 0, 0, effect]}
+                meter = targets.run_binary(sale, sale_box, x)['meters']['litter']
+                sales += 1
+                if targets.run_binary(trigger, trigger_box, {'litter': meter}):
+                    break
+            sales_per_drop[effect] = sales if sales < 200 else None
+        self.assertEqual(sales_per_drop, {0: None, 5: 18, 10: 9, 25: 4, 50: 2})
+
+    def test_shop_sale_litter_stubs_are_checked(self):
+        # The type lookup must see the registry and the shop's type id; a wrong id aborts the run instead of returning a record.
+        target = targets.ECON_SALE
+        sandbox = target.sandbox(self.image)
+        sandbox.reset()
+        targets.SALE_STATE.registry = targets.toc_pointer(sandbox, targets.POINTS_REGISTRY)
+        targets.SALE_STATE.record = sandbox.struct(4096)
+        targets.SALE_STATE.guest = sandbox.struct(1024)
+        shop = sandbox.struct(256, {14: ('H', targets.SALE_TYPE_ID + 1)})
+        with self.assertRaises(AssertionError):
+            sandbox.call(targets.SALE_FRAGMENT, {3: shop, 25: targets.toc_pointer(sandbox, targets.SALE_GLOBALS),
+                                                 28: targets.SALE_STATE.guest, 30: targets.toc_pointer(sandbox, targets.SALE_STRINGS)},
+                         stop=targets.SALE_STOP)
 
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})

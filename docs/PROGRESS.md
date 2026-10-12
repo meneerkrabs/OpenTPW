@@ -180,6 +180,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (that exit is a worn-out toilet, `0xdfe34`); the ride update (`0xe0a8c`, executed in the oracle) dismisses its head guest
   each park turn instead, the rest waiting. The oracle compares the C# side on `queue-failure-predicate`,
   `queue-join-difference` and `queue-join-gate`; only a ride with a thing behind ride `+36` differs (QUEUE-004).
+- The oracle executed what a shop sale does to the buying guest (F18 in [ORACLE.md](reverse/ORACLE.md), ECON-020, `0xeaaf8`).
+  The five shop effects (thirst, hunger, vomit, happiness, litter) are added to five guest meters, each clamped to 0..100; litter is the
+  raw `LitterEffect` (type `+0x154`), but it fills the guest's own meter, and the guest update drops litter once that meter reaches 90.
+  The static trace's "unscaled, up to 100x" was a misreading of the unit: with the shipped values (50, 25, 10, 0) a guest who keeps buying
+  makes 1/2, 1/4, 1/9 and 0 litter item per sale (a burger shop: 0.5, as before), within 11 % of OpenTPW's `LitterEffect/100`. C# is
+  unchanged (it has no guest litter meter; ECON-020 stays `[APPROX]` with the sharper text); the oracle pins the 213 inputs where the
+  old rule leaves the 0..100 range.
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).

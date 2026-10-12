@@ -25,7 +25,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>Months in the red before bankruptcy (TAG_SYSTEM 123–127: warnings at 3 and 5, bankrupt after 6).</summary>
 	// [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)]
 	public const int MonthsInRedForBankruptcy = 6;
-	// [APPROX:ECON-020] a sale drops LitterEffect/100 litter items — evidence needed: capture of litter after sales
+	// [APPROX:ECON-020] a sale adds LitterEffect/100 litter items to a park-wide store; the original adds LitterEffect to the buying guest's 0..100 litter meter, which drops one litter event at 90 (ORACLE F18) — evidence needed: a guest litter meter with the drop-at-90 and bin rules, and the park's litter count
 	public const int LitterScale = 100;
 
 	private readonly SortedDictionary<int, ParkObjectState> objects = new();

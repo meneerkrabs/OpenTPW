@@ -28,7 +28,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / 'lanes' / 'det'))
 
 import det_model  # noqa: E402  (DET-plan's reference arithmetic)
-from harness import Image, Sandbox, f32  # noqa: E402
+from harness import STACK_BASE, STACK_SIZE, Image, Sandbox, f32  # noqa: E402
 from ppc32 import MASK32, Machine, Undefined, bits_to_double, double_to_bits, s32  # noqa: E402
 
 UNDEFINED = 'UNDEFINED'
@@ -2382,6 +2382,191 @@ def ride_update_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (l) ECON: what a shop sale does to the guest (F18)
+# The sale routine 0xeaaf8 (guest, shop thing): after the "used shop" log it fetches the shop's type record (0xdc320) and adds the five
+# UsageInfo effects of that record to the guest's five need meters, each one clamped to 0..100 in single precision:
+#   type +0x144 ThirstEffect    -> guest +0x1a4 (subtracted)      type +0x14c VomitEffect     -> guest +0x1b0 (added)
+#   type +0x148 HungerEffect    -> guest +0x1a8 (subtracted)      type +0x150 HappinessEffect -> guest +0x19c (added)
+#   type +0x154 LitterEffect    -> guest +0x1b4 (added)
+# The fragment 0xeabb8..0xeae44 runs the type lookup, the five updates and the "litter gone up" log; the later parts of the routine
+# (ingredient and appearance effects, state change) are not executed. The key-to-offset order comes from the key table of the shop
+# files (ThirstEffect, HungerEffect, VomitEffect, HappinessEffect, LitterEffect, SpecialIngredient follow InitCostOfGoods at +0x140,
+# the order the original's Shops.sam comments give: "How much thirst to deduct" ... "How much litter to add").
+SALE_FRAGMENT, SALE_STOP = 0xEABB8, 0xEAE44
+SALE_ALLOWED = [(0xEABB8, 0xEAE48), (0xDC320, 0xDC350)]   # the stop 0xeae44 is reached by a stub return, so it lies inside the range
+SALE_TYPE_ID = 0x4321
+SALE_SELLER_ID = 0x4D
+SALE_STRINGS, SALE_GLOBALS = -19392, -30176   # TOC slots loaded into r30 (string base) and r25 (a global struct) by the prologue
+SALE_STATE = type('SaleState', (), {})()
+SALE_METERS = (('thirst', 420, 324, -1), ('hunger', 424, 328, -1), ('vomit', 432, 332, 1), ('happy', 412, 336, 1), ('litter', 436, 340, 1))
+
+
+def sale_stubs(target: Target) -> dict:
+    state = SALE_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != SALE_TYPE_ID:   # the u16 id travels in the high half
+            raise AssertionError('0x118018 called without the registry or the shop type id')
+        m.gpr[3] = state.record
+
+    def drink_or_food(m: Machine) -> None:   # 0xe6d20(guest, [globals + 4], 131 | 132): which of thirst and hunger the shop serves more
+        if m.gpr[3] != state.guest:
+            raise AssertionError('0xe6d20 called without the guest')
+        target.log.append(('serves', m.gpr[5]))
+
+    def message(m: Machine) -> None:
+        address, text = m.gpr[4], b''
+        while m.memory.u8(address + len(text)):
+            text += bytes([m.memory.u8(address + len(text))])
+        if not text.startswith(b'Litter'):
+            raise AssertionError('0x5fbcc called with an unexpected format')
+        target.log.append(('litter-log', m.gpr[3], s32(m.gpr[5]), m.gpr[6]))
+
+    return {TYPE_RECORD_LOOKUP: lookup, 0xE6D20: drink_or_food, DEBUG_LOG: message}
+
+
+def sale_binary(sb: Sandbox, x: dict, log) -> dict:
+    st = SALE_STATE
+    st.registry = toc_pointer(sb, POINTS_REGISTRY)
+    fields = {324 + 4 * i: ('i', s32(x['effects'][i])) for i in range(5)}
+    st.record = sb.struct(4096, fields)
+    st.shop = sb.struct(256, {14: ('H', SALE_TYPE_ID)})
+    st.guest = sb.struct(1024, {offset: ('f', x['meters'][name]) for name, offset, _, _ in SALE_METERS})
+    sb.call(SALE_FRAGMENT, {3: st.shop, 25: toc_pointer(sb, SALE_GLOBALS), 28: st.guest, 30: toc_pointer(sb, SALE_STRINGS)}, stop=SALE_STOP)
+    meters = {name: sb.read(st.guest + offset, 'f') for name, offset, _, _ in SALE_METERS}
+    return {'meters': meters, 'log': list(log)}
+
+
+def sale_clamp(value: float) -> float:
+    """fcmpo against 100 first (a NaN is not greater), then against 0 (a NaN is not less): a NaN is stored as it is."""
+    return 100.0 if value > 100.0 else 0.0 if value < 0.0 else value
+
+
+def sale_step(before: float, effect: int, sign: int) -> float:
+    amount = f32(float(s32(effect)))
+    return sale_clamp(f32(before + amount) if sign > 0 else f32(before - amount))
+
+
+def sale_reading(x: dict, signs: dict | None = None, unclamped: tuple = (), slots: dict | None = None, log_threshold: int = 0) -> dict:
+    """The five meter updates and the log as the fragment runs them. The keywords are deliberate deviations for the sharpness tests:
+    a sign or effect slot swapped per meter, meters left without the clamp, and another threshold for the "litter gone up" log."""
+    meters, log = {}, []
+    for index, (name, _, _, sign) in enumerate(SALE_METERS):
+        sign = (signs or {}).get(name, sign)
+        effect = x['effects'][(slots or {}).get(name, index)]
+        amount = f32(float(s32(effect)))
+        total = f32(x['meters'][name] + amount) if sign > 0 else f32(x['meters'][name] - amount)
+        meters[name] = total if name in unclamped else sale_clamp(total)
+    thirst, hunger = s32(x['effects'][0]), s32(x['effects'][1])
+    if thirst > hunger:
+        log.append(('serves', 131))
+    elif thirst < hunger:
+        log.append(('serves', 132))
+    litter_effect = s32(x['effects'][4])
+    if litter_effect > log_threshold:
+        log.append(('litter-log', 2, litter_effect, fctiwz(meters['litter']) & 0xFF))
+    return {'meters': meters, 'log': log}
+
+
+def sale_equal(original: dict, other: dict) -> bool:
+    if not all(same_float(original['meters'][name], value) for name, value in other['meters'].items()):
+        return False
+    return 'log' not in other or original['log'] == other['log']
+
+
+def sale_plan(x: dict) -> dict:
+    """The rule before F18 (ECONOMY.md, ParkEconomy.TryBuy): a sale adds LitterEffect, in 1/100 litter items, to the litter store. In
+    the guest's meter units that is before + effect, with no floor and no ceiling."""
+    return {'meters': {'litter': f32(x['meters']['litter'] + f32(float(s32(x['effects'][4]))))}}
+
+
+def sale_csharp_request(x: dict) -> dict:
+    return {'fn': 'shop_sale_litter', 'effect': s32(x['effects'][4])}
+
+
+def sale_csharp_result(x: dict, delta) -> dict:
+    """C# adds `delta` scaled litter units to the park's store per sale; its store has no per-guest meter, so the guest's meter before
+    the sale (the oracle's input) is carried over: before + delta, in single precision."""
+    return {'meters': {'litter': f32(x['meters']['litter'] + f32(float(delta)))}}
+
+
+def sale_inputs(rng: random.Random, n: int) -> list:
+    shipped = [0, 0, 10, 25, 50, 50, 5]    # the LitterEffect values of the shipped shop files (0, 10, 25, 50) and the category default 5
+
+    def meter() -> float:
+        return rng.choice([0.0, 0.0, 100.0, random_float(rng, 0, 100), random_float(rng, 0, 100), random_float(rng, 0, 100),
+                           random_float(rng, 80, 100), random_float(rng, -20, 130)])
+
+    def effect() -> int:
+        return rng.choice(shipped + [rng.randrange(-100, 400), rng.randrange(0, 60), rng.randrange(-2 ** 31, 2 ** 31)])
+
+    def make(**kw) -> dict:
+        x = {'meters': {name: meter() for name, _, _, _ in SALE_METERS}, 'effects': [effect() for _ in range(5)]}
+        x.update(kw)
+        return x
+
+    def with_litter(before: float, effect_value: int, **kw) -> dict:
+        meters = {'thirst': 40.0, 'hunger': 40.0, 'vomit': 10.0, 'happy': 50.0, 'litter': before}
+        return make(meters=meters, effects=[20, 30, 5, 10, effect_value], **kw)
+    edges = [with_litter(0.0, 50),            # a burger or drinks sale for a clean guest: litter 50 (the guest drops at 90)
+             with_litter(50.0, 50),           # the second sale: 100, the ceiling
+             with_litter(60.0, 50),           # 110 clamps to 100: the surplus is lost
+             with_litter(0.0, 25), with_litter(75.0, 25), with_litter(80.0, 25),
+             with_litter(0.0, 10), with_litter(85.0, 10), with_litter(90.0, 0),
+             with_litter(10.0, -30),          # a negative effect lowers the meter, floor 0
+             with_litter(10.0, -3), with_litter(0.0, -1),
+             with_litter(99.5, 1), with_litter(100.0, 1), with_litter(0.0, 2 ** 31 - 1), with_litter(100.0, -2 ** 31),
+             with_litter(16777217.0, 1), with_litter(0.0, 16777217),   # single-precision conversion of a 25-bit effect
+             with_litter(math.nan, 5), with_litter(math.inf, 5), with_litter(-math.inf, 5), with_litter(-0.0, 0),
+             make(effects=[50, 10, 0, 0, 0]),   # a drinks shop: thirst effect above hunger effect
+             make(effects=[10, 50, 0, 0, 0]), make(effects=[20, 20, 0, 0, 5]), make(effects=[-5, 0, 0, 0, 5])]
+    return edges + [make() for _ in range(n)]
+
+
+ECON_SALE = Target('shop-sale-litter', 'Shop sale effects on the guest (fragment 0xeabb8 of 0xeaaf8)', 'ECONOMY.md "UsageInfo.LitterEffect" / ParkEconomy.TryBuy',
+                   SALE_FRAGMENT, SALE_ALLOWED, sale_stubs, sale_binary, sale_plan, sale_inputs, equal=sale_equal,
+                   alternatives={'routine-reading': sale_reading},
+                   csharp=('shop_sale_litter', sale_csharp_request, sale_csharp_result),
+                   notes=['C# hook: bridge function "shop_sale_litter" (ParkEconomy.TryBuy on a one-shop economy; the delta of LitterScaled). C# keeps '
+                          'a park-wide store, not a guest meter, so the guest\'s meter before the sale is carried over: after = before + delta.',
+                          'Executed: the type record getter 0xdc320 and the fragment 0xeabb8..0xeae44 (thirst, hunger, vomit, happiness and litter '
+                          'updates with their 0..100 clamps, and the "litter gone up" log). Stubs: 0x118018 type record (synthetic, registry and '
+                          'type id checked), 0xe6d20 (which of drink and food the shop serves: logged), 0x5fbcc debug log (arguments logged).',
+                          'The guest drops the litter later (meter byte >= 90 in 0xebd20); that and the ingredient and appearance effects are not '
+                          'executed.'])
+
+
+# The trigger of the guest's litter drop (0xebd20, in the guest update 0xeb... that switches on the guest state): the meter +0x1b4 is
+# truncated to an integer, taken as a byte and compared with 90 (cmplwi 90, branch when lower). At or above 90 the update goes on to the
+# state check (+544 in 6, 7 or 10) and the drop; below it jumps to 0xebdfc. Only the threshold is executed here.
+LITTER_TRIGGER, LITTER_BELOW, LITTER_AT_OR_ABOVE = 0xEBD20, 0xEBDFC, 0xEBD3C
+
+
+def trigger_binary(sb: Sandbox, x: dict, log) -> bool:
+    guest = sb.struct(1024, {436: ('f', x['litter'])})
+    sb.call(LITTER_TRIGGER, {1: STACK_BASE + STACK_SIZE - 0x1000, 31: guest}, stop=(LITTER_AT_OR_ABOVE, LITTER_BELOW))
+    return sb.machine.pc == sb.image.code(LITTER_AT_OR_ABOVE)
+
+
+def trigger_reading(x: dict) -> bool:
+    return (fctiwz(x['litter']) & 0xFF) >= 90
+
+
+def trigger_inputs(rng: random.Random, n: int) -> list:
+    edges = [{'litter': value} for value in (0.0, 89.0, 89.999, 90.0, 90.5, 99.0, 100.0, 255.9, 256.0, 345.9, 346.0, -1.0, -0.5, -166.0, -165.0,
+                                              1e10, -1e10, math.nan, math.inf, -math.inf, 50.0)]
+    return edges + [{'litter': rng.choice([random_float(rng, 0, 100), random_float(rng, 80, 100), random_float(rng, -400, 400),
+                                           float(rng.randrange(80, 100))])} for _ in range(n)]
+
+
+ECON_TRIGGER = Target('guest-litter-trigger', 'Guest litter drop threshold (0xebd20)', 'ORACLE F18 / ECONOMY.md "LitterEffect"', LITTER_TRIGGER,
+                      [(LITTER_TRIGGER, LITTER_BELOW + 4)], lambda t: {}, trigger_binary, None, trigger_inputs,
+                      alternatives={'routine-reading': trigger_reading},
+                      notes=['No plan side and no C# hook: OpenTPW has no guest litter meter, so no threshold (ECON-020).',
+                             'Fragment: the first lines of the litter test in the guest update. Executed alone (no stubs); the run ends at 0xebd3c (the '
+                             'meter byte is 90 or more: the state check and the drop follow) or at 0xebdfc (below 90).'])
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -2536,5 +2721,5 @@ RIDE_UPDATE_TARGET = Target('queue-ride-update', 'Ride update 0xe0a8c (what a br
                                    'Domain: an empty queue has no VAR_LETMEON guest (the original would index ThingArray[0]).'])
 
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER]
 DOMAINS = {SET_CELL.key: set_cell_domain}

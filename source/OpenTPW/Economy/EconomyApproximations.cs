@@ -22,7 +22,7 @@ public static class EconomyApproximations
 		("ECON-015", "researchers on strike or picked up are the original's excluded states 3, 4 and 5", "the staff state values behind 0x100F4170"),
 		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
-		("ECON-020", "a sale drops LitterEffect/100 litter items", "capture of litter after sales"),
+		("ECON-020", "a sale adds LitterEffect/100 litter items to a park-wide store; the original adds LitterEffect to the buying guest's 0..100 litter meter, which drops one litter event at 90 (ORACLE F18)", "a guest litter meter with the drop-at-90 and bin rules, and the park's litter count"),
 		("ECON-021", "a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly", "capture of repair duration per grade"),
 		("ECON-022", "a handyman removes one litter item per WorkDuration game minutes, park-wide", "capture of cleaning speed"),
 		("ECON-023", "the ride update's state gates (ride states 1, 3 and 4 at +0x198, +0x64 == 0, +0x2e bit 0) map only to \"a mechanic is at work\"", "the names of those ride states and flags"),

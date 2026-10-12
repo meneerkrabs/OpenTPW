@@ -143,9 +143,12 @@ Mutation checks (`test_oracle.py`):
 | `queue-ride-update` | `0xe0a8c` (the ride update: dispatch on the ride state `+408`, the head-guest step of states 1, 2 and 4) | the calls it makes are recorded, not run: `0xe1864` admission, `0xdcebc` remove from queue (ride and the u16 head id in the high half of r4 checked), `0xee804` dismiss, `0xeda04` force aboard, `0xe1758` script release; plus `0xb5758`/`0xb5be0` (VAR_LETMEON), `0xb678` assertion (logged when the condition is 0), `0xfa9a4` and `0x5fbcc` | 510 | **F15**: **agree** 510/510 (states 0..6 and −1, heads that wait or were taken, state 14 or not; `test_queue_ride_update_reading_is_sharp`) | no hook (CSHARP_PENDING): C# has the VAR_BROKEN reading only (`RideVisitorBridge.DismissHead`, `QueueTests`) |
 | `queue-join-difference` | `0xe9a84`, `0xdfe34`, `0xeb7e4` (guest preference), `0xe02ec` (excitement), `0xdff70` (its formulas), `0xe1f70`/`0xe1f78`/`0xe2364` (sideshow words), `0xe2fe4` (track type 3), `0x41a14` (coaster getter, controller table built) | `0x118018` type record (registry and type id checked), `0xb5e24` script controller (script `+32` checked), `0x1ea40` pieces behind ride `+36` (the `+36` word and four distinct outputs checked), import `sqrt` (IEEE double square root, argument checked non-negative). The settings word `+164 + 12 · type` is written in the data block | 524 | **F16** (fixed in C#): 387 differ from the old claim ("ride minus preferred", `plan-static`). The plan now says the routine reading: **agree** 524/524 | `RideVisitorBridge.JoinDifference` through `queue_join_difference`: **agree** except 46 inputs that have a thing behind ride `+36` (QUEUE-004; with the thing removed from the inputs **agree** 524/524) |
 | `queue-join-gate` | the fragment `0xecd6c..0xecdb0` / `0xeced0..0xecf34` of the state-10 handler `0xeccb0` (the `0xe9a84` call, `0xe02ec(ride, 1)`, the 45 test and the refusal) plus the callees above | the callees' stubs, plus `0x5fbcc` log (the message text is read from memory), `0xfb7b4` reason and `0xfb54c` thought (guest `+48` object, id and thought checked) | 524 | **F16** (fixed in C#): 155 differ in outcome from the old claim (`plan-static`). The plan now says the routine reading: **agree** 524/524 (outcome and difference) | `RideVisitorBridge.ExcitementRefusal` and `JoinDifference` through `queue_join_gate`: **agree** except 61 inputs with a thing behind ride `+36` (the same cause) |
+| `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `ParkEconomy.TryBuy` through `shop_sale_litter` (delta of `LitterScaled`): the same 213 (C# has no guest meter, so its delta is added to the oracle's meter) |
+| `guest-litter-trigger` | the first lines of the litter test in the guest update (`0xebd20..0xebd3c`) | none | 521 | no plan side. **Agree** 521/521 with the routine reading: the meter truncated, taken as a byte, `>= 90` | no hook (CSHARP_PENDING): OpenTPW has no guest litter meter |
 
 The C# comparisons use these seams:
 
+- `ParkEconomy.TryBuy` (`shop_sale_litter`): the litter store delta of one sale.
 - `RideVisitorBridge.ComputeQueueLimit`.
 - `ParkCellMap.CanChangeCellType`.
 - `ParkEconomy.TrySpendCell` in `ParkPathBuilder.Validate` order: refuse, then the same type
@@ -666,6 +669,65 @@ changes are the sideshows (live 27 for the jungle Arcade, 33 for the Halloween A
 three counts of `0x1ea40`) is not modelled (QUEUE-004), because OpenTPW has no such thing and what the counts are is not traced.
 Not changed: the attraction score (`ScoreAttraction`) and the ride outcome (`ApplyVisit`) still use the static `ExcitementLevel`;
 their callers `0xe9438`, `0xe9478`, `0xea348` and `0xea4e0` of `0xe02ec` and `0xeb7e4` are not traced (PPC-guests).
+
+**F18, what a shop sale does to the guest and how much litter that is (ECON-020, `ParkEconomy.TryBuy`, `0xeaaf8`; C# unchanged).**
+The static trace (APPROX-TRACE ECON-020) read `0xeaaf8` as "adds the raw per-use value to a litter float at `+0x1b4`, no division by
+100", and the old C# rule was "a sale drops LitterEffect/100 litter items" (`LitterScaled += LitterEffect`, 1/100 item). The fragment
+`0xeabb8..0xeae44` is executed (`shop-sale-litter`). It is the stat-update step of the sale routine, run by the guest (`r28`, the first
+argument) on the shop thing (`r3`, type id at `+14`). The type record comes from `0xdc320` (`0x118018` with the id at `+14`), and the five
+words from type `+0x144` on go to five guest floats:
+
+| Type record | Key (shop `.sam`, in the file order after `InitCostOfGoods` at `+0x140`) | Guest float | Update |
+| --- | --- | --- | --- |
+| `+0x144` (324) | `UsageInfo.ThirstEffect` ("How much thirst to deduct") | `+0x1a4` (420) | minus, clamp 0..100 |
+| `+0x148` (328) | `UsageInfo.HungerEffect` ("How much hunger to deduct") | `+0x1a8` (424) | minus, clamp 0..100 |
+| `+0x14c` (332) | `UsageInfo.VomitEffect` ("How much vomit to add") | `+0x1b0` (432) | plus, clamp 0..100 |
+| `+0x150` (336) | `UsageInfo.HappinessEffect` ("How much happiness to add") | `+0x19c` (412) | plus, clamp 0..100 |
+| `+0x154` (340) | `UsageInfo.LitterEffect` ("How much litter to add") | `+0x1b4` (436) | plus, clamp 0..100 |
+
+So the field that feeds the litter amount is type `+0x154`, the catalogue word 0x55 after `InitCostOfGoods` (word 0x50, `+0x140`), which is
+`LitterEffect`. The order is not inferred from one comment: the key table in the data section lists `InitCostOfGoods`, `ThirstEffect`,
+`HungerEffect`, `VomitEffect`, `HappinessEffect`, `LitterEffect`, `SpecialIngredient` consecutively, the shop files' comments give the same
+verbs (deduct, deduct, add, add, add), the fragment subtracts exactly the first two, and the word after litter (`+0x158`) is the ingredient
+switch value that the routine tests next (`0xeaf44`, `SpecialIngredient`). Each update is `clamp(float(old) +- float(effect), 0, 100)` in single precision (a NaN
+meter passes the clamp), the litter step is `0xead48..0xeae14`, and when `LitterEffect > 0` the routine logs "Litter gone up by" with
+the effect and the new meter as a byte (`0x5fbcc`, level 2). The routine reading agrees on 526/526 inputs, and the sign, effect slot and
+clamp of every meter, the log test and the surplus clamp each change a result (`test_shop_sale_litter_reading_is_sharp`).
+
+What the number means. The litter value is the guest's own meter `+0x1b4`, not a park total, and it is the same 0..100 scale as the other
+needs. The sale is the only code that adds to `+0x1b4`; the other writers set an initial value (guest construction `0xe76b8`, `0x106fe8`), clear it to 0 (`0xe78c4`) or reset it to 0 after the drop (`0xebdf8`, `0xed1b0`, `0xed228`; the constant is 0.0). The guest update tests the meter at `0xebd20`: truncated, as a byte, `>= 90`
+(`guest-litter-trigger`, 521/521). From there the guest state (`+544` in 6, 7 or 10) and a search for a place (`0xee1c4(guest, 3)`: a
+radius-3 loop over the thing array for objects with `+46` bit `0x40`, probably a litter bin; static only, not executed) lead to going to
+that place (state 9) or, when none is found, to a drop (`0xd8548` on a cell) and the meter reset to 0. So a sale does not drop `LitterEffect`
+items and does not drop 100 times too many: it moves a 0..100 meter, and one litter event follows once it reaches 90.
+
+The static trace's "contradicted (scaling)" is therefore a misreading of the unit, not a 100x error. Executed with the shipped
+LitterEffect values (`test_shop_sale_litter_items_per_sale`), a guest who keeps buying from one shop reaches the drop test after
+`ceil(90 / LitterEffect)` sales:
+
+| Shop (shipped `LitterEffect`, all four themes) | Sales per drop (original) | Litter items per sale: original | Old C# rule |
+| --- | --- | --- | --- |
+| burger, fries, drinks (50) | 2 (50, then 100) | 0.5 | 0.5 |
+| ice cream (25) | 4 (25, 50, 75, 100) | 0.25 | 0.25 |
+| steak restaurant, restaurant, moonrock cafe (10) | 9 (the ninth sale reaches 90) | 0.111 | 0.1 |
+| balloon, costume, gift (0) | never | 0 | 0 |
+| category default (5, none ships it for a shop) | 18 | 0.056 | 0.05 |
+
+Example, a burger sale (jungle Burger Shop, Info.Id 1207, `LitterEffect` 50): the old rule adds 50 to the park's store (0.5 item); the
+original adds 50 to the buying guest's meter (0 to 50) and the second burger bought by that guest takes it to 100 (50 + 50) and starts the
+drop, one item per two sales: the same 0.5 per sale on average. The differences are second order: the meter is per guest (a guest who
+leaves with 80 never drops it), a surplus above 100 is lost (a guest at 60 buying a burger gets 100, not 110), a mixed basket drops
+at 90 or more (a burger and an ice cream and another ice cream: 50 + 25 + 25 = 100), and the drop needs the right guest state and, probably, no bin in reach.
+
+C# is **not changed**, deliberately. `ParkEconomy` keeps a park-wide store (`LitterScaled`, 1/100 item) and `TryBuy` has no guest, so the
+meter, the clamp, the 90 threshold and the bin search have no home there; the guests slice has no litter meter and its needs (`Hunger`,
+`Thirst`, `Toilet`) are set to 0 by `ApplyVisit` when the shop satisfies them, rather than moved by the shop's effects (so thirst, hunger and vomit
+effects are also still approximations). Modelling it means a guest litter field with a snapshot and save change and a drop
+event into the economy, which belongs with the guest-needs work, not with the economy constant. For a guest who keeps buying from one shop the long-run rate is within about 11 % of
+the old rule for every shipped value, so ECON-020 stays an `[APPROX]` with the sharper text: the average litter per sale is right, the
+per-guest meter, its clamp and the 90 threshold are not modelled. The `shop-sale-litter` plan and C# sides keep their 213 mismatches
+(first counterexample: meter 60, effect 50: original 100, old rule 110) until the guest meter lands, and every one is a sum outside 0..100
+(`test_shop_sale_litter_rule_differs_only_where_the_meter_clamps`).
 
 ## 6. Adding a target or a C# hook
 

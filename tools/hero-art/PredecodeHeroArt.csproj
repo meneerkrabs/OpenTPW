@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!-- Build-time generator for the browser's predecoded interface art (docs/WEB.md). The web project's
+	     PredecodeHeroArt target builds and runs this on every build; it compiles the same format code the
+	     game loads with (source/OpenTPW/Render/Assets/PredecodedUiArt.cs) and the same StbImageSharp
+	     package and version the game decodes these PNGs with (source/OpenTPW/OpenTPW.csproj). -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AssemblyName>PredecodeHeroArt</AssemblyName>
+		<RootNamespace>OpenTPW.Tools</RootNamespace>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="StbImageSharp" Version="2.27.8" />
+		<Compile Include="../../source/OpenTPW/Render/Assets/PredecodedUiArt.cs" Link="PredecodedUiArt.cs" />
+	</ItemGroup>
+
+</Project>

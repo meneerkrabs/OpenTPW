@@ -5,7 +5,8 @@ Usage: python3 -I tools/ppc-analysis/coverage.py --mac-bin FERAL_BIN [--repo CHE
 FERAL_BIN is the Feral `bin` directory (the one holding SimThemePark.data and libraries/). The
 script analyses the main container with analyze.py (function starts, names from exports, traceback
 tables and RTTI virtual tables, string references), collects every Mac address the repository
-cites (`0x10xxxxxx`, and `STP-PPC:0x...` short forms as code offsets), and writes
+cites (`0x10xxxxxx`, and `STP-PPC:0x...` or `code:0x...` short forms as code offsets; bare short
+offsets in docs/reverse and the analysis lanes only at a function's start), and writes
 docs/reverse/COVERAGE.md:
 
 * totals: functions and code bytes inside a cited function;
@@ -156,7 +157,7 @@ def build(mac_bin: str, repo: str) -> str:
         "(`0x10xxxxxx`, or `STP-PPC:0x...` as a code offset), or when `docs/reverse/` or an analysis lane cites its",
         "start as a bare 5–6 digit code offset. Cited is not the same as implemented: a citation",
         "can be a note that something is not done. Uncited is a lead, not proof of a gap: small helpers are",
-        "often covered through their callers.",
+        "often covered through their callers. [AREAS.md](AREAS.md) groups the same functions by game area.",
         "",
         "## Totals",
         "",

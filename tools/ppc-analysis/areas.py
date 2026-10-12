@@ -248,8 +248,8 @@ def render(config: dict, functions: list[Facts], labels: list[tuple[str, str]], 
         "",
         "## Shared libraries",
         "",
-        "Exports of the Feral shared libraries next to the game. Named in repository: exports whose class or",
-        "function name appears as a word in `source/`, `docs/` or `tools/`.",
+        "Exports of the Feral shared libraries next to the game. Named in repository: exports whose function name",
+        "(six characters or more, without its class) appears as a word in `source/`, `docs/` or `tools/`.",
         "",
         "| Library | Area | Exports | Named in repository |",
         "| --- | --- | ---: | ---: |",
@@ -305,9 +305,9 @@ def library_summary(mac_bin: str, repo: str, labeller: Labeller) -> list[tuple[s
             container = pef.PEFContainer(handle.read(), file)
         words_by_export = []
         for export in container.exports:
-            name = demangle.demangle(export.name)
-            parts = re.sub(r"\(.*", "", name).split("::")
-            words_by_export.append({re.sub(r"<.*", "", part).strip() for part in parts if len(part) >= 6 and part != "std"})
+            # Only the function's own name: a class name in a document would otherwise mark all its methods.
+            name = re.sub(r"<.*", "", re.sub(r"\(.*", "", demangle.demangle(export.name)).split("::")[-1]).strip()
+            words_by_export.append({name} if len(name) >= 6 else set())
         found = set()
         candidates = sorted({word for words in words_by_export for word in words if re.fullmatch(r"\w+", word)})
         for start in range(0, len(candidates), 400):

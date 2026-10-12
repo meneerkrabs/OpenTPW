@@ -58,24 +58,24 @@ Open approximations without an area (test gates and unmapped prefixes): 4.
 
 ## Shared libraries
 
-Exports of the Feral shared libraries next to the game. Named in repository: exports whose class or
-function name appears as a word in `source/`, `docs/` or `tools/`.
+Exports of the Feral shared libraries next to the game. Named in repository: exports whose function name
+(six characters or more, without its class) appears as a word in `source/`, `docs/` or `tools/`.
 
 | Library | Area | Exports | Named in repository |
 | --- | --- | ---: | ---: |
-| `bullfrog shared` | platform | 529 | 221 |
-| `c/c++ shared` | platform | 750 | 40 |
-| `engine shared` | render & assets | 198 | 51 |
+| `bullfrog shared` | platform | 529 | 75 |
+| `c/c++ shared` | platform | 750 | 34 |
+| `engine shared` | render & assets | 198 | 30 |
 | `indirectx shared` | render & assets | 87 | 4 |
 | `libjpeg shared` | render & assets | 101 | 0 |
-| `ltms shared` | text & language | 245 | 110 |
-| `macdoze shared` | platform | 187 | 183 |
+| `ltms shared` | text & language | 245 | 49 |
+| `macdoze shared` | platform | 187 | 53 |
 | `mail shared` | online | 11 | 5 |
 | `more files shared` | platform | 160 | 2 |
-| `online shared` | online | 124 | 74 |
-| `runtime shared` | platform | 57 | 6 |
-| `sams utils shared` | platform | 494 | 492 |
-| `sound shared` | audio & video | 951 | 393 |
+| `online shared` | online | 124 | 68 |
+| `runtime shared` | platform | 57 | 4 |
+| `sams utils shared` | platform | 494 | 95 |
+| `sound shared` | audio & video | 951 | 188 |
 | `winsock shared` | online | 59 | 5 |
 | `zlib shared` | platform | 26 | 2 |
 

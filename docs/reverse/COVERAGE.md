@@ -5,7 +5,7 @@ A function counts as cited when any Mac address inside it appears in `source/`, 
 (`0x10xxxxxx`, or `STP-PPC:0x...` as a code offset), or when `docs/reverse/` or an analysis lane cites its
 start as a bare 5–6 digit code offset. Cited is not the same as implemented: a citation
 can be a note that something is not done. Uncited is a lead, not proof of a gap: small helpers are
-often covered through their callers.
+often covered through their callers. [AREAS.md](AREAS.md) groups the same functions by game area.
 
 ## Totals
 

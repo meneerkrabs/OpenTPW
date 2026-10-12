@@ -824,6 +824,10 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-loan-offers` | tp.exe `0x4cf7c0`..`0x4cf8c6` (bank constructor, the 8-offer loop; the Mac `0xcb7a8`) plus the runtime's own `pow` (`0x67c5d0`, `0x686170`) and `0x67a830`, executed | `0x50afe0` base constructor (header only, arguments checked) | 506 offer sets (the Mac target's 505 plus one out-of-range set) | **X4**: 505/506 **agree** with the Mac plan, records and bank words included; the one set holds a zero term and a result above 32 bits | **agree** 506/506 (x87 reading, `math.pow` for the power) |
 | `tpw-exe-loan-term`, `tpw-exe-loan-month` | tp.exe `0x4d0385`..`0x4d04d9` (the loan loop of the monthly handler `0x4d0370`; the Mac `0xcc21c`) | `0x519510` game to park (sentinel, checked), `0x5da3c0` print (logged by message) | 503 whole terms, 506 random bank states | **X5**: **agree** 503/503 with the Mac plan | **agree** 503/503 and 506/506, events in the same order |
 | `tpw-exe-park-points` | tp.exe `0x4c8240`, park record search `0x4d3d10`/`0x4d3d80`, `0x4f88b0` (turns to 100 ns), the 64-bit divide and multiply helpers (the Mac `0xc24c0`) | `0x412e90` type record (registry checked), `0x5da3c0` assertion (a zero condition fails the run), `0x4dd920` counts-test (chosen flag), `0x4dd670` own age (signed timestamp difference in days) | 507 | **X6**: **agree** 507/507 | (the plan is the Mac routine reading) |
+| `tpi-exe-arrival-group` | TPI `Game.exe` `0x5bcd60`..`0x5bcf05` and `_ftol` `0x86fab0` (thiscall, `ecx` unused; the TPW `0x4cf5b0`), the mode-object getter (`0x403a99` to `0x42a340`) executed | on the jump thunks: `0x40144c` game to park (sentinel, checked), `0x40461f` counted guests (argument 20 checked), `0x402bd5` park points (chosen), `0x4019b5` weather thing (synthetic thing, dword `+0x70` chosen), `0x403e45` print (logged); the GameType object is marked constructed | 532 (500 random + 32 boundaries), x87 control word `0x27F` | **X7**: 216 differ from the TPW / Mac rule (67 from an exit that tp.exe lacks, 149 from the factor and the floating divide) | **agree** 532/532 (53-bit reading); exact arithmetic differs on 30 (the single-precision 0.01) |
+| `tpi-exe-loan-offers` | TPI `0x5bfb70`..`0x5bfc73` (bank constructor, the 8-offer loop; the TPW `0x4cf7c0`), the runtime's own `pow` (`0x871c00`, `0x87c410`..) and `_ftol`, executed | `0x403d19` base constructor (header only, arguments checked) | 506 offer sets (the TPW target's inputs, seeded by this key) | **X8**: 505/506 **agree** with the Mac plan, records and bank words included; the one set is the same out-of-range set as in tp.exe | **agree** 506/506 |
+| `tpi-exe-loan-term`, `tpi-exe-loan-month` | TPI `0x5c0b25`..`0x5c0c49` (the loan loop of the monthly handler `0x5c0b10`; the TPW `0x4d0370`) | `0x40144c` game to park (sentinel, checked), `0x403e45` print (logged by message) | 503 whole terms, 506 random bank states | **X9**: **agree** 503/503 with the Mac plan | **agree** 503/503 and 506/506 (the Mac reading minus its two assertion events, which this build lacks) |
+| `tpi-exe-park-points` | TPI `0x5b05d0`, park record searches `0x5cfd70`/`0x5cfcf0` and their thunks, `0x608d50` (turns to 100 ns), the 64-bit divide and multiply helpers (the TPW `0x4c8240`) | `0x40c1d0` type record (registry checked), `0x40998a` counts-test (chosen flag), `0x403bb6` own age (signed timestamp difference in days) | 507 | **X10**: **agree** 507/507 | (the plan is the Mac routine reading) |
 
 The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
 rotate the result right by 13 bits, store that, and return its signed absolute value (the
@@ -1065,3 +1069,134 @@ are x87 arithmetic: a wrap beyond range and a precision effect that shows only f
 (X3), and a last-bit dependence on the control word for exactly-integer instalments (X4). No C# change
 is needed. Not examined: loan payoff and take (`0xccc78`, `0xcc904`), the counts-test, the arrival update
 loop, and which control word is live when the bank is built.
+
+### 7.7 Findings X7 to X10: the four rules in the Theme Park Inc `Game.exe`
+
+Question: does the TPI no-CD `Game.exe` (SHA-256 `77ea0c41410aad7c94a5eda658e31cb4ac05f7253aaf6746ad5e8a90afbd967a`,
+the only TPI image analysed) implement the rules OpenTPW follows from the Mac oracle (F9, F10, F12, F13), and
+where does it differ from TPW? Same method as 7.6 (constants, object offsets, call structure, message texts; static
+reading with Capstone in a scratch directory, terminal output only), then execution with the Mac plans and readings
+reused through `oracle/targets.py` and the tp.exe targets' helpers. The addresses are virtual addresses at the preferred
+base `0x400000`. The image is incrementally linked, so most calls go through five-byte jump thunks; the stubs sit on the
+thunk addresses and some thunks are executed through. The game object is reached through the global `0xade6b0` (the
+bank code reads a second copy, `0xaa1484`). Its world words moved: RNG `+0x1eab3c`, tick `+0x1eab40`, the handle slots
+from `+0x1eab54` (park `+0x1eab54`, weather `+0x1eab58`), world state `+0x1eab78`, first thing `+0x1eab88`, per-type park
+records `+0x1e9618`. The settings are global words in one block (table order, below); the setting-table rows
+(`0x999220` onward, 60 bytes each: a type word and the key name) give the names, and the TPI data file that fills
+them is `Data/levels/Standard.sam` (`Online_Standard.sam` for online play; the four `levels/*/Standard.sam` files only
+override lender names). No data was changed or copied; the values below were read.
+
+**X7, arrival group size (TPW `0x4cf5b0`, Mac `0xcb4e8`, F9): TPI `0x5bcd60`; a different rule.**
+Identification (high confidence): the same skeleton. It returns 0 while the world state word is 4 (bankrupt); counts the
+guests (argument 20) and asks the park for its points; takes the divisor from PointsPerVisitor, 1 unless above 1 (signed);
+adds NewParkBonus to the points (`fild`); raises the group to MinPeople (signed); then cuts it with unsigned compares and no
+floor, to 500 minus the guests when the GameType word (`0xc65b80`) is 1 and to 1500 minus the guests otherwise; and
+logs the same two capping lines ("Capping the number of people in online park / offline park") and a group-size line.
+The three settings words sit at `0xa02230` (MinPeople), `0xa0223c` (NewParkBonus) and `0xa02240` (PointsPerVisitor), in the
+settings table's order: MinPeople, TimeBetweenArrivals, FixedRate, NewParkBonus, PointsPerVisitor, and then four new keys,
+`RainPercentageModifier`, `StormPercentageModifier`, `SnowPercentageModifier`, `HeatwavePercentageModifier` (`0xa02244` to
+`0xa02250`).
+
+Three differences, all executed:
+
+1. **The factor is a weather percentage, not 0.8 / 1.2.** The thing at the game's weather handle (save name `mWeather`)
+   has a state word at `+0x70`. States 1 to 4 pick, through a jump table, the Heatwave, Rain, Storm and Snow words;
+   any other state (no weather, or an out-of-range value, compared unsigned) gives 100. The shipped words are Rain 90, Storm
+   80, Snow 75, Heatwave 120.
+2. **The arithmetic changed.** The routine multiplies the integer percentage by the single-precision constant 0.01, then
+   by the exact integer total (points + bonus), divides by the divisor in floating point and truncates once (`_ftol`, which
+   forces round toward zero); TPW multiplies by a single-precision factor, truncates, and then divides as integers. Because
+   0.01 is not exact in single precision, a total that is an exact multiple of the divisor gives one group less than exact
+   arithmetic: 80 points + 20 bonus over 25, no weather, is 3 groups, not 4 (30 of 532 inputs differ from exact arithmetic,
+   each by exactly one). The result is the same at the control words `0x27F` and `0x37F` on every input; `0x7F` (24 bits)
+   differs on 28.
+3. **A new exit.** A dword at `+0x14` of the object at `0xa06558` equal to 3 gives 0, after the world-state exit. The
+   object is a widely used global (over a hundred references); what the value 3 means was not established. tp.exe has no such
+   test in this routine.
+
+Executed result: the routine reading (x87 at 53 bits) agrees on 532/532 inputs; against the TPW / Mac rule on the same world
+state 216 inputs differ (67 where the exit on the mode word 3 applies, the other 149 through the factor and the divide). Examples with the
+shipped TPI settings (bonus 20, PointsPerVisitor 25, MinPeople 1) and 480 park points: 19 with no weather, 23 in a
+heatwave, 17 in rain, 15 in a storm, 14 in snow; the TPW rule on the same state gives 24 without weather and 16 with any
+positive weather word. With 80 points the groups are 3, 4, 3, 3 and 2.
+
+Correction to the F9 / X3 wording (not C#): tp.exe's own save code names the handle at game `+0x1da724`, the one the
+tp.exe arrival routine reads, `mWeather` (string `0x7628e0`, used where the world words are written and read), and
+names `+0x1da734` `mTrafficLights` and `+0x1da732` `mParkGates`. X3's "the Mac's handle is at `+0x1da734`" was therefore a
+different handle, not the same one at a shifted offset: the Windows routine reads the weather thing's `+0x30` word,
+and the Mac routine, per the PPC reading, the Traffic Lights' `+48`. TPI keeps the weather source and turns the
+positive-or-not test into the four percentages. Whether the Mac handle naming is right, or the PC routine really differs
+from the Mac one here, needs a look at the Mac world-variable saver; nothing in C# changes from this note, but
+`GuestSimulation.TrafficLightsPlaced` rests on the Mac reading only.
+
+Shipped values. TPI `Standard.sam`: `Arrival.MinPeople` 1, `TimeBetweenArrivals` 25, `FixedRate` 15, `NewParkBonus` 20,
+`PointsPerVisitor` 25, the four percentages above. `Online_Standard.sam`: MinPeople 1, TimeBetweenArrivals 150,
+FixedRate 15, NewParkBonus 20, PointsPerVisitor 2, and no percentage keys (whether the four words then keep the standard
+file's values or stay 0, which would give online groups of MinPeople in any weather, depends on the load order, not
+examined). TPW's `Standard.sam` is not in reach as shipped; the TPW oracle's "shipped" row (MinPeople 1, bonus 20, 6 per
+visitor) matches the Nexus mod file's values, which is a modified file (`TimeBetweenArrivals` 150, `InitialCash`
+99999999999 there). If that is representative, TPI differs in the shipped numbers as well: 25 points per guest instead
+of 6, and groups arrive every 25 timer units instead of 150.
+
+**X8, loan offer instalment (TPW `0x4cf7c0`, Mac `0xcb7a8`, F12): TPI `0x5bfb70`; same formula.**
+Identification (high confidence): the constructor loops over eight 16-byte setting rows from `0xa020c4` (InitialCash
+at `0xa020bc`, the `BankAccountInfo` and `LoanInfo` rows of the settings table) and fills eight 32-byte records from
+`bank + 0x1c` (the TPW layout, 8 higher, because the base class grew): available when the amount is at most 10000, the
+amount, APR, months, the instalment, bought and months repaid (0), the lender; it then sets the bank words (balance
+`+0x14`, batch `+0x18`, withdrawals `+0x11c`, and so on, each 8 above TPW). The instalment is
+trunc(P x pow(1 + APR x 0.01, N x (1/12) x 0.5) / N): the constants 0.01, 1/12 (`0x93ddf8`, `0x93dde8`) and 0.5, a
+`+1.0` where TPW subtracts -1.0 (no value change), the runtime's own x87 `pow` (`0x871c00`, the TPW `0x67c5d0` code
+with the same control-word-`0x27F` test) and `_ftol`. Executed with no stub except the base constructor, on the same
+506 offer sets as the TPW target: 505 agree with the Mac plan (records and bank words included), the one that does not
+is the same out-of-range set (zero terms, a result above 32 bits). Shipped TPI offers (`Standard.sam`; `Online_Standard.sam`
+has the same eight): 100000 / 20 % / 36, 50000 / 20 / 36, 25000 / 20 / 36, 10000 / 20 / 36, 18000 / 23 / 24, 30000 / 22 / 30,
+80000 / 18 / 48, 65000 / 21 / 30, instalments 3651, 1825, 912, 365, 922, 1282, 2320, 2749 at `0x27F`, `0x37F` and
+`0x7F`: the TPW values. The integer-instalment control-word effect is the same (18000 at 20 % over 24 months is 900 at
+`0x27F`, 899 at `0x37F`; 16 of the 506 sets change between the two words). Other shipped words: InitialCash 50000 and InitialAdmissionFee 25 (online 20).
+C# needs no change for the instalment.
+
+**X9, monthly loan step (TPW `0x4d0370`, Mac `0xcc21c`, F13): TPI `0x5c0b10`; same state changes.**
+Identification (high confidence): the bank's message dispatcher calls it for message code 12 (as the TPW and Mac
+dispatchers do; code 13 clears the year profit word), and the handler has the same shape: flush the batch into the balance,
+the park's money-in word (`+0x1fef8`) and the year profit (`+0x12c`); then for each of the eight records, in order, when
+bought: log the instalment line ("Paying the %d'th monthly instalment of loan %d, costing %d"), and with the withdrawals
+flag set take M off the balance, record the turn the balance first goes negative, raise the money-out word (`+0x1f808`)
+and lower the year profit; raise months repaid; add M - floor((M x N - P) / N) (unsigned) to the year profit unless the term
+is 0; and when months repaid reach N, log the paid-off line and clear bought and months repaid. Executed (the loop,
+`0x5c0b25` to `0x5c0c49`; the entry sets up an exception frame the sandbox lacks, the tail for a bank in the red is not run):
+503/503 whole terms agree with the Mac plan, 503/503 and 506/506 with the Mac reading. The one difference is that this
+release build has no assertion calls (the TPW handler asserts the batch is below one million and the term is not 0, and so
+does the Mac), so the event list holds only the two log lines; the reading used drops the Mac's two assertion events.
+Example, 100,000 over 36 months at 20 %: 36 deductions of 3651 and the year profit falling by 873 a month. C#
+(`LoanMath.Pay`) is right for TPI.
+
+**X10, park points (TPW `0x4c8240`, Mac `0xc24c0`, F10): TPI `0x5b05d0`; same rule, fields moved.**
+Identification (high confidence): it is the routine the arrival group calls for the points, and has the TPW routine's
+structure statement for statement. It walks the thing list from game `+0x1eab88` through the 20-byte thing array at
+`0xaa18b0` (next link `+0x14`, type `+0x16`, a type id, 8 above TPW); reads the type record from the registry at `0xa09ac8`
+(value `+0x80`, decay `+0x84`, bonus brackets `+0x370`, track-type word `+0x14c`, kind word `+0x600`; the TPW `+0x58`,
+`+0x5c`, `+0x268`, `+0x9c`, `+0x4ac`); counts only kinds 0 and 2 and things that pass the counts-test (`0x40998a`, thunk of
+`0x5dfc90`); reads the park record (game `+0x1e9618`, 36-byte records, copies `+0x18`, first purchase `+0x1c`, the same
+cached search); ages a type with track-type word 0 from its first purchase through the turn conversion `0x608d50` (the
+turn difference times the clock rate at `+0x428`/`+0x1c`, divided by 4, times 10,000,000, divided by the day length
+864,000,000,000, pushed as `0xc9` and `0x2a69c000`), any other type from the thing's own timestamp (`0x403bb6`, divisor 1);
+bracket = age / decay (signed) in 0 to 2; sum += (value + bracket bonus) / copies (signed). Executed: the routine, the
+two park record searches (through their thunks), the turn conversion and the 64-bit helpers; stubbed: the type registry,
+the counts-test (chosen flag) and the own age. 507/507 agree with the Mac reading `points_full`, and the three Mac rules
+(track-type branch, first-purchase age, counts-test) each change the result when dropped (`test_points_reading_is_sharp`).
+The only difference is that this build has no assertion call on the thing array. The counts-test and the own age were not
+run (call-position counterparts only, as in X6). Data: the type fields come from the per-ride and per-feature `.sam` files
+(`Info.AttractionValue`, `Info.NewAttractionDecayTime`, `Attraction[0..2].NewBonus`, for example in `levels/water/rides/Rides.sam`);
+the offsets-to-keys mapping is by analogy with TPW and was not traced.
+
+Summary and what a TPI mode would need to change relative to TPW. The loan rules (X8, X9) and the park points (X10) are
+the same rules as TPW and the Mac, so a TPI mode needs nothing there beyond the shipped data (offers and instalments are
+the same eight; initial cash 50000). The arrival group size (X7) is the one rule that differs: a TPI mode would replace the
+0.8 / 1.2 factor with the weather percentage (state 1 to 4 selects Heatwave, Rain, Storm or Snow, else 100) read from the
+four new `Arrival.*PercentageModifier` keys, compute `total x (percentage x 0.01f) / divisor` as one floating division
+truncated toward zero (keeping the single-precision 0.01, which makes exact multiples one group lower) instead of
+truncate-then-integer-divide, add the exit for the mode object word 3 (meaning unknown), and use TPI's settings
+(PointsPerVisitor 25, TimeBetweenArrivals 25 in the standard file, 2 and 150 online). The world RNG (X2) is the TPW step
+at moved offsets. A TPI mode also has the shifted world-object and bank layouts above if it ever imports original saves.
+Not examined: the arrival update loop and the timer settings, loan payoff and take, the counts-test, the TPI-only systems
+the settings table lists, and which x87 control word is live at run time.

@@ -229,6 +229,12 @@ preview; original runtime fidelity and the complete offline scope remain open.
   integer wrap and a single-vs-extended rounding at totals no park reaches, and a last-bit
   dependence of exactly-integer instalments on the x87 control word (which the code expects to
   be `0x27F`). The runtime's own `pow` is executed, not stubbed.
+- The same four rules in the Theme Park Inc `Game.exe` (ORACLE.md 7.7, findings X7 to X10; analysis only, no C#
+  change): loan offers `0x5bfb70`, the monthly loan step `0x5c0b10` and park points `0x5b05d0` are the same rules
+  as TPW at moved offsets (shipped offers and instalments unchanged). The arrival group size `0x5bcd60` differs:
+  the 0.8 / 1.2 factor became a weather percentage (Rain 90, Storm 80, Snow 75, Heatwave 120 in `Standard.sam`),
+  the integer divide became a floating one (80 points + 20 over 25 gives 3, not 4), and a mode word of 3 gives no
+  group. The note also records that tp.exe's arrival routine reads the `mWeather` handle, not Traffic Lights.
 - [Fidelity register](FIDELITY-REGISTER.md): **316 original fidelity items** plus
   **24 online extension** IDs (340 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

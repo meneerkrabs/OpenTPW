@@ -70,6 +70,34 @@ EXPECTED = {
     ('tpw-exe-loan-month', 'routine-reading'): AGREE,
     # X6 (park points 0x4c8240 vs the Mac 0xc24c0, F10): identical on 507 inputs.
     ('tpw-exe-park-points', 'plan'): AGREE,
+    # X7 (arrival group size 0x5bcd60 vs the TPW / Mac rule, F9): a different rule. The factor is the weather percentage
+    # (state 1 to 4: Heatwave, Rain, Storm, Snow words, else 100) instead of 0.8 / 1.2, the divide is floating (times the
+    # single-precision 0.01), and a mode object word of 3 gives no group. 216 of 532 inputs differ from the TPW rule; the
+    # routine reading agrees on all, and exact arithmetic differs on 30 (the 0.01f truncation, first: 80 + 20 points over 25).
+    ('tpi-exe-arrival-group', 'plan'): (216, {'world_mode': 0, 'mode': 3, 'guests': 0, 'points': 0, 'bonus': 20,
+                                              'per_visitor': 25, 'min_people': 1, 'weather': 0, 'pct': (90, 80, 75, 120),
+                                              'limit_mode': 0}),
+    ('tpi-exe-arrival-group', 'routine-reading'): AGREE,
+    ('tpi-exe-arrival-group', 'exact-arithmetic'): (30, {'world_mode': 0, 'mode': 0, 'guests': 0, 'points': 80, 'bonus': 20,
+                                                          'per_visitor': 25, 'min_people': 1, 'weather': 0,
+                                                          'pct': (90, 80, 75, 120), 'limit_mode': 0}),
+    # X8 (loan offer instalment 0x5bfb70 vs F12): the same formula and the same single mismatch as tp.exe (the out-of-range set).
+    ('tpi-exe-loan-offers', 'plan'): (1, {'cash': 0, 'offers': [(100000, 20, 0, 0), (0, 20, 0, 1), (4000000000, 20, 36, 2),
+                                                                  (4294967295, 0, 1, 3), (4294967295, 40, 120, 4),
+                                                                  (4294967295, 40, 1, 5), (1, 0, 1, 6),
+                                                                  (3000000000, 1, 2, 7)]}),
+    ('tpi-exe-loan-offers', 'mac-reading'): (1, {'cash': 0, 'offers': [(100000, 20, 0, 0), (0, 20, 0, 1),
+                                                                         (4000000000, 20, 36, 2), (4294967295, 0, 1, 3),
+                                                                         (4294967295, 40, 120, 4), (4294967295, 40, 1, 5),
+                                                                         (1, 0, 1, 6), (3000000000, 1, 2, 7)]}),
+    ('tpi-exe-loan-offers', 'routine-reading'): AGREE,
+    # X9 (loan monthly step 0x5c0b10 vs F13): identical state changes; the release build has no assertion calls, so the
+    # reading compared here is the Mac one without its two assertion events.
+    ('tpi-exe-loan-term', 'plan'): AGREE,
+    ('tpi-exe-loan-term', 'routine-reading'): AGREE,
+    ('tpi-exe-loan-month', 'routine-reading'): AGREE,
+    # X10 (park points 0x5b05d0 vs F10): identical on 507 inputs, fields at other offsets.
+    ('tpi-exe-park-points', 'plan'): AGREE,
 }
 
 BASE = 0x400000
@@ -526,13 +554,204 @@ class Oracle(unittest.TestCase):
 @unittest.skipUnless(UNICORN, UNICORN_HINT)
 @unittest.skipUnless(TPI, NO_TPI)
 class OracleTpi(unittest.TestCase):
-    """X2: the TPI Game.exe world RNG step (the image has a relocation directory and an .idata section)."""
+    """X2: the TPI Game.exe world RNG step (the image has a relocation directory and an .idata section); X7 to X10: the
+    TPI counterparts of the arrival, loan and park-points rules."""
 
     @classmethod
     def setUpClass(cls):
         cls.image = Image.load(TPI)
-        target = targets.TPI_WORLD_RNG_TARGET
-        cls.results = {(target.key, c.side): c for c in compare(target, cls.image, DEFAULT_COUNT)}
+        cls.results = {}
+        for target in targets.TARGETS:
+            if target.exe == 'tpi':
+                cls.results.update({(target.key, c.side): c for c in compare(target, cls.image, DEFAULT_COUNT)})
+
+    def check(self, key):
+        comparison = self.results[key]
+        expected = EXPECTED[key]
+        if expected == AGREE:
+            self.assertTrue(comparison.agrees, f'{key}: {comparison.mismatches} mismatches, first {comparison.first}')
+        else:
+            count, first_input = expected
+            self.assertEqual(comparison.mismatches, count, f'{key}: first {comparison.first}')
+            self.assertEqual(comparison.first['input'], first_input, key)
+
+    def run_target(self, target, x, **kwargs):
+        sandbox = target.sandbox(self.image)
+        sandbox.reset()
+        target.log.clear()
+        return target.binary(sandbox, x, target.log, **kwargs)
+
+    def test_every_comparison_is_pinned(self):
+        self.assertEqual(set(self.results), {key for key in EXPECTED if key[0].startswith('tpi-')})
+
+    def test_every_pinned_tpi_comparison_holds(self):
+        for key in EXPECTED:
+            if key[0].startswith('tpi-'):
+                self.check(key)
+
+    # ------------------------------------------------------------------ X7: arrival group size
+    def test_arrival_factor_is_the_weather_percentage(self):
+        """The weather thing's state 1 to 4 picks Heatwave, Rain, Storm, Snow (jump table); 0 and out-of-range states give 100.
+        Points 480 + bonus 20 over 25 (shipped settings): 100 % gives 19 (19.99999), 120 % 23, 90 % 17, 80 % 15, 75 % 14."""
+        shipped = dict(world_mode=0, mode=0, guests=0, points=480, bonus=20, per_visitor=25, min_people=1, weather=0,
+                       pct=targets.TPI_SHIPPED_PCT, limit_mode=0)
+        target = targets.TPI_ARRIVAL_TARGET
+        groups = {w: self.run_target(target, {**shipped, 'weather': w}) for w in (-1, 0, 1, 2, 3, 4, 5, 0x7FFFFFFF)}
+        self.assertEqual(groups, {-1: 19, 0: 19, 1: 23, 2: 17, 3: 15, 4: 14, 5: 19, 0x7FFFFFFF: 19})
+        self.assertEqual(targets.TPI_SHIPPED_PCT, (90, 80, 75, 120))   # the shipped Rain, Storm, Snow, Heatwave words
+        # the TPW rule on the same state: 1.2 without weather, 0.8 with (any positive word), a different group
+        self.assertEqual([targets.tpi_arrival_tpw_plan({**shipped, 'weather': w}) for w in (0, 1, 4)], [24, 16, 16])
+
+    def test_arrival_mode_object_word_three_gives_no_group(self):
+        target = targets.TPI_ARRIVAL_TARGET
+        x = dict(world_mode=0, mode=3, guests=0, points=480, bonus=20, per_visitor=25, min_people=1, weather=0,
+                 pct=targets.TPI_SHIPPED_PCT, limit_mode=0)
+        self.assertEqual(self.run_target(target, x), 0)
+        self.assertEqual(self.run_target(target, {**x, 'mode': 2}), 19)
+        self.assertEqual(self.run_target(target, {**x, 'mode': 3, 'world_mode': 4}), 0)
+        self.assertEqual(targets.tpi_arrival_tpw_plan(x), 24)   # the TPW rule has no such exit
+
+    def test_arrival_float_divide_truncates_below_exact_multiples(self):
+        """The factor is the integer percentage times the single-precision 0.01 (0.0099999998), so a total that is an exact
+        multiple of the divisor gives one group less: 80 points + 20 over 25 is 3, not 4. 30 of 532 inputs differ from the
+        exact arithmetic, all by one."""
+        shipped = dict(world_mode=0, mode=0, guests=0, points=80, bonus=20, per_visitor=25, min_people=1, weather=0,
+                       pct=targets.TPI_SHIPPED_PCT, limit_mode=0)
+        target = targets.TPI_ARRIVAL_TARGET
+        self.assertEqual((self.run_target(target, shipped), targets.tpi_arrival_exact_reading(shipped)), (3, 4))
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        sandbox = target.sandbox(self.image)
+        deltas = [targets.tpi_arrival_exact_reading(x) - targets.run_binary(target, sandbox, x) for x in inputs]
+        self.assertEqual({d for d in deltas if d}, {1})
+        self.assertEqual(sum(1 for d in deltas if d), 30)
+
+    def test_arrival_follows_the_control_word(self):
+        """Each x87 precision agrees with the reading at that precision; 53 and 64 bits give the same groups on these
+        inputs, 24 bits (single) differ."""
+        target = targets.TPI_ARRIVAL_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        sandbox = target.sandbox(self.image)
+        groups = {}
+        for control, precision in ((0x27F, 53), (0x37F, 64), (0x7F, 24)):
+            results = []
+            for x in inputs:
+                sandbox.reset()
+                target.log.clear()
+                results.append(targets.tpi_arrival_binary(sandbox, x, target.log, fpcw=control))
+            groups[control] = results
+            self.assertEqual(results, [targets.tpi_arrival_reading(x, precision) for x in inputs], hex(control))
+        self.assertEqual(groups[0x27F], groups[0x37F])
+        self.assertNotEqual(groups[0x27F], groups[0x7F])
+
+    def test_arrival_reading_is_sharp(self):
+        """The slot of each weather state, the percentage constant, the mode exit and the online cut each matter."""
+        def slots_in_table_order(x):
+            return targets.tpi_arrival_reading({**x, 'weather': {1: 2, 2: 3, 3: 4, 4: 1}.get(x['weather'], x['weather'])})
+
+        def tpw_factor(x):   # the TPW factor and integer divide, with the TPI mode exit kept
+            return 0 if x['mode'] == 3 else targets.tpi_arrival_tpw_plan(x)
+
+        def no_mode_exit(x):
+            return targets.tpi_arrival_reading({**x, 'mode': 0})
+
+        def no_online_cut(x):
+            return targets.tpi_arrival_reading({**x, 'limit_mode': 0 if x['limit_mode'] == 1 else x['limit_mode']})
+        for name, mutated in (('slots', slots_in_table_order), ('TPW factor', tpw_factor), ('mode exit', no_mode_exit),
+                              ('online cut', no_online_cut)):
+            comparison = compare(targets.TPI_ARRIVAL_TARGET, self.image, 100, plan=mutated)[0]
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    # ------------------------------------------------------------------ X8: loan offers
+    def test_loan_offers_shipped_instalments_at_every_control_word(self):
+        target = targets.TPI_LOAN_OFFERS_TARGET
+        shipped = {'cash': 50000, 'offers': targets.mac().SHIPPED_LOANS}   # the LoanInfo values of the TPI Standard.sam
+        for control in (0x27F, 0x37F, 0x7F):
+            self.assertEqual(self.run_target(target, shipped, fpcw=control)['monthly'], targets.mac().SHIPPED_MONTHLY,
+                             hex(control))
+
+    def test_loan_offers_depend_on_the_control_word_where_the_instalment_is_an_integer(self):
+        """As in tp.exe: 18000 over 24 months at 20 % is exactly 900 at 0x27F and 899 at 0x37F; 16 of this target's 506 offer
+        sets change between the two words."""
+        target = targets.TPI_LOAN_OFFERS_TARGET
+        x = {'cash': 0, 'offers': [(18000, 20, 24, 0)] * 8}
+        self.assertEqual(self.run_target(target, x)['monthly'][0], 900)
+        self.assertEqual(self.run_target(target, x, fpcw=0x37F)['monthly'][0], 899)
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        different = sum(self.run_target(target, x)['monthly'] != self.run_target(target, x, fpcw=0x37F)['monthly']
+                        for x in inputs)
+        self.assertEqual(different, 16)
+
+    def test_loan_pow_is_executed(self):
+        target = targets.TPI_LOAN_OFFERS_TARGET
+        self.assertTrue(any(lo <= 0x871C00 < hi for lo, hi in target.allowed))
+        self.assertEqual(set(target.stubs(target)), {targets.TPI_LOAN_BASE_CTOR})
+
+    def test_loan_offers_reading_is_sharp(self):
+        def exponent_in_years(x):
+            result = targets.loan_offers_reading(x)
+            result['monthly'] = [targets.mac().loan_monthly_reading(a, r, n, exponent=1.0) for a, r, n, _ in x['offers']]
+            return result
+        comparison = compare(targets.TPI_LOAN_OFFERS_TARGET, self.image, 50, plan=exponent_in_years)[0]
+        self.assertGreater(comparison.mismatches, 0)
+
+    # ------------------------------------------------------------------ X9: loan monthly step
+    def test_loan_step_reading_is_sharp(self):
+        for part in ('share', 'withdraw-flag', 'red', 'clear', 'batch', 'profit-debit'):
+            def mutated(x, part=part):
+                out = targets.mac().loan_step_reading(x, drop=part)
+                out['events'] = [[e for e in events if e[0] != 'assert'] for events in out['events']]
+                return out
+            comparison = compare(targets.TPI_LOAN_MONTH_TARGET, self.image, 100, plan=mutated)[0]
+            self.assertGreater(comparison.mismatches, 0, part)
+
+    def test_loan_step_has_no_assertion_events(self):
+        """Unlike tp.exe, the handler raises no assertions: the event list holds only the instalment and paid-off lines, and
+        the Mac reading with its assertion events does not match."""
+        target = targets.TPI_LOAN_MONTH_TARGET
+        loan = {'amount': 100000, 'apr': 20, 'months': 36, 'monthly': 3651, 'bought': 1, 'repaid': 0}
+        idle = targets.mac().LOAN_IDLE
+        x = {'bal': 50000, 'batch': 2000000, 'wd': 1, 'last': 50000, 'red': 0, 'profit': 0, 'loans': [loan] + [idle] * 7,
+             'turns': [800]}
+        result = self.run_target(target, x)
+        self.assertEqual(result['events'], [[('log465', 1, 0, 3651)]])
+        self.assertEqual(targets.mac().loan_step_reading(x)['events'][0][0], ('assert', 0, 340))
+
+    def test_loan_term_deducts_the_instalment_exactly_n_times(self):
+        target = targets.TPI_LOAN_TERM_TARGET
+        loan = {'amount': 100000, 'apr': 20, 'months': 36, 'monthly': 3651, 'bought': 1, 'repaid': 0}
+        idle = targets.mac().LOAN_IDLE
+        x = {'bal': 1000000, 'batch': 0, 'wd': 1, 'last': 1000000, 'red': 0, 'profit': 0, 'loans': [loan] + [idle] * 7,
+             'turns': [800 * k for k in range(38)]}
+        result = self.run_target(target, x)
+        self.assertEqual(result['balance'][35], 1000000 - 36 * 3651)
+        self.assertEqual(result['balance'][37], 1000000 - 36 * 3651)
+        self.assertEqual((result['profit'][0], result['profit'][35]), (-873, -36 * 873))
+        self.assertEqual((result['active'][34], result['active'][35]), (1, 0))
+
+    # ------------------------------------------------------------------ X10: park points
+    def test_points_reading_is_sharp(self):
+        def flipped(x):
+            return targets.mac().points_full({**x, 'types': [{**k, 'f9c': 0 if k['f9c'] else 1} for k in x['types']]})
+
+        def every_thing_counts(x):
+            return targets.mac().points_full({**x, 'things': [{**t, 'open': True} for t in x['things']]})
+
+        def own_age_always(x):
+            return targets.mac().points_full({**x, 'types': [{**k, 'f9c': 1} for k in x['types']]})
+        for name, mutated in (('track type', flipped), ('counts-test', every_thing_counts), ('first purchase', own_age_always)):
+            comparison = compare(targets.TPI_POINTS_TARGET, self.image, 100, plan=mutated)[0]
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_points_copies_age_from_the_first_purchase(self):
+        day = 86400 * 4 // 15000 + 1
+        ride = dict(id=0x101, kind=0, f9c=0, value=25, decay=2, bonus=[30, 20, 10], first=1)
+        copies = [{'type': 0x101, 'open': True, 'built': 1}, {'type': 0x101, 'open': True, 'built': 1 + 3 * day}]
+        x = {'now': 1 + 3 * day, 'scale': 15000, 'types': [ride], 'things': copies}
+        target = targets.TPI_POINTS_TARGET
+        self.assertEqual(self.run_target(target, x), targets.mac().points_full(x))
+        tracked = {**x, 'types': [{**ride, 'f9c': 1}]}
+        self.assertEqual(self.run_target(target, tracked), targets.mac().points_full(tracked))
+        self.assertNotEqual(self.run_target(target, x), self.run_target(target, tracked))
 
     def test_identity_and_loader(self):
         self.assertEqual(self.image.identity, 'tpi')

@@ -800,12 +800,13 @@ def arrival_core(x: dict, factor: float) -> int:
 
 
 def arrival_plan(x: dict) -> int:
-    """GUESTS.md "Arrivals" and GuestSimulation.ArrivalGroupSize: none while bankrupt; (int)(1.2f × (points +
-    NewParkBonus)) / PointsPerVisitor (1 below 2), at least MinPeople, cut so guests + group stay within 1500
-    (never below 0)."""
+    """GUESTS.md "Arrivals" and GuestSimulation.ArrivalGroupSize: none while bankrupt; (int)(factor × (points +
+    NewParkBonus)) / PointsPerVisitor (1 below 2) with factor 0.8 while the Traffic Lights thing's +48 word is positive
+    (the lights are placed) and 1.2 otherwise, at least MinPeople, cut so guests + group stay within 1500 (never below
+    0)."""
     if x['world_mode'] == 4:
         return 0
-    count = arrival_core(x, 1.2)
+    count = arrival_core(x, 0.8 if x['obj48'] > 0 else 1.2)
     if x['guests'] + count > 1500:
         count = max(0, 1500 - x['guests'])
     return count
@@ -828,7 +829,7 @@ def arrival_full(x: dict) -> int:
 
 def arrival_csharp_request(x: dict) -> dict:
     return {'fn': 'arrival_group', **{k: x[k] for k in ('world_mode', 'guests', 'points', 'bonus', 'per_visitor',
-                                                         'min_people')}}
+                                                         'min_people', 'obj48')}}
 
 
 def arrival_inputs(rng: random.Random, n: int) -> list:
@@ -1432,8 +1433,9 @@ ARRIVAL = Target('arrival-group', 'Arrival group size 0xcb4e8', 'GUESTS.md "Arri
                  [(0xCB4E8, 0xCB698)], arrival_stubs, arrival_binary, arrival_plan, arrival_inputs,
                  alternatives={'routine-reading': arrival_full},
                  csharp=('arrival_group', arrival_csharp_request, lambda x, r: r),
-                 notes=['C# hook: bridge function "arrival_group" (GuestSimulation.ArrivalGroupSize); the thing +48 word '
-                        'and the mode word are not passed (no C# counterpart).',
+                 notes=['C# hook: bridge function "arrival_group" (GuestSimulation.ArrivalGroupSize); the thing +48 word is '
+                        'passed as the Traffic Lights placed flag (word > 0). The GameType mode word is not passed (the '
+                        '500 cut for online parks has no C# counterpart).',
                         'Stubs: 0x1082b4 park, 0xc1fb4 counted guests, 0xc24c0 points, 0x1083c8 factor object, '
                         '0x5fbcc debug log; the mode object is marked constructed so 0x12bb64 does not run.'])
 

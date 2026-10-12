@@ -207,6 +207,8 @@ public partial class Level : IDisposable
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests );
 			ConnectObjectsToGuests();
+			if ( Guests != null )
+				Guests.TrafficLightsPlaced = () => Objects.Objects.Any( item => item.Entry.IsTrafficLights );
 			ConnectObjectsToEconomy();
 			SetupStaff();
 			SetupParkGate();

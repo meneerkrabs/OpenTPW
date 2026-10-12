@@ -129,6 +129,9 @@ against the original routines in the PPC differential oracle (ORACLE.md F7, F8;
 REVIEW-COAST.md).
 `CoasterRating.Step`, `CoasterRating.Restore` and `CoasterRating.FinalFor` are
 the seams for the oracle hooks `coaster_rating_step` and `coaster_rating_final`.
+The Windows executables (tp.exe and the Theme Park Inc `Game.exe`) differ from this Mac rule in the step's
+non-inverted arm, where they add `u` instead of Fz, and in the last bits of S, E and the final excitement
+(x87 rounding); C# follows the Mac and is unchanged (ORACLE.md 7.8, X11 and X12).
 
 The train count is `min(uiMaxTrains, max(1, trunc(lap / (uiTrainReleaseRate/1000))))`.
 

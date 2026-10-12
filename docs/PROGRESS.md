@@ -256,6 +256,12 @@ preview; original runtime fidelity and the complete offline scope remain open.
   without a room a tired member loses 2 happiness one turn in 16. At a month end of an open, guest-free park a role of more than three whose average energy or
   happiness is below 15 is warned, then strikes (TAG_SYSTEM 38-62, no dispatch or research until the next month end). C#: `StaffVitals`, `StaffStrikeBoard`,
   saves carry energy and the strike board; the oracle agrees on all four targets. Open: the staff state machine, the handymen's litter statistics and the stamp epoch.
+- The x86 oracle now executes the coaster rating step and final of both Windows executables: tp.exe `0x43dc50`/`0x43df90` and the
+  Theme Park Inc `Game.exe` `0x480630`/`0x4809c0` (ORACLE.md 7.8, findings X11 and X12). The final is the Mac rule (clamps, 1.7 and 1/2 weights,
+  both-flags section count) with only last-bit differences in the excitement. The step differs in one rule: where the inverted arm does not apply the
+  Windows builds add `u` (the single 1 + U), the Mac the stale `Fz` that C# follows, so 469 of 509 Mac-target inputs differ; the rest is x87
+  rounding (at most 3 ulps), and the two Windows builds round differently from each other. A TPI coaster mode reuses the layout and the C# machinery but needs that
+  one term and a rounding decision. No C# change.
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

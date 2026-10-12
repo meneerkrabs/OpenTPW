@@ -134,9 +134,9 @@
     ["^ltms shared$", "text & language"],
     [".", "platform"]
   ],
-  "stop_strings": "ThingArray|chunk|read ?failed|write ?failed|allocat|out of memory|^%|assert",
+  "stop_strings": "ThingArray|chunk|read ?failed|write ?failed|allocat|out of memory|^%|assert|std::|length error|out of range",
   "strings": [
-    ["ftp|chat\\b|blackmark|teleport|online|buddy|upload|download|postcard|e-?mail", "online"],
+    ["ftp|chat\\b|blackmark|teleport|online|buddy|upload|download|postcard|e-?mail|@[a-z]+\\.(net|com)|outbox|addrbook", "online"],
     ["\\bSND\\b|sound|speech|music|mpeg|\\bcat_|\\.sdt|lip ?sync|movie|fmv", "audio & video"],
     ["advisor", "advisor & park events"],
     ["lobby|island|player profile|new player|game mode", "lobby & front end"],

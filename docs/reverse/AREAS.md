@@ -18,11 +18,11 @@ weight (how much a player notices it, `areas.json`) times its researched and unc
 | repository | 1328 | 681 |
 | class | 692 | 94 |
 | library | 563 | 13 |
-| strings | 248 | 135 |
+| strings | 269 | 152 |
 | index | 216 | 94 |
-| imports | 143 | 48 |
-| propagated | 2485 | 540 |
-| unknown | 1035 | 161 |
+| imports | 141 | 47 |
+| propagated | 2471 | 526 |
+| unknown | 1030 | 160 |
 
 6723 functions, 1823 KB. Functions cited from files of more than one area: 408.
 
@@ -34,25 +34,25 @@ Kilobytes of code per status. Open approximations are fidelity-register IDs whos
 
 | Area | Weight | Functions | KB | Built | Researched | Uncited | Open approximations | Gap |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| interface | 4 | 1045 | 280 | 23 | 149 | 109 | 70 | 1031 |
+| interface | 4 | 1041 | 278 | 23 | 149 | 107 | 70 | 1022 |
 | render & assets | 3 | 762 | 204 | 8 | 60 | 135 | 21 | 587 |
 | paths & construction | 5 | 279 | 151 | 71 | 28 | 52 | 37 | 399 |
 | economy & research | 4 | 375 | 116 | 25 | 62 | 30 | 35 | 366 |
 | coasters | 4 | 325 | 144 | 54 | 25 | 64 | 22 | 357 |
 | guests | 5 | 240 | 78 | 13 | 34 | 31 | 18 | 324 |
 | rides & scripts | 5 | 191 | 82 | 21 | 29 | 32 | 35 | 305 |
-| scenarios & progression | 3 | 358 | 108 | 15 | 52 | 41 | 0 | 279 |
+| scenarios & progression | 3 | 342 | 99 | 15 | 52 | 32 | 0 | 252 |
 | simulation core | 2 | 282 | 96 | 13 | 39 | 44 | 5 | 166 |
-| online | 1 | 534 | 146 | 10 | 15 | 121 | 24 | 136 |
+| online | 1 | 566 | 161 | 10 | 15 | 137 | 24 | 152 |
 | save & load | 2 | 123 | 63 | 9 | 39 | 15 | 11 | 108 |
 | audio & video | 3 | 218 | 61 | 26 | 9 | 27 | 36 | 105 |
 | lobby & front end | 2 | 238 | 33 | 0 | 1 | 32 | 0 | 65 |
 | staff | 4 | 58 | 14 | 0 | 1 | 13 | 0 | 55 |
-| text & language | 2 | 89 | 30 | 2 | 9 | 18 | 0 | 55 |
+| text & language | 2 | 88 | 29 | 2 | 9 | 18 | 0 | 53 |
 | advisor & park events | 3 | 155 | 32 | 15 | 4 | 13 | 19 | 51 |
-| platform | 1 | 395 | 25 | 0 | 0 | 25 | 0 | 25 |
+| platform | 1 | 389 | 22 | 0 | 0 | 22 | 0 | 22 |
 | camera | 3 | 21 | 1 | 0 | 0 | 1 | 0 | 3 |
-| (unknown) | 0 | 1035 | 161 | 0 | 0 | 161 | 4 | 0 |
+| (unknown) | 0 | 1030 | 160 | 0 | 0 | 160 | 4 | 0 |
 
 Open approximations without an area (test gates and unmapped prefixes): 4.
 
@@ -157,7 +157,7 @@ Largest uncited functions:
 | `0x10196E50` | 996 | propagated |  |
 | `0x10199EE0` | 940 | strings | Cursor Failed on ReadHeader · Failed on Load |
 | `0x1013ED18` | 812 | class |  |
-| `0x1019269C` | 808 | propagated | deque::push_back length error · cdeque::push_back length error · !std::exception!!std::logic_error!!std::length_error!! |
+| `0x1019269C` | 808 | propagated |  |
 | `0x10187680` | 800 | propagated |  |
 | `0x10198AC8` | 800 | propagated |  |
 
@@ -270,7 +270,7 @@ Largest researched, not built:
 | --- | ---: | --- | --- |
 | `0x101BE890` | 3452 | repository | 2dmap.tga · .:data:2dmap:vsprite.tga · .:data:2dmap:rsprite.tga |
 | `0x1005EB20` | 3160 | repository | Could not generate skirt flags for ride %s (root node posit… · Has %d flipped and %d non-flipped skirt textures |
-| `0x10191CA0` | 2556 | repository | deque::push_back length error · cdeque::insert length error · !std::exception!!std::logic_error!!std::length_error!! |
+| `0x10191CA0` | 2556 | repository |  |
 | `0x100EBBD0` | 2480 | repository |  |
 | `0x1013A8EC` | 2116 | repository | !cbut |
 | `0x100E0C3C` | 1764 | repository | Can only build objects at upgrade level 0 at the moment · Ride has become CONDEMNED!!! · Object %d: script admitted person %d but he doesn't know ye… |
@@ -493,21 +493,21 @@ Largest uncited functions:
 
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
-| `0x1019E3B8` | 1544 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :outbox |
-| `0x101A14FC` | 1332 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · ios_base failure in clear |
 | `0x100CE1E4` | 1196 | strings | mType · mTargetTime · mTargetVal |
-| `0x10002148` | 1168 | propagated | !std::exception!!std::logic_error!!std::out_of_range!! · development data · basic_string::replace pos out of range |
-| `0x101A5A24` | 1156 | propagated | !std::exception!!std::ios_base::failure!! · ios_base failure in clear |
-| `0x101A0A6C` | 1124 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :addrbook.dat |
+| `0x101A5A24` | 1156 | propagated | ios_base failure in clear |
 | `0x100D6868` | 1064 | propagated |  |
 | `0x100BFDC4` | 1012 | propagated |  |
 | `0x10118F98` | 912 | propagated |  |
 | `0x10022BFC` | 884 | propagated |  |
-| `0x101A3230` | 840 | propagated | nobody@nowhere.net · ios_base failure in clear · !std::exception!!std::ios_base::failure!! |
-| `0x101A0764` | 776 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :addrbook.dat |
 | `0x100FC4F0` | 716 | propagated |  |
-| `0x101A2EA8` | 708 | propagated |  |
 | `0x1001D750` | 648 | propagated |  |
+| `0x101806B8` | 648 | propagated |  |
+| `0x10008028` | 636 | propagated |  |
+| `0x1012A618` | 544 | propagated | Failed to open %s |
+| `0x1017F84C` | 536 | propagated |  |
+| `0x100F913C` | 532 | propagated |  |
+| `0x1013DE1C` | 516 | propagated |  |
+| `0x10180CF4` | 504 | propagated |  |
 
 Largest researched, not built:
 
@@ -524,7 +524,7 @@ Largest researched, not built:
 | `0x101369E4` | 1288 | repository |  |
 | `0x1009FD70` | 1192 | repository |  |
 | `0x10184028` | 1000 | repository |  |
-| `0x101A51E8` | 940 | propagated | !std::exception!!std::ios_base::failure!! · ios_base failure in clear |
+| `0x101A51E8` | 940 | propagated | ios_base failure in clear |
 | `0x10002894` | 892 | repository |  |
 | `0x10155B7C` | 828 | repository |  |
 | `0x1013D708` | 784 | repository |  |
@@ -621,16 +621,16 @@ Largest uncited functions:
 | `0x100F95FC` | 4232 | strings | TAG SYSTEM says: Postcard sent |
 | `0x1012E17C` | 2252 | strings | ONLINE LOGIN: About to connect · ONLINE CITY: City data downloaded ok |
 | `0x1019DA40` | 1768 | strings | <html> <head> <title>Theme Park World (TM) Virtual Postcard… · nobody@nowhere.net · --_BF_TPW_mpmbndry.%08x |
-| `0x1019EF2C` | 1664 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :%08x.dat |
+| `0x1019EF2C` | 1664 | strings | nobody@nowhere.net · :%08x.dat · ios_base failure in clear |
+| `0x1019E3B8` | 1544 | strings | nobody@nowhere.net · :outbox · :outbox.dat |
 | `0x101AA9D0` | 1448 | strings | goto ftp download failed · ONLINE CHAT: Created a player, let's join a park. |
-| `0x101B28F8` | 1332 | strings | goto ftp download failed · ios_base failure in clear · !std::exception!!std::ios_base::failure!! |
+| `0x101A14FC` | 1332 | strings | nobody@nowhere.net · ios_base failure in clear |
+| `0x101B28F8` | 1332 | strings | goto ftp download failed · ios_base failure in clear |
 | `0x1012BCF4` | 1288 | propagated |  |
-| `0x1019F5AC` | 1288 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :%08x.dat |
+| `0x1019F5AC` | 1288 | strings | nobody@nowhere.net · :%08x.dat · ios_base failure in clear |
 | `0x101A48A8` | 1228 | imports | LIST %s · RETR %s |
-| `0x101949AC` | 1220 | propagated | !std::exception!!std::logic_error!!std::length_error!! · hilight · basic_string::replace pos out of range |
-| `0x1015E644` | 1104 | strings | postcard.jpg · ftp.ea-europe.com |
-| `0x1019FC84` | 1084 | propagated | nobody@nowhere.net |
-| `0x101B15C0` | 1084 | strings | goto ftp download failed · :ignore.dat · ios_base failure in clear |
+| `0x101949AC` | 1220 | propagated | hilight |
+| `0x10002148` | 1168 | propagated | development data |
 
 Largest researched, not built:
 
@@ -860,7 +860,6 @@ Largest uncited functions:
 | `0x10111BE8` | 1336 | imports |  |
 | `0x101207D8` | 972 | imports |  |
 | `0x10120BD8` | 884 | strings | Error: Unable to open text resource at %s · English · French |
-| `0x101A38D8` | 856 | strings | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · English |
 | `0x10141068` | 788 | imports |  |
 | `0x101C3910` | 720 | strings | data:init: · English · French |
 | `0x100025D8` | 700 | strings | development data · English · French |
@@ -872,6 +871,7 @@ Largest uncited functions:
 | `0x1000112C` | 588 | imports | development data · cd missing · Quit |
 | `0x10153798` | 456 | imports |  |
 | `0x101535EC` | 428 | imports |  |
+| `0x101A7EE8` | 372 | propagated |  |
 
 Largest researched, not built:
 
@@ -988,18 +988,18 @@ Largest uncited functions:
 | `0x101B3704` | 1552 | class |  |
 | `0x101B32B8` | 1004 | class |  |
 | `0x10060BB8` | 948 | class |  |
-| `0x100625EC` | 932 | propagated | tpw.log · vector::insert length error · !std::exception!!std::ios_base::failure!! |
-| `0x10001CE4` | 880 | propagated | development data · basic_string::length error. Resizing out of range · !std::exception!!std::logic_error!!std::out_of_range!! |
 | `0x100608A8` | 696 | class |  |
-| `0x10061A2C` | 512 | propagated | tpw.log · string constructor: n > max_size · !std::exception!!std::ios_base::failure!! |
+| `0x10061A2C` | 512 | propagated | tpw.log · string constructor: n > max_size |
 | `0x101B30F8` | 448 | class |  |
 | `0x100606F0` | 440 | class |  |
-| `0x10061C90` | 404 | propagated | tpw.log · basic_string::append results in string > max_size · !std::exception!!std::ios_base::failure!! |
+| `0x10061C90` | 404 | propagated | tpw.log · basic_string::append results in string > max_size |
 | `0x10061370` | 344 | propagated |  |
 | `0x1005FC44` | 340 | class |  |
 | `0x1019EA58` | 340 | class |  |
 | `0x101B0A8C` | 340 | class |  |
 | `0x101B1090` | 340 | class |  |
+| `0x10061E24` | 328 | propagated |  |
+| `0x100620D0` | 328 | propagated |  |
 
 Largest researched, not built:
 

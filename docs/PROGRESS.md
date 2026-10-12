@@ -135,7 +135,9 @@ preview; original runtime fidelity and the complete offline scope remain open.
   Both differ from GUESTS.md and the C# rule; the routine readings agree on every
   input. `GuestSimulation.ArrivalGroupSize` is compared through the C# bridge
   (the same 125 differences); C# behavior is unchanged and the differences are
-  tracked as ARRIVAL-002..004.
+  tracked as ARRIVAL-002..004. `ParkEconomy.ParkPoints` is compared the same way
+  (`park_points`): the same 214 differences, equal to the GUESTS.md plan on all
+  507 inputs; C# behavior is unchanged.
 - The oracle also executed the arrival update `0xcb2ac` over scripts of repeated
   calls (F11, ARRIVAL-004). A negative group (1700 guests: -200) behaves like an
   empty one: no guest, timer restart and cleared active byte at the next stop,

@@ -108,15 +108,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// <summary>True while no group arrives (a bankrupt park).</summary>
 	public Func<bool>? ArrivalsHalted { get; set; }
 	/// <summary>
-	/// True while the park's Traffic Lights fixed item is placed. The group size then uses 0.8 instead of 1.2. The proven rule: the
-	/// original reads the signed 32-bit word at +48 of that thing (<c>mTopLeft</c> and <c>mEntryPos</c>, cell ids
-	/// <c>1 + X + (Y &lt;&lt; 7)</c>) and uses 0.8 when it is positive. Fixed items are created at cell id 1 and the writer search found
-	/// no later store, so the word is 1 while the item exists. Null or false is OpenTPW's own fallback (1.2): the original reads
-	/// the word without checking that the thing exists, so what it does without the lights is not established.
+	/// True while the park's weather has drops falling (<see cref="ParkWeather.CurrentDrops"/> above 0). The group size then uses 0.8
+	/// instead of 1.2. The original reads the signed 32-bit word at +48 of the weather thing (game +0x1DA724, saved as mWeather; the
+	/// weather object's mCurrentDrops, the drops the weather ramps toward its target) and uses 0.8 when it is positive. Null (no
+	/// weather yet, or a headless scene without one) is 1.2: no drops.
 	/// </summary>
-	// [BIN:STP-PPC:0x100CB564 arrival factor] 0x1083c8 returns the thing at ThingArray[u16 game+0x1DA734] (mTrafficLights, written at 0x104cb0 and saved by 0x105d3c); 0xcb568 reads its +48 word; positive selects 0.8f
-	// [DATA:Easymode.TPWI:mTopLeft] the saved Lights record (Info.Id 1603 in Jungle; the Lights ids are 1603/2603/4603/3603 for jungle/hallow/fantasy/space) holds mTopLeft = mEntryPos = mExitPos = 1, so the word is positive
-	public Func<bool>? TrafficLightsPlaced { get; set; }
+	// [BIN:STP-PPC:0x100CB564 arrival factor] 0x1083c8 returns the thing at ThingArray[u16 game+0x1DA724] (mWeather, created at 0x104a7c with the weather constructor 0x10298c, stored at 0x104a98 and saved by 0x105d3c as "mWeather"); 0xcb568 reads its +48 word, mCurrentDrops (serialised by 0x102b1c); positive selects 0.8f
+	// [BIN:STP-PPC:0x10103300-0x10103348 drop ramp] the only writers of +48 are the constructor (0x102aa0, zero), the ramp toward mTargetDrops (+52) and the rain stop (0x103d08, zero), so the word is positive exactly while drops are falling
+	public Func<bool>? WeatherDropsFalling { get; set; }
 	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] a group is cut so the guests already counted plus the group stay at most 1500 (0x5DC)
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] executed by the PowerPC oracle (docs/reverse/ORACLE.md F9): the 500 cut applies when the GameType word (data:0x53d98) is 1, i.e. online parks only; offline parks use 1500
@@ -339,17 +338,17 @@ public sealed class GuestSimulation : IRideVisitorHost
 	}
 
 	/// <summary>
-	/// Guests in the next group: 0.8 (OpenTPW's own 1.2 without the Traffic Lights, see <see cref="TrafficLightsPlaced"/>) × (park points +
+	/// Guests in the next group: 0.8 while drops are falling (see <see cref="WeatherDropsFalling"/>), else 1.2 × (park points +
 	/// Arrival.NewParkBonus) / Arrival.PointsPerVisitor, at least Arrival.MinPeople, and none while the park is bankrupt; cut to
 	/// the park limit (<see cref="ArrivalParkLimit"/>, <see cref="OnlineArrivalParkLimit"/> for an online visit).
 	/// </summary>
-	// [BIN:STP-PPC:0x100CB4E8 arrival group] 0 in world mode 4 (bankrupt); else (int)(factor (0.8f with the Traffic Lights thing's +48 word positive; 1.2f is OpenTPW's fallback without the lights) × (points 0x100C24C0 + NewParkBonus +0x2DC)) / PointsPerVisitor (+0x2E0, 1 when below 2), raised to MinPeople (+0x2D0), then cut so the counted guests (0x100C1FB4) plus the group stay within 1500 (500 when the GameType word is 1)
+	// [BIN:STP-PPC:0x100CB4E8 arrival group] 0 in world mode 4 (bankrupt); else (int)(factor (0.8f with the weather thing's +48 word, mCurrentDrops, positive; else 1.2f) × (points 0x100C24C0 + NewParkBonus +0x2DC)) / PointsPerVisitor (+0x2E0, 1 when below 2), raised to MinPeople (+0x2D0), then cut so the counted guests (0x100C1FB4) plus the group stay within 1500 (500 when the GameType word is 1)
 	public int ArrivalGroupSize()
 	{
 		if ( ArrivalsHalted?.Invoke() == true )
 			return 0;
 		var perVisitor = Settings.ArrivalPointsPerVisitor < 2 ? 1 : Settings.ArrivalPointsPerVisitor;
-		var factor = TrafficLightsPlaced?.Invoke() == true ? 0.8f : 1.2f;
+		var factor = WeatherDropsFalling?.Invoke() == true ? 0.8f : 1.2f;
 		var count = (int)(factor * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		count = Math.Max( count, Settings.ArrivalMinPeople );
 		var limit = OnlineVisit ? OnlineArrivalParkLimit : ArrivalParkLimit;

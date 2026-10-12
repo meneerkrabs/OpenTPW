@@ -328,7 +328,6 @@ public class ObjectCatalogCorpusTests
 		Assert.AreEqual( (650, 30, 20), (drinks.BuildCost, drinks.PricePerUse, drinks.CostOfGoods) );
 		Assert.AreEqual( ObjectCategory.Shop, jungle.Get( 1203 ).Category );
 		Assert.IsTrue( jungle.Get( 1601 ).IsFixedItem && !jungle.Get( 1601 ).IsBuildable );
-		Assert.IsTrue( jungle.Get( 1603 ).IsTrafficLights && !jungle.Get( 1601 ).IsTrafficLights && !jungle.Get( 1100 ).IsTrafficLights );
 		Assert.ThrowsException<KeyNotFoundException>( () => jungle.Get( 17302 ) );
 	}
 

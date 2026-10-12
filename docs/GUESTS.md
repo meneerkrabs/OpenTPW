@@ -135,11 +135,11 @@ The group size is `(int)(0.8 × (park points + NewParkBonus)) / PointsPerVisitor
 divides by 1), at least `MinPeople`, cut so that the guests in the park plus the group stay within 1,500;
 a bankrupt park gets none. With the shipped 20 and 6 a new park gets 2 guests per group. The PowerPC oracle
 ran this routine (docs/reverse/ORACLE.md, F9). It adds three details to the first reading. The factor is
-0.8, not 1.2, while the `+48` word of the thing at game `+0x1da734` is positive. That thing is the Traffic Lights
-fixed item (`mTrafficLights`), and the word is its `mTopLeft` cell id, which is 1 for a fixed item, so every park with
-its lights uses 0.8 (the saved Easymode Lights record holds 1; the rule itself is "word positive: 0.8, else 1.2", and what
-the original does without the lights is not established). OpenTPW uses 0.8 while the level has its Traffic Lights
-(`GuestSimulation.TrafficLightsPlaced`); 1.2 without them is OpenTPW's own fallback. Online parks (GameType 1) are cut at
+0.8, not 1.2, while the `+48` word of the weather thing (game `+0x1da724`, saved as `mWeather`) is positive. That word is the weather
+object's `mCurrentDrops`, the drops its tick ramps toward the rain or snow target (0 in clear weather), so the group is
+smaller while rain or snow is falling and the factor is 1.2 otherwise. OpenTPW uses 0.8 while `ParkWeather.CurrentDrops`
+is above 0 (`GuestSimulation.WeatherDropsFalling`); a scene without weather has no drops and uses 1.2. (An earlier reading took the
+thing to be the Traffic Lights fixed item at `+0x1da734`; that offset was miscalculated, see ORACLE.md F9.) Online parks (GameType 1) are cut at
 500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`, an assumption,
 ARRIVAL-002). A group cut with more guests than the limit becomes
 negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)

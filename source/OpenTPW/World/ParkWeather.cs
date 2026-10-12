@@ -16,7 +16,7 @@ namespace OpenTPW;
 // [BIN:STP-PPC:0x101031f0-0x10103298 the roll schedule] a roll happens once the day is past lastChanged + max(0, DaysBetweenChanges - DaysOfWarning)
 // [BIN:STP-PPC:0x1010386c-0x101038d4 the roll] a normal roll is Avg - Tol + rand % (2·Tol), or Avg when Tol <= 0; the exceptional branch (rand % 100 < Chance) gives rand % 100
 // [BIN:STP-PPC:0x10103998-0x10103a80 converter] snow, rain and lightning bands; when both snow and rain hold, rand & 1 decides (even: snow)
-// [BIN:STP-PPC:0x10103aa4-0x10103af8 target] intensity = (q − low) × 100 / (high − low) (100 when high = low); target drops = ((100 − intensity) × MaxRaindrops) / 100
+// [BIN:STP-PPC:0x10103a90-0x10103b80 target] intensity = (q − low) × 100 / (high − low) (100 when high = low) with the snow band for snow and the rain band for rain; target drops = ((100 − intensity) × MaxRaindrops) / 100, so snow has drops too (the word the arrival group reads, ARRIVAL-002)
 // [BIN:STP-PPC:0x101030fc-0x101033c8 drop ramp] the drops move by SpeedOfChange toward the target and stop once within one step of it; a target of 0 then stops the rain
 // [BIN:STP-PPC:0x101033cc-0x101034c4 lightning] while the lightning band holds, the countdown falls by LightningCountdownSpeed each turn and a strike resets it to rand % LightningCountdownFrom; the bolt count resets outside the band
 // [BIN:STP-PPC:0x10103438-0x1010346c thunder] a strike sets the thunder countdown to max(0, ThunderStartsThisFarAway − bolts) + rand % ThunderRandomiser when it is idle (bolts fired this period, before the strike)
@@ -24,7 +24,6 @@ namespace OpenTPW;
 // [APPROX:AUDIO-025] the December row reads past the four-season table on the Mac; this follows the fork's reading (Avg 4, Tolerance DaysOfWarning, Chance DaysBetweenChanges) — evidence needed: the Mac's row address for index 4
 // [APPROX:AUDIO-026] the forecast's apply day is roll day + DaysOfWarning on the day index, and the roll is taken on the first turn of its day — evidence needed: the Mac's day comparison units ("now" against +0x20)
 // [APPROX:AUDIO-027] the first quality is rolled at park entry from the entry day's season and the drops start at 0 — evidence needed: the Mac's initial roll (not traced)
-// [APPROX:AUDIO-028] a snow quality's drops target is 0 (no rain voice); the snow branch's target is not traced
 // [APPROX:AUDIO-029] thunder with a computed countdown of 0 plays at once — evidence needed: the Mac's thunder countdown test beside 0x10103438
 // [APPROX:AUDIO-030] the random draws come from the park's weather stream, not the world LCG; the Mac's seed source is not traced
 public sealed class ParkWeather
@@ -67,7 +66,8 @@ public sealed class ParkWeather
 	public int CurrentDrops { get; private set; }
 	/// <summary>The drops the rain is ramping to (<c>+0x34</c>).</summary>
 	public int TargetDrops { get; private set; }
-	/// <summary>The rain voice's level (0 to 100): the current drops over the cap (the Mac's rain tick).</summary>
+	/// <summary>The level-driven rain voice (0 to 100): the current drops over the cap, in any weather band until the drops reach 0
+	/// (the Mac's ramp sends it at 0x103394..0x1033a4 regardless of the band; the snow stop at 0x103ce0 ends a separate voice).</summary>
 	public int RainLevel => settings.MaxRaindrops > 0 ? Math.Clamp(CurrentDrops * 100 / settings.MaxRaindrops, 0, 100) : 0;
 
 	/// <summary>Brings the weather up to <paramref name="tick"/> of the park's clock; each new park turn is one weather step.</summary>
@@ -292,10 +292,12 @@ public sealed class ParkWeather
 		Rain = rainBand && !snow;
 		Lightning = quality >= settings.LightningLow && quality <= settings.LightningHigh;
 		TargetDrops = 0;
-		if ( Rain )
+		// Both bands compute the target the same way from their own range (0x103a90..0x103afc snow, 0x103b18..0x103b80 rain); only rain starts the rain voice.
+		if ( Snow || Rain )
 		{
-			var width = settings.RainHigh - settings.RainLow;
-			var intensity = width == 0 ? 100 : (quality - settings.RainLow) * 100 / width;
+			var low = Snow ? settings.SnowLow : settings.RainLow;
+			var width = (Snow ? settings.SnowHigh : settings.RainHigh) - low;
+			var intensity = width == 0 ? 100 : (quality - low) * 100 / width;
 			TargetDrops = Math.Min( (100 - intensity) * settings.MaxRaindrops / 100, settings.MaxRaindrops );
 		}
 	}

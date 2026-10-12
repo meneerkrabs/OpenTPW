@@ -211,7 +211,6 @@ implemented yet.
 | AUDIO-025 | The December season row reads past the four-season table; the fork's reading is used | The Mac's row address for index 4 |
 | AUDIO-026 | The forecast applies DaysOfWarning after the roll, on day indices | The Mac's day comparison units (`now` against `+0x20`) |
 | AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |
-| AUDIO-028 | A snow quality's drops target is 0 | The snow branch's target |
 | AUDIO-029 | Thunder with a countdown of 0 plays at the strike | The countdown test beside `0x10103438` |
 | AUDIO-030 | The weather's draws come from the park's weather stream, not the world LCG | The Mac's seed source |
 | AUDIO-031 | Weather is simulated for sound only: no drops, snow, bolt or forecast warning is drawn | The weather renderer and the forecast's handler |

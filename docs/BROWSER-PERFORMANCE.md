@@ -54,7 +54,7 @@ The complete original texture corpus retains identical pixels: 8,412 successful
 RGBA hashes and the same four malformed-file errors, plus 31 synthetic cases.
 
 The follow-up on 13 October reduced the same first menu frame from about 165 ms
-in deployed v0.7.13 to 94 ms in the local candidate. Bundled HUD PNGs are decoded at
+in deployed v0.7.13 to about 94–96 ms in repeated local candidate runs. Bundled HUD PNGs are decoded at
 build time and stored as compressed, exact RGBA; sign rasterization scans an ordered
 active-edge window without changing coverage. The existing park-file copy wait also
 prepares only shared buy-menu image resources, with a 6 ms budget checked between

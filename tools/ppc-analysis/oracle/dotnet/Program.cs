@@ -128,8 +128,8 @@ static JsonNode? GuestSpeedSmoothing( JsonObject a )
 
 // GuestSimulation.ArrivalGroupSize (0xcb4e8) on a fresh simulation. World mode 4 halts arrivals; the counted guests fill
 // the guest list (a field) through reflection (only its count is read). The thing +48 word of the Traffic Lights is passed as
-// the placed flag (word > 0 selects the factor 0.8, ARRIVAL-002 resolved, F9). The GameType mode word (the 500 cut for
-// online parks) has no C# counterpart, so it is not passed.
+// the placed flag (word > 0 selects the factor 0.8, F9). The GameType mode word 1 (limit_mode) is passed as OnlineVisit
+// (the 500 cut; ARRIVAL-002 assumes a visit is GameType 1).
 static JsonNode? ArrivalGroup( JsonObject a )
 {
 	var settings = new GuestSettings
@@ -141,7 +141,8 @@ static JsonNode? ArrivalGroup( JsonObject a )
 	var points = (int)a["points"]!;
 	var halted = (int)a["world_mode"]! == 4;
 	var lights = (int)a["obj48"]! > 0;
-	var simulation = new GuestSimulation( new GuestPathGrid( 1, 1 ), settings, 1 ) { ParkPoints = () => points, ArrivalsHalted = () => halted, TrafficLightsPlaced = () => lights };
+	var online = (int)a["limit_mode"]! == 1;
+	var simulation = new GuestSimulation( new GuestPathGrid( 1, 1 ), settings, 1 ) { ParkPoints = () => points, ArrivalsHalted = () => halted, TrafficLightsPlaced = () => lights, OnlineVisit = online };
 	var field = typeof( GuestSimulation ).GetField( "guests", BindingFlags.NonPublic | BindingFlags.Instance )
 		?? throw new MissingFieldException( "GuestSimulation.guests" );
 	((List<Guest>)field.GetValue( simulation )!).AddRange( Enumerable.Repeat<Guest>( null!, (int)a["guests"]! ) );

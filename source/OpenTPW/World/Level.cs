@@ -221,7 +221,7 @@ public partial class Level : IDisposable
 		var grid = visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: GuestPathGrid.FromOriginal( park.Map, park.Save );
-		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream );
+		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream ) { OnlineVisit = Visit != null };
 		var sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );

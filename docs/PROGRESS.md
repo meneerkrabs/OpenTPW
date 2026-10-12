@@ -134,7 +134,7 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (F9) and the park points `0xc24c0` (F10), see [ORACLE.md](reverse/ORACLE.md).
   Both differ from GUESTS.md and the C# rule; the routine readings agree on every
   input. `GuestSimulation.ArrivalGroupSize` is compared through the C# bridge
-  (now 55 differences, see the next bullet) and the differences are
+  (now 49 differences, see the next bullet) and the differences are
   tracked as ARRIVAL-002..004. `ParkEconomy.ParkPoints` now follows F10's track
   type rule: an untracked type is aged from its first purchase and divided by
   its copies, every copy of a kart, water ride or coaster counts in full. Only
@@ -155,9 +155,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   The word is therefore positive in every park with its lights, and the original
   always uses 0.8, not 1.2. `GuestSimulation.ArrivalGroupSize` now takes
   `TrafficLightsPlaced` (set from the placed fixed items); a new park gets 2
-  guests per group instead of 4. The oracle's C# pin drops from 125 to 55
-  differences, all from the online 500 cut (no OpenTPW counterpart, still
-  ARRIVAL-002) and the missing floor (ARRIVAL-004). Open-item count unchanged.
+  guests per group instead of 4. A non-sandbox online visit now cuts groups to
+  500 − guests as the original does for GameType 1 (`OnlineVisit`; that a visit
+  is GameType 1 stays an assumption under ARRIVAL-002). The oracle's C# pin
+  drops from 125 to 49 differences, all from the missing floor (ARRIVAL-004).
+  Open-item count unchanged.
 - The oracle also executed the arrival update `0xcb2ac` over scripts of repeated
   calls (F11, ARRIVAL-004). A negative group (1700 guests: -200) behaves like an
   empty one: no guest, timer restart and cleared active byte at the next stop,

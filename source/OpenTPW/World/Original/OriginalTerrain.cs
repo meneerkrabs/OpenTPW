@@ -6,8 +6,8 @@ namespace OpenTPW;
 /// Renders an imported original level: the base.MD2 terrain meshes (node transforms composed up the
 /// hierarchy), the heightfield surface with its per-cell ground texture slot, and the paths as a blended
 /// layer on that ground. Each path cell takes the theme's PathTex shape and turn for its neighbours
-/// (<see cref="PathTiles"/>; cells unchanged since the original save keep the saved ones); queue cells use
-/// PathTex entry 0. The layer follows <see cref="PathSource"/> and <see cref="QueueSource"/> (the level's cell
+/// (<see cref="PathTiles"/>; cells unchanged since the original save keep the saved ones); queues use the
+/// separate QueueTex list and queue archive. The layer follows <see cref="PathSource"/> and <see cref="QueueSource"/> (the level's cell
 /// map) after <see cref="RefreshPaths"/>. Placed objects are drawn with their original models by
 /// <see cref="ParkObjects"/>, not as footprint markers.
 /// </summary>
@@ -38,8 +38,10 @@ public sealed class OriginalTerrain : Entity
 	public OriginalPark Park { get; }
 	/// <summary>Path cells; null: the MAP InitialPath and save path cells.</summary>
 	public Func<int, int, bool>? PathSource { get; set; }
-	/// <summary>Queue cells, drawn with PathTex entry 0; null: none.</summary>
+	/// <summary>Queue cells, drawn with the theme's QueueTex textures; null: none.</summary>
 	public Func<int, int, bool>? QueueSource { get; set; }
+	/// <summary>Queue predecessor links, so neighbouring independent queues do not visually join.</summary>
+	public Func<int, int, byte>? QueueLinkSource { get; set; }
 	public int SurfaceCellCount { get; private set; }
 	/// <summary>Path and queue cells in the path layer.</summary>
 	public int PathCellCount { get; private set; }
@@ -103,8 +105,9 @@ public sealed class OriginalTerrain : Entity
 	private void BuildPaths( Dictionary<string, Texture> textures )
 	{
 		var field = Park.Heightfield;
-		var names = ReadPathTextureNames();
-		var cells = new Dictionary<int, List<(int X, int Y, int Rotation)>>();
+		var pathNames = ReadTextureNames( "PathTex" );
+		var queueNames = ReadTextureNames( "QueueTex" );
+		var cells = new Dictionary<(bool Queue, int Index), List<(int X, int Y, int Rotation)>>();
 		for ( var y = 0; y < field.CellCountZ; y++ )
 		{
 			for ( var x = 0; x < field.CellCountX; x++ )
@@ -112,25 +115,37 @@ public sealed class OriginalTerrain : Entity
 				if ( field.GetCellTextureSlot( x, y ) < 0 )
 					continue;
 				PathTile tile;
+				var queue = false;
 				if ( IsPath( x, y ) )
 					tile = ChoosePathTile( x, y );
 				else if ( QueueSource?.Invoke( x, y ) == true )
-					tile = new PathTile( 0, 0 );
+				{
+					queue = true;
+					tile = PathTiles.ForQueueCell( x, y, field.CellCountX, field.CellCountZ, QueueSource, QueueLinkSource, IsPath );
+				}
 				else
 					continue;
+				var names = queue ? queueNames : pathNames;
 				if ( !names.ContainsKey( tile.TextureIndex ) )
 					tile = new PathTile( 0, tile.Rotation );
-				if ( !cells.TryGetValue( tile.TextureIndex, out var list ) )
-					cells.Add( tile.TextureIndex, list = new() );
+				// Hallow and Space omit the isolated square (que4); keep a queue floor rather than showing a missing texture.
+				if ( queue && tile.TextureIndex == 0 && names.TryGetValue( 0, out var square ) && names.ContainsKey( 2 )
+					&& FindTexture( $"/levels/{Park.LevelName}/queue", Park.LevelName, square, "textures", ListFiles ) == null )
+					tile = new PathTile( 2, tile.Rotation );
+				var key = (queue, tile.TextureIndex);
+				if ( !cells.TryGetValue( key, out var list ) )
+					cells.Add( key, list = new() );
 				list.Add( (x, y, tile.Rotation) );
 			}
 		}
 		PathCellCount = cells.Values.Sum( list => list.Count );
 		// Lifted a little along the cell so the blended layer never fights the ground for depth.
 		var lift = 0.01f * field.CellSizeX;
-		foreach ( var batch in cells.Keys.Order().Chunk( MaximumTextureSlots ) )
+		foreach ( var batch in cells.Keys.OrderBy( tile => tile.Queue ).ThenBy( tile => tile.Index ).Chunk( MaximumTextureSlots ) )
 		{
-			var slots = batch.Select( index => names.TryGetValue( index, out var name ) ? LoadTexture( textures, name, "pathtex" ) : Texture.Missing ).ToList();
+			var slots = batch.Select( tile => (tile.Queue ? queueNames : pathNames).TryGetValue( tile.Index, out var name )
+				? LoadTexture( textures, name, tile.Queue ? "textures" : "pathtex", tile.Queue ? $"/levels/{Park.LevelName}/queue" : null )
+				: Texture.Missing ).ToList();
 			var vertices = new List<Vertex>();
 			var indices = new List<uint>();
 			for ( var slot = 0; slot < batch.Length; slot++ )
@@ -277,17 +292,21 @@ public sealed class OriginalTerrain : Entity
 		return matrix;
 	}
 
-	private IReadOnlyDictionary<int, string> ReadPathTextureNames()
+	private IReadOnlyDictionary<int, string> ReadTextureNames( string listName )
 	{
 		var table = ListFiles( Park.TerrainDirectory ).FirstOrDefault( file => file.EndsWith( ".tct", StringComparison.OrdinalIgnoreCase ) );
-		return table == null ? new Dictionary<int, string>() : ReadPathTextureNames( FileSystem.ReadAllText( table ) );
+		return table == null ? new Dictionary<int, string>() : ReadTextureNames( FileSystem.ReadAllText( table ), listName );
 	}
 
 	/// <summary>Entry 0 of the "PathTex" list in a theme texture correspondence table (.tct).</summary>
 	internal static string? ReadPathTextureName( string table ) => ReadPathTextureNames( table ).GetValueOrDefault( 0 );
 
 	/// <summary>The "PathTex" list of a theme texture correspondence table (.tct): index to texture name.</summary>
-	internal static IReadOnlyDictionary<int, string> ReadPathTextureNames( string table )
+	internal static IReadOnlyDictionary<int, string> ReadPathTextureNames( string table ) => ReadTextureNames( table, "PathTex" );
+
+	internal static IReadOnlyDictionary<int, string> ReadQueueTextureNames( string table ) => ReadTextureNames( table, "QueueTex" );
+
+	private static IReadOnlyDictionary<int, string> ReadTextureNames( string table, string listName )
 	{
 		var names = new Dictionary<int, string>();
 		var inPathList = false;
@@ -299,7 +318,7 @@ public sealed class OriginalTerrain : Entity
 			var fields = line.Split( (char[]?)null, StringSplitOptions.RemoveEmptyEntries );
 			if ( fields.Length == 1 )
 			{
-				inPathList = string.Equals( fields[0], "PathTex", StringComparison.OrdinalIgnoreCase );
+				inPathList = string.Equals( fields[0], listName, StringComparison.OrdinalIgnoreCase );
 				continue;
 			}
 			if ( inPathList && fields.Length >= 2 && int.TryParse( fields[0], out var index ) )
@@ -308,12 +327,13 @@ public sealed class OriginalTerrain : Entity
 		return names;
 	}
 
-	private Texture LoadTexture( Dictionary<string, Texture> textures, string name, string directory = "textures" )
+	private Texture LoadTexture( Dictionary<string, Texture> textures, string name, string directory = "textures", string? terrainDirectory = null )
 	{
-		var key = $"{directory}/{Path.GetFileNameWithoutExtension( name.TrimEnd( '\0' ) )}";
+		terrainDirectory ??= Park.TerrainDirectory;
+		var key = $"{terrainDirectory}/{directory}/{Path.GetFileNameWithoutExtension( name.TrimEnd( '\0' ) )}";
 		if ( textures.TryGetValue( key, out var texture ) )
 			return texture;
-		var path = FindTexture( Park.TerrainDirectory, Park.LevelName, name, directory, ListFiles );
+		var path = FindTexture( terrainDirectory, Park.LevelName, name, directory, ListFiles );
 		if ( path == null )
 			missingTextures.Add( Path.GetFileName( key ) );
 		texture = path == null ? Texture.Missing : new Texture( path, TextureFlags.Repeat );

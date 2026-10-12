@@ -103,6 +103,45 @@ public static class PathTiles
 		return Choose( neighbours, x, y );
 	}
 
+	/// <summary>QueueTex's square, end, straight or corner, following predecessor/successor links and the back cell's join path.</summary>
+	public static PathTile ForQueueCell( int x, int y, int countX, int countY, Func<int, int, bool> isQueue,
+		Func<int, int, byte>? queueLink, Func<int, int, bool> isPath )
+	{
+		var mask = queueLink?.Invoke( x, y ) & 0x55 ?? 0;
+		var hasSuccessor = false;
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			var (nx, ny) = (x + dx, y + dy);
+			if ( (uint)nx >= (uint)countX || (uint)ny >= (uint)countY || !isQueue( nx, ny ) ) continue;
+			if ( queueLink == null || queueLink( nx, ny ) == GuestPathGrid.LinkValue( (direction + 2) & 3 ) )
+			{
+				mask |= GuestPathGrid.LinkValue( direction );
+				hasSuccessor = true;
+			}
+		}
+		if ( !hasSuccessor )
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var (dx, dy) = GuestPathGrid.Directions[direction];
+				var (nx, ny) = (x + dx, y + dy);
+				if ( (uint)nx < (uint)countX && (uint)ny < (uint)countY && isPath( nx, ny ) )
+				{
+					mask |= GuestPathGrid.LinkValue( direction );
+					break;
+				}
+			}
+		// [APPROX:PATH-015] QueueTex square/end/straight/corner and rotation are derived from the decoded que4/que3/que1/que2 artwork and queue links; the original tile-selection routine is not traced — evidence needed: original queue terrain texture selection and rotation
+		for ( var quarter = 0; quarter < 4; quarter++ )
+		{
+			if ( mask == 0x10 ) return new PathTile( 1, quarter * 90 );
+			if ( mask == 0x11 ) return new PathTile( 2, quarter * 90 );
+			if ( mask == 0x14 ) return new PathTile( 3, quarter * 90 );
+			mask = Turn( Turn( Turn( (byte)mask ) ) );
+		}
+		return new PathTile( 0, 0 );
+	}
+
 	/// <summary>
 	/// Vertex texture coordinates for the cell corner (<paramref name="fx"/>, <paramref name="fy"/>) ∈ [0, 1]² of a path
 	/// tile turned <paramref name="rotation"/> degrees clockwise. The textures have +X to the right and +Y at the top

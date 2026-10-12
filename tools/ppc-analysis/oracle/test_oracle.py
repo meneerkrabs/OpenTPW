@@ -183,10 +183,22 @@ EXPECTED = {
                                                        {'role': 1, 'class': 0, 'grade': 1, 'points': 0}], 'active': True}),
     ('staff-training-split', 'routine-reading'): AGREE,
     ('staff-training-split', 'csharp'): AGREE,
+    # F19 (fixed in C#): the mechanic arrival 0xd9c0c sets the job timer to WorkDuration x (100 - low byte of the truncated gauge) / 100 for a
+    # repair (a ride at 40 %: 48 of 80) and to WorkDuration x Upgrades[level + 1].DurationOfUpgrade for an upgrade (ride state 2), without a
+    # minimum of one. The old flat WorkDuration differs on 396 of 529 inputs ("flat-repair": the same without the upgrade factor).
+    ('ride-repair-duration', 'plan'): (396, {'mech_id': 176, 'arrive': 0, 'grade': 0, 'work': 80, 'gauge': 40.0, 'level': 0, 'upgrade': 2, 'state': 1, 'flag': 0,
+                                      'ride_mech': 176}),
+    ('ride-repair-duration', 'routine-reading'): AGREE,
+    ('ride-repair-duration', 'flat-repair'): (352, {'mech_id': 176, 'arrive': 0, 'grade': 0, 'work': 80, 'gauge': 40.0, 'level': 0, 'upgrade': 2, 'state': 1, 'flag': 0,
+                                      'ride_mech': 176}),
+    ('ride-repair-duration', 'csharp'): AGREE,
+    # F19 (executed flow): a mechanic whose ride names another mechanic, or that is still walking (0xe6454 == 2), releases itself; a job
+    # needs ride state 1 or 2 or the maintenance word +96; it writes the sub-state 18, the state 13 and the timer.
+    ('ride-repair-arrival', 'plan'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
-                  'queue-ride-update', 'guest-litter-trigger'}
+                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival'}
 
 
 class Identity(unittest.TestCase):
@@ -604,6 +616,48 @@ class Oracle(unittest.TestCase):
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
 
+    def test_repair_duration(self):
+        for key in (('ride-repair-duration', 'plan'), ('ride-repair-duration', 'routine-reading'), ('ride-repair-duration', 'flat-repair'),
+                    ('ride-repair-arrival', 'plan')):
+            self.check(key)
+
+    def test_repair_duration_csharp(self):
+        self.check(('ride-repair-duration', 'csharp'))
+
+    def test_repair_duration_reading_is_sharp(self):
+        # Every part matters: the scaling by the missing repair, the low byte of the truncated gauge, the division by 100, the upgrade
+        # branch on ride state 2 and the product with the type record word, and the absence of a minimum.
+        import dataclasses
+        read = targets.repair_timer_result
+        variants = {
+            'flat': lambda x: read(x, flat=True),
+            'no-byte': lambda x: read(x, byte=False),
+            'no-division': lambda x: read(x, divide=False),
+            'upgrade-by-state-1': lambda x: read(x, upgrade_state=1),
+            'upgrade-flat': lambda x: {'timer': x['work'] & 0xFFFFFFFF if x['state'] == 2 else read(x)['timer']},
+            'minimum-one': lambda x: {'timer': max(1, read(x)['timer'])},
+            'percent-of-100': lambda x: {'timer': read({**x, 'gauge': 100.0 - x['gauge']})['timer'] if x['state'] != 2 else read(x)['timer']},
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.REPAIR_TIMER, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_repair_arrival_reading_is_sharp(self):
+        import dataclasses
+        read = targets.repair_arrival_reading
+        variants = {
+            'other-mechanic': lambda x: read({**x, 'ride_mech': x['mech_id']}),
+            'walking': lambda x: read({**x, 'arrive': 0 if x['arrive'] == 2 else x['arrive']}),
+            'no-maintenance-word': lambda x: read({**x, 'flag': 0}),
+            'state-0-works': lambda x: read({**x, 'state': 1 if x['state'] == 0 else x['state']}),
+            'no-sub-state': lambda x: {**read(x), 'sub': 0},
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.REPAIR_ARRIVAL_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
     def test_queue_failure_reading_is_sharp(self):
         # Every part of the reading matters: the relief flag, the byte wrap of the truncated gauge and the limit of 25.
         import dataclasses
@@ -845,6 +899,8 @@ class CSharpMutation(unittest.TestCase):
         ('queue-join-gate', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
          'return difference < 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;',
          'return difference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;'),
+        ('ride-repair-duration', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         '(100 - (QueueJoinRules.Truncate( (float)stateOfRepair ) & 0xFF)) / 100', '(100 - (QueueJoinRules.Truncate( (float)stateOfRepair ) & 0xFF)) / 101'),
         ('queue-failure-predicate', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
          '(Truncate( wearGauge ) & 0xFF) < WornGauge', '(Truncate( wearGauge ) & 0xFF) <= WornGauge'),
         ('queue-join-difference', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',

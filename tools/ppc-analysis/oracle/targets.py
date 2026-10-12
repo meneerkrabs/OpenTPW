@@ -2759,6 +2759,201 @@ def train_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (l) ECON-021: mechanic arrival 0xd9c0c (F19)
+REPAIR_ARRIVAL = 0xD9C0C                                  # (mechanic): the repair-state entry of a mechanic
+REPAIR_RELEASE, REPAIR_ARRIVED, REPAIR_RIDE_MECHANIC, REPAIR_TYPE_RECORD = 0xD99AC, 0xE6454, 0xDFB94, 0xDC320
+REPAIR_BALANCE = ARRIVAL_SETTINGS                         # TOC -30084 -> balance block: +1004 + 8 x grade = MechanicConstsPerGrade.WorkDuration
+REPAIR_RIDE_ID, REPAIR_TYPE_ID = 7, 0x1234
+REPAIR_MAX_LEVEL = 255                                    # the level is a byte; the type record is read at +508 + 64 x level
+REPAIR_UNWRITTEN = 0xA5A5A5A5                             # the timer word before the routine writes it
+REPAIR_STATE = type('RepairState', (), {})()
+
+
+def repair_stubs(target: Target) -> dict:
+    state = REPAIR_STATE
+
+    def thing_id(m: Machine) -> None:
+        if m.gpr[4] != state.mech:
+            raise AssertionError('0xfa9a4 called for something other than the mechanic')
+        m.memory.w16(m.gpr[3], state.x['mech_id'])
+
+    def ride_mechanic(m: Machine) -> None:
+        if m.gpr[4] != state.ride:
+            raise AssertionError('0xdfb94 called for something other than the ride')
+        m.memory.w16(m.gpr[3], state.x['ride_mech'])
+
+    def arrived(m: Machine) -> None:
+        if m.gpr[3] != state.mech:
+            raise AssertionError('0xe6454 called for something other than the mechanic')
+        m.gpr[3] = state.x['arrive'] & MASK32
+
+    def release(m: Machine) -> None:
+        target.log.append(('release', m.gpr[3] == state.mech))
+
+    def type_record(m: Machine) -> None:
+        if m.gpr[3] != state.ride:
+            raise AssertionError('0xdc320 called for something other than the ride')
+        m.gpr[3] = state.record
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', m.gpr[3]))
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert',))
+
+    return {THING_ID_OF: thing_id, REPAIR_RIDE_MECHANIC: ride_mechanic, REPAIR_ARRIVED: arrived, REPAIR_RELEASE: release,
+            REPAIR_TYPE_RECORD: type_record, DEBUG_LOG: log, ASSERT: assertion}
+
+
+def repair_run(sb: Sandbox, x: dict, log) -> dict:
+    st = REPAIR_STATE
+    st.x = x
+    things = toc_pointer(sb, POINTS_THINGS)
+    if sb.read(things, 'I') != 0:
+        raise AssertionError('slot 0 of the thing array is not empty')
+    st.record = sb.struct(508 + 64 * (REPAIR_MAX_LEVEL + 1) + 8, {508 + 64 * x['level']: ('I', x['upgrade'] & MASK32)})
+    st.ride = sb.struct(512, {14: ('H', REPAIR_TYPE_ID), 64: ('f', x['gauge']), 76: ('B', x['level']), 96: ('I', x['flag'] & MASK32),
+                              408: ('i', x['state'])})
+    st.mech = sb.struct(1024, {412: ('I', 5), 484: ('I', x['grade']), 528: ('I', REPAIR_UNWRITTEN), 532: ('H', REPAIR_RIDE_ID)})
+    sb.write(things + 20 * REPAIR_RIDE_ID, 'I', st.ride)
+    sb.write(toc_pointer(sb, REPAIR_BALANCE) + 1004 + 8 * x['grade'], 'I', x['work'] & MASK32)
+    sb.call(REPAIR_ARRIVAL, {3: st.mech})
+    return {'timer': sb.read(st.mech + 528, 'I'), 'state': sb.read(st.mech + 412, 'I'), 'target': sb.read(st.mech + 532, 'H'),
+            'sub': sb.read(st.mech + 16, 'I'), 'calls': list(log)}
+
+
+def repair_timer_binary(sb: Sandbox, x: dict, log) -> dict:
+    return {'timer': repair_run(sb, x, log)['timer']}
+
+
+def repair_arrival_binary(sb: Sandbox, x: dict, log) -> dict:
+    return repair_run(sb, x, log)
+
+
+def repair_gauge_byte(x: dict) -> int:
+    return fctiwz(f32(x['gauge'])) & 0xFF
+
+
+def repair_timer_reading(x: dict, flat: bool = False, byte: bool = True, divide: bool = True, upgrade_state: int = 2) -> int:
+    """0xd9d48..0xd9dc4: ride state 2 (0xdfe90) multiplies the grade's WorkDuration by the type record word at +508 + 64 x level; any other job
+    scales it by (100 - low byte of the truncated gauge) / 100 (mullw, then the signed multiply-high division by 100)."""
+    work = x['work']
+    if x['state'] == upgrade_state:
+        return (work * x['upgrade']) & MASK32
+    if flat:
+        return work & MASK32
+    missing = 100 - (repair_gauge_byte(x) if byte else fctiwz(f32(x['gauge'])))
+    product = to_s32(work * missing)
+    return (c_div(product, 100) if divide else product) & MASK32
+
+
+def repair_timer_result(x: dict, **variant) -> dict:
+    return {'timer': repair_timer_reading(x, **variant)}
+
+
+def repair_timer_plan(x: dict) -> dict:
+    """ECON-021 before F19 (docs/ECONOMY.md, ParkEconomy.DispatchMechanics): a job takes WorkDuration (at least 1), an upgrade that times
+    DurationOfUpgrade (at least 1); the state of repair plays no part. (The old unit was game hours; only the number is compared.)"""
+    factor = max(1, x['upgrade']) if x['state'] == 2 else 1
+    return {'timer': max(1, x['work'] * factor)}
+
+
+def repair_timer_request(x: dict) -> dict:
+    return {'fn': 'repair_timer', 'work': s32(x['work']), 'gauge_bits': bits(f32(x['gauge'])),
+            'upgrade': s32(x['upgrade']) if x['state'] == 2 else None}
+
+
+def repair_job_inputs(rng: random.Random, n: int) -> list:
+    shipped = [80, 60, 40, 30, 20]
+
+    def make(**kw) -> dict:
+        grade = rng.randrange(0, 5)
+        x = {'mech_id': rng.randrange(1, 300), 'arrive': 0, 'grade': grade,
+             'work': rng.choice([shipped[grade], shipped[grade], rng.randrange(0, 150)]),
+             'gauge': rng.choice([100.0, 0.0, 40.0, random_float(rng, 0, 100), random_float(rng, 0, 100), float(rng.randrange(0, 101)),
+                                  random_float(rng, 0, 30), random_float(rng, -5, 300)]),
+             'level': rng.choice([0, 0, 1, 2]), 'upgrade': rng.choice([0, 2, 4, 0, rng.randrange(0, 40)]),
+             'state': rng.choice([1, 1, 2, 2, 0, 3, 4, 5, -1]), 'flag': rng.choice([0, 1, 1, 4, 0x10000])}
+        x.update(kw)
+        x['ride_mech'] = x['mech_id']
+        if x['state'] not in (1, 2) and x['flag'] == 0:
+            x['flag'] = 1                                  # a job needs the broken state, the upgrade state or the maintenance word
+        return x
+    base = dict(grade=0, work=80, gauge=40.0, level=0, upgrade=2, state=1, flag=0)
+    edges = [make(**base),                                            # a ride at 40 %, base level: 48 (the flat claim: 80)
+             make(**{**base, 'state': 2}),                            # a base-level ride upgraded to level 1: 80 x 2
+             make(**{**base, 'state': 2, 'level': 1, 'upgrade': 4}),  # level 1 -> 2: the record word at +508 + 64 x 1
+             make(**{**base, 'gauge': 100.0}), make(**{**base, 'gauge': 0.0}), make(**{**base, 'gauge': 99.9}),
+             make(**{**base, 'state': 2, 'upgrade': 0}),              # DurationOfUpgrade 0: no timer (the flat claim: 80 x 1)
+             make(**{**base, 'state': 0, 'flag': 1}), make(**{**base, 'state': 3, 'flag': 1}),   # maintenance word, not broken: scaled
+             make(**{**base, 'state': 2, 'flag': 1, 'gauge': 10.0}),   # upgrade wins over the maintenance word
+             make(**{**base, 'work': 0}), make(**{**base, 'work': 20, 'gauge': 40.0, 'grade': 4}),
+             make(**{**base, 'gauge': 100.5}), make(**{**base, 'gauge': 101.0}), make(**{**base, 'gauge': 200.0}),
+             make(**{**base, 'gauge': 255.5}), make(**{**base, 'gauge': 256.0}), make(**{**base, 'gauge': 356.0}),
+             make(**{**base, 'gauge': -1.0}), make(**{**base, 'gauge': -256.0}), make(**{**base, 'gauge': math.nan}),
+             make(**{**base, 'gauge': math.inf}), make(**{**base, 'gauge': -math.inf}), make(**{**base, 'gauge': 1e10}),
+             make(**{**base, 'work': 0x7FFFFFFF, 'gauge': 0.0}), make(**{**base, 'work': 0x7FFFFFFF, 'gauge': 40.0}),
+             make(**{**base, 'work': 0x10000000, 'gauge': 40.0}), make(**{**base, 'state': 2, 'work': 0x10000, 'upgrade': 0x10000}),
+             make(**{**base, 'level': 255, 'state': 2, 'upgrade': 3})]
+    return edges + [make() for _ in range(n)]
+
+
+def repair_arrival_reading(x: dict) -> dict:
+    """The routine as read: a mechanic whose ride names another mechanic logs and releases itself; one still walking (0xe6454 returning 2)
+    lets go of the ride and releases; one that has arrived (0xe6454 returning 0) starts a repair if the ride is broken (+408 == 1), being
+    upgraded (2) or has the maintenance word +96 set, else logs and releases. A job writes the sub-state 18 and the timer, and sets the
+    mechanic's state +412 to 13."""
+    keep = {'timer': REPAIR_UNWRITTEN, 'state': 5, 'target': REPAIR_RIDE_ID, 'sub': 0}
+    if x['ride_mech'] != x['mech_id']:
+        return {**keep, 'target': 0, 'calls': [('log', 2), ('release', True)]}
+    arrive = s32(x['arrive'])
+    if arrive != 0:
+        return {**keep, 'target': 0, 'calls': [('release', True)]} if arrive == 2 else {**keep, 'calls': []}
+    if not (x['state'] == 1 or x['state'] == 2 or x['flag'] & MASK32):
+        return {**keep, 'calls': [('log', 2), ('release', True)]}
+    return {**keep, 'timer': repair_timer_reading(x), 'state': 13, 'sub': 18, 'calls': []}
+
+
+def repair_arrival_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = dict(repair_job_inputs(rng, 1)[-1])
+        x.update({'arrive': rng.choice([0, 0, 0, 1, 2, 2, 3, -1, 0x10000]), 'state': rng.choice([0, 1, 1, 2, 2, 3, 4, 5, -1]),
+                  'flag': rng.choice([0, 0, 1, 5]), 'ride_mech': rng.choice([x['mech_id']] * 3 + [rng.randrange(1, 300)])})
+        x.update(kw)
+        return x
+    base = dict(mech_id=11, ride_mech=11, arrive=0, state=1, flag=0, grade=0, work=80, gauge=40.0, level=0, upgrade=2)
+    edges = [make(**base), make(**{**base, 'ride_mech': 12}), make(**{**base, 'arrive': 2}), make(**{**base, 'arrive': 1}),
+             make(**{**base, 'arrive': 3}), make(**{**base, 'arrive': -1}), make(**{**base, 'arrive': 0x10000}),
+             make(**{**base, 'state': 0}), make(**{**base, 'state': 0, 'flag': 1}), make(**{**base, 'state': 2}),
+             make(**{**base, 'state': 3}), make(**{**base, 'state': 4, 'flag': 1}), make(**{**base, 'state': 2, 'ride_mech': 12}),
+             make(**{**base, 'arrive': 2, 'ride_mech': 12}), make(**{**base, 'state': 5, 'flag': 0x10000})]
+    return edges + [make() for _ in range(n)]
+
+
+REPAIR_ALLOWED = [(0xD9C0C, 0xD9E04), (0xD2290, 0xD2298), (0xDFE0C, 0xDFE20), (0xDFE88, 0xDFEA4)]
+REPAIR_NOTES = ['Executed: 0xd9c0c, 0xdfe0c / 0xdfe88 / 0xdfe90 (ride state 1, the maintenance word +96, ride state 2) and 0xd2290 (the sub-state '
+                'setter). Stubs: 0xfa9a4 thing id (mechanic), 0xdfb94 the ride\'s mechanic id, 0xe6454 arrival / walking state (chosen), '
+                '0xdc320 type record (+508 + 64 x level chosen), 0xd99ac release (recorded), 0x5fbcc log, 0xb678 assertion; the balance block word '
+                '+1004 + 8 x grade is WorkDuration.']
+
+REPAIR_TIMER = Target('ride-repair-duration', 'Mechanic job timer 0xd9c0c (a repair or an upgrade)', 'ECON-021 / ECONOMY.md (F19)', REPAIR_ARRIVAL,
+                      REPAIR_ALLOWED, repair_stubs, repair_timer_binary, repair_timer_plan, repair_job_inputs,
+                      alternatives={'routine-reading': repair_timer_result,
+                                    'flat-repair': lambda x: repair_timer_result(x, flat=True)},
+                      csharp=('repair_timer', repair_timer_request, lambda x, r: {'timer': r}),
+                      notes=['C# hook: bridge function "repair_timer" (ParkEconomy.RepairTimer). The upgrade duration is sent only when the ride is '
+                             'in state 2, as DispatchMechanics sends it for a pending upgrade. The unit is park turns (staff updates), read '
+                             'statically; the executed value is the timer word +528.',
+                             '"plan" is the claim before F19: WorkDuration (x DurationOfUpgrade for upgrades), at least 1, no state of repair.'] + REPAIR_NOTES)
+
+REPAIR_ARRIVAL_TARGET = Target('ride-repair-arrival', 'Mechanic arrival 0xd9c0c (flow)', 'ECON-021 / ECONOMY.md (F19)', REPAIR_ARRIVAL,
+                               REPAIR_ALLOWED, repair_stubs, repair_arrival_binary, repair_arrival_reading, repair_arrival_inputs,
+                               notes=['No C# hook: OpenTPW starts a mechanic at once and has no walk or release (ECON-021 stays an approximation); '
+                                      'CSHARP_PENDING.', 'The result is the timer, the mechanic state +412 and sub-state, the target word +532 and the '
+                                      'recorded calls.'] + REPAIR_NOTES)
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -2928,5 +3123,5 @@ TRAIN_TARGET = Target('staff-training-split', 'Staff training split 0xfc1c4', 'E
                              'Domain: prices of at least 1 (divw by zero is undefined); budgets from 0 to 2^28 (the sum of the debits stays inside 32 bits); an active bank.'])
 
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain}

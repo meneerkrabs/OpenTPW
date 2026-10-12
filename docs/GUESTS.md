@@ -131,15 +131,37 @@ passed since the last group emptied. A unit is four park turns (`(turn >> 2)`, a
 shipped 150 is about two and a half minutes. The timer starts unset, so a park loaded at a later turn (an
 original save) gets its first group at once, while a new park waits one interval.
 
-The group size is `(int)(1.2 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
+The group size is `(int)(0.8 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
 divides by 1), at least `MinPeople`, cut so that the guests in the park plus the group stay within 1,500;
-a bankrupt park gets none. With the shipped 20 and 6 a new park gets 4 guests per group.
+a bankrupt park gets none. With the shipped 20 and 6 a new park gets 2 guests per group. The PowerPC oracle
+ran this routine (docs/reverse/ORACLE.md, F9). It adds three details to the first reading. The factor is
+0.8, not 1.2, while the `+48` word of the thing at game `+0x1da734` is positive. That thing is the Traffic Lights
+fixed item (`mTrafficLights`), and the word is its `mTopLeft` cell id, which is 1 for a fixed item, so every park with
+its lights uses 0.8 (the saved Easymode Lights record holds 1; the rule itself is "word positive: 0.8, else 1.2", and what
+the original does without the lights is not established). OpenTPW uses 0.8 while the level has its Traffic Lights
+(`GuestSimulation.TrafficLightsPlaced`); 1.2 without them is OpenTPW's own fallback. Online parks (GameType 1) are cut at
+500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`, an assumption,
+ARRIVAL-002). A group cut with more guests than the limit becomes
+negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)
+shows that this changes nothing in behaviour: a group at or below 0 creates no guest and, at the next stop of
+the arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does, so nothing
+holds. Only the stored group word and one vehicle step for an exactly empty group differ (effect not traced).
 
 Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
-bonus from the fourth bracket on), divided by the number of objects of the same type, so copies of one
-type count once. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has 25 and bonuses
-10/7/4. Open points are ARRIVAL-001..003 (`ArrivalApproximations`).
+bonus from the fourth bracket on). The PowerPC oracle ran this routine (docs/reverse/ORACLE.md, F10). A type
+without a track (`Bumper.WhichTrackType` 0) is aged from its first purchase after turn 0, so all its copies
+share one age, and is divided by the number of its objects, so its copies count once; selling does not reset
+that first purchase. Every copy of a tracked type (karts 1, water rides 2, coasters and flumes 3) is aged
+from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has
+25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (executed in the oracle, F10): the type is
+choosable (`Info.IsChoosable`), the ride is neither broken down nor condemned and is open, its entrance connects
+to a cell, its queue holds fewer guests than four per queue cell, a coaster carries no riders, and a kart or water
+ride has its track word (set when the ride is built). OpenTPW applies the first three (`IsChoosable`,
+`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`), so a closed or broken ride gives no points, while its copies still count in the
+divisor of an untracked type; the entrance, queue room and coaster conditions have no state in the economy
+(ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
+purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`).
 
 ## Simulation
 

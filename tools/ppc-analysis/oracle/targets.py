@@ -720,6 +720,668 @@ def coast_final_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (h) ARRIVAL: group size 0xcb4e8
+ARRIVAL_GAME_POINTER = -30124  # TOC slot -> data word holding the game pointer
+ARRIVAL_MODE_OBJECT = -30136   # TOC slot -> static object; its word 0 is the mode (1: the 500-guest limit)
+ARRIVAL_MODE_GUARD = -30132    # TOC slot -> its construction guard byte (nonzero once 0x12bb64 has run)
+ARRIVAL_SETTINGS = -30084      # TOC slot -> settings block: +720 MinPeople, +732 NewParkBonus, +736 PointsPerVisitor
+ARRIVAL_WORLD_MODE = 0x1E0000 - 22728  # game + 0x1da738: 4 = bankrupt (no group)
+PARK_OF_GAME = 0x1082B4        # (game) -> park; stubbed with a sentinel, checked
+COUNTED_GUESTS = 0xC1FB4       # (park, 20) -> guests counted against the limit; stubbed: the chosen count
+PARK_POINTS = 0xC24C0          # (park) -> attraction points; stubbed: the chosen points
+FACTOR_OBJECT = 0x1083C8       # (game) -> object whose +48 word picks the factor; stubbed with a synthetic object
+ARRIVAL_STATE = type('ArrivalState', (), {})()  # set per input by arrival_binary, read by the stubs
+DEBUG_LOG = 0x5FBCC            # (level, format, ...) debug print; logged, no effect on the result
+
+
+def arrival_stubs(target: Target) -> dict:
+    state = ARRIVAL_STATE  # arrival_binary's memory set-up; shared with copies of the target (mutation tests)
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    def counted(m: Machine) -> None:
+        if m.gpr[3] != state.park or m.gpr[4] != 20:
+            raise AssertionError('0xc1fb4 called with unexpected arguments')
+        m.gpr[3] = state.guests & MASK32
+
+    def points(m: Machine) -> None:
+        if m.gpr[3] != state.park:
+            raise AssertionError('0xc24c0 called without the park')
+        m.gpr[3] = state.points & MASK32
+
+    def factor_object(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1083c8 called without the game pointer')
+        m.gpr[3] = state.factor_object
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', m.gpr[3], m.gpr[5]))
+
+    return {PARK_OF_GAME: park, COUNTED_GUESTS: counted, PARK_POINTS: points, FACTOR_OBJECT: factor_object,
+            DEBUG_LOG: log}
+
+
+def arrival_setup(sb: Sandbox, x: dict, park_size: int = 16) -> None:
+    state = ARRIVAL_STATE
+    state.game = sb.alloc(ARRIVAL_WORLD_MODE + 8)
+    sb.write(state.game + ARRIVAL_WORLD_MODE, 'i', x['world_mode'])
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', state.game)
+    state.park = sb.struct(park_size)
+    state.factor_object = sb.struct(64, {48: ('i', x['obj48'])})
+    state.guests, state.points = x['guests'], x['points']
+    settings = toc_pointer(sb, ARRIVAL_SETTINGS)
+    sb.write(settings + 720, 'i', x['min_people'])
+    sb.write(settings + 732, 'i', x['bonus'])
+    sb.write(settings + 736, 'i', x['per_visitor'])
+    sb.write(toc_pointer(sb, ARRIVAL_MODE_OBJECT), 'i', x['limit_mode'])
+    sb.write(toc_pointer(sb, ARRIVAL_MODE_GUARD), 'B', 1)  # constructed: 0x12bb64 is not in `allowed` and must not run
+
+
+def arrival_binary(sb: Sandbox, x: dict, log) -> int:
+    arrival_setup(sb, x)
+    return s32(sb.call(0xCB4E8).r3)
+
+
+def fctiwz32(value: float) -> int:
+    if math.isnan(value):
+        return -0x80000000
+    return max(-0x80000000, min(0x7FFFFFFF, math.trunc(value)))
+
+
+def arrival_core(x: dict, factor: float) -> int:
+    per_visitor = x['per_visitor'] if x['per_visitor'] >= 2 else 1
+    total = s32(x['points'] + x['bonus'])
+    product = f32(f32(factor) * f32(float(total)))
+    quotient = int(fctiwz32(product) / per_visitor)  # C / divw: toward zero
+    return max(quotient, x['min_people'])
+
+
+def arrival_plan(x: dict) -> int:
+    """GUESTS.md "Arrivals" and GuestSimulation.ArrivalGroupSize: none while bankrupt; (int)(factor × (points +
+    NewParkBonus)) / PointsPerVisitor (1 below 2) with factor 0.8 while the Traffic Lights thing's +48 word is positive
+    (the lights are placed) and 1.2 otherwise, at least MinPeople, cut so guests + group stay within 1500, or 500 for an
+    online visit (GameType word 1), never below 0."""
+    if x['world_mode'] == 4:
+        return 0
+    count = arrival_core(x, 0.8 if x['obj48'] > 0 else 1.2)
+    limit = 500 if x['limit_mode'] == 1 else 1500
+    if x['guests'] + count > limit:
+        count = max(0, limit - x['guests'])
+    return count
+
+
+def arrival_full(x: dict) -> int:
+    """The routine as read from 0xcb4e8..0xcb694: the factor is 0.8 when the 0x1083c8 object's +48 word is positive,
+    else 1.2; with the mode word == 1 the group is first cut to 500 − guests; both cuts compare guests + group
+    unsigned and can go negative."""
+    if x['world_mode'] == 4:
+        return 0
+    count = arrival_core(x, 0.8 if x['obj48'] > 0 else 1.2)
+    guests = x['guests']
+    if x['limit_mode'] == 1 and (guests + count) & MASK32 > 500:
+        count = s32(500 - guests)
+    if x['limit_mode'] != 1 and (guests + count) & MASK32 > 1500:
+        count = s32(1500 - guests)
+    return count
+
+
+def arrival_csharp_request(x: dict) -> dict:
+    return {'fn': 'arrival_group', **{k: x[k] for k in ('world_mode', 'guests', 'points', 'bonus', 'per_visitor',
+                                                         'min_people', 'obj48', 'limit_mode')}}
+
+
+def arrival_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw):
+        x = {'world_mode': rng.choice([0, 1, 2, 3, 4, 5]), 'guests': rng.choice([0, rng.randrange(0, 1600)]),
+             'points': rng.choice([0, rng.randrange(0, 2000), rng.randrange(-500, 0)]),
+             'bonus': rng.choice([20, rng.randrange(0, 200)]), 'per_visitor': rng.choice([6, rng.randrange(-2, 30)]),
+             'min_people': rng.choice([1, 2, rng.randrange(0, 40)]), 'obj48': rng.choice([0, 0, 1, rng.randrange(-5, 5)]),
+             'limit_mode': rng.choice([0, 0, 0, 1, 2])}
+        x.update(kw)
+        return x
+    shipped = dict(world_mode=0, guests=0, points=0, bonus=20, per_visitor=6, min_people=1, obj48=0, limit_mode=0)
+    edges = [make(**shipped), make(**{**shipped, 'world_mode': 4}), make(**{**shipped, 'obj48': 1}),
+             make(**{**shipped, 'limit_mode': 1, 'guests': 499}), make(**{**shipped, 'limit_mode': 1, 'guests': 600}),
+             make(**{**shipped, 'guests': 1499}), make(**{**shipped, 'guests': 1500}), make(**{**shipped, 'guests': 1700}),
+             make(**{**shipped, 'points': 0x7FFFFFFF}), make(**{**shipped, 'points': -0x80000000, 'bonus': -1}),
+             make(**{**shipped, 'points': 16777217}), make(**{**shipped, 'per_visitor': 1}),
+             make(**{**shipped, 'per_visitor': -7}), make(**{**shipped, 'min_people': -5, 'bonus': -100}),
+             make(**{**shipped, 'points': 25, 'bonus': 20})]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (j) ARRIVAL: update 0xcb2ac
+ARRIVAL_TURN = 0x1E0000 - 22772        # game + 0x1da70c: the world turn, read by the timer routines 0x1210f8 / 0x121098
+ARRIVAL_PARK_SIZE = 0x20000 + 8192     # the park record: +0x20000+3264 guests created, +0x20000+5848 group history
+ARRIVAL_CREATED = 0x20000 + 3264       # park + 0x20cc0: raised by one for every guest 0xcb2ac creates
+ARRIVAL_CONSTRUCTOR = 0xCB028          # (arrival object): timer, group, active and the two other state bytes/words
+ARRIVAL_PHASE = 0x109784               # (game) -> state of the arrival vehicle: 2 = at the stop, -1 / 6 = on its way
+ARRIVAL_EVENTS = 0x109B78              # (game) -> nonzero when the vehicle script reports the arrival state
+ARRIVAL_VEHICLE = 0x109368             # (buffer, game, size) arrival vehicle script step; the buffer is r1 + a frame slot
+ARRIVAL_CREATE = 0xCB698               # (arrival object) creates one guest, returns 1
+ARRIVAL_HISTORY = 0xCB750              # (park + 0x20000 + 5848, group) ring buffer of the group sizes
+EVENT_ASSERT, EVENT_HISTORY = 1000, 2000  # codes in the event lists next to the vehicle script's frame slots 72..82
+
+
+def arrival_update_stubs(target: Target) -> dict:
+    state = ARRIVAL_STATE
+    stubs = arrival_stubs(target)
+
+    def phase(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x109784 called without the game pointer')
+        m.gpr[3] = state.phase & MASK32
+
+    def reports(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x109b78 called without the game pointer')
+        m.gpr[3] = state.flag
+
+    def vehicle(m: Machine) -> None:
+        if m.gpr[4] != state.game:
+            raise AssertionError('0x109368 called without the game pointer')
+        target.log.append(('event', (m.gpr[3] - m.gpr[1]) & MASK32, m.gpr[5]))
+
+    def create(m: Machine) -> None:
+        state.guests += 1
+        state.created += 1
+        m.gpr[3] = 1
+
+    def history(m: Machine) -> None:
+        if m.gpr[3] != state.park + ARRIVAL_CREATED + 5848 - 3264:
+            raise AssertionError('0xcb750 called without the park history')
+        target.log.append(('history', s32(m.gpr[4])))
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3]))
+
+    stubs.update({ARRIVAL_PHASE: phase, ARRIVAL_EVENTS: reports, ARRIVAL_VEHICLE: vehicle, ARRIVAL_CREATE: create,
+                  ARRIVAL_HISTORY: history, ASSERT: assertion})
+    return stubs
+
+
+def arrival_update_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Construct the arrival object (0xcb028, executed), set the saved state if given, then call 0xcb2ac once per step in
+    the same sandbox. Per call: (active, timer start, guests created so far), the group word and the events."""
+    state = ARRIVAL_STATE
+    arrival_setup(sb, x, ARRIVAL_PARK_SIZE)
+    sb.write(toc_pointer(sb, ARRIVAL_SETTINGS) + 724, 'I', x['interval'])
+    obj = sb.struct(32)
+    sb.call(ARRIVAL_CONSTRUCTOR, {3: obj})
+    sb.write(obj + 4, 'I', x['timer0'])
+    if x['preset'] is not None:
+        sb.write(obj + 12, 'i', x['preset'][0])
+        sb.write(obj + 16, 'B', x['preset'][1])
+    state.created = 0
+    calls, groups, events = [], [], []
+    for now, phase, flag in x['steps']:
+        sb.write(state.game + ARRIVAL_TURN, 'I', now)
+        state.phase, state.flag = phase, flag
+        mark = len(log)
+        sb.call(0xCB2AC, {3: obj})
+        created = sb.read(state.park + ARRIVAL_CREATED, 'i')
+        if created != state.created:
+            raise AssertionError('the created-guest counter disagrees with the creation calls')
+        calls.append((sb.read(obj + 16, 'B'), sb.read(obj + 4, 'I'), created))
+        groups.append(sb.read(obj + 12, 'i'))
+        codes = {'event': lambda e: (e[1], s32(e[2])), 'assert': lambda e: (EVENT_ASSERT, e[1]),
+                 'history': lambda e: (EVENT_HISTORY, e[1])}
+        events.append([codes[e[0]](e) for e in log[mark:] if e[0] in codes])
+    return {'calls': calls, 'groups': groups, 'events': events}
+
+
+def arrival_update_reading(x: dict, hold_negative: bool = False, floor: bool = False) -> dict:
+    """0xcb2ac as read from the listing. Per call: with no active group and (turn >> 2) − (start >> 2) above the
+    interval (unsigned), the group becomes the 0xcb4e8 size at the current count and starts. With an active group:
+    phase 2 creates a guest while the group is above 0 (signed) and otherwise restarts the timer, clears the active
+    byte and starts the vehicle with size 0; phase −1 or 6 starts the vehicle with size 1/2/3 (group up to 35, 60,
+    more; phase 6 logs a failed assertion first). Then, when 0x109b78 is nonzero: phase 2 with group == 0 starts the
+    vehicle with size 0 (slot 74), phase 0 (slot 76) and −1 (slot 78) too; with it zero, phase 4 (slot 72).
+    `hold_negative` is the static reading of the brief: a negative group neither ends nor creates. `floor` stores the
+    group floored at 0, as C# computes it."""
+    group, active, start, created = (x['preset'] if x['preset'] is not None else (0, 0)) + (x['timer0'], 0)
+    guests = x['guests']
+    calls, groups, events = [], [], []
+    for now, phase, flag in x['steps']:
+        out = []
+        if not active and (((now >> 2) - (start >> 2)) & MASK32) > x['interval']:
+            group = arrival_full({**x, 'guests': guests})
+            if floor:
+                group = max(0, group)
+            active = 1
+            out.append((EVENT_HISTORY, group))
+        if active:
+            if phase == 2:
+                if group > 0:
+                    created += 1
+                    guests += 1
+                    group -= 1
+                elif not (hold_negative and group < 0):
+                    start, active = now, 0
+                    out.append((80, 0))
+            elif phase in (-1, 6):
+                if phase == 6:
+                    out.append((EVENT_ASSERT, 0))
+                out.append((82, 1 if group <= 35 else 2 if group <= 60 else 3))
+        if flag:
+            if phase == 2 and group == 0:
+                out.append((74, 0))
+            elif phase == 0:
+                out.append((76, 0))
+            elif phase == -1:
+                out.append((78, 0))
+        elif phase == 4:
+            out.append((72, 0))
+        calls.append((active, start, created))
+        groups.append(group)
+        events.append(out)
+    return {'calls': calls, 'groups': groups, 'events': events}
+
+
+def arrival_update_plan(x: dict, hold_negative: bool = False) -> dict:
+    """GUESTS.md "Arrivals" / GuestSimulation.UpdateArrivals with the F9 details (factor, 500 cut) and the group floored
+    at 0: when no group is delivering and (turn >> 2) − (start >> 2) exceeds the interval, a group starts; a guest steps
+    off per stop (phase 2); an empty group ends and restarts the timer. Only the behaviour is returned: active flag,
+    timer start and guests created per call (C# has no group word and no vehicle events)."""
+    pending, delivering = (x['preset'] if x['preset'] is not None else (0, 0))
+    start, created, guests = x['timer0'], 0, x['guests']
+    calls = []
+    for now, phase, flag in x['steps']:
+        if not delivering and (((now >> 2) - (start >> 2)) & MASK32) > x['interval']:
+            pending = max(0, arrival_full({**x, 'guests': guests}))
+            delivering = 1
+        if delivering and phase == 2:
+            if pending < 1 and not (hold_negative and pending < 0):
+                delivering, start = 0, now
+            elif pending >= 1:
+                pending -= 1
+                created += 1
+                guests += 1
+        calls.append((delivering, start, created))
+    return {'calls': calls}
+
+
+def arrival_update_static(x: dict) -> dict:
+    """The brief's static reading: only exactly 0 ends a group, so a negative group holds the state."""
+    return arrival_update_plan(x, hold_negative=True)
+
+
+def arrival_update_reading_held(x: dict) -> dict:
+    return arrival_update_reading(x, hold_negative=True)
+
+
+def arrival_update_floored(x: dict) -> dict:
+    return arrival_update_reading(x, floor=True)
+
+
+def arrival_update_equal(original: dict, other: dict) -> bool:
+    return all(original[key] == value for key, value in other.items())
+
+
+def arrival_update_inputs(rng: random.Random, n: int) -> list:
+    shipped = dict(world_mode=0, guests=0, points=0, bonus=20, per_visitor=6, min_people=1, obj48=0, limit_mode=0,
+                   preset=None)
+
+    def script(first: int, length: int, phases: list, gap: int) -> list:
+        now, steps = first, []
+        for _ in range(length):
+            now += rng.randrange(0, gap + 1)
+            steps.append((now, rng.choice(phases), rng.choice([0, 1])))
+        return steps
+
+    def make(**kw):
+        timer0 = rng.choice([0, 0, rng.randrange(0, 400)])
+        x = {**shipped, 'world_mode': rng.choice([0, 0, 0, 0, 4]),
+             'guests': rng.choice([0, 1499, 1500, 1700, 2000, rng.randrange(0, 1700)]),
+             'points': rng.choice([0, rng.randrange(0, 600)]), 'min_people': rng.choice([1, 1, 2, rng.randrange(0, 70)]),
+             'obj48': rng.choice([0, 0, 1]), 'limit_mode': rng.choice([0, 0, 1]),
+             'interval': rng.choice([0, 1, 2, 5, rng.randrange(0, 40)]), 'timer0': timer0,
+             'preset': rng.choice([None, None, None, None, (rng.randrange(-300, 40), rng.choice([0, 1, 1]))])}
+        x.update(kw)
+        if 'steps' not in x:
+            phases = rng.choice([[2], [2], [2, 2, 2, -1], [-1, 6, 2], [2, -1, 6, 0, 1, 4, 3, 5]])
+            x['steps'] = script(x['timer0'] + rng.randrange(0, 30), rng.randrange(8, 40), phases, rng.choice([2, 6, 20, 80]))
+        return x
+    stop = lambda *s: list(s)
+    over = dict(guests=1700, interval=2, timer0=0, preset=None)  # 1700 counted guests: the group is 1500 - 1700 = -200
+    edges = [make(**{**over, 'steps': stop((40, 2, 0), (44, 2, 0), (48, 2, 1), (400, 2, 1), (404, 2, 0), (900, 2, 0))}),
+             make(**{**over, 'steps': stop((40, -1, 0), (44, 6, 0), (48, 2, 0), (52, 2, 1), (900, 2, 1))}),
+             make(**{**over, 'steps': stop((40, -1, 1), (44, -1, 1), (48, -1, 1), (400, -1, 1), (4000, -1, 1))}),
+             make(**{**over, 'limit_mode': 1, 'guests': 600, 'steps': stop((40, 2, 1), (44, 2, 1), (48, 2, 1))}),
+             make(**{**shipped, 'interval': 2, 'timer0': 0, 'steps': stop((40, 2, 1), (44, 2, 1), (48, 2, 1), (52, 2, 1),
+                                                                         (56, 2, 1), (60, 2, 1), (64, 2, 1), (68, 2, 1))}),
+             make(**{**shipped, 'guests': 1499, 'min_people': 1, 'interval': 0, 'timer0': 0,
+                     'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 1), (20, 2, 1))}),
+             make(**{**shipped, 'world_mode': 4, 'interval': 0, 'timer0': 0, 'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 1))}),
+             make(**{**shipped, 'preset': (-5, 1), 'interval': 0, 'timer0': 0, 'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 0))}),
+             make(**{**shipped, 'preset': (-5, 1), 'interval': 0, 'timer0': 0, 'steps': stop((8, -1, 1), (12, 0, 1), (16, 4, 0))}),
+             make(**{**shipped, 'preset': (7, 0), 'interval': 100, 'timer0': 0, 'steps': stop((8, 2, 1), (12, 2, 1), (16, 2, 1))})]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (i) ARRIVAL: park points 0xc24c0
+POINTS_FIRST = 0x1E0000 - 22714        # game + 0x1da746: index of the first thing in the list (u16)
+POINTS_TURN = 0x1E0000 - 22772         # game + 0x1da70c: the world turn, read by 0xe4750
+POINTS_CLOCK = 672                     # game + 672: the clock; its +28 word is the rate (15000 s per tick)
+POINTS_TYPE_TABLE = 0x1E0000 - 27588   # game + 0x1d943c: per-type park records searched by 0xd1be8 / 0xd1c88
+POINTS_THINGS = -30140                 # TOC slot -> ThingArray: 20-byte entries, word 0 = the thing
+POINTS_END = -20276                    # TOC slot -> u16 index that ends the thing list
+POINTS_REGISTRY = -29976               # TOC slot -> type registry passed to 0x118018
+OPEN_TEST = 0xDC834                    # (thing) -> nonzero when the thing counts; stubbed: the chosen flag
+THING_AGE = 0xDC520                    # (thing) -> days since the thing's purchase timestamp (+20); stubbed
+CLOCK_RATE = 15000                     # clock +28 as the clock constructor sets it (APPROX-TRACE ECON-001/002)
+DAY_TICKS = 864_000_000_000            # 100 ns units per day, the divisor at 0xc2600..0xc2608
+POINTS_STATE = type('PointsState', (), {})()
+
+
+def s64(value: int) -> int:
+    value &= (1 << 64) - 1
+    return value - (1 << 64) if value >> 63 else value
+
+
+def div64(a: int, b: int) -> int:
+    """0x1c4100: signed 64-bit division toward zero; a zero divisor gives 0."""
+    return 0 if b == 0 else abs(a) // abs(b) * (1 if (a < 0) == (b < 0) else -1)
+
+
+def points_days(now: int, turn: int, scale: int) -> int:
+    """0xe4750 then the divide at 0xc2600..0xc2608: the turn difference as an unsigned word times the clock rate
+    (a 64-bit product), divided by 4, times 10^7, divided by DAY_TICKS; the low word of the quotient."""
+    ticks = s64(div64(s64(((now - turn) & MASK32) * (scale & MASK32)), 4) * 10_000_000)
+    return s32(div64(ticks, DAY_TICKS))
+
+
+def points_own_days(now: int, built: int, scale: int) -> int:
+    """The 0xdc520 stub: the clock's timestamps (unsigned64(rate x turn / 4) seconds, 0xe4394) subtracted signed
+    (TbTimeStamp::operator-), divided by DAY_TICKS (0x1c4100)."""
+    return s32(div64((scale * now // 4 - scale * built // 4) * 10_000_000, DAY_TICKS))
+
+
+def points_count(x: dict, type_id: int) -> int:
+    """Park record +24: copies of the type in the park (raised by 0xda874, lowered on removal at 0xdbfcc)."""
+    return sum(1 for thing in x['things'] if thing['type'] == type_id)
+
+
+def points_stubs(target: Target) -> dict:
+    state = POINTS_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry:
+            raise AssertionError('0x118018 called without the type registry')
+        m.gpr[3] = state.records[m.gpr[4] >> 16]
+
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3]))
+
+    def thing_of(address: int) -> dict:
+        if address not in state.things:
+            raise AssertionError('called without a thing')
+        return state.things[address]
+
+    def open_test(m: Machine) -> None:
+        m.gpr[3] = 1 if thing_of(m.gpr[3])['open'] else 0
+
+    def age(m: Machine) -> None:
+        thing = thing_of(m.gpr[3])
+        m.gpr[3] = points_own_days(state.x['now'], thing['built'], state.x['scale']) & MASK32
+
+    return {TYPE_RECORD_LOOKUP: lookup, ASSERT: assertion, OPEN_TEST: open_test, THING_AGE: age}
+
+
+def points_binary(sb: Sandbox, x: dict, log) -> int:
+    state = POINTS_STATE
+    state.x = x
+    game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', game)
+    sb.write(game + POINTS_TURN, 'I', x['now'] & MASK32)
+    sb.write(game + POINTS_CLOCK + 28, 'I', x['scale'] & MASK32)
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    state.records = {}
+    table = game + POINTS_TYPE_TABLE
+    for n, kind in enumerate(x['types']):
+        fields = {88: ('i', kind['value']), 92: ('i', kind['decay']), 156: ('i', kind['f9c']), 1960: ('i', kind['kind'])}
+        fields.update({616 + 4 * k: ('i', bonus) for k, bonus in enumerate(kind['bonus'])})
+        state.records[kind['id']] = sb.struct(2048, fields)
+        sb.write(table + 32 * n, 'H', kind['id'])
+        sb.write(table + 32 * n + 24, 'i', points_count(x, kind['id']))
+        sb.write(table + 32 * n + 28, 'I', kind['first'] & MASK32)
+    sb.write(table + 4800, 'i', len(x['types']))  # +4804 (cached id 0, never a type id) and +4808 stay 0
+    things = toc_pointer(sb, POINTS_THINGS)
+    state.things = {}
+    for index, thing in enumerate(x['things'], start=1):
+        following = index + 1 if index < len(x['things']) else 0
+        address = sb.struct(64, {12: ('H', following), 14: ('H', thing['type'])})
+        sb.write(things + 20 * index, 'I', address)
+        state.things[address] = thing
+    sb.write(toc_pointer(sb, POINTS_END), 'H', 0)
+    sb.write(game + POINTS_FIRST, 'H', 1 if x['things'] else 0)
+    result = s32(sb.call(0xC24C0, {3: sb.struct(16)}).r3)
+    if any(kind == 'assert' and value == 0 for kind, value in log):  # 0xb678 reports a zero condition
+        raise AssertionError('an assertion failed (park record not found or ThingArray entry 0 in use)')
+    return result
+
+
+def trunc_div(a: int, b: int) -> int:
+    return abs(a) // abs(b) * (1 if (a < 0) == (b < 0) else -1)
+
+
+def points_bonus(kind: dict, days: int) -> int:
+    bracket = trunc_div(days, kind['decay'])
+    return kind['bonus'][bracket] if 0 <= bracket < 3 else 0
+
+
+def points_plan(x: dict) -> int:
+    """GUESTS.md "Arrivals" and ParkEconomy.ParkPoints: per ride or sideshow (type kind 0 or 2), AttractionValue plus the
+    NewBonus of the age bracket (none outside 0..2). A type without a track (+0x9C, Bumper.WhichTrackType, 0) is aged
+    from its first purchase after turn 0 and divided by its copies; a tracked type is aged per copy and counts in full.
+    Only things passing the counts-test 0xdc834 count; the input's open flag is the chosen test result (the test itself
+    is the park-points-counts-test target, and C# applies the part of it that it has state for, ARRIVAL-003)."""
+    return points_full(x)
+
+
+def points_full(x: dict) -> int:
+    """The routine as read from 0xc24c0..0xc26dc: only things passing 0xdc834 count. A type whose +0x9C word is 0 is
+    aged from its park record +28 (written by 0xda874 at a purchase while it is still 0) and divided by its count
+    (park record +24, 0xc5828); any other type is aged from the thing's own purchase (0xdc520) and divided by 1."""
+    types = {kind['id']: kind for kind in x['types']}
+    points = 0
+    for thing in x['things']:
+        kind = types[thing['type']]
+        if kind['kind'] not in (0, 2) or not thing['open'] or points_count(x, thing['type']) <= 0:
+            continue
+        if kind['f9c'] == 0:
+            days, divisor = points_days(x['now'], kind['first'], x['scale']), points_count(x, thing['type'])
+        else:
+            days, divisor = points_own_days(x['now'], thing['built'], x['scale']), 1
+        points = s32(points + trunc_div(s32(points_bonus(kind, days) + kind['value']), divisor))
+    return points
+
+
+def points_first(builds: list[int], sold: list[int]) -> int:
+    """Park record +28 after purchases at these turns: 0xda874 stores the turn while +28 is still 0, so purchases at
+    turn 0 leave it unset and the first purchase at a later turn sets it for good (removal does not clear it)."""
+    return next((turn for turn in sorted(builds + sold) if turn != 0), 0)
+
+
+def points_csharp_request(x: dict) -> dict:
+    # The open flag (the chosen 0xdc834 counts-test result) is the object's open state (thing +0x64, ParkObjectState.IsOpen):
+    # the other conditions of the test have no C# state (ARRIVAL-003). Type +0x9C is Bumper.WhichTrackType; park record
+    # +28 is the first-purchase turn counter.
+    return {'fn': 'park_points', 'now': x['now'],
+            'types': [{'id': kind['id'], 'kind': kind['kind'], 'value': kind['value'], 'decay': kind['decay'],
+                       'bonus': kind['bonus'], 'track_type': kind['f9c'], 'first': kind['first']} for kind in x['types']],
+            'things': [{k: thing[k] for k in ('type', 'built', 'open')} for thing in x['things']]}
+
+
+def points_inputs(rng: random.Random, n: int) -> list:
+    day = 86400 * 4 // CLOCK_RATE + 1  # turns per park day, rounded up (23.04 turns at 3750 s per turn)
+
+    def make_type(type_id: int, **kw) -> dict:
+        kind = {'id': type_id, 'kind': rng.choice([0, 0, 2, 2, 1, 3, 4]), 'f9c': rng.choice([0, 0, 0, 1, rng.randrange(-3, 4)]),
+                'value': rng.choice([10, 25, rng.randrange(-20, 120)]),
+                'decay': rng.choice([1, 2, 5, 60, rng.randrange(1, 12)]),
+                'bonus': [rng.choice([0, rng.randrange(0, 60), rng.randrange(-30, 80)]) for _ in range(3)]}
+        kind.update(kw)
+        return kind
+
+    def make(**kw) -> dict:
+        now = rng.choice([rng.randrange(0, 12 * day), rng.randrange(0, 200 * day)])
+        types = [make_type(0x100 + k) for k in range(rng.randrange(1, 5))]
+        things = [{'type': rng.choice(types)['id'], 'open': rng.random() < 0.85,
+                   'built': rng.choice([0, now, rng.randrange(0, now + 1)])} for _ in range(rng.randrange(0, 9))]
+        for kind in types:
+            builds = [thing['built'] for thing in things if thing['type'] == kind['id']]
+            sold = [rng.randrange(0, now + 1) for _ in range(rng.choice([0, 0, 1]))]
+            kind['first'] = points_first(builds, sold)
+        x = {'now': now, 'scale': CLOCK_RATE, 'types': types, 'things': things}
+        x.update(kw)
+        return x
+
+    ride = dict(id=0x101, kind=0, f9c=0, value=25, decay=2, bonus=[30, 20, 10])
+    copies = [{'type': 0x101, 'open': True, 'built': 1}, {'type': 0x101, 'open': True, 'built': 1 + 3 * day}]
+    edges = [make(things=[], types=[{**ride, 'first': 0}]),
+             # One ride, built now: both readings give 25 + 30.
+             make(now=1, types=[{**ride, 'first': 1}], things=[{'type': 0x101, 'open': True, 'built': 1}]),
+             # Two copies bought three days apart: the first purchase ages both, the plan ages each copy.
+             make(now=1 + 3 * day, types=[{**ride, 'first': 1}], things=copies),
+             # The same with +0x9C set: own ages and no division by the count.
+             make(now=1 + 3 * day, types=[{**ride, 'f9c': 1, 'first': 1}], things=copies),
+             # A copy bought at turn 0 leaves +28 unset; the next purchase sets it and ages both copies from then.
+             make(now=1 + 3 * day, types=[{**ride, 'first': 1 + 3 * day}],
+                  things=[{'type': 0x101, 'open': True, 'built': 0}, {'type': 0x101, 'open': True, 'built': 1 + 3 * day}]),
+             # A thing failing 0xdc834.
+             make(now=1, types=[{**ride, 'first': 1}], things=[{'type': 0x101, 'open': False, 'built': 1}]),
+             # Kinds other than 0 and 2 never count.
+             make(now=1, types=[{**ride, 'kind': 1, 'first': 1}], things=[{'type': 0x101, 'open': True, 'built': 1}])]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (i2) ARRIVAL: counts-test 0xdc834
+COUNTS_ENTRY_CELL = 0xDD3F4  # (out u16*, thing) -> writes the back-of-queue cell; stubbed: the chosen cell
+COUNTS_QUEUE_COUNT = 0xDD118  # (thing) -> guests listed in the thing's queue; stubbed: the chosen count
+COUNTS_COASTER = 0x45EAC      # (thing) -> the coaster controller exists and carries no riders; stubbed: the chosen word
+COUNTS_NULL_CELL = -19648     # TOC slot -> the u16 the cell is compared with; zero in the file (read, never written)
+COUNTS_TYPE_ID = 0x4321
+COUNTS_STATE = type('CountsState', (), {})()
+
+
+def counts_stubs(target: Target) -> dict:
+    state = COUNTS_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != COUNTS_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the thing type id')
+        target.log.append('lookup')
+        m.gpr[3] = state.record
+
+    def cell(m: Machine) -> None:
+        if m.gpr[4] != state.thing:
+            raise AssertionError('0xdd3f4 called without the thing')
+        target.log.append('cell')
+        m.memory.w16(m.gpr[3], state.x['cell'])
+
+    def count(m: Machine) -> None:
+        if m.gpr[3] != state.thing:
+            raise AssertionError('0xdd118 called without the thing')
+        target.log.append('count')
+        m.gpr[3] = state.x['count'] & MASK32
+
+    def coaster(m: Machine) -> None:
+        target.log.append('coaster')
+        m.gpr[3] = state.x['coaster'] & MASK32
+
+    return {TYPE_RECORD_LOOKUP: lookup, COUNTS_ENTRY_CELL: cell, COUNTS_QUEUE_COUNT: count, COUNTS_COASTER: coaster}
+
+
+def counts_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = COUNTS_STATE
+    state.x = x
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    state.record = sb.struct(2048, {156: ('i', x['track'])})
+    state.thing = sb.struct(512, {14: ('H', COUNTS_TYPE_ID), 40: ('i', x['thing40']), 46: ('H', x['flags']),
+                                  60: ('I', x['cells'] & MASK32), 100: ('i', x['open']), 408: ('i', x['state'])})
+    if sb.image.memory.u16(toc_pointer(sb, COUNTS_NULL_CELL)) != 0:
+        raise AssertionError('the u16 behind TOC -19648 is not zero in the file')
+    r = sb.call(0xDC834, {3: state.thing})
+    return {'counts': r.r3, 'calls': list(log)}
+
+
+def counts_plan(x: dict) -> dict:
+    """The routine as read from 0xdc834..0xdc984, in the order it runs: thing +46 bit 0x4 (Info.IsChoosable), ride state
+    (+408) not 1 (BROKEN_DOWN, 0xdfe0c), the open word +100 nonzero (0xdff18 is +100 == 0), state not 4 (CONDEMNED,
+    0xdfe20), a back-of-queue cell different from the zero null cell (0xdd3f4), the listed guests below four times the
+    queue cells (+60, unsigned, 0xdc988), a coaster (track type 3, 0xe2fe4) only with 0x45eac nonzero, and a track word
+    (+40) for track types 1 and 2."""
+    calls: list = []
+
+    def done(counts: int) -> dict:
+        return {'counts': counts, 'calls': calls}
+    if not x['flags'] & 0x4 or s32(x['state']) == 1 or s32(x['open']) == 0 or s32(x['state']) == 4:
+        return done(0)
+    calls.append('cell')
+    if x['cell'] == 0:
+        return done(0)
+    calls.append('count')
+    if not (x['count'] & MASK32) < (x['cells'] << 2) & MASK32:
+        return done(0)
+    calls.append('lookup')  # 0xe2fe4
+    if s32(x['track']) == 3:
+        calls.append('coaster')
+        if x['coaster'] & MASK32 == 0:
+            return done(0)
+    calls.append('lookup')
+    if s32(x['track']) == 1 and s32(x['thing40']) == 0:
+        return done(0)
+    calls.append('lookup')
+    if s32(x['track']) == 2 and s32(x['thing40']) == 0:
+        return done(0)
+    return done(1)
+
+
+def counts_subset(x: dict) -> dict:
+    """What ParkEconomy.CountsForParkPoints tests (ARRIVAL-003): Info.IsChoosable (+46 bit 0x4), not broken down or
+    condemned (state 1 or 4) and open (+100). The entrance cell, the queue room, the coaster and the track word have no
+    C# state, so every input counts as if they held."""
+    return {'counts': int(bool(x['flags'] & 0x4) and s32(x['state']) not in (1, 4) and s32(x['open']) != 0),
+            'calls': None}  # no call trace: C# has no stubbed callees
+
+
+def counts_equal(original: dict, other: dict) -> bool:
+    return original['counts'] == other['counts'] and (other['calls'] is None or other['calls'] == original['calls'])
+
+
+def counts_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'flags': rng.choice([0x4, 0x4, 0x4, rng.getrandbits(16) | 0x4, rng.getrandbits(16)]),
+             'state': rng.choice([0, 0, 0, 0, 1, 2, 3, 4, rng.randrange(-2, 7)]),
+             'open': rng.choice([1, 1, 1, 0, rng.randrange(-3, 4)]),
+             'cell': rng.choice([rng.randrange(1, 0x10000), rng.randrange(1, 0x10000), 0, 0x8000, 0xFFFF]),
+             'cells': rng.choice([rng.randrange(0, 40), rng.randrange(0, 40), 0, 0x40000000, 0x3FFFFFFF, 0xFFFFFFFF]),
+             'track': rng.choice([0, 0, 1, 2, 3, 3, rng.randrange(-3, 6)]),
+             'thing40': rng.choice([1, 1, 0, rng.randrange(-2, 3)]),
+             'coaster': rng.choice([1, 1, 0, 2, 0x100, 0xFFFFFFFF])}
+        x['count'] = rng.choice([rng.randrange(0, 4 * max(1, min(x['cells'], 40)) + 2), rng.randrange(0, 160), 0,
+                                 4 * x['cells'] & MASK32, (4 * x['cells'] - 1) & MASK32, 0xFFFFFFFF])
+        x.update(kw)
+        return x
+    passing = dict(flags=0x4, state=0, open=1, cell=0x1234, cells=2, count=7, track=0, thing40=1, coaster=1)
+    edges = [make(**passing),
+             # One condition fails at a time.
+             make(**{**passing, 'flags': 0}), make(**{**passing, 'flags': 0xFFFB}), make(**{**passing, 'state': 1}),
+             make(**{**passing, 'state': 4}), make(**{**passing, 'state': 2}), make(**{**passing, 'state': 3}),
+             make(**{**passing, 'open': 0}), make(**{**passing, 'cell': 0}), make(**{**passing, 'count': 8}),
+             make(**{**passing, 'count': 9}), make(**{**passing, 'cells': 0, 'count': 0}),
+             make(**{**passing, 'cells': 0x40000000, 'count': 0xFFFFFFFF}), make(**{**passing, 'cells': 0x40000001, 'count': 3}),
+             make(**{**passing, 'track': 3, 'coaster': 0}), make(**{**passing, 'track': 3, 'coaster': 1}),
+             make(**{**passing, 'track': 3, 'thing40': 0}), make(**{**passing, 'track': 1, 'thing40': 0}),
+             make(**{**passing, 'track': 2, 'thing40': 0}), make(**{**passing, 'track': 0, 'thing40': 0}),
+             make(**{**passing, 'track': 4, 'thing40': 0}), make(**{**passing, 'track': 1, 'coaster': 0})]
+    return edges + [make() for _ in range(n)]
+
+
 # ============================================================================== registry
 LCG = Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -768,5 +1430,57 @@ COAST_FINAL = Target('coast-rating-final', 'Coaster rating final 0x41900', 'COAS
                      coast_final_inputs, equal=coast_equal, alternatives={'plan-both-flags': coast_final_both_flags},
                      notes=['C# hook: bridge function "coaster_rating_final" (COAST-I).'])
 
-TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL]
+ARRIVAL = Target('arrival-group', 'Arrival group size 0xcb4e8', 'GUESTS.md "Arrivals"', 0xCB4E8,
+                 [(0xCB4E8, 0xCB698)], arrival_stubs, arrival_binary, arrival_plan, arrival_inputs,
+                 alternatives={'routine-reading': arrival_full},
+                 csharp=('arrival_group', arrival_csharp_request, lambda x, r: r),
+                 notes=['C# hook: bridge function "arrival_group" (GuestSimulation.ArrivalGroupSize); the thing +48 word is '
+                        'passed as the Traffic Lights placed flag (word > 0) and GameType word 1 as OnlineVisit (500 cut).',
+                        'Stubs: 0x1082b4 park, 0xc1fb4 counted guests, 0xc24c0 points, 0x1083c8 factor object, '
+                        '0x5fbcc debug log; the mode object is marked constructed so 0x12bb64 does not run.'])
+
+ARRIVAL_UPDATE = Target('arrival-update', 'Arrival update 0xcb2ac', 'GUESTS.md "Arrivals"', 0xCB2AC,
+                        [(0xCB028, 0xCB050), (0xCB2AC, 0xCB4E4), (0xCB4E8, 0xCB698), (0x121098, 0x1210B0),
+                         (0x1210F8, 0x12113C), (0x10A9A4, 0x10A9B0)],
+                        arrival_update_stubs, arrival_update_binary, arrival_update_plan, arrival_update_inputs,
+                        alternatives={'routine-reading': arrival_update_reading, 'static-reading': arrival_update_static,
+                                      'reading-held': arrival_update_reading_held},
+                        equal=arrival_update_equal,
+                        notes=['No C# hook: GuestSimulation.UpdateArrivals runs on a frame clock, not on the original phases.',
+                               'Executed: 0xcb028 (constructor), 0xcb2ac, 0xcb4e8 (group size), 0x1210f8 / 0x121098 (timer '
+                               'elapsed / restart), 0x10a9a4 (game pointer). Stubs: 0x109784 vehicle phase and 0x109b78 '
+                               'report flag (chosen per call), 0x109368 vehicle script step (logged with its frame slot), '
+                               '0xcb698 guest creation (counted, raises the counted guests), 0xcb750 group history (logged), '
+                               '0xb678 assertion (logged), plus the arrival-group stubs.',
+                        'Each input is a script: one 0xcb2ac call per step in the same sandbox.'])
+
+POINTS = Target('park-points', 'Park points 0xc24c0', 'GUESTS.md "Arrivals"', 0xC24C0,
+                [(0xC24C0, 0xC26DC), (0xC5828, 0xC5864), (0xD1BE8, 0xD1D1C), (0xE4750, 0xE47F8), (0x10A9A4, 0x10A9B0),
+                 (0x1C4100, 0x1C4230)], points_stubs, points_binary, points_plan, points_inputs,
+                alternatives={'routine-reading': points_full},
+                csharp=('park_points', points_csharp_request, lambda x, r: r),
+                notes=['C# hook: bridge function "park_points" (ParkEconomy.ParkPoints): track type and first-purchase turn '
+                       'and the open flag (the chosen 0xdc834 result, ParkObjectState.IsOpen) are passed.',
+                       'Executed: 0xc5828 (type count = park record +24), 0xd1be8 / 0xd1c88 (park record search over a '
+                       'built table), 0xe4750 (turns -> 100 ns units), 0x10a9a4 (game pointer), 0x1c4100 (64-bit divide). '
+                       'Stubs: 0x118018 type record, 0xb678 assert (a zero condition fails the run), 0xdc834 counts-test '
+                       '(chosen flag), 0xdc520 own age (signed timestamp difference in days).',
+                       'Park record +24 is the number of listed copies; +28 follows the 0xda874 write rule '
+                       '(points_first). Builds never lie after the current turn.'])
+
+COUNTS = Target('park-points-counts-test', 'Park points counts-test 0xdc834', 'GUESTS.md "Arrivals"', 0xDC834,
+                [(0xDC834, 0xDC9D4), (0xDFE0C, 0xDFE34), (0xDFF18, 0xDFF2C), (0xE2FE4, 0xE3024)], counts_stubs,
+                counts_binary, counts_plan, counts_inputs, equal=counts_equal,
+                alternatives={'implemented-subset': counts_subset},
+                notes=['No C# hook: the entrance cell, the queue room and the coaster have no state in ParkEconomy; the '
+                       '"implemented-subset" reading is the Python mirror of ParkEconomy.CountsForParkPoints (ARRIVAL-003), '
+                       'whose mismatches are the conditions C# omits.',
+                       'Executed: 0xdc834, 0xdc988 (queue room), 0xdfe0c / 0xdfe20 (ride state 1 / 4), 0xdff18 (open word '
+                       '+100 == 0), 0xe2fe4 (track type 3). Stubs: 0x118018 type record (+156 chosen), 0xdd3f4 back of queue '
+                       '(writes the chosen cell), 0xdd118 listed guests (chosen), 0x45eac coaster controller (chosen word).',
+                       'The compared result is the returned word and, for the plan, the stub call order; the u16 behind TOC '
+                       '-19648 (zero in the file, read only here) is checked to be zero.'])
+
+TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS]
 DOMAINS = {SET_CELL.key: set_cell_domain}

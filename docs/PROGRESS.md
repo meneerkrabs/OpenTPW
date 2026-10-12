@@ -130,8 +130,51 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - Nine independent worktrees were started for the PowerPC follow-up analysis and
   TPI comparison (six native and three app subagents). Their new source and
   renderer changes will be reviewed and tested separately before merging.
-- [Fidelity register](FIDELITY-REGISTER.md): **135 original fidelity items** plus
-  **6 online extension uncertainties** remain open. CI checks explicit tags and
+- The PowerPC differential oracle ran the arrival rule: the group size `0xcb4e8`
+  (F9) and the park points `0xc24c0` (F10), see [ORACLE.md](reverse/ORACLE.md).
+  Both differ from GUESTS.md and the C# rule; the routine readings agree on every
+  input. `GuestSimulation.ArrivalGroupSize` is compared through the C# bridge
+  (now 49 differences, see the next bullet) and the differences are
+  tracked as ARRIVAL-002..004. `ParkEconomy.ParkPoints` now follows F10's track
+  type rule: an untracked type is aged from its first purchase and divided by
+  its copies, every copy of a kart, water ride or coaster counts in full. Only
+  the counts-test `0xdc834` remained (121 differences, ARRIVAL-003).
+- The counts-test `0xdc834` was traced and executed (oracle target
+  `park-points-counts-test`, 522/522 against the reading, call order included).
+  It needs `Info.IsChoosable`, a ride that is not broken down or condemned, the
+  open word, a connected entrance, queue room, a riderless coaster and a kart or
+  water track word. `ParkEconomy.ParkPoints` now applies the first three
+  (`IsChoosable`, `IsBrokenDown`, `IsOpen`): the park points bridge input's open
+  flag is passed as `IsOpen` and C# agrees on 507/507. ARRIVAL-003 stays open for
+  the conditions that need world state (entrance, queue room, coaster riders).
+- ARRIVAL-002 (factor) is resolved. The `+48` word of the thing at game
+  `+0x1da734` is the Traffic Lights fixed item's `mTopLeft` cell id: the world
+  setup `0x10474c` finds the item by the name `lights` and stores its thing id
+  there, which the world-variable writer saves as `mTrafficLights`; the object
+  serializer pairs `+48` with `mTopLeft`; the saved Easymode Lights record holds 1.
+  The word is therefore positive in every park with its lights, and the original
+  always uses 0.8, not 1.2. `GuestSimulation.ArrivalGroupSize` now takes
+  `TrafficLightsPlaced` (set from the placed fixed items); a new park gets 2
+  guests per group instead of 4. A non-sandbox online visit now cuts groups to
+  500 − guests as the original does for GameType 1 (`OnlineVisit`; that a visit
+  is GameType 1 stays an assumption under ARRIVAL-002). The oracle's C# pin
+  drops from 125 to 49 differences, all from the missing floor (ARRIVAL-004).
+  Open-item count unchanged.
+- The oracle also executed the arrival update `0xcb2ac` over scripts of repeated
+  calls (F11, ARRIVAL-004). A negative group (1700 guests: -200) behaves like an
+  empty one: no guest, timer restart and cleared active byte at the next stop,
+  so nothing holds (the static reading was wrong). Only the stored group word
+  and one arrival-vehicle step differ; C# behavior is unchanged.
+- Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
+  (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
+  13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).
+- Two original-data regressions for the SDT Layer I decoder: every Layer I entry
+  in all installed `.sdt` banks decodes (2,650, of which 5 MPEG-1 at 44.1 kHz),
+  and the MPEG-1 clip `tp_riderepaired` (stored without a `.mp2` suffix) matches
+  the pinned ffmpeg reference within 1 LSB. No decoder change: `Mp2Decoder`
+  already covers MPEG-1/2 Layer I.
+- [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
+  **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.
   Windows/Linux GPU/input/audio, original captures, coaster controllers, missing
   script effects, and further scenario acceptance remain release blockers.
@@ -210,8 +253,7 @@ contain original assets and are not distributed as repository fixtures.
   audio/video, localization, and original behavior references.
 - M7: actually running on Windows/Linux, packaging and licenses, long sessions,
   complete native dependency evidence, and a supported release runtime policy.
-- Existing NuGet audit warnings for ImageSharp and existing code warnings have
-  not been cleaned up. No dependency upgrades without explicit authorization.
+- Existing code warnings have not been cleaned up. No dependency upgrades without explicit authorization.
 - Subagent follow-up was blocked by a revoked refresh token. Work continued
   locally; independent architect or review sign-off is not claimed.
 
@@ -729,7 +771,8 @@ were earned from visits to published parks). What OpenTPW rebuilds:
 - **Arrivals:** guests arrive in groups as in the Mac binary: a group every
   `TimeBetweenArrivals` units of four park turns (about 2.5 minutes for the
   shipped 150) after the last one emptied, sized
-  `1.2 × (park points + NewParkBonus) / PointsPerVisitor` with park points from
+  `0.8 × (park points + NewParkBonus) / PointsPerVisitor` (1.2 before the Traffic
+  Lights finding, ARRIVAL-002) with park points from
   the rides' and sideshows' AttractionValue and age bonus (docs/GUESTS.md,
   "Arrivals"). A 30-minute M3 run now admits 105 guests instead of 1,800.
   ARRIVAL-001..003 remain open.

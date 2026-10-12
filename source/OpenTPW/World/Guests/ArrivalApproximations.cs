@@ -9,7 +9,9 @@ public static class ArrivalApproximations
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
 		("ARRIVAL-001", "STEP-OFF: a group's guests appear every 0.4 s at the arrival lanes instead of at the stops of a bus sized by the group"),
-		("ARRIVAL-002", "MODE: the 500-guest limit and the 0.8 factor of the original's other states are not reproduced; groups use 1.2 and 1500"),
-		("ARRIVAL-003", "POINTS: rides and sideshows count, aged from their build turn; the type kind, the second age source and the open-state test are not traced"),
+		("ARRIVAL-002", "ONLINE CUT: the original cuts a group to 500 minus the guests when its GameType word (data:0x53D98) is 1 (online) and to 1500 otherwise (oracle F9); OpenTPW takes a non-sandbox park visit to be GameType 1 (an assumption), and a hosted online park may not run the routine at all. The factor (0.8 while the Traffic Lights' +48 word is positive) is resolved; 1.2 without the lights is OpenTPW's own fallback"),
+		("ARRIVAL-003", "POINTS: of the original's counts-test 0xDC834 only Info.IsChoosable, not broken down (also standing for condemned) and open are applied; the entrance cell, the queue room, a coaster without riders and a built kart or water track (always set in the original's constructor) have no state here, and kind 0/2 is read as ride/sideshow (oracle F10)"),
+		("ARRIVAL-004", "FLOOR: a group cut by the 1500 limit stops at 0; the original keeps 1500 minus guests, negative above the limit (oracle F9). Executed (oracle F11), a negative group ends at the next stop like 0: no guest, timer restart, active byte cleared. Only the stored group word and one arrival-vehicle step (slot 74, 'group == 0', effect untraced) differ"),
+		("ARRIVAL-005", "FIRST PURCHASE: imported and fixed objects set a type's first-purchase turn to the current turn; the original restores park record +28 from its save"),
 	};
 }

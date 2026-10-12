@@ -469,7 +469,7 @@ public class GuestTests
 		var points = 0;
 		var bankrupt = false;
 		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { ParkPoints = () => points, ArrivalsHalted = () => bankrupt };
-		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "a new park: 1.2 × 20 / 6" );
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "a new park without the Traffic Lights: 1.2 × 20 / 6" );
 		points = 35;
 		Assert.AreEqual( 11, simulation.ArrivalGroupSize(), "Belly Bounce's 25 + 10 new bonus: 1.2 × 55 / 6" );
 		settings.ArrivalPointsPerVisitor = 1;
@@ -480,6 +480,48 @@ public class GuestTests
 		Assert.AreEqual( 3, simulation.ArrivalGroupSize(), "raised to MinPeople" );
 		bankrupt = true;
 		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "no group in world mode 4" );
+	}
+
+	[TestMethod]
+	public void ArrivalGroupsUseTheTrafficLightsFactor()
+	{
+		// 0x100CB564..0x100CB594: the +48 word (mTopLeft, cell id 1 for a fixed item) of the Traffic Lights thing is positive, so the factor is 0.8f.
+		var settings = CreateSettings();
+		var points = 0;
+		var lights = true;
+		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { ParkPoints = () => points, TrafficLightsPlaced = () => lights };
+		Assert.AreEqual( 2, simulation.ArrivalGroupSize(), "a new park: (int)(0.8f × 20) / 6" );
+		points = 35;
+		Assert.AreEqual( 7, simulation.ArrivalGroupSize(), "Belly Bounce's 25 + 10 new bonus: (int)(0.8f × 55) / 6" );
+		settings.ArrivalMinPeople = 5;
+		points = 0;
+		Assert.AreEqual( 5, simulation.ArrivalGroupSize(), "raised to MinPeople" );
+		settings.ArrivalMinPeople = 1;
+		lights = false;
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "without the lights the factor is 1.2f" );
+		simulation.TrafficLightsPlaced = null;
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "no lights hook: 1.2f" );
+		simulation.TrafficLightsPlaced = () => true;
+		var bankrupt = new GuestSimulation( CreateCross(), settings, 1 ) { TrafficLightsPlaced = () => true, ArrivalsHalted = () => true };
+		Assert.AreEqual( 0, bankrupt.ArrivalGroupSize(), "world mode 4 still gives none" );
+	}
+
+	[TestMethod]
+	public void OnlineVisitsCutArrivalGroupsTo500()
+	{
+		// 0x100CB4E8: with the GameType word 1 the group is cut to 500 − guests instead of 1500 − guests.
+		var settings = CreateSettings();
+		settings.ArrivalMinPeople = 40;
+		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { OnlineVisit = true };
+		var field = typeof( GuestSimulation ).GetField( "guests", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		var list = (List<Guest>)field.GetValue( simulation )!;
+		list.AddRange( Enumerable.Repeat<Guest>( null!, 480 ) );
+		Assert.AreEqual( 20, simulation.ArrivalGroupSize(), "500 − 480" );
+		simulation.OnlineVisit = false;
+		Assert.AreEqual( 40, simulation.ArrivalGroupSize(), "an offline park is cut at 1500" );
+		simulation.OnlineVisit = true;
+		list.AddRange( Enumerable.Repeat<Guest>( null!, 120 ) );
+		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "600 guests: the group stops at 0 (ARRIVAL-004)" );
 	}
 
 	[TestMethod]

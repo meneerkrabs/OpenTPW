@@ -107,10 +107,29 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public Func<int>? ParkPoints { get; set; }
 	/// <summary>True while no group arrives (a bankrupt park).</summary>
 	public Func<bool>? ArrivalsHalted { get; set; }
+	/// <summary>
+	/// True while the park's Traffic Lights fixed item is placed. The group size then uses 0.8 instead of 1.2. The proven rule: the
+	/// original reads the signed 32-bit word at +48 of that thing (<c>mTopLeft</c> and <c>mEntryPos</c>, cell ids
+	/// <c>1 + X + (Y &lt;&lt; 7)</c>) and uses 0.8 when it is positive. Fixed items are created at cell id 1 and the writer search found
+	/// no later store, so the word is 1 while the item exists. Null or false is OpenTPW's own fallback (1.2): the original reads
+	/// the word without checking that the thing exists, so what it does without the lights is not established.
+	/// </summary>
+	// [BIN:STP-PPC:0x100CB564 arrival factor] 0x1083c8 returns the thing at ThingArray[u16 game+0x1DA734] (mTrafficLights, written at 0x104cb0 and saved by 0x105d3c); 0xcb568 reads its +48 word; positive selects 0.8f
+	// [DATA:Easymode.TPWI:mTopLeft] the saved Lights record (Info.Id 1603 in Jungle; the Lights ids are 1603/2603/4603/3603 for jungle/hallow/fantasy/space) holds mTopLeft = mEntryPos = mExitPos = 1, so the word is positive
+	public Func<bool>? TrafficLightsPlaced { get; set; }
 	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] a group is cut so the guests already counted plus the group stay at most 1500 (0x5DC)
-	// [APPROX:ARRIVAL-002] the 500-guest limit of the original's other mode (*0x101EC8F8 == 1) and its 0.8 factor condition are not reproduced — evidence needed: what sets 0x101EC8F8 and the +0x30 word of 0x101083C8's object
+	// [BIN:STP-PPC:0x100CB4E8 arrival group] executed by the PowerPC oracle (docs/reverse/ORACLE.md F9): the 500 cut applies when the GameType word (data:0x53d98) is 1, i.e. online parks only; offline parks use 1500
+	// [APPROX:ARRIVAL-002] the online-park cut (500 instead of 1500 for GameType 1) has no counterpart: OpenTPW's online visits run no simulation — evidence needed: whether a hosted online park runs this routine and which game type it reports
 	public const int ArrivalParkLimit = 1500;
+	/// <summary>The group limit while <see cref="OnlineVisit"/> is set.</summary>
+	public const int OnlineArrivalParkLimit = 500;
+	/// <summary>
+	/// True for an online visit of another player's park. The original cuts the group to 500 minus the guests when its GameType word
+	/// (data:0x53D98) is 1 (online) and to 1500 otherwise.
+	/// </summary>
+	// [APPROX:ARRIVAL-002] an OpenTPW online visit (a non-sandbox park visit) is taken to be the original's GameType 1 — evidence needed: which GameType the original sets for a visit of another park, and whether a hosted online park runs the arrival routine at all
+	public bool OnlineVisit { get; set; }
 	/// <summary>Where guests pay (the park economy). Null: the standalone <see cref="GuestSettings.AdmissionFee"/> and attraction prices apply and no money is booked anywhere.</summary>
 	public IGuestPayments? Payments { get; set; }
 	/// <summary>Entrance fee: the economy's when <see cref="Payments"/> is set, else <see cref="GuestSettings.AdmissionFee"/>.</summary>
@@ -320,19 +339,23 @@ public sealed class GuestSimulation : IRideVisitorHost
 	}
 
 	/// <summary>
-	/// Guests in the next group: 1.2 × (park points + Arrival.NewParkBonus) / Arrival.PointsPerVisitor, at least
-	/// Arrival.MinPeople, and none while the park is bankrupt; cut to the park limit.
+	/// Guests in the next group: 0.8 (OpenTPW's own 1.2 without the Traffic Lights, see <see cref="TrafficLightsPlaced"/>) × (park points +
+	/// Arrival.NewParkBonus) / Arrival.PointsPerVisitor, at least Arrival.MinPeople, and none while the park is bankrupt; cut to
+	/// the park limit (<see cref="ArrivalParkLimit"/>, <see cref="OnlineArrivalParkLimit"/> for an online visit).
 	/// </summary>
-	// [BIN:STP-PPC:0x100CB4E8 arrival group] 0 in world mode 4 (bankrupt); else (int)(1.2f × (points 0x100C24C0 + NewParkBonus +0x2DC)) / PointsPerVisitor (+0x2E0, 1 when below 2), raised to MinPeople (+0x2D0), then cut so the counted guests (0x100C1FB4) plus the group stay within 1500
+	// [BIN:STP-PPC:0x100CB4E8 arrival group] 0 in world mode 4 (bankrupt); else (int)(factor (0.8f with the Traffic Lights thing's +48 word positive; 1.2f is OpenTPW's fallback without the lights) × (points 0x100C24C0 + NewParkBonus +0x2DC)) / PointsPerVisitor (+0x2E0, 1 when below 2), raised to MinPeople (+0x2D0), then cut so the counted guests (0x100C1FB4) plus the group stay within 1500 (500 when the GameType word is 1)
 	public int ArrivalGroupSize()
 	{
 		if ( ArrivalsHalted?.Invoke() == true )
 			return 0;
 		var perVisitor = Settings.ArrivalPointsPerVisitor < 2 ? 1 : Settings.ArrivalPointsPerVisitor;
-		var count = (int)(1.2f * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
+		var factor = TrafficLightsPlaced?.Invoke() == true ? 0.8f : 1.2f;
+		var count = (int)(factor * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		count = Math.Max( count, Settings.ArrivalMinPeople );
-		if ( guests.Count + count > ArrivalParkLimit )
-			count = Math.Max( 0, ArrivalParkLimit - guests.Count );
+		var limit = OnlineVisit ? OnlineArrivalParkLimit : ArrivalParkLimit;
+		if ( guests.Count + count > limit )
+			// [APPROX:ARRIVAL-004] the cut group stops at 0; the original stores 1500 − guests as is (negative above 1500, compared unsigned; oracle F9). Executing 0xcb2ac with a negative group (oracle F11) shows the same behaviour as 0: at the next stop (phase 2) it creates no guest, restarts the timer and clears the active byte (0xcb3bc, 0xcb3f4), so nothing holds. What differs is the stored group word (negative) and the missing 'group == 0' arrival-vehicle step (0xcb488, slot 74), whose effect is not traced
+			count = Math.Max( 0, limit - guests.Count );
 		return count;
 	}
 

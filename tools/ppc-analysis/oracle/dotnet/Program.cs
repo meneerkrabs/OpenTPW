@@ -19,6 +19,8 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["bounce"] = Bounce,
 	["guest_speed_limits"] = GuestSpeedLimits,
 	["guest_speed_smoothing"] = GuestSpeedSmoothing,
+	["arrival_group"] = ArrivalGroup,
+	["park_points"] = ParkPoints,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -122,4 +124,61 @@ static JsonNode? GuestSpeedSmoothing( JsonObject a )
 	var (s, boost, speed, force) = GuestSpeed.Update( BitConverter.Int32BitsToSingle( (int)(uint)a["s_bits"]! ), (int)a["base"]!,
 		(int)a["bonus"]!, (ushort)(int)a["boost"]! );
 	return new JsonObject { ["s_bits"] = (uint)BitConverter.SingleToInt32Bits( s ), ["boost"] = (int)boost, ["force"] = force, ["speed"] = speed };
+}
+
+// GuestSimulation.ArrivalGroupSize (0xcb4e8) on a fresh simulation. World mode 4 halts arrivals; the counted guests fill
+// the guest list (a field) through reflection (only its count is read). The thing +48 word of the Traffic Lights is passed as
+// the placed flag (word > 0 selects the factor 0.8, F9). The GameType mode word 1 (limit_mode) is passed as OnlineVisit
+// (the 500 cut; ARRIVAL-002 assumes a visit is GameType 1).
+static JsonNode? ArrivalGroup( JsonObject a )
+{
+	var settings = new GuestSettings
+	{
+		ArrivalMinPeople = (int)a["min_people"]!,
+		ArrivalNewParkBonus = (int)a["bonus"]!,
+		ArrivalPointsPerVisitor = (int)a["per_visitor"]!,
+	};
+	var points = (int)a["points"]!;
+	var halted = (int)a["world_mode"]! == 4;
+	var lights = (int)a["obj48"]! > 0;
+	var online = (int)a["limit_mode"]! == 1;
+	var simulation = new GuestSimulation( new GuestPathGrid( 1, 1 ), settings, 1 ) { ParkPoints = () => points, ArrivalsHalted = () => halted, TrafficLightsPlaced = () => lights, OnlineVisit = online };
+	var field = typeof( GuestSimulation ).GetField( "guests", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingFieldException( "GuestSimulation.guests" );
+	((List<Guest>)field.GetValue( simulation )!).AddRange( Enumerable.Repeat<Guest>( null!, (int)a["guests"]! ) );
+	return JsonValue.Create( simulation.ArrivalGroupSize() );
+}
+
+// ParkEconomy.ParkPoints (0xc24c0) on an economy built from the input: one synthetic object type per input type (kind 0 -> Ride,
+// 2 -> Sideshow, any other kind -> Shop, the C# reading ARRIVAL-003; AttractionValue, NewAttractionDecayTime, NewBonus and
+// Bumper.WhichTrackType (type +0x9C) from the input), one RegisterExisting object per thing. The economy clock is a read-only
+// property, so its setter is reached through reflection to put each object's BuiltTick on the first tick of its build turn and the
+// economy on the first tick of turn "now". The type's first-purchase turn (park record +28) is then set to the input's value, as a
+// loaded save restores its counters after its objects: it can stem from a sold copy or be unset (0) with later copies standing;
+// ParkPointsTests covers how purchases set it. The input's open flag stands for the original's counts-test (0xdc834) and is passed as
+// the object's open state (thing +0x64); the test's other conditions have no C# state (ARRIVAL-003, F10) and are not in the inputs.
+static JsonNode? ParkPoints( JsonObject a )
+{
+	var infos = a["types"]!.AsArray().Select( type =>
+	{
+		var kind = (int)type!["kind"]! switch { 0 => ParkObjectKind.Ride, 2 => ParkObjectKind.Sideshow, _ => ParkObjectKind.Shop };
+		return new EconomyObjectInfo( (int)type["id"]!, $"Type {(int)type["id"]!}", kind, ResearchCategory.Ride, 0,
+			new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, null, null, null, 0, 0, 0, 0, 0, (int)type["value"]!, "synthetic.wad",
+			0, 0, (int)type["decay"]!, type["bonus"]!.AsArray().Select( bonus => (int)bonus! ).ToArray(), (int)type["track_type"]! );
+	} ).ToList();
+	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( infos ), ParkGameMode.FullSimulation, 1 );
+	var tick = typeof( ParkEconomy ).GetProperty( "Tick" )!.GetSetMethod( nonPublic: true )
+		?? throw new MissingMethodException( "ParkEconomy.Tick setter" );
+	foreach ( var thing in a["things"]!.AsArray() )
+	{
+		tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)thing!["built"]! ) } );
+		park.RegisterExisting( (int)thing["type"]! ).IsOpen = (bool)thing["open"]!;
+	}
+	foreach ( var type in a["types"]!.AsArray() )
+	{
+		var key = ParkCounters.FirstPurchaseTurn( (int)type!["id"]! );
+		park.Counters.Add( key, (long)(uint)(int)type["first"]! - park.Counters[key] );
+	}
+	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)a["now"]! ) } );
+	return JsonValue.Create( park.ParkPoints() );
 }

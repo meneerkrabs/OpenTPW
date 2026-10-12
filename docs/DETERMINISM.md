@@ -196,7 +196,9 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xF21F9E6EC3DBEB23`, schema 10: the traced arrival rule (docs/GUESTS.md, "Arrivals") hashes the arrival
+  (`0xA51B682C587D0689`, schema 10: the economy counters, already hashed, gain each type's first-purchase turn
+  (`firstturn:<Info.Id>`, PPC oracle F10); the synthetic park's shop adds one, so the run's hash changes. Before that:
+  `0xF21F9E6EC3DBEB23`, schema 10: the traced arrival rule (docs/GUESTS.md, "Arrivals") hashes the arrival
   timer's start turn and group flag instead of a countdown, and its groups change the run. Before that:
   `0x3FD757BA59B3524D`, schema 9; COAST-M merged the coasters into schema 8: the coaster digest
   (see the table) follows the script digest. The synthetic park has no coaster, so the digest holds only the coaster

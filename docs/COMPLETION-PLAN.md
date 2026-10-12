@@ -150,6 +150,13 @@ with the SHA-256 of the analyzed executable in `RECOMPILATION-ASSESSMENT.md`. Th
 fidelity register (`tools/fidelity_register.py`) must still learn that label
 before the first rule is marked this way.
 
+A decision of the project owner on October 10, 2026 allows pure computational
+routines of the identified Mac build to run in OpenTPW's own PowerPC interpreter as
+a differential oracle, with no OS calls, explicit stubs, bounded execution and no
+original bytes in git. Policy, targets and findings are in
+`docs/reverse/ORACLE.md`. Executed agreement is evidence about that routine only,
+not about callers or game state that the stubs replace.
+
 ### Evidence and determinism contract (requirements, not yet delivered)
 
 `docs/REFERENCE-CORPUS.md` specifies the selected corpus and the trace fields.
@@ -343,5 +350,8 @@ upstream documentation is no evidence for the locally pinned runtime versions.
 - [x] Local .NET 8 arm64 SDK; x64 bootstrap SDK is being checked.
 - [ ] M0 build/asset diagnostics/tests.
 - [ ] M1 visible Mac park slice.
-- [ ] Recompilation decision experiment with original executable.
+- [ ] Recompilation decision experiment with original executable. For the Mac build,
+  the PowerPC differential oracle (`docs/reverse/ORACLE.md`) now recovers bounded
+  routines and compares them with OpenTPW; a decision on the Windows executable
+  remains open.
 - [ ] M2–M7; not delivered and not to be reported as done.

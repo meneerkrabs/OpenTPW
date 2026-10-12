@@ -2,8 +2,6 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using OpenTPW.FrontEnd;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 
 namespace OpenTPW;
@@ -707,8 +705,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
 				colors.Add( BitConverter.ToUInt32( pixels, pixel ) );
 			Require( colors.Count > 32, $"the world framebuffer retains texture detail ({name})" );
-			using var image = Image.LoadPixelData<Bgra32>( pixels, (int)source.Width, (int)source.Height );
-			image.SaveAsPng( Path.Combine( evidenceDirectory, name ) );
+			PngWriter.SaveBgra( Path.Combine( evidenceDirectory, name ), pixels, (int)source.Width, (int)source.Height );
 			capturedPngs.Add( name );
 			Log.Trace( $"Park-resume draw: {name} ({source.Width}x{source.Height}, 32+ distinct colors)." );
 		}

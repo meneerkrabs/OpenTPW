@@ -63,9 +63,45 @@ EXPECTED = {
                                            'max_y': 0.7295945286750793, 'max_speed': 20.78131103515625,
                                            'sections': [5678, 64, 10262, 128, 64]}),
     ('coast-rating-final', 'plan-both-flags'): AGREE,
+    # F9: 0xcb4e8 uses the factor 0.8 while the 0x1083c8 thing's +48 word is positive (the Traffic Lights' mTopLeft: GUESTS.md
+    # and C# take that), cuts to 500 − guests in limit mode 1 (online; C#: OnlineVisit, ARRIVAL-002), and both cuts compare
+    # guests + group unsigned without a floor at 0 (GUESTS.md and C# floor at 0, ARRIVAL-004). 49 of the 515 inputs remain:
+    # 36 in limit mode 1 and 12 in the other modes where the group is cut below 0 (guests above the limit), plus 1 where a
+    # negative group (MinPeople −5) wraps the unsigned compare.
+    ('arrival-group', 'plan'): (49, {'world_mode': 0, 'guests': 600, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                     'min_people': 1, 'obj48': 0, 'limit_mode': 1}),
+    ('arrival-group', 'routine-reading'): AGREE,
+    ('arrival-group', 'csharp'): (49, {'world_mode': 0, 'guests': 600, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                       'min_people': 1, 'obj48': 0, 'limit_mode': 1}),
+    # F11: executed over scripts of 0xcb2ac calls, a negative group (1700 counted guests: 1500 − 1700 = −200) ends at the
+    # next stop exactly like 0: guests created, active byte and timer restart agree with the floored plan. The group word
+    # keeps the negative value and the "group == 0" vehicle event (slot 74) is missing. The static reading (only exactly 0
+    # ends a group, a negative group holds the state) is refuted.
+    ('arrival-update', 'plan'): AGREE,
+    ('arrival-update', 'routine-reading'): AGREE,
+    ('arrival-update', 'static-reading'): (66, {'world_mode': 0, 'guests': 0, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                                'min_people': 1, 'obj48': 0, 'limit_mode': 0, 'preset': [-5, 1],
+                                                'interval': 0, 'timer0': 0, 'steps': [[8, 2, 1], [12, 2, 1], [16, 2, 0]]}),
+    ('arrival-update', 'reading-held'): (210, {'world_mode': 0, 'guests': 1700, 'points': 552, 'bonus': 20, 'per_visitor': 6,
+                                               'min_people': 2, 'obj48': 1, 'limit_mode': 0, 'preset': None, 'interval': 2,
+                                               'timer0': 0, 'steps': [[40, 2, 0], [44, 2, 0], [48, 2, 1], [400, 2, 1],
+                                                                      [404, 2, 0], [900, 2, 0]]}),
+    # F10 (fixed, counts-test partly): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its first purchase and
+    # divided by its count, any other type is aged per copy and counts in full, and only things passing 0xdc834 count, in
+    # GUESTS.md and C# too. The input's open flag is the chosen result of the counts-test; C# maps it to the object's open
+    # state (thing +0x64), the one condition of the test that the inputs vary.
+    ('park-points', 'plan'): AGREE,
+    ('park-points', 'routine-reading'): AGREE,
+    ('park-points', 'csharp'): AGREE,
+    # ARRIVAL-003: 0xdc834 executed (the entrance cell, the queue count and the coaster controller stubbed) agrees with the
+    # reading on the returned word and the stub call order. The part C# implements (Info.IsChoosable, not broken down or
+    # condemned, open) differs wherever one of the other conditions fails.
+    ('park-points-counts-test', 'plan'): AGREE,
+    ('park-points-counts-test', 'implemented-subset'): (205, {'flags': 4, 'state': 0, 'open': 1, 'cell': 0, 'cells': 2,
+                                                              'track': 0, 'thing40': 1, 'coaster': 1, 'count': 7}),
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final'}
+                  'coast-rating-final', 'arrival-update', 'park-points-counts-test'}
 
 
 class Identity(unittest.TestCase):
@@ -165,6 +201,109 @@ class Oracle(unittest.TestCase):
                     ('coast-rating-final', 'plan'), ('coast-rating-final', 'plan-both-flags')):
             self.check(key)
 
+    def test_arrival(self):
+        for key in (('arrival-group', 'plan'), ('arrival-group', 'routine-reading')):
+            self.check(key)
+
+    def test_arrival_csharp(self):
+        self.check(('arrival-group', 'csharp'))
+
+    def test_arrival_reading_is_sharp(self):
+        # Each part of the routine reading matters: dropping the 0.8 factor, the 500 cut or the unsigned/no-floor cut
+        # turns the agreement into mismatches.
+        import dataclasses
+        variants = {
+            'factor': lambda x: targets.arrival_full({**x, 'obj48': 0}),
+            'mode-500': lambda x: targets.arrival_full({**x, 'limit_mode': 0}),
+            'floor': lambda x: max(0, targets.arrival_full(x)),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.ARRIVAL, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_arrival_update(self):
+        for key in (('arrival-update', 'plan'), ('arrival-update', 'routine-reading'),
+                    ('arrival-update', 'static-reading'), ('arrival-update', 'reading-held')):
+            self.check(key)
+
+    def test_arrival_update_reading_is_sharp(self):
+        # Each part of the reading matters: the group word kept negative, the missing slot-74 event, the stop gating
+        # (phase 2) and the interval test each bring mismatches back when dropped. The plan keeps only the
+        # behaviour, so a floored group changes nothing there (the finding), but it does change the full reading.
+        import dataclasses
+        strip74 = lambda r: {**r, 'events': [[e for e in ev if e[0] != 74] for ev in r['events']]}
+        variants = {
+            'floor': targets.arrival_update_floored,
+            'hold': targets.arrival_update_reading_held,
+            'slot-74': lambda x: strip74(targets.arrival_update_reading(x)),
+            'phase-gate': lambda x: targets.arrival_update_reading(
+                {**x, 'steps': [(now, 2, flag) for now, _, flag in x['steps']]}),
+            'interval-off-by-one': lambda x: targets.arrival_update_reading({**x, 'interval': x['interval'] + 1}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.ARRIVAL_UPDATE, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+        # The negative group itself: the floored plan's behaviour agrees even where the group started below 0.
+        [original] = [targets.run_binary(targets.ARRIVAL_UPDATE, targets.ARRIVAL_UPDATE.sandbox(self.image), x)
+                      for x in [{'world_mode': 0, 'guests': 1700, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                 'min_people': 1, 'obj48': 0, 'limit_mode': 0, 'preset': None, 'interval': 2, 'timer0': 0,
+                                 'steps': [(40, -1, 0), (44, -1, 0), (48, 2, 0)]}]]
+        self.assertEqual(original['groups'], [-200, -200, -200])
+        self.assertEqual(original['calls'], [(1, 0, 0), (1, 0, 0), (0, 48, 0)])
+        self.assertEqual(original['events'], [[(2000, -200), (82, 1)], [(82, 1)], [(80, 0)]])
+
+    def test_points(self):
+        for key in (('park-points', 'plan'), ('park-points', 'routine-reading'), ('park-points', 'csharp')):
+            self.check(key)
+
+    def test_points_reading_is_sharp(self):
+        # Each part of the routine reading matters: the 0xdc834 test, the +0x9C branch either way and the park record
+        # age (+28, not the earliest copy) each bring mismatches back when dropped.
+        import dataclasses
+
+        def earliest(x, kind):
+            return min([t['built'] for t in x['things'] if t['type'] == kind['id']] or [x['now']])
+        variants = {
+            'open-test': lambda x: targets.points_full({**x, 'things': [{**t, 'open': True} for t in x['things']]}),
+            'f9c-zero': lambda x: targets.points_full({**x, 'types': [{**k, 'f9c': 0} for k in x['types']]}),
+            'f9c-set': lambda x: targets.points_full({**x, 'types': [{**k, 'f9c': 1} for k in x['types']]}),
+            'record-age': lambda x: targets.points_full(
+                {**x, 'types': [{**k, 'first': earliest(x, k)} for k in x['types']]}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.POINTS, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_counts_test(self):
+        for key in (('park-points-counts-test', 'plan'), ('park-points-counts-test', 'implemented-subset')):
+            self.check(key)
+
+    def test_counts_test_reading_is_sharp(self):
+        # Every condition of the reading matters: dropping any one brings mismatches back.
+        import dataclasses
+
+        def without(**fixed):
+            return lambda x: targets.counts_plan({**x, **fixed})
+        variants = {
+            'choosable': lambda x: targets.counts_plan({**x, 'flags': x['flags'] | 4}),
+            'broken-down': lambda x: targets.counts_plan({**x, 'state': 0 if x['state'] == 1 else x['state']}),
+            'condemned': lambda x: targets.counts_plan({**x, 'state': 0 if x['state'] == 4 else x['state']}),
+            'call-order': lambda x: {**targets.counts_plan(x), 'calls': []},
+            'open': without(open=1),
+            'cell': without(cell=1),
+            'queue-room': without(count=0, cells=1),
+            'coaster': without(coaster=1),
+            'kart-track': lambda x: targets.counts_plan({**x, 'thing40': 1 if x['track'] == 1 else x['thing40']}),
+            'water-track': lambda x: targets.counts_plan({**x, 'thing40': 1 if x['track'] == 2 else x['thing40']}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.COUNTS, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})
         sandbox.reset()
@@ -213,6 +352,8 @@ class CSharpMutation(unittest.TestCase):
          '(3f * previous + (baseSpeed + bonus + boost) / (float)Divisor) * 0.25f'),
         ('walk-speed-setter', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
          'public const int Floor = 655;', 'public const int Floor = 654;'),
+        ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         '!item.ScriptBroken && item.IsOpen;', '!item.ScriptBroken;'),
     ]
 
     def test_mutations_are_detected(self):

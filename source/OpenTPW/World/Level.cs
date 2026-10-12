@@ -222,6 +222,8 @@ public partial class Level : IDisposable
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests, openParkOnAttach: resumeState == null );
 			ConnectObjectsToGuests();
+			if ( Guests != null )
+				Guests.TrafficLightsPlaced = () => Objects.Objects.Any( item => item.Entry.IsTrafficLights );
 			ConnectObjectsToEconomy();
 			SetupStaff();
 			SetupParkGate();
@@ -235,7 +237,7 @@ public partial class Level : IDisposable
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: GuestPathGrid.FromOriginal( park.Map, park.Save );
-		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream );
+		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream ) { OnlineVisit = Visit != null };
 		var sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
@@ -503,7 +505,20 @@ public partial class Level : IDisposable
 	public void SavePark( string path ) => Streams.SavePark( path );
 
 	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
-	public void LoadPark( string path ) => Streams.LoadPark( path );
+	public void LoadPark( string path )
+	{
+		Streams.LoadPark( path );
+		// The saved open state goes back into the running scripts; SyncObjectEconomy would otherwise overwrite it with the live one on the next tick (park points count only open rides, ARRIVAL-003).
+		foreach ( var (item, instance) in economyInstances )
+		{
+			if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.IsOpen == item.IsOpen )
+				continue;
+			if ( state.IsOpen )
+				item.Open();
+			else
+				item.Close();
+		}
+	}
 
 	private void RequireSandbox()
 	{

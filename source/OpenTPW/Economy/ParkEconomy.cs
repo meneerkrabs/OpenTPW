@@ -581,10 +581,14 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>
 	/// The park's attraction points for the arrival rule: per ride or sideshow, its Info.AttractionValue plus the
 	/// Attraction[n].NewBonus of its age bracket (n = age in days / Info.NewAttractionDecayTime, none from the fourth
-	/// bracket on), divided by the number of objects of the same type, so copies of one type count once.
+	/// bracket on). A type without a track (Bumper.WhichTrackType 0) is aged from its first purchase and divided by its
+	/// number of objects, so its copies count once; every copy of a tracked type (karts, water rides, coasters) is aged
+	/// from its own build and counts in full.
 	/// </summary>
-	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / count of that type (0x100C5828), age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
-	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; the age is counted from the build turn on the park calendar, and the original's second age source (type +0x9C, 0x100DC520) and its open-state test (0x100DC834) are not reproduced — evidence needed: the type record's +0x7A8 and +0x9C fields and 0x100DC834
+	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / divisor, age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
+	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
+	// [BIN:STP-PPC:0x100DC834 counts-test] only things passing 0x100DC834 count: thing +0x2E bit 0x4 (the type's Info.IsChoosable, 0x100DABDC), ride state (+0x198) not BROKEN_DOWN (1, 0x100DFE0C) and not CONDEMNED (4, 0x100DFE20), the open word +0x64 nonzero (0x100DFF18; 1 at construction, cleared by closing and by breaking down), a connected entrance (0x100DD3F4 gives a cell), room in the queue (0x100DC988), a coaster without riders (0x100E2FE4, 0x10045EAC) and a built track for karts and water rides (+0x28)
+	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; of the counts-test only Info.IsChoosable, IsBrokenDown (which also stands for the original's CONDEMNED, a breakdown at life gauge 0) and IsOpen (+0x64) are applied — evidence needed: world state for the entrance cell 0x100DD3F4 (a cell other than the u16 behind TOC -19648, zero in the file), the queue room 0x100DC988 (guests listed < 4 × queue cells), the coaster controller riders +0x140 (equal to the script's VAR_ONRIDE?) and the kart or water track word +0x28 (written only by the constructor, as 1), and whether a condemned ride stays condemned after a repair
 	public int ParkPoints()
 	{
 		var counts = new Dictionary<int, int>();
@@ -593,15 +597,23 @@ public sealed class ParkEconomy : IParkEconomy
 		var points = 0;
 		foreach ( var item in objects.Values )
 		{
-			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Kind is not (ParkObjectKind.Ride or ParkObjectKind.Sideshow) )
+			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Kind is not (ParkObjectKind.Ride or ParkObjectKind.Sideshow) || !CountsForParkPoints( item, info ) )
 				continue;
-			var ageDays = Math.Max( 0, Turn - ParkCalendar.Turn( item.BuiltTick ) ) * ParkCalendar.SecondsPerTurn / 86400;
+			var tracked = info.TrackType != 0;
+			var since = tracked ? ParkCalendar.Turn( item.BuiltTick ) : Counters[ParkCounters.FirstPurchaseTurn( item.InfoId )];
+			var ageDays = Math.Max( 0, Turn - since ) * ParkCalendar.SecondsPerTurn / 86400;
 			var bracket = info.NewAttractionDecayTime > 0 ? ageDays / info.NewAttractionDecayTime : 0;
 			var bonus = info.NewBonus is { } bonuses && bracket < Math.Min( 3, bonuses.Count ) ? bonuses[(int)bracket] : 0;
-			points += (bonus + info.AttractionValue) / counts[item.InfoId];
+			points += (bonus + info.AttractionValue) / (tracked ? 1 : counts[item.InfoId]);
 		}
 		return points;
 	}
+
+	/// <summary>
+	/// The part of the original's park points counts-test (0x100DC834) that OpenTPW has state for: the type is choosable, and the
+	/// object is neither broken down (in the economy or by its script) nor closed. The test's world conditions are listed at <see cref="ParkPoints"/>.
+	/// </summary>
+	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen;
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
 	public ParkObjectState RegisterExisting( int infoId )
@@ -626,6 +638,10 @@ public sealed class ParkEconomy : IParkEconomy
 		};
 		objects.Add( item.Id, item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
+		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
+		// [APPROX:ARRIVAL-005] an object imported from an original save or placed as a fixed item also sets the first-purchase turn to the current turn; the original restores park record +28 from the save (0x100D1E8C) — evidence needed: park record +28 in an original save
+		if ( Counters[ParkCounters.FirstPurchaseTurn( info.InfoId )] == 0 )
+			Counters.Max( ParkCounters.FirstPurchaseTurn( info.InfoId ), Turn );
 		return item;
 	}
 

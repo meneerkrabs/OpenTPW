@@ -307,6 +307,29 @@ they are not proof of interactive UI correctness or original-game visual fidelit
 The nine native shader tests verify MSL/HLSL/GLSL material and text binding names without
 creating a GPU device; omit the opt-in variable when matching libraries are absent.
 
+## Park-resume smoke test
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --mute --no-advisor \
+  --park-resume-smoke capture --park-resume-file park.otpw --park-resume-evidence evidence/
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --mute --no-advisor \
+  --park-resume-smoke restore --park-resume-file park.otpw --park-resume-evidence evidence/
+```
+
+Two-phase verification of the whole-park save (PARK-SAVES.md) on a real renderer. The capture phase
+builds a seeded Jungle park (the same ride placed twice at rotations 0 and 180 with edited queues,
+two identical shops at different prices, a toilet, a demolished object leaving an id hole, two staff
+and fourteen guests), saves it through the pause menu's own save handler and continues the live park.
+The restore phase — a cold second process — requires the save's bytes to survive the restart,
+rejects six corrupted candidates with the live park intact each time, resumes the park and compares
+every typed section hash and the composite world hash against the capture run at each checkpoint,
+then runs post-load economy checks (admission booked once, a sale credited once with its links
+removed, a new placement, wages charged once, payment bindings one-to-one). The evidence directory
+holds the phase evidence (hashes and counters only, never asset bytes), the corrupted probe files
+and captures; `--park-resume-file` accepts the own-format `.json`/`.otpw` suffix only. These are
+controlled, accelerated, seeded fixtures that validate persistence of current OpenTPW behaviour,
+not original-game fidelity.
+
 ## Advisor speech
 
 ```sh

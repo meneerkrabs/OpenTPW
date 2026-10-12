@@ -106,7 +106,10 @@ key press on the page.
 The game writes saves and options to `/save`, online files to `/online` and display and graphics
 settings to `/config` (`OPENTPW_CONFIG_DIR`). `opentpw-storage.js` mirrors those folders into
 IndexedDB every five seconds and when the page is hidden or closed, and puts them back before the
-game starts. The player's game files are not kept; the next visit asks for the folder again.
+game starts. Whole-park saves (`opentpw-<theme>-world.json`, docs/PARK-SAVES.md) live in `/save`
+too: a park saved in the browser is still on the Load screen after a page or runtime reload, and
+resuming it asks for the game folder to be chosen again, because the original files are not kept.
+The player's game files are not uploaded.
 
 ### Shaders
 

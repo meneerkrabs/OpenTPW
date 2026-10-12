@@ -63,9 +63,14 @@ EXPECTED = {
                                            'max_y': 0.7295945286750793, 'max_speed': 20.78131103515625,
                                            'sections': [5678, 64, 10262, 128, 64]}),
     ('coast-rating-final', 'plan-both-flags'): AGREE,
+    # F9: 0xcb4e8 uses the factor 0.8 while the 0x1083c8 thing's +48 word is positive, cuts to 500 − guests in limit
+    # mode 1, and both cuts compare guests + group unsigned without a floor at 0 (GUESTS.md and C# have 1.2 / 1500 / ≥ 0).
+    ('arrival-group', 'plan'): (125, {'world_mode': 0, 'guests': 0, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                      'min_people': 1, 'obj48': 1, 'limit_mode': 0}),
+    ('arrival-group', 'routine-reading'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final'}
+                  'coast-rating-final', 'arrival-group'}
 
 
 class Identity(unittest.TestCase):
@@ -164,6 +169,24 @@ class Oracle(unittest.TestCase):
         for key in (('coast-rating-step', 'plan'), ('coast-rating-step', 'plan-stale-fz'),
                     ('coast-rating-final', 'plan'), ('coast-rating-final', 'plan-both-flags')):
             self.check(key)
+
+    def test_arrival(self):
+        for key in (('arrival-group', 'plan'), ('arrival-group', 'routine-reading')):
+            self.check(key)
+
+    def test_arrival_reading_is_sharp(self):
+        # Each part of the routine reading matters: dropping the 0.8 factor, the 500 cut or the unsigned/no-floor cut
+        # turns the agreement into mismatches.
+        import dataclasses
+        variants = {
+            'factor': lambda x: targets.arrival_full({**x, 'obj48': 0}),
+            'mode-500': lambda x: targets.arrival_full({**x, 'limit_mode': 0}),
+            'floor': lambda x: max(0, targets.arrival_full(x)),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.ARRIVAL, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
 
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})

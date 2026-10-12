@@ -109,7 +109,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public Func<bool>? ArrivalsHalted { get; set; }
 	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] a group is cut so the guests already counted plus the group stay at most 1500 (0x5DC)
-	// [APPROX:ARRIVAL-002] the 500-guest limit of the original's other mode (*0x101EC8F8 == 1) and its 0.8 factor condition are not reproduced — evidence needed: what sets 0x101EC8F8 and the +0x30 word of 0x101083C8's object
+	// [BIN:STP-PPC:0x100CB4E8 arrival group] executed by the PowerPC oracle (docs/reverse/ORACLE.md F9): the 500 cut applies when the GameType word (data:0x53d98) is 1, i.e. online parks only; offline parks use 1500
+	// [APPROX:ARRIVAL-002] the factor is always 1.2; the original uses 0.8 while the +48 word of the thing at game +0x1DA734 (0x101083C8) is positive (oracle F9) — evidence needed: what that thing is and what its +48 word counts
 	public const int ArrivalParkLimit = 1500;
 	/// <summary>Where guests pay (the park economy). Null: the standalone <see cref="GuestSettings.AdmissionFee"/> and attraction prices apply and no money is booked anywhere.</summary>
 	public IGuestPayments? Payments { get; set; }
@@ -332,6 +333,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var count = (int)(1.2f * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		count = Math.Max( count, Settings.ArrivalMinPeople );
 		if ( guests.Count + count > ArrivalParkLimit )
+			// [APPROX:ARRIVAL-004] the cut group stops at 0; the original stores 1500 − guests as is (negative above 1500, compared unsigned; oracle F9), and its caller (0xcb3bc, 0xcb488) then neither creates guests nor restarts the timer — evidence needed: execute 0xcb2ac with a negative count and find what else resets the group
 			count = Math.Max( 0, ArrivalParkLimit - guests.Count );
 		return count;
 	}

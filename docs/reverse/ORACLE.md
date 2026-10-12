@@ -127,6 +127,7 @@ Mutation checks (`test_oracle.py`):
 | `walk-smoothing` | `0xe6b28` + `0xffe38` | `0xffd4c`, `0xd2394` (later movement updates, no value used) | 507 | **F6**: 99 differ (98 in the last bit of `s`, 2 in the boost wrap, one input both). Fused reading: 2 (wrap) | **agree** (`GuestSpeed.Update`: fused multiply-add and the u16 product, F6 fixed in WALK-I; wired in WALK-F) |
 | `coast-rating-step` | `0x415b4` | none | 509 | **F7**: 440 differ with the stale term = 0. **Agree** 509/509 with the stale term = Fz. Previous force and bank are 0 in every input (OV-7, F7) | COAST-I not on main (hook `coaster_rating_step`) |
 | `coast-rating-final` | `0x41900` | none | 506 | **F8**: 280 differ. **Agree** 506/506 with the corrected count | hook `coaster_rating_final` |
+| `arrival-group` | `0xcb4e8` | `0x1082b4` game → park (sentinel, checked), `0xc1fb4` counted guests (chosen count; argument 20 checked), `0xc24c0` park points (chosen), `0x1083c8` thing lookup (synthetic thing, `+48` chosen), `0x5fbcc` debug print (logged). The GameType object is marked constructed, so its constructor `0x12bb64` must not run | 515 | **F9**: 125 differ from GUESTS.md. **Agree** 515/515 with the routine reading | hook `arrival_group` not wired (`GuestSimulation.ArrivalGroupSize`) |
 
 The C# comparisons use these seams:
 
@@ -269,6 +270,30 @@ whose flags have **both** `0x40` and `0x80` set. Each `rlwinm.` test branches pa
 when its bit is clear. The plan says "sections without flags 0x40 and 0x80". Sickness,
 excitement (clamps included), `+268`, `+272` and `+276` agree on all 506 inputs. With the
 corrected count, everything agrees.
+
+**F9, arrival group size (GUESTS.md "Arrivals", `GuestSimulation.ArrivalGroupSize`).** GUESTS.md and C#
+use `(int)(1.2f × (points + NewParkBonus)) / PointsPerVisitor`, at least MinPeople, cut to 1500 − guests and never
+below 0. Executed, `0xcb4e8` differs in three places. A reading with all three agrees on 515/515 inputs, and dropping
+any one of them brings mismatches back (`test_arrival_reading_is_sharp`).
+
+- **Factor.** `0xcb564..0xcb590` calls `0x1083c8`. That routine returns the thing whose ThingArray index is the u16
+  at game `+0x1da734` (20-byte entries; the neighbour `0x108424` reads `+0x1da736` for the bank). When that thing's
+  `+48` word is **positive**, the factor is `0.8f` (TOC −11272, `0x3f4ccccd`). Otherwise it is `1.2f` (TOC −11268).
+  What the `+48` word counts is not traced (ARRIVAL-002).
+- **500 cut in online parks.** When word 0 of the GameType object (`data:0x53d98`, PPC-review "New binding": 0 Full
+  Simulation, 1 online, 2 Instant Action) is 1, the group is first cut to `500 − guests`. Otherwise the 1500 cut
+  applies. Offline parks therefore use 1500 as C# does. OpenTPW's online visits run no simulation, so the 500 cut has
+  no OpenTPW counterpart yet.
+- **No floor.** Both cuts compare `guests + group` with `cmplwi` (unsigned) and store `limit − guests` as is. With more
+  guests counted than the limit, the group is negative: 1700 guests give −200, where C# gives 0. Statically, the caller
+  `0xcb2ac` creates guests only while the count is above 0 (`0xcb3bc`) and restarts the timer only at exactly 0
+  (`0xcb488`). A negative group would therefore hold the arrival state until something else resets it. This caller
+  consequence is static reading and has not been executed (ARRIVAL-004).
+
+First counterexample: shipped values (NewParkBonus 20, PointsPerVisitor 6, MinPeople 1), no points, no guests, thing
+`+48` = 1. The original gives 2 (0.8 × 20 / 6) and the plan gives 4. Integer and float steps agree with the plan
+wherever the three points above do not apply: the int → double → `fsubs` conversion is `(float)(points + bonus)` with a
+32-bit wrapping sum, `fmuls` rounds to single, `fctiwz` truncates and saturates, and `divw` truncates toward zero.
 
 ## 6. Adding a target or a C# hook
 

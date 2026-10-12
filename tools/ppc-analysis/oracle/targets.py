@@ -720,6 +720,128 @@ def coast_final_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (h) ARRIVAL: group size 0xcb4e8
+ARRIVAL_GAME_POINTER = -30124  # TOC slot -> data word holding the game pointer
+ARRIVAL_MODE_OBJECT = -30136   # TOC slot -> static object; its word 0 is the mode (1: the 500-guest limit)
+ARRIVAL_MODE_GUARD = -30132    # TOC slot -> its construction guard byte (nonzero once 0x12bb64 has run)
+ARRIVAL_SETTINGS = -30084      # TOC slot -> settings block: +720 MinPeople, +732 NewParkBonus, +736 PointsPerVisitor
+ARRIVAL_WORLD_MODE = 0x1E0000 - 22728  # game + 0x1da738: 4 = bankrupt (no group)
+PARK_OF_GAME = 0x1082B4        # (game) -> park; stubbed with a sentinel, checked
+COUNTED_GUESTS = 0xC1FB4       # (park, 20) -> guests counted against the limit; stubbed: the chosen count
+PARK_POINTS = 0xC24C0          # (park) -> attraction points; stubbed: the chosen points
+FACTOR_OBJECT = 0x1083C8       # (game) -> object whose +48 word picks the factor; stubbed with a synthetic object
+ARRIVAL_STATE = type('ArrivalState', (), {})()  # set per input by arrival_binary, read by the stubs
+DEBUG_LOG = 0x5FBCC            # (level, format, ...) debug print; logged, no effect on the result
+
+
+def arrival_stubs(target: Target) -> dict:
+    state = ARRIVAL_STATE  # arrival_binary's memory set-up; shared with copies of the target (mutation tests)
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    def counted(m: Machine) -> None:
+        if m.gpr[3] != state.park or m.gpr[4] != 20:
+            raise AssertionError('0xc1fb4 called with unexpected arguments')
+        m.gpr[3] = state.guests & MASK32
+
+    def points(m: Machine) -> None:
+        if m.gpr[3] != state.park:
+            raise AssertionError('0xc24c0 called without the park')
+        m.gpr[3] = state.points & MASK32
+
+    def factor_object(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1083c8 called without the game pointer')
+        m.gpr[3] = state.factor_object
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', m.gpr[3], m.gpr[5]))
+
+    return {PARK_OF_GAME: park, COUNTED_GUESTS: counted, PARK_POINTS: points, FACTOR_OBJECT: factor_object,
+            DEBUG_LOG: log}
+
+
+def arrival_binary(sb: Sandbox, x: dict, log) -> int:
+    state = ARRIVAL_STATE
+    state.game = sb.alloc(ARRIVAL_WORLD_MODE + 8)
+    sb.write(state.game + ARRIVAL_WORLD_MODE, 'i', x['world_mode'])
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', state.game)
+    state.park = sb.struct(16)
+    state.factor_object = sb.struct(64, {48: ('i', x['obj48'])})
+    state.guests, state.points = x['guests'], x['points']
+    settings = toc_pointer(sb, ARRIVAL_SETTINGS)
+    sb.write(settings + 720, 'i', x['min_people'])
+    sb.write(settings + 732, 'i', x['bonus'])
+    sb.write(settings + 736, 'i', x['per_visitor'])
+    sb.write(toc_pointer(sb, ARRIVAL_MODE_OBJECT), 'i', x['limit_mode'])
+    sb.write(toc_pointer(sb, ARRIVAL_MODE_GUARD), 'B', 1)  # constructed: 0x12bb64 is not in `allowed` and must not run
+    return s32(sb.call(0xCB4E8).r3)
+
+
+def fctiwz32(value: float) -> int:
+    if math.isnan(value):
+        return -0x80000000
+    return max(-0x80000000, min(0x7FFFFFFF, math.trunc(value)))
+
+
+def arrival_core(x: dict, factor: float) -> int:
+    per_visitor = x['per_visitor'] if x['per_visitor'] >= 2 else 1
+    total = s32(x['points'] + x['bonus'])
+    product = f32(f32(factor) * f32(float(total)))
+    quotient = int(fctiwz32(product) / per_visitor)  # C / divw: toward zero
+    return max(quotient, x['min_people'])
+
+
+def arrival_plan(x: dict) -> int:
+    """GUESTS.md "Arrivals" and GuestSimulation.ArrivalGroupSize: none while bankrupt; (int)(1.2f × (points +
+    NewParkBonus)) / PointsPerVisitor (1 below 2), at least MinPeople, cut so guests + group stay within 1500
+    (never below 0)."""
+    if x['world_mode'] == 4:
+        return 0
+    count = arrival_core(x, 1.2)
+    if x['guests'] + count > 1500:
+        count = max(0, 1500 - x['guests'])
+    return count
+
+
+def arrival_full(x: dict) -> int:
+    """The routine as read from 0xcb4e8..0xcb694: the factor is 0.8 when the 0x1083c8 object's +48 word is positive,
+    else 1.2; with the mode word == 1 the group is first cut to 500 − guests; both cuts compare guests + group
+    unsigned and can go negative."""
+    if x['world_mode'] == 4:
+        return 0
+    count = arrival_core(x, 0.8 if x['obj48'] > 0 else 1.2)
+    guests = x['guests']
+    if x['limit_mode'] == 1 and (guests + count) & MASK32 > 500:
+        count = s32(500 - guests)
+    if x['limit_mode'] != 1 and (guests + count) & MASK32 > 1500:
+        count = s32(1500 - guests)
+    return count
+
+
+def arrival_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw):
+        x = {'world_mode': rng.choice([0, 1, 2, 3, 4, 5]), 'guests': rng.choice([0, rng.randrange(0, 1600)]),
+             'points': rng.choice([0, rng.randrange(0, 2000), rng.randrange(-500, 0)]),
+             'bonus': rng.choice([20, rng.randrange(0, 200)]), 'per_visitor': rng.choice([6, rng.randrange(-2, 30)]),
+             'min_people': rng.choice([1, 2, rng.randrange(0, 40)]), 'obj48': rng.choice([0, 0, 1, rng.randrange(-5, 5)]),
+             'limit_mode': rng.choice([0, 0, 0, 1, 2])}
+        x.update(kw)
+        return x
+    shipped = dict(world_mode=0, guests=0, points=0, bonus=20, per_visitor=6, min_people=1, obj48=0, limit_mode=0)
+    edges = [make(**shipped), make(**{**shipped, 'world_mode': 4}), make(**{**shipped, 'obj48': 1}),
+             make(**{**shipped, 'limit_mode': 1, 'guests': 499}), make(**{**shipped, 'limit_mode': 1, 'guests': 600}),
+             make(**{**shipped, 'guests': 1499}), make(**{**shipped, 'guests': 1500}), make(**{**shipped, 'guests': 1700}),
+             make(**{**shipped, 'points': 0x7FFFFFFF}), make(**{**shipped, 'points': -0x80000000, 'bonus': -1}),
+             make(**{**shipped, 'points': 16777217}), make(**{**shipped, 'per_visitor': 1}),
+             make(**{**shipped, 'per_visitor': -7}), make(**{**shipped, 'min_people': -5, 'bonus': -100}),
+             make(**{**shipped, 'points': 25, 'bonus': 20})]
+    return edges + [make() for _ in range(n)]
+
+
 # ============================================================================== registry
 LCG = Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -768,5 +890,13 @@ COAST_FINAL = Target('coast-rating-final', 'Coaster rating final 0x41900', 'COAS
                      coast_final_inputs, equal=coast_equal, alternatives={'plan-both-flags': coast_final_both_flags},
                      notes=['C# hook: bridge function "coaster_rating_final" (COAST-I).'])
 
-TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL]
+ARRIVAL = Target('arrival-group', 'Arrival group size 0xcb4e8', 'GUESTS.md "Arrivals"', 0xCB4E8,
+                 [(0xCB4E8, 0xCB698)], arrival_stubs, arrival_binary, arrival_plan, arrival_inputs,
+                 alternatives={'routine-reading': arrival_full},
+                 notes=['C# hook: bridge function "arrival_group" (GuestSimulation.ArrivalGroupSize) is not wired yet.',
+                        'Stubs: 0x1082b4 park, 0xc1fb4 counted guests, 0xc24c0 points, 0x1083c8 factor object, '
+                        '0x5fbcc debug log; the mode object is marked constructed so 0x12bb64 does not run.'])
+
+TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
+           ARRIVAL]
 DOMAINS = {SET_CELL.key: set_cell_domain}

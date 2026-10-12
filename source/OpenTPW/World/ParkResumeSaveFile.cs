@@ -412,8 +412,8 @@ internal static class ParkResumeSaveFile
 		var width = snapshot.Layout!.Cells!.Width;
 		var height = snapshot.Layout.Cells.Height;
 		bool InBounds( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
-		Require( guests.SchemaVersion == GuestSimulationSnapshot.CurrentSchemaVersion,
-			$"the guest snapshot's schema version {guests.SchemaVersion} is not {GuestSimulationSnapshot.CurrentSchemaVersion}" );
+		Require( GuestSimulationSnapshot.AcceptedSchemaVersions.Contains( guests.SchemaVersion ),
+			$"the guest snapshot's schema version {guests.SchemaVersion} is not one of {string.Join( ", ", GuestSimulationSnapshot.AcceptedSchemaVersions )}" );
 		Require( guests.Guests != null, "the guest snapshot has no guest list" );
 		Require( guests.Attractions != null, "the guest snapshot has no attraction list" );
 		Require( guests.SeenQueueEdits != null, "the guest snapshot has no seen-queue-edit list" );
@@ -473,6 +473,17 @@ internal static class ParkResumeSaveFile
 			Require( guest.State != GuestState.Gone, $"guest {guest.Id} is already gone; gone guests are removed at the end of their tick" );
 			Require( Enum.IsDefined( guest.Thought ), $"guest {guest.Id} thought {(int)guest.Thought} is not a guest thought" );
 			Require( guest.Type >= 0, $"guest {guest.Id} type {guest.Type} is negative" );
+			Require( double.IsFinite( guest.ExitLevel ) && Math.Truncate( guest.ExitLevel ) is >= int.MinValue and <= int.MaxValue,
+				$"guest {guest.Id} exit counter {guest.ExitLevel} does not fit the truncated counter" );
+			// Schema 2 writes the histories; schema 1 has none (they start empty). When present they must be whole and non-negative.
+			foreach ( var (name, history) in new[] { (nameof( guest.UsedHistory ), guest.UsedHistory), (nameof( guest.TemporaryHistory ), guest.TemporaryHistory) } )
+			{
+				if ( history == null )
+					Require( guests.SchemaVersion == 1, $"guest {guest.Id} has no {name}" );
+				else
+					Require( history.Length == Guest.HistorySlots && !history.Any( id => id < 0 ),
+						$"guest {guest.Id} {name} is not {Guest.HistorySlots} non-negative attraction ids" );
+			}
 			Require( guest.Money >= 0 && guest.RidesTaken >= 0, $"guest {guest.Id} holds negative money or rides" );
 			Require( float.IsFinite( guest.Hunger ) && float.IsFinite( guest.Thirst ) && float.IsFinite( guest.Toilet )
 				&& float.IsFinite( guest.Energy ) && float.IsFinite( guest.Happiness ) && float.IsFinite( guest.Nausea )

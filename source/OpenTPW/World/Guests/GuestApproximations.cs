@@ -9,7 +9,7 @@ public static class GuestApproximations
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
 		("GUEST-001", "CELL MODIFIER: the environment record's component 4 at the attraction's cell divides the distance match (0xE9388); OpenTPW has no region effects (entertainers, vomit, toilets, guards), so it is 0 (oracle F24)"),
-		("GUEST-002", "BACK CELL AND QUEUE: the attraction's back-of-queue cell (0xDD3F4) is the bridge's join cell and its queue count the guests in OpenTPW's queue list; candidates run in attraction-id order, not the original's thing-list order (oracle F24)"),
+		("GUEST-002", "BACK CELL AND QUEUE: the attraction's back-of-queue cell (0xDD3F4) is the bridge's last queue cell and its queue count the guests in OpenTPW's queue list; candidates run in attraction-id order, not the original's thing-list order (oracle F24)"),
 		("GUEST-003", "AFFORDABILITY: a guest only chooses an attraction it can afford; the original's price eligibility is not traced (oracle F24)"),
 		("GUEST-004", "FULL QUEUE ROOM: a physically full queue (count at 4 per cell) refuses like the queue-too-long case for thought and happiness but pushes no history; its original path is the dismissal 0xEE804 (oracle F24)"),
 		("GUEST-005", "USE EFFECTS: a relief object sets the toilet meter to 0 and the litter effect stays in the park's store (ECON-020); the original's toilet branch (0xEB2B0, 0xEB32C clears illness above 90), the ingredient and appearance effects and the guest litter meter are not modelled (oracle F18)"),
@@ -18,5 +18,6 @@ public static class GuestApproximations
 		("GUEST-008", "ENERGY: OpenTPW's energy meter has no original counterpart (the original has no energy field and nothing here reads it); its drain and recovery rates are invented"),
 		("GUEST-009", "THOUGHTS AND BOREDOM: the thought thresholds (a need from NeedThoughtLevel 70) and the boredom loss of SmallHappinessChange per decision after BoredomThreshold seconds have no original source; the original's thoughts (0xE8C58: hunger and thirst both above 90, a single need above 99, happiness above 99 or below 10, litter) are picked on a draw each needs phase"),
 		("GUEST-010", "LEAVING TEST: the original tests leaving in its state 6 (a guest standing at a cell, deciding), once per park turn it spends there; OpenTPW has no separate state 6 and tests every guest that is walking around or doing nothing on every park turn (oracle F26)"),
+		("GUEST-011", "CLOSURE: what the original does with queued or riding guests at the closed word (mParkClosed) is not traced; OpenTPW also pulls guests out of queues and drops GoingToRide reservations when the park closes, or a closed park would strand every guest whose ride holds admission (oracle F26)"),
 	};
 }

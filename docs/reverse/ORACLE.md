@@ -1369,6 +1369,8 @@ time in the former model). Closing the park (the economy's open/closed switch) n
 happiness 1.0 and a counter of 120: the original stays, the former rule leaves (`happiness <= 10`); 181 of 513 inputs differ.
 
 *Not changed / open.* OpenTPW has no state 6 or 7 separately: the test runs on every park turn for guests that are walking around or doing nothing (GUEST-010), which is more often than the original's dwell in state 6;
+what the original does with queued or riding guests at `mParkClosed` is not traced — OpenTPW also pulls guests out of queues and drops `GoingToRide` reservations on closure, or a closed park would strand every guest
+whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the queue's leave level); guests on a ride finish it (GUEST-011);
 the decision cadence (F24); the happiness a guest on a lane or at the booth carries; and the reading that a negative counter never leaves is an observation of the instruction (`beq`), not of a played game.
 
 ## 6. Adding a target or a C# hook

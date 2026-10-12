@@ -379,6 +379,23 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// [APPROX:GUEST-010] the leaving test belongs to the original's state 6 (standing at a cell, deciding); OpenTPW has no separate state 6 and tests every guest that is walking around or doing nothing, on every park turn — evidence needed: how long a guest dwells in the original's states 6 and 7
 			if ( guest.State is GuestState.WalkingAround or GuestState.DoingNothing && GuestLifecycle.ShouldLeave( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
 				StartLeaving( guest );
+			// The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
+			// would strand every guest whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the
+			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
+			// [APPROX:GUEST-011] what the original does with queued guests at mParkClosed is not traced — evidence needed: a closing-word read in the state-11 handler 0xed244 or the ride update 0xe0aec
+			if ( Payments?.ParkClosed == true )
+			{
+				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard && FindAttraction( guest.AttractionId ) is { } closed )
+				{
+					LeaveQueue( guest, closed, GuestThought.None );
+					StartLeaving( guest );
+				}
+				else if ( guest.State == GuestState.GoingToRide )
+				{
+					guest.AttractionId = 0;
+					StartLeaving( guest );
+				}
+			}
 		}
 		if ( InPark( guest ) )
 			UpdateNeeds( guest, dt );
@@ -780,14 +797,15 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [APPROX:GUEST-001] the environment record's component 4 at the attraction's cell (0xe9388, a divisor of the distance match) is not modelled: OpenTPW has no region effects (entertainers, vomit, guards), so it is 0 — evidence needed: the effect grid (PPC-guests, Phase 2) and what writes component 4
-	// [APPROX:GUEST-002] the attraction's back-of-queue cell (0xdd3f4) is the bridge's join cell and its queue count the guests in OpenTPW's queue list; the type's own thing-array order, tie rule on equal scores and the thing behind ride +36 follow the join gate's approximations (QUEUE-004)
+	// [APPROX:GUEST-002] the attraction's back-of-queue cell (0xdd3f4) is the bridge's last queue cell and its queue count the guests in OpenTPW's queue list; a back cell that is not connected to a path (no join cell) is scored 0; the type's own thing-array order, tie rule on equal scores and the thing behind ride +36 follow the join gate's approximations (QUEUE-004)
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
-		if ( attraction.JoinCell is not { } join )
+		if ( attraction.JoinCell == null )
 			return 0;
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
 		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
-		var input = new AttractionScoreInput( guest.CellX, guest.CellY, join.X, join.Y, 0, attraction.QueueLength, attraction.QueueSizeInCells,
+		var back = attraction.QueueCells[^1];
+		var input = new AttractionScoreInput( guest.CellX, guest.CellY, back.X, back.Y, 0, attraction.QueueLength, attraction.QueueSizeInCells,
 			type.PreferredExcitement, attraction.LiveExcitement, (attraction.StaticExcitementLevel & 0xFF) != 0, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea,
 			attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays, WeatherDropsFalling?.Invoke() ?? false, attraction.IsIndoors,
 			attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.AttractionId, sameType, guest.UsedHistory, guest.TemporaryHistory );
@@ -1629,8 +1647,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 				Error( $"Guest {id} {name} is not finite." );
 		}
 
-		if ( snapshot.SchemaVersion != GuestSimulationSnapshot.CurrentSchemaVersion )
-			Error( $"Guest snapshot schema version {snapshot.SchemaVersion} is not supported; this build reads {GuestSimulationSnapshot.CurrentSchemaVersion}." );
+		if ( !GuestSimulationSnapshot.AcceptedSchemaVersions.Contains( snapshot.SchemaVersion ) )
+			Error( $"Guest snapshot schema version {snapshot.SchemaVersion} is not supported; this build reads {string.Join( ", ", GuestSimulationSnapshot.AcceptedSchemaVersions )}." );
 		if ( snapshot.TickCount < 0 )
 			Error( $"TickCount {snapshot.TickCount} is negative." );
 		if ( !double.IsFinite( snapshot.TimeSeconds ) || snapshot.TimeSeconds < 0 )
@@ -1782,11 +1800,21 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Bounded( guest.Id, guest.Nausea, nameof( guest.Nausea ), 0, 100 );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
 			Bounded( guest.Id, guest.SecondsSinceRide, nameof( guest.SecondsSinceRide ), 0, 1_000_000 );
+			// Schema 1 predates the histories (they start empty); from schema 2 on they must be whole.
 			foreach ( var (name, history) in new[] { (nameof( guest.UsedHistory ), guest.UsedHistory), (nameof( guest.TemporaryHistory ), guest.TemporaryHistory) } )
 			{
-				if ( history == null || history.Length != Guest.HistorySlots || history.Any( id => id < 0 ) )
+				if ( history == null )
+				{
+					if ( snapshot.SchemaVersion != 1 )
+						Error( $"Guest {guest.Id} has no {name}." );
+				}
+				else if ( history.Length != Guest.HistorySlots || history.Any( id => id < 0 ) )
 					Error( $"Guest {guest.Id} {name} is not {Guest.HistorySlots} non-negative attraction ids." );
 			}
+			// Schema 1 stores the former seconds-based exit value as a fraction; the truncated counter must stay a counter
+			// (the live decrement has no floor, so negative counts are legitimate).
+			if ( !double.IsFinite( guest.ExitLevel ) || Math.Truncate( guest.ExitLevel ) is < int.MinValue or > int.MaxValue )
+				Error( $"Guest {guest.Id} exit counter {guest.ExitLevel} does not fit the truncated counter." );
 			if ( guest.Money < 0 )
 				Error( $"Guest {guest.Id} Money {guest.Money} is negative." );
 			if ( guest.RidesTaken < 0 )
@@ -2044,14 +2072,15 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.Nausea = snapshot.Nausea;
 		guest.Happiness = snapshot.Happiness;
 		guest.Money = snapshot.Money;
-		guest.ExitLevel = snapshot.ExitLevel;
+		// Schema 1 stored the former seconds-based value as a fraction; truncating toward zero keeps it a counter (one per 0.992 s).
+		guest.ExitLevel = (int)Math.Truncate( snapshot.ExitLevel );
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
 		guest.Thought = snapshot.Thought;
 		guest.AttractionId = snapshot.AttractionId;
 		guest.LastAttractionId = snapshot.LastAttractionId;
-		snapshot.UsedHistory.CopyTo( guest.UsedHistory, 0 );
-		snapshot.TemporaryHistory.CopyTo( guest.TemporaryHistory, 0 );
+		snapshot.UsedHistory?.CopyTo( guest.UsedHistory, 0 );
+		snapshot.TemporaryHistory?.CopyTo( guest.TemporaryHistory, 0 );
 		guest.QueuePosition = snapshot.QueuePosition;
 		guest.QueueJoinTurn = snapshot.QueueJoinTurn;
 		guest.LastQueueWaitTurns = snapshot.LastQueueWaitTurns;

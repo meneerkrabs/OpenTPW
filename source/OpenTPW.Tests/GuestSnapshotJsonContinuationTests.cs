@@ -124,6 +124,53 @@ public class GuestSnapshotJsonContinuationTests
 	}
 
 	/// <summary>
+	/// Saves written before the histories and the integer exit counter (schema 1) still restore: the histories are
+	/// absent from the file and start empty, the seconds-based exit value is truncated toward zero into the counter,
+	/// and a current save (schema 2) that lost a history or carries a non-finite exit value is rejected instead.
+	/// </summary>
+	[TestMethod]
+	public void ASchemaOneSnapshotWithoutHistoriesStillRestoresWithTheFractionalExitValue()
+	{
+		var park = new GuestSnapshotTests.Rig();
+		GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.TickCount >= 4200, 0, 4201 );
+		var snapshot = park.Simulation.CaptureSnapshot();
+		Assert.AreEqual( GuestSimulationSnapshot.CurrentSchemaVersion, snapshot.SchemaVersion );
+		Assert.IsTrue( snapshot.Guests.Any( guest => guest.UsedHistory is { Length: Guest.HistorySlots } ), "the current schema writes the histories" );
+
+		// Downgrade to exactly what schema 1 wrote: no histories in the file, the exit value still the old seconds as a fraction.
+		var schemaOne = snapshot with
+		{
+			SchemaVersion = 1,
+			Guests = snapshot.Guests.Select( guest => guest with { UsedHistory = null, TemporaryHistory = null, ExitLevel = 37.8 } ).ToArray()
+		};
+		var loaded = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( schemaOne ) );
+		Assert.IsNull( loaded.Guests[0].UsedHistory, "the codec keeps the histories absent" );
+
+		var resumed = new GuestSnapshotTests.Rig();
+		resumed.Simulation.RestoreSnapshot( loaded );
+		var restored = resumed.Simulation.Guests.ToDictionary( guest => guest.Id );
+		foreach ( var guest in loaded.Guests )
+		{
+			Assert.AreEqual( 37, restored[guest.Id].ExitLevel, $"guest {guest.Id}: the seconds fraction truncates toward zero into the counter" );
+			CollectionAssert.AreEqual( new int[Guest.HistorySlots], restored[guest.Id].UsedHistory, $"guest {guest.Id}: the used history starts empty" );
+			CollectionAssert.AreEqual( new int[Guest.HistorySlots], restored[guest.Id].TemporaryHistory, $"guest {guest.Id}: the temporary history starts empty" );
+		}
+
+		// A current save must be whole: losing a history or corrupting the exit value is rejected without touching the target.
+		// (The corruptions land on the deserialized DTO — NaN never survives JSON, so the codec is out of the loop here.)
+		var fromFile = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( snapshot ) );
+		void Rejects( Func<GuestSimulationSnapshot, GuestSimulationSnapshot> corrupt, string message )
+		{
+			var fresh = new GuestSnapshotTests.Rig();
+			var exception = Assert.ThrowsException<InvalidDataException>( () => fresh.Simulation.RestoreSnapshot( corrupt( fromFile ) ) );
+			StringAssert.Contains( exception.Message, message );
+		}
+		Rejects( file => file with { Guests = file.Guests.Select( guest => guest with { UsedHistory = null } ).ToArray() }, "has no UsedHistory" );
+		Rejects( file => file with { Guests = file.Guests.Select( guest => guest with { TemporaryHistory = new[] { 1 } } ).ToArray() }, "TemporaryHistory" );
+		Rejects( file => file with { Guests = file.Guests.Select( guest => guest with { ExitLevel = double.NaN } ).ToArray() }, "does not fit" );
+	}
+
+	/// <summary>
 	/// A guest caught mid-route (past its fourth buffered waypoint, so <see cref="GuestNavigationSnapshot.Cursor"/> is
 	/// non-zero and the waypoint buffer must be rebuilt from inside the route) survives the codec and continues its
 	/// walk identically. Long routes only exist in the harness's early fill-up window, so this runs to that moment

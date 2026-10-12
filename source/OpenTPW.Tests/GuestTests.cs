@@ -806,6 +806,36 @@ public class GuestTests
 	}
 
 	[TestMethod]
+	public void TheScoreMeasuresTheGuestAgainstTheBackOfTheQueueNotTheJoinCell()
+	{
+		// F24: both the distance match and the queue term's d² ≤ 8 range read the back-of-queue cell (0xdd3f4), never the path cell
+		// guests step from. The guest stands diagonally beside the back (d² 4 + 4 = 8, in range) while the join cell beyond it is
+		// d² 9 + 4 = 13 away: with the back cell the score is (distance 99 + queue 50 + excitement 70) / 11 weights = 19, and the
+		// join cell would drop the queue term and its weight entirely: (98 + 70) / 10 = 16.
+		var grid = new GuestPathGrid( 12, 12 );
+		grid.SetPath( 0, 1, true );
+		grid.SetPath( 3, 3, true );
+		var ride = new RideVisitorBridge( 1, "Queue ride", RideVisitorKind.Ride, 5, 55, 30, GuestNeeds.None )
+		{
+			EntranceCell = (2, 6),
+			ExitCell = (2, 6),
+			QueueFrontCell = (2, 5),
+			QueueEntranceDirection = 2,
+			Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
+		};
+		ride.Attach( CreateShopScript( new VisitorRideScriptEffects( ride, UnimplementedRideScriptEffects.Instance ) ), () => true );
+		Assert.AreEqual( 3, QueuePaths.TryExtend( grid, ride, new[] { (2, 5), (2, 4), (2, 3) } ) );
+		Assert.AreEqual( (2, 3), ride.QueueBackCell );
+		Assert.AreEqual( (3, 3), ride.JoinCell, "the only walkable neighbour of the back cell, away from the guest" );
+		for ( var queued = 1; queued <= 6; queued++ )
+			Assert.IsTrue( ride.TryJoinQueue( queued ), "six of the twelve physical places fill" );
+		var simulation = new GuestSimulation( grid, CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		simulation.Register( ride );
+		var guest = simulation.SpawnInPark( 0, 1 );
+		Assert.AreEqual( 19u, simulation.ScoreAttraction( guest, ride ), "d² 8 to the back keeps the queue term: (99 + 50 + 70) / 11" );
+	}
+
+	[TestMethod]
 	public void ARideTheGuestJustUsedIsRememberedAndTurnedAwayRidesFadeAfterTwentyTurns()
 	{
 		var ride = CreateShop( 1, (10, 9), excitement: 70 );

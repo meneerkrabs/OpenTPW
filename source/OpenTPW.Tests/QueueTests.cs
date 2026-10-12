@@ -441,6 +441,45 @@ public class QueueTests
 		Assert.AreEqual( 6, rig.Simulation.GetStatistics().Queueing );
 	}
 
+	/// <summary>The leaving test only reads the closing word for guests that decide (state 6); the closure clause also
+	/// pulls queued guests out and drops reservations, or a closed park strands everyone whose ride holds admission
+	/// (APPROX:GUEST-011).</summary>
+	private sealed class ClosedPayments : IGuestPayments
+	{
+		public bool Closed;
+		public int AdmissionFee => 0;
+		public bool ParkClosed => Closed;
+		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return !Closed; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
+	}
+
+	[TestMethod]
+	public void ClosingTheParkPullsQueuedGuestsOutAndDropsGoingToRideReservations()
+	{
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var queued = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		Assert.IsTrue( queued.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", queued.Select( guest => guest.State ) ) );
+		Assert.AreEqual( 3, rig.Ride.QueueLength );
+
+		var payments = new ClosedPayments();
+		rig.Simulation.Payments = payments;
+		payments.Closed = true;
+		rig.RunTurns( 1 );
+		// The rig's path row is short, so a closed park turn is enough for some guests to be fully out the gate.
+		Assert.IsTrue( queued.All( guest => guest.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone ),
+			string.Join( ", ", queued.Select( guest => guest.State ) ) );
+		Assert.AreEqual( 0, rig.Ride.QueueLength, "the closed park emptied the queue" );
+
+		// A guest still on its way drops the reservation instead of walking up to a ride that will not take it.
+		var walker = rig.Send();
+		Assert.AreEqual( GuestState.GoingToRide, walker.State );
+		rig.RunTurns( 1 );
+		Assert.IsTrue( walker.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone, $"{walker.State}" );
+		Assert.AreEqual( 0, walker.AttractionId, "the reservation is dropped" );
+	}
+
 	/// <summary>
 	/// Review WV-13: a guest standing on the join cell keeps the last queue cell it stood on in QueueCellIndex (here cell
 	/// 1, as after cutting a corner into a folded queue and drifting back). A redirect must start its route at the join

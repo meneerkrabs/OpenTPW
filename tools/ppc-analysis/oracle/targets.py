@@ -5177,6 +5177,10 @@ TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEE
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}
 
 # The guests' core decisions (F24 attraction choice, F25 needs, F26 lifecycle) live in targets_guests.py; they are appended here.
+# oracle_x86/x86_targets.mac() executes this file as `ppc_oracle_targets`; alias it as `targets` too, or the guests module's
+# `import targets as T` would re-execute this file and hit its own half-initialized `targets_guests` import.
+import sys
+sys.modules.setdefault('targets', sys.modules[__name__])
 import targets_guests  # noqa: E402  (after every helper it imports is defined)
 
 TARGETS += targets_guests.TARGETS

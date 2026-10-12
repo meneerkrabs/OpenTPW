@@ -45,8 +45,8 @@ public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int 
 /// <b>Approximations</b> (documented in docs/ECONOMY.md): pool timing treats
 /// <c>TimeBetweenStaffUpdates</c>/<c>StaffTimeoutTime</c> as seconds at normal speed, candidate grades
 /// are drawn around <c>AvgGradeOf*</c>, hiring is free (the meaning of <c>BaseCostPerStaff</c> and
-/// <c>CostPerQualityLevel</c> is unknown), training spends a per-role monthly budget evenly at the
-/// month's end, and 100 training points raise one grade.
+/// <c>CostPerQualityLevel</c> is unknown), training spends a per-role monthly budget at the month's end
+/// (divided over every employee of the role, ORACLE F17), and 100 training points raise one grade.
 /// </summary>
 public sealed class ParkStaff
 {
@@ -174,28 +174,36 @@ public sealed class ParkStaff
 		return member;
 	}
 
-	/// <summary>Spends each role's training budget evenly over its employees; returns the amount spent.</summary>
-	// [APPROX:ECON-013] training budget is spent evenly over a role at month end — evidence needed: capture of training budget effects
+	/// <summary>
+	/// Month-end training: each role's budget is divided by the role's number of employees (the original adds a base count that is
+	/// zero in the shipped build), and every employee below the top grade is trained with that share. Returns the amount spent.
+	/// </summary>
+	// [BIN:STP-PPC:0x100FC1C4 training split] ECON-013, ORACLE F17 (executed, 507 inputs): share = budget / all employees of the role, including those already at the top grade, whose share is not spent; each other employee costs the whole share, even where it buys fewer points than it could, and gets min(share / price, 100) points; the points above 99 carry into the next grade (0x100F3588)
 	public long Train()
 	{
 		long spent = 0;
 		foreach ( var role in settings.Roles )
 		{
-			var trainees = OfType( role.Type ).Where( member => member.Grade < BalanceSettings.GradeCount - 1 && role.PoundsPerTrainingPoint[member.Grade] > 0 ).ToList();
-			if ( trainees.Count == 0 || trainingBudget[(int)role.Type] <= 0 )
+			var employees = OfType( role.Type ).ToList();
+			if ( employees.Count == 0 )
 				continue;
-			var share = trainingBudget[(int)role.Type] / trainees.Count;
-			foreach ( var member in trainees )
+			var share = trainingBudget[(int)role.Type] / employees.Count;
+			foreach ( var member in employees )
 			{
+				if ( member.Grade >= BalanceSettings.GradeCount - 1 )
+					continue;
 				var price = role.PoundsPerTrainingPoint[member.Grade];
-				var points = (int)Math.Min( share / price, TrainingPointsPerGrade - member.TrainingPoints );
-				spent += (long)points * price;
-				member.TrainingPoints += points;
-				if ( member.TrainingPoints >= TrainingPointsPerGrade )
+				if ( price <= 0 ) // the original divides by it (undefined at 0); no shipped grade below the top has a zero price
+					continue;
+				spent += share;
+				var total = member.TrainingPoints + (int)Math.Min( share / price, TrainingPointsPerGrade );
+				if ( total >= TrainingPointsPerGrade )
 				{
 					member.Grade++;
-					member.TrainingPoints = 0;
+					member.TrainingPoints = total - TrainingPointsPerGrade;
 				}
+				else
+					member.TrainingPoints = total;
 			}
 		}
 		return spent;

@@ -9,6 +9,7 @@ fixes it and updates the table and ORACLE.md together. Gates only get stricter.
 from __future__ import annotations
 
 import os
+import random
 import shutil
 import sys
 import tempfile
@@ -168,6 +169,20 @@ EXPECTED = {
     ('shop-sale-litter', 'csharp'): (213, {'meters': {'thirst': 40.0, 'hunger': 40.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0},
                                            'effects': [20, 30, 5, 10, 50]}),
     ('guest-litter-trigger', 'routine-reading'): AGREE,
+    # F17 (fixed in C#): 0xfc1c4 divides each role's budget by ALL its employees (the base counts behind TOC -19008 are zero in the
+    # file), debits the whole share for every employee below the top grade (the top grade's share is not spent), gives
+    # min(share / price, 100) points and carries the points above 99 into the next grade. The former rule (only trainees share the
+    # budget, only the points bought are spent, cap at the grade boundary, reset to 0) is the pinned plan: 358 of 507 inputs differ.
+    ('staff-training-split', 'plan'): (358, {'budgets': [1000, 1000, 0, 0, 0],
+                                             'prices': [[5, 8, 12, 15, 1], [5, 8, 12, 15, 1], [5, 8, 12, 15, 1], [5, 8, 12, 15, 1],
+                                                        [5, 8, 12, 15, 1]],
+                                             'staff': [{'role': 0, 'class': 0, 'grade': 0, 'points': 0},
+                                                       {'role': 0, 'class': 0, 'grade': 0, 'points': 0},
+                                                       {'role': 0, 'class': 0, 'grade': 4, 'points': 0},
+                                                       {'role': 1, 'class': 0, 'grade': 1, 'points': 0},
+                                                       {'role': 1, 'class': 0, 'grade': 1, 'points': 0}], 'active': True}),
+    ('staff-training-split', 'routine-reading'): AGREE,
+    ('staff-training-split', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
@@ -373,6 +388,52 @@ class Oracle(unittest.TestCase):
             mutated = dataclasses.replace(targets.COUNTS, plan=reading, alternatives={})
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_training(self):
+        for key in (('staff-training-split', 'plan'), ('staff-training-split', 'routine-reading')):
+            self.check(key)
+
+    def test_training_csharp(self):
+        self.check(('staff-training-split', 'csharp'))
+
+    def test_training_reading_is_sharp(self):
+        # Every part of the reading matters: the divisor counting all employees (and no base count), the top grade left out, the
+        # whole share debited, the cap of 100 points (not the points left to the grade) and the carry into the next grade.
+        import dataclasses
+        variants = {
+            'divide-by-trainees': lambda x: targets.train_reading(x, count_all=False),
+            'base-count-one': lambda x: targets.train_reading(x, base=1),
+            'spend-what-was-bought': lambda x: targets.train_reading(x, spend_share=False),
+            'no-carry': lambda x: targets.train_reading(x, carry=False),
+            'cap-at-grade-boundary': lambda x: targets.train_reading(x, cap=False),
+            'train-the-top-grade': lambda x: targets.train_reading(x, skip_top=False),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.TRAIN_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_training_example(self):
+        # A budget of 1,000 for 3 handymen (grades 0, 0 and 4, 5 pounds per point) and for 2 mechanics (grade 1, 8 pounds per
+        # point): the handymen's share is 333 (the top-grade one counts in the divisor, its share is not spent), the mechanics' 500.
+        target = targets.TRAIN_TARGET
+        sandbox = target.sandbox(self.image)
+        [x] = [x for x in target.inputs(random.Random('example'), 0) if x['budgets'] == [1000, 1000, 0, 0, 0]]
+        original = targets.run_binary(target, sandbox, x)
+        self.assertEqual(original, {'staff': [[0, 66], [0, 66], [4, 0], [1, 62], [1, 62]], 'spent': 1666, 'booked': 1666})
+        self.assertEqual(targets.train_current(x)['spent'], 1992)
+
+    def test_training_inactive_bank(self):
+        # With the bank's flag +276 clear the debit 0xcbfdc does nothing, but the training is booked (0xf3588) and the points are given.
+        target = targets.TRAIN_TARGET
+        sandbox = target.sandbox(self.image)
+        [x] = [x for x in target.inputs(random.Random('example'), 0) if x['budgets'] == [600, 0, 0, 0, 0]]
+        active = targets.run_binary(target, sandbox, x)
+        self.assertEqual(active["spent"], 600)
+        inactive = targets.run_binary(target, sandbox, {**x, 'active': False})
+        self.assertEqual(inactive['staff'], active['staff'])
+        self.assertEqual(inactive['spent'], 0)
+        self.assertEqual(inactive['booked'], 600)
 
     def test_loans(self):
         for key in (('loan-offers', 'plan'), ('loan-offers', 'routine-reading'), ('loan-month', 'routine-reading'),
@@ -799,6 +860,8 @@ class CSharpMutation(unittest.TestCase):
         ('loan-payoff', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'Ledger.ChargeLoanInterest( LoanMath.PayoffInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );',
          'Ledger.ChargeLoanInterest( 0 );'),
+        ('staff-training-split', 'csharp', 'source/OpenTPW/Economy/ParkStaff.cs',
+         'spent += share;', 'spent += share / 2;'),
         ('loan-take', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'Post( LedgerCategory.LoanReceived, offer.Amount );', 'Post( LedgerCategory.OtherIncome, offer.Amount );'),
     ]

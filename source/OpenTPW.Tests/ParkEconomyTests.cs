@@ -247,7 +247,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( balance - park.Settings.GetMonthlyWage( StaffType.Mechanic, grade ) - price * 60L, park.Balance );
 		park.AdvanceMonths( 1 );
 		Assert.AreEqual( grade + 1, mechanic.Grade );
-		Assert.AreEqual( 0, mechanic.TrainingPoints );
+		Assert.AreEqual( 20, mechanic.TrainingPoints, "60 + 60 points: the 20 above the grade boundary carry over" );
 	}
 
 	[TestMethod]

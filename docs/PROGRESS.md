@@ -235,6 +235,7 @@ preview; original runtime fidelity and the complete offline scope remain open.
   the 0.8 / 1.2 factor became a weather percentage (Rain 90, Storm 80, Snow 75, Heatwave 120 in `Standard.sam`),
   the integer divide became a floating one (80 points + 20 over 25 gives 3, not 4), and a mode word of 3 gives no
   group. The note also records that tp.exe's arrival routine reads the `mWeather` handle, not Traffic Lights.
+- The oracle now executes the Mac month-end staff training `0xfc1c4` (finding F17, ECON-013): each role's budget is divided by all of the role's staff (the base counts are zero), every member below the top grade is charged the whole share and gets min(share / price, 100) points, and points above 99 carry into the next grade. `ParkStaff.Train` now does the same (358 of 507 oracle inputs differed): a budget of 1,000 for 3 handymen (grades 0, 0, 4) trains the two at 333 each instead of 500, and a share below the price is still spent. ECON-013 is retired.
 - [Fidelity register](FIDELITY-REGISTER.md): **316 original fidelity items** plus
   **24 online extension** IDs (340 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

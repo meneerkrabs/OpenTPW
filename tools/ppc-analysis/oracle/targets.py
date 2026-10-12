@@ -2567,6 +2567,198 @@ ECON_TRIGGER = Target('guest-litter-trigger', 'Guest litter drop threshold (0xeb
                              'meter byte is 90 or more: the state check and the drop follow) or at 0xebdfc (below 90).'])
 
 
+# ============================================================================== (k) STAFF: the monthly training split 0xfc1c4
+TRAIN_ENTRY = 0xFC1C4          # (budget words) month-end training: the five role budgets are split over the staff things
+TRAIN_NEXT_GLUE = (0x10507C, 0x105110)  # first / next thing id of the staff list (header +4, thing-array entry +8 -> node +4)
+TRAIN_ONE = 0xF3588            # (staff thing, amount) trains one member; also the debit 0xcbfdc and the statistic
+TRAIN_LIST_HEADER = -26704     # TOC slot -> variable holding the staff list header (its +4 u16 is the first thing id)
+TRAIN_SETTINGS = -30084        # TOC slot -> settings block: per-role PoundsPerTrainingPoint arrays (offset, stride below)
+TRAIN_GAME_SLOTS = (-30124, -30080)  # TOC slots -> variables holding the game pointer (0xf3588 / 0xcbfdc and 0xfc1c4)
+TRAIN_BASE_TABLE = -19008      # TOC slot -> the five-word table 0xfc1c4 copies into its role counters (static, zero in the file)
+TRAIN_ROLE_CLASS = (5, 4, 6, 7, 8)  # StaffType order (handyman 0 ... researcher 4) -> thing class byte +2 (SAVE-plan models)
+TRAIN_PRICE_FIELDS = {4: (1008, 8), 5: (948, 12), 6: (868, 16), 7: (1116, 8), 8: (1056, 12)}  # class -> (offset, stride)
+TRAIN_BANK_ID, TRAIN_PARK_ID, TRAIN_FIRST_STAFF_ID = 1, 2, 3
+TRAIN_START_BALANCE = 1_000_000
+TRAIN_POINTS = 100             # training points per grade: 0xf3588 promotes when the byte +488 would pass 99
+TRAIN_TOP_GRADE = 4
+
+
+def train_stubs(target: Target) -> dict:
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+
+    def debug(m: Machine) -> None:
+        target.log.append(('log', m.gpr[3]))
+
+    return {ASSERT: assertion, DEBUG_LOG: debug}
+
+
+def train_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Runs 0xfc1c4 over a staff list built in memory: the list header, the thing array, the settings prices, a bank thing
+    and a park thing (both reached through the game's thing ids) so that the debit 0xcbfdc and the statistics run too."""
+    base = toc_pointer(sb, TRAIN_BASE_TABLE)
+    if [sb.read(base + 4 * i, 'i') for i in range(5)] != [0] * 5:
+        raise AssertionError('the role counter table behind TOC -19008 is not zero in the file')
+    game = sb.alloc(0x1E0000)
+    for slot in TRAIN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', game)
+    things = toc_pointer(sb, POINTS_THINGS)
+    bank = sb.struct(512, {12: ('i', TRAIN_START_BALANCE), 276: ('i', 1 if x.get('active', True) else 0)})
+    park = sb.struct(ARRIVAL_PARK_SIZE)
+    sb.write(things + 20 * TRAIN_BANK_ID, 'I', bank)
+    sb.write(things + 20 * TRAIN_PARK_ID, 'I', park)
+    sb.write(game + 0x1E0000 - 22746, 'H', TRAIN_BANK_ID)
+    sb.write(game + 0x1E0000 - 22752, 'H', TRAIN_PARK_ID)
+    sb.write(game + 0x1E0000 - 22772, 'I', 1)
+    settings = toc_pointer(sb, TRAIN_SETTINGS)
+    for role, cls in enumerate(TRAIN_ROLE_CLASS):
+        offset, stride = TRAIN_PRICE_FIELDS[cls]
+        for grade, price in enumerate(x['prices'][role]):
+            sb.write(settings + offset + stride * grade, 'i', price)
+    objects = []
+    ids = [TRAIN_FIRST_STAFF_ID + n for n in range(len(x['staff']))]
+    for n, member in enumerate(x['staff']):
+        cls = member['class'] if member['role'] is None else TRAIN_ROLE_CLASS[member['role']]
+        following = ids[n + 1] if n + 1 < len(ids) else 0
+        node = sb.struct(16, {4: ('I', following)})
+        obj = sb.struct(536, {0: ('H', ids[n]), 2: ('B', cls), 484: ('i', member['grade']), 488: ('B', member['points'])})
+        sb.write(things + 20 * ids[n], 'I', obj)
+        sb.write(things + 20 * ids[n] + 8, 'I', node)
+        objects.append(obj)
+    header = sb.struct(16, {4: ('I', ids[0] if ids else 0)})
+    sb.write(toc_pointer(sb, TRAIN_LIST_HEADER), 'I', header)
+    budgets = sb.struct(32)
+    for role, budget in enumerate(x['budgets']):
+        sb.write(budgets + 4 * role, 'i', budget)
+    sb.call(TRAIN_ENTRY, {3: budgets})
+    if any(kind == 'assert' and value == 0 for kind, value in log):
+        raise AssertionError('an assertion failed while training')
+    if [sb.read(budgets + 4 * role, 'i') for role in range(5)] != list(x['budgets']):
+        raise AssertionError('the budgets were written')
+    balance = TRAIN_START_BALANCE - sb.read(bank + 12, 'i')
+    profit, month = -sb.read(bank + 292, 'i'), sb.read(park + 0x20000 - 2656, 'i')
+    booked = sb.read(park + 0x20000 - 1472, 'i')
+    if x.get('active', True) and len({balance, profit, month, booked}) != 1:
+        raise AssertionError(f'the debit and the statistics disagree: {balance} {profit} {month} {booked}')
+    return {'staff': [[sb.read(obj + 484, 'i'), sb.read(obj + 488, 'B')] for obj in objects], 'spent': balance,
+            'booked': booked}
+
+
+def train_current(x: dict) -> dict:
+    """The rule before F17 (ParkStaff.Train, ECON-013, ECONOMY.md): only members that can still train (below the top grade, a
+    positive price) share the budget; each buys min(share / price, points left to the next grade) at its price; the grade
+    rises at 100 points with the points reset to 0; only what was bought is spent."""
+    staff = [[member['grade'], member['points']] for member in x['staff']]
+    spent = 0
+    for role in range(5):
+        budget = x['budgets'][role]
+        trainees = [n for n, member in enumerate(x['staff']) if member['role'] == role and staff[n][0] < TRAIN_TOP_GRADE
+                    and x['prices'][role][staff[n][0]] > 0]
+        if not trainees or budget <= 0:
+            continue
+        share = budget // len(trainees)
+        for n in trainees:
+            price = x['prices'][role][staff[n][0]]
+            points = min(share // price, TRAIN_POINTS - staff[n][1])
+            spent += points * price
+            staff[n][1] += points
+            if staff[n][1] >= TRAIN_POINTS:
+                staff[n][0] += 1
+                staff[n][1] = 0
+    return {'staff': staff, 'spent': spent, 'booked': spent}
+
+
+def train_reading(x: dict, count_all: bool = True, spend_share: bool = True, carry: bool = True, cap: bool = True,
+                  base: int = 0, skip_top: bool = True) -> dict:
+    """The routine as read from 0xfc1c4 / 0xf3588: each role's budget is divided (signed) by the number of ALL staff of that
+    role (the base counts are zero) and every member below the top grade is trained with that share: the whole share is debited,
+    min(share / price, 100) points are added, and the points above 99 carry into the next grade. The keyword flags build the
+    refuted variants used by the sharpness tests."""
+    staff = [[member['grade'], member['points']] for member in x['staff']]
+    spent = 0
+    for role in range(5):
+        members = [n for n, member in enumerate(x['staff']) if member['role'] == role]
+        if not members:
+            continue
+        if count_all:
+            divisor = len(members) + base
+        else:
+            divisor = len([n for n in members if staff[n][0] < TRAIN_TOP_GRADE]) or 1
+        share = trunc_div(x['budgets'][role], divisor)
+        for n in members:
+            if skip_top and staff[n][0] == TRAIN_TOP_GRADE:
+                continue
+            price = x['prices'][role][staff[n][0]]
+            points = trunc_div(share, price)
+            if cap:
+                points = min(points, TRAIN_POINTS)
+            else:
+                points = min(points, TRAIN_POINTS - staff[n][1])
+            spent += share if spend_share else points * price
+            total = staff[n][1] + points
+            if total > TRAIN_POINTS - 1:
+                staff[n][0] += 1
+                staff[n][1] = total - TRAIN_POINTS if carry else 0
+            else:
+                staff[n][1] = total
+    return {'staff': staff, 'spent': spent, 'booked': spent}
+
+
+def train_request(x: dict) -> dict:
+    return {'fn': 'staff_training', 'budgets': x['budgets'], 'prices': x['prices'],
+            'staff': [{'role': member['role'], 'grade': member['grade'], 'points': member['points']}
+                      for member in x['staff'] if member['role'] is not None]}
+
+
+def train_result(x: dict, r: dict) -> dict:
+    """The bridge returns the real members in input order and what ParkStaff.Train reports as spent (booked as the same
+    staff cost); the foreign things the list may carry are never touched by either side."""
+    real = iter(r['staff'])
+    staff = [[member['grade'], member['points']] if member['role'] is None else list(next(real)) for member in x['staff']]
+    return {'staff': staff, 'spent': r['spent'], 'booked': r['spent']}
+
+
+def train_inputs(rng: random.Random, n: int) -> list:
+    def make_staff(role=None, grade=None, points=None) -> dict:
+        if role is None and rng.random() < 0.06:
+            return {'role': None, 'class': rng.choice([1, 3, 9]), 'grade': 0, 'points': 0}
+        return {'role': rng.randrange(5) if role is None else role, 'class': 0,
+                'grade': rng.choice([0, 1, 2, 3, 4, rng.randrange(5)]) if grade is None else grade,
+                'points': rng.choice([0, 0, 50, 99, rng.randrange(100)]) if points is None else points}
+
+    def make(**kw) -> dict:
+        prices = [[rng.choice([1, 5, 8, 12, 15, rng.randrange(1, 60)]) for _ in range(5)] for _ in range(5)]
+        staff = [make_staff() for _ in range(rng.choice([0, 1, 2, 3, 4, 6, 9, rng.randrange(0, 13)]))]
+        budgets = []
+        for role in range(5):
+            price = prices[role][0]
+            budgets.append(rng.choice([0, 0, price * rng.randrange(0, 150), rng.randrange(0, 5000), rng.randrange(0, 200000),
+                                       2 ** 28]))
+        x = {'budgets': budgets, 'prices': prices, 'staff': staff, 'active': True}
+        x.update(kw)
+        return x
+
+    flat = [[5, 8, 12, 15, 1]] * 5
+    handymen = [make_staff(0, g, 0) for g in (0, 0, 4)]
+    mechanics = [make_staff(1, 1, 0), make_staff(1, 1, 0)]
+    edges = [make(budgets=[0] * 5, staff=[]),
+             # A budget of 1,000 over 3 handymen (grades 0, 0 and 4) and 2 mechanics (both grade 1): the divisor counts the
+             # top-grade handyman, so 333 each for the two trainees (the third share is not spent); 500 each for the mechanics.
+             make(budgets=[1000, 1000, 0, 0, 0], prices=flat, staff=handymen + mechanics),
+             # The share is below the price: no points, the share is still debited.
+             make(budgets=[4, 0, 0, 0, 0], prices=flat, staff=[make_staff(0, 0, 0)]),
+             # A share above 100 points: capped at 100, the rest of the share is still debited.
+             make(budgets=[5000, 0, 0, 0, 0], prices=flat, staff=[make_staff(0, 0, 0)]),
+             # Points carry into the next grade: 99 + 60 = 159 gives grade + 1 and 59 points.
+             make(budgets=[300, 0, 0, 0, 0], prices=flat, staff=[make_staff(0, 0, 99)]),
+             # Everyone at the top grade: nothing is spent.
+             make(budgets=[1000] * 5, prices=flat, staff=[make_staff(role, 4, 0) for role in range(5)]),
+             # A foreign thing in the list does not count.
+             make(budgets=[600, 0, 0, 0, 0], prices=flat,
+                  staff=[make_staff(0, 0, 0), {'role': None, 'class': 3, 'grade': 0, 'points': 0}, make_staff(0, 1, 0)])]
+    return edges + [make() for _ in range(n)]
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -2720,6 +2912,21 @@ RIDE_UPDATE_TARGET = Target('queue-ride-update', 'Ride update 0xe0a8c (what a br
                                    '0xfa9a4 and the log 0x5fbcc.',
                                    'Domain: an empty queue has no VAR_LETMEON guest (the original would index ThingArray[0]).'])
 
+TRAIN_TARGET = Target('staff-training-split', 'Staff training split 0xfc1c4', 'ECONOMY.md / APPROX-TRACE ECON-013 (F17)', TRAIN_ENTRY,
+                      [(0xFC1C4, 0xFC4D4), TRAIN_NEXT_GLUE, (0xFA9A4, 0xFA9B0), (TRAIN_ONE, 0xF3708), (0x108424, 0x108480),
+                       (0x1082B4, 0x108310), (0xCBFDC, 0xCC084)], train_stubs, train_binary, train_current, train_inputs,
+                      alternatives={'routine-reading': train_reading},
+                      csharp=('staff_training', train_request, train_result),
+                      notes=['C# hook: bridge function "staff_training" (ParkStaff.Train on synthetic Standard.sam prices; the '
+                             'bridge sends the real members in input order and reads back grade, points and the amount spent).',
+                             'Executed: 0xfc1c4 (count loop, per-member loop), the list walkers 0x10507c / 0x1050a4 / 0xfa9a4, '
+                             '0xf3588 (one member: points, promotion), the thing lookups 0x108424 / 0x1082b4 and the debit 0xcbfdc '
+                             'with its statistics. Stubs: 0xb678 assertion (a zero condition fails the run) and the log 0x5fbcc.',
+                             'The role counter table behind TOC -19008 (the "base counts") is checked to be zero in the file: it is '
+                             'read, never written. The compared result is each member grade and points, the amount debited from '
+                             'the bank (equal to the profit, month and training statistics, which are checked inside the run).',
+                             'Domain: prices of at least 1 (divw by zero is undefined); budgets from 0 to 2^28 (the sum of the debits stays inside 32 bits); an active bank.'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain}

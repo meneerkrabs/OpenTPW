@@ -145,6 +145,7 @@ Mutation checks (`test_oracle.py`):
 | `queue-join-gate` | the fragment `0xecd6c..0xecdb0` / `0xeced0..0xecf34` of the state-10 handler `0xeccb0` (the `0xe9a84` call, `0xe02ec(ride, 1)`, the 45 test and the refusal) plus the callees above | the callees' stubs, plus `0x5fbcc` log (the message text is read from memory), `0xfb7b4` reason and `0xfb54c` thought (guest `+48` object, id and thought checked) | 524 | **F16** (fixed in C#): 155 differ in outcome from the old claim (`plan-static`). The plan now says the routine reading: **agree** 524/524 (outcome and difference) | `RideVisitorBridge.ExcitementRefusal` and `JoinDifference` through `queue_join_gate`: **agree** except 61 inputs with a thing behind ride `+36` (the same cause) |
 | `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `ParkEconomy.TryBuy` through `shop_sale_litter` (delta of `LitterScaled`): the same 213 (C# has no guest meter, so its delta is added to the oracle's meter) |
 | `guest-litter-trigger` | the first lines of the litter test in the guest update (`0xebd20..0xebd3c`) | none | 521 | no plan side. **Agree** 521/521 with the routine reading: the meter truncated, taken as a byte, `>= 90` | no hook (CSHARP_PENDING): OpenTPW has no guest litter meter |
+| `staff-training-split` | `0xfc1c4` (the month-end training split), the list walkers `0x10507c` / `0x1050a4` / `0xfa9a4`, `0xf3588` (train one member), `0x108424` / `0x1082b4` (bank and park things of the game) and the debit `0xcbfdc` with its statistics | `0xb678` assertion (a zero condition fails the run) and the debug print `0x5fbcc` (logged) | 507 | **F17**: 358 differ from the former rule (the plan). **Agree** 507/507 with the routine reading | `ParkStaff.Train` through `staff_training`: **agree** (358 differed before the fix) |
 
 The C# comparisons use these seams:
 
@@ -183,10 +184,52 @@ The C# comparisons use these seams:
   `ParkEconomyTests`. `ParkEconomy.TryRepayLoan` (`loan_payoff`) on an imported bank with one bought loan; `ParkEconomy.TakeLoan` (`loan_take`) on an economy with the one offer (a second take refused for
   an offer already bought); the changes of balance, year profit and the month's money-in total are compared.
 
+- `ParkStaff.Train` (`staff_training`) on a fresh `ParkStaff` over the synthetic `Standard.sam`, with each role's five
+  `PoundsPerTrainingPoint` values replaced by the input's, members added with the internal `AddImported` (reflection) at the input's
+  grade and points, and the five budgets set. The members' grade and points and the amount `Train` returns are compared; the
+  bridge sends only real staff (the original's list may carry other things, which neither side touches).
+
 The pricing domain is the free byte clear, `game+36 == 0` and bank `+276 ≠ 0`. Old 1 → new 3
 belongs to `path-can-change`.
 
 ## 5. Findings
+**F17, the month-end staff training (ECON-013, `ParkStaff.Train`).**
+`staff-training-split` executes `0xfc1c4` over a staff list built in memory (the list walkers, the thing array, the settings prices,
+a bank and a park thing for the debit `0xcbfdc` and its statistics). The routine reading agrees on 507/507, C# agrees after the fix,
+and every part is needed (`test_training_reading_is_sharp`: six variants). The routine called per member is `0xf3588`, and
+`0x10507c` / `0x1050a4` are the list walkers (first id: list header `+4`; next id: thing-array entry `+8` node `+4`; both read the low
+half of the word), so everything is executed, nothing is stubbed but the assertion and the debug print. What the original does:
+
+1. Five role counters start from a five-word table (`0xfc1cc`, TOC -19008) and get +1 for each list thing whose class byte `+2`
+   is 4..8. The table is read here and never written anywhere (the only reference to that TOC slot), and is zero in the file
+   (`train_binary` checks it): the "base count" of the static trace is 0. The class bytes are 5 handyman, 4 mechanic, 6 entertainer,
+   7 guard, 8 researcher (SAVE-plan models), and the budget words are in `StaffType` order (the staff HQ's five words), so the
+   divisor for role r is the number of **all** things of that role.
+2. A second walk calls `0xf3588(thing, budget[r] / count[r])` for each of them (`divw`, signed; the remainder is not spent).
+3. `0xf3588`: a member at grade 4 only logs and returns. Any other member is debited the **whole share** (`0xcbfdc(bank, share)`:
+   balance, a park statistic and the profit bookkeeping; `0xf3588` also books it in a second park statistic), even when
+   the share buys fewer points than it could or none. The price is the settings word per class and grade (`+868 + 16 g`, `+948 + 12 g`,
+   `+1008 + 8 g`, `+1056 + 12 g`, `+1116 + 8 g` for classes 6, 5, 4, 8, 7), the points are `min(share / price, 100)` (signed divide,
+   price 0 is undefined), added to the byte at `+488`. A total above 99 raises the grade (`+484`), keeps `total - 100` as the points
+   and resets a float at `+500`; otherwise the total is stored. With the bank's flag `+276` clear the debit does nothing but the
+   points are still given (`test_training_inactive_bank`).
+
+The former rule (ParkStaff.Train and ECONOMY.md: only members that can still train share the budget, only the bought points are spent,
+points capped at the grade boundary, reset to 0 on promotion) differs on 358 of 507 inputs, the synthetic ones. It shows which rules
+differ, not how often. Examples a player would notice: a budget of 1,000 for 3 handymen (grades 0, 0 and 4) at 5 pounds per point and for
+2 mechanics (grade 1, 8 pounds): the original gives each trainee handyman 333 → 66 points (the top-grade handyman's third is not
+spent, 666 in all) and each mechanic 500 → 62 points, spending 500 each; 1,666 in total. OpenTPW gave the two handymen 500 each (100
+points and a grade: they promoted at once, 1,000 spent) and the mechanics 62 points for 496 each (1,992 in total). A budget of 300 for
+a handyman at 99 points gives grade + 1 and 59 points (OpenTPW: 1 point, grade + 1, 0 points kept, 5 spent). A budget of 4 under the
+price buys nothing but still costs 4. Not shown: the log text of the promotion, the float at `+500` (reset to a constant) and
+`ECON-008` itself (the 100-point threshold is the same constant, so that approximation is now read as well: it can be retired by the lead).
+
+**Fixed in C#** (`ParkStaff.Train`, `[BIN:STP-PPC:0x100FC1C4 training split]`; C# 358 → 0 mismatches): the divisor counts every employee of
+the role, each employee below the top grade is charged the whole share, gets min(share / price, 100) points and carries the points above
+99 into the next grade. `ParkEconomy.EndMonth` books the returned amount as one staff cost as before. A price of 0 below the top
+grade (undefined in the original, none shipped) is skipped. `ECON-013` is retired from the register. Tests: `StaffTrainingTests`, the
+mechanic example in `ParkEconomyTests` (the second month now keeps 20 points). The determinism hash did not change.
+
 
 **F1, queue limit polarity (QUEUE-plan §4, `RideVisitorBridge.ComputeQueueLimit`).** At
 `0xdcba4..0xdcbb0` the routine runs `lhz +46`, `rlwinm. r0,r0,0,28,28` and `bc 4,2,0xdcbb8`.

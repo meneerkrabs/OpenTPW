@@ -17,7 +17,6 @@ public static class EconomyApproximations
 		("ECON-008", "100 training points per grade (from Online_Standard.sam comments \"costs 1000 to get up to grade 1\")", "capture of a training run"),
 		("ECON-010", "TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed", "capture of pool refresh timing"),
 		("ECON-012", "hiring is free; BaseCostPerStaff/CostPerQualityLevel unused", "capture of the balance before/after hiring"),
-		("ECON-013", "training budget is spent evenly over a role at month end", "capture of training budget effects"),
 		("ECON-014", "staff start at happiness 100 and it never changes (no strikes)", "staff happiness rules (binary/captures)"),
 		("ECON-015", "researchers on strike or picked up are the original's excluded states 3, 4 and 5", "the staff state values behind 0x100F4170"),
 		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),

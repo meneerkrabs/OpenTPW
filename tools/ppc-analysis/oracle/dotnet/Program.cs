@@ -40,6 +40,10 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["profit_ticket"] = ProfitTicket,
 	["local_tickets"] = LocalTickets,
 	["global_tickets"] = GlobalTickets,
+	["calendar_date"] = CalendarDate,
+	["calendar_update"] = CalendarUpdate,
+	["golden_check_turns"] = GoldenCheckTurns,
+	["park_turns"] = ParkTurns,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -525,6 +529,72 @@ static JsonNode? StaffStrikeMonth( JsonObject a )
 		messages.Add( new JsonArray( sent.Select( message => (JsonNode)new JsonArray( (int)message.Role, (int)message.Kind ) ).ToArray() ) );
 	}
 	return new JsonObject { ["levels"] = levels, ["flags"] = flags, ["ticks"] = ticks, ["messages"] = messages };
+}
+
+// ParkCalendar.DateAtTurn: the date of a park turn (the original's 0xe4394 at the default clock rate 15000 and the 2000-01-01 start).
+static JsonNode? CalendarDate( JsonObject a )
+{
+	var date = ParkCalendar.DateAtTurn( (long)a["turn"]! );
+	return new JsonObject { ["date"] = new JsonArray( date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second ) };
+}
+
+// A park economy synchronised at the turn before the first step and advanced one park turn per step through ParkEconomy.Advance (the
+// path that raises the day, month and year events): per step the kinds raised, in order, and the calendar fields the update stores.
+static JsonNode? CalendarUpdate( JsonObject a )
+{
+	var start = (long)a["start"]!;
+	var count = (int)a["count"]!;
+	var park = EconomyTestData.Park();
+	var startAt = typeof( ParkEconomy ).GetMethod( "StartAtOriginalTurn", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingMethodException( "ParkEconomy.StartAtOriginalTurn" );
+	startAt.Invoke( park, new object[] { Math.Max( 0L, start - 1 ) } );
+	var raised = new List<string>();
+	park.EventRaised += item =>
+	{
+		switch ( item.Kind )
+		{
+			case ParkEventKind.DayEnded: raised.Add( "day" ); break;
+			case ParkEventKind.MonthEnded: raised.Add( "month" ); break;
+			case ParkEventKind.YearEnded: raised.Add( "year" ); break;
+		}
+	};
+	var kinds = new JsonArray();
+	var state = new JsonArray();
+	for ( var step = 0; step < count; step++ )
+	{
+		raised.Clear();
+		var turn = start + step;
+		park.Advance( Math.Max( 0L, ParkCalendar.TickOfTurn( turn ) - park.Tick ) );
+		kinds.Add( new JsonArray( raised.Select( kind => (JsonNode)JsonValue.Create( kind )! ).ToArray() ) );
+		var fields = ParkCalendar.FieldsAtTurn( park.Turn );
+		state.Add( new JsonArray( fields.Month, fields.Day, fields.Year ) );
+	}
+	return new JsonObject { ["kinds"] = kinds, ["state"] = state };
+}
+
+// ParkEconomy.RunsGoldenTicketCheck: whether the world update of a park turn runs the golden-ticket checks. The game type word 0 is
+// Full Simulation; any other word has no tickets (Instant Action and the types OpenTPW has no mode for).
+static JsonNode? GoldenCheckTurns( JsonObject a )
+{
+	var mode = (int)a["mode"]! == 0 ? ParkGameMode.FullSimulation : ParkGameMode.InstantAction;
+	return new JsonObject { ["tickets"] = new JsonArray( a["turns"]!.AsArray()
+		.Select( turn => (JsonNode)JsonValue.Create( ParkEconomy.RunsGoldenTicketCheck( (long)turn!, mode ) )! ).ToArray() ) };
+}
+
+// The path from real time to park turns in OpenTPW: each frame's elapsed milliseconds times the speed scale go to the fixed clock exactly as
+// Level.Update does (Time.Delta x SimulationTimeScale into FixedStepClock.Advance), and the park turn is ParkCalendar.Turn of its tick count.
+// Per frame: the turns so far.
+static JsonNode? ParkTurns( JsonObject a )
+{
+	var scale = (double)a["scale"]!;
+	var clock = new FixedStepClock();
+	var turns = new JsonArray();
+	foreach ( var gap in a["gaps"]!.AsArray() )
+	{
+		clock.Advance( (double)gap! / 1000.0 * scale, _ => { } );
+		turns.Add( ParkCalendar.Turn( clock.TickCount ) );
+	}
+	return new JsonObject { ["turns"] = turns };
 }
 
 sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStatistics

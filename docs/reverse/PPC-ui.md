@@ -616,7 +616,11 @@ initializes to 1, divides/multiplies by 1.25 and clamps to **0.25..2.0**.
 The clock lane traced `0x127cd0` to the main scheduling clock via
 `0x10e844 -> 0x11a588 -> 0x10ed54 -> 0x117d74`, ordinary animation and RSE
 waits. Advisor LIP has a separate unscaled clock. UI-022's ×1/×2/×4 economy-only
-control is therefore a different policy. The records' event/key dispatch,
+control is therefore a different policy. (Executed in the PowerPC oracle, ORACLE.md F32: the
+callbacks and the third one at `0x1131ac` (store 1.0) step the scale as described and the
+scheduler clock adds each raw gap times the scale; 60 call sites read the scaled clock, among them the
+world callback, the RSE waits, the board code and the animation updater, and 11 the unscaled one.
+OpenTPW's speeds now scale the whole simulation.) The records' event/key dispatch,
 displayed speed widget and pause interaction remain unresolved; do not infer
 their key meanings merely from packed numeric default fields.
 

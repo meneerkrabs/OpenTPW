@@ -13,7 +13,7 @@ public interface IHudParkStatus
 	long Money { get; }
 	ParkDate Date { get; }
 	GameSpeed Speed { get; set; }
-	/// <summary>Multiplier for rides/guests on the fixed clock (0 when paused).</summary>
+	/// <summary>Factor on the elapsed time of the whole simulation (guests, rides, scripts, economy; 0 when paused), see <see cref="GameSpeedScale"/>.</summary>
 	float TimeScale { get; }
 	/// <summary>Advances by real seconds (stubs only; the economy runs on the level's fixed clock).</summary>
 	void Update( float realSeconds );

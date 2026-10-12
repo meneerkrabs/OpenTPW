@@ -269,6 +269,27 @@ preview; original runtime fidelity and the complete offline scope remain open.
   Windows builds add `u` (the single 1 + U), the Mac the stale `Fz` that C# follows, so 469 of 509 Mac-target inputs differ; the rest is x87
   rounding (at most 3 ulps), and the two Windows builds round differently from each other. A TPI coaster mode reuses the layout and the C# machinery but needs that
   one term and a rounding decision. No C# change.
+- The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
+  the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
+  boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the
+  scheduler loop `0x1c22b0..0x1c24d0` (31 ms substeps, a park turn on every eighth, three at most per call, a 2000 ms backlog dropped, scaled time =
+  raw ms × the clock scale). At the default scale that is 4.03 park turns a second: a game day takes 5.7 s of real time, January 177 s, the leap
+  year 2000 34.9 minutes, as OpenTPW already had it. `ParkCalendar` gains `DateAtTurn`, `FieldsAtTurn` and `Update`, and `ParkEconomy` raises
+  its day, month and year events through them (no change for players; the oracle's C# side agrees on every turn). The original's first update
+  of a new calendar also posts a day and a year message (stored day -1, year 0); OpenTPW starts synchronised. ECON-001 stays open with a narrower
+  text (the 60 Hz sampling, the catch-up limits, the clock route).
+- The oracle executed the golden-ticket check cadence (finding F31, ECON-033, [ORACLE.md](reverse/ORACLE.md)): the world's park-turn update `0xd67f0`
+  runs the bank, the staff pool and the calendar update, then, on every turn that is a multiple of 100 (unsigned, 4.34 game days, 24.8 s at normal
+  speed) and for game type 0 only, the ticket dispatcher `0xd2f1c`. `ParkEconomy` had the cadence and the mode (507 scripts agree, 0 mismatches); it
+  ran the check before the calendar update, so the year's profit ticket could be awarded from the old year's profit on the turn the year changed, and now
+  runs it after (`ParkEconomy.RunsGoldenTicketCheck`). The determinism hash did not change.
+- The oracle executed the original's speed scale (finding F32, ECON-004/UI-022, [ORACLE.md](reverse/ORACLE.md)): three key callbacks divide the scheduler clock's
+  scale by 1.25, multiply it by 1.25 and store 1.0, clamped to 0.25..2.0, and the clock that park turns, ride scripts (WAIT, GETTIME), the board code and the
+  animation updater read (60 call sites; 11 read the unscaled clock) adds each raw gap times the scale. OpenTPW's speed buttons sped up the economy alone
+  while guests and rides kept x1; a speed is now the clock scale of the whole simulation (`GameSpeedScale`, `Level` feeds the fixed clock scaled time, the economy
+  runs one tick per fixed tick). At x2 a park day takes 2.9 s of real time (x1 5.7 s, x4 1.4 s) and guests, rides and the economy run at x2 together; x4 stays an
+  OpenTPW extension beyond the original's maximum scale 2.0. The determinism hash did not change. ECON-004 and UI-022 stay open with narrower texts (the
+  keys' names, whether a speed control is shown).
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

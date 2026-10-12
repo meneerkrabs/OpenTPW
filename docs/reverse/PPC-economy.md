@@ -154,7 +154,11 @@ imports through macdoze to the actual legacy OS conversion calls and states
 the environment boundary for civil/leap-calendar interpretation.
 
 Calendar update `0xe3f0c` compares extracted day/month with its saved previous
-values, emits day/month events on changes, and stores the new values. Year
+values, emits day/month events on changes, and stores the new values. (Executed in
+the PowerPC oracle, ORACLE.md F30: the day of the month, the 0-based month and the year are
+compared with the fields at `+20`, `+16` and `+24`, the messages come day, month, year, the constructor
+stores day -1, month 0 and year 0, so a new calendar's first update posts a day and a year
+message, and the conversion `0xe4394` agrees with `2000-01-01 + floor(turn × rate / 4)` s.) Year
 changes generate the separately constructed year event. Initial date
 arguments are directly established; month/hour extraction is traced below.
 Runtime calendar environment and Windows equivalence require their own evidence.

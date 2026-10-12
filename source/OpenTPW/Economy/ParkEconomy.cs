@@ -106,8 +106,12 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// ---------------------------------------------------------------- time
 
-	/// <summary>One fixed 60 Hz frame tick: advances the park by <see cref="Speed"/> ticks (0 when paused).</summary>
-	public void AdvanceFixedTick() => Advance( (int)Speed );
+	/// <summary>
+	/// One fixed 60 Hz simulation tick: advances the park by one tick (none when paused). A faster <see cref="Speed"/> is the clock
+	/// scale of the whole simulation (<see cref="GameSpeedScale"/>): <c>Level</c> feeds the fixed clock scaled time, so guests, rides and
+	/// the economy all get more ticks per real second together.
+	/// </summary>
+	public void AdvanceFixedTick() => Advance( Speed == GameSpeed.Paused ? 0 : 1 );
 
 	/// <summary>Advances the simulation by <paramref name="ticks"/> fixed ticks. Each new park turn runs the turn work and the hourly, daily and monthly updates for the calendar boundaries it crosses.</summary>
 	public void Advance( long ticks )
@@ -160,23 +164,21 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100E077C ride update] each ride is updated when the turn counter is a multiple of 8
 		if ( turn % RideUpdateInterval == 0 )
 			UpdateRides( turn );
-		// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
-		if ( turn % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
-			CheckGoldenTickets();
-		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change
-		var before = ParkCalendar.Epoch.AddSeconds( previousTurn * ParkCalendar.SecondsPerTurn );
-		var now = ParkCalendar.Epoch.AddSeconds( turn * ParkCalendar.SecondsPerTurn );
+		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
+		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
+		var changes = ParkCalendar.Update( ref stored, turn );
 		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
 		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour && !IsBankrupt; hour++ )
 			UpdateHour();
-		var dayBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
-		var day = turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
-		for ( var ended = dayBefore; ended < day && !IsBankrupt; ended++ )
-			EndDay( ended );
-		if ( now.Month != before.Month || now.Year != before.Year )
-			EndMonth( (now.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + now.Month - 1 );
-		if ( now.Year != before.Year )
+		if ( changes.HasFlag( CalendarChange.Day ) && !IsBankrupt )
+			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
+		if ( changes.HasFlag( CalendarChange.Month ) )
+			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
+		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
+		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
+		if ( RunsGoldenTicketCheck( turn, Mode ) )
+			CheckGoldenTickets();
 	}
 
 	/// <summary>
@@ -259,6 +261,11 @@ public sealed class ParkEconomy : IParkEconomy
 		foreach ( var message in messages )
 			Raise( ParkEventKind.StaffStrikeMessage, (int)message.Kind, 0, (int)message.Role, $"TAG_SYSTEM {message.TagSystemIndex}" );
 	}
+
+	/// <summary>Whether the world update of a park turn runs the golden-ticket checks: every 100th turn (the turn is unsigned) in Full Simulation only.</summary>
+	// [BIN:STP-PPC:0x100D67F0 world update] turn % 100 == 0 (unsigned) calls the dispatcher 0x100D2F1C, which runs the checks only while the game type word is 0 (oracle F31: 507 scripts agree)
+	public static bool RunsGoldenTicketCheck( long turn, ParkGameMode mode ) =>
+		turn % GoldenTicketCheckInterval == 0 && ParkModeFeatures.For( mode ).GoldenTickets;
 
 	private void DoResearch()
 	{

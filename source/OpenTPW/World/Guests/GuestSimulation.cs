@@ -840,7 +840,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		if ( guest.CellX == tx && guest.CellY == ty )
 		{
 			var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-			var result = attraction.JoinQueue( guest.Id, type.PreferredExcitement - attraction.ExcitementLevel );
+			var result = attraction.JoinQueue( guest.Id, type.PreferredExcitement );
 			if ( result == QueueJoinResult.Joined )
 			{
 				BeginQueue( guest, attraction );
@@ -1158,9 +1158,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 			guest.State = GuestState.Boarding;
 			return;
 		}
-		// 3. The ride failed.
-		// [APPROX:QUEUE-008] the ride-failure exit (0xdfe34 set → thought 14, leave) is read as VAR_BROKEN ≠ 0; executed (ORACLE.md F15): 0xdfe34 never reads the script, it is true for a relief object (type ProvidesRelief) whose gauge +64, truncated to a byte, is below 25, so the original has no such exit for a broken ride — evidence needed: what empties the rest of a broken ride's queue (SetState(1) closes the ride and handles the head guest, static) and the toilet gauge, which C# does not simulate
-		if ( attraction.IsBroken )
+		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken ride
+		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
+		// [APPROX:QUEUE-008] OpenTPW wears only rides (ECON-023), so a toilet's state of repair stays 100 and the exit never fires; the predicate itself follows the original — evidence needed: the wear step of relief objects (0xdec2c callers) and what the original's toilet ride state does at gauge 0
+		if ( attraction.ReliefWornOut )
 		{
 			LeaveQueue( guest, attraction, GuestThought.FeelingSick );
 			return;
@@ -1173,17 +1174,27 @@ public sealed class GuestSimulation : IRideVisitorHost
 			return;
 		}
 		// 5. Moving up: wait out the delay while the gap is at most 2, else walk to the new position.
+		// While the ride is in state 1 (broken) 0xed4b0 (0xdfe0c) skips the walk and goes straight to the needs window (0xed58c), so the
+		// guests keep their physical places as the head is dismissed.
+		// [BIN:STP-PPC:0x100ED4B0 broken ride holds the queue] only state 1 holds; state 4 (condemned, life gauge 0) is not told apart from it here (QUEUE-019)
+		var held = false;
 		if ( position != guest.QueuePosition )
 		{
 			var gap = guest.QueuePosition - position;
 			if ( guest.QueueMoveDelay != 0 && gap is >= 0 and <= MoveUpWaitGap )
+			{
 				guest.QueueMoveDelay--;
-			else
+				return;
+			}
+			if ( !attraction.IsBroken )
+			{
 				MoveToQueuePosition( guest, attraction );
-			return;
+				return;
+			}
+			held = true;
 		}
 		// 6. Beyond the limit.
-		if ( guest.QueuePosition > attraction.QueueLimit )
+		if ( !held && guest.QueuePosition > attraction.QueueLimit )
 		{
 			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
 			return;
@@ -1350,6 +1361,20 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.SecondsSinceRide = 0;
 		guest.RidesTaken++;
 		ApplyVisit( guest, ride );
+	}
+
+	/// <summary>
+	/// A broken ride sends its head guest away (<c>0xee804</c>): reason 6 (not a thought), happiness down by the medium change
+	/// (<c>0xeb6f4</c> selector 1, <c>PeepInfo.MediumHappinessChange</c>, clamped to 0..100), queue fields cleared and state 6.
+	/// </summary>
+	// [BIN:STP-PPC:0x100EE804 dismissal] "Person %d: dismissed from queue on ride %d"; the target id +476 is cleared and no thought or last attraction is written
+	void IRideVisitorHost.OnVisitorDismissed( IRideVisitorBridge ride, int guestId )
+	{
+		if ( Find( guestId ) is not { } guest )
+			return;
+		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
+		ClearQueueState( guest );
+		ReturnToPath( guest, JoinCellOf( ride ) );
 	}
 
 	void IRideVisitorHost.OnVisitorTurnedAway( IRideVisitorBridge ride, int guestId )

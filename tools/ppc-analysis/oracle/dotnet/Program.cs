@@ -25,6 +25,8 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["loan_term"] = LoanTerm,
 	["loan_take"] = LoanTake,
 	["loan_payoff"] = LoanPayoff,
+	["queue_failure"] = QueueFailure,
+	["queue_join_difference"] = QueueJoinDifference,
 	["queue_join_gate"] = QueueJoinGate,
 };
 
@@ -270,19 +272,47 @@ static JsonNode? LoanPayoff( JsonObject a )
 		["bought"] = left == null ? 0 : 1, ["repaid"] = left?.MonthsRepaid ?? 0, ["money_out"] = park.Ledger.CurrentMonth( 0, 0 )[LedgerCategory.LoanPayments] };
 }
 
-// RideVisitorBridge.ExcitementRefusal (the state-10 excitement gate of JoinQueue, 0xeccb0) through reflection (it is internal and
-// static). The guest's difference is built as GuestSimulation.UpdateGoingToRide builds it: preferred excitement minus the ride's
-// ExcitementLevel, which is the .sam value, or the coaster's CoasterRating.GuestExcitement once its controller exists (0 before).
-// Type +1960 (Info.WhichUIType) 0 is a ride, 2 a sideshow and anything else a facility, as OriginalObjectRuntime maps them.
+// A real RideVisitorBridge for the join excitement rules (ORACLE.md F15 and F16): type +1960 (Info.WhichUIType) 2 is a sideshow,
+// anything else a ride or facility as OriginalObjectRuntime maps them; track type 3 gives the coaster source (0 until its controller
+// exists, else trunc(0.5 E + 50)); the ride record's speed word, duration byte and design values come through QueueParameters; the
+// sideshow's win byte is 100 minus the chance of losing; the wear gauge is the single of the original's float +64. The thing behind
+// ride +36 has no C# counterpart and is not part of the request.
+static RideVisitorBridge JoinBridge( JsonObject a )
+{
+	var kind = (int)a["kind"]! == 2 ? RideVisitorKind.Sideshow : RideVisitorKind.Ride;
+	var bridge = new RideVisitorBridge( 1, "Oracle", kind, 4, (int)a["level"]!, 10, (bool)a["relief"]! ? GuestNeeds.Toilet : GuestNeeds.None )
+	{
+		Parameters = new QueueParameters( true, false, false, 130, (int)a["speed"]!, (int)a["init_speed"]!, 4, (int)a["dur"]!, (int)a["init_dur"]! ),
+		Sideshow = new SideshowTerms( (int)a["goods"]!, (int)a["price"]!, 100 - (int)a["win"]! ),
+		WearGauge = BitConverter.Int32BitsToSingle( (int)(uint)a["gauge_bits"]! )
+	};
+	if ( (int)a["track"]! == 3 )
+	{
+		var rating = BitConverter.Int32BitsToSingle( (int)(uint)a["e_bits"]! );
+		var controller = (bool)a["ctrl"]!;
+		bridge.ExcitementSource = () => controller ? CoasterRating.GuestExcitement( rating ) : 0;
+	}
+	return bridge;
+}
+
+// 0xdfe34: RideVisitorBridge.ReliefWornOut, the relief flag and the wear gauge.
+static JsonNode? QueueFailure( JsonObject a )
+{
+	var bridge = new RideVisitorBridge( 1, "Oracle", RideVisitorKind.Facility, 1, 0, 0, (bool)a["relief"]! ? GuestNeeds.Toilet : GuestNeeds.None )
+	{
+		WearGauge = BitConverter.Int32BitsToSingle( (int)(uint)a["gauge_bits"]! )
+	};
+	return JsonValue.Create( bridge.ReliefWornOut ? 1 : 0 );
+}
+
+// 0xe9a84: RideVisitorBridge.JoinDifference for the guest's preferred excitement.
+static JsonNode? QueueJoinDifference( JsonObject a ) => JsonValue.Create( JoinBridge( a ).JoinDifference( (int)a["pref"]! ) );
+
+// The state-10 gate (0xeccb0): RideVisitorBridge.ExcitementRefusal with the difference it computed.
 static JsonNode? QueueJoinGate( JsonObject a )
 {
-	var excitement = (bool)a["coaster"]!
-		? (bool)a["ctrl"]! ? CoasterRating.GuestExcitement( BitConverter.Int32BitsToSingle( (int)(uint)a["e_bits"]! ) ) : 0
-		: (int)a["level"]!;
-	var kind = (int)a["kind"]! switch { 0 => RideVisitorKind.Ride, 2 => RideVisitorKind.Sideshow, _ => RideVisitorKind.Facility };
-	var method = typeof( RideVisitorBridge ).GetMethod( "ExcitementRefusal", BindingFlags.NonPublic | BindingFlags.Static )
-		?? throw new MissingMethodException( "RideVisitorBridge.ExcitementRefusal" );
-	var refusal = (QueueJoinResult?)method.Invoke( null, new object[] { kind, (int)a["pref"]! - excitement } );
-	var outcome = refusal switch { null => "pass", QueueJoinResult.NotExcitingEnough => "bored", QueueJoinResult.TooExciting => "scared", _ => refusal.ToString()! };
-	return new JsonObject { ["outcome"] = outcome };
+	var bridge = JoinBridge( a );
+	var pref = (int)a["pref"]!;
+	var outcome = bridge.ExcitementRefusal( pref ) switch { null => "pass", QueueJoinResult.NotExcitingEnough => "bored", QueueJoinResult.TooExciting => "scared", var other => other.ToString()! };
+	return new JsonObject { ["outcome"] = outcome, ["difference"] = bridge.JoinDifference( pref ) };
 }

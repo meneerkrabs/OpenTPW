@@ -23,9 +23,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Queue limit of objects without <c>Info.HasQueue</c> (shops, toilets and sideshows: the virtual queue).</summary>
 	// [BIN:STP-PPC:0x100DCB74 queue limit] ride +46 & 0x8 (Info.HasQueue, set by the ride build 0x100DAB6C) clear gives limit 100; set gives trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) as a u32
 	public const uint NoQueueLimit = 100;
-	/// <summary>Excitement difference at which a guest refuses to join.</summary>
+	/// <summary>Excitement difference at which a guest refuses to join (<see cref="QueueJoinRules.Gate"/>).</summary>
 	// [BIN:STP-PPC:0x100ECCB0 join excitement gate] |difference| ≥ 45 leaves with "ride is not exciting enough!" / "ride is too exciting!"
-	public const int ExcitementGate = 45;
+	public const int ExcitementGate = QueueJoinRules.Gate;
 	/// <summary>Iteration guard of the back-of-queue walk ("GetBackOfQueue() crashed!").</summary>
 	public const int QueueWalkGuard = 1000;
 
@@ -65,9 +65,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public string Name { get; }
 	public RideVisitorKind Kind { get; }
 	public int Capacity { get; }
+	/// <summary>The excitement shown to the HUD and used by the attraction score: the coaster's guest value when there is a source, else the .sam level.</summary>
 	public int ExcitementLevel => ExcitementSource?.Invoke() ?? excitementLevel;
+	/// <summary>The type's <c>UsageInfo.ExcitementLevel</c> word (type <c>+316</c>); its low byte decides whether guests are tested at all.</summary>
+	public int StaticExcitementLevel => excitementLevel;
 	/// <summary>Replaces the .sam excitement with a live value (a coaster's rating, <c>0xdff70</c>), or null.</summary>
 	public Func<int>? ExcitementSource { get; set; }
+	/// <summary>The sideshow's goods, price and win chance, read by <see cref="LiveExcitement"/>; the level mirrors them from the economy each tick.</summary>
+	public SideshowTerms Sideshow { get; set; }
+	/// <summary>The wear gauge (ride <c>+64</c>, the state of repair 0–100) the relief predicate reads; the level mirrors it from the economy.</summary>
+	public double WearGauge { get; set; } = 100;
 	/// <summary>The ride's head table for ADDHEAD/DELHEAD, null when its model has no head records (see <see cref="RideHeadSpace"/>).</summary>
 	// [APPROX:HEADS-005] root and resolved child/sound scripts share the attraction head table; the Mac opcode reads the calling script +48/+76, but allocation/binding for child scripts is not traced
 	public RideHeadSpace? Heads { get; set; }
@@ -87,8 +94,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool HasQueue => Parameters.HasQueue;
 	public IRideVisitorHost? Host { get; set; }
 	public bool IsOpen => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting) && isOpen();
-	/// <summary>The ride reports a failure (<c>VAR_BROKEN</c>); queueing guests leave.</summary>
+	/// <summary>
+	/// The ride script reports a breakdown (<c>VAR_BROKEN</c>, which the original's ride update turns into ride state 1, or 4 when
+	/// the life gauge is 0): the ride dismisses its queue head first, one guest per park turn, and takes nobody (ORACLE.md F15).
+	/// </summary>
 	public bool IsBroken => vm != null && Get( RideVariables.VAR_BROKEN ) != 0;
+	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
+	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
 	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
 	public int RidersOnBoard => vm != null ? Get( RideVariables.VAR_ONRIDE ) : 0;
 	/// <summary>The operating speed: InitSpeed of the ride record (see <see cref="QueueParameters"/>).</summary>
@@ -508,14 +520,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	// ---- Guest list --------------------------------------------------------------------------
 
-	public bool TryJoinQueue( int guestId ) => JoinQueue( guestId, 0 ) == QueueJoinResult.Joined;
+	public bool TryJoinQueue( int guestId ) => JoinQueue( guestId ) == QueueJoinResult.Joined;
 
 	/// <summary>
 	/// The joining checks of state 10 at the back cell (<c>0xeccb0</c>), in the original order: physical room
-	/// (count &lt; 4 × cells), the excitement gate, then the limit. <paramref name="excitementDifference"/> is
-	/// the guest's preferred excitement minus the ride's excitement.
+	/// (count &lt; 4 × cells), the excitement gate, then the limit. <paramref name="preferredExcitement"/> is the guest's
+	/// preferred excitement (<c>PeepTypes[n].PreferredExcitement</c>); null skips the gate.
 	/// </summary>
-	public QueueJoinResult JoinQueue( int guestId, int excitementDifference )
+	public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null )
 	{
 		if ( guestId <= 0 || !IsOpen )
 			return QueueJoinResult.Closed;
@@ -528,8 +540,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:STP-PPC:0x100DC988 queue room] a guest may join only while count < 4 × queue size in cells (+60)
 		if ( count >= QueueRoom )
 			return QueueJoinResult.NoRoom;
-		// [APPROX:QUEUE-004] the gate applies to rides and sideshows on the static |preferred − ExcitementLevel| ≥ 45; executed (ORACLE.md F16): the original gates when the low byte of the type's UsageInfo.ExcitementLevel is nonzero (0xe02ec(ride, 1)), on |clamp(live excitement − preferred, ±50)| ≥ 45 over bytes, with a live excitement from 0xdff70 (sideshows 20 + 0.8 × win × sqrt(clamp(goods − price, 0, 100)) / 10; other types the level scaled by the speed and duration ratios clamped to 0.75..1.25, and with a thing behind ride +36 60 % of it plus up to 40), so C# differs on sideshows, rides off their design speed or duration and rides with a +36 thing — evidence needed: what ride +36, +84, +88 and the sideshow goods, price and win words are in play
-		if ( ExcitementRefusal( Kind, excitementDifference ) is { } refusal )
+		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
+		// [APPROX:QUEUE-004] the excitement of a ride with a thing behind ride +36 (60 % of the level plus up to 40 from three piece counts of 0x1ea40) is not modelled, because OpenTPW has no such thing and what the counts are is not traced — evidence needed: the ride +36 handle and 0x1ea40
+		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
 			return refusal;
 		if ( count >= QueueLimit )
 			return QueueJoinResult.QueueTooLong;
@@ -544,16 +557,37 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 
 	/// <summary>
-	/// The excitement gate of <see cref="JoinQueue"/>: rides and sideshows refuse a guest whose |preferred − excitement| reaches
-	/// <see cref="ExcitementGate"/>. A positive difference (the ride is below the preference) is "not exciting enough", a negative one
-	/// "too exciting". Null when the guest may join. Separate so the oracle bridge can call it on its own.
+	/// The live excitement of <c>0xe02ec(ride, 0)</c> (<c>0xdff70</c>): 0 when the data level is 0, else the sideshow formula,
+	/// a coaster's guest value, or the data level scaled by the speed and duration ratios (<see cref="QueueJoinRules"/>).
 	/// </summary>
-	internal static QueueJoinResult? ExcitementRefusal( RideVisitorKind kind, int excitementDifference )
+	public int LiveExcitement
 	{
-		if ( kind is not (RideVisitorKind.Ride or RideVisitorKind.Sideshow) || Math.Abs( excitementDifference ) < ExcitementGate )
-			return null;
-		return excitementDifference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;
+		get
+		{
+			if ( excitementLevel == 0 )
+				return 0;
+			if ( Kind == RideVisitorKind.Sideshow )
+				return QueueJoinRules.SideshowExcitement( Sideshow );
+			if ( ExcitementSource is { } source )
+				return source();
+			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; the original would divide 0 by 0 (NaN, excitement 0) — evidence needed: none, no original object lacks them
+			if ( Parameters is { Speed: 0, InitSpeed: 0, Duration: 0, InitDuration: null or 0 } )
+				return excitementLevel;
+			return QueueJoinRules.ScaledExcitement( excitementLevel, Parameters.Speed, Parameters.InitSpeed, Parameters.Duration, Parameters.InitDuration ?? Parameters.Duration );
+		}
 	}
+
+	/// <summary><c>0xe9a84</c>: 100 while <see cref="ReliefWornOut"/>, else <c>clamp(live excitement − preferred, −50, 50)</c> over bytes.</summary>
+	public int JoinDifference( int preferredExcitement ) =>
+		QueueJoinRules.Difference( ReliefWornOut, ReliefWornOut ? 0 : LiveExcitement, preferredExcitement );
+
+	/// <summary>
+	/// The excitement gate of <see cref="JoinQueue"/> (<see cref="QueueJoinRules.Refusal"/>): only when the low byte of the type's
+	/// <c>ExcitementLevel</c> is nonzero, and then |<see cref="JoinDifference"/>| ≥ 45 refuses: a negative difference is "not exciting
+	/// enough" (bored), otherwise "too exciting" (scared). Null when the guest may join.
+	/// </summary>
+	public QueueJoinResult? ExcitementRefusal( int preferredExcitement ) =>
+		QueueJoinRules.Refusal( excitementLevel, JoinDifference( preferredExcitement ) );
 
 	/// <summary>0-based list position (<c>0xdd144</c>), or −1.</summary>
 	public int GetQueuePosition( int guestId )
@@ -655,7 +689,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
 			MarkBoarded( called );
 
-		if ( !isOpen() )
+		// A breakdown takes precedence over a closed ride: SetState(1) writes VAR_RIDECLOSED = 1 itself, and the original still drains the
+		// queue head first (0xe0aec) instead of emptying it at once.
+		if ( !isOpen() && !IsBroken )
 		{
 			if ( called != 0 )
 			{
@@ -678,11 +714,34 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( turn >= 0 && turn == lastAdmissionTurn )
 			return;
 		lastAdmissionTurn = turn;
-		// [APPROX:QUEUE-019] admission is skipped while VAR_BROKEN ≠ 0: the ride update calls 0xe1864 → 0xe1404 only when ride +408 == 0, and a breakdown is read as +408 ≠ 0; the predicate 0xdfe34 plays no part (executed, ORACLE.md F15: a relief object's gauge test) — evidence needed: the ride +408 state names and their writers
+		// [BIN:STP-PPC:0x100E0AEC ride update, states 1, 2 and 4] while the ride is broken (state 1; 4 when condemned) every update removes the head guest from the queue and sends it away (0xdcebc, 0xee804) unless the script has already taken it; the rest wait their turn, so a queue drains one guest per park turn. Static reading (ORACLE.md F15): the dispatch is exercised in the oracle target queue-ride-update
+		// [APPROX:QUEUE-019] a breakdown is read from VAR_BROKEN ≠ 0 at once; the original's ride update first runs the admission (0xe1864 → 0xe1404) on the turn it notices VAR_BROKEN and then SetState(1), which also writes VAR_RIDECLOSED = 1 and clears the open word +100, and only a repair reopens it — evidence needed: the callers that set ride state 0 again (0xdad24, 0xde8e4, 0xdf4d4, 0xdf90c, 0xdfb08), not traced to a player action
 		if ( IsBroken )
+		{
+			DismissHead();
 			return;
+		}
 		CheckAdmission( turn );
 	}
+
+	/// <summary>
+	/// The ride update of a broken ride (<c>0xe0aec</c>): the head guest leaves the queue (<c>0xdcebc</c>) and is sent away
+	/// (<c>0xee804</c>), which also withdraws the pending visitor and VAR_LETMEON when they name it. A head the script has
+	/// already taken is not here any more (<see cref="MarkBoarded"/> removed it above), which is the original's "forcing him onto
+	/// the ride" (<c>0xeda04</c>) case.
+	/// </summary>
+	private void DismissHead()
+	{
+		if ( head == 0 )
+			return;
+		var guest = head;
+		LeaveQueue( guest );
+		Dismissed++;
+		Host?.OnVisitorDismissed( this, guest );
+	}
+
+	/// <summary>Guests a broken ride has sent away.</summary>
+	public int Dismissed { get; private set; }
 
 	/// <summary>
 	/// The ride update's admission (<c>0xe1864 → 0xe1404</c>): call the head forward when VAR_LETMEON is 0,

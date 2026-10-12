@@ -390,8 +390,21 @@ also block object placement. New queue cells are not drawn on the terrain yet.
 **Joining** (§4, state 10 at the join cell), in this order:
 
 1. Room: the guest joins only while the count is below 4 × cells.
-2. Excitement: rides and sideshows refuse a guest when
-   |preferred − excitement| ≥ 45 (thought Scared or Bored).
+2. Excitement (ORACLE.md F16, executed): an object tests its guests only when the low byte of its
+   `UsageInfo.ExcitementLevel` is nonzero, whatever its kind. The difference is
+   clamp(excitement − preferred, −50, 50) over bytes, or 100 while the relief predicate
+   holds (a toilet whose wear gauge is below 25). |difference| ≥ 45 refuses: a negative
+   difference is "not exciting enough" (thought Bored), otherwise "too exciting"
+   (thought Scared). The excitement is the live value of `0xdff70`: a sideshow
+   20 + trunc(0.8 × win × sqrt(clamp(goods − price, 0, 100)) / 10) with the win chance
+   100 − `InitChanceOfLoosing`, a coaster trunc(0.5 E + 50), any other object its level times
+   the speed ratio and the duration ratio, each clamped to 0.75..1.25. A sideshow at level 30
+   with a prize 25 above its price and a win chance of 50 scores 40, so a guest who prefers 80
+   joins; a ride of level 100 at a tenth of its design speed scores 75, so a guest who prefers 50
+   joins. Four shipped rides whose `InitDuration` (3) lies under their `MinDuration` score 1.25 × their level, because
+   the ride's duration byte is the clamped value and the ratio divides by the raw one (Brain Buster, Zero G, Bumper Bugs,
+   Jelly Bounce). A ride with a thing behind its record `+36` scores 60 % of its level plus up to 40 in the
+   original; OpenTPW has no such thing (QUEUE-004).
 3. Limit: the count must be below the data limit, an unsigned 32-bit value.
    With `Info.HasQueue` it is
    trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) in single precision,
@@ -418,7 +431,7 @@ position (state 12) with the traced steering ([Walking](#walking)).
 Each turn, in order:
 
 1. Called forward → walk to the stand point (state 13).
-2. The ride failed (`VAR_BROKEN`) → leave.
+2. The ride failed (`0xdfe34`: a toilet whose wear gauge is below 25) → leave, "feeling sick".
 3. Not in the list any more → leave.
 4. The list position moved up: wait while the delay is non-zero and the gap is
    at most 2 (one turn per decrement), else walk to the new position.
@@ -436,15 +449,17 @@ queueing for a toilet), when the ride fails, closes or is removed, or on a
 queue edit. Happiness and toilet are compared after truncation to whole
 numbers, as the original does (`fctiwz`): "> 80" means at least 81.
 
-**Breakdown.** While `VAR_BROKEN ≠ 0`, queued guests leave on their next
-state-11 turn (QUEUE-008), and nobody new joins: walking guests do not choose
-the ride (QUEUE-017), joins are refused as if it were closed (QUEUE-018), and
-admission does not call the head (QUEUE-019). All four are approximations.
-The original's state-11 exit at `0xed424` is `0xdfe34`, which executed turns out
-to be a relief object (toilet) whose wear gauge is below 25, not `VAR_BROKEN`
-(ORACLE.md F15): a broken ride has no such exit, and `SetState(1)` instead closes
-the ride and handles the head guest (static; what happens to the rest of the queue
-is not traced). The admission skip rests on the ride `+408` state.
+**Breakdown** (ORACLE.md F15). While `VAR_BROKEN ≠ 0` the ride dismisses its queue head first,
+one guest per park turn: the ride update (`0xe0a8c`, executed in the oracle for its states 1, 2
+and 4) removes the head from the queue and sends it away (`0xdcebc`, `0xee804`: reason 6, no
+thought, happiness down by `PeepInfo.MediumHappinessChange`, back to wandering). A head the script
+has already taken is forced aboard instead. The guests behind keep their places and wait, and a
+repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new joins: walking guests do not choose the ride
+(QUEUE-017) and joins are refused as if it were closed (QUEUE-018), and admission does not call
+the head (QUEUE-019); these three are approximations. Queued guests no longer leave "feeling sick" for
+a breakdown: state 11's exit at `0xed424` is `0xdfe34`, a relief object (toilet) whose wear gauge
+is below 25. OpenTPW wears only rides, so a toilet's gauge never falls and the exit does not fire
+in practice (QUEUE-008).
 
 **Admission** (§6, once per park turn per ride). The front guest is called when
 all of these hold:
@@ -495,10 +510,10 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-001 | The queue link (+13) uses the connection bits' compass: 1/4/16/64 = −Y/+X/+Y/−X (verified for +12 on 78 Easymode cells) | Run-time neighbour offset tables (data `0xec52c..0xec5a4`) |
 | QUEUE-002 | The next queue cell is searched in grid direction order | Same tables; the order paired with links 16, 1, 64, 4 |
 | QUEUE-003 | Guests step onto the back cell from its first walkable neighbour | `0xdd744` and the state-10 walk to the back cell |
-| QUEUE-004 | Excitement gate for rides and sideshows, using \|preferred − static excitement\|. Executed (ORACLE.md F16): the original gates on the type's `ExcitementLevel` byte and compares a live excitement (sideshow formula, speed and duration ratios, coaster) clamped to ±50 | What the live inputs are in play (ride `+36`, `+84`, `+88`, sideshow goods, price and win) |
+| QUEUE-004 | The join excitement gate, clamped difference and live excitement follow the original (ORACLE.md F16, executed); only the excitement of a ride with a thing behind ride `+36` (60 % of the level plus up to 40 from three piece counts of `0x1ea40`) is not modelled | What ride `+36` and the three counts are (no OpenTPW object has one) |
 | QUEUE-005 | Queue-edit exits: beyond 4 × cells, or standing cell removed | `0xee8f8` in detail |
 | QUEUE-006 | Depth from the cell's front edge; the 4th position stays in its cell | `0xdde74` and the sub-cell axis selection |
-| QUEUE-008 | Ride failure = `VAR_BROKEN ≠ 0`. Executed (ORACLE.md F15): `0xdfe34` is a relief object's wear gauge below 25 | What empties a broken ride's queue (`SetState(1)`, `0xe0ec4`), and the toilet gauge |
+| QUEUE-008 | The ride-failure exit follows `0xdfe34` (ORACLE.md F15, executed): a relief object whose wear gauge is below 25. OpenTPW wears only rides, so a toilet's gauge never falls and the exit never fires | The wear step of relief objects (callers of `0xdec2c`) |
 | QUEUE-009 | Facing-change sign from the 1-in-10 draw | The sign selection in `0xed244` |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once | The state-6 transition after a queue exit |
 | QUEUE-011 | Upgrade level 0 for QWTC/InitSpeed | None (OpenTPW does not apply upgrade levels to objects) |
@@ -509,9 +524,10 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-016 | Admission and state 11 run once per park turn | Live-list eligibility of objects and guests |
 | QUEUE-017 | Guests do not choose a broken attraction | The state-6 attraction choice and its test of ride `+408` |
 | QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |
-| QUEUE-019 | A broken attraction skips admission (`VAR_BROKEN ≠ 0` read as ride `+408 ≠ 0`) | Ride `+408` state names and writers |
+| QUEUE-019 | A breakdown is read from `VAR_BROKEN ≠ 0` at once: the broken ride skips admission and dismisses its queue head each park turn. The original admits on the turn it notices, `SetState(1)` also writes `VAR_RIDECLOSED` and the open word, and what reopens it is not traced | The callers of `SetState(0)` (`0xdad24`, `0xde8e4`, `0xdf4d4`, `0xdf90c`, `0xdfb08`) |
 | QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; the original calls its millisecond clock twice (`0xadfb0`, `0xadfcc`), so its start can lie 1 ms later | None for the reading; OpenTPW's stepped script clock cannot tick between the two calls |
 | QUEUE-021 | A left click on a queue cell (help 444, "Left-click to edit this queue") starts the queue tool at that ride's back cell; the click handler is not traced | None: `Level.EditQueueAt` follows the help text and `EnterQueueTool` |
+| QUEUE-022 | A bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object; every original object has `InitSpeed` and `InitDuration`) is read at its design speed and duration, where the original would divide 0 by 0 and score 0 | None |
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand
@@ -565,7 +581,8 @@ traced yet. Root scripts without `ADDHEAD` do not enable this renderer; this doe
 
 - `QueueTests` (no assets): queue-cell links and recompute after edits, build
   refusals, both limit formulas (single precision, NaN floor, unsigned saturation, 100 without HasQueue),
-  join order room → excitement → limit, guests walking queue cells to four
+  join order room → excitement → limit (`QueueJoinTests`: the live excitement, the level-byte gate, the
+  relief predicate, a broken ride's head-first dismissal), guests walking queue cells to four
   positions per cell, depth bytes, move-up delays trunc(1.2 × position) with the
   gap ≤ 2 rule, no boredom exit over 2,000 turns, the unhappy/toilet/relief,
   ride-failure and queue-edit exits, the admission gates (LETMEON, ONRIDE <

@@ -139,6 +139,37 @@ public class GuestAssetTests
 	}
 
 	/// <summary>
+	/// The join excitement of shipped objects (ORACLE.md F16): rides run at their design speed and duration, so their live excitement is
+	/// their level, except Brain Buster whose InitDuration 3 lies under its MinDuration 10 (ratio 10 / 3 clamps to 1.25); sideshows score
+	/// 20 + 0.8 × win × sqrt(goods − price) / 10 from their goods, price and chance of losing.
+	/// </summary>
+	[TestMethod]
+	public void ShippedObjectsScoreTheirLiveJoinExcitement()
+	{
+		RideVisitorBridge Bridge( string theme, string name ) =>
+			OriginalObjectRuntime.CreateVisitorBridge( ObjectCatalog.Load( theme ).Entries.First( entry => entry.DisplayName == name ), 1 );
+		Assert.AreEqual( 40, Bridge( "jungle", "Belly Bounce" ).LiveExcitement, "level 40 at the design speed and duration" );
+		Assert.AreEqual( 50, Bridge( "hallow", "Brain Buster" ).LiveExcitement, "level 40 × 1.25" );
+		Assert.AreEqual( 27, Bridge( "jungle", "Arcade" ).LiveExcitement, "20 + trunc(0.8 × 25 × sqrt(15) / 10): goods 25, price 10, chance of losing 75" );
+		Assert.AreEqual( 33, Bridge( "hallow", "Arcade" ).LiveExcitement, "goods 50, price 20, chance of losing 70" );
+		Assert.AreEqual( 37, Bridge( "space", "Arcade" ).LiveExcitement, "goods 100, price 20, chance of losing 75" );
+		var scaled = new List<string>();
+		foreach ( var theme in ObjectCatalog.Themes )
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( entry => entry.Category == ObjectCategory.Ride && entry.Settings.GetInt( "Bumper.WhichTrackType" ) != 3 && entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ) )
+			{
+				var bridge = OriginalObjectRuntime.CreateVisitorBridge( entry, 1 );
+				if ( bridge.LiveExcitement != bridge.StaticExcitementLevel )
+					scaled.Add( $"{theme} {entry.DisplayName} {bridge.StaticExcitementLevel}->{bridge.LiveExcitement} duration {bridge.Parameters.Duration}/{bridge.Parameters.InitDuration}" );
+			}
+		// The only rides whose duration byte (the data clamped to MinDuration..MaxDuration) differs from the raw InitDuration of the level.
+		CollectionAssert.AreEqual( new[]
+		{
+			"hallow Brain Buster 40->50 duration 10/3", "space Zero G 65->81 duration 15/3",
+			"fantasy Bumper Bugs 70->87 duration 10/3", "fantasy Jelly Bounce 40->50 duration 10/3"
+		}, scaled.ToArray(), string.Join( "; ", scaled ) );
+	}
+
+	/// <summary>
 	/// The original Belly Bounce (Bouncy.RSE) with a queue path laid beside the Easymode paths: guests walk the
 	/// queue cells, stand four to a cell, are called forward through the traced gates and ride.
 	/// </summary>
@@ -150,7 +181,7 @@ public class GuestAssetTests
 		Assert.IsNotNull( entry, "Belly Bounce (Info.Id 1100)" );
 		var parameters = OriginalObjectRuntime.CreateQueueParameters( entry );
 		// [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9).
-		Assert.AreEqual( new QueueParameters( true, true, false, 130, 60, 60, 5, 30 ), parameters );
+		Assert.AreEqual( new QueueParameters( true, true, false, 130, 60, 60, 5, 30, 30 ), parameters );
 		Assert.AreEqual( 21u, RideVisitorBridge.ComputeQueueLimit( parameters ), "HasQueue: trunc(130 × (1 × 5) / 30), the QWTC formula of 0xdcb74" );
 
 		// A straight run of four free cells off an Easymode path cell: the ride entrance sits beyond the fourth.

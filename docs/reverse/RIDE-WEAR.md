@@ -154,6 +154,9 @@ It behaves like a remaining-life meter, which may be the Remaining Life value in
 
 Not verified (agent reports, recorded as leads):
 - `0x100d9e04` clears statistic 4 and calls the repair when a job timer ends, except when statistic 7 is set.
+  The timer itself is set by the mechanic's arrival `0x100d9c0c` and was executed (ORACLE.md F19): a repair takes
+  `WorkDuration × (100 − low byte of the truncated +0x40) / 100` park turns, an upgrade (ride state 2) `WorkDuration × Upgrades[level + 1].DurationOfUpgrade`;
+  the ride's own level does not scale a repair.
 - `0x100df5b4` repairs on a timer without clearing statistic 4.
 - The constructor `0x100da874` sets `+0x40`, `+0x44` and `+0x48` to 0.
 

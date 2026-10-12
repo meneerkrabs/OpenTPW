@@ -66,6 +66,7 @@ public sealed partial class ParkHud
 		hud = new UiScreen( "hud" ) { Modal = false };
 		Stack.Push( hud );
 		Build();
+		HookStaffStrikeMessages();
 	}
 
 	public UiScreenStack Stack { get; } = new();
@@ -150,8 +151,8 @@ public sealed partial class ParkHud
 		// [APPROX:UI-042] camera button cycles host park views; original camera-view action remains unqualified
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, CycleCameraView );
 
-		// [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options
-		// Speed control (OpenTPW addition; the original has pause only).
+		// [APPROX:UI-022] speed buttons and multipliers — evidence needed: the original's key actions step its clock scale by 1.25 within 0.25..2 and no speed control was found in its UI
+		// Speed control (OpenTPW buttons): each sets the clock scale of the whole simulation.
 		var speeds = new[] { (GameSpeed.Paused, "||"), (GameSpeed.Normal, ">"), (GameSpeed.Fast, ">>"), (GameSpeed.Fastest, ">>>") };
 		for ( var index = 0; index < speeds.Length; index++ )
 		{

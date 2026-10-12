@@ -19,8 +19,10 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["bounce"] = Bounce,
 	["guest_speed_limits"] = GuestSpeedLimits,
 	["guest_speed_smoothing"] = GuestSpeedSmoothing,
+	["guest_ingredient_boost"] = GuestIngredientBoost,
 	["arrival_group"] = ArrivalGroup,
 	["park_points"] = ParkPoints,
+	["object_scrap_value"] = ObjectScrapValue,
 	["loan_offers"] = LoanOffers,
 	["loan_term"] = LoanTerm,
 	["loan_take"] = LoanTake,
@@ -30,6 +32,18 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["queue_join_gate"] = QueueJoinGate,
 	["shop_sale_litter"] = ShopSaleLitter,
 	["staff_training"] = StaffTraining,
+	["repair_timer"] = RepairTimer,
+	["staff_vitals"] = StaffVitalsStep,
+	["staff_rest_seek"] = StaffRestSeek,
+	["staff_grievance"] = StaffGrievance,
+	["staff_strike_month"] = StaffStrikeMonth,
+	["profit_ticket"] = ProfitTicket,
+	["local_tickets"] = LocalTickets,
+	["global_tickets"] = GlobalTickets,
+	["calendar_date"] = CalendarDate,
+	["calendar_update"] = CalendarUpdate,
+	["golden_check_turns"] = GoldenCheckTurns,
+	["park_turns"] = ParkTurns,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -135,6 +149,14 @@ static JsonNode? GuestSpeedSmoothing( JsonObject a )
 	return new JsonObject { ["s_bits"] = (uint)BitConverter.SingleToInt32Bits( s ), ["boost"] = (int)boost, ["force"] = force, ["speed"] = speed };
 }
 
+// GuestSpeed.RaiseBoost (0xeb0cc..0xeb0f4 in the outcome routine 0xeaaf8): the boost after a use of an object with the given
+// special ingredient (type +344) and amount byte (ride +404).
+static JsonNode? GuestIngredientBoost( JsonObject a )
+{
+	var boost = GuestSpeed.RaiseBoost( (ushort)(int)a["boost"]!, (int)a["ingredient"]!, (int)a["amount"]! );
+	return new JsonObject { ["boost"] = (int)boost };
+}
+
 // GuestSimulation.ArrivalGroupSize (0xcb4e8) on a fresh simulation. World mode 4 halts arrivals; the counted guests fill
 // the guest list (a field) through reflection (only its count is read). The weather thing's +48 word (mCurrentDrops, game +0x1da724)
 // is passed as the drops-falling flag (word > 0 selects the factor 0.8, F9). The GameType mode word 1 (limit_mode) is passed as OnlineVisit
@@ -190,6 +212,26 @@ static JsonNode? ParkPoints( JsonObject a )
 	}
 	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)a["now"]! ) } );
 	return JsonValue.Create( park.ParkPoints() );
+}
+
+// ParkEconomy.ScrapValue (the sale refund 0xe25e8, ORACLE F21) for one synthetic object type whose upgrade levels carry the
+// input's costs (Upgrades[n].CostOfUpgrade) and percentages (Upgrades[n].ScrapValueYear1..4). The economy clock is a read-only
+// property, so its setter is reached through reflection: the object is registered on the first tick of its build turn, then the
+// economy is put on the first tick of turn "now". The input's use count (thing +412) is ParkObjectState.TimesUsed.
+static JsonNode? ObjectScrapValue( JsonObject a )
+{
+	var costs = a["cost"]!.AsArray().Select( cost => (long)cost! ).ToArray();
+	var levels = a["pct"]!.AsArray().Select( ( row, level ) => new UpgradeLevelInfo( level, costs[level], 0, 0, 0, row!.AsArray().Select( value => (int)value! ).ToArray() ) ).ToArray();
+	var info = new EconomyObjectInfo( 0x101, "Type 257", ParkObjectKind.Ride, ResearchCategory.Ride, 0, levels, null, null, null, 0, 0, 0, 0, 0, 0, "synthetic.wad" );
+	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[] { info } ), ParkGameMode.FullSimulation, 1 );
+	var tick = typeof( ParkEconomy ).GetProperty( "Tick" )!.GetSetMethod( nonPublic: true )
+		?? throw new MissingMethodException( "ParkEconomy.Tick setter" );
+	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)a["built"]! ) } );
+	var item = park.RegisterExisting( 0x101 );
+	item.Level = (int)a["level"]!;
+	item.TimesUsed = (long)a["used"]!;
+	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)a["now"]! ) } );
+	return JsonValue.Create( park.ScrapValue( item ) );
 }
 
 // LoanMath.MonthlyRepayment (the monthly instalment at loan setup 0xcb7a8, ORACLE F12) for each [amount, APR, months] offer;
@@ -333,6 +375,62 @@ static JsonNode? ShopSaleLitter( JsonObject a )
 	return JsonValue.Create( park.LitterScaled - before );
 }
 
+// ParkObjectives.CheckGoldenTickets (the local ticket check 0xd31d0, ORACLE F23) on a park whose bank holds the given year profit
+// (ImportOriginalBank, like a loaded original save) and whose Standard.sam has the given GoldenTicketLocal.ProfitYear: whether the
+// yearly profit ticket is newly won. The other tickets are not reached on an empty park and are not looked at.
+static JsonNode? ProfitTicket( JsonObject a )
+{
+	var text = System.Text.RegularExpressions.Regex.Replace( EconomyTestData.StandardText(), @"^GoldenTicketLocal\.ProfitYear .*$",
+		$"GoldenTicketLocal.ProfitYear {(int)a["threshold"]!}", System.Text.RegularExpressions.RegexOptions.Multiline );
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	typeof( ParkEconomy ).GetMethod( "ImportOriginalBank", BindingFlags.NonPublic | BindingFlags.Instance )!
+		.Invoke( park, new object[] { 0L, 20, (long)(int)a["profit"]!, Array.Empty<LoanAccount>() } );
+	var won = park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, park.Ledger.ProfitThisYear, Array.Empty<long>() );
+	return JsonValue.Create( won.Contains( GoldenTicketKind.ProfitYear ) );
+}
+
+// ParkObjectives.CheckGoldenTickets for the six local tickets (0xd31d0, ORACLE F23): the Standard.sam keys are replaced, the guest
+// statistics come from a stub, the profit from the imported bank and the monthly admissions are `age` closed months whose last
+// RecentVisitorMonths sum to `recent`. Returns the won ticket indices (the enum order is the original's ticket order).
+static JsonNode? LocalTickets( JsonObject a )
+{
+	var text = EconomyTestData.StandardText();
+	foreach ( var (key, value) in new[] { ("Visitors", "visitors_limit"), ("PeopleInPark", "people_limit"), ("Happiness", "happiness_limit"),
+		("AtLeastThisManyHappyPeople", "happy_people_limit"), ("ProfitYear", "threshold"), ("RecentVisitors", "recent_limit"), ("RecentVisitorMonths", "months_limit") } )
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^GoldenTicketLocal\.{key} .*$", $"GoldenTicketLocal.{key} {(int)a[value]!}",
+			System.Text.RegularExpressions.RegexOptions.Multiline );
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	typeof( ParkEconomy ).GetMethod( "ImportOriginalBank", BindingFlags.NonPublic | BindingFlags.Instance )!
+		.Invoke( park, new object[] { 0L, 20, (long)(int)a["profit"]!, Array.Empty<LoanAccount>() } );
+	park.Counters.Add( ParkCounters.Admissions, (int)a["visitors"]! );
+	var months = new long[Math.Max( 0, (int)a["age"]! )];
+	if ( months.Length > 0 )
+		months[^1] = (int)a["recent"]!;
+	var average = BitConverter.Int32BitsToSingle( (int)(uint)a["avg_bits"]! );
+	var won = park.Objectives.CheckGoldenTickets( park.Counters, new FixedGuestStatistics( (int)a["people"]!, average ), park.Research, park.Ledger.ProfitThisYear, months );
+	return new JsonArray( won.Where( kind => (int)kind < 6 ).Select( kind => (JsonNode)JsonValue.Create( (int)kind )! ).ToArray() );
+}
+
+// The four global tickets (0xd34c0, ORACLE F23): the statistic is the reported record, the limits are the Standard.sam keys (big park
+// reads MinCellsOwned in C# and [1916] = MinCellsCovered in the original, so both keys get the limit). Returns the won kinds (6..9).
+static JsonNode? GlobalTickets( JsonObject a )
+{
+	var text = EconomyTestData.StandardText();
+	var keys = new[] { "CoasterHeight", "GokartExcitement", "WaterLength", "MinCellsOwned" };
+	for ( var i = 0; i < 4; i++ )
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^GoldenTicketGlobal\.{keys[i]} .*$", $"GoldenTicketGlobal.{keys[i]} {(int)a["limits"]![i]!}",
+			System.Text.RegularExpressions.RegexOptions.Multiline );
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	var kinds = new[] { ParkRecordKind.CoasterHeight, ParkRecordKind.GokartExcitement, ParkRecordKind.WaterLength, ParkRecordKind.CellsOwned };
+	for ( var i = 0; i < 4; i++ )
+		park.Counters.Max( ParkCounters.Record( kinds[i], 0 ), (int)a["stats"]![i]! );
+	var won = park.Objectives.CheckGoldenTickets( park.Counters, NoGuestStatistics.Instance, park.Research, 0, Array.Empty<long>() );
+	return new JsonArray( won.Where( kind => (int)kind >= 6 && (int)kind <= 9 ).Select( kind => (JsonNode)JsonValue.Create( (int)kind )! ).ToArray() );
+}
+
 // ParkStaff.Train (0xfc1c4, ORACLE F17) on staff added the way an original save adds them (AddImported is internal: reflection), with
 // the five roles' PoundsPerTrainingPoint columns replaced in the synthetic Standard.sam. Returns the members in input order and the
 // amount Train reports (ParkEconomy.EndMonth books it as one staff cost).
@@ -351,10 +449,159 @@ static JsonNode? StaffTraining( JsonObject a )
 	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
 		?? throw new MissingMethodException( "ParkStaff.AddImported" );
 	var members = a["staff"]!.AsArray().Select( member => (StaffMember)add.Invoke( staff, new object[]
-		{ (StaffType)(int)member!["role"]!, (int)member["grade"]!, (int)member["points"]!, 100, StaffState.Idle, 0L } )! ).ToList();
+		{ (StaffType)(int)member!["role"]!, (int)member["grade"]!, (int)member["points"]!, 100f, StaffState.Idle, 0L, 100f } )! ).ToList();
 	for ( var role = 0; role < 5; role++ )
 		staff.SetTrainingBudget( (StaffType)role, (long)(int)a["budgets"]![role]! );
 	var spent = staff.Train();
 	return new JsonObject { ["spent"] = spent,
 		["staff"] = new JsonArray( members.Select( member => (JsonNode)new JsonArray( member.Grade, member.TrainingPoints ) ).ToArray() ) };
+}
+
+// 0xd9c0c: ParkEconomy.RepairTimer. The upgrade duration is sent only for a ride in state 2, as DispatchMechanics sends it for a pending upgrade.
+static JsonNode? RepairTimer( JsonObject a )
+{
+	var gauge = BitConverter.Int32BitsToSingle( (int)(uint)a["gauge_bits"]! );
+	int? upgrade = a["upgrade"] is null ? null : (int)a["upgrade"]!;
+	return JsonValue.Create( ParkEconomy.RepairTimer( (int)a["work"]!, gauge, upgrade ) );
+}
+
+static StaffMember StaffMemberOf( int grade, double energy, double happiness ) =>
+	new() { Id = 1, Type = StaffType.Mechanic, NameIndex = 0, Grade = grade, Energy = (float)energy, Happiness = (float)happiness };
+
+static uint SingleBits( float value ) => (uint)BitConverter.SingleToInt32Bits( value );
+
+// StaffVitals.Walk / Work / Rest / IsBelowRestLevel (0xf44c0, 0xf459c, 0xf3d8c, 0xf448c) on a staff member; the rates come from the settings
+// block in the original, so they are passed as the settings' singles.
+static JsonNode? StaffVitalsStep( JsonObject a )
+{
+	var member = StaffMemberOf( (int)a["grade"]!, (double)a["energy"]!, (double)a["happiness"]! );
+	var finished = false;
+	var below = false;
+	switch ( (string)a["op"]! )
+	{
+		case "walk": StaffVitals.Walk( member ); break;
+		case "work": StaffVitals.Work( member ); break;
+		case "rest": finished = StaffVitals.Rest( member, (float)(double)a["rate_energy"]!, (float)(double)a["rate_happiness"]! ); break;
+		case "below": below = StaffVitals.IsBelowRestLevel( member.Energy, (int)a["level"]! ); break;
+	}
+	return new JsonObject { ["energy_bits"] = SingleBits( member.Energy ), ["happiness_bits"] = SingleBits( member.Happiness ), ["finished"] = finished, ["below"] = below };
+}
+
+// StaffVitals.SeekRest (the tail of 0xf4900): the world draw is passed in (OpenTPW's economy draws from its own stream).
+static JsonNode? StaffRestSeek( JsonObject a )
+{
+	var member = StaffMemberOf( 0, (double)a["energy"]!, (double)a["happiness"]! );
+	var sets = StaffVitals.SeekRest( member, (int)a["level"]!, (int)a["hit"]!, (bool)a["found"]!, () => (uint)(long)a["draw"]! );
+	return new JsonObject { ["ret"] = sets ? 1 : 0, ["happiness_bits"] = SingleBits( member.Happiness ) };
+}
+
+static List<StaffVital>[] StaffRoster( JsonNode? staff ) =>
+	staff!.AsArray().Select( role => role!.AsArray().Select( member => new StaffVital( (float)(double)member![0]!, (float)(double)member[1]! ) ).ToList() ).ToArray();
+
+// StaffStrikeBoard.Grievance (0xf8410) for one role of the lists.
+static JsonNode? StaffGrievance( JsonObject a )
+{
+	var roster = StaffRoster( a["staff"] );
+	var role = (StaffType)(int)a["role"]!;
+	var strike = StaffStrikeBoard.Grievance( role, roster[(int)role], (long)a["forced"]! != 0, new LitterStatistic( (int)a["litter_den"]!, (int)a["litter_num"]! ) );
+	return new JsonObject { ["strike"] = strike ? 1 : 0 };
+}
+
+// StaffStrikeBoard.ConsiderMonth (0xf7e18 with 0xf7fe0): the saved levels are restored, then one call per month.
+static JsonNode? StaffStrikeMonth( JsonObject a )
+{
+	var roster = StaffRoster( a["staff"] );
+	var board = new StaffStrikeBoard();
+	board.Restore( a["levels"]!.AsArray().Select( value => (int)value! ).ToList(), a["flags"]!.AsArray().Select( value => (int)value! != 0 ).ToList(),
+		a["ticks"]!.AsArray().Select( value => (uint)(long)value! ).ToList() );
+	var roles = Enum.GetValues<StaffType>();
+	var levels = new JsonArray();
+	var flags = new JsonArray();
+	var ticks = new JsonArray();
+	var messages = new JsonArray();
+	foreach ( var month in a["months"]!.AsArray() )
+	{
+		var sent = board.ConsiderMonth( (long)month!["turn"]!, (long)a["forced"]! != 0, !(bool)month["closed"]!, (int)month["guests"]!, (long)month["stamp"]!,
+			role => roster[(int)role], new LitterStatistic( (int)a["litter_den"]!, (int)a["litter_num"]! ) );
+		levels.Add( new JsonArray( roles.Select( role => (JsonNode)JsonValue.Create( board.Level( role ) )! ).ToArray() ) );
+		flags.Add( new JsonArray( roles.Select( role => (JsonNode)JsonValue.Create( board.IsActive( role ) ? 1 : 0 )! ).ToArray() ) );
+		ticks.Add( new JsonArray( roles.Select( role => (JsonNode)JsonValue.Create( board.LastConsidered( role ) )! ).ToArray() ) );
+		messages.Add( new JsonArray( sent.Select( message => (JsonNode)new JsonArray( (int)message.Role, (int)message.Kind ) ).ToArray() ) );
+	}
+	return new JsonObject { ["levels"] = levels, ["flags"] = flags, ["ticks"] = ticks, ["messages"] = messages };
+}
+
+// ParkCalendar.DateAtTurn: the date of a park turn (the original's 0xe4394 at the default clock rate 15000 and the 2000-01-01 start).
+static JsonNode? CalendarDate( JsonObject a )
+{
+	var date = ParkCalendar.DateAtTurn( (long)a["turn"]! );
+	return new JsonObject { ["date"] = new JsonArray( date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second ) };
+}
+
+// A park economy synchronised at the turn before the first step and advanced one park turn per step through ParkEconomy.Advance (the
+// path that raises the day, month and year events): per step the kinds raised, in order, and the calendar fields the update stores.
+static JsonNode? CalendarUpdate( JsonObject a )
+{
+	var start = (long)a["start"]!;
+	var count = (int)a["count"]!;
+	var park = EconomyTestData.Park();
+	var startAt = typeof( ParkEconomy ).GetMethod( "StartAtOriginalTurn", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingMethodException( "ParkEconomy.StartAtOriginalTurn" );
+	startAt.Invoke( park, new object[] { Math.Max( 0L, start - 1 ) } );
+	var raised = new List<string>();
+	park.EventRaised += item =>
+	{
+		switch ( item.Kind )
+		{
+			case ParkEventKind.DayEnded: raised.Add( "day" ); break;
+			case ParkEventKind.MonthEnded: raised.Add( "month" ); break;
+			case ParkEventKind.YearEnded: raised.Add( "year" ); break;
+		}
+	};
+	var kinds = new JsonArray();
+	var state = new JsonArray();
+	for ( var step = 0; step < count; step++ )
+	{
+		raised.Clear();
+		var turn = start + step;
+		park.Advance( Math.Max( 0L, ParkCalendar.TickOfTurn( turn ) - park.Tick ) );
+		kinds.Add( new JsonArray( raised.Select( kind => (JsonNode)JsonValue.Create( kind )! ).ToArray() ) );
+		var fields = ParkCalendar.FieldsAtTurn( park.Turn );
+		state.Add( new JsonArray( fields.Month, fields.Day, fields.Year ) );
+	}
+	return new JsonObject { ["kinds"] = kinds, ["state"] = state };
+}
+
+// ParkEconomy.RunsGoldenTicketCheck: whether the world update of a park turn runs the golden-ticket checks. The game type word 0 is
+// Full Simulation; any other word has no tickets (Instant Action and the types OpenTPW has no mode for).
+static JsonNode? GoldenCheckTurns( JsonObject a )
+{
+	var mode = (int)a["mode"]! == 0 ? ParkGameMode.FullSimulation : ParkGameMode.InstantAction;
+	return new JsonObject { ["tickets"] = new JsonArray( a["turns"]!.AsArray()
+		.Select( turn => (JsonNode)JsonValue.Create( ParkEconomy.RunsGoldenTicketCheck( (long)turn!, mode ) )! ).ToArray() ) };
+}
+
+// The path from real time to park turns in OpenTPW: each frame's elapsed milliseconds times the speed scale go to the fixed clock exactly as
+// Level.Update does (Time.Delta x SimulationTimeScale into FixedStepClock.Advance), and the park turn is ParkCalendar.Turn of its tick count.
+// Per frame: the turns so far.
+static JsonNode? ParkTurns( JsonObject a )
+{
+	var scale = (double)a["scale"]!;
+	var clock = new FixedStepClock();
+	var turns = new JsonArray();
+	foreach ( var gap in a["gaps"]!.AsArray() )
+	{
+		clock.Advance( (double)gap! / 1000.0 * scale, _ => { } );
+		turns.Add( ParkCalendar.Turn( clock.TickCount ) );
+	}
+	return new JsonObject { ["turns"] = turns };
+}
+
+sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStatistics
+{
+	public int PeopleInPark => people;
+	public float AverageHappiness => average;
+	public int CountHappierThan( int happiness ) => 0;
+	public int KidsWithBalloonsPercent => 0;
+	public int KidsWithCostumesPercent => 0;
 }

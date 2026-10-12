@@ -47,6 +47,29 @@ public class ParkEconomyOriginalDataTests
 			Assert.IsFalse( BalanceSettings.HasEasyLayer( theme ) );
 	}
 
+	// ORACLE F23 (ECON-039): every shipped theme's GoldenTicketLocal.ProfitYear is the strict signed threshold of the award, with no factor.
+	[TestMethod]
+	public void TheShippedProfitTicketThresholdsAreStrictAndUnscaled()
+	{
+		UseOriginalData();
+		foreach ( var theme in Themes )
+		{
+			var settings = BalanceSettings.Load( theme, easy: false );
+			var threshold = settings.GoldenTickets.ProfitYear;
+			Assert.IsTrue( threshold > 0, theme );
+			bool Won( long profit )
+			{
+				var park = new ParkEconomy( settings, EconomyObjectCatalog.Load( theme, easy: false ), ParkGameMode.FullSimulation, 1 );
+				return park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, profit, Array.Empty<long>() ).Contains( GoldenTicketKind.ProfitYear );
+			}
+			Assert.IsFalse( Won( threshold ), theme );
+			Assert.IsTrue( Won( threshold + 1 ), theme );
+			Assert.IsFalse( Won( threshold * 9L / 10 + 1 ), $"{theme}: 0.9 x ProfitYear is the advisor hint, not the award" );
+		}
+		Assert.AreEqual( 15000, BalanceSettings.Load( "jungle", false ).GoldenTickets.ProfitYear );
+		Assert.AreEqual( 30000, BalanceSettings.Load( "space", false ).GoldenTickets.ProfitYear );
+	}
+
 	[TestMethod]
 	public void ObjectCatalogMergesCategoryObjectAndEasyFiles()
 	{
@@ -79,6 +102,39 @@ public class ParkEconomyOriginalDataTests
 			Assert.IsTrue( themed.Objects.Where( info => info.IsBuyable ).All( info => info.Upgrades.Count > 0 ), theme );
 			Assert.IsTrue( themed.Objects.Where( info => info.Kind == ParkObjectKind.Shop ).All( info => info.PricePerUse > 0 && info.CostOfGoods > 0 && info.ShopType > 0 ), theme );
 		}
+	}
+
+	[TestMethod]
+	public void ShippedScrapRowsGiveTheOriginalsRefunds()
+	{
+		// ORACLE.md F21: the refund is Upgrades[0].CostOfUpgrade times the current level's ScrapValueYearN percentage, or the whole
+		// base price for an unused object in its first 30 days, on every shipped object.
+		UseOriginalData();
+		var checkedObjects = 0;
+		var upgraded = 0;
+		var noFullRefund = new System.Collections.Generic.List<string>();
+		foreach ( var theme in Themes )
+		{
+			var park = ParkEconomy.CreateForTheme( theme, easy: false );
+			foreach ( var info in park.Catalog.Objects.Where( info => info.IsBuyable ) )
+			{
+				Assert.IsTrue( info.Upgrades.All( level => level.ScrapValuePercentByYear.Count == 4 ), $"{theme} {info.Name}: four scrap years per level" );
+				var item = park.RegisterExisting( info.InfoId );
+				var firstYear = info.Upgrades[0].ScrapValuePercentByYear[0];
+				if ( firstYear <= 0 )
+					noFullRefund.Add( $"{theme} {info.Name}" );
+				Assert.AreEqual( firstYear > 0 ? info.PurchaseCost : info.PurchaseCost * firstYear / 100, park.ScrapValue( item ), $"{theme} {info.Name}: unused and new" );
+				park.RecordRideUse( item.Id ); park.RecordUseFinished( item.Id );
+				Assert.AreEqual( info.PurchaseCost * firstYear / 100, park.ScrapValue( item ), $"{theme} {info.Name}: used, year 1" );
+				item.Level = info.Upgrades.Count - 1;
+				Assert.AreEqual( info.PurchaseCost * info.Upgrades[^1].ScrapValuePercentByYear[0] / 100, park.ScrapValue( item ), $"{theme} {info.Name}: top level, year 1" );
+				checkedObjects++;
+				if ( info.Upgrades.Count > 1 )
+					upgraded++;
+			}
+		}
+		Console.WriteLine( $"Scrap refunds checked on {checkedObjects} shipped objects, {upgraded} with upgrade levels; no first-30-days refund (level 0 year 1 is 0) for: {string.Join( ", ", noFullRefund )}." );
+		Assert.IsTrue( checkedObjects > 100 );
 	}
 
 	[TestMethod]
@@ -207,6 +263,22 @@ public class ParkEconomyOriginalDataTests
 		// Themes without Easy_Standard.sam still load in Instant Action, as in the original.
 		var space = BalanceSettings.Load( "space", easy: true );
 		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/space/Standard.sam" }, space.Standard.Sources.ToArray() );
+	}
+
+	[TestMethod]
+	public void RepairTimersFollowTheShippedMechanicAndUpgradeData()
+	{
+		UseOriginalData();
+		var catalog = EconomyObjectCatalog.Load( "jungle", easy: false );
+		var work = BalanceSettings.Load( "jungle", easy: false )[StaffType.Mechanic].WorkDuration;
+		var durations = catalog[1100].Upgrades.Select( level => level.DurationOfUpgrade ).ToArray();
+		CollectionAssert.AreEqual( new[] { 80, 60, 40, 30, 20 }, work.ToArray() );
+		CollectionAssert.AreEqual( new[] { 0, 2, 4 }, durations, "Upgrades[level + 1].DurationOfUpgrade of the Belly Bounce" );
+		// ORACLE F19: a ride at 40 % repair needs 60 % of the grade's WorkDuration in park turns, whatever its level; an upgrade needs
+		// WorkDuration x the DurationOfUpgrade of the level it installs.
+		CollectionAssert.AreEqual( new long[] { 48, 36, 24, 18, 12 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, null ) ).ToArray() );
+		CollectionAssert.AreEqual( new long[] { 160, 120, 80, 60, 40 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, durations[1] ) ).ToArray() );
+		CollectionAssert.AreEqual( new long[] { 320, 240, 160, 120, 80 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, durations[2] ) ).ToArray() );
 	}
 
 	private void UseOriginalData()

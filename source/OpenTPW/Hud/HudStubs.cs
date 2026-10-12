@@ -44,8 +44,7 @@ public sealed class NoEconomyStatus : IHudParkStatus
 	public long Money => 0;
 	public ParkDate Date => default;
 	public GameSpeed Speed { get; set; } = GameSpeed.Normal;
-	// [APPROX:UI-022] without an economy only pause stops the rides; faster speeds run at normal speed
-	public float TimeScale => Speed == GameSpeed.Paused ? 0 : 1;
+	public float TimeScale => GameSpeedScale.Of( Speed );
 	public void Update( float realSeconds ) { }
 	public long? PriceOf( BuildItem item ) => null;
 	public bool IsAvailable( BuildItem item ) => true;
@@ -84,9 +83,9 @@ public sealed class EconomyParkStatus : IHudParkStatus
 		}
 	}
 
-	// The economy multiplies its own clock by Speed each fixed tick; rides and guests keep normal speed.
-	// [APPROX:UI-022] faster speeds only speed up the park clock/economy, not rides or guests — evidence needed: original speed controls
-	public float TimeScale => Speed == GameSpeed.Paused ? 0 : 1;
+	// The level scales the elapsed time of its whole fixed clock (guests, rides, scripts, economy) by this factor; the economy itself runs one tick per fixed tick.
+	// [APPROX:UI-022] the four speed buttons scale the simulation clock by 0, 1, 2 and 4 — evidence needed: the original's key actions step the scale by 1.25 within 0.25..2 and no speed control was found in its UI (UITEXT 426 'Speed :' has no code reference)
+	public float TimeScale => GameSpeedScale.Of( Speed );
 
 	public int GoldenTickets => Math.Max( 0, Economy?.GoldenTicketsAvailable ?? 0 );
 	public object? EconomySource => Economy;

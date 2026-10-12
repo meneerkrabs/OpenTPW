@@ -24,7 +24,7 @@ the work here at a faster pace. We would much rather work together than apart: m
 contributors of the original project are very welcome here, and we are happy to offer our changes
 back upstream or to join efforts in whatever way works best. Open an issue or a discussion to talk.
 
-For now our website is **[opentpw.io](https://opentpw.io/)**.
+For now our website is **[opentpw.io](https://opentpw.io/)**. Its [status page](https://opentpw.io/docs/status.html) is generated from this repository at every deploy (`tools/site_status.py`), and it has reading options (fonts, contrast, reduced motion).
 
 ## What OpenTPW is
 

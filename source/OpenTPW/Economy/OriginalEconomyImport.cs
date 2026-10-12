@@ -160,6 +160,20 @@ public sealed class OriginalEconomyImport
 		evidence.Add( $"[APPROX:SAVE-008] Loan offers' Available flags not imported: the save marks {(available.Length == 0 ? "no offer" : $"{(available.Length == 1 ? "offer" : "offers")} {string.Join( ", ", available )}")} available ({string.Join( ", ", bank.Loans.Select( loan => $"{loan.Index}:{(loan.Available ? 1 : 0)}" ) )}); OpenTPW offers {(offered.Length == 0 ? "none" : string.Join( ", ", offered ))}{(offered.SequenceEqual( available ) ? ", the same" : "")}." );
 	}
 
+	/// <summary>The park tick of a saved attraction time stamp (a calendar date and time of the park clock); null when it is not a date.</summary>
+	private static long? SavedBuildTick( SaveTimestamp stamp )
+	{
+		try
+		{
+			var date = new DateTime( stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second );
+			return ParkCalendar.TickAtSeconds( Math.Max( 0, (long)(date - ParkCalendar.Epoch).TotalSeconds ) );
+		}
+		catch ( ArgumentOutOfRangeException )
+		{
+			return null;
+		}
+	}
+
 	private static (int Objects, int FixedItems) ImportObjects( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
 	{
 		var objects = 0;
@@ -169,12 +183,14 @@ public sealed class OriginalEconomyImport
 		// The order matches ParkObjects.ImportOriginal (placed, unverified footprints, fixed items), which Level.ConnectObjectsToEconomy pairs by Info.Id
 		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
 		{
-			var state = economy.RegisterExisting( record.InfoId );
+			var matched = save.FindAttraction( record );
+			// [BIN:STP-PPC:0x100DAD90 object purchase] thing +20 is the clock's stamp at the purchase; the saved attraction time stamp is taken as it, and the saved customer count as the use word +412 (raised with the history record at +420 when a guest leaves, 0x100EAA00 → 0x100E1B44), so an imported used or old object never gets the unused first-30-days scrap refund
+			var state = economy.RegisterExisting( record.InfoId, matched is { } stamped ? SavedBuildTick( stamped.Timestamp ) : null, matched is { } counted ? counted.CustomerCount : 0 );
 			if ( record.IsFixedItem )
 				fixedItems++;
 			else
 				objects++;
-			if ( save.FindAttraction( record ) is not { } attraction )
+			if ( matched is not { } attraction )
 			{
 				unmatched++;
 				continue;
@@ -194,8 +210,8 @@ public sealed class OriginalEconomyImport
 		evidence.Add( $"Registered {objects} placed objects ({save.UnresolvedObjects.Count} with an unverified footprint{(save.UnresolvedObjects.Count == 0 ? "" : $": {string.Join( ", ", save.UnresolvedObjects.Select( item => $"{item.InfoId} at ({item.X}, {item.Y}) {item.Width}x{item.Height} turned {item.Rotation}" ) )}")}) and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair and life gauge." );
 		if ( unmatched != 0 || notImported.Count != 0 )
 			evidence.Add( $"{unmatched} objects have no matching attraction thing; outside OpenTPW's ranges and kept at their defaults: {string.Join( ", ", notImported )}." );
-		// [APPROX:SAVE-006] an attraction's saved state enum, chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size, customer and walk-away counts, time stamp and mesh instance ID are not imported (open/broken state comes from its script, the queue from the laid queue cells) — evidence needed: the attraction state values, the chance-of-winning/losing relation and OpenTPW counterparts of the operating and count fields
-		evidence.Add( $"[APPROX:SAVE-006] Not imported for {save.Attractions.Count} attraction things: state ({string.Join( ", ", save.Attractions.Select( item => item.State ).Distinct().Order() )}), chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size, customer and walk-away counts, time stamp, mesh instance ID." );
+		// [APPROX:SAVE-006] an attraction's saved state enum, chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size, walk-away counts and mesh instance ID are not imported (the customer count is taken as the use word +412 and the time stamp as the build time +20, unverified) (open/broken state comes from its script, the queue from the laid queue cells) — evidence needed: the attraction state values, the chance-of-winning/losing relation and OpenTPW counterparts of the operating and count fields
+		evidence.Add( $"[APPROX:SAVE-006] Not imported for {save.Attractions.Count} attraction things: state ({string.Join( ", ", save.Attractions.Select( item => item.State ).Distinct().Order() )}), chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size, walk-away counts, mesh instance ID (the customer count is the use count and the time stamp the build time, evidence needed: that the save's time stamp is thing +20 and its customer count +412)." );
 		foreach ( var item in save.Attractions )
 		{
 			var stamp = item.Timestamp;
@@ -233,19 +249,22 @@ public sealed class OriginalEconomyImport
 			}
 			else
 				adjusted.Add( $"{saved.Model} thing {saved.Id} hired time stamp {staff.HiredTimestamp} lies outside the park's calendar (start {start}, turn {ParkCalendar.Turn( economy.Tick )}), imported as hired at tick 0" );
-			// [APPROX:SAVE-003] saved staff are imported with their state enum read in STAFFSTATES.str order, their inline name replaced by name index 0, their hire time stamp rounded down to its park turn and no job, patrol region, rest area, energy, idle tick, role suffix — evidence needed: the staff state values and an inline-name field in OpenTPW's staff record
+			// [APPROX:SAVE-003] saved staff are imported with their state enum read in STAFFSTATES.str order, their inline name replaced by name index 0, their hire time stamp rounded down to its park turn and no job, patrol region, rest area, idle tick, role suffix — evidence needed: the staff state values and an inline-name field in OpenTPW's staff record
 			var state = staff.State <= (uint)StaffState.PickedUp ? (StaffState)staff.State : StaffState.Idle;
 			if ( staff.State > (uint)StaffState.PickedUp )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} state {staff.State} has no STAFFSTATES entry, imported as {StaffState.Idle}" );
-			// [BIN:STP-PPC:0x100F3D8C staff rest] happiness is clamped to [0, 100] by every rest, idle and work update
-			var happiness = (int)Math.Clamp( staff.Happiness, 0, 100 );
+			// [BIN:STP-PPC:0x100F3D8C staff rest] happiness and energy are singles clamped to [0, 100] by every rest, idle and work update
+			var happiness = Math.Clamp( staff.Happiness, 0f, 100f );
 			if ( happiness != staff.Happiness )
-				adjusted.Add( $"{saved.Model} thing {saved.Id} happiness {staff.Happiness} imported as {happiness} (traced range 0-100, whole numbers)" );
+				adjusted.Add( $"{saved.Model} thing {saved.Id} happiness {staff.Happiness} imported as {happiness} (traced range 0-100)" );
+			var energy = Math.Clamp( staff.Energy, 0f, 100f );
+			if ( energy != staff.Energy )
+				adjusted.Add( $"{saved.Model} thing {saved.Id} energy {staff.Energy} imported as {energy} (traced range 0-100)" );
 			// OpenTPW keeps 0-99 training points and promotes at 100 (ECON-008), so a saved 100 % is imported as 99 and reported
 			var points = Math.Min( staff.GradePercentage, ParkStaff.TrainingPointsPerGrade - 1 );
 			if ( points != staff.GradePercentage )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
-			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, state, hired );
+			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, state, hired, energy );
 			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
 			member.CellX = saved.Base.X / 256f;
 			member.CellY = saved.Base.Y / 256f;
@@ -256,9 +275,9 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"[APPROX:SAVE-003] Adjusted on import: {adjustment}." );
 		if ( imported != 0 )
 		{
-			evidence.Add( $"[APPROX:SAVE-003] Staff states {string.Join( ", ", save.Staff.Select( item => item.Staff.State ) )} read in STAFFSTATES order; inline names ({string.Join( ", ", save.Staff.Select( item => item.Staff.Name ) )}), jobs, patrol regions, rest areas, energy, idle ticks, role suffixes are not imported." );
+			evidence.Add( $"[APPROX:SAVE-003] Staff states {string.Join( ", ", save.Staff.Select( item => item.Staff.State ) )} read in STAFFSTATES order; inline names ({string.Join( ", ", save.Staff.Select( item => item.Staff.Name ) )}), jobs, patrol regions, rest areas, idle ticks, role suffixes are not imported." );
 			foreach ( var saved in save.Staff )
-				evidence.Add( $"[APPROX:SAVE-003] {saved.Model} thing {saved.Id} values not imported: jobs 0x{saved.Staff.Jobs:X8}, patrol region {saved.Staff.PatrolRegion}, rest area {saved.Staff.RestAreaId}, energy {saved.Staff.Energy}, idle tick {saved.Staff.IdleTick}, role bytes {Convert.ToHexString( saved.RoleBytes )}, role next ID {saved.RoleNextId}." );
+				evidence.Add( $"[APPROX:SAVE-003] {saved.Model} thing {saved.Id} values not imported: jobs 0x{saved.Staff.Jobs:X8}, patrol region {saved.Staff.PatrolRegion}, rest area {saved.Staff.RestAreaId}, idle tick {saved.Staff.IdleTick}, role bytes {Convert.ToHexString( saved.RoleBytes )}, role next ID {saved.RoleNextId}." );
 		}
 		// [APPROX:SAVE-009] the staff HQ's five training budgets, force-strike word, picked-up word, five strike levels and trained byte are not imported (the budgets' role order is not traced); OpenTPW's budgets start at 0 — evidence needed: the role order of the budget loop 0xfc108 and the strike-level fields
 		if ( save.StaffHq is { } hq )

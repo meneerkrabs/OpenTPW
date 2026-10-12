@@ -98,6 +98,30 @@ EXPECTED = {
     ('tpi-exe-loan-month', 'routine-reading'): AGREE,
     # X10 (park points 0x5b05d0 vs F10): identical on 507 inputs, fields at other offsets.
     ('tpi-exe-park-points', 'plan'): AGREE,
+    # X11 (coaster rating step, tp.exe 0x43dc50 and Game.exe 0x480630 vs the Mac 0x415b4, F7). The pin of a mismatch is its
+    # count and a summary of the first counterexample: (sample index, bank, speed) for the step, (S, E, peak S, peak E) for the
+    # final. 'plan' is the Mac routine with the stale term = Fz (what CoasterRating.Step follows): the Windows step adds u, the
+    # single (1 + U), where the Mac adds Fz, so most inputs differ. 'coast-plan-stale0' is the documented COAST-plan 6.3 (0).
+    # 'mac-plan-else-u' is the Mac plan with the Windows term: what is left is rounding (x87 sums against singles, at most
+    # 3 ulps in S and E, no scream decision changes in this input set).
+    ('tpw-exe-coast-rating-step', 'plan'): (469, (33, 1.5707963705062866, 22.126415252685547)),
+    ('tpw-exe-coast-rating-step', 'coast-plan-stale0'): (229, (33, 1.5707963705062866, 22.126415252685547)),
+    ('tpw-exe-coast-rating-step', 'mac-plan-else-u'): (190, (33, 1.5707963705062866, 22.126415252685547)),
+    ('tpw-exe-coast-rating-step', 'routine-reading'): AGREE,
+    # X12 (coaster rating final, tp.exe 0x43df90 and Game.exe 0x4809c0 vs the Mac 0x41900, F8): the same rules (both flags
+    # counted, the 1.7 and 1/2 weights, the 0..100 clamps, +268 = +168 * +172); only the excitement differs, in the last bit,
+    # where the x87 adds the exact product 1.7 * peak E and the Mac rounds it to single first. 'coast-plan-documented' is
+    # COAST-plan 6.4 as written (a section counted when neither flag is set).
+    ('tpw-exe-coast-rating-final', 'plan'): (23, (6.844004154205322, 34.513729095458984, 87.3030014038086, 18.75595474243164)),
+    ('tpw-exe-coast-rating-final', 'coast-plan-documented'): (315, (50.0, 126.62156677246094, 50.0000038, 51.75424575805664)),
+    ('tpw-exe-coast-rating-final', 'routine-reading'): AGREE,
+    ('tpi-exe-coast-rating-step', 'plan'): (470, (14, 1.5707963705062866, 9.884252548217773)),
+    ('tpi-exe-coast-rating-step', 'coast-plan-stale0'): (217, (39, -3.1415927410125732, 10.482479095458984)),
+    ('tpi-exe-coast-rating-step', 'mac-plan-else-u'): (181, (4, 3.0, 9.048203468322754)),
+    ('tpi-exe-coast-rating-step', 'routine-reading'): AGREE,
+    ('tpi-exe-coast-rating-final', 'plan'): (30, (50.0, 109.31599426269531, 50.0000038, 22.756824493408203)),
+    ('tpi-exe-coast-rating-final', 'coast-plan-documented'): (271, (50.0, 77.47186279296875, 50.0, -13.047860145568848)),
+    ('tpi-exe-coast-rating-final', 'routine-reading'): AGREE,
 }
 
 BASE = 0x400000
@@ -299,9 +323,161 @@ class SandboxSynthetic(unittest.TestCase):
         self.assertEqual(sb.call(0x10000000 + TEXT).eax, 77)
 
 
+def check_pinned(case, comparison, key):
+    """One comparison against its pin: AGREE, or (mismatches, first counterexample or its coaster summary)."""
+    expected = EXPECTED[key]
+    if expected == AGREE:
+        case.assertTrue(comparison.agrees, f'{key}: {comparison.mismatches} mismatches, first {comparison.first}')
+    else:
+        count, first_input = expected
+        case.assertEqual(comparison.mismatches, count, f'{key}: first {comparison.first}')
+        first = comparison.first['input']
+        if isinstance(first_input, tuple):
+            first = coast_summary(first)
+        case.assertEqual(first, first_input, key)
+
+
+def coast_summary(x):
+    """Short identity of a coaster input: (sample index, bank, speed) for a step, (S, E, peak S, peak E) for a final."""
+    return (x['i'], x['bank'], x['v']) if 'def' in x else (x['S'], x['E'], x['peak_s'], x['peak_e'])
+
+
+def ulps(a: float, b: float) -> int:
+    """Distance of two singles in units in the last place."""
+    ia, ib = (struct.unpack('<i', struct.pack('<f', value))[0] for value in (a, b))
+    return abs(ia - ib)
+
+
+class CoastTests:
+    """X11 and X12 for either executable: the coaster rating step and final (class attributes `exe` and `image`)."""
+
+    def coast(self, step: bool):
+        return {('tpw', True): targets.COAST_STEP_TPW, ('tpw', False): targets.COAST_FINAL_TPW,
+                ('tpi', True): targets.COAST_STEP_TPI, ('tpi', False): targets.COAST_FINAL_TPI}[(self.exe, step)]
+
+    def coast_runs(self, target, count=DEFAULT_COUNT, **kwargs):
+        sandbox = target.sandbox(self.image)
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), count)
+        results = []
+        for x in inputs:
+            sandbox.reset()
+            target.log.clear()
+            results.append(target.binary(sandbox, x, target.log, **kwargs))
+        return inputs, results
+
+    def test_coast_pins(self):
+        for step, sides in ((True, ('plan', 'coast-plan-stale0', 'mac-plan-else-u', 'routine-reading')),
+                            (False, ('plan', 'coast-plan-documented', 'routine-reading'))):
+            target = self.coast(step)
+            results = {c.side: c for c in compare(target, self.image, DEFAULT_COUNT)}
+            self.assertEqual(set(results), set(sides))
+            for side in sides:
+                check_pinned(self, results[side], (target.key, side))
+
+    def test_coast_step_adds_u_where_the_mac_adds_the_stale_fz(self):
+        """The branch that is not inverted (u = 0, or Fy at least 0.1): the Mac adds Fz (F7), the Windows step adds u itself.
+        With the default weights and force (0.4, 1.3, 0.5), speed 20, E = 1: level bank, u = 0, the Windows E is
+        1/2 + (2 + 2.2 + 5 * 0.2 - 0.4) = 5.3, the Mac 4.8 (it also subtracts Fz = 0.5); upside down (bank 3) with Fy = 0.5
+        the Windows step subtracts u = 1 + (3 - pi/2) = 2.4292, the Mac Fz = 0.5; where the inverted branch is taken
+        (Fy below 0.1) both agree."""
+        defaults = dict(gforce_sick=0.5, upside_sick=3.0, speed=0.1, gforce_excite=1.0, bank_excite=5.0, xg_uncomf=1.0,
+                        inverted_uncomf=2.0, normal_start=0.5, terror_start=1.0, normal_sustain=10.0, terror_sustain=20.0)
+
+        def sample(force, bank):
+            return {'def': dict(defaults), 'F': force, 'f0': force[2], 'v': 20.0, 'i': 5, 'bank': bank, 'S': 0.0, 'E': 1.0,
+                    'peak_s': 0.0, 'peak_e': 0.0, 'e_prev': 1.0, 'normal': 0, 'terror': 0, 'flags': 0}
+        target = self.coast(True)
+        sandbox = target.sandbox(self.image)
+        level = targets.run_binary(target, sandbox, sample([0.4, 1.3, 0.5], 0.2))
+        self.assertAlmostEqual(level['E'], 5.3, places=5)
+        self.assertAlmostEqual(targets.coast_step_plan(sample([0.4, 1.3, 0.5], 0.2))['E'], 4.8, places=5)
+        upside = sample([0.4, 0.5, 0.5], 3.0)
+        self.assertAlmostEqual(targets.run_binary(target, sandbox, upside)['E'], 16.0708, places=3)
+        self.assertAlmostEqual(targets.coast_step_plan(upside)['E'], 18.0, places=5)
+        for force in ([0.4, 0.05, 0.5], [0.4, -0.5, 0.5]):
+            inverted = sample(force, 3.0)
+            self.assertAlmostEqual(targets.run_binary(target, sandbox, inverted)['E'], targets.coast_step_plan(inverted)['E'],
+                                   delta=1e-5)
+        self.assertAlmostEqual(targets.run_binary(target, sandbox, sample([0.4, -0.5, 0.5], 3.0))['E'], 3.92478, places=4)
+
+    def test_coast_step_rest_is_rounding_only(self):
+        """Against the Mac plan with the Windows term every difference is S or E (and what follows from them) within 3 ulps,
+        and no scream flag or state differs: the x87 builds the sums in a different order and rounds to single later."""
+        target = self.coast(True)
+        inputs, results = self.coast_runs(target)
+        worst = 0
+        for x, result in zip(inputs, results):
+            reference = targets.coast_step_plan_else_u(x)
+            for key in ('flags', 'normal', 'terror'):
+                self.assertEqual(result[key], reference[key], key)
+            for key in ('S', 'E', 'peak_s', 'peak_e', 'e_prev'):
+                worst = max(worst, ulps(result[key], reference[key]))
+        self.assertLessEqual(worst, 3)
+        self.assertGreater(worst, 0)   # a precision difference does exist: the readings differ from the single arithmetic
+
+    def test_coast_step_follows_the_state_block_not_a_stale_register(self):
+        """Calling the step twice in a row on the same state block (the second call's S, E and peaks are the first's) matches
+        the reading twice: no state outside the static block carries over."""
+        target = self.coast(True)
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:chain:' + target.key), 40)
+        sandbox = target.sandbox(self.image)
+        for x in inputs:
+            first = targets.run_binary(target, sandbox, x)
+            second_input = {**x, 'S': first['S'], 'E': first['E'], 'peak_s': first['peak_s'], 'peak_e': first['peak_e'],
+                            'e_prev': first['e_prev'], 'normal': first['normal'], 'terror': first['terror'], 'i': x['i'] + 1}
+            second = targets.run_binary(target, sandbox, second_input)
+            self.assertTrue(targets.coast_equal(second, targets.coast_step_reading(second_input, self.exe)))
+
+    def test_coast_step_precision_is_the_same_at_53_and_64_bits(self):
+        """The control words 0x27F and 0x37F give identical results on every input (single stores hide the extra bits)."""
+        target = self.coast(True)
+        _, narrow = self.coast_runs(target, fpcw=0x27F)
+        _, wide = self.coast_runs(target, fpcw=0x37F)
+        self.assertTrue(all(targets.coast_equal(a, b) for a, b in zip(narrow, wide)))
+
+    def test_coast_step_readings_are_sharp(self):
+        """The two executables round at different points: the other executable's reading is wrong on part of the inputs."""
+        target = self.coast(True)
+        other = 'tpi' if self.exe == 'tpw' else 'tpw'
+        inputs, results = self.coast_runs(target)
+        mismatches = sum(1 for x, r in zip(inputs, results) if not targets.coast_equal(r, targets.coast_step_reading(x, other)))
+        self.assertGreater(mismatches, 20)
+        self.assertEqual(sum(1 for x, r in zip(inputs, results)
+                             if not targets.coast_equal(r, targets.coast_step_reading(x, self.exe))), 0)
+
+    def test_coast_final_differs_from_the_mac_in_the_last_bit_only(self):
+        """Sickness, length, maxima and the section count agree with the Mac routine (F8) on every input; the excitement
+        differs in the last bit(s) where it differs at all, and agrees on all inputs at the single-precision word 0x7F."""
+        target = self.coast(False)
+        inputs, results = self.coast_runs(target)
+        for x, result in zip(inputs, results):
+            reference = targets.coast_final_plan(x)
+            for key in ('sickness', 'length', 'max_y', 'max_speed', 'sections'):
+                self.assertEqual(result[key], reference[key], key)
+            self.assertAlmostEqual(result['excitement'], reference['excitement'], delta=1e-4)
+        _, single = self.coast_runs(target, fpcw=0x7F)
+        for x, result in zip(inputs, single):
+            self.assertTrue(targets.coast_equal(result, targets.coast_final_plan(x)))
+
+    def test_coast_final_example_and_section_count(self):
+        """S = 30, peak S = 40, E = 20, peak E = 30: sickness 70, excitement 20/2 + 1.7 * 30 = 61; a sum past 100 clamps; the
+        sections count only the ones with both 0x40 and 0x80 (2 of [0, 0x40, 0x80, 0xC0, 0xC0])."""
+        target = self.coast(False)
+        sandbox = target.sandbox(self.image)
+        x = dict(S=30.0, E=20.0, peak_s=40.0, peak_e=30.0, length_a=10.0, length_b=7.0, max_y=12.0, max_speed=30.0,
+                 sections=[0, 0x40, 0x80, 0xC0, 0xC0])
+        self.assertEqual(targets.run_binary(target, sandbox, x),
+                         {'sickness': 70.0, 'excitement': 61.0, 'length': 70.0, 'max_y': 12.0, 'max_speed': 30.0, 'sections': 2})
+        clamped = targets.run_binary(target, sandbox, {**x, 'S': 80.0, 'peak_e': 70.0})
+        self.assertEqual((clamped['sickness'], clamped['excitement']), (100.0, 100.0))
+        negative = targets.run_binary(target, sandbox, {**x, 'S': -90.0, 'E': -50.0, 'peak_e': 1.0})
+        self.assertEqual((negative['sickness'], negative['excitement']), (0.0, 0.0))
+        self.assertEqual(targets.run_binary(target, sandbox, {**x, 'sections': []})['sections'], 0)
+
+
 @unittest.skipUnless(UNICORN, UNICORN_HINT)
 @unittest.skipUnless(TPW, NO_TPW)
-class Oracle(unittest.TestCase):
+class Oracle(CoastTests, unittest.TestCase):
     exe, path = 'tpw', TPW
 
     @classmethod
@@ -315,14 +491,7 @@ class Oracle(unittest.TestCase):
                 cls.results[(target.key, comparison.side)] = comparison
 
     def check(self, key):
-        comparison = self.results[key]
-        expected = EXPECTED[key]
-        if expected == AGREE:
-            self.assertTrue(comparison.agrees, f'{key}: {comparison.mismatches} mismatches, first {comparison.first}')
-        else:
-            count, first_input = expected
-            self.assertEqual(comparison.mismatches, count, f'{key}: first {comparison.first}')
-            self.assertEqual(comparison.first['input'], first_input, key)
+        check_pinned(self, self.results[key], key)
 
     def test_every_comparison_is_pinned(self):
         self.assertEqual(set(self.results), {key for key in EXPECTED if key[0].startswith(self.exe + '-')})
@@ -553,9 +722,10 @@ class Oracle(unittest.TestCase):
 
 @unittest.skipUnless(UNICORN, UNICORN_HINT)
 @unittest.skipUnless(TPI, NO_TPI)
-class OracleTpi(unittest.TestCase):
+class OracleTpi(CoastTests, unittest.TestCase):
     """X2: the TPI Game.exe world RNG step (the image has a relocation directory and an .idata section); X7 to X10: the
-    TPI counterparts of the arrival, loan and park-points rules."""
+    TPI counterparts of the arrival, loan and park-points rules; X11 and X12: the coaster rating."""
+    exe = 'tpi'
 
     @classmethod
     def setUpClass(cls):
@@ -566,14 +736,7 @@ class OracleTpi(unittest.TestCase):
                 cls.results.update({(target.key, c.side): c for c in compare(target, cls.image, DEFAULT_COUNT)})
 
     def check(self, key):
-        comparison = self.results[key]
-        expected = EXPECTED[key]
-        if expected == AGREE:
-            self.assertTrue(comparison.agrees, f'{key}: {comparison.mismatches} mismatches, first {comparison.first}')
-        else:
-            count, first_input = expected
-            self.assertEqual(comparison.mismatches, count, f'{key}: first {comparison.first}')
-            self.assertEqual(comparison.first['input'], first_input, key)
+        check_pinned(self, self.results[key], key)
 
     def run_target(self, target, x, **kwargs):
         sandbox = target.sandbox(self.image)
@@ -752,7 +915,6 @@ class OracleTpi(unittest.TestCase):
         tracked = {**x, 'types': [{**ride, 'f9c': 1}]}
         self.assertEqual(self.run_target(target, tracked), targets.mac().points_full(tracked))
         self.assertNotEqual(self.run_target(target, x), self.run_target(target, tracked))
-
     def test_identity_and_loader(self):
         self.assertEqual(self.image.identity, 'tpi')
         self.assertEqual(len(self.image.pe.imports), 393)

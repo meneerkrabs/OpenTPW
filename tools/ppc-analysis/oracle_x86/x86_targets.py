@@ -1049,5 +1049,215 @@ TPI_POINTS_TARGET = Target(
            'kind +0x600; thing next +0x14 and type +0x16; park record 0x24 bytes.'])
 
 
+# ============================================================================== (f) coaster rating step and final: tp.exe and Game.exe
+# The Mac routines 0x415b4 (step, per 56-byte sample) and 0x41900 (final), F7 and F8. Both Windows executables carry them in
+# the same call structure (reset routine, one step per sample from index 1, the final with max Y and max speed). The state
+# that the Mac keeps behind TOC slots is a block of static words in the executable's data (previous force and bank, S, E and
+# the peaks), written only by the reset, the step and the final.
+COAST_PC = {
+    'tpw': dict(step=0x43DC50, step_end=0x43DF90, final=0x43DF90, final_end=0x43E0A8, reset=0x43DBF0,
+                S=0x7923B4, peak_s=0x7923B0, E=0x7923D8, peak_e=0x7923BC, e_prev=0x7923C0, normal=0x7923AC, terror=0x7923C4),
+    'tpi': dict(step=0x480630, step_end=0x480900, final=0x4809C0, final_end=0x480ACA, reset=0x4803A0,
+                S=0xA191FC, peak_s=0xA191F8, E=0xA19220, peak_e=0xA19204, e_prev=0xA19208, normal=0xA191F4, terror=0xA1920C),
+}
+COAST_DEF_FIELDS = {'gforce_sick': 812, 'upside_sick': 816, 'speed': 820, 'gforce_excite': 824, 'bank_excite': 832,
+                    'xg_uncomf': 836, 'inverted_uncomf': 840, 'normal_start': 844, 'terror_start': 848,
+                    'normal_sustain': 852, 'terror_sustain': 856}   # the Mac's DEF_FIELDS: the same definition offsets
+
+
+def f32(value: float) -> float:
+    return struct.unpack('<f', struct.pack('<f', value))[0]
+
+
+def f32_bits(value: float) -> int:
+    return struct.unpack('<I', struct.pack('<f', value))[0]
+
+
+def coast_step_binary_for(exe: str):
+    layout = COAST_PC[exe]
+
+    def binary(sb: Sandbox, x: dict, log, fpcw: int | None = None) -> dict:
+        for name in ('S', 'E', 'peak_s', 'peak_e', 'e_prev'):
+            sb.write(layout[name], 'f', x[name])
+        sb.write(layout['normal'], 'i', x['normal'])
+        sb.write(layout['terror'], 'i', x['terror'])
+        # The previous force and bank words (the reset zeroes them, nothing else writes them) stay 0, as on the Mac.
+        definition = sb.object(0x380, {offset: ('f', x['def'][name]) for name, offset in COAST_DEF_FIELDS.items()})
+        samples = sb.alloc(56 * (x['i'] + 1))
+        sb.write(samples + 56 * x['i'], 'I', x['flags'])
+        controller = sb.object(0x200, {4: ('I', definition), 156: ('I', samples)})
+        force = sb.object(12, {0: ('f', x['F'][0]), 4: ('f', x['F'][1]), 8: ('f', x['F'][2])})
+        sb.set_fpcw(X87_CONTROL_WORD if fpcw is None else fpcw)
+        # cdecl (controller, sample index, unused, speed, bank, force*, unused); the speed and the bank are singles on the
+        # stack. The Mac's stale f0 has no counterpart: the x87 routine keeps no live register between calls.
+        sb.call(layout['step'], (controller, x['i'], 0, f32_bits(x['v']), f32_bits(x['bank']), force, 0))
+        out = {name: sb.read(layout[name], 'f') for name in ('S', 'E', 'peak_s', 'peak_e', 'e_prev')}
+        out.update(flags=sb.read(samples + 56 * x['i'], 'I'), normal=sb.read(layout['normal'], 'i'),
+                   terror=sb.read(layout['terror'], 'i'))
+        return out
+    return binary
+
+
+def coast_final_binary_for(exe: str):
+    layout = COAST_PC[exe]
+
+    def binary(sb: Sandbox, x: dict, log, fpcw: int | None = None) -> dict:
+        for name in ('S', 'E', 'peak_s', 'peak_e'):
+            sb.write(layout[name], 'f', x[name])
+        head = 0
+        for flags in reversed(x['sections']):
+            head = sb.object(104, {8: ('I', flags), 100: ('I', head)})
+        controller = sb.object(0x200, {84: ('I', head), 168: ('f', x['length_a']), 172: ('f', x['length_b'])})
+        sb.set_fpcw(X87_CONTROL_WORD if fpcw is None else fpcw)
+        sb.call(layout['final'], (controller, f32_bits(x['max_y']), f32_bits(x['max_speed']), 0))   # cdecl; the 4th word is unused
+        out = {name: sb.read(controller + offset, 'f') for name, offset in
+               (('sickness', 256), ('excitement', 260), ('length', 268), ('max_y', 272), ('max_speed', 276))}
+        out['sections'] = sb.read(controller + 264, 'i')
+        return out
+    return binary
+
+
+COAST_PI_2 = f32(math.pi / 2)
+COAST_TENTH = f32(0.1)
+COAST_PEAK_WEIGHT = f32(1.7)
+
+
+def coast_step_reading(x: dict, exe: str = 'tpw') -> dict:
+    """What the Windows step does, in double arithmetic (the control word 0x27F: a 53-bit significand), with a single
+    rounding wherever the routine stores a single. The structure is the Mac's (S and E decay by 1/2, scream flags after
+    sample 2) with these differences:
+
+    * the term added to the uncomfortableness when the inverted branch is not taken (u = 0, or Fy at least 0.1) is u itself, the
+      single (1 + U) the routine stores, not the Mac's stale f0 (Fz); it is 0 when u is 0, so it only matters for a
+      track pitched upright (Fy at least 0.1) while |bank| is past pi/2;
+    * the sums are built in a different order and rounded to single at different points: tp.exe rounds the g-force sickness
+      term to single and the excitement sum never, Game.exe rounds the whole sickness delta and the excitement sum to
+      single (the two readings differ in those roundings only)."""
+    d = x['def']
+    fx, fy, fz = x['F']
+    bank = x['bank']
+    norm1 = (abs(fz) + abs(fx)) + abs(fy)
+    g = norm1 * d['gforce_sick']
+    u0 = abs(bank) - COAST_PI_2
+    uf = f32(u0)
+    if u0 <= 0 or uf <= 0:
+        ds = g if exe == 'tpi' else f32(g)
+    else:
+        ds = (g if exe == 'tpi' else f32(g)) + (1.0 + uf) * d['upside_sick']
+    ds_stored = f32(ds) if exe == 'tpi' else ds
+    de = ((abs(fy) + abs(fz)) + abs(fx)) * d['gforce_excite']
+    de = de + abs(bank) * d['bank_excite']
+    de = de + x['v'] * d['speed']
+    if exe == 'tpi':
+        de = f32(de)
+    u = f32(1.0 + uf) if (u0 > 0 and uf > 0) else 0.0
+    if u == 0 or not fy < COAST_TENTH:
+        inverted = u
+    else:
+        inverted = u * d['inverted_uncomf']
+        if fy < 0:
+            inverted = inverted * 3.0
+    diff = de - (abs(fx) * d['xg_uncomf'] + inverted)
+    if diff <= 0:
+        diff = 0.0
+    s = f32(x['S'] * 0.5 + ds_stored)
+    e = f32(x['E'] * 0.5 + diff)
+    out = {'S': s, 'E': e, 'peak_s': max(x['peak_s'], s), 'peak_e': max(x['peak_e'], e)}
+    flags, normal, terror = x['flags'] & ~7 & MASK32, x['normal'], x['terror']
+    if x['i'] > 2:
+        rise = e - x['e_prev']
+        if rise > d['normal_start']:
+            normal, flags = 1, flags | 4
+        elif normal != 0 and e > d['normal_sustain']:
+            flags |= 4
+        else:
+            normal = 0
+        if rise > d['terror_start']:
+            terror, flags = 1, flags | 2
+        elif terror != 0 and e > d['terror_sustain']:
+            flags |= 2
+        else:
+            terror = 0
+    out.update(e_prev=e, flags=flags, normal=normal, terror=terror)
+    return out
+
+
+def coast_step_plan(x: dict) -> dict:
+    """The Mac routine (F7): the plan with the stale term = Fz, which CoasterRating.Step follows."""
+    return mac().coast_step_plan_fz(x)
+
+
+def coast_step_plan_zero(x: dict) -> dict:
+    """COAST-plan 6.3 as written (the stale term taken as 0)."""
+    return mac().coast_step_plan(x)
+
+
+def coast_step_plan_else_u(x: dict) -> dict:
+    """The Mac plan in single arithmetic with the Windows term for the branch that is not inverted: u, the single (1 + U)
+    for U above 0 and 0 otherwise. What is left against the executables is rounding only."""
+    big_u = max(f32(abs(x['bank']) - COAST_PI_2), 0.0)
+    return mac().coast_step_plan(x, stale=f32(big_u + (1.0 if big_u != 0 else 0.0)))
+
+
+def coast_final_reading(x: dict) -> dict:
+    """What the Windows final does: sickness = peakS + S and excitement = 1.7 peakE + E/2 (the sum built in double, one
+    single rounding), each clamped to 0..100 after the rounding; +264 counts the sections with both 0x40 and 0x80."""
+    def clamp(value: float) -> float:
+        return 100.0 if value > 100.0 else 0.0 if value < 0.0 else value
+    return {'sickness': clamp(f32(x['peak_s'] + x['S'])),
+            'excitement': clamp(f32(COAST_PEAK_WEIGHT * x['peak_e'] + 0.5 * x['E'])),
+            'length': f32(x['length_a'] * x['length_b']), 'max_y': x['max_y'], 'max_speed': x['max_speed'],
+            'sections': sum(1 for flags in x['sections'] if flags & 0xC0 == 0xC0)}
+
+
+def coast_final_plan(x: dict) -> dict:
+    """The Mac routine (F8): the plan with the section count of both flags, which CoasterRating.FinalFor follows."""
+    return mac().coast_final_both_flags(x)
+
+
+def coast_final_plan_documented(x: dict) -> dict:
+    """COAST-plan 6.4 as written (a section is counted when neither flag is set)."""
+    return mac().coast_final_plan(x)
+
+
+def coast_step_inputs(rng: random.Random, n: int) -> list:
+    return mac().coast_step_inputs(rng, n)
+
+
+def coast_final_inputs(rng: random.Random, n: int) -> list:
+    return mac().coast_final_inputs(rng, n)
+
+
+def coast_equal(a, b) -> bool:
+    return mac().coast_equal(a, b)
+
+
+def coast_targets() -> list:
+    result = []
+    for exe, label in (('tpw', 'tp.exe'), ('tpi', 'Game.exe')):
+        layout = COAST_PC[exe]
+        result.append(Target(
+            f'{exe}-exe-coast-rating-step', exe, f'{label} coaster rating step {layout["step"]:#x}',
+            'COAST-plan 6.3 / ORACLE.md F7 (Mac 0x415b4)', layout['step'], [(layout['step'], layout['step_end'])],
+            lambda t: {}, coast_step_binary_for(exe), coast_step_plan, coast_step_inputs,
+            alternatives={'coast-plan-stale0': coast_step_plan_zero, 'mac-plan-else-u': coast_step_plan_else_u,
+                          'routine-reading': lambda x, exe=exe: coast_step_reading(x, exe)},
+            equal=coast_equal,
+            notes=['No stubs: the routine calls nothing. The static state block is written before the call and the previous '
+                   'force and bank words stay 0 (the reset zeroes them and nothing else writes them), as in the Mac target. '
+                   'The x87 control word is 0x27F.']))
+        result.append(Target(
+            f'{exe}-exe-coast-rating-final', exe, f'{label} coaster rating final {layout["final"]:#x}',
+            'COAST-plan 6.4 / ORACLE.md F8 (Mac 0x41900)', layout['final'], [(layout['final'], layout['final_end'])],
+            lambda t: {}, coast_final_binary_for(exe), coast_final_plan, coast_final_inputs,
+            alternatives={'coast-plan-documented': coast_final_plan_documented, 'routine-reading': coast_final_reading},
+            equal=coast_equal,
+            notes=['No stubs: the routine calls nothing. Sections are a synthetic list (flags at +8, next at +100).']))
+    return result
+
+
+COAST_TARGETS = coast_targets()
+COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
+
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET]
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

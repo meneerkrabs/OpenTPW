@@ -109,6 +109,10 @@ public interface IRideVisitorBridge
 	GuestNeeds Satisfies { get; }
 	/// <summary>Price per visit charged to the guest (0 for rides: TPW charges admission).</summary>
 	int Price { get; }
+	/// <summary>.sam <c>UsageInfo.SpecialIngredient</c> (type <c>+344</c>): 0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar. Only Sugar changes a guest here: it raises the walk speed boost (<see cref="GuestSpeed.RaiseBoost"/>).</summary>
+	int SpecialIngredient => 0;
+	/// <summary>The amount of the special ingredient (ride <c>+404</c> byte, 0..255); the ride build sets 50.</summary>
+	int IngredientAmount => GuestSpeed.DefaultIngredientAmount;
 	/// <summary>Walkable path cell where guests join the queue.</summary>
 	(int X, int Y) EntranceCell { get; }
 	/// <summary>Walkable path cell where released guests reappear.</summary>

@@ -214,7 +214,10 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   in single precision with one fused multiply-add (`fmadds`, PPC oracle F6). The toilet
   term (`+194`) is 25 while toilet > 80 (the truncated toilet's low byte, unsigned),
   rewritten after the speed update, but only on the guest's needs phase (park turn & 3 =
-  id & 3, `0xeed40`). The boost (`+196`) decays by trunc(× 99 / 100) per turn, with the product kept to 16 bits.
+  id & 3, `0xeed40`). The boost (`+196`) decays by trunc(× 99 / 100) per turn, with the product kept to 16 bits. It is raised only when a guest
+  leaves an object whose special ingredient is Sugar (the Ice Cream Shop, `UsageInfo.SpecialIngredient` 4): by
+  trunc(6 × amount / 100) with the amount byte 50 the ride build stores (+3; at most +15), so a sugar rush lasts three turns and moves a speed of 1.0
+  by about one percent ([ORACLE.md](reverse/ORACLE.md) F20).
   The speed setter (`0xffe38`) gives the max speed max(655, trunc(min(s, 2) · 0.2 ·
   65536)) and the max force with 0.4, in 16.16 cells per turn: 0.48 cell/s at s = 0.6,
   0.81 cell/s at s = 1 and 1.61 cell/s at s = 2.
@@ -248,7 +251,7 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
-| WALK-001 | Nothing raises the boost `+196`; only its decay runs | The callers of `0xeb0f4` and their amounts |
+| WALK-001 | The boost `+196` comes from the Sugar ingredient only, with the ride build's amount 50 (+3 per visit); the original's per-object amount (ride `+404`, set from the shop screen and saved) is not modelled | The shop screen that sets `+404` (`0x1685b4`, `0x168640`), its range and the saved `mAmountOfSpecialIngredient` |
 | WALK-002 | avoid_walls models its edge branch (the first pushing edge of +x, −x, +y, −y), not its four diagonal-corner branches | `0xfc9e0` and `0xfdfe4..0xfe5e0` |
 | WALK-003 | Separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell; the original's query `0x10087c` also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW | The writers of thing `+4/+6` and of the per-cell thing lists (`+764`, `+10`) |
 | WALK-004 | Routes are OpenTPW's cell sequences, refilled five waypoints at a time; the reroute prepends the current cell to the rest | The route search `0x101c64` and its `+164/+168` bookkeeping |
@@ -383,7 +386,7 @@ charged `Costs.QueueCell` (75) when it is written, refused only when
 balance − cost < 0 (`ParkEconomy.TrySpendCell`, `SetCellType` `0x82ac4`).
 `QueuePaths.RemoveFrom` / `Level.RemoveQueueCell` remove a cell and every cell
 behind it; each removed cell refunds `Costs.QueueCell` × the ride's scrap
-percentage / 100 (`ParkEconomy.RefundQueueCell`, `ClearCell` `0x85dcc`). After a HasQueue ride is
+percentage / 100 (`ParkEconomy.RefundQueueCell`, `ClearCell` `0x85dcc`; 100 for a ride nobody used in its first 30 days, ORACLE.md F21). After a HasQueue ride is
 built from the HUD, park clicks lay its queue until Back (UI-031). Queue cells
 also block object placement. New queue cells are not drawn on the terrain yet.
 

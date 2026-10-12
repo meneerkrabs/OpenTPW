@@ -106,8 +106,12 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// ---------------------------------------------------------------- time
 
-	/// <summary>One fixed 60 Hz frame tick: advances the park by <see cref="Speed"/> ticks (0 when paused).</summary>
-	public void AdvanceFixedTick() => Advance( (int)Speed );
+	/// <summary>
+	/// One fixed 60 Hz simulation tick: advances the park by one tick (none when paused). A faster <see cref="Speed"/> is the clock
+	/// scale of the whole simulation (<see cref="GameSpeedScale"/>): <c>Level</c> feeds the fixed clock scaled time, so guests, rides and
+	/// the economy all get more ticks per real second together.
+	/// </summary>
+	public void AdvanceFixedTick() => Advance( Speed == GameSpeed.Paused ? 0 : 1 );
 
 	/// <summary>Advances the simulation by <paramref name="ticks"/> fixed ticks. Each new park turn runs the turn work and the hourly, daily and monthly updates for the calendar boundaries it crosses.</summary>
 	public void Advance( long ticks )
@@ -135,37 +139,133 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Ride scripts' running state, riders and speed for the wear step; none by default (nothing wears).</summary>
 	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
-	/// <summary>Staff job time is kept in tenths of a park-clock hour.</summary>
-	public const int BusyTicksPerHour = 10;
+	// A mechanic's BusyTicks is the number of park turns (staff updates) until its job completes.
 
 	public long Turn => ParkCalendar.Turn( Tick );
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		UpdateStaffVitals();
+		// [BIN:STP-PPC:0x100D9E04 repair state] each staff update counts a mechanic's job timer down by one; the update that finds it zero completes the repair
+		foreach ( var member in Staff.Members )
+		{
+			if ( member.BusyTicks == 0 )
+				continue;
+			member.BusyTicks--;
+			if ( member.BusyTicks == 0 )
+			{
+				FinishJob( member );
+				StrikeOrRest( member, HasRestArea );
+			}
+		}
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
 		// [BIN:STP-PPC:0x100E077C ride update] each ride is updated when the turn counter is a multiple of 8
 		if ( turn % RideUpdateInterval == 0 )
 			UpdateRides( turn );
-		// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
-		if ( turn % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
-			CheckGoldenTickets();
-		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change
-		var before = ParkCalendar.Epoch.AddSeconds( previousTurn * ParkCalendar.SecondsPerTurn );
-		var now = ParkCalendar.Epoch.AddSeconds( turn * ParkCalendar.SecondsPerTurn );
+		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
+		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
+		var changes = ParkCalendar.Update( ref stored, turn );
 		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
 		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour && !IsBankrupt; hour++ )
 			UpdateHour();
-		var dayBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
-		var day = turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
-		for ( var ended = dayBefore; ended < day && !IsBankrupt; ended++ )
-			EndDay( ended );
-		if ( now.Month != before.Month || now.Year != before.Year )
-			EndMonth( (now.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + now.Month - 1 );
-		if ( now.Year != before.Year )
+		if ( changes.HasFlag( CalendarChange.Day ) && !IsBankrupt )
+			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
+		if ( changes.HasFlag( CalendarChange.Month ) )
+			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
+		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
+		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
+		if ( RunsGoldenTicketCheck( turn, Mode ) )
+			CheckGoldenTickets();
 	}
+
+	/// <summary>
+	/// Staff vitals, once per park turn (ECON-014, docs/reverse/ORACLE.md F22). A member on strike waits for its role's strike to end; a resting
+	/// one regains energy and happiness until the energy byte reaches 100; a working one (a mechanic on a job) loses the working rate; a free one
+	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
+	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
+	/// </summary>
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines but not the staff state machine: walking members drain every turn, working means a job in progress, resting needs no walk, idle members are not told apart and the rest search runs every turn; the handymen's analyser statistics, the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the staff state machine, the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
+	private void UpdateStaffVitals()
+	{
+		if ( Staff.Members.Count == 0 )
+			return;
+		var restArea = HasRestArea;
+		foreach ( var member in Staff.Members )
+		{
+			switch ( member.State )
+			{
+				case StaffState.PickedUp:
+					continue;
+				case StaffState.OnStrike:
+					// [BIN:STP-PPC:0x100F3F64 strike turn] a striking member that sees the park closed and without guests (0x100C3684) ends its role's strike (0x100F40E8 / 0x100F8BD0); once the role's flag is clear it walks back to work
+					if ( !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+						Staff.Strikes.End( member.Type );
+					if ( !Staff.Strikes.IsActive( member.Type ) )
+						member.State = StaffState.Patrolling;
+					continue;
+				case StaffState.Resting:
+					// [BIN:STP-PPC:0x100F4D00 rest release] the original frees the member's rest-area association (+516) when the rest ends; what it does when the rest thing is removed during the rest is not traced, so OpenTPW ends the rest at once when no rest area is left
+					if ( !restArea )
+					{
+						member.State = StaffState.Patrolling;
+						continue;
+					}
+					if ( StaffVitals.Rest( member, Settings.RecuperationRate[member.Grade], Settings.HappinessRecuperationRate[member.Grade] ) )
+						member.State = StaffState.Patrolling;
+					continue;
+			}
+			if ( member.BusyTicks > 0 )
+			{
+				StaffVitals.Work( member );
+				continue;
+			}
+			if ( member.State == StaffState.Patrolling && !Staff.Strikes.IsActive( member.Type ) )
+				StaffVitals.Walk( member );
+			StrikeOrRest( member, restArea );
+		}
+	}
+
+	/// <summary>Whether any placed object is a rest area for staff (<c>UsageInfo.ChillsYouOut</c>, in the shipped data the Staff Room).</summary>
+	private bool HasRestArea => objects.Values.Any( item => Catalog.TryGet( item.InfoId, out var info ) && info.ChillsYouOut );
+
+	/// <summary>
+	/// What a free member does next (0x100F4900): a member of a striking role walks out, otherwise a tired one goes to rest when a rest area
+	/// exists. True when its state changed. Runs every turn for free members and once when a job ends, before the next job is dispatched
+	/// (the original's working member finishes its job first, then reaches this decision).
+	/// </summary>
+	// [BIN:STP-PPC:0x100F4900 strike or rest] a free member of a striking role walks to the strike area (raw state 4); the original also needs the world state 0x1091B8 to be 1, which is not modelled
+	// [APPROX:DET-015] the world draw of the no-rest-area happiness hit (0x100F4AD4 takes it from the shared world LCG 0x105328, which OpenTPW has not ported) comes from the economy's own stream
+	private bool StrikeOrRest( StaffMember member, bool restArea )
+	{
+		if ( Staff.Strikes.IsActive( member.Type ) )
+		{
+			member.State = StaffState.OnStrike;
+			return true;
+		}
+		if ( !StaffVitals.SeekRest( member, Settings.RestLevel, Settings.HappyHitCosNoRestArea, restArea, () => (uint)Random.NextUInt64() ) )
+			return false;
+		member.State = StaffState.Resting;
+		return true;
+	}
+
+	/// <summary>The staff manager's month-end consideration of each role's strike (ECON-014): <see cref="StaffStrikeBoard.ConsiderMonth"/> with the park's state.</summary>
+	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike debug word is never set, the handymen's analyser statistics are not supplied (so their litter grievance never applies), OpenTPW's stamp counts the park clock from its start, and the game-type gating of the caller is not traced (strikes are considered in every mode)
+	private void ConsiderStrikes()
+	{
+		var stamp = ParkCalendar.Seconds( Tick ) * StaffStrikeBoard.StampUnitsPerSecond;
+		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.PeopleInPark, stamp,
+			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList() );
+		foreach ( var message in messages )
+			Raise( ParkEventKind.StaffStrikeMessage, (int)message.Kind, 0, (int)message.Role, $"TAG_SYSTEM {message.TagSystemIndex}" );
+	}
+
+	/// <summary>Whether the world update of a park turn runs the golden-ticket checks: every 100th turn (the turn is unsigned) in Full Simulation only.</summary>
+	// [BIN:STP-PPC:0x100D67F0 world update] turn % 100 == 0 (unsigned) calls the dispatcher 0x100D2F1C, which runs the checks only while the game type word is 0 (oracle F31: 507 scripts agree)
+	public static bool RunsGoldenTicketCheck( long turn, ParkGameMode mode ) =>
+		turn % GoldenTicketCheckInterval == 0 && ParkModeFeatures.For( mode ).GoldenTickets;
 
 	private void DoResearch()
 	{
@@ -197,14 +297,6 @@ public sealed class ParkEconomy : IParkEconomy
 	private void UpdateHour()
 	{
 		Staff.UpdatePool( Random, Tick );
-		foreach ( var member in Staff.Members )
-		{
-			if ( member.BusyTicks == 0 )
-				continue;
-			member.BusyTicks = Math.Max( 0, member.BusyTicks - BusyTicksPerHour );
-			if ( member.BusyTicks == 0 )
-				FinishJob( member );
-		}
 		DispatchMechanics();
 		CleanLitter();
 	}
@@ -292,9 +384,27 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// The mechanic's job timer (arrival routine <c>0xd9c0c</c>, ORACLE.md F19), in park turns. An upgrade takes
+	/// <c>WorkDuration × Upgrades[level + 1].DurationOfUpgrade</c> (<paramref name="upgradeDuration"/>; 32-bit product, no minimum), any
+	/// other job <c>WorkDuration × (100 − state of repair) / 100</c>, with the state of repair the low byte of the truncated gauge
+	/// and a signed 32-bit division by 100 that truncates toward zero. A ride at 100 % repair needs no time.
+	/// </summary>
+	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] upgrade (ride state 2): WorkDuration[grade] (+1004 + 8 × grade) × the type record word at +508 + 64 × level (Upgrades[level + 1].DurationOfUpgrade); otherwise WorkDuration × (100 − (fctiwz(+64) & 0xFF)) / 100 through mullw and the 1/100 multiply-high; stored at mechanic +528 as an unsigned word
+	public static long RepairTimer( int workDuration, double stateOfRepair, int? upgradeDuration )
+	{
+		unchecked
+		{
+			if ( upgradeDuration is { } duration )
+				return (uint)(workDuration * duration);
+			// The gauge is a single-precision float (ride +64): round to float before truncating, as lfs then fctiwz does.
+			return (uint)(workDuration * (100 - (QueueJoinRules.Truncate( (float)stateOfRepair ) & 0xFF)) / 100);
+		}
+	}
+
+	/// <summary>
 	/// Assigns free mechanics: broken rides first, then paid upgrades, then worn rides. A job takes
-	/// <c>MechanicConstsPerGrade[grade].WorkDuration</c> game hours (× <c>DurationOfUpgrade</c> for
-	/// upgrades) — the unit is an <b>approximation</b>.
+	/// <see cref="RepairTimer"/> park turns (one more for the update that completes it); the walk to the ride is
+	/// not modelled (<b>approximation</b>).
 	/// </summary>
 	private void DispatchMechanics()
 	{
@@ -303,17 +413,17 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( jobs.Count == 0 )
 			return;
 		var role = Settings[StaffType.Mechanic];
-		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => member.IsAvailable ).OrderBy( member => member.Id ) )
+		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
 		{
 			if ( jobs.Count == 0 )
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
-			// [APPROX:ECON-021] a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly — evidence needed: capture of repair duration per grade
-			var hours = (long)role.WorkDuration[mechanic.Grade];
-			if ( job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count )
-				hours *= Math.Max( 1, info.Upgrades[job.PendingLevel].DurationOfUpgrade );
-			mechanic.BusyTicks = Math.Max( 1, hours ) * BusyTicksPerHour;
+			// [APPROX:ECON-021] the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically) — evidence needed: capture of a repair from arrival to completion
+			int? upgradeDuration = job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
+				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
+			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
+			mechanic.BusyTicks = RepairTimer( role.WorkDuration[mechanic.Grade], job.Repair, upgradeDuration ) + 1;
 			mechanic.AssignedInstanceId = job.Id;
 			mechanic.State = StaffState.Working;
 			job.MechanicId = mechanic.Id;
@@ -359,6 +469,7 @@ public sealed class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.StaffCosts, training );
 			Raise( ParkEventKind.TrainingPaid, training );
 		}
+		ConsiderStrikes();
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
 		// [APPROX:ECON-051] the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) — evidence needed: the writer of the flag and when the original clears it
 		foreach ( var loan in loans.OrderBy( item => item.OfferIndex ).ToList() )
@@ -423,33 +534,58 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- park values
 
 	/// <summary>
-	/// Scrap value: the purchase and upgrade costs up to the current level times
-	/// <c>Upgrades[level].ScrapValueYearN</c> percent for the object's age (year 4 onwards uses year 4).
-	/// Basing it on catalogue costs rather than money paid is an <b>approximation</b>.
+	/// Scrap value, the refund when an object is sold (the sale 0xDBFA8 credits the getter 0xE25E8, which the scrap value
+	/// panels also show): the base purchase price <c>Upgrades[0].CostOfUpgrade</c> (catalogue +440; upgrade costs are not added)
+	/// times <see cref="ScrapPercent"/>, divided by 100 (ORACLE.md F21).
 	/// </summary>
+	// [BIN:STP-PPC:0x100E25E8 scrap value] Upgrades[0].CostOfUpgrade × the percentage 0xE2424, unsigned division by 100
 	public long ScrapValue( ParkObjectState item )
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
-		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
-		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days — evidence needed: capture of scrap value
-		var basis = info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade );
-		return basis * ScrapPercent( item ) / 100;
+		// the 32-bit multiply wraps and the division is unsigned (cost 50,000,000 at 100 % refunds 7,050,327)
+		return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;
 	}
 
-	/// <summary>The object's age-based scrap percentage, <c>Upgrades[level].ScrapValueYearN</c> (year 4 onwards uses year 4).</summary>
+	/// <summary>
+	/// The object's scrap percentage (0xE2424): the age is the park clock since the build, in 365-day years (0, 1, 2, anything
+	/// else uses year 4), read from the current level's row <c>Upgrades[level].ScrapValueYearN</c>. An object nobody has used
+	/// (<see cref="ParkObjectState.TimesUsed"/> 0) in its first 30 days is refunded 100 percent, when the base level's year-1
+	/// percentage is above 0.
+	/// </summary>
+	// [BIN:STP-PPC:0x100E2424 scrap percentage] age = clock stamp − thing +20 as signed 100 ns units; quotient by 365 days (exactly) 0 → year 1, 1, 2, else (also negative) year 4; in year 1, quotient by 30 days 0 and thing +412 = 0 and record +392 > 0 give 100; the row is record +392 + 64 × level
 	public int ScrapPercent( ParkObjectState item )
+	{
+		// [APPROX:ECON-025] the scrap rule is the Mac build's (0xE25E8 / 0xE2424: base cost x the age percentage, 100 for an unused object in its first 30 days); the Windows build's counterpart is not executed, and the object use counter (thing +412) is ParkObjectState.TimesUsed — evidence needed: the tp.exe counterpart of 0xE25E8 run in the x86 oracle, or a capture of a sale
+		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+			return 0;
+		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
+		var age = ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick );
+		var year = age / (365 * ParkCalendar.SecondsPerDay);
+		int Row( int index ) => info.Upgrades[level].ScrapValuePercentByYear.Count > index ? info.Upgrades[level].ScrapValuePercentByYear[index] : 0;
+		if ( year == 0 )
+		{
+			if ( age / (30 * ParkCalendar.SecondsPerDay) == 0 && item.TimesUsed == 0 && info.Upgrades[0].ScrapValuePercentByYear.FirstOrDefault() > 0 )
+				return 100;
+			return Row( 0 );
+		}
+		return year is 1 or 2 ? Row( (int)year ) : Row( 3 );
+	}
+
+	/// <summary>
+	/// Park value (UITEXT 163): the sum over all objects of the catalogue costs up to the current level times the level's age
+	/// percentage, which was the scrap value before ORACLE.md F21 — an <b>approximation</b>.
+	/// </summary>
+	// [APPROX:ECON-026] park value = sum of catalogue costs up to the current level times the age percentage (the scrap rule before ORACLE F21), not the sale refund — evidence needed: capture of the park value screen
+	public long ParkValue => objects.Values.Sum( item =>
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
 		var year = (int)Math.Min( 3, (ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick )) / (365 * ParkCalendar.SecondsPerDay) );
-		return info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
-	}
-
-	/// <summary>Park value (UITEXT 163): the sum of all scrap values — an <b>approximation</b>.</summary>
-	// [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen
-	public long ParkValue => objects.Values.Sum( ScrapValue );
+		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
+		return info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade ) * percent / 100;
+	} );
 
 	public int LitterItems => (int)(LitterScaled / LitterScale);
 
@@ -619,22 +755,25 @@ public sealed class ParkEconomy : IParkEconomy
 	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen;
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
-	public ParkObjectState RegisterExisting( int infoId )
+	/// <param name="builtTick">When the object was built, for an object from an original save (default: now).</param>
+	/// <param name="timesUsed">Guests that used it before, for an object from an original save: a used object never refunds the unused 100 %.</param>
+	public ParkObjectState RegisterExisting( int infoId, long? builtTick = null, long timesUsed = 0 )
 	{
 		if ( !Catalog.TryGet( infoId, out var info ) )
 			throw new InvalidDataException( $"Info.Id {infoId} is not in the {Settings.Theme} object catalogue." );
-		return AddObject( info, imported: true );
+		return AddObject( info, imported: true, builtTick, timesUsed );
 	}
 
-	private ParkObjectState AddObject( EconomyObjectInfo info, bool imported )
+	private ParkObjectState AddObject( EconomyObjectInfo info, bool imported, long? builtTick = null, long timesUsed = 0 )
 	{
 		var item = new ParkObjectState
 		{
 			Id = NextObjectId++,
 			InfoId = info.InfoId,
 			Kind = info.Kind,
-			BuiltTick = Tick,
+			BuiltTick = Math.Clamp( builtTick ?? Tick, 0, Tick ),
 			Imported = imported,
+			TimesUsed = timesUsed,
 			Price = info.PricePerUse ?? 0,
 			CostOfGoods = info.CostOfGoods ?? 0,
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
@@ -955,6 +1094,16 @@ public sealed class ParkEconomy : IParkEconomy
 			return;
 		item.CustomersThisMonth++;
 		Counters.Add( ParkCounters.RideUses( item.InfoId ), 1 );
+	}
+
+	/// <summary>
+	/// A guest has left the object: raises <see cref="ParkObjectState.TimesUsed"/>, the original's word +412, which the
+	/// release path increments (0xEAA00 → 0xE1B44), not the boarding. Until the first guest leaves the object counts as unused.
+	/// </summary>
+	public void RecordUseFinished( int instanceId )
+	{
+		if ( objects.TryGetValue( instanceId, out var item ) )
+			item.TimesUsed++;
 	}
 
 	public void ReportRecord( ParkRecordKind kind, int instanceId, long value )

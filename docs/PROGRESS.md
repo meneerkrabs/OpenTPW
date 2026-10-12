@@ -1,4 +1,4 @@
-# Execution status — October 11, 2026
+# Execution status — October 12, 2026
 
 This is a development prototype, not the complete offline game. The full plan
 and final acceptance remain unchanged. The user approved publishing the plan,
@@ -185,6 +185,22 @@ preview; original runtime fidelity and the complete offline scope remain open.
   makes 1/2, 1/4, 1/9 and 0 litter item per sale (a burger shop: 0.5, as before), within 11 % of OpenTPW's `LitterEffect/100`. C# is
   unchanged (it has no guest litter meter; ECON-020 stays `[APPROX]` with the sharper text); the oracle pins the 213 inputs where the
   old rule leaves the 0..100 range.
+- The oracle executed the mechanic's arrival routine `0xd9c0c` (F19 in [ORACLE.md](reverse/ORACLE.md), ECON-021) and C# follows it:
+  a repair takes `WorkDuration x (100 - state of repair) / 100` park turns (a grade-0 mechanic on a ride at 40 %: 48, not a flat 80 hours;
+  the ride's level does not matter) and an upgrade `WorkDuration x DurationOfUpgrade` of the level it installs, without a minimum. Mechanic job
+  time now counts park turns (saved as `BusyTurns`; older saves' `BusyTicks` convert from tenths of an hour, rounded up). The walk to the ride stays an approximation (ECON-021).
+- The guest speed boost is settled (ORACLE.md F20, WALK-001). `0xeb0f4` is the store at the end of a block in the outcome routine `0xeaaf8`
+  (one call site, the guest leaving an object): only the Sugar ingredient raises it, by trunc(6 x amount / 100) with the ride build's amount 50, so a guest
+  leaving an Ice Cream Shop walks about one percent faster for three turns (at most +15 per use, so the u16 wrap above 661 never happens in play). The oracle
+  target `walk-boost` executes the routine (521/521); `GuestSpeed.RaiseBoost` does the same in `ApplyVisit` and agrees. WALK-001 now only keeps the shop screen's
+  amount and its saved field.
+- The oracle settled ECON-039 (F23 in [ORACLE.md](reverse/ORACLE.md)): the yearly profit golden ticket is won when the bank's year profit is
+  signed strictly greater than `GoldenTicketLocal.ProfitYear` (`0xd33dc`, executed), with no factor. The 0.9 multiplier the register
+  saw at `0x13fdc` is the advisor's near-ticket hint (`GoldTicketNearToXProfit`), executed separately. OpenTPW now compares `>` instead
+  of `>=` (the two differ only at exactly 15000 in jungle) and the `[APPROX:ECON-039]` is gone. The same oracle run executed every
+  other local and global ticket arm: all are signed strictly-greater compares (so 100 admissions no longer win the visitors ticket), the
+  happiness ticket is the single average above `Happiness` and more than `AtLeastThisManyHappyPeople` guests, and OpenTPW follows; the recent-visitors
+  ticket's park-age gate is registered as ECON-052.
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).
@@ -234,6 +250,46 @@ preview; original runtime fidelity and the complete offline scope remain open.
   the integer divide became a floating one (80 points + 20 over 25 gives 3, not 4), and a mode word of 3 gives no
   group. The note also records that tp.exe's arrival routine reads the `mWeather` handle, not Traffic Lights.
 - The oracle now executes the Mac month-end staff training `0xfc1c4` (finding F17, ECON-013): each role's budget is divided by all of the role's staff (the base counts are zero), every member below the top grade is charged the whole share and gets min(share / price, 100) points, and points above 99 carry into the next grade. `ParkStaff.Train` now does the same (358 of 507 oracle inputs differed): a budget of 1,000 for 3 handymen (grades 0, 0, 4) trains the two at 333 each instead of 500, and a share below the price is still spent. ECON-013 is retired.
+- The oracle executed the object sale refund (`0xe25e8` / `0xe2424`, ORACLE.md F21, ECON-025) and C# follows it: the
+  refund is the base price `Upgrades[0].CostOfUpgrade` (no upgrade costs) times the current level's age percentage
+  (exact 365-day years), and 100 % for an object no guest used in its first 30 days. A used Belly Bounce at level 2
+  sold at two years refunds 175, not 490; an unused new one refunds its whole price. The new
+  `ParkObjectState.TimesUsed` counter (raised when a guest leaves, imported from a save's customer count) is saved and hashed, so the
+  hash schema is 11 and the determinism pin re-pinned (behaviour unchanged);
+  the Windows `tp.exe` counterpart is not executed yet.
+- The oracle executed the staff vitals, rest and strike routines (F22 in [ORACLE.md](reverse/ORACLE.md), ECON-014: the old claim "happiness never
+  changes, no strikes" is refuted). Staff energy and happiness (singles, start 100) fall every park turn while a member walks (0.012 / 0.005 x (6 - grade))
+  or works (0.025 / 0.01 x (6 - grade)) and rise while it rests at a Staff Room (the one `ChillsYouOut` object; 0.2..0.75 energy and 1..3 happiness a turn);
+  without a room a tired member loses 2 happiness one turn in 16. At a month end of an open, guest-free park a role of more than three whose average energy or
+  happiness is below 15 is warned, then strikes (TAG_SYSTEM 38-62, no dispatch or research until the next month end). C#: `StaffVitals`, `StaffStrikeBoard`,
+  saves carry energy and the strike board; the oracle agrees on all four targets. Open: the staff state machine, the handymen's litter statistics and the stamp epoch.
+- The x86 oracle now executes the coaster rating step and final of both Windows executables: tp.exe `0x43dc50`/`0x43df90` and the
+  Theme Park Inc `Game.exe` `0x480630`/`0x4809c0` (ORACLE.md 7.8, findings X11 and X12). The final is the Mac rule (clamps, 1.7 and 1/2 weights,
+  both-flags section count) with only last-bit differences in the excitement. The step differs in one rule: where the inverted arm does not apply the
+  Windows builds add `u` (the single 1 + U), the Mac the stale `Fz` that C# follows, so 469 of 509 Mac-target inputs differ; the rest is x87
+  rounding (at most 3 ulps), and the two Windows builds round differently from each other. A TPI coaster mode reuses the layout and the C# machinery but needs that
+  one term and a rounding decision. No C# change.
+- The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
+  the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
+  boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the
+  scheduler loop `0x1c22b0..0x1c24d0` (31 ms substeps, a park turn on every eighth, three at most per call, a 2000 ms backlog dropped, scaled time =
+  raw ms × the clock scale). At the default scale that is 4.03 park turns a second: a game day takes 5.7 s of real time, January 177 s, the leap
+  year 2000 34.9 minutes, as OpenTPW already had it. `ParkCalendar` gains `DateAtTurn`, `FieldsAtTurn` and `Update`, and `ParkEconomy` raises
+  its day, month and year events through them (no change for players; the oracle's C# side agrees on every turn). The original's first update
+  of a new calendar also posts a day and a year message (stored day -1, year 0); OpenTPW starts synchronised. ECON-001 stays open with a narrower
+  text (the 60 Hz sampling, the catch-up limits, the clock route).
+- The oracle executed the golden-ticket check cadence (finding F31, ECON-033, [ORACLE.md](reverse/ORACLE.md)): the world's park-turn update `0xd67f0`
+  runs the bank, the staff pool and the calendar update, then, on every turn that is a multiple of 100 (unsigned, 4.34 game days, 24.8 s at normal
+  speed) and for game type 0 only, the ticket dispatcher `0xd2f1c`. `ParkEconomy` had the cadence and the mode (507 scripts agree, 0 mismatches); it
+  ran the check before the calendar update, so the year's profit ticket could be awarded from the old year's profit on the turn the year changed, and now
+  runs it after (`ParkEconomy.RunsGoldenTicketCheck`). The determinism hash did not change.
+- The oracle executed the original's speed scale (finding F32, ECON-004/UI-022, [ORACLE.md](reverse/ORACLE.md)): three key callbacks divide the scheduler clock's
+  scale by 1.25, multiply it by 1.25 and store 1.0, clamped to 0.25..2.0, and the clock that park turns, ride scripts (WAIT, GETTIME), the board code and the
+  animation updater read (60 call sites; 11 read the unscaled clock) adds each raw gap times the scale. OpenTPW's speed buttons sped up the economy alone
+  while guests and rides kept x1; a speed is now the clock scale of the whole simulation (`GameSpeedScale`, `Level` feeds the fixed clock scaled time, the economy
+  runs one tick per fixed tick). At x2 a park day takes 2.9 s of real time (x1 5.7 s, x4 1.4 s) and guests, rides and the economy run at x2 together; x4 stays an
+  OpenTPW extension beyond the original's maximum scale 2.0. The determinism hash did not change. ECON-004 and UI-022 stay open with narrower texts (the
+  keys' names, whether a speed control is shown).
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.
@@ -850,3 +906,20 @@ were earned from visits to published parks). What OpenTPW rebuilds:
   queue and marker checks (its Totem pick check fails intermittently, which was
   also seen on an earlier build without these changes); the native Metal shader
   tests pass; the browser project builds. Direct3D 11, Vulkan and WebGL were not run.
+
+## Website: live status and reading options (October 12, 2026)
+
+- **Live status:** `tools/site_status.py` reads the fidelity register, the oracle
+  findings (F/X, with how many are marked fixed in C#), the feature matrix, the
+  README format table, the merged pull requests (GitHub API in the website
+  workflow, `git log --first-parent` as fallback) and the commit, and writes
+  `website/docs/status.html` and `status.json`; the front page shows a summary
+  from the JSON. The front page's "You can / You cannot yet" block comes from
+  `tools/site_status_curated.json`, checked against the feature matrix and the docs.
+- **Reading options:** Atkinson Hyperlegible and OpenDyslexic (SIL OFL, vendored
+  under `website/fonts/`), high-contrast and calm colours, and a reduce-motion
+  switch that also follows the system setting; stored in localStorage only
+  (`website/a11y.js`).
+- Verification: `tools/test_site_status.py` (synthetic repository, no network),
+  `site_docs.py`, `site_status.py` and `check_site.py`; checked in a browser in
+  default, high-contrast and calm/OpenDyslexic modes. The Cloudflare deploy was not run.

@@ -258,7 +258,7 @@ public sealed class ParkObjectives
 			+ (IsSupportedType( definition.Type ) ? "" : " [progress not measurable yet]");
 	}
 
-	/// <summary>Monthly golden ticket check; returns newly won tickets.</summary>
+	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets.</summary>
 	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions )
 	{
 		var won = new List<GoldenTicketKind>();
@@ -266,7 +266,7 @@ public sealed class ParkObjectives
 			return won;
 		var rules = settings.GoldenTickets;
 		long MaxRecord( ParkRecordKind kind ) => counters.Values.Where( pair => pair.Key.StartsWith( $"record:{kind}:", StringComparison.Ordinal ) ).Select( pair => pair.Value ).DefaultIfEmpty( 0 ).Max();
-		// [APPROX:ECON-039] the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key — evidence needed: the caller of 0x10013FDC and its factor
+		// [BIN:STP-PPC:0x100D33F8 local golden tickets] the profit ticket is won when the bank's year profit (+292, mProfitThisYear) is signed GREATER than ProfitYear, with no factor (oracle F23); the multiplier at 0x10013FDC belongs to the advisor's near-ticket hint, not to the award
 		var recentMonths = Math.Max( 1, rules.RecentVisitorMonths );
 		var recent = monthlyAdmissions.Count >= recentMonths ? monthlyAdmissions.Skip( monthlyAdmissions.Count - recentMonths ).Sum() : 0;
 		var allBuilt = research.IsAllResearched && catalog.Objects.Where( info => info.IsBuyable ).All( info => counters[ParkCounters.Built( info.InfoId )] > 0 );
@@ -275,17 +275,20 @@ public sealed class ParkObjectives
 			if ( condition && tickets.Add( kind ) )
 				won.Add( kind );
 		}
-		Check( GoldenTicketKind.Visitors, counters[ParkCounters.Admissions] >= rules.Visitors );
-		Check( GoldenTicketKind.PeopleInPark, guests.PeopleInPark >= rules.PeopleInPark );
-		Check( GoldenTicketKind.Happiness, guests.PeopleInPark > 0 && guests.AverageHappiness >= rules.Happiness && guests.CountHappierThan( rules.Happiness ) >= rules.AtLeastThisManyHappyPeople );
+		// [BIN:STP-PPC:0x100D3244 local golden tickets] every local ticket compares signed and strictly GREATER (cmpw, bc 4,1) with the word of GoldenTicketLocal, none is a >= (oracle F23)
+		Check( GoldenTicketKind.Visitors, counters[ParkCounters.Admissions] > rules.Visitors );
+		Check( GoldenTicketKind.PeopleInPark, guests.PeopleInPark > rules.PeopleInPark );
+		// [BIN:STP-PPC:0x100D3308 happiness ticket] the average guest happiness (single) is greater than single(Happiness) and the guests in the park are more than AtLeastThisManyHappyPeople; nobody is filtered by happiness (oracle F23)
+		Check( GoldenTicketKind.Happiness, guests.AverageHappiness > (float)rules.Happiness && guests.PeopleInPark > rules.AtLeastThisManyHappyPeople );
 		Check( GoldenTicketKind.AllResearchedAndBuilt, allBuilt );
-		Check( GoldenTicketKind.ProfitYear, profitThisYear >= rules.ProfitYear );
-		Check( GoldenTicketKind.RecentVisitors, recent >= rules.RecentVisitors );
-		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) >= rules.CoasterHeight );
-		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) >= rules.GokartExcitement );
-		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) >= rules.WaterLength );
+		Check( GoldenTicketKind.ProfitYear, profitThisYear > rules.ProfitYear );
+		// [APPROX:ECON-052] the original compares the visitor counter minus its history value RecentVisitorMonths back with RecentVisitors (strictly greater) and also needs the park age in 30-day months to exceed RecentVisitorMonths; OpenTPW sums the last closed calendar months and needs that many closed months — evidence needed: the history value at 0x100C3B88 and the age in calendar months
+		Check( GoldenTicketKind.RecentVisitors, recent > rules.RecentVisitors );
+		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) > rules.CoasterHeight );
+		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) > rules.GokartExcitement );
+		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) > rules.WaterLength );
 		// [APPROX:ECON-038] big park uses MinCellsOwned, cameras use MinCellsCovered — evidence needed: golden ticket award captures
-		Check( GoldenTicketKind.BigPark, MaxRecord( ParkRecordKind.CellsOwned ) >= rules.MinCellsOwned );
+		Check( GoldenTicketKind.BigPark, MaxRecord( ParkRecordKind.CellsOwned ) > rules.MinCellsOwned );
 		Check( GoldenTicketKind.CamerasEverywhere, MaxRecord( ParkRecordKind.CellsCoveredByCameras ) >= rules.MinCellsCovered );
 		Check( GoldenTicketKind.AllLandOwned, MaxRecord( ParkRecordKind.OwnsAllLand ) > 0 );
 		return won;

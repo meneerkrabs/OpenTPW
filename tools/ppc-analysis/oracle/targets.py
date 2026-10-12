@@ -15,11 +15,13 @@ Stubs are listed per target with the reason they are safe; any other call aborts
 """
 from __future__ import annotations
 
+import datetime
 import math
 import random
 import struct
 import sys
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import Callable
 
@@ -573,6 +575,116 @@ def smoothing_result(x: dict, r: dict) -> dict:
     if 's_bits' not in r:
         return r
     return {'s': from_bits(r['s_bits']), 'boost': r['boost'], 'force': r['force'], 'speed': r['speed']}
+
+
+# ============================================================================== (e2) WALK: the speed boost 0xeaaf8
+# 0xeaaf8(guest, ride) is the outcome of a completed use (shop, sideshow, ride; 497 != 0: the always-true win of an object
+# with chance 100). After the happiness and need effects of the type record (+324 thirst, +328 hunger, +332 vomit,
+# +336 happiness, +340 litter) it switches on the type's special ingredient (+344, UsageInfo.SpecialIngredient) with the
+# amount byte of the ride (+404, mAmountOfSpecialIngredient, read by 0xe2384): 1 Fat adds the amount to the toilet float
+# (+428), 2 Salt to the thirst float (+420), 3 Ice adds trunc(+324 x amount / 100) to the thirst, 4 Sugar adds
+# trunc(6 x amount / 100) to the speed boost (+196, a u16). 0xeb0f4 is the `sth` that stores the boost.
+BOOST_TYPE_ID = 0x4321
+BOOST_STATE = type('BoostState', (), {})()
+BOOST_REGISTRY = -29976          # TOC slot -> type registry passed to 0x118018
+BOOST_WORLD = -30124             # TOC slot -> the global that holds the world pointer (0x105328's argument)
+BOOST_ALLOWED = [(0xEAAF8, 0xEB49C), (0xDC320, 0xDC350), (0xE2384, 0xE2390), (0x105328, 0x10536C)]
+
+
+def boost_stubs(target: Target) -> dict:
+    state = BOOST_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry or m.gpr[4] >> 16 != BOOST_TYPE_ID:
+            raise AssertionError('0x118018 called without the registry or the ride type id')
+        m.gpr[3] = state.record
+
+    def thing_id(m: Machine) -> None:
+        # 0xfa9a4(out, thing): the 16-bit thing id behind the output pointer (the caller reads it back as a word or half)
+        if m.gpr[4] not in (state.guest, state.ride):
+            raise AssertionError('0xfa9a4 called without the guest or the ride')
+        m.memory.w16(m.gpr[3], 0x1234 if m.gpr[4] == state.ride else 0x4321)
+
+    def record(name, *registers):
+        def stub(m: Machine) -> None:
+            target.log.append((name,) + tuple(m.gpr[r] & MASK32 for r in registers))
+        return stub
+
+    def goods_cost(m: Machine) -> None:
+        m.gpr[3] = 33
+
+    return {TYPE_RECORD_LOOKUP: lookup, 0xFA9A4: thing_id, 0xFB7B4: record('thought', 4, 5), 0xEA318: record('outcome', 3, 4),
+            0xE1F78: lambda m: m.gpr.__setitem__(3, 77), 0xE1E58: record('charge', 4), 0xE2094: goods_cost,
+            0xEB6F4: record('happiness', 4), 0xE6D20: record('state-log', 5), 0x5FBCC: record('log', 3)}
+
+
+def boost_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = BOOST_STATE
+    state.registry = toc_pointer(sb, BOOST_REGISTRY)
+    world = sb.alloc(WORLD_RNG + 8)
+    sb.write(world + WORLD_RNG, 'I', 12345)
+    sb.write(toc_pointer(sb, BOOST_WORLD), 'I', world)
+    state.record = sb.struct(2048, {324: ('i', x['thirst_effect']), 328: ('i', 5), 332: ('i', 5), 336: ('i', 5),
+                                    340: ('i', 5), 344: ('i', x['mode']), 348: ('i', 0), 1960: ('i', x['ui'])})
+    state.ride = sb.struct(1024, {14: ('H', BOOST_TYPE_ID), 46: ('H', 0), 404: ('I', x['amount'])})
+    state.guest = sb.struct(1024, {196: ('H', x['boost']), 420: ('f', x['thirst']), 428: ('f', x['toilet']), 412: ('f', 50.0)})
+    sb.call(0xEAAF8, {3: state.guest, 4: state.ride})
+    if [entry[0] for entry in log if entry[0] == 'outcome'] != ['outcome']:
+        raise AssertionError('the outcome 0xea318 was not called once')
+    return {'boost': sb.read(state.guest + 196, 'H'), 'thirst': bits(sb.read(state.guest + 420, 'f')),
+            'toilet': bits(sb.read(state.guest + 428, 'f'))}
+
+
+def boost_clamp(value: float) -> float:
+    """The float clamp of the effects: above 100 gives 100, below 0 gives 0, else the value."""
+    return 100.0 if value > 100.0 else 0.0 if value < 0.0 else value
+
+
+def boost_reading(x: dict) -> dict:
+    """0xeaaf8 as read: the thirst effect (+324) is taken off the thirst float and clamped to 0..100, then the ingredient (+344)
+    with the byte amount (+404): 1 Fat toilet + amount, 2 Salt thirst + amount (both single, clamped to 0..100), 3 Ice thirst +
+    trunc(+324 x amount / 100), 4 Sugar boost + trunc(6 x amount / 100) (u16 store). Any other value changes nothing."""
+    amount = x['amount'] & 0xFF
+    thirst = boost_clamp(f32(x['thirst'] - float(x['thirst_effect'])))
+    toilet, boost, mode = x['toilet'], x['boost'], x['mode']
+    if mode == 1:
+        toilet = boost_clamp(f32(toilet + float(amount)))
+    elif mode == 2:
+        thirst = boost_clamp(f32(thirst + float(amount)))
+    elif mode == 3:
+        thirst = boost_clamp(f32(thirst + float(x['thirst_effect'] * amount // 100)))
+    elif mode == 4:
+        boost = (boost + amount * 6 // 100) & 0xFFFF
+    return {'boost': boost, 'thirst': bits(thirst), 'toilet': bits(f32(toilet))}
+
+
+def boost_equal(a, b) -> bool:
+    """C# models the boost only: thirst and toilet are compared where both sides carry them."""
+    return a['boost'] == b['boost'] and all(a[k] == b[k] for k in ('thirst', 'toilet') if k in a and k in b)
+
+
+def boost_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw):
+        x = {'mode': rng.choice([0, 1, 2, 3, 4, 4, 4, 5]), 'amount': rng.choice([rng.randrange(0, 256), 50, 100, 50]),
+             'boost': rng.choice([0, 0, rng.randrange(0, 200), rng.randrange(0, 0x10000)]), 'ui': rng.choice([0, 1]),
+             'thirst_effect': rng.randrange(0, 30), 'thirst': random_float(rng, 0.0, 100.0),
+             'toilet': random_float(rng, 0.0, 100.0)}
+        x.update(kw)
+        return x
+    edges = [make(mode=4, amount=a, boost=0) for a in (0, 1, 16, 17, 33, 34, 50, 100, 255)]
+    edges += [make(mode=4, amount=255, boost=b) for b in (661, 662, 0xFFF0, 0xFFFF)]
+    edges += [make(mode=4, amount=256 + 50, boost=7), make(mode=4, amount=0x1_0100, boost=7), make(mode=-1, amount=50),
+              make(mode=9, amount=50), make(mode=0, amount=255), make(mode=3, amount=255, thirst_effect=29, thirst=99.0),
+              make(mode=2, amount=255, thirst=99.0), make(mode=1, amount=255, toilet=0.0)]
+    return edges + [make() for _ in range(n)]
+
+
+def boost_request(x: dict) -> dict:
+    return {'fn': 'guest_ingredient_boost', 'boost': x['boost'], 'ingredient': x['mode'], 'amount': x['amount'] & 0xFF}
+
+
+def boost_result(x: dict, r: dict) -> dict:
+    return {'boost': r['boost']}
 
 
 # ============================================================================== (f) COAST: rating step, final
@@ -2759,6 +2871,1597 @@ def train_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (l) ECON-021: mechanic arrival 0xd9c0c (F19)
+REPAIR_ARRIVAL = 0xD9C0C                                  # (mechanic): the repair-state entry of a mechanic
+REPAIR_RELEASE, REPAIR_ARRIVED, REPAIR_RIDE_MECHANIC, REPAIR_TYPE_RECORD = 0xD99AC, 0xE6454, 0xDFB94, 0xDC320
+REPAIR_BALANCE = ARRIVAL_SETTINGS                         # TOC -30084 -> balance block: +1004 + 8 x grade = MechanicConstsPerGrade.WorkDuration
+REPAIR_RIDE_ID, REPAIR_TYPE_ID = 7, 0x1234
+REPAIR_MAX_LEVEL = 255                                    # the level is a byte; the type record is read at +508 + 64 x level
+REPAIR_UNWRITTEN = 0xA5A5A5A5                             # the timer word before the routine writes it
+REPAIR_STATE = type('RepairState', (), {})()
+
+
+def repair_stubs(target: Target) -> dict:
+    state = REPAIR_STATE
+
+    def thing_id(m: Machine) -> None:
+        if m.gpr[4] != state.mech:
+            raise AssertionError('0xfa9a4 called for something other than the mechanic')
+        m.memory.w16(m.gpr[3], state.x['mech_id'])
+
+    def ride_mechanic(m: Machine) -> None:
+        if m.gpr[4] != state.ride:
+            raise AssertionError('0xdfb94 called for something other than the ride')
+        m.memory.w16(m.gpr[3], state.x['ride_mech'])
+
+    def arrived(m: Machine) -> None:
+        if m.gpr[3] != state.mech:
+            raise AssertionError('0xe6454 called for something other than the mechanic')
+        m.gpr[3] = state.x['arrive'] & MASK32
+
+    def release(m: Machine) -> None:
+        target.log.append(('release', m.gpr[3] == state.mech))
+
+    def type_record(m: Machine) -> None:
+        if m.gpr[3] != state.ride:
+            raise AssertionError('0xdc320 called for something other than the ride')
+        m.gpr[3] = state.record
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', m.gpr[3]))
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert',))
+
+    return {THING_ID_OF: thing_id, REPAIR_RIDE_MECHANIC: ride_mechanic, REPAIR_ARRIVED: arrived, REPAIR_RELEASE: release,
+            REPAIR_TYPE_RECORD: type_record, DEBUG_LOG: log, ASSERT: assertion}
+
+
+def repair_run(sb: Sandbox, x: dict, log) -> dict:
+    st = REPAIR_STATE
+    st.x = x
+    things = toc_pointer(sb, POINTS_THINGS)
+    if sb.read(things, 'I') != 0:
+        raise AssertionError('slot 0 of the thing array is not empty')
+    st.record = sb.struct(508 + 64 * (REPAIR_MAX_LEVEL + 1) + 8, {508 + 64 * x['level']: ('I', x['upgrade'] & MASK32)})
+    st.ride = sb.struct(512, {14: ('H', REPAIR_TYPE_ID), 64: ('f', x['gauge']), 76: ('B', x['level']), 96: ('I', x['flag'] & MASK32),
+                              408: ('i', x['state'])})
+    st.mech = sb.struct(1024, {412: ('I', 5), 484: ('I', x['grade']), 528: ('I', REPAIR_UNWRITTEN), 532: ('H', REPAIR_RIDE_ID)})
+    sb.write(things + 20 * REPAIR_RIDE_ID, 'I', st.ride)
+    sb.write(toc_pointer(sb, REPAIR_BALANCE) + 1004 + 8 * x['grade'], 'I', x['work'] & MASK32)
+    sb.call(REPAIR_ARRIVAL, {3: st.mech})
+    return {'timer': sb.read(st.mech + 528, 'I'), 'state': sb.read(st.mech + 412, 'I'), 'target': sb.read(st.mech + 532, 'H'),
+            'sub': sb.read(st.mech + 16, 'I'), 'calls': list(log)}
+
+
+def repair_timer_binary(sb: Sandbox, x: dict, log) -> dict:
+    return {'timer': repair_run(sb, x, log)['timer']}
+
+
+def repair_arrival_binary(sb: Sandbox, x: dict, log) -> dict:
+    return repair_run(sb, x, log)
+
+
+def repair_gauge_byte(x: dict) -> int:
+    return fctiwz(f32(x['gauge'])) & 0xFF
+
+
+def repair_timer_reading(x: dict, flat: bool = False, byte: bool = True, divide: bool = True, upgrade_state: int = 2) -> int:
+    """0xd9d48..0xd9dc4: ride state 2 (0xdfe90) multiplies the grade's WorkDuration by the type record word at +508 + 64 x level; any other job
+    scales it by (100 - low byte of the truncated gauge) / 100 (mullw, then the signed multiply-high division by 100)."""
+    work = x['work']
+    if x['state'] == upgrade_state:
+        return (work * x['upgrade']) & MASK32
+    if flat:
+        return work & MASK32
+    missing = 100 - (repair_gauge_byte(x) if byte else fctiwz(f32(x['gauge'])))
+    product = to_s32(work * missing)
+    return (c_div(product, 100) if divide else product) & MASK32
+
+
+def repair_timer_result(x: dict, **variant) -> dict:
+    return {'timer': repair_timer_reading(x, **variant)}
+
+
+def repair_timer_plan(x: dict) -> dict:
+    """ECON-021 before F19 (docs/ECONOMY.md, ParkEconomy.DispatchMechanics): a job takes WorkDuration (at least 1), an upgrade that times
+    DurationOfUpgrade (at least 1); the state of repair plays no part. (The old unit was game hours; only the number is compared.)"""
+    factor = max(1, x['upgrade']) if x['state'] == 2 else 1
+    return {'timer': max(1, x['work'] * factor)}
+
+
+def repair_timer_request(x: dict) -> dict:
+    return {'fn': 'repair_timer', 'work': s32(x['work']), 'gauge_bits': bits(f32(x['gauge'])),
+            'upgrade': s32(x['upgrade']) if x['state'] == 2 else None}
+
+
+def repair_job_inputs(rng: random.Random, n: int) -> list:
+    shipped = [80, 60, 40, 30, 20]
+
+    def make(**kw) -> dict:
+        grade = rng.randrange(0, 5)
+        x = {'mech_id': rng.randrange(1, 300), 'arrive': 0, 'grade': grade,
+             'work': rng.choice([shipped[grade], shipped[grade], rng.randrange(0, 150)]),
+             'gauge': rng.choice([100.0, 0.0, 40.0, random_float(rng, 0, 100), random_float(rng, 0, 100), float(rng.randrange(0, 101)),
+                                  random_float(rng, 0, 30), random_float(rng, -5, 300)]),
+             'level': rng.choice([0, 0, 1, 2]), 'upgrade': rng.choice([0, 2, 4, 0, rng.randrange(0, 40)]),
+             'state': rng.choice([1, 1, 2, 2, 0, 3, 4, 5, -1]), 'flag': rng.choice([0, 1, 1, 4, 0x10000])}
+        x.update(kw)
+        x['ride_mech'] = x['mech_id']
+        if x['state'] not in (1, 2) and x['flag'] == 0:
+            x['flag'] = 1                                  # a job needs the broken state, the upgrade state or the maintenance word
+        return x
+    base = dict(grade=0, work=80, gauge=40.0, level=0, upgrade=2, state=1, flag=0)
+    edges = [make(**base),                                            # a ride at 40 %, base level: 48 (the flat claim: 80)
+             make(**{**base, 'state': 2}),                            # a base-level ride upgraded to level 1: 80 x 2
+             make(**{**base, 'state': 2, 'level': 1, 'upgrade': 4}),  # level 1 -> 2: the record word at +508 + 64 x 1
+             make(**{**base, 'gauge': 100.0}), make(**{**base, 'gauge': 0.0}), make(**{**base, 'gauge': 99.9}),
+             make(**{**base, 'state': 2, 'upgrade': 0}),              # DurationOfUpgrade 0: no timer (the flat claim: 80 x 1)
+             make(**{**base, 'state': 0, 'flag': 1}), make(**{**base, 'state': 3, 'flag': 1}),   # maintenance word, not broken: scaled
+             make(**{**base, 'state': 2, 'flag': 1, 'gauge': 10.0}),   # upgrade wins over the maintenance word
+             make(**{**base, 'work': 0}), make(**{**base, 'work': 20, 'gauge': 40.0, 'grade': 4}),
+             make(**{**base, 'gauge': 100.5}), make(**{**base, 'gauge': 101.0}), make(**{**base, 'gauge': 200.0}),
+             make(**{**base, 'gauge': 255.5}), make(**{**base, 'gauge': 256.0}), make(**{**base, 'gauge': 356.0}),
+             make(**{**base, 'gauge': -1.0}), make(**{**base, 'gauge': -256.0}), make(**{**base, 'gauge': math.nan}),
+             make(**{**base, 'gauge': math.inf}), make(**{**base, 'gauge': -math.inf}), make(**{**base, 'gauge': 1e10}),
+             make(**{**base, 'work': 0x7FFFFFFF, 'gauge': 0.0}), make(**{**base, 'work': 0x7FFFFFFF, 'gauge': 40.0}),
+             make(**{**base, 'work': 0x10000000, 'gauge': 40.0}), make(**{**base, 'state': 2, 'work': 0x10000, 'upgrade': 0x10000}),
+             make(**{**base, 'level': 255, 'state': 2, 'upgrade': 3})]
+    return edges + [make() for _ in range(n)]
+
+
+def repair_arrival_reading(x: dict) -> dict:
+    """The routine as read: a mechanic whose ride names another mechanic logs and releases itself; one still walking (0xe6454 returning 2)
+    lets go of the ride and releases; one that has arrived (0xe6454 returning 0) starts a repair if the ride is broken (+408 == 1), being
+    upgraded (2) or has the maintenance word +96 set, else logs and releases. A job writes the sub-state 18 and the timer, and sets the
+    mechanic's state +412 to 13."""
+    keep = {'timer': REPAIR_UNWRITTEN, 'state': 5, 'target': REPAIR_RIDE_ID, 'sub': 0}
+    if x['ride_mech'] != x['mech_id']:
+        return {**keep, 'target': 0, 'calls': [('log', 2), ('release', True)]}
+    arrive = s32(x['arrive'])
+    if arrive != 0:
+        return {**keep, 'target': 0, 'calls': [('release', True)]} if arrive == 2 else {**keep, 'calls': []}
+    if not (x['state'] == 1 or x['state'] == 2 or x['flag'] & MASK32):
+        return {**keep, 'calls': [('log', 2), ('release', True)]}
+    return {**keep, 'timer': repair_timer_reading(x), 'state': 13, 'sub': 18, 'calls': []}
+
+
+def repair_arrival_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = dict(repair_job_inputs(rng, 1)[-1])
+        x.update({'arrive': rng.choice([0, 0, 0, 1, 2, 2, 3, -1, 0x10000]), 'state': rng.choice([0, 1, 1, 2, 2, 3, 4, 5, -1]),
+                  'flag': rng.choice([0, 0, 1, 5]), 'ride_mech': rng.choice([x['mech_id']] * 3 + [rng.randrange(1, 300)])})
+        x.update(kw)
+        return x
+    base = dict(mech_id=11, ride_mech=11, arrive=0, state=1, flag=0, grade=0, work=80, gauge=40.0, level=0, upgrade=2)
+    edges = [make(**base), make(**{**base, 'ride_mech': 12}), make(**{**base, 'arrive': 2}), make(**{**base, 'arrive': 1}),
+             make(**{**base, 'arrive': 3}), make(**{**base, 'arrive': -1}), make(**{**base, 'arrive': 0x10000}),
+             make(**{**base, 'state': 0}), make(**{**base, 'state': 0, 'flag': 1}), make(**{**base, 'state': 2}),
+             make(**{**base, 'state': 3}), make(**{**base, 'state': 4, 'flag': 1}), make(**{**base, 'state': 2, 'ride_mech': 12}),
+             make(**{**base, 'arrive': 2, 'ride_mech': 12}), make(**{**base, 'state': 5, 'flag': 0x10000})]
+    return edges + [make() for _ in range(n)]
+
+
+REPAIR_ALLOWED = [(0xD9C0C, 0xD9E04), (0xD2290, 0xD2298), (0xDFE0C, 0xDFE20), (0xDFE88, 0xDFEA4)]
+REPAIR_NOTES = ['Executed: 0xd9c0c, 0xdfe0c / 0xdfe88 / 0xdfe90 (ride state 1, the maintenance word +96, ride state 2) and 0xd2290 (the sub-state '
+                'setter). Stubs: 0xfa9a4 thing id (mechanic), 0xdfb94 the ride\'s mechanic id, 0xe6454 arrival / walking state (chosen), '
+                '0xdc320 type record (+508 + 64 x level chosen), 0xd99ac release (recorded), 0x5fbcc log, 0xb678 assertion; the balance block word '
+                '+1004 + 8 x grade is WorkDuration.']
+
+REPAIR_TIMER = Target('ride-repair-duration', 'Mechanic job timer 0xd9c0c (a repair or an upgrade)', 'ECON-021 / ECONOMY.md (F19)', REPAIR_ARRIVAL,
+                      REPAIR_ALLOWED, repair_stubs, repair_timer_binary, repair_timer_plan, repair_job_inputs,
+                      alternatives={'routine-reading': repair_timer_result,
+                                    'flat-repair': lambda x: repair_timer_result(x, flat=True)},
+                      csharp=('repair_timer', repair_timer_request, lambda x, r: {'timer': r}),
+                      notes=['C# hook: bridge function "repair_timer" (ParkEconomy.RepairTimer). The upgrade duration is sent only when the ride is '
+                             'in state 2, as DispatchMechanics sends it for a pending upgrade. The unit is park turns (staff updates), read '
+                             'statically; the executed value is the timer word +528.',
+                             '"plan" is the claim before F19: WorkDuration (x DurationOfUpgrade for upgrades), at least 1, no state of repair.'] + REPAIR_NOTES)
+
+REPAIR_ARRIVAL_TARGET = Target('ride-repair-arrival', 'Mechanic arrival 0xd9c0c (flow)', 'ECON-021 / ECONOMY.md (F19)', REPAIR_ARRIVAL,
+                               REPAIR_ALLOWED, repair_stubs, repair_arrival_binary, repair_arrival_reading, repair_arrival_inputs,
+                               notes=['No C# hook: OpenTPW starts a mechanic at once and has no walk or release (ECON-021 stays an approximation); '
+                                      'CSHARP_PENDING.', 'The result is the timer, the mechanic state +412 and sub-state, the target word +532 and the '
+                                      'recorded calls.'] + REPAIR_NOTES)
+
+
+# ============================================================================== (l) ECON: object scrap value 0xe25e8
+SCRAP_VALUE = 0xE25E8                  # (thing) -> the sale refund; called by the sale 0xdbfa8 (0xdc05c) and by the UI panels
+SCRAP_CLOCK_STAMP = 0xE4394            # (out, clock, 0 x 6): the clock's current TbTimeStamp, written big-endian (high, low)
+SCRAP_STAMP_DIFFERENCE = 0x1C5C64      # import glue: TbTimeStamp::operator- (out, a, b), as at 0xdc520
+SCRAP_YEAR_TICKS = 365 * DAY_TICKS     # the divisor at 0xe2494..0xe24ac: (73425 << 32) + 0x78C6C000 = 365 days of 100 ns units
+SCRAP_START_TICKS = 30 * DAY_TICKS     # the divisor at 0xe24d8..0xe24e8: (6034 << 32) + 0xF8648000 = 30 days
+SCRAP_STATE = type('ScrapState', (), {})()
+
+
+def scrap_stamp(turn: int, scale: int = CLOCK_RATE) -> int:
+    """0xe4394 (stored to a purchased thing's +20 at 0xdad90..0xdadd4): the clock's turn as 100 ns units, signed 64-bit."""
+    return s64(div64(((turn & MASK32) * (scale & MASK32)), 4) * 10_000_000)
+
+
+def scrap_stubs(target: Target) -> dict:
+    state = SCRAP_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry:
+            raise AssertionError('0x118018 called without the type registry')
+        m.gpr[3] = state.record
+
+    def now(m: Machine) -> None:
+        stamp = scrap_stamp(state.x['now']) & ((1 << 64) - 1)
+        m.memory.w32(m.gpr[3], stamp >> 32)
+        m.memory.w32(m.gpr[3] + 4, stamp & MASK32)
+
+    def difference(m: Machine) -> None:
+        def stamp(address: int) -> int:
+            return m.memory.u32(address) << 32 | m.memory.u32(address + 4)
+        result = (stamp(m.gpr[4]) - stamp(m.gpr[5])) & ((1 << 64) - 1)
+        m.memory.w32(m.gpr[3], result >> 32)
+        m.memory.w32(m.gpr[3] + 4, result & MASK32)
+
+    return {TYPE_RECORD_LOOKUP: lookup, SCRAP_CLOCK_STAMP: now, SCRAP_STAMP_DIFFERENCE: difference}
+
+
+def scrap_binary(sb: Sandbox, x: dict, log) -> int:
+    state = SCRAP_STATE
+    state.x = x
+    game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', game)
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    fields = {440 + 64 * level: ('i', cost) for level, cost in enumerate(x['cost'])}
+    for level, row in enumerate(x['pct']):
+        fields.update({392 + 64 * level + 4 * year: ('i', value) for year, value in enumerate(row)})
+    state.record = sb.struct(2048, fields)
+    built = scrap_stamp(x['built']) & ((1 << 64) - 1)
+    thing = sb.struct(512, {14: ('H', 0x101), 20: ('I', built >> 32), 24: ('I', built & MASK32), 76: ('B', x['level']),
+                            412: ('I', x['used'] & MASK32)})
+    return sb.call(SCRAP_VALUE, {3: thing}).r3
+
+
+def scrap_age(x: dict) -> int:
+    """The signed 100 ns difference of the clock's stamp and the thing's +20."""
+    return s64(scrap_stamp(x['now']) - scrap_stamp(x['built']))
+
+
+def scrap_plan(x: dict) -> int:
+    """The rule C# followed before F21 (ECON-025): the catalogue cost of every level up to the current one times
+    Upgrades[level].ScrapValueYearN percent, N the age in 365 day years (year 4 onwards uses year 4)."""
+    level = x['level']
+    year = min(3, max(0, scrap_age(x) // SCRAP_YEAR_TICKS))
+    return sum(x['cost'][:level + 1]) * x['pct'][level][year] // 100
+
+
+def scrap_reading(x: dict, initial: bool = True, level_row: bool = True, base_cost: bool = True,
+                  year_ticks: int = SCRAP_YEAR_TICKS, start_ticks: int = SCRAP_START_TICKS, used_test: bool = True) -> int:
+    """The routine as read from 0xe2424..0xe2640. Age = clock stamp - thing +20, a signed 64-bit difference; the low word of
+    its quotient by 365 days picks the column (0 first year, 1, 2, anything else the fourth). In the first year, a thing
+    that has never been used (+412 == 0) and is within its first 30 days (the low word of the quotient by 30 days is 0)
+    refunds 100 when the type record's first percentage (+392, level 0's row) is positive. Otherwise the percentage is
+    Upgrades[level].ScrapValueYearN (record +392 + 64 x level + 4 x column); the refund is Upgrades[0].CostOfUpgrade
+    (record +440, no level) x percentage, divided by 100 as an unsigned word."""
+    age = scrap_age(x)
+    row = x['pct'][x['level'] if level_row else 0]
+    year = s32(div64(age, year_ticks))
+    if year == 0 and initial and s32(div64(age, start_ticks)) == 0 and (x['used'] == 0 or not used_test) and x['pct'][0][0] > 0:
+        percent = 100
+    else:
+        percent = row[year] if 0 <= year <= 2 else row[3]
+    cost = x['cost'][0] if base_cost else sum(x['cost'][:x['level'] + 1])
+    return ((percent * cost & MASK32) * 0x51EB851F >> 32) >> 5
+
+
+def scrap_csharp_request(x: dict) -> dict:
+    return {'fn': 'object_scrap_value', 'now': x['now'], 'built': x['built'], 'level': x['level'], 'used': x['used'],
+            'cost': x['cost'], 'pct': x['pct']}
+
+
+def scrap_inputs(rng: random.Random, n: int) -> list:
+    def turns(days: float) -> int:
+        return int(days * 86400 * 4 / CLOCK_RATE)  # whole turns (3750 s each) at or just below a number of park days
+
+    def make(**kw) -> dict:
+        built = rng.choice([0, rng.randrange(0, 50000), rng.randrange(0, 5000)])
+        age = rng.choice([0, rng.randrange(0, turns(40)), rng.randrange(0, turns(400)), rng.randrange(0, turns(1500)),
+                          rng.randrange(0, turns(5000)), turns(30) + rng.randrange(-2, 3), turns(365) + rng.randrange(-2, 3),
+                          turns(730) + rng.randrange(-2, 3), turns(1095) + rng.randrange(-2, 3)])
+        x = {'now': built + age, 'built': built, 'level': rng.choice([0, 0, 1, 2]),
+             'used': rng.choice([0, 0, 1, rng.randrange(0, 5000)]),
+             'cost': [rng.choice([0, 1000, 5000, 12345, rng.randrange(1, 300000)]) for _ in range(3)],
+             'pct': [[rng.choice([0, 10, 20, 30, 50, rng.randrange(0, 101)]) for _ in range(4)] for _ in range(3)]}
+        x.update(kw)
+        return x
+
+    shipped = dict(cost=[10000, 8000, 12000], pct=[[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]])
+    edges = []
+    for level in (0, 1, 2):
+        for used in (0, 3):
+            # Straight after the purchase and either side of the 30 day mark (turn 691.2) and of the 1, 2 and 3 year marks
+            # (turns 8409.6, 16819.2, 25228.8).
+            for age in (0, 1, 691, 692, 8409, 8410, 16819, 16820, 25228, 25229, 50000):
+                edges.append(make(now=1000 + age, built=1000, level=level, used=used, **shipped))
+    # A first-year percentage of 0 in level 0's row never refunds the 100; the level's own row is not what decides it.
+    edges.append(make(now=1010, built=1000, level=0, used=0, cost=[10000, 8000, 12000], pct=[[0, 30, 20, 10]] * 3))
+    edges.append(make(now=1010, built=1000, level=2, used=0, cost=[10000, 8000, 12000],
+                      pct=[[50, 30, 20, 10], [45, 25, 15, 8], [0, 0, 0, 0]]))
+    edges.append(make(now=1010, built=1000, level=2, used=0, cost=[10000, 8000, 12000],
+                      pct=[[0, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]]))
+    # A product beyond 32 bits wraps before the unsigned division: 50,000,000 at 100 % refunds 7,050,327 (and 5e7 x 50 % is 2.5e9, above 2^31).
+    edges.append(make(now=1000, built=1000, level=0, used=0, cost=[50_000_000, 1, 1], pct=shipped['pct']))
+    edges.append(make(now=1000, built=1000, level=0, used=5, cost=[50_000_000, 1, 1], pct=shipped['pct']))
+    edges.append(make(now=1000, built=1000, level=0, used=0, cost=[2_147_483_647, 1, 1], pct=shipped['pct']))
+    return edges + [make() for _ in range(n)]
+
+
+def scrap_domain(x: dict) -> bool:
+    """A park never holds a thing bought after the current turn (the original would pick the fourth column for a negative
+    quotient, C# the first). Costs up to 2^31 - 1 are allowed: the product wraps to 32 bits on both sides."""
+    return x['built'] <= x['now']
+
+
+# ============================================================================== (n) STAFF: vitals, rest, strikes (ECON-014)
+STAFF_GAME_POINTER = ARRIVAL_GAME_POINTER  # TOC slot -> data word holding the game pointer
+STAFF_THINGS = POINTS_THINGS               # TOC slot -> ThingArray (20-byte entries, word 0 = the thing)
+STAFF_STRINGS = -19104                     # TOC slot -> string table of the strike routines (log texts are offsets from it)
+STAFF_SETTINGS = -30084                    # TOC slot -> settings block (+740 RestLevel, +744 HappyHitCosNoRestArea,
+                                           # +756 / +760 + 16 g the energy / happiness recuperation of grade g)
+STAFF_END_SLOTS = tuple(range(-19168, -19128, 4))  # ten TOC slots -> the u16 that ends each role's staff chain
+STAFF_HEADS = {0: -22724, 1: -22722, 2: -22720, 3: -22716, 4: -22718}  # game + 0x1E0000 + d: first staff of each role (u16)
+STAFF_TURN, STAFF_CLOSED, STAFF_CLOCK = 0x1E0000 - 22772, 0x1E0000 - 22768, 672
+STAFF_MESSAGE_QUEUE = -30100               # TOC slot -> word holding the message queue (nonzero: no allocation)
+STAFF_CLOCK_CHAIN = -30076                 # TOC slot -> pointer to a pointer to the game (0xf7fe0 builds clock = game + 672)
+STAFF_REST_TABLE = -27232                  # TOC slot -> u16 table (walking-speed tiers by energy, written to staff +192)
+STAFF_NO_AREA = -19232                     # TOC slot -> u16 that 0xf4c18 stores when it finds no rest area
+STAFF_REST_STRINGS = -19220                # TOC slot -> string table of 0xf4900 and 0xf3d8c
+STAFF_STATE = type('StaffState', (), {})()
+STAFF_MONTH = 25_920_000_000_000           # one fixed 30-day unit in 100 ns units: the divisor (6034 << 32 | 0xf8648000)
+STAFF_LITTER_DENOMINATOR, STAFF_LITTER_NUMERATOR = 0xC21F4, 0xC2264   # (park, 1): two analyser sums; their meaning is not traced
+
+
+def fbits(value: float):
+    """A single's bit pattern, 'nan' for any NaN (a comparable representation of a float outcome)."""
+    return 'nan' if math.isnan(value) else bits(value)
+
+
+def vital_byte(value: float) -> int:
+    """fctiwz then rlwinm 0,24,31: the truncated 32-bit integer's low byte (NaN: 0x80000000, saturating)."""
+    return fctiwz32(value) & 0xFF
+
+
+def vital_clamp(value: float) -> float:
+    """The clamp every vitals step ends with: above 100 stores 100.0, below 0 stores 0.0, anything else (NaN too) the value."""
+    if value > 100.0:
+        return 100.0
+    if value < 0.0:
+        return 0.0
+    return value
+
+
+# ---------------------------------------------------------------------------- vitals: 0xf44c0, 0xf459c, 0xf3d8c, 0xf448c
+VITALS_WALK, VITALS_WORK, VITALS_REST, VITALS_BELOW = 0xF44C0, 0xF459C, 0xF3D8C, 0xF448C
+REST_RELEASE = 0xF4D00                     # (staff) frees the rest-area association; stubbed
+REST_NEXT = {4: 0xD99AC, 5: 0xD5A3C, 6: 0xD2B04, 7: 0xD4B74, 8: 0xF0380}  # staff type byte +2 -> the role's next action; stubbed
+STAFF_TYPE_ROLE = {5: 0, 4: 1, 6: 2, 7: 3, 8: 4}  # staff type byte +2 -> role (0xf4900: 5 handyman, 4 mechanic, 6 entertainer, 7 guard, 8 researcher)
+
+
+def vitals_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+
+    def release(m: Machine) -> None:
+        target.log.append(('release', m.gpr[3] == state.staff))
+
+    def following(name: str):
+        def stub(m: Machine) -> None:
+            target.log.append((name, m.gpr[3] == state.staff))
+        return stub
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert', (m.gpr[4] - state.strings) & MASK32))
+
+    stubs = {REST_RELEASE: release, ASSERT: assertion}
+    stubs.update({address: following(f'next-{kind}') for kind, address in REST_NEXT.items()})
+    return stubs
+
+
+def vitals_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = STAFF_STATE
+    state.strings = toc_pointer(sb, STAFF_REST_STRINGS)
+    settings = toc_pointer(sb, STAFF_SETTINGS)
+    sb.write(settings + 740, 'i', x['level'])
+    sb.write(settings + 756 + 16 * x['grade'], 'f', x['rate_e'])
+    sb.write(settings + 760 + 16 * x['grade'], 'f', x['rate_h'])
+    state.staff = sb.struct(1024, {2: ('B', x['type']), 484: ('I', x['grade']), 500: ('f', x['happiness']), 504: ('f', x['energy'])})
+    entry = {'walk': VITALS_WALK, 'work': VITALS_WORK, 'rest': VITALS_REST, 'below': VITALS_BELOW}[x['op']]
+    result = sb.call(entry, {3: state.staff})
+    out = {'energy': fbits(sb.read(state.staff + 504, 'f')), 'happiness': fbits(sb.read(state.staff + 500, 'f')),
+           'events': [tuple(e) for e in log]}
+    if x['op'] == 'below':
+        out['below'] = result.r3 & 0xFF
+    if x['op'] == 'rest':
+        out['finished'] = int(any(event[0] == 'release' for event in log))
+    return out
+
+
+def vitals_reading(x: dict) -> dict:
+    """The four routines as read. Walking (0xf44c0, a moving staff member) takes 0.012 (6 - grade) off the energy and 0.005 (6 -
+    grade) off the happiness, the products in binary64 then rounded to single; working (0xf459c) takes 0.025f (6 - grade) off the
+    energy (single product) and 0.01 (6 - grade) off the happiness; resting (0xf3d8c) adds the grade's recuperation rates (single
+    sums); every result is clamped to 0..100. A rest that ends with the truncated energy byte at 100 frees the rest area (0xf4d00)
+    and calls the role's next action by the type byte +2 (4..8), anything else asserts. 0xf448c is the signed test
+    energy byte < RestLevel."""
+    energy, happiness, grade = x['energy'], x['happiness'], x['grade']
+    events: list = []
+    out = {'energy': fbits(energy), 'happiness': fbits(happiness), 'events': events}
+    if x['op'] == 'walk':
+        out['energy'] = fbits(vital_clamp(f32(energy - f32(0.012 * (6 - grade)))))
+        out['happiness'] = fbits(vital_clamp(f32(happiness - f32(0.005 * (6 - grade)))))
+    elif x['op'] == 'work':
+        out['energy'] = fbits(vital_clamp(f32(energy - f32(f32(0.025) * f32(float(6 - grade))))))
+        out['happiness'] = fbits(vital_clamp(f32(happiness - f32(0.01 * (6 - grade)))))
+    elif x['op'] == 'rest':
+        new_energy = vital_clamp(f32(x['rate_e'] + energy))
+        out['energy'] = fbits(new_energy)
+        out['happiness'] = fbits(vital_clamp(f32(x['rate_h'] + happiness)))
+        out['finished'] = int(vital_byte(new_energy) == 100)
+        if out['finished']:
+            events.append(('release', True))
+            events.append((f'next-{x["type"]}', True) if x['type'] in REST_NEXT else ('assert', 720))
+    else:
+        out['below'] = int(s32(vital_byte(energy)) < s32(x['level']))
+    return out
+
+
+def vitals_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: happiness starts at 100 and never changes, there is no energy, a member never needs rest."""
+    out = {'energy': fbits(x['energy']), 'happiness': fbits(x['happiness'])}
+    if x['op'] == 'below':
+        out['below'] = 0
+    if x['op'] == 'rest':
+        out['finished'] = 0
+    return out
+
+
+def vitals_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def vitals_request(x: dict) -> dict:
+    return {'fn': 'staff_vitals', 'op': x['op'], 'grade': x['grade'], 'energy': x['energy'], 'happiness': x['happiness'],
+            'rate_energy': x['rate_e'], 'rate_happiness': x['rate_h'], 'level': x['level']}
+
+
+def vitals_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'energy_bits' not in answer:
+        return {'exception': str(answer)}
+    out = {'energy': fbits(from_bits(answer['energy_bits'])), 'happiness': fbits(from_bits(answer['happiness_bits']))}
+    if x['op'] == 'below':
+        out['below'] = int(answer['below'])
+    if x['op'] == 'rest':
+        out['finished'] = int(answer['finished'])
+    return out
+
+
+def vitals_value(rng: random.Random) -> float:
+    return rng.choice([lambda: 100.0, lambda: 0.0, lambda: random_float(rng, 0, 100), lambda: random_float(rng, 0, 100),
+                       lambda: random_float(rng, -5, 110), lambda: random_float(rng, 90, 101), lambda: random_float(rng, 0, 3),
+                       lambda: f32(rng.choice([1.0, 1.5, 99.5, 99.99, 100.01, 255.9, 256.0, 300.5, -0.5, -1.0, 0.05]))])()
+
+
+def vitals_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        op = rng.choice(['walk', 'work', 'rest', 'rest', 'below'])
+        x = {'op': op, 'grade': rng.randrange(0, 5) if op not in ('walk', 'work') or rng.random() < 0.9 else rng.randrange(5, 8),
+             'energy': vitals_value(rng), 'happiness': vitals_value(rng),
+             'rate_e': rng.choice([0.2, 0.3, 0.4, 0.5, 0.75, random_float(rng, 0, 3), random_float(rng, 0, 100)]),
+             'rate_h': rng.choice([1.0, 2.0, 3.0, random_float(rng, 0, 5)]), 'type': rng.choice([4, 5, 6, 7, 8, 8, 3, 9]),
+             'level': rng.choice([1, 1, 1, 0, 2, rng.randrange(0, 120), -1])}
+        x.update(kw)
+        return {key: f32(value) if isinstance(value, float) else value for key, value in x.items()}
+    shipped = [(0.2, 1.0), (0.3, 2.0), (0.4, 2.0), (0.5, 3.0), (0.75, 3.0)]
+    edges = [make(op='walk', grade=0, energy=100.0, happiness=100.0), make(op='work', grade=0, energy=100.0, happiness=100.0),
+             make(op='walk', grade=4, energy=0.01, happiness=0.001), make(op='work', grade=4, energy=0.01, happiness=0.001),
+             make(op='walk', grade=7, energy=100.0, happiness=99.99),
+             make(op='rest', grade=2, energy=99.7, happiness=99.0, rate_e=0.4, rate_h=2.0, type=6),
+             make(op='rest', grade=4, energy=99.2, happiness=50.0, rate_e=0.75, rate_h=3.0, type=8),
+             make(op='rest', grade=0, energy=99.9, happiness=10.0, rate_e=0.1, rate_h=1.0, type=4),
+             make(op='rest', grade=1, energy=100.0, happiness=100.0, rate_e=0.3, rate_h=2.0, type=5),
+             make(op='rest', grade=1, energy=50.0, happiness=100.0, rate_e=0.3, rate_h=2.0, type=5),
+             make(op='below', energy=0.0, level=1), make(op='below', energy=1.0, level=1), make(op='below', energy=1.99, level=1),
+             make(op='below', energy=2.0, level=1), make(op='below', energy=256.0, level=1), make(op='below', energy=-1.0, level=1)]
+    edges += [make(op='rest', grade=g, energy=e, happiness=60.0, rate_e=re, rate_h=rh, type=6)
+              for g, (re, rh) in enumerate(shipped) for e in (95.0, 99.9)]
+    return edges + [make() for _ in range(n)]
+
+
+# ---------------------------------------------------------------------------- rest seeking: the tail of 0xf4900 (0xf4a60..0xf4c04)
+SEEK_ENTRY, SEEK_END = 0xF4A60, 0xF4C04
+SEEK_THOUGHT, SEEK_NAVIGATE, SEEK_STATE = 0xFB54C, 0xF4C18, 0xF311C
+
+
+def seek_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+
+    def thought(m: Machine) -> None:
+        if m.gpr[3] != state.staff + 48 or m.gpr[5] != 0:
+            raise AssertionError('0xfb54c called without the staff +48 object and 0')
+        target.log.append(('thought', m.gpr[4]))
+
+    def navigate(m: Machine) -> None:
+        if m.gpr[4] != state.staff:
+            raise AssertionError('0xf4c18 called without the staff member')
+        target.log.append(('seek',))
+        m.memory.w16(m.gpr[3], state.no_area if not state.x['found'] else (state.no_area ^ 0x00FF) & 0xFFFF)
+
+    def set_state(m: Machine) -> None:
+        if m.gpr[3] != state.staff:
+            raise AssertionError('0xf311c called without the staff member')
+        target.log.append(('state', m.gpr[4]))
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', (m.gpr[4] - state.strings) & MASK32))
+
+    return {SEEK_THOUGHT: thought, SEEK_NAVIGATE: navigate, SEEK_STATE: set_state, DEBUG_LOG: log}
+
+
+def seek_binary(sb: Sandbox, x: dict, log) -> dict:
+    state = STAFF_STATE
+    state.x = x
+    state.game = sb.alloc(0x1E0000)
+    game_word = toc_pointer(sb, STAFF_GAME_POINTER)
+    sb.write(game_word, 'I', state.game)
+    sb.write(state.game + WORLD_RNG, 'I', x['rng'])
+    state.strings = toc_pointer(sb, STAFF_REST_STRINGS)
+    state.no_area = sb.read(toc_pointer(sb, STAFF_NO_AREA), 'H')
+    settings = toc_pointer(sb, STAFF_SETTINGS)
+    sb.write(settings + 740, 'i', x['level'])
+    sb.write(settings + 744, 'i', x['hit'])
+    state.staff = sb.struct(1024, {500: ('f', x['happiness']), 504: ('f', x['energy'])})
+    result = sb.call(SEEK_ENTRY, {27: state.staff, 28: settings, 29: toc_pointer(sb, STAFF_REST_TABLE), 30: game_word,
+                                  31: state.strings}, stop=SEEK_END)
+    return {'ret': result.r3 & 0xFF, 'happiness': fbits(sb.read(state.staff + 500, 'f')),
+            'energy': fbits(sb.read(state.staff + 504, 'f')), 'rng': sb.read(state.game + WORLD_RNG, 'I'),
+            'events': [tuple(e) for e in log]}
+
+
+def seek_reading(x: dict, strict: bool = False, always_hit: bool = False) -> dict:
+    """The tail of 0xf4900 as read. The truncated energy byte above RestLevel (signed compare) is the comfortable branch: the
+    happiness byte at most 10 gives thought 19 (no draw); above 97 a world draw with (draw & 15) == 0 gives thought 18. At or below
+    RestLevel the member thinks 20 ('tired') and seeks a rest area; found: state 2 and the result 1. Not found: a world draw, and
+    with (draw & 15) == 0 the happiness falls by HappyHitCosNoRestArea (clamped 0..100); the result is 0."""
+    events: list = []
+    rng = x['rng']
+    happiness = x['happiness']
+
+    def draw() -> int:
+        nonlocal rng
+        rng, returned = det_model.world_next(rng)
+        return returned
+    byte = vital_byte(x['energy'])
+    out = {'ret': 0}
+    below = byte < x['level'] if strict else byte <= x['level']
+    if not below:
+        hb = vital_byte(happiness)
+        if hb <= 10:
+            events.append(('thought', 19))
+        elif hb > 97 and draw() & 15 == 0:
+            events.append(('thought', 18))
+    else:
+        events.append(('thought', 20))
+        events.append(('seek',))
+        if x['found']:
+            events.append(('state', 2))
+            out['ret'] = 1
+        else:
+            events.append(('log', 985))
+            if always_hit or draw() & 15 == 0:
+                happiness = vital_clamp(f32(happiness - f32(float(x['hit']))))
+    out.update({'happiness': fbits(happiness), 'energy': fbits(x['energy']), 'rng': rng, 'events': events})
+    return out
+
+
+def seek_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: nothing changes, nothing is sought, no draw is taken."""
+    return {'ret': 0, 'happiness': fbits(x['happiness'])}
+
+
+def seek_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def seek_request(x: dict) -> dict:
+    return {'fn': 'staff_rest_seek', 'energy': x['energy'], 'happiness': x['happiness'], 'level': x['level'], 'hit': x['hit'],
+            'found': bool(x['found']), 'draw': det_model.world_next(x['rng'])[1]}
+
+
+def seek_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'ret' not in answer:
+        return {'exception': str(answer)}
+    return {'ret': int(answer['ret']), 'happiness': fbits(from_bits(answer['happiness_bits']))}
+
+
+def seek_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'energy': vitals_value(rng), 'happiness': vitals_value(rng), 'level': rng.choice([1, 1, 1, 0, 2, rng.randrange(0, 120)]),
+             'hit': rng.choice([2, 2, 0, 5, rng.randrange(-3, 60)]), 'found': rng.randrange(2),
+             'rng': rng.choice([rng.getrandbits(32), rng.getrandbits(32), 0, 1, MASK32])}
+        x.update(kw)
+        return {key: f32(value) if isinstance(value, float) else value for key, value in x.items()}
+    seeds = random.Random(7)
+    unlucky = next(s for s in iter(lambda: seeds.getrandbits(32), None) if det_model.world_next(s)[1] & 15 != 0)
+    lucky = next(s for s in iter(lambda: seeds.getrandbits(32), None) if det_model.world_next(s)[1] & 15 == 0)
+    edges = [make(energy=1.0, level=1, found=0, rng=lucky, happiness=50.0, hit=2),     # at RestLevel: seeks (tired), no area, the hit
+             make(energy=1.0, level=1, found=0, rng=unlucky, happiness=50.0, hit=2),   # no hit: the draw is not 0 mod 16
+             make(energy=2.0, level=1, found=0, rng=lucky, happiness=50.0, hit=2),     # above RestLevel: comfortable
+             make(energy=0.9, level=1, found=1, rng=lucky, happiness=50.0, hit=2),     # an area is found: state 2
+             make(energy=0.0, level=1, found=0, rng=lucky, happiness=1.0, hit=2),      # the hit clamps at 0
+             make(energy=50.0, level=1, found=0, rng=lucky, happiness=98.0, hit=2),    # comfortable and happy: thought 18 on a lucky draw
+             make(energy=50.0, level=1, found=0, rng=unlucky, happiness=98.0, hit=2),
+             make(energy=50.0, level=1, found=0, rng=lucky, happiness=10.9, hit=2),    # unhappy: thought 19
+             make(energy=50.0, level=1, found=0, rng=lucky, happiness=97.9, hit=2)]
+    return edges + [make() for _ in range(n)]
+
+
+# ---------------------------------------------------------------------------- the staff world shared by the strike routines
+def staff_world(sb: Sandbox, x: dict) -> None:
+    """The game block, the ThingArray with one chain of staff per role, the chain ends, the manager and the stub state."""
+    state = STAFF_STATE
+    state.x = x
+    state.game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, STAFF_GAME_POINTER), 'I', state.game)
+    state.park = sb.struct(16)
+    state.strings = toc_pointer(sb, STAFF_STRINGS)
+    for slot in STAFF_END_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'H', 0)
+    table = toc_pointer(sb, STAFF_THINGS)
+    index = 1
+    for role in range(5):
+        members = x['roles'][role]
+        first = 0
+        for position, (energy, happiness) in enumerate(members):
+            following = index + 1 if position + 1 < len(members) else 0
+            address = sb.struct(1024, {500: ('f', happiness), 504: ('f', energy), 524: ('H', following)})
+            sb.write(table + 20 * index, 'I', address)
+            first = first or index
+            index += 1
+        sb.write(state.game + 0x1E0000 + STAFF_HEADS[role], 'H', first)
+    state.manager = sb.struct(256, {100: ('I', x['forced'] & MASK32)})
+
+
+def staff_world_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    def statistic(value_key: str):
+        def stub(m: Machine) -> None:
+            if m.gpr[3] != state.park or m.gpr[4] != 1:
+                raise AssertionError('the analyser statistic was called without (park, 1)')
+            m.gpr[3] = state.x[value_key] & MASK32
+        return stub
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert', (m.gpr[4] - state.strings) & MASK32))
+
+    def log(m: Machine) -> None:
+        target.log.append(('log', (m.gpr[4] - state.strings) & MASK32))
+
+    return {PARK_OF_GAME: park, STAFF_LITTER_DENOMINATOR: statistic('litter_den'), STAFF_LITTER_NUMERATOR: statistic('litter_num'),
+            ASSERT: assertion, DEBUG_LOG: log}
+
+
+# ---------------------------------------------------------------------------- the strike test 0xf8410
+STAFF_GRIEVANCE = 0xF8410
+
+
+def grievance_binary(sb: Sandbox, x: dict, log) -> dict:
+    staff_world(sb, x)
+    state = STAFF_STATE
+    result = sb.call(STAFF_GRIEVANCE, {3: state.manager, 4: x['role']})
+    return {'strike': int(result.r3 != 0), 'ret': result.r3, 'events': [tuple(e) for e in log]}
+
+
+def grievance_reading(x: dict, count: int = 3, limit: int = 15, fatigue: bool = True, happiness: bool = True,
+                      litter: bool = True, byte_wrap: bool = True) -> dict:
+    """0xf8410 as read. A nonzero word at manager +100 (the forced flag, any value) returns 1 at once. A role outside 0..4 asserts and returns 0.
+    Handymen (role 0) first test the ratio of the two analyser sums (single precision, quotient above 0.2f). Then the role's staff
+    chain (the first index at game +0x1da73c.. per role, next at staff +524, ended by the role's end word) is walked twice: the
+    low bytes of the truncated energies (+504), then of the happinesses (+500), each added into an unsigned sum; more than `count`
+    members with floor(sum / members) below `limit` strike ('fatigue' log 705, 'unhappiness' log 746). No strike returns 0."""
+    events: list = []
+    forced = x['forced'] & MASK32
+    if forced:
+        return {'strike': 1, 'ret': 1, 'events': events}
+    role = x['role']
+    if role not in range(5):
+        return {'strike': 0, 'ret': 0, 'events': [('assert', 784)]}
+    if role == 0 and litter:
+        den, num = f32(float(s32(x['litter_den']))), f32(float(s32(x['litter_num'])))
+        quotient = f32(num / den) if den != 0.0 else (math.nan if num == 0.0 else math.copysign(math.inf, num))
+        if quotient > f32(0.2):
+            return {'strike': 1, 'ret': 1, 'events': events}
+    members = x['roles'][role]
+    for index, message, enabled in ((0, 705, fatigue), (1, 746, happiness)):
+        if not enabled:
+            continue
+        values = [vital_byte(member[index]) if byte_wrap else max(0, min(255, int(member[index]))) for member in members]
+        if len(values) > count and (sum(values) & MASK32) // len(values) < limit:
+            events.append(('log', message))
+            return {'strike': 1, 'ret': 1, 'events': events}
+    return {'strike': 0, 'ret': 0, 'events': events}
+
+
+def grievance_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: no strikes."""
+    return {'strike': 0}
+
+
+def grievance_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def grievance_request(x: dict) -> dict:
+    return {'fn': 'staff_grievance', 'role': x['role'], 'forced': x['forced'] & MASK32,
+            'staff': [[list(member) for member in members] for members in x['roles']],
+            'litter_den': s32(x['litter_den']), 'litter_num': s32(x['litter_num'])}
+
+
+def grievance_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'strike' not in answer:
+        return {'exception': str(answer)}
+    return {'strike': int(answer['strike'])}
+
+
+def staff_lists(rng: random.Random) -> list:
+    """One role's staff: (energy, happiness) pairs hovering around a level near the strike threshold of 15."""
+    size = rng.choice([0, 1, 2, 3, 4, 4, 5, 6, 8])
+    base = rng.choice([0.0, 5.0, 14.0, 14.5, 15.0, 15.5, 20.0, 60.0, 100.0])
+    spread = rng.choice([0.0, 0.5, 3.0, 10.0])
+
+    def vital() -> float:
+        if rng.random() < 0.9:
+            return f32(max(-3.0, rng.gauss(base, spread)))
+        return f32(rng.choice([256.0, 300.0, -1.0, 15.0, 14.99]))
+    return [(vital(), vital()) for _ in range(size)]
+
+
+def grievance_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'role': rng.choice([0, 1, 2, 3, 4, 4, 0]), 'forced': rng.choice([0, 0, 0, 0, 1, 7, MASK32]),
+             'roles': [staff_lists(rng) for _ in range(5)],
+             'litter_den': rng.choice([0, 1, 10, 100, rng.randrange(0, 1000), -5, 0x7FFFFFFF]),
+             'litter_num': rng.choice([0, 0, 1, 3, 20, 21, rng.randrange(0, 1000), -1])}
+        x.update(kw)
+        x['roles'] = [[(f32(energy), f32(happiness)) for energy, happiness in members] for members in x['roles']]
+        return x
+    zero = lambda size: [(0.0, 0.0)] * size
+    full = lambda size: [(100.0, 100.0)] * size
+    edges = [make(role=1, forced=0, roles=[zero(5)] * 5, litter_den=10, litter_num=0),                       # fatigue average 0
+             make(role=1, forced=0, roles=[zero(5), zero(3), zero(5), zero(5), zero(5)]),                     # only three members: no strike
+             make(role=1, forced=0, roles=[zero(5), zero(4), zero(5), zero(5), zero(5)]),                     # four members: strikes
+             make(role=2, forced=0, roles=[full(5), full(5), [(100.0, 14.9)] * 4, zero(5), zero(5)]),         # unhappiness
+             make(role=2, forced=0, roles=[zero(5), zero(5), [(15.0, 15.0)] * 4, zero(5), zero(5)]),          # average exactly 15
+             make(role=3, forced=0, roles=[zero(5), zero(5), zero(5), [(15.0, 15.0)] * 3 + [(14.0, 14.0)], zero(5)]),  # sum 59 / 4 = 14
+             make(role=4, forced=0, roles=[zero(5), zero(5), zero(5), zero(5), [(256.0, 100.0)] * 4]),        # 256.0 wraps to byte 0
+             make(role=4, forced=0, roles=[zero(5), zero(5), zero(5), zero(5), [(-1.0, 100.0)] * 4]),         # -1.0 is byte 255
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=10, litter_num=3),            # handymen: 0.3 > 0.2
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=10, litter_num=2),            # 0.2f: not above
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=0, litter_num=1),             # x / 0 = inf
+             make(role=0, forced=0, roles=[full(5)] + [zero(5)] * 4, litter_den=0, litter_num=0),             # 0 / 0 = NaN
+             make(role=1, forced=0, roles=[full(5)] * 5, litter_den=10, litter_num=9),                        # only handymen test it
+             make(role=3, forced=1, roles=[full(5)] * 5), make(role=3, forced=MASK32, roles=[full(5)] * 5),
+             ]
+    return edges + [make() for _ in range(n)]
+
+
+# ---------------------------------------------------------------------------- the month consideration 0xf7e18 (with the escalation 0xf7fe0)
+MONTH_ENTRY = 0xF7E18
+MONTH_TRAINING, MONTH_CLOCK, MONTH_GUESTS = 0xFC1C4, 0xE4628, 0xC1FB4
+MONTH_MESSAGE, MONTH_POST = 0x116590, 0x11688C
+MONTH_ALLOWED = [(0xF7E18, 0xF83C4), (0xF8410, 0xF8BE4), (0x1091AC, 0x1091B8), (0x1C4100, 0x1C4230)]
+LEVEL_BASE, LEVEL_STRIDE = 36, 12      # the manager's per-role records: +36 level, +40 active flag, +44 turn last considered
+
+
+def month_stubs(target: Target) -> dict:
+    state = STAFF_STATE
+    stubs = staff_world_stubs(target)
+
+    def training(m: Machine) -> None:
+        target.log.append(('training',))
+
+    def guests(m: Machine) -> None:
+        if m.gpr[3] != state.park or m.gpr[4] != 5:
+            raise AssertionError('0xc1fb4 called without (park, 5)')
+        m.gpr[3] = state.step['guests'] & MASK32
+
+    def clock(m: Machine) -> None:
+        if m.gpr[4] != state.game + STAFF_CLOCK:
+            raise AssertionError('0xe4628 called without the game clock')
+        stamp = state.step['stamp'] & ((1 << 64) - 1)
+        m.memory.w32(m.gpr[3], stamp >> 32)
+        m.memory.w32(m.gpr[3] + 4, stamp & MASK32)
+
+    def message(m: Machine) -> None:
+        target.log.append(('message', m.gpr[4], m.gpr[5]))   # (role, kind)
+
+    def post(m: Machine) -> None:
+        pass
+
+    stubs.update({MONTH_TRAINING: training, MONTH_GUESTS: guests, MONTH_CLOCK: clock, MONTH_MESSAGE: message, MONTH_POST: post})
+    return stubs
+
+
+def month_binary(sb: Sandbox, x: dict, log) -> dict:
+    staff_world(sb, x)
+    state = STAFF_STATE
+    sb.write(toc_pointer(sb, STAFF_MESSAGE_QUEUE), 'I', 1)
+    chain = sb.alloc(8)
+    sb.write(chain, 'I', state.game)
+    sb.write(toc_pointer(sb, STAFF_CLOCK_CHAIN), 'I', chain)
+    for role in range(5):
+        base = state.manager + LEVEL_BASE + LEVEL_STRIDE * role
+        sb.write(base, 'I', x['levels'][role])
+        sb.write(base + 4, 'I', x['flags'][role])
+        sb.write(base + 8, 'I', x['ticks'][role])
+    out = {'levels': [], 'flags': [], 'ticks': [], 'messages': [], 'events': []}
+    for step in x['months']:
+        state.step = step
+        sb.write(state.game + STAFF_TURN, 'I', step['turn'] & MASK32)
+        sb.write(state.game + STAFF_CLOSED, 'I', step['closed'] & MASK32)
+        mark = len(log)
+        sb.call(MONTH_ENTRY, {3: state.manager})
+        bases = [state.manager + LEVEL_BASE + LEVEL_STRIDE * role for role in range(5)]
+        out['levels'].append([sb.read(base, 'I') for base in bases])
+        out['flags'].append([sb.read(base + 4, 'I') for base in bases])
+        out['ticks'].append([sb.read(base + 8, 'I') for base in bases])
+        out['events'].append([tuple(e) for e in log[mark:]])
+        out['messages'].append([(e[1], e[2]) for e in out['events'][-1] if e[0] == 'message'])
+    return out
+
+
+def months_of(stamp: int) -> int:
+    """0xf7ff8..0xf805c: the signed 64-bit stamp divided toward zero by 25.92e12 (30 days in 100 ns); the low word, signed."""
+    stamp = s64(stamp)
+    quotient = abs(stamp) // STAFF_MONTH * (1 if stamp >= 0 else -1)
+    return s32(quotient & MASK32)
+
+
+def month_reading(x: dict, age_gate: int = 24, drop: str = '') -> dict:
+    """0xf7e18 and 0xf7fe0 as read. Training first (0xfc1c4). Unless the manager's forced word is set the month is skipped, with log
+    389, while the park is closed (game +0x1da710 nonzero) or any guest stands in the park (0xc1fb4(park, 5) nonzero). Each role with a
+    nonempty staff chain not yet considered this turn (+44) is marked, then: an active strike (+40) is simply ended; otherwise the
+    escalation runs. It logs 442, then needs the clock stamp / 25.92e12 to be at least 24 (signed low word) and the strike test (0xf8410).
+    A grievance: level 0 -> 1 (log 475, message kind 0: a warning); 1 -> 2 (log 546), 2 -> 3 (log 599), 3 -> 4 (log 653) and 4 -> 4, each
+    setting the active flag and sending kind 2 (the strike); any other level does nothing. No grievance: level 1 sends kind 3 (called
+    off); the level and the active flag clear. Messages are (role, kind)."""
+    levels, flags, ticks = list(x['levels']), list(x['flags']), list(x['ticks'])
+    out = {'levels': [], 'flags': [], 'ticks': [], 'messages': [], 'events': []}
+    for step in x['months']:
+        events: list = [('training',)]
+        skipped = False
+        if x['forced'] & MASK32 == 0 and (step['closed'] != 0 or step['guests'] != 0):
+            events.append(('log', 389))
+            skipped = True
+        for role in () if skipped else range(5):
+            if not x['roles'][role] or ticks[role] == step['turn'] & MASK32:
+                continue
+            ticks[role] = step['turn'] & MASK32
+            if flags[role] and drop != 'end':
+                flags[role] = 0
+                continue
+            events.append(('log', 442))
+            if months_of(step['stamp']) < age_gate:
+                continue
+            verdict = grievance_reading({**x, 'role': role})
+            events.extend(verdict['events'])
+            if verdict['strike']:
+                level = levels[role]
+                if level == 0:
+                    events += [('log', 475), ('message', role, 0)]
+                    levels[role] = 1
+                elif level in (1, 2, 3):
+                    events += [('log', {1: 546, 2: 599, 3: 653}[level]), ('message', role, 2)]
+                    levels[role] = level + 1
+                    flags[role] = 1
+                elif level == 4:
+                    events.append(('message', role, 2))
+                    flags[role] = 1
+            else:
+                if levels[role] == 1:
+                    events.append(('message', role, 3))
+                levels[role] = 0
+                flags[role] = 0
+        out['levels'].append(list(levels))
+        out['flags'].append(list(flags))
+        out['ticks'].append(list(ticks))
+        out['events'].append(events)
+        out['messages'].append([(e[1], e[2]) for e in events if e[0] == 'message'])
+    return out
+
+
+def month_plan(x: dict) -> dict:
+    """ECON-014 as OpenTPW had it: no strikes, so no level or flag ever changes."""
+    count = len(x['months'])
+    return {'levels': [list(x['levels'])] * count, 'flags': [list(x['flags'])] * count, 'messages': [[]] * count}
+
+
+def month_equal(original: dict, other: dict) -> bool:
+    return all(original.get(key) == other[key] for key in other)
+
+
+def month_request(x: dict) -> dict:
+    return {'fn': 'staff_strike_month', 'staff': [[list(member) for member in members] for members in x['roles']], 'forced': x['forced'] & MASK32,
+            'levels': list(x['levels']), 'flags': list(x['flags']), 'ticks': list(x['ticks']),
+            'litter_den': x['litter_den'], 'litter_num': x['litter_num'],
+            'months': [{'turn': step['turn'], 'closed': step['closed'] != 0, 'guests': step['guests'], 'stamp': step['stamp']}
+                       for step in x['months']]}
+
+
+def month_result(x: dict, answer) -> dict:
+    if not isinstance(answer, dict) or 'levels' not in answer:
+        return {'exception': str(answer)}
+    return {'levels': answer['levels'], 'flags': answer['flags'], 'ticks': answer['ticks'],
+            'messages': [[tuple(message) for message in month] for month in answer['messages']]}
+
+
+def month_inputs(rng: random.Random, n: int) -> list:
+    def months(count: int) -> list:
+        turn = 100
+        steps = []
+        for _ in range(count):
+            turn += rng.choice([500, 700, 17, 1])
+            steps.append({'turn': turn, 'closed': rng.choice([0, 0, 0, 0, 1]), 'guests': rng.choice([0, 0, 0, 3]),
+                          'stamp': rng.choice([30 * STAFF_MONTH, 25 * STAFF_MONTH, 24 * STAFF_MONTH, 24 * STAFF_MONTH - 1,
+                                               23 * STAFF_MONTH, rng.randrange(0, 40 * STAFF_MONTH), 1217 * STAFF_MONTH,
+                                               -1 * STAFF_MONTH, (1 << 63) - 1, -(1 << 63), 24 * STAFF_MONTH + STAFF_MONTH // 2])})
+        return steps
+
+    def make(**kw) -> dict:
+        unhappy = [(0.0, 0.0)] * 5
+        content = [(100.0, 100.0)] * 5
+        x = {'roles': [rng.choice([unhappy, content, [], staff_lists(rng)]) for _ in range(5)],
+             'forced': rng.choice([0, 0, 0, 0, 1]), 'levels': [rng.choice([0, 0, 0, 1, 2, 3, 4, 5, 9]) for _ in range(5)],
+             'flags': [rng.choice([0, 0, 0, 1, 1]) for _ in range(5)], 'ticks': [rng.choice([0, 0, 0, 99, 100]) for _ in range(5)],
+             'litter_den': 10, 'litter_num': rng.choice([0, 0, 3]), 'months': months(rng.randrange(1, 7))}
+        x.update(kw)
+        x['roles'] = [[(f32(energy), f32(happiness)) for energy, happiness in members] for members in x['roles']]
+        return x
+    unhappy, content = [(0.0, 0.0)] * 5, [(100.0, 100.0)] * 5
+    clean = lambda count, **kw: [{'turn': 1000 * (i + 1), 'closed': 0, 'guests': 0, 'stamp': 30 * STAFF_MONTH, **kw} for i in range(count)]
+    zeros = {'levels': [0] * 5, 'flags': [0] * 5, 'ticks': [0] * 5, 'forced': 0, 'litter_den': 10, 'litter_num': 0}
+    edges = [make(**zeros, roles=[unhappy, unhappy, content, content, content], months=clean(6)),    # warning, strike, ended, strike, ended, strike
+             make(**zeros, roles=[content] * 5, months=clean(3)),
+             make(**zeros, roles=[unhappy] * 5, months=clean(8)),
+             make(**zeros, roles=[unhappy, [], content, content, content], months=clean(3)),         # an empty role is skipped
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, guests=2)),                           # guests in the park: skipped, log 389
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, closed=1)),                           # park closed
+             make(**{**zeros, 'forced': 1}, roles=[content] * 5, months=clean(2, guests=5, closed=1)),  # forced: no gates, always a grievance
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, stamp=24 * STAFF_MONTH - 1)),        # younger than 24 units
+             make(**zeros, roles=[unhappy] * 5, months=clean(4, stamp=24 * STAFF_MONTH)),
+             make(**{**zeros, 'ticks': [1000] * 5}, roles=[unhappy] * 5, months=clean(2)),           # already considered this turn
+             make(**{**zeros, 'levels': [1] * 5}, roles=[content] * 5, months=clean(2)),             # called off from level 1
+             make(**{**zeros, 'levels': [2] * 5}, roles=[content] * 5, months=clean(2)),             # no grievance from level 2: cleared silently
+             make(**{**zeros, 'levels': [4] * 5, 'flags': [1] * 5}, roles=[unhappy] * 5, months=clean(3))]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (m) CLOCK: the park calendar 0xe4394 / 0xe3f0c (F30)
+# The calendar object (0xe3c90): +0 the start time stamp (a TbTimeStamp, hi word first, 100 ns units since 1601), +8 the host time of the
+# session, +16 the month and +20 the day and +24 the year of the last update, +28 the clock rate (15000). 0xe4394 turns the world turn
+# (game +0x1da70c, a u32) into the date: start + floor(turn x rate / 4) x 10^7 through the time-stamp API; 0xe3f0c compares the date's
+# fields with the stored ones, posts one day / month / year message for each that changed and stores the new fields.
+# The time-stamp API (operator+, GetTime, SetTime and the host clock of the bullfrog library) is the operating system's calendar
+# (LongSecondsToDate / LongDateToSeconds, proleptic Gregorian); its imports are stubbed with Python's civil arithmetic, so what is
+# executed is the application's own conversion and comparison code.
+CAL_DATE, CAL_UPDATE, CAL_CONSTRUCTOR = 0xE4394, 0xE3F0C, 0xE3C90
+CAL_TURN = 0x1E0000 - 22772          # game + 0x1da70c
+CAL_GAME_POINTER = -30124            # TOC slot -> data word holding the game pointer (0x10a9a4)
+CAL_DISPATCHER = -30100              # TOC slot -> data word holding the message dispatcher (created lazily when null)
+CAL_MESSAGES = {'day': -27152, 'month': -27156, 'year': -27160}   # TOC slots holding each message's vtable pointer (the constructors 0x116488 / 0x1164a4 / 0x1164c0)
+CAL_GLUE = [(0x1C5C34, 0x1C5C64), (0x1C5E2C, 0x1C5E44), (0x1C6DD4, 0x1C6DEC)]   # import glue: operator+, GetTime, SetTime, GetLocalTime
+CAL_IMPORTS = ('__pl__11TbTimeStampCFRC10TbTimeDiff', 'GetTime__11TbTimeStampCFPiPiPiPiPiPiPiPi',
+               'SetTime__11TbTimeStampFiiiiiii', 'GetLocalTime__10NS_MacDozeFPQ210NS_MacDoze11_SYSTEMTIME')
+CAL_FILETIME_EPOCH = datetime.datetime(1601, 1, 1)
+CAL_EPOCH = datetime.datetime(2000, 1, 1)
+CAL_RATE = 15000
+CAL_SECONDS_PER_TURN = CAL_RATE // 4   # 3750
+CAL_STATE = type('CalendarState', (), {})()
+
+
+def filetime(moment: datetime.datetime) -> int:
+    delta = moment - CAL_FILETIME_EPOCH
+    return (delta.days * 86400 + delta.seconds) * 10 ** 7
+
+
+def civil(stamp: int) -> datetime.datetime:
+    seconds = stamp // 10 ** 7
+    if seconds >= 9000 * 365 * 86400:
+        raise AssertionError('time stamp outside the civil range of the stub')
+    return CAL_FILETIME_EPOCH + datetime.timedelta(seconds=seconds)
+
+
+def calendar_stubs(target: Target) -> dict:
+    state = CAL_STATE
+
+    def add(m: Machine) -> None:                       # TbTimeStamp::operator+(r3 result, r4 this, r5 &TbTimeDiff)
+        m.memory.w64(m.gpr[3], m.memory.u64(m.gpr[4]) + m.memory.u64(m.gpr[5]))
+
+    def get_time(m: Machine) -> None:                  # TbTimeStamp::GetTime(r4 this; year r5, month r6, day r7, weekday r8, hour r9, minute r10, second [sp+56], ms [sp+60]); null pointers are skipped
+        pointers = [m.gpr[r] for r in range(5, 11)] + [m.memory.u32(m.gpr[1] + 56), m.memory.u32(m.gpr[1] + 60)]
+        if not any(pointers):
+            return
+        moment = civil(m.memory.u64(m.gpr[4]))
+        weekday = (moment.weekday() + 1) % 7 + 1      # LongDateRec: 1 = Sunday
+        fields = [moment.year, moment.month, moment.day, weekday, moment.hour, moment.minute, moment.second, 0]
+        for pointer, value in zip(pointers, fields):
+            if pointer:
+                m.memory.w32(pointer, value)
+
+    def set_time(m: Machine) -> None:                  # TbTimeStamp::SetTime(r4 this; year, month, day, hour, minute, second in r5..r10, ms [sp+56])
+        moment = datetime.datetime(m.gpr[5], m.gpr[6], m.gpr[7], m.gpr[8], m.gpr[9], m.gpr[10])
+        m.memory.w64(m.gpr[4], filetime(moment) + m.memory.u32(m.gpr[1] + 56) * 10 ** 4)
+
+    def host_time(m: Machine) -> None:                 # GetLocalTime(r3 SYSTEMTIME): the fixed host time 2000-01-01 00:00:00
+        for offset, value in enumerate([2000, 1, 6, 1, 0, 0, 0, 0]):
+            m.memory.w16(m.gpr[3] + 2 * offset, value)
+
+    def post(m: Machine) -> None:                      # (dispatcher, message): the message type is told by its vtable
+        vtable = m.memory.u32(m.gpr[4])
+        kinds = [kind for kind, slot in CAL_MESSAGES.items() if m.memory.u32(state.toc + slot) == vtable]
+        if len(kinds) != 1 or m.gpr[3] != state.dispatcher:
+            raise AssertionError('0x11688c called with an unknown message or without the dispatcher')
+        target.log.append(('post', kinds[0]))
+
+    def notify(m: Machine) -> None:                    # 0x18f4cc after the day message: the date's second, minute, hour, day, month - 1, year - 1900 (r10, the weekday, is the stub's own)
+        target.log.append(('notify', [s32(m.gpr[r]) for r in range(4, 10)]))
+
+    def hook(address: int):
+        def stub(m: Machine) -> None:
+            target.log.append(('hook', address, s32(m.gpr[3])))
+        return stub
+
+    stubs = {CAL_IMPORTS[0]: add, CAL_IMPORTS[1]: get_time, CAL_IMPORTS[2]: set_time, CAL_IMPORTS[3]: host_time,
+             0x11688C: post, 0x18F4CC: notify}
+    for address in (0x15BBD8, 0x151698, 0x155234):
+        stubs[address] = hook(address)
+    return stubs
+
+
+CAL_ALLOWED = [(0x10A9A4, 0x10A9B0), (0x1C4100, 0x1C4230), (0x116488, 0x1164DC)] + CAL_GLUE
+
+
+def calendar_setup(sb: Sandbox) -> int:
+    state = CAL_STATE
+    state.toc = sb.image.toc
+    state.game = sb.alloc(CAL_TURN + 8)
+    sb.write(toc_pointer(sb, CAL_GAME_POINTER), 'I', state.game)
+    state.dispatcher = sb.struct(16)
+    sb.write(toc_pointer(sb, CAL_DISPATCHER), 'I', state.dispatcher)
+    return sb.struct(64)
+
+
+def calendar_date_binary(sb: Sandbox, x: dict, log) -> dict:
+    """0xe4394 on a calendar with the given rate at the given turn: the resulting time stamp and the date it decomposes
+    into (year, month, day, hour, minute, second)."""
+    calendar = calendar_setup(sb)
+    sb.write(CAL_STATE.game + CAL_TURN, 'I', x['turn'])
+    sb.write(calendar, 'Q', filetime(CAL_EPOCH))
+    sb.write(calendar + 28, 'I', x['rate'])
+    out, fields = sb.struct(8), sb.struct(40)
+    sb.write(STACK_BASE + STACK_SIZE - 0x100 + 56, 'I', fields + 24)   # the ninth argument: where the seconds go
+    # year, month, day, weekday, hour, minute, second, in the order of the argument registers r5..r10 and the stack word
+    if x.get('stamp_only'):    # beyond the civil range of the stub: only the time stamp is computed (null date pointers, which GetTime skips)
+        sb.write(STACK_BASE + STACK_SIZE - 0x100 + 56, 'I', 0)
+        sb.call(CAL_DATE, {3: out, 4: calendar})
+        return {'stamp': sb.read(out, 'Q')}
+    sb.call(CAL_DATE, {3: out, 4: calendar, 5: fields, 6: fields + 4, 7: fields + 8, 8: fields + 12, 9: fields + 16,
+                       10: fields + 20})
+    year, month, day, weekday, hour, minute, sec = (sb.read(fields + 4 * i, 'I') for i in range(7))
+    return {'stamp': sb.read(out, 'Q'), 'date': [year, month, day, hour, minute, sec]}
+
+
+def calendar_date_plan(x: dict) -> dict:
+    """ParkCalendar: the date is 2000-01-01 + floor(turn x rate / 4) seconds."""
+    seconds = x['turn'] * x['rate'] // 4
+    stamp = (filetime(CAL_EPOCH) + seconds * 10 ** 7) & (2 ** 64 - 1)   # a 64-bit word: the largest turns wrap
+    if x.get('stamp_only'):
+        return {'stamp': stamp}
+    moment = CAL_EPOCH + datetime.timedelta(seconds=seconds)
+    return {'stamp': stamp, 'date': [moment.year, moment.month, moment.day, moment.hour, moment.minute, moment.second]}
+
+
+def calendar_date_rounded(x: dict) -> dict:
+    """Sharpness reading: the seconds rounded to nearest instead of floored."""
+    seconds = round(x['turn'] * x['rate'] / 4)
+    moment = CAL_EPOCH + datetime.timedelta(seconds=seconds)
+    return {'stamp': filetime(CAL_EPOCH) + seconds * 10 ** 7,
+            'date': [moment.year, moment.month, moment.day, moment.hour, moment.minute, moment.second]}
+
+
+def calendar_boundary_turns() -> list[int]:
+    """Turns on both sides of every month boundary of 2000-2002, the leap days of 2000, 2004 and 2400, the missing one of 2100
+    and the first days of January 2000."""
+    turns = []
+    for year, month in [(2000 + i // 12, i % 12 + 1) for i in range(40)] + [(2004, 2), (2004, 3), (2100, 2), (2100, 3),
+                                                                           (2400, 2), (2400, 3), (2101, 1), (6000, 1)]:
+        boundary = (datetime.datetime(year, month, 1) - CAL_EPOCH).total_seconds()
+        turns += [int(boundary // CAL_SECONDS_PER_TURN) + d for d in (-1, 0, 1)]
+    for day in range(1, 4):
+        boundary = (datetime.datetime(2000, 1, 1) + datetime.timedelta(days=day) - CAL_EPOCH).total_seconds()
+        turns += [int(boundary // CAL_SECONDS_PER_TURN) + d for d in (-1, 0, 1)]
+    return sorted({max(0, t) for t in turns})
+
+
+CAL_ODD_RATES = [{'turn': t, 'rate': r} for t, r in [(5, 3), (7, 1), (1, 3), (1000, 7), (86401, 4), (3, 15001), (2 ** 24, 15000),
+                                                      (2 ** 32 - 1, 15000), (2 ** 31, 1), (1, 2 ** 31)]]   # a saved rate other than 15000; the product stays 64 bits
+for _x in CAL_ODD_RATES:
+    _x['stamp_only'] = _x['turn'] * _x['rate'] // 4 >= 7000 * 365 * 86400
+
+
+def calendar_date_inputs(rng: random.Random, n: int) -> list:
+    boundaries = [{'turn': t, 'rate': CAL_RATE} for t in calendar_boundary_turns()]
+    randoms = [{'turn': rng.choice([rng.randrange(0, 40000), rng.randrange(0, 2 ** 22), rng.randrange(0, 6 * 10 ** 7)]), 'rate': CAL_RATE}
+               for _ in range(n)]
+    return boundaries + randoms
+
+
+def calendar_date_csharp_request(x: dict) -> dict:
+    return {'fn': 'calendar_date', 'turn': x['turn']}
+
+
+def calendar_date_csharp_result(x: dict, r: dict) -> dict:
+    return {'date': r['date']}
+
+
+def calendar_subset_equal(original: dict, other: dict) -> bool:
+    """The other side is compared on the keys it provides."""
+    return all(original[key] == value for key, value in other.items())
+
+
+def calendar_update_binary(sb: Sandbox, x: dict, log) -> dict:
+    """A calendar updated once per step. With state 'fresh' the calendar is constructed by 0xe3c90 (executed: month 0,
+    day -1, year 0) and updated from there; with 'synced' it was already updated at the turn before the first step.
+    Per step: the messages and calls in order, and the stored (month, day, year) afterwards."""
+    calendar = calendar_setup(sb)
+    if x['state'] == 'fresh':
+        sb.call(CAL_CONSTRUCTOR, {3: calendar})
+        if sb.read(calendar + 28, 'I') != CAL_RATE:
+            raise AssertionError('the constructor did not store the clock rate')
+    else:
+        sb.write(calendar + 28, 'I', CAL_RATE)
+        sb.write(calendar, 'Q', filetime(CAL_EPOCH))
+        sb.write(CAL_STATE.game + CAL_TURN, 'I', max(0, x['start'] - 1))
+        sb.call(CAL_UPDATE, {3: calendar})
+        log.clear()
+    steps, states = [], []
+    for step in range(x['count']):
+        sb.write(CAL_STATE.game + CAL_TURN, 'I', x['start'] + step)
+        mark = len(log)
+        sb.call(CAL_UPDATE, {3: calendar})
+        steps.append([list(entry) for entry in log[mark:]])
+        states.append([sb.read(calendar + 16, 'i'), sb.read(calendar + 20, 'i'), sb.read(calendar + 24, 'i')])
+    return {'steps': steps, 'kinds': [[e[1] for e in step if e[0] == 'post'] for step in steps], 'state': states}
+
+
+def calendar_at(turn: int) -> datetime.datetime:
+    return CAL_EPOCH + datetime.timedelta(seconds=turn * CAL_SECONDS_PER_TURN)
+
+
+def calendar_events(moment: datetime.datetime, changes: tuple) -> list:
+    """The calls of one update: a day message then the notification with the date, a month message and its three hooks
+    (the new month, 1-based), a year message."""
+    events = []
+    day, month, year = changes
+    if day:
+        events += [['post', 'day'], ['notify', [moment.second, moment.minute, moment.hour, moment.day, moment.month - 1,
+                                                moment.year - 1900]]]
+    if month:
+        events += [['post', 'month']] + [['hook', a, moment.month] for a in (0x15BBD8, 0x151698, 0x155234)]
+    if year:
+        events += [['post', 'year']]
+    return events
+
+
+def calendar_update_plan(x: dict, init: tuple | None = None, hooks: bool = True) -> dict:
+    """ParkEconomy.AdvanceTurn (the rule C# implements): each of the day, the month and the year has its message when
+    the date's field differs from the one at the previous turn. `init` is the stored (month, day, year) a fresh
+    calendar starts from instead: the original's constructor stores (0, -1, 0), so its first update posts a day and a
+    year message whatever the date. `hooks` False drops the three month hooks (a sharpness variant)."""
+    steps, states = [], []
+    if init is not None and x['state'] == 'fresh':
+        month_stored, day_stored, year_stored = init
+    else:
+        before = calendar_at(max(0, x['start'] - 1))
+        month_stored, day_stored, year_stored = before.month - 1, before.day, before.year
+    for step in range(x['count']):
+        moment = calendar_at(x['start'] + step)
+        changes = (moment.day != day_stored, moment.month - 1 != month_stored, moment.year != year_stored)
+        events = calendar_events(moment, changes)
+        steps.append(events if hooks else [e for e in events if e[0] != 'hook'])
+        month_stored, day_stored, year_stored = moment.month - 1, moment.day, moment.year
+        states.append([month_stored, day_stored, year_stored])
+    return {'steps': steps, 'kinds': [[e[1] for e in step if e[0] == 'post'] for step in steps], 'state': states}
+
+
+def calendar_update_reading(x: dict) -> dict:
+    return calendar_update_plan(x, init=(0, -1, 0))
+
+
+def calendar_update_inputs(rng: random.Random, n: int) -> list:
+    """Updates from a calendar that was already synchronised at the turn before the first step."""
+    boundaries = calendar_boundary_turns()
+
+    def make(start: int, count: int) -> dict:
+        return {'start': max(0, start), 'count': count, 'state': 'synced'}
+    edges = [make(0, 40), make(1, 30), make(23, 5)]
+    for turn in boundaries[:: max(1, len(boundaries) // 60)]:
+        edges.append(make(turn - 2, 6))
+    randoms = [make(rng.choice([rng.randrange(0, 3000), rng.randrange(0, 100000), rng.choice(boundaries) - rng.randrange(0, 30)]),
+                    rng.randrange(1, 25)) for _ in range(n)]
+    return edges + randoms
+
+
+def calendar_first_inputs(rng: random.Random, n: int) -> list:
+    """Updates from a calendar the constructor 0xe3c90 just made (day -1, year 0, month 0)."""
+    boundaries = calendar_boundary_turns()
+    edges = [{'start': 0, 'count': 40, 'state': 'fresh'}, {'start': 1, 'count': 40, 'state': 'fresh'},
+             {'start': 8433, 'count': 30, 'state': 'fresh'}]
+    randoms = [{'start': rng.choice([0, 1, rng.randrange(0, 3000), rng.choice(boundaries) - rng.randrange(0, 30)]),
+                'count': rng.randrange(1, 25), 'state': 'fresh'} for _ in range(n)]
+    return [dict(x, start=max(0, x['start'])) for x in edges + randoms]
+
+
+# ============================================================================== (n) CLOCK: park turns per real time, 0x1c22b4 (F30, F32)
+# The catch-up loop of the world callback 0x1c1208 (the fragment 0x1c22b0..0x1c24d0, entered with the registers its prologue loads from
+# the TOC: executed up to 0x1c1274). Each call samples the scheduler clock 0x10e844 (executed down to the library clock: the import
+# LbTime_GetClock, milliseconds, is stubbed with the chosen raw reading), drops a backlog above 2000 ms, and then, while now > previous,
+# advances previous by 31, counts a substep and runs the substep body: a script pass, on the even substeps the two per-two-substeps
+# passes, on every eighth the park turn (at most 3 per call), on every 32nd the slow body. The scheduler clock multiplies the raw
+# millisecond delta by its scale (object +24, 1.0 from the constructor 0x127c08) before it accumulates it (0x127cd0).
+CADENCE_SCHEDULER = -30168        # TOC slot -> the scheduler (static object): +12 raw millisecond of the last read, +16 the accumulated double, +24 the scale
+CADENCE_NOW, CADENCE_PREVIOUS, CADENCE_COUNTER, CADENCE_PARK_WORK = -26080, -24124, -24132, -24108   # TOC slots -> data words
+CADENCE_FLAG8, CADENCE_FLAG1, CADENCE_MODE, CADENCE_GUARD = -30264, -29140, -30136, -30132          # application flags (& 8), gameplay flags (& 1), game type word, its constructed byte
+CADENCE_GAME, CADENCE_GAME_CHAIN, CADENCE_ONLINE_OBJECT = -30080, -30076, -28548
+CADENCE_PROLOGUE, CADENCE_LOOP, CADENCE_END = 0x1C1274, 0x1C22B0, 0x1C24D0
+CADENCE_ALLOWED = [(0x1C1208, 0x1C1274), (0x1C22B0, 0x1C24D4), (0x10E844, 0x10E864), (0x11A588, 0x11A5BC), (0x10ED54, 0x10EDA0),
+                   (0x117D74, 0x117DC8), (0x127CD0, 0x127D3C), (0x1C3FBC, 0x1C400C), (0x1C4D64, 0x1C4D7C), (0x10565C, 0x1056CC)]
+CADENCE_STATE = type('CadenceState', (), {})()
+
+
+def cadence_stubs(target: Target) -> dict:
+    state = CADENCE_STATE
+
+    def clock(m: Machine) -> None:        # LbTime_GetClock: the raw millisecond counter
+        m.gpr[3] = state.raw & MASK32
+
+    def record(name: str, value: int = 0):
+        def stub(m: Machine) -> None:
+            target.log.append((name,))
+            m.gpr[3] = value
+        return stub
+
+    stubs = {'LbTime_GetClock__Fv': clock, 0xB2838: record('script'), 0x9F748: record('pre-script'), 0x20688: record('pre-script'),
+             0x63DD0: record('even'), 0xB7AC0: record('even'), 0x10536C: record('turn'), 0xB5DA4: record('after-turn'),
+             0x1AA614: record('online'), 0x1082B4: record('slow'), 0xC2344: record('slow'), 0xBC1D4: record('slow'),
+             0xC313C: record('slow'), 0xBC210: record('slow'), 0x63D20: record('slow')}
+    return stubs
+
+
+def cadence_binary(sb: Sandbox, x: dict, log) -> dict:
+    """One world callback 0x1c22b4..0x1c24d0 per frame: the raw clock advances by each gap, the scheduler scales it. Per
+    call: the scheduler millisecond, the substeps (script passes), the park turns and the other passes run, and the state after."""
+    state = CADENCE_STATE
+    scheduler = toc_pointer(sb, CADENCE_SCHEDULER)
+    sb.write(scheduler + 12, 'I', x['raw0'])
+    sb.write(scheduler + 16, 'd', 0.0)
+    sb.write(scheduler + 24, 'd', x['scale'])
+    for offset in (32, 36, 40, 44, 48, 56, 60):
+        sb.write(scheduler + offset, 'I', 0)
+    word = lambda slot: toc_pointer(sb, slot)
+    sb.write(word(CADENCE_FLAG8), 'I', 8 if x['flags'][0] else 0)
+    sb.write(word(CADENCE_FLAG1), 'I', 1 if x['flags'][1] else 0)
+    sb.write(word(CADENCE_MODE), 'I', x['mode'])
+    sb.write(word(CADENCE_GUARD), 'B', 1)                           # constructed: 0x12bb64 must not run
+    game = sb.alloc(0x1E0000 + 4096)
+    sb.write(word(CADENCE_GAME), 'I', game)
+    chain = sb.struct(8)
+    sb.write(toc_pointer(sb, CADENCE_GAME_CHAIN), 'I', chain)
+    sb.write(chain, 'I', chain + 4)
+    sb.write(chain + 4, 'I', game)
+    sb.write(word(CADENCE_ONLINE_OBJECT), 'I', sb.struct(16))
+    sb.write(word(CADENCE_PREVIOUS), 'I', 0)
+    sb.write(word(CADENCE_COUNTER), 'I', x['counter0'])
+    sb.call(0x1C1208, stop=CADENCE_PROLOGUE)                      # the prologue: r13..r31 from the TOC
+    machine = sb.machine
+    state.raw = x['raw0']
+    calls = []
+    for gap in x['gaps']:
+        state.raw = (state.raw + gap) & MASK32
+        sb.write(word(CADENCE_PARK_WORK), 'I', 0)                 # reset at the tail of the callback (0x1c27a4)
+        mark = len(log)
+        machine.executed = 0
+        machine.call(sb.image.code(CADENCE_LOOP), stop=frozenset({sb.image.code(CADENCE_END)}))
+        names = [entry[0] for entry in log[mark:]]
+        calls.append({'now': s32(sb.read(word(CADENCE_NOW), 'I')), 'previous': s32(sb.read(word(CADENCE_PREVIOUS), 'I')),
+                      'counter': sb.read(word(CADENCE_COUNTER), 'I'), 'scripts': names.count('script'),
+                      'turns': names.count('turn'), 'even': names.count('even') // 2})
+    return {'calls': calls, 'turns': cadence_cumulative(calls)}
+
+
+def cadence_cumulative(calls: list) -> list:
+    total, out = 0, []
+    for call in calls:
+        total += call['turns']
+        out.append(total)
+    return out
+
+
+def cadence_model(x: dict, step: int = 31, per_turn: int = 8, cap: int = 3, drop: int = 2000, fused: bool = True,
+                  per_even: int = 2) -> dict:
+    """The loop as read from the listing. The scheduler clock is the accumulated double of 0x127cd0: each raw millisecond
+    gap times the scale is added with one fused multiply-add (a single rounding), and the sum is truncated to a u32 by
+    0x1c3fbc. `fused` False keeps the sum exact (the scaled time as real arithmetic would have it)."""
+    acc, raw, previous, counter = (0.0 if fused else Fraction(0)), x['raw0'], 0, x['counter0']
+    calls = []
+    for gap in x['gaps']:
+        new = (raw + gap) & MASK32
+        delta = Fraction((new - raw) & MASK32) * Fraction(x['scale'])
+        acc = float(delta + Fraction(acc)) if fused else acc + delta
+        raw = new
+        now = min(int(acc), MASK32)            # float -> unsigned: truncated, saturating
+        now_s = s32(now)
+        if s32((now - previous) & MASK32) > drop:
+            previous = (now - drop) & MASK32
+        scripts = turns = even = park = 0
+        while s32(now_s - s32(previous)) > 0:
+            previous = (previous + step) & MASK32
+            counter = (counter + 1) & MASK32
+            if x['flags'][0] or not x['flags'][1]:
+                scripts += 1
+                if counter % per_even == 0:
+                    even += 1
+                if counter % per_turn == 0 and park < cap:
+                    park += 1
+                    turns += 1
+        calls.append({'now': now_s, 'previous': s32(previous), 'counter': counter, 'scripts': scripts, 'turns': turns,
+                      'even': even})
+    return {'calls': calls, 'turns': cadence_cumulative(calls)}
+
+
+def cadence_plan(x: dict) -> dict:
+    """PPC-clock.md: 31 ms substeps, a park turn on every eighth, at most 3 per call, a backlog of more than 2000 ms
+    dropped, all of the clock scaled by the scale (the scaled time kept exact)."""
+    return cadence_model(x, fused=False)
+
+
+def cadence_reading(x: dict) -> dict:
+    return cadence_model(x)
+
+
+def cadence_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        frames = rng.choice([[16] * 64, [17] * 64, [33] * 40, [rng.randrange(1, 70) for _ in range(rng.randrange(20, 80))],
+                             [rng.choice([1, 8, 16, 100, 400, 1500, 2500, 5000]) for _ in range(rng.randrange(5, 25))]])
+        x = {'scale': rng.choice([1.0, 1.0, 2.0, 0.25, 1.25, 1.5625, 0.8, rng.uniform(0.25, 2.0)]), 'mode': rng.choice([0, 0, 2, 1]),
+             'flags': rng.choice([(False, False)] * 4 + [(True, False), (False, True), (True, True)]),
+             'raw0': rng.choice([0, 1000, rng.randrange(0, 2 ** 32)]), 'counter0': rng.choice([0, 0, 7, rng.randrange(0, 40)]),
+             'gaps': frames}
+        x.update(kw)
+        return x
+    edges = [make(scale=1.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[248] * 5),
+             make(scale=1.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[2000, 2000]),
+             make(scale=1.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[5000]),
+             make(scale=1.0, mode=2, flags=(False, False), raw0=0, counter0=0, gaps=[1] * 3 + [30] * 3),
+             make(scale=2.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[16] * 100),
+             make(scale=1.0, mode=0, flags=(False, True), raw0=0, counter0=0, gaps=[100] * 4),
+             make(scale=1.0, mode=0, flags=(True, True), raw0=0, counter0=0, gaps=[100] * 4),
+             make(scale=1.0, mode=0, flags=(False, False), raw0=4294967000, counter0=0, gaps=[100] * 6)]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (o) CLOCK: when the golden tickets are checked, 0xd67f0 / 0xd2f1c (F31)
+# 0xd67f0 is the park-turn update of the world object (called once per park turn from 0x10536c): the bank update 0xcb278 (world +708), the
+# staff pool 0xf6e24, the calendar update 0xe3f0c (world +672), then, when the world turn (game +0x1da70c, unsigned) is a multiple of 100,
+# the ticket dispatcher 0xd2f1c (world +704), which runs the three ticket checks 0xd31d0, 0xd34c0 and 0xd35b4 only while the game type
+# word (the object behind TOC -30136, constructed lazily by 0x12bb64) is 0. The checks themselves are stubbed: only whether and when
+# they are called is compared.
+GOLDEN_UPDATE, GOLDEN_DISPATCH = 0xD67F0, 0xD2F1C
+GOLDEN_CHAIN = -30076                # TOC slot -> data word -> pointer -> game pointer (0xd6820..0xd6830)
+GOLDEN_ALLOWED = [(0xD67F0, 0xD6868), (0xD2F1C, 0xD2F9C)]
+GOLDEN_STATE = type('GoldenState', (), {})()
+
+
+def golden_stubs(target: Target) -> dict:
+    state = GOLDEN_STATE
+
+    def stub(name: str, offset: int):
+        def run(m: Machine) -> None:
+            if m.gpr[3] != state.world + offset:
+                raise AssertionError(f'{name} called with a wrong object')
+            target.log.append(name)
+        return run
+
+    return {0xCB278: stub('bank', 708), 0xF6E24: lambda m: target.log.append('pool'), 0xE3F0C: stub('calendar', 672),
+            0xD31D0: stub('ticket-1', 704), 0xD34C0: stub('ticket-2', 704), 0xD35B4: stub('ticket-3', 704)}
+
+
+def golden_binary(sb: Sandbox, x: dict, log) -> dict:
+    """The world update once per turn of the script, for the given game type word. Per call, the stubbed calls in order."""
+    state = GOLDEN_STATE
+    state.world = sb.struct(1024)
+    game = sb.alloc(0x1E0000 + 4096)
+    holder = sb.struct(4, {0: ('I', game)})
+    sb.write(toc_pointer(sb, GOLDEN_CHAIN), 'I', holder)
+    sb.write(toc_pointer(sb, CADENCE_MODE), 'I', x['mode'] & MASK32)
+    sb.write(toc_pointer(sb, CADENCE_GUARD), 'B', 1)             # constructed: 0x12bb64 must not run
+    calls = []
+    for turn in x['turns']:
+        sb.write(game + CAL_TURN, 'I', turn)
+        mark = len(log)
+        sb.call(GOLDEN_UPDATE, {3: state.world})
+        calls.append(list(log[mark:]))
+    return {'calls': calls, 'tickets': ['ticket-1' in call for call in calls]}
+
+
+def golden_plan(x: dict) -> dict:
+    """ParkEconomy.AdvanceTurn as it was: the check runs when the turn is a multiple of 100 (unsigned) in Full Simulation (game type 0)."""
+    return golden_result(x, lambda turn: turn % 100 == 0 and x['mode'] == 0)
+
+
+def golden_result(x: dict, runs, calendar_first: bool = True) -> dict:
+    calls = [['bank', 'pool'] + (['calendar'] if calendar_first else []) + (['ticket-1', 'ticket-2', 'ticket-3'] if runs(turn) else [])
+             + ([] if calendar_first else ['calendar']) for turn in x['turns']]
+    return {'calls': calls, 'tickets': [runs(turn) for turn in x['turns']]}
+
+
+def golden_every(period: int):
+    return lambda x: golden_result(x, lambda turn: turn % period == 0 and x['mode'] == 0)
+
+
+def golden_any_mode(x: dict) -> dict:
+    return golden_result(x, lambda turn: turn % 100 == 0)
+
+
+def golden_signed(x: dict) -> dict:
+    """Sharpness reading: a signed remainder instead of the unsigned one at the top of the 32-bit range."""
+    return golden_result(x, lambda turn: (turn - (1 << 32 if turn >> 31 else 0)) % 100 == 0 and x['mode'] == 0)
+
+
+def golden_calendar_after(x: dict) -> dict:
+    """The order of the calls in the other direction: the ticket check before the calendar update (the order OpenTPW had)."""
+    return golden_result(x, lambda turn: turn % 100 == 0 and x['mode'] == 0, calendar_first=False)
+
+
+def golden_inputs(rng: random.Random, n: int) -> list:
+    tops = [2 ** 32 - 96, 2 ** 32 - 100, 2 ** 32 - 1, 2 ** 31 - 48, 2 ** 31 + 52, 2 ** 31]   # 2^32 - 96 and 2^31 - 48 are multiples of 100 (unsigned)
+    edges = [{'mode': 0, 'turns': [0, 1, 99, 100, 101, 199, 200, 201, 300]}, {'mode': 2, 'turns': [100, 200, 300]},
+             {'mode': 1, 'turns': [100, 200]}, {'mode': 0, 'turns': tops},
+             {'mode': 0, 'turns': list(range(1, 405))}, {'mode': 3, 'turns': [100]}, {'mode': -1, 'turns': [100, 200]}]
+    randoms = []
+    for _ in range(n):
+        base = rng.choice([0, rng.randrange(0, 5000), rng.randrange(0, 2 ** 32 - 300), 2 ** 32 - 150, 2 ** 31 - 50])
+        count = rng.randrange(1, 12)
+        turns = [(base + i) % 2 ** 32 for i in range(count)] if rng.random() < 0.6 else [rng.choice([rng.randrange(0, 2 ** 32), rng.randrange(0, 3000) * 100]) for _ in range(count)]
+        randoms.append({'mode': rng.choice([0, 0, 0, 0, 1, 2, 3, rng.randrange(-5, 40)]), 'turns': turns})
+    return edges + randoms
+
+
+def cadence_frames_inputs(rng: random.Random, n: int) -> list:
+    """Frame loops of an interactive game: gaps of at most 150 ms of scaled time (OpenTPW's fixed clock accepts 16 ticks, 267 ms, per
+    frame), at the scales the speed keys reach and OpenTPW's x4."""
+    def make(scale: float, frame: int | None = None, frames: int | None = None) -> dict:
+        limit = max(1, int(150 / scale))
+        count = frames or rng.randrange(30, 120)
+        gaps = [frame] * count if frame else [rng.randrange(1, limit + 1) for _ in range(count)]
+        return {'scale': scale, 'mode': 0, 'flags': [False, False], 'raw0': rng.choice([0, rng.randrange(0, 2 ** 32)]), 'counter0': 0,
+                'gaps': gaps}
+    scales = [1.0, 1.0, 2.0, 4.0, 0.25, 1.25, 1.5625, 1.953125, 0.8, 0.64]
+    edges = [make(1.0, 16, 400), make(2.0, 16, 400), make(4.0, 16, 400), make(0.25, 16, 400), make(1.0, 17, 400), make(1.0, 33, 200)]
+    randoms = [make(rng.choice(scales + [rng.uniform(0.25, 4.0)]), rng.choice([None, None, 8, 16, 17, 20, 33])) for _ in range(n)]
+    for x in randoms:
+        x['gaps'] = [min(gap, max(1, int(150 / x['scale']))) for gap in x['gaps']]
+    return edges + randoms
+
+
+def cadence_frames_equal(original: dict, other: dict) -> bool:
+    """The plan and the routine reading are compared in full. OpenTPW's fixed 60 Hz clock turns a frame's elapsed time into ticks
+    and ticks into park turns: its turn count is never ahead of the original's and at most one turn behind it at every frame."""
+    if 'calls' in other:
+        return all(original[key] == value for key, value in other.items())
+    return len(original['turns']) == len(other['turns']) and all(0 <= o - c <= 1 for o, c in zip(original['turns'], other['turns']))
+
+
+# ============================================================================== (p) CLOCK: the speed scale and what it scales, 0x11315c / 0x113184 / 0x1131ac and 0x10e844 (F32)
+# The game input group has three speed records (ids 6, 7 and 8, tokens 0x6d00, 0x6b00 and 0x6a00): their release callbacks divide the
+# scheduler clock's scale by 1.25 (0x11315c), multiply it by 1.25 (0x113184) and store 1.0 (0x1131ac), through the object behind TOC -30168,
+# clamping to 0.25..2.0 (0x127c88 / 0x127c48). The same object is the scheduler clock 0x10e844 that the park turns (F30), the script
+# manager (WAIT, GETTIME) and the animation channels (0xa6f70) read. The ops of an input are key presses and clock reads in order.
+SPEED_KEYS = {'slower': 0x11315C, 'faster': 0x113184, 'reset': 0x1131AC}
+SPEED_ALLOWED = [(0x11315C, 0x1131D8), (0x127C40, 0x127CC8), (0x10E844, 0x10E864), (0x11A588, 0x11A5BC), (0x10ED54, 0x10EDA0),
+                 (0x117D74, 0x117DC8), (0x127CD0, 0x127D3C), (0x1C3FBC, 0x1C400C), (0x1C4D64, 0x1C4D7C)]
+
+
+def speed_stubs(target: Target) -> dict:
+    state = CADENCE_STATE
+
+    def clock(m: Machine) -> None:        # LbTime_GetClock: the raw millisecond counter
+        m.gpr[3] = state.raw & MASK32
+    return {'LbTime_GetClock__Fv': clock}
+
+
+def speed_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Per op: a key press gives the scale after it (the callback returns 1), a read the scheduler millisecond (0x10e844)."""
+    state = CADENCE_STATE
+    scheduler = toc_pointer(sb, CADENCE_SCHEDULER)
+    sb.write(scheduler + 12, 'I', x['raw0'])
+    sb.write(scheduler + 16, 'd', 0.0)
+    sb.write(scheduler + 24, 'd', x['scale'])
+    for offset in (32, 36, 40, 44, 48, 56, 60):
+        sb.write(scheduler + offset, 'I', 0)
+    state.raw = x['raw0']
+    scales, reads = [], []
+    for op in x['ops']:
+        if isinstance(op, int):
+            state.raw = (state.raw + op) & MASK32
+            reads.append(s32(sb.call(0x10E844, {3: scheduler}).r3))
+        else:
+            r3 = sb.call(SPEED_KEYS[op]).r3
+            scales.append((op, sb.read(scheduler + 24, 'd'), r3))
+    return {'scales': scales, 'reads': reads}
+
+
+def speed_step(scale: float, op: str) -> float:
+    if op == 'reset':
+        return 1.0
+    scaled = scale * 1.25 if op == 'faster' else scale / 1.25
+    return 0.25 if scaled < 0.25 else 2.0 if scaled > 2.0 else scaled
+
+
+def speed_model(x: dict, step=speed_step, fused: bool = True) -> dict:
+    """The keys as read (x or / 1.25, clamped to 0.25..2.0, reset to 1.0) and the clock as the accumulated double of 0x127cd0."""
+    scale, acc, raw = x['scale'], 0.0 if fused else Fraction(0), x['raw0']
+    scales, reads = [], []
+    for op in x['ops']:
+        if isinstance(op, int):
+            new = (raw + op) & MASK32
+            delta = Fraction((new - raw) & MASK32) * Fraction(scale)
+            acc = float(delta + Fraction(acc)) if fused else acc + delta
+            raw = new
+            reads.append(s32(min(int(acc), MASK32)))
+        else:
+            scale = step(scale, op)
+            scales.append((op, scale, 1))
+    return {'scales': scales, 'reads': reads}
+
+
+def speed_plan(x: dict) -> dict:
+    """PPC-clock.md: the scale steps by 1.25 within 0.25..2.0 and multiplies the scheduler time (exact arithmetic)."""
+    return speed_model(x, fused=False)
+
+
+def speed_reading(x: dict) -> dict:
+    return speed_model(x)
+
+
+def speed_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        ops = [rng.choice(['slower', 'faster', 'faster', 'reset', rng.choice([1, 16, 17, 33, 100, 1000])]) for _ in range(rng.randrange(3, 30))]
+        x = {'scale': rng.choice([1.0, 1.0, 0.25, 2.0, 0.8, 1.25, rng.uniform(0.25, 2.0), 3.0, 4.0, 0.1, 0.0]),
+             'raw0': rng.choice([0, rng.randrange(0, 2 ** 32)]), 'ops': ops}
+        x.update(kw)
+        return x
+    edges = [make(scale=1.0, ops=['faster'] * 6 + ['slower'] * 12 + ['reset', 'faster']),
+             make(scale=1.0, ops=[100, 'faster', 100, 'faster', 100, 'faster', 100, 'reset', 100]),
+             make(scale=2.0, ops=['faster', 'faster', 'slower']), make(scale=0.25, ops=['slower', 'faster']),
+             make(scale=3.0, ops=['slower']), make(scale=0.1, ops=['faster', 'faster', 'faster']), make(scale=4.0, ops=[1000, 'faster', 1000]),
+             make(scale=1.0, raw0=4294967000, ops=[100, 100, 100]), make(scale=0.8, raw0=0, ops=[16] * 10)]
+    return edges + [make() for _ in range(n)]
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -2798,6 +4501,19 @@ SMOOTHING = Target('walk-smoothing', 'Guest speed smoothing 0xe6b28', 'WALK-plan
                    smoothing_inputs, equal=smoothing_equal, alternatives={'plan-fused': smoothing_fused},
                    csharp=('guest_speed_smoothing', smoothing_request, smoothing_result),
                    notes=['C# hook: bridge function "guest_speed_smoothing" (WALK-I GuestSpeed.Update).'])
+BOOST = Target('walk-boost', 'Guest speed boost 0xeaaf8 (0xeb0cc..0xeb0f4)', 'WALK-plan §4, ORACLE.md F20', 0xEAAF8, BOOST_ALLOWED,
+               boost_stubs, boost_binary, boost_reading, boost_inputs, equal=boost_equal,
+               csharp=('guest_ingredient_boost', boost_request, boost_result),
+               notes=['C# hook: bridge function "guest_ingredient_boost" (GuestSpeed.RaiseBoost: only the boost; the thirst and toilet '
+                      'words are compared with the plan only).',
+                      'Executed: the whole outcome routine 0xeaaf8 of one completed use, with the type record +324..+348 and the ride '
+                      '+404 byte as the inputs, the amount getter 0xe2384, the type lookup 0xdc320 and the world LCG 0x105328 (drawn '
+                      'for the happiness checks). The appearance switch (+348) is 0 and the toilet flag (ride +46 bit 0x1) clear, so '
+                      'the balloon and costume blocks (0xeb0f8..0xeb33c) are not entered. Type UI kind 0 (ride) and 1 (shop).',
+                      'Stubs record the calls instead of running them: 0x118018 type record (registry and type id checked), 0xfa9a4 '
+                      'thing id, 0xfb7b4 thought, 0xea318 ride outcome (checked: once), 0xe1f78 / 0xe2094 goods, 0xe1e58 charge, '
+                      '0xeb6f4 happiness change, 0xe6d20 and the log 0x5fbcc.'])
+
 COAST_STEP = Target('coast-rating-step', 'Coaster rating step 0x415b4', 'COAST-plan §6.3 (coast-research2 32dfe49)',
                     0x415B4, [(0x415B4, 0x41900)], lambda t: {}, coast_step_binary, coast_step_plan, coast_step_inputs,
                     equal=coast_equal, alternatives={'plan-stale-fz': coast_step_plan_fz},
@@ -2927,6 +4643,532 @@ TRAIN_TARGET = Target('staff-training-split', 'Staff training split 0xfc1c4', 'E
                              'the bank (equal to the profit, month and training statistics, which are checked inside the run).',
                              'Domain: prices of at least 1 (divw by zero is undefined); budgets from 0 to 2^28 (the sum of the debits stays inside 32 bits); an active bank.'])
 
-TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET]
-DOMAINS = {SET_CELL.key: set_cell_domain}
+SCRAP = Target('object-scrap-value', 'Object scrap value 0xe25e8 (the sale refund, percentage 0xe2424)', 'ECONOMY.md / ParkEconomy.ScrapValue (F21, ECON-025)',
+               0xE25E8, [(0xE2424, 0xE2650), (0x10A9A4, 0x10A9B0), (0x1C4100, 0x1C4230)], scrap_stubs, scrap_binary, scrap_plan,
+               scrap_inputs, alternatives={'routine-reading': scrap_reading},
+               csharp=('object_scrap_value', scrap_csharp_request, lambda x, r: r),
+               notes=['C# hook: bridge function "object_scrap_value" (ParkEconomy.ScrapValue): the type record rows go in as '
+                      'Upgrades[level].CostOfUpgrade / ScrapValueYear1..4 and the thing +412 word as the use count.',
+                      'Executed: 0xe25e8, 0xe2424 (percentage), 0x10a9a4 (game pointer), 0x1c4100 (64-bit divide). Stubs: 0x118018 '
+                      'type record (a synthetic one: +392 + 64 x level + 4 x year percentages, +440 + 64 x level costs), 0xe4394 '
+                      'clock stamp (turn x 15000 / 4 x 10^7, the stamp 0xdad90 stores to thing +20) and the glue 0x1c5c64 '
+                      '(TbTimeStamp subtraction, as at 0xdc520).',
+                      'Domain: no thing bought after the current turn.'])
+
+VITALS = Target('staff-vitals', 'Staff vitals steps 0xf44c0, 0xf459c, 0xf3d8c, 0xf448c', 'ECONOMY.md ECON-014', VITALS_WALK,
+                [(0xF3D8C, 0xF3EE0), (0xF448C, 0xF4674)], vitals_stubs, vitals_binary, vitals_plan, vitals_inputs,
+                equal=vitals_equal, alternatives={'routine-reading': vitals_reading},
+                csharp=('staff_vitals', vitals_request, vitals_result),
+                notes=['C# hook: bridge function "staff_vitals" (StaffVitals.Walk, Work, Rest and BelowRestLevel on a staff member).',
+                       'Executed whole: 0xf44c0 (a moving staff member), 0xf459c (a working one), 0xf3d8c (resting) and 0xf448c (energy byte '
+                       'below RestLevel). Stubs: 0xf4d00 (frees the rest area) and the role actions 0xd99ac, 0xd5a3c, 0xd2b04, 0xd4b74, 0xf0380 '
+                       '(called when the truncated energy byte reaches 100; logged), 0xb678 assertion. The settings block (RestLevel, the '
+                       'recuperation rates of the grade) is written in the data section.'])
+
+SEEK = Target('staff-rest-seek', 'Rest seeking, the tail of 0xf4900 (0xf4a60..0xf4c04)', 'ECONOMY.md ECON-014', SEEK_ENTRY,
+              [(SEEK_ENTRY, SEEK_END + 4), (0x105328, 0x10536C)], seek_stubs, seek_binary, seek_plan, seek_inputs,
+              equal=seek_equal, alternatives={'routine-reading': seek_reading},
+              csharp=('staff_rest_seek', seek_request, seek_result),
+              notes=['C# hook: bridge function "staff_rest_seek" (StaffVitals.SeekRest): the world draw is passed in.',
+                     'A fragment run from 0xf4a60 with the registers 0xf4900 holds there (r27 staff, r28 settings, r29 speed table, r30 game word, '
+                     'r31 strings) up to its epilogue 0xf4c04. Executed: the energy test, the speed tiers, the happiness thoughts and the '
+                     'no-rest-area happiness hit with the world LCG 0x105328. Stubs: 0xfb54c thought, 0xf4c18 navigation (found or not, '
+                     'through the u16 behind TOC -19232), 0xf311c state change, 0x5fbcc log.'])
+
+GRIEVANCE = Target('staff-strike-grievance', 'Strike test 0xf8410', 'ECONOMY.md ECON-014', STAFF_GRIEVANCE, [(0xF8410, 0xF8BC0)],
+                   staff_world_stubs, grievance_binary, grievance_plan, grievance_inputs, equal=grievance_equal,
+                   alternatives={'routine-reading': grievance_reading},
+                   csharp=('staff_grievance', grievance_request, grievance_result),
+                   notes=['C# hook: bridge function "staff_grievance" (StaffStrikes.Grievance). The handymen analyser ratio (0xc21f4, 0xc2264) is '
+                          'passed; OpenTPW has no such statistics, so ParkEconomy never supplies it (ECON-014).',
+                          'Whole routine. Stubs: 0x1082b4 game -> park, the two analyser sums 0xc21f4 / 0xc2264 (chosen words; arguments '
+                          'checked), 0xb678 assertion, 0x5fbcc log. The ThingArray holds one chain of staff per role; the other roles hold '
+                          'decoys, so a wrong chain head would show.'])
+
+STRIKE_MONTH = Target('staff-strike-month', 'Strike consideration 0xf7e18 with the escalation 0xf7fe0', 'ECONOMY.md ECON-014', MONTH_ENTRY,
+                      MONTH_ALLOWED, month_stubs, month_binary, month_plan, month_inputs, equal=month_equal,
+                      alternatives={'routine-reading': month_reading},
+                      csharp=('staff_strike_month', month_request, month_result),
+                      notes=['C# hook: bridge function "staff_strike_month" (StaffStrikeBoard.ConsiderMonth).',
+                             'Replays several month-end calls of 0xf7e18 in one sandbox (state in the manager block persists).',
+                             'Executed: 0xf7e18, 0xf7fe0, 0xf8410 with the strike test above, 0xf8bc0 / 0xf8bd0 (active flag), 0x1091ac (park '
+                             'closed word) and the signed 64-bit divide 0x1c4100. Stubs: 0xfc1c4 training, 0xc1fb4 guests in the park (chosen), '
+                             '0xe4628 clock stamp (chosen; its epoch is not traced), 0x116590 / 0x11688c message construction and posting '
+                             '(logged as role and kind), the world-stub set of staff-strike-grievance.'])
+
+# ============================================================================== (m) GOLDEN TICKET: the yearly profit ticket (ECON-039)
+# The local golden ticket checks run from the world update (0xd2f1c -> 0xd31d0, every 100 turns, game type 0): for each local ticket
+# they ask the earned flags (0x128d6c(flag set, index)) and, when the ticket is not yet earned, compare a park statistic with the
+# GoldenTicketLocal threshold from the Standard.sam block (TOC -30084). Ticket 4, the yearly profit, is 0xd33dc..0xd3410: it reads
+# the bank (0x108424(game)), the bank's year profit word (+292, 0xccfa8) and awards 0xd3664(this, 4) when the profit is signed
+# GREATER than the threshold word at +1888 (GoldenTicketLocal.ProfitYear). There is no factor in this comparison.
+# 0x13fdc, a virtual method of the advisor's rules, is a different routine: the advisor's "you are near the profit ticket" hint
+# (Advisor.sam GoldTicketNearToXProfit.ProfitMultiplier / .Score). It scales the same threshold by the multiplier and returns the
+# rule's score while the ticket is not yet earned: that is the "per-objective factor" ECON-039 saw.
+LOCAL_TICKETS = 0xD31D0        # (this) the six local tickets
+LOCAL_TICKETS_END = 0xD34C0
+TICKET_AWARD = 0xD3664         # (this, ticket index) awards; stubbed: the index is logged
+BANK_OF_GAME = 0x108424        # (game) -> bank thing; stubbed with a synthetic bank, game checked
+PROFIT_GAME_VARIABLE = -30124  # TOC slot -> variable holding the game pointer (0xd31d0)
+PROFIT_GAME_CELL = -30076      # TOC slot -> variable holding the address of a cell that holds the game pointer (0x13fdc)
+PROFIT_FLAGS = -30088          # TOC slot -> variable holding the earned-flags singleton (+68 -> flag bytes)
+PROFIT_SETTINGS = -30084       # TOC slot -> settings block: +1888 GoldenTicketLocal.ProfitYear
+PROFIT_TICKET = 4
+PROFIT_STATE = type('ProfitState', (), {})()
+
+
+def profit_stubs(target: Target) -> dict:
+    state = PROFIT_STATE
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    def bank(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x108424 called without the game pointer')
+        m.gpr[3] = state.bank
+
+    def award(m: Machine) -> None:
+        if m.gpr[3] != state.this:
+            raise AssertionError('0xd3664 called without the checking object')
+        target.log.append(('award', m.gpr[4]))
+
+    return {PARK_OF_GAME: park, BANK_OF_GAME: bank, TICKET_AWARD: award}
+
+
+def profit_setup(sb: Sandbox, x: dict) -> None:
+    """The game pointer variables, the settings threshold, the earned-flags singleton (every ticket but the profit one earned,
+    so that only ticket 4 reaches its statistic) and a bank whose +292 word is the year profit."""
+    state = PROFIT_STATE
+    state.game = sb.alloc(16)
+    state.park = sb.alloc(16)
+    state.this = sb.alloc(16)
+    state.bank = sb.struct(512, {292: ('i', x['profit'])})
+    sb.write(toc_pointer(sb, PROFIT_GAME_VARIABLE), 'I', state.game)
+    cell = sb.struct(8, {0: ('I', state.game)})
+    sb.write(toc_pointer(sb, PROFIT_GAME_CELL), 'I', cell)
+    flags = sb.struct(16, {i: ('B', 1) for i in range(16)})
+    sb.write(flags + PROFIT_TICKET, 'B', 1 if x.get('earned') else 0)
+    sb.write(toc_pointer(sb, PROFIT_FLAGS), 'I', sb.struct(80, {68: ('I', flags)}))
+    sb.write(toc_pointer(sb, PROFIT_SETTINGS) + 1888, 'i', x['threshold'])
+
+
+def profit_binary(sb: Sandbox, x: dict, log) -> list:
+    profit_setup(sb, x)
+    sb.call(LOCAL_TICKETS, {3: PROFIT_STATE.this})
+    return sorted(index for kind, index in log if kind == 'award')
+
+
+def profit_old_rule(x: dict) -> list:
+    """OpenTPW before F23 (ParkObjectives.CheckGoldenTickets): the ticket is won when the year profit reaches the threshold (>=)."""
+    return [PROFIT_TICKET] if not x.get('earned') and x['profit'] >= x['threshold'] else []
+
+
+def profit_reading(x: dict, strict: bool = True, unsigned: bool = False, scale: float | None = None) -> list:
+    """The routine as read from 0xd33dc..0xd3410: not earned, then a signed word compare profit > threshold. The keywords are
+    deliberate deviations for the sharpness tests: a >= compare, an unsigned compare and the advisor's multiplier."""
+    profit, threshold = x['profit'], x['threshold']
+    if scale is not None:
+        threshold = fctiwz(f32_mul(f32(float(threshold)), scale))
+    if unsigned:
+        profit, threshold = profit & MASK32, threshold & MASK32
+    if x.get('earned'):
+        return []
+    return [PROFIT_TICKET] if (profit > threshold if strict else profit >= threshold) else []
+
+
+def f32_mul(a: float, b: float) -> float:
+    """Single-precision product of two singles; an overflow gives the infinity (struct.pack would raise)."""
+    product = a * b
+    if math.isfinite(product) and abs(product) >= 3.4028235677973366e38:
+        return math.copysign(math.inf, product)
+    return f32(product)
+
+
+def profit_csharp_request(x: dict) -> dict:
+    return {'fn': 'profit_ticket', 'profit': x['profit'], 'threshold': x['threshold']}
+
+
+def profit_csharp_result(x: dict, awarded) -> list:
+    return [PROFIT_TICKET] if awarded else []
+
+
+def profit_inputs(rng: random.Random, n: int) -> list:
+    shipped = [15000, 30000]         # GoldenTicketLocal.ProfitYear of the jungle/fantasy/hallow and space Standard.sam files
+    edges = [{'profit': t + d, 'threshold': t} for t in shipped + [0, -5, 2 ** 31 - 1, -2 ** 31] for d in (-1, 0, 1)
+             if -2 ** 31 <= t + d < 2 ** 31]
+    edges += [{'profit': 2 ** 31 - 1, 'threshold': -2 ** 31}, {'profit': -2 ** 31, 'threshold': 2 ** 31 - 1},
+              {'profit': -1, 'threshold': 1}, {'profit': 1, 'threshold': -1},
+              {'profit': 13500, 'threshold': 15000}, {'profit': 15000, 'threshold': 15000}, {'profit': 15001, 'threshold': 15000}]
+
+    def make() -> dict:
+        threshold = rng.choice(shipped + [rng.randrange(-2 ** 31, 2 ** 31), rng.randrange(-50000, 60000)])
+        profit = rng.choice([threshold, threshold + rng.randrange(-3, 4), rng.randrange(-60000, 90000), rng.randrange(-2 ** 31, 2 ** 31)])
+        return {'profit': max(-2 ** 31, min(2 ** 31 - 1, profit)), 'threshold': threshold}
+    return edges + [make() for _ in range(n)]
+
+
+PROFIT_ALLOWED = [(LOCAL_TICKETS, LOCAL_TICKETS_END), (0xCCFA8, 0xCCFB0), (0x128D6C, 0x128D90), (0x12A438, 0x12A440)]
+PROFIT_TARGET = Target('profit-ticket', 'Yearly profit golden ticket (ticket 4 of 0xd31d0)', 'ORACLE F23 / ECONOMY.md "Golden tickets" (ECON-039)',
+                       LOCAL_TICKETS, PROFIT_ALLOWED, profit_stubs, profit_binary, profit_old_rule, profit_inputs,
+                       alternatives={'routine-reading': profit_reading},
+                       csharp=('profit_ticket', profit_csharp_request, profit_csharp_result),
+                       notes=['C# hook: bridge function "profit_ticket" (ParkObjectives.CheckGoldenTickets with the threshold in the synthetic '
+                              'Standard.sam; whether the profit ticket is newly won).',
+                              'Executed: 0xd31d0 with every other ticket marked earned (0x128d6c over a synthetic flag singleton), the bank '
+                              'year profit word 0xccfa8 and the earned flag test 0x12a438; ticket 4 is 0xd33dc..0xd3410. Stubs: 0x1082b4 and '
+                              '0x108424 (game checked, a synthetic park and bank) and 0xd3664 (the award: logged).',
+                              'The gate around the routine (game type 0, every 100 turns, ParkModeFeatures) is not executed.'])
+
+HINT_ENTRY = 0x13FDC           # (advisor rules this) the "near the profit ticket" hint: the rule's score, or 0
+
+
+def hint_binary(sb: Sandbox, x: dict, log) -> int:
+    profit_setup(sb, x)
+    this = sb.struct(1600, {1492: ('f', x['mult']), 1496: ('i', x['score'])})
+    return s32(sb.call(HINT_ENTRY, {3: this}).r3)
+
+
+def hint_reading(x: dict, unscaled: bool = False, ignore_earned: bool = False, strict: bool = True) -> int:
+    """0x13fdc: threshold = trunc(single(single(ProfitYear) * multiplier)) (fctiwz), then profit > threshold (signed) and the
+    ticket not earned: the score, else 0. The keywords are deliberate deviations: no multiplier, no earned test and a >= compare."""
+    threshold = x['threshold'] if unscaled else fctiwz(f32_mul(f32(float(x['threshold'])), f32(x['mult'])))
+    reached = x['profit'] > threshold if strict else x['profit'] >= threshold
+    if reached and (ignore_earned or not x.get('earned')):
+        return x['score']
+    return 0
+
+
+def hint_inputs(rng: random.Random, n: int) -> list:
+    shipped = [f32(0.9), f32(0.65), f32(0.85)]      # Advisor.sam: GoldTicketNearToXProfit / ...FirstOne / ...XHappiness multipliers
+    edges = []
+    for mult in shipped + [1.0, 0.0, -1.0, math.nan, math.inf, -math.inf]:
+        for threshold in (15000, 30000, 0, -5, 2 ** 31 - 1):
+            scaled = fctiwz(f32_mul(f32(float(threshold)), mult))
+            for d in (-1, 0, 1):
+                if -2 ** 31 <= scaled + d < 2 ** 31:
+                    edges.append({'profit': scaled + d, 'threshold': threshold, 'mult': mult, 'score': 100})
+    edges += [{'profit': 13500, 'threshold': 15000, 'mult': f32(0.9), 'score': 100, 'earned': True},
+              {'profit': 13501, 'threshold': 15000, 'mult': f32(0.9), 'score': 100, 'earned': True},
+              {'profit': 20000, 'threshold': 15000, 'mult': f32(0.9), 'score': 100}]
+
+    def make() -> dict:
+        threshold = rng.choice([15000, 30000, rng.randrange(-50000, 60000), rng.randrange(-2 ** 31, 2 ** 31)])
+        mult = rng.choice(shipped + [random_float(rng, 0, 2), random_float(rng, -2, 2), random_single_bits(rng)])
+        scaled = fctiwz(f32_mul(f32(float(threshold)), mult))
+        profit = rng.choice([scaled + rng.randrange(-3, 4), rng.randrange(-60000, 90000), rng.randrange(-2 ** 31, 2 ** 31)])
+        return {'profit': max(-2 ** 31, min(2 ** 31 - 1, profit)), 'threshold': threshold, 'mult': mult,
+                'score': rng.choice([100, rng.randrange(-2 ** 31, 2 ** 31)]), 'earned': rng.random() < 0.3}
+    return edges + [make() for _ in range(n)]
+
+
+HINT_TARGET = Target('profit-ticket-hint', 'Advisor hint "near the profit ticket" 0x13fdc', 'ORACLE F23 / ECONOMY.md (ECON-039)', HINT_ENTRY,
+                     [(HINT_ENTRY, 0x140B8), (0xCCFA8, 0xCCFB0), (0x128D6C, 0x128D90), (0x12A438, 0x12A440)], profit_stubs, hint_binary, None,
+                     hint_inputs, alternatives={'routine-reading': hint_reading},
+                     notes=['No plan side and no C# hook: OpenTPW has no advisor rule for the near-ticket hints (Advisor.sam GoldTicketNearTo*, '
+                            'ECONOMY.md "unused"); this target shows what the multiplier of ECON-039 is: the advisor, not the award.',
+                            'Executed: 0x13fdc with the rules object (+1492 multiplier as a single, +1496 score), the bank year profit 0xccfa8 and '
+                            'the earned flag 0x128d6c; stubs 0x108424 (game checked, a synthetic bank).'])
+
+# ---- all the local tickets (0xd31d0) and the global ones (0xd34c0): every arm, strictly greater
+# Local arms (flags[i] clear; stubs return the statistic, the real flag test 0x128d6c runs):
+#   0 visitors   0xc3b7c(park) > [1872]                                          (cmpw, signed)
+#   1 people     0xc3684(park) > [1876]
+#   2 happiness  float 0xc19e4(park, 0) > single([1880])  (fcmpo)  and  0xc3684(park) > [1884]
+#   3 research   0xc5510(park) low byte nonzero
+#   4 profit     bank +292 > [1888]                                              (F23 above)
+#   5 recent     0xc3b88(park, [1896]) > [1892]  and  the park age in 30-day months (0xe4628 / 0x1c4100, low word) > [1896]
+# Global arms (0xd34c0, each award 0xd3748(this, index) tests its own earned flag): 0xc73bc, 0xc6cec, 0xc710c, 0xc8cc0 (park
+# statistics) > [1900], [1904], [1908], [1916] (cmpw, signed).
+VISITORS_STAT, PEOPLE_STAT, HAPPINESS_STAT, RESEARCH_STAT, RECENT_STAT = 0xC3B7C, 0xC3684, 0xC19E4, 0xC5510, 0xC3B88
+PARK_AGE, WIDE_DIVIDE = 0xE4628, 0x1C4100
+GLOBAL_TICKETS, GLOBAL_TICKETS_END, GLOBAL_AWARD = 0xD34C0, 0xD35B4, 0xD3748
+GLOBAL_STATS = (0xC73BC, 0xC6CEC, 0xC710C, 0xC8CC0)
+LOCAL_KEYS = {1872: 'visitors_limit', 1876: 'people_limit', 1880: 'happiness_limit', 1884: 'happy_people_limit',
+              1888: 'threshold', 1892: 'recent_limit', 1896: 'months_limit'}
+GLOBAL_OFFSETS = (1900, 1904, 1908, 1916)
+
+
+def tickets_stubs(target: Target) -> dict:
+    state = PROFIT_STATE
+
+    def stat(name):
+        def stub(m: Machine) -> None:
+            if m.gpr[3] != state.park:
+                raise AssertionError(f'{name} called without the park')
+            m.gpr[3] = state.values[name] & MASK32
+        return stub
+
+    def happiness(m: Machine) -> None:
+        if m.gpr[3] != state.park or m.gpr[4] != 0:
+            raise AssertionError('0xc19e4 called with unexpected arguments')
+        m.fpr[1] = double_to_bits(state.values['avg'])
+
+    def recent(m: Machine) -> None:
+        if m.gpr[3] != state.park or s32(m.gpr[4]) != state.values['months_limit']:
+            raise AssertionError('0xc3b88 called without the park and the month count')
+        m.gpr[3] = state.values['recent'] & MASK32
+
+    def wide_divide(m: Machine) -> None:
+        m.gpr[3], m.gpr[4] = 0, state.values['age'] & MASK32   # the age in months: the low word of the quotient
+
+    def global_stat(index):
+        def stub(m: Machine) -> None:
+            if m.gpr[3] != state.park:
+                raise AssertionError('a global statistic was called without the park')
+            m.gpr[3] = state.values['stats'][index] & MASK32
+        return stub
+
+    def award(m: Machine) -> None:
+        if m.gpr[3] != state.this:
+            raise AssertionError('an award was called without the checking object')
+        target.log.append(('award', m.gpr[4]))
+
+    def park(m: Machine) -> None:
+        if m.gpr[3] != state.game:
+            raise AssertionError('0x1082b4 called without the game pointer')
+        m.gpr[3] = state.park
+
+    stubs = {PARK_OF_GAME: park, BANK_OF_GAME: profit_stubs(target)[BANK_OF_GAME],
+             TICKET_AWARD: award, GLOBAL_AWARD: award, VISITORS_STAT: stat('visitors'), PEOPLE_STAT: stat('people'),
+             HAPPINESS_STAT: happiness, RESEARCH_STAT: stat('built'), RECENT_STAT: recent, PARK_AGE: lambda m: None,
+             WIDE_DIVIDE: wide_divide}
+    for index, address in enumerate(GLOBAL_STATS):
+        stubs[address] = global_stat(index)
+    return stubs
+
+
+def tickets_setup(sb: Sandbox, x: dict) -> None:
+    """The local arms: the settings words, a bank with the year profit and the statistics the stubs return; every earned flag clear."""
+    profit_setup(sb, {'profit': x.get('profit', 0), 'threshold': x.get('threshold', 0), 'earned': False})
+    flags = sb.read(sb.read(toc_pointer(sb, PROFIT_FLAGS), 'I') + 68, 'I')
+    for index in range(16):
+        sb.write(flags + index, 'B', 0)
+    settings = toc_pointer(sb, PROFIT_SETTINGS)
+    for offset, key in LOCAL_KEYS.items():
+        sb.write(settings + offset, 'i', x.get(key, 0))
+    for offset, limit in zip(GLOBAL_OFFSETS, x.get('global_limits', [0, 0, 0, 0])):
+        sb.write(settings + offset, 'i', limit)
+    PROFIT_STATE.values = {'visitors': x.get('visitors', 0), 'people': x.get('people', 0), 'avg': x.get('avg', 0.0), 'built': x.get('built', 0),
+                           'recent': x.get('recent', 0), 'age': x.get('age', 0), 'months_limit': x.get('months_limit', 0),
+                           'stats': x.get('global_stats', [0, 0, 0, 0])}
+
+
+def local_binary(sb: Sandbox, x: dict, log) -> list:
+    tickets_setup(sb, x)
+    sb.call(LOCAL_TICKETS, {3: PROFIT_STATE.this})
+    return sorted(index for kind, index in log if kind == 'award')
+
+
+def global_binary(sb: Sandbox, x: dict, log) -> list:
+    tickets_setup(sb, x)
+    sb.call(GLOBAL_TICKETS, {3: PROFIT_STATE.this})
+    return sorted(index for kind, index in log if kind == 'award')
+
+
+def local_reading(x: dict, strict: bool = True, trunc_average: bool = False, count_happy: bool = False, age_strict: bool = True) -> list:
+    """0xd31d0 as read above. Keywords are deliberate deviations for the sharpness tests: >= compares, the average truncated to an
+    integer first, and a >= age gate."""
+    def over(a, b):
+        return a > b if strict else a >= b
+    avg = float(int(x['avg'])) if trunc_average and x['avg'] == x['avg'] and abs(x['avg']) < 1e9 else x['avg']
+    won = []
+    if over(x['visitors'], x['visitors_limit']):
+        won.append(0)
+    if over(x['people'], x['people_limit']):
+        won.append(1)
+    if over(avg, f32(float(x['happiness_limit']))) and over(x['people'], x['happy_people_limit']):
+        won.append(2)
+    if x['built'] & 0xFF:
+        won.append(3)
+    if over(x['profit'], x['threshold']):
+        won.append(4)
+    if over(x['recent'], x['recent_limit']) and (over(x['age'], x['months_limit']) if age_strict else x['age'] >= x['months_limit']):
+        won.append(5)
+    return won
+
+
+def local_old_rule(x: dict) -> list:
+    """OpenTPW before the strictness fix: every ticket >=, the average truncated to an integer, every guest counted as at least as
+    happy as the threshold (the old count of happier guests is not an input), and the age gate at least the month count (closed months)."""
+    won = local_reading(x, strict=False, trunc_average=True, age_strict=False)
+    return [i for i in won if i != 3 and (i != 2 or x['people'] > 0)]
+
+
+def global_reading(x: dict, strict: bool = True) -> list:
+    return [i for i, (stat, limit) in enumerate(zip(x['global_stats'], x['global_limits'])) if (stat > limit if strict else stat >= limit)]
+
+
+def local_csharp_request(x: dict) -> dict:
+    return {'fn': 'local_tickets', 'avg_bits': bits(x['avg']), **{k: x[k] for k in ('visitors', 'people', 'profit', 'recent', 'age', 'months_limit', 'visitors_limit',
+                                                         'people_limit', 'happiness_limit', 'happy_people_limit', 'threshold', 'recent_limit')}}
+
+
+def tickets_result(x: dict, awarded) -> list:
+    return sorted(awarded)
+
+
+def global_csharp_request(x: dict) -> dict:
+    return {'fn': 'global_tickets', 'stats': x['global_stats'], 'limits': x['global_limits']}
+
+
+def global_csharp_result(x: dict, awarded) -> list:
+    return sorted(index - 6 for index in awarded)
+
+
+def local_inputs(rng: random.Random, n: int) -> list:
+    limits = {'visitors_limit': 100, 'people_limit': 200, 'happiness_limit': 75, 'happy_people_limit': 150, 'threshold': 15000,
+              'recent_limit': 350, 'months_limit': 6}
+    base = {'visitors': 0, 'people': 0, 'avg': 0.0, 'built': 0, 'profit': 0, 'recent': 0, 'age': 0}
+
+    def one(**kw) -> dict:
+        x = {**limits, **base, **kw}
+        x['age'] = kw.get('age', x['months_limit'] + 3)
+        return x
+    edges = [one()]
+    for stat, limit in (('visitors', 'visitors_limit'), ('people', 'people_limit'), ('profit', 'threshold'), ('recent', 'recent_limit')):
+        edges += [one(**{stat: limits[limit] + d}) for d in (-1, 0, 1)]
+    for avg in (74.0, 74.9999, 75.0, 75.5, 76.0, math.nan, math.inf):
+        for people in (0, 150, 151):
+            edges.append(one(avg=f32(avg), people=people))
+    edges += [one(visitors=-1, visitors_limit=-1), one(visitors=0, visitors_limit=-1), one(age=2), one(age=9, recent=351),
+              one(age=2, recent=351), one(profit=-2 ** 31, threshold=2 ** 31 - 1),
+              one(profit=2 ** 31 - 1, threshold=-2 ** 31)]
+
+    def near(limit: int) -> int:
+        return max(-2 ** 31, min(2 ** 31 - 1, rng.choice([limit, limit + rng.randrange(-2, 3), rng.randrange(-300, 3000)])))
+
+    def make() -> dict:
+        x = {key: rng.choice([value, rng.randrange(-50, 400)]) for key, value in limits.items()}
+        x['months_limit'] = rng.choice([6, 3, 1, 12])
+        x['recent_limit'] = abs(x['recent_limit'])   # a negative limit lets a short park pass in C# (ECON-052); no shipped file has one
+        x.update(visitors=near(x['visitors_limit']), people=near(x['people_limit']), profit=near(x['threshold']),
+                 recent=near(x['recent_limit']), built=0,
+                 avg=rng.choice([f32(rng.uniform(0, 100)), float(x['happiness_limit']), f32(x['happiness_limit'] + 0.5), 0.0]))
+        x['age'] = x['months_limit'] + rng.choice([-3, 3, 10])   # never equal to the month count: the units differ (ECON-052)
+        return x
+    return edges + [make() for _ in range(n)]
+
+
+def local_domain(x: dict) -> bool:
+    return True
+
+
+def global_inputs(rng: random.Random, n: int) -> list:
+    limits = [105, 90, 50, 2000]
+    edges = [{'global_limits': limits, 'global_stats': [0, 0, 0, 0]}]
+    for i, limit in enumerate(limits):
+        for d in (-1, 0, 1):
+            stats = [0, 0, 0, 0]
+            stats[i] = limit + d
+            edges.append({'global_limits': limits, 'global_stats': stats})
+    edges += [{'global_limits': [-1, -1, -1, -1], 'global_stats': [0, 0, 0, 0]}, {'global_limits': [0, 0, 0, 0], 'global_stats': [0, 0, 0, 0]}]
+
+    def make() -> dict:
+        lim = [rng.choice([value, rng.randrange(-5, 3000)]) for value in limits]
+        return {'global_limits': lim, 'global_stats': [rng.choice([v, v + rng.randrange(-2, 3), rng.randrange(0, 3500)]) if v >= 0 else 0 for v in lim]}
+    return edges + [make() for _ in range(n)]
+
+
+LOCAL_TICKETS_TARGET = Target('local-tickets', 'All local golden tickets (arms of 0xd31d0)', 'ORACLE F23 / ECONOMY.md "Golden tickets"',
+                              LOCAL_TICKETS, PROFIT_ALLOWED, tickets_stubs, local_binary, local_old_rule, local_inputs,
+                              alternatives={'routine-reading': local_reading},
+                              csharp=('local_tickets', local_csharp_request, tickets_result),
+                              notes=['C# hook: bridge function "local_tickets" (ParkObjectives.CheckGoldenTickets with the threshold keys in the synthetic '
+                                     'Standard.sam, a guest-statistics stub and the monthly admissions list of the chosen age).',
+                                     'Executed: all six arms of 0xd31d0 with every earned flag clear (0x128d6c real). Stubs return the statistic: '
+                                     '0xc3b7c, 0xc3684, 0xc19e4 (float), 0xc5510, 0xc3b88 (month count checked), the park age 0xe4628 / 0x1c4100 '
+                                     '(the quotient low word is the chosen age) and the bank 0x108424.',
+                                     'The all-built ticket (3) has no C# input (built is 0 in every compared input; the arm is executed in test_local_tickets_all_built). Ages equal to the '
+                                     'month count are not compared with C# (units differ, ECON-052).'])
+GLOBAL_TICKETS_TARGET = Target('global-tickets', 'The global golden tickets (0xd34c0)', 'ORACLE F23 / ECONOMY.md "Golden tickets"',
+                               GLOBAL_TICKETS, [(GLOBAL_TICKETS, GLOBAL_TICKETS_END)], tickets_stubs, global_binary, None, global_inputs,
+                               alternatives={'routine-reading': global_reading},
+                               csharp=('global_tickets', global_csharp_request, global_csharp_result),
+                               notes=['C# hook: bridge function "global_tickets" (coaster height, go-kart excitement, water length and big park records '
+                                      'against the four thresholds; big park reads MinCellsOwned in C# but [1916] = MinCellsCovered in the original '
+                                      '(ECON-038), so the hook sets both keys to the same limit).',
+                                      'Executed: 0xd34c0 (four statistics against +1900, +1904, +1908, +1916, signed >); the earned test lives inside the '
+                                      'award 0xd3748 (stubbed, index logged). The secret camera ticket 0xd35b4 and the never-awarded all-land ticket are not run.'])
+
+CALENDAR_DATE = Target('calendar-date', 'Calendar conversion 0xe4394 (world turn -> date)', 'ECONOMY.md / ParkCalendar (F30)', CAL_DATE,
+                       [(0xE4394, 0xE44A8)] + CAL_ALLOWED, calendar_stubs, calendar_date_binary, calendar_date_plan,
+                       calendar_date_inputs, equal=calendar_subset_equal,
+                       csharp=('calendar_date', calendar_date_csharp_request, calendar_date_csharp_result),
+                       notes=['C# hook: bridge function "calendar_date" (ParkCalendar.DateAtTurn, the date of a park turn; only the default rate '
+                              '15000 and the 2000-01-01 start are bridged, other rates are compared with the plan only).',
+                              'Executed: 0xe4394 (the 64-bit turn x rate product, the signed 64-bit divide by 4 at 0x1c4100, the multiplication by '
+                              '10^7), 0x10a9a4 (game pointer) and the import glue. Stubs: the bullfrog time-stamp API (operator+, GetTime) by '
+                              'import name, as Python civil arithmetic (proleptic Gregorian, the Mac OS default calendar).'])
+
+CALENDAR_UPDATE_TARGET = Target('calendar-update', 'Calendar update 0xe3f0c (day, month and year messages)', 'ECONOMY.md / ParkEconomy.AdvanceTurn (F30)',
+                                CAL_UPDATE, [(0xE3F0C, 0xE41CC), (0xE4394, 0xE44A8)] + CAL_ALLOWED,
+                                calendar_stubs, calendar_update_binary, calendar_update_plan, calendar_update_inputs,
+                                equal=calendar_subset_equal, alternatives={'routine-reading': calendar_update_reading},
+                                csharp=('calendar_update', lambda x: {'fn': 'calendar_update', 'start': x['start'], 'count': x['count']},
+                                        lambda x, r: r),
+                                notes=['C# hook: bridge function "calendar_update" (a ParkEconomy started at the turn before the first step, advanced '
+                                       'turn by turn through ParkEconomy.Advance: the DayEnded / MonthEnded / YearEnded events per turn are compared with '
+                                       'the messages, and ParkCalendar.FieldsAtTurn with the stored fields).',
+                                       'Executed: 0xe3f0c, the conversion 0xe4394, the message constructors 0x116488 / 0x1164a4 / 0x1164c0. '
+                                       'Stubs: the time-stamp API (operator+, GetTime) by import name, the dispatcher 0x11688c (the message type '
+                                       'is read from its vtable), the day notification 0x18f4cc and the three month hooks 0x15bbd8 / 0x151698 / 0x155234 (logged).',
+                                       'The calendar is synchronised: one update at the turn before the first step has run (the original saves its stored fields).'])
+
+CALENDAR_FIRST_TARGET = Target('calendar-first-update', 'First calendar update after construction (0xe3c90, then 0xe3f0c)',
+                               'ECONOMY.md / ParkEconomy.AdvanceTurn (F30)', CAL_UPDATE,
+                               [(0xE3F0C, 0xE41CC), (0xE3C90, 0xE3D30), (0xE4348, 0xE4394), (0xE4394, 0xE44A8)] + CAL_ALLOWED,
+                               calendar_stubs, calendar_update_binary, calendar_update_plan, calendar_first_inputs,
+                               equal=calendar_subset_equal, alternatives={'routine-reading': calendar_update_reading},
+                               notes=['No C# hook: OpenTPW starts its calendar synchronised with the first turn (APPROX:ECON-001 text), so a constructed '
+                                      'calendar has no counterpart. The plan is the synchronised rule.',
+                                      'Executed: the constructor 0xe3c90 (month 0, day -1, year 0, rate 15000) with the start initializer 0xe4348, and '
+                                      '0xe3f0c; stubs as calendar-update plus the host clock GetLocalTime and SetTime.'])
+
+CADENCE_TARGET = Target('park-turn-cadence', 'World callback catch-up loop 0x1c22b0 (substeps and park turns per real time)',
+                        'PPC-clock.md / ECON-001 (F30, F32)', CADENCE_LOOP, CADENCE_ALLOWED, cadence_stubs, cadence_binary,
+                        cadence_plan, cadence_inputs, equal=calendar_subset_equal, alternatives={'routine-reading': cadence_reading},
+                        notes=['No C# hook: OpenTPW samples park turns from a 60 Hz fixed clock (FixedStepClock, ParkCalendar.Turn); '
+                               'CSHARP_PENDING.'])
+
+GOLDEN_TARGET = Target('golden-ticket-cadence', 'World turn update 0xd67f0 (the golden-ticket check cadence, dispatcher 0xd2f1c)',
+                       'ECONOMY.md / ParkEconomy.AdvanceTurn (F31)', GOLDEN_UPDATE, GOLDEN_ALLOWED, golden_stubs, golden_binary,
+                       golden_plan, golden_inputs, equal=calendar_subset_equal,
+                       alternatives={'plan-signed': golden_signed, 'plan-tickets-before-calendar': golden_calendar_after},
+                       csharp=('golden_check_turns', lambda x: {'fn': 'golden_check_turns', 'mode': x['mode'], 'turns': x['turns']},
+                               lambda x, r: r),
+                       notes=['C# hook: bridge function "golden_check_turns" (ParkEconomy.RunsGoldenTicketCheck, the predicate AdvanceTurn uses; only '
+                              'game types 0 (Full Simulation) and 2 (Instant Action) are bridged, every other word runs no check on both sides). '
+                              'The order of the calls inside one turn (calendar update first) is the oracle\'s plan-tickets-before-calendar reading, covered '
+                              'on the C# side by ParkEconomyTests.',
+                              'Executed: 0xd67f0 and 0xd2f1c, including the unsigned remainder by 100 (a multiply-high), the lazy game type '
+                              'object (marked constructed) and its word. Stubs: the bank update 0xcb278, the staff pool 0xf6e24, the calendar update '
+                              '0xe3f0c and the three ticket checks 0xd31d0 / 0xd34c0 / 0xd35b4, each logged and its object argument checked.'])
+
+CADENCE_FRAMES_TARGET = Target('park-turn-cadence-frames', 'Park turns per frame at game speeds (0x1c22b0, frames of at most 150 ms)',
+                               'PPC-clock.md / ECON-001, ECON-004 (F30, F32)', CADENCE_LOOP, CADENCE_ALLOWED, cadence_stubs,
+                               cadence_binary, cadence_plan, cadence_frames_inputs, equal=cadence_frames_equal,
+                               alternatives={'routine-reading': cadence_reading},
+                               csharp=('park_turns', lambda x: {'fn': 'park_turns', 'scale': x['scale'], 'gaps': x['gaps']}, lambda x, r: r),
+                               notes=['C# hook: bridge function "park_turns" (FixedStepClock fed with each frame\'s elapsed time times the speed scale, '
+                                      'exactly as Level.Update feeds it, and ParkCalendar.Turn of its tick count). Compared as a window: OpenTPW\'s turn '
+                                      'count is never ahead of the original\'s and at most one turn behind at every frame (the original runs a turn when '
+                                      'the scaled time passes 248 j - 31 ms, OpenTPW at the first 60 Hz tick of 248 j ms).',
+                                      'Same routine and stubs as park-turn-cadence; the inputs keep each frame within what the fixed clock accepts '
+                                      '(a longer frame is dropped above 16 ticks, ECON-001).'])
+
+SPEED_TARGET = Target('clock-speed-scale', 'Speed keys 0x11315c / 0x113184 / 0x1131ac and the scheduler clock 0x10e844 (what the scale scales)',
+                      'PPC-clock.md / ECON-004, UI-022 (F32)', 0x10E844, SPEED_ALLOWED, speed_stubs, speed_binary, speed_plan,
+                      speed_inputs, equal=calendar_subset_equal, alternatives={'routine-reading': speed_reading},
+                      notes=['No C# hook: OpenTPW has four speed buttons (pause, x1, x2, x4), not the original\'s three stepping keys '
+                             '(CSHARP_PENDING); its path from the speed to the simulation is covered by park-turn-cadence-frames.',
+                             'Executed: the three key release callbacks, the clamping scale setters 0x127c48 / 0x127c88 and the direct setter 0x127c40, '
+                             'and the scheduler clock read 0x10e844 down to the stubbed library clock LbTime_GetClock (the chosen raw millisecond).'])
+
+TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
+           CALENDAR_DATE, CALENDAR_UPDATE_TARGET, CALENDAR_FIRST_TARGET, CADENCE_TARGET, GOLDEN_TARGET,
+           CADENCE_FRAMES_TARGET, SPEED_TARGET]
+DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

@@ -76,9 +76,11 @@ public class ParkEconomyTests
 		park.Speed = GameSpeed.Paused;
 		park.AdvanceFixedTick();
 		Assert.AreEqual( 0, park.Tick );
+		// A faster speed is the clock scale of the whole simulation (Level scales the elapsed time), not extra economy ticks per fixed tick.
 		park.Speed = GameSpeed.Fastest;
 		park.AdvanceFixedTick();
-		Assert.AreEqual( 4, park.Tick );
+		Assert.AreEqual( 1, park.Tick );
+		Assert.AreEqual( (0f, 1f, 2f, 4f), (GameSpeedScale.Of( GameSpeed.Paused ), GameSpeedScale.Of( GameSpeed.Normal ), GameSpeedScale.Of( GameSpeed.Fast ), GameSpeedScale.Of( GameSpeed.Fastest )) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => park.Advance( -1 ) );
 	}
 
@@ -394,15 +396,109 @@ public class ParkEconomyTests
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuyCells( CellPurchase.Path, 10 ) );
 		Assert.AreEqual( 300, park.Balance );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, park.TryBuyCells( CellPurchase.Land, 4 ) );
-		Assert.AreEqual( 250, park.ScrapValue( ride! ) );
+		Assert.AreEqual( 500, park.ScrapValue( ride! ), "nobody used it in its first 30 days: the whole base price" );
+		park.RecordRideUse( ride!.Id ); park.RecordUseFinished( ride!.Id );
+		Assert.AreEqual( 250, park.ScrapValue( ride ) );
 		park.AdvanceDays( 365 );
-		Assert.AreEqual( 150, park.ScrapValue( ride! ) );
+		Assert.AreEqual( 150, park.ScrapValue( ride ) );
 		var gates = park.RegisterExisting( 1601 );
 		Assert.IsTrue( gates.Imported );
 		var balance = park.Balance;
 		Assert.AreEqual( 150, park.Sell( ride!.Id ) );
 		Assert.AreEqual( balance + 150, park.Balance );
 		Assert.IsFalse( park.TryGetObject( ride.Id, out _ ) );
+	}
+
+	/// <summary>A ride with the jungle Rides.sam rows: cost 1000 / 1000 / 2000 and a better scrap row per upgrade level.</summary>
+	private static ParkEconomy ScrapPark( int firstYearOfBase = 50 ) => new( EconomyTestData.Settings(), new EconomyObjectCatalog( new[]
+	{
+		new EconomyObjectInfo( 1100, "Belly Bounce", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[]
+		{
+			new UpgradeLevelInfo( 0, 1000, 0, 5, 0, new[] { firstYearOfBase, 30, 20, 10 } ),
+			new UpgradeLevelInfo( 1, 1000, 250, 3, 2, new[] { 60, 40, 30, 15 } ),
+			new UpgradeLevelInfo( 2, 2000, 300, 2, 4, new[] { 65, 45, 35, 20 } )
+		}, null, null, null, 0, 0, 0, 0, 0, 25, "rides/bouncy.wad", 100, 5 )
+	} ), ParkGameMode.FullSimulation, 7 );
+
+	[TestMethod]
+	public void ScrapValueIsTheBasePriceTimesTheCurrentLevelsAgePercentage()
+	{
+		// ORACLE.md F21 (0xE25E8 / 0xE2424): Upgrades[0].CostOfUpgrade only, whatever was spent on upgrades, and the row of the
+		// current level. A ride at level 2 that guests have used, in years 1, 2, 3 and from year 4 on.
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		ride.Level = 2;
+		ride.TotalSpent = 4000;
+		park.RecordRideUse( ride.Id ); park.RecordUseFinished( ride.Id );
+		Assert.AreEqual( 650, park.ScrapValue( ride ), "65 % of the base price 1000, not of the 4000 spent" );
+		park.AdvanceDays( 365 );
+		Assert.AreEqual( 450, park.ScrapValue( ride ) );
+		park.AdvanceDays( 365 );
+		Assert.AreEqual( 350, park.ScrapValue( ride ), "a two-year-old upgraded ride: 35 % of 1000 (the old rule gave 4000 x 35 % = 1400)" );
+		park.AdvanceDays( 365 );
+		Assert.AreEqual( 200, park.ScrapValue( ride ) );
+		park.AdvanceDays( 365 * 5 );
+		Assert.AreEqual( 200, park.ScrapValue( ride ), "year 4 onwards uses year 4" );
+		ride.Level = 0;
+		Assert.AreEqual( 100, park.ScrapValue( ride ) );
+	}
+
+	[TestMethod]
+	public void AnObjectNobodyUsedIsRefundedInFullForItsFirstThirtyDays()
+	{
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		ride.Level = 2;
+		Assert.AreEqual( 1000, park.ScrapValue( ride ), "unused and new: 100 % of the base price whatever the level" );
+		// A turn is 3750 s: 30 days are 691.2 turns.
+		EconomyTestData.AdvanceToTurn( park, 691 );
+		Assert.AreEqual( 1000, park.ScrapValue( ride ), "29.99 days" );
+		EconomyTestData.AdvanceToTurn( park, 692 );
+		Assert.AreEqual( 650, park.ScrapValue( ride ), "30.01 days: the level 2 row, year 1" );
+	}
+
+	[TestMethod]
+	public void TheUseCountsWhenTheGuestLeavesAndTheProductWrapsLikeTheOriginal()
+	{
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		park.RecordRideUse( ride.Id );
+		Assert.AreEqual( 1000, park.ScrapValue( ride ), "a guest aboard: the use word +412 rises on release, so it still counts as unused" );
+		park.RecordUseFinished( ride.Id );
+		Assert.AreEqual( 500, park.ScrapValue( ride ) );
+
+		var big = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[]
+		{
+			new EconomyObjectInfo( 1100, "Big", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { new UpgradeLevelInfo( 0, 50_000_000, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "x.wad" )
+		} ), ParkGameMode.FullSimulation, 7 );
+		Assert.AreEqual( 7_050_327, big.ScrapValue( big.RegisterExisting( 1100 ) ), "50,000,000 x 100 wraps to 32 bits before the unsigned division by 100" );
+	}
+
+	[TestMethod]
+	public void AnImportedUsedOrOldObjectNeverGetsTheUnusedRefund()
+	{
+		var park = ScrapPark();
+		EconomyTestData.AdvanceToTurn( park, 5000 );
+		var used = park.RegisterExisting( 1100, builtTick: ParkCalendar.TickOfTurn( 4990 ), timesUsed: 3 );
+		Assert.AreEqual( 500, park.ScrapValue( used ), "customers in the save: the ordinary year-1 row" );
+		var old = park.RegisterExisting( 1100, builtTick: ParkCalendar.TickOfTurn( 1 ), timesUsed: 0 );
+		Assert.AreEqual( ParkCalendar.TickOfTurn( 1 ), old.BuiltTick );
+		Assert.AreEqual( 500, park.ScrapValue( old ), "unused but older than 30 days" );
+		Assert.AreEqual( 1000, park.ScrapValue( park.RegisterExisting( 1100 ) ), "a new object without saved history is new and unused" );
+	}
+
+	[TestMethod]
+	public void TheFirstThirtyDaysRefundNeedsNoUseAndAPositiveBaseFirstYearPercentage()
+	{
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		park.RecordRideUse( ride.Id ); park.RecordUseFinished( ride.Id );
+		Assert.AreEqual( 500, park.ScrapValue( ride ), "a use ends the full refund" );
+		var shop = ScrapPark( firstYearOfBase: 0 );
+		var unused = shop.RegisterExisting( 1100 );
+		Assert.AreEqual( 0, shop.ScrapValue( unused ), "the base level's first-year percentage is 0, so there is no 100 %" );
+		unused.Level = 1;
+		Assert.AreEqual( 600, shop.ScrapValue( unused ), "the test reads level 0's row, so level 1 gets its own first-year 60 %" );
 	}
 
 	[TestMethod]
@@ -440,7 +536,14 @@ public class ParkEconomyTests
 		park.Advance( ParkCalendar.TicksForHours( 2 ) );
 		Assert.AreEqual( mechanic.Id, ride.MechanicId );
 		var life = ride.LifeGauge;
-		park.Advance( ParkCalendar.TicksForHours( park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade] + 1 ) );
+		// ORACLE F19: the repair of a ride at zero repair takes WorkDuration park turns (100 % of it) and one update more to complete it.
+		var work = park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade];
+		var startTurn = park.Turn;
+		Assert.IsTrue( mechanic.BusyTicks is > 0 && mechanic.BusyTicks <= work + 1 && mechanic.BusyTicks > work + 1 - 3, "dispatched within the last turns" );
+		var remaining = mechanic.BusyTicks;
+		EconomyTestData.AdvanceToTurn( park, startTurn + remaining - 1 );
+		Assert.IsTrue( ride.IsBrokenDown, "still being repaired one turn before the timer ends" );
+		EconomyTestData.AdvanceToTurn( park, startTurn + remaining );
 		Assert.IsFalse( ride.IsBrokenDown );
 		Assert.AreEqual( 100, ride.Repair );
 		Assert.AreEqual( life, ride.LifeGauge, "a repair does not restore the life gauge, and a ride under repair does not wear" );
@@ -461,6 +564,30 @@ public class ParkEconomyTests
 		Assert.IsNotNull( researcher );
 		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotAvailableInInstantAction, instant.TryBuyUpgrade( instant.RegisterExisting( 1100 ).Id ) );
+	}
+
+	[TestMethod]
+	public void RepairTimerScalesWithTheMissingRepairAndMultipliesUpgrades()
+	{
+		// ORACLE F19 (0xd9c0c): WorkDuration x (100 - truncated state of repair) / 100, or WorkDuration x DurationOfUpgrade for an upgrade.
+		Assert.AreEqual( 48, ParkEconomy.RepairTimer( 80, 40.0, null ), "a ride at 40 % repair, grade 0" );
+		Assert.AreEqual( 48, ParkEconomy.RepairTimer( 80, 40.9, null ), "the gauge is truncated" );
+		Assert.AreEqual( 80, ParkEconomy.RepairTimer( 80, 0.0, null ) );
+		Assert.AreEqual( 0, ParkEconomy.RepairTimer( 80, 100.0, null ), "a fully repaired ride needs no time" );
+		Assert.AreEqual( 12, ParkEconomy.RepairTimer( 20, 40.0, null ), "grade 4" );
+		Assert.AreEqual( 0, ParkEconomy.RepairTimer( 80, 99.0, null ), "0.8 rounds down" );
+		Assert.AreEqual( 160, ParkEconomy.RepairTimer( 80, 40.0, 2 ), "an upgrade ignores the state of repair" );
+		Assert.AreEqual( 0, ParkEconomy.RepairTimer( 80, 40.0, 0 ), "no minimum of one" );
+		Assert.AreEqual( 320, ParkEconomy.RepairTimer( 80, 40.0, 4 ) );
+		Assert.AreEqual( 0L, ParkEconomy.RepairTimer( 80, 101.0, null ), "-0.8 truncates toward zero" );
+		Assert.AreEqual( 4294967216L, ParkEconomy.RepairTimer( 80, 200.0, null ), "above 100 the factor goes negative and the unsigned word wraps (-80)" );
+	}
+
+	[TestMethod]
+	public void RepairTimerIsTheLowByteOfTheTruncatedGauge()
+	{
+		Assert.AreEqual( 80L, ParkEconomy.RepairTimer( 80, 256.0, null ), "256 wraps to a zero byte: a full repair is due" );
+		Assert.AreEqual( 80L, ParkEconomy.RepairTimer( 80, -256.0, null ), "-256 is the word 0xFFFFFF00" );
 	}
 
 	[TestMethod]
@@ -486,7 +613,7 @@ public class ParkEconomyTests
 	private sealed class FixedGuests( int inPark ) : IParkGuestStatistics
 	{
 		public int PeopleInPark => inPark;
-		public int AverageHappiness => 0;
+		public float AverageHappiness => 0;
 		public int CountHappierThan( int happiness ) => 0;
 		public int KidsWithBalloonsPercent => 0;
 		public int KidsWithCostumesPercent => 0;
@@ -731,13 +858,122 @@ public class ParkEconomyTests
 		{
 			var park = EconomyTestData.Park( mode: mode );
 			park.OpenPark();
-			for ( var visitor = 0; visitor < 100; visitor++ )
+			for ( var visitor = 0; visitor < 101; visitor++ )
 				park.TryAdmitVisitor( 100, out _ );
 			park.Advance( ParkCalendar.TickOfTurn( ParkEconomy.GoldenTicketCheckInterval ) - 1 );
 			Assert.AreEqual( 0, park.Objectives.GoldenTickets.Count, $"{mode}: not checked before turn 100" );
 			park.Advance( 1 );
 			Assert.AreEqual( mode == ParkGameMode.FullSimulation ? 1 : 0, park.Objectives.GoldenTickets.Count, $"{mode}: checked at turn 100" );
 		}
+	}
+
+	// ORACLE F23 (ECON-039): the local ticket check 0xd31d0 awards ticket 4 when the bank's year profit word is signed GREATER than
+	// GoldenTicketLocal.ProfitYear. The 0.9 multiplier of 0x13fdc is the advisor's near-ticket hint, not part of the award.
+	[TestMethod]
+	public void TheProfitTicketNeedsTheYearProfitStrictlyAboveProfitYear()
+	{
+		var threshold = EconomyTestData.Park().Settings.GoldenTickets.ProfitYear;
+		Assert.AreEqual( 15000, threshold );
+		bool Won( long profit )
+		{
+			var park = EconomyTestData.Park();
+			return park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, profit, Array.Empty<long>() ).Contains( GoldenTicketKind.ProfitYear );
+		}
+		Assert.IsFalse( Won( 0 ) );
+		Assert.IsFalse( Won( -20000 ) );
+		Assert.IsFalse( Won( (long)(threshold * 0.9) + 1 ), "no 0.9 factor: the advisor hint is not the award" );
+		Assert.IsFalse( Won( threshold - 1 ) );
+		Assert.IsFalse( Won( threshold ), "equal is not enough (signed greater-than at 0xd3400)" );
+		Assert.IsTrue( Won( threshold + 1 ) );
+		Assert.IsTrue( Won( int.MaxValue ) );
+	}
+
+	// ORACLE F23: every ticket arm of 0xd31d0 and 0xd34c0 is a signed strictly-greater compare. Each case checks the limit (not won) and
+	// the limit plus one (won) against the shipped jungle thresholds of the test Standard.sam.
+	private sealed class StatGuests( int people, float average ) : IParkGuestStatistics
+	{
+		public int PeopleInPark => people;
+		public float AverageHappiness => average;
+		public int CountHappierThan( int happiness ) => 0;
+		public int KidsWithBalloonsPercent => 0;
+		public int KidsWithCostumesPercent => 0;
+	}
+
+	private static bool TicketWon( GoldenTicketKind kind, int visitors = 0, int people = 0, float average = 0, long profit = 0, long recentVisitors = 0,
+		ParkRecordKind? record = null, long recordValue = 0 )
+	{
+		var park = EconomyTestData.Park();
+		park.Counters.Add( ParkCounters.Admissions, visitors );
+		if ( record is { } kindOfRecord )
+			park.Counters.Max( ParkCounters.Record( kindOfRecord, 0 ), recordValue );
+		// six closed months; the last carries the recent visitors (RecentVisitorMonths 6)
+		var months = new long[] { 0, 0, 0, 0, 0, recentVisitors };
+		return park.Objectives.CheckGoldenTickets( park.Counters, new StatGuests( people, average ), park.Research, profit, months ).Contains( kind );
+	}
+
+	[TestMethod]
+	public void EveryGoldenTicketNeedsItsStatisticStrictlyAboveTheLimit()
+	{
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Visitors, visitors: 100 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.Visitors, visitors: 101 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.PeopleInPark, people: 200 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.PeopleInPark, people: 201 ) );
+		// happiness: the single average above 75 and more than 150 guests; the fraction counts (75.5 > 75), nobody is filtered by happiness
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Happiness, people: 151, average: 75f ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.Happiness, people: 151, average: 75.5f ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Happiness, people: 150, average: 90f ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.Happiness, people: 151, average: 75.01f ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.Happiness, people: 151, average: float.NaN ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.RecentVisitors, recentVisitors: 350 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.RecentVisitors, recentVisitors: 351 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.CoasterHeight, record: ParkRecordKind.CoasterHeight, recordValue: 105 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.CoasterHeight, record: ParkRecordKind.CoasterHeight, recordValue: 106 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.GokartExcitement, record: ParkRecordKind.GokartExcitement, recordValue: 90 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.GokartExcitement, record: ParkRecordKind.GokartExcitement, recordValue: 91 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.WaterLength, record: ParkRecordKind.WaterLength, recordValue: 50 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.WaterLength, record: ParkRecordKind.WaterLength, recordValue: 51 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3000 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3001 ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0L, ParkGameMode.FullSimulation, true )]
+	[DataRow( 1L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 99L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 100L, ParkGameMode.FullSimulation, true )]
+	[DataRow( 101L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 8433L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 648000L, ParkGameMode.FullSimulation, true )]
+	[DataRow( 100L, ParkGameMode.InstantAction, false )]
+	[DataRow( 0L, ParkGameMode.InstantAction, false )]
+	public void TheGoldenTicketCheckRunsEvery100thTurnInFullSimulation( long turn, ParkGameMode mode, bool runs )
+	{
+		// [BIN:STP-PPC:0x100D67F0 world update] turn % 100 == 0 (unsigned) calls the dispatcher 0x100D2F1C, which checks only for game type 0; about 4.3 park days (25 s at normal speed) apart (oracle F31)
+		Assert.AreEqual( runs, ParkEconomy.RunsGoldenTicketCheck( turn, mode ) );
+	}
+
+	[TestMethod]
+	public void TheGoldenTicketCheckSeesTheStateAfterTheCalendarUpdateOfItsTurn()
+	{
+		// The world update runs the calendar update (and with it the bank's year reset, a message handled at once) before the ticket check.
+		// Turn 648,000 is the first turn of 2077 and a multiple of 100: the year's profit of 20,000 (above the jungle's 15,000) was reset
+		// by the year message, so the check of that turn finds none; the check at turn 100 of a running year finds it.
+		ParkEconomy Prepared( long startTurn )
+		{
+			var park = EconomyTestData.Park( initialCash: 100_000_000 );
+			park.StartAtOriginalTurn( startTurn );
+			park.ImportOriginalBank( 100_000_000, 10, 20000, Array.Empty<LoanAccount>() );
+			return park;
+		}
+		var running = Prepared( 99 );
+		running.Advance( ParkCalendar.TickOfTurn( 100 ) - running.Tick );
+		CollectionAssert.AreEqual( new[] { GoldenTicketKind.ProfitYear }, running.Objectives.GoldenTickets.ToArray(), "a check in the middle of a year sees the profit" );
+
+		var yearChange = Prepared( 647_999 );
+		yearChange.Advance( ParkCalendar.TickOfTurn( 648_000 ) - yearChange.Tick );
+		Assert.AreEqual( 648_000, yearChange.Turn );
+		Assert.AreEqual( 0, yearChange.Ledger.ProfitThisYear, "the year message reset the profit" );
+		Assert.AreEqual( 0, yearChange.Objectives.GoldenTickets.Count, "the ticket check of the year's first turn runs after the reset" );
 	}
 
 	[TestMethod]
@@ -747,7 +983,7 @@ public class ParkEconomyTests
 		var events = new List<ParkEvent>();
 		park.EventRaised += events.Add;
 		park.OpenPark();
-		for ( var visitor = 0; visitor < 100; visitor++ )
+		for ( var visitor = 0; visitor < 101; visitor++ )
 			park.TryAdmitVisitor( 100, out _ );
 		park.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
 		park.AdvanceMonths( 1 );
@@ -979,6 +1215,28 @@ public class ParkEconomyTests
 		Assert.IsTrue( fromOlder.TryGetObject( ride.Id, out var old ) );
 		Assert.AreEqual( (42.0, 100.0), (old.Repair, old.LifeGauge), "older saves use StateOfRepair and a full life gauge" );
 		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.Replace( "\"Repair\": 42.625", "\"Repair\": 50.5" ) ) ) );
+	}
+
+	[TestMethod]
+	public void SavesWithTheOldJobTimeFieldAreConvertedToTurns()
+	{
+		// ORACLE F19: mechanic job time is counted in park turns (BusyTurns). An older save has BusyTicks in tenths of a park hour
+		// (360 park seconds each); a turn is 3750 park seconds, so the old value converts rounded up.
+		var park = EconomyTestData.Park();
+		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		mechanic.BusyTicks = 7;
+		var text = ParkSaveFile.Serialize( park );
+		Assert.IsTrue( text.Contains( "\"BusyTurns\": 7" ) && !text.Contains( "\"BusyTicks\"" ), "new saves write BusyTurns only" );
+		Assert.AreEqual( 7L, ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text ) ), park.Settings, park.Catalog ).Staff.Members.Single( member => member.Id == mechanic.Id ).BusyTicks );
+
+		long Loaded( string field ) => ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text.Replace( "\"BusyTurns\": 7", field ) ) ), park.Settings, park.Catalog )
+			.Staff.Members.Single( member => member.Id == mechanic.Id ).BusyTicks;
+		Assert.AreEqual( 0L, Loaded( "\"BusyTicks\": 0" ), "no job" );
+		Assert.AreEqual( 1L, Loaded( "\"BusyTicks\": 10" ), "one park hour left is one turn" );
+		Assert.AreEqual( 77L, Loaded( "\"BusyTicks\": 800" ), "800 tenths = 80 h = 76.8 turns, rounded up" );
+		Assert.AreEqual( 1L, Loaded( "\"BusyTicks\": 1" ), "a started job never rounds down to none" );
+		Assert.ThrowsException<InvalidDataException>( () => Loaded( "\"BusyTicks\": -1" ) );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text.Replace( "\"BusyTurns\": 7", "\"BusyTurns\": 7, \"BusyTicks\": 7" ) ) ) );
 	}
 
 	[TestMethod]

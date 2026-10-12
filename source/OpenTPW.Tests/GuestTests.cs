@@ -336,6 +336,22 @@ public class GuestTests
 	}
 
 	[TestMethod]
+	public void TheTicketAverageTruncatesEachGuestAndIsZeroWhileTheParkIsClosed()
+	{
+		// 0xc19e4 (PPC-scenarios): the mean of each in-park guest's (u8)trunc(happiness), 0.0 while the park is closed.
+		var economy = EconomyTestData.Park();
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 11 );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		var first = simulation.SpawnInPark( 19, 5 );
+		var second = simulation.SpawnInPark( 19, 5 );
+		first.Happiness = 75.5f;
+		second.Happiness = 74.5f;
+		Assert.AreEqual( 0f, bridge.AverageHappiness, "closed park" );
+		economy.OpenPark();
+		Assert.AreEqual( 74.5f, bridge.AverageHappiness, "(75 + 74) / 2, not (75.5 + 74.5) / 2" );
+	}
+
+	[TestMethod]
 	public void GuestsPayThroughTheParkEconomy()
 	{
 		var economy = EconomyTestData.Park();
@@ -441,6 +457,65 @@ public class GuestTests
 			thirsty = guest.Thirst > 1;
 		}
 		Assert.IsFalse( thirsty, "the guest walked to the drinks shop and drank" );
+	}
+
+	/// <summary>
+	/// PPC oracle finding F20 (<c>walk-boost</c>): the only event that raises the speed boost +196 is a completed use of an object whose type has
+	/// the special ingredient Sugar (the ice cream shops, <c>UsageInfo.SpecialIngredient</c> 4): trunc(6 × amount / 100), amount 50 at build.
+	/// </summary>
+	[TestMethod]
+	public void LeavingASugarShopRaisesTheSpeedBoostAndOtherShopsDoNot()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var iceCream = CreateShop( 2, (0, 5), satisfies: GuestNeeds.Hunger );
+		var burgers = CreateShop( 3, (0, 6), satisfies: GuestNeeds.Hunger );
+		iceCream.Bridge.SpecialIngredient = GuestSpeed.SugarIngredient;
+		burgers.Bridge.SpecialIngredient = 1;
+		var host = (IRideVisitorHost)simulation;
+		var guest = simulation.SpawnInPark( 19, 5 );
+		Assert.AreEqual( (ushort)0, guest.Boost );
+		host.OnVisitorReleased( burgers.Bridge, guest.Id );
+		Assert.AreEqual( (ushort)0, guest.Boost, "Fat does not touch the boost" );
+		host.OnVisitorReleased( iceCream.Bridge, guest.Id );
+		Assert.AreEqual( (ushort)3, guest.Boost, "trunc(6 x 50 / 100)" );
+		iceCream.Bridge.IngredientAmount = 100;
+		host.OnVisitorReleased( iceCream.Bridge, guest.Id );
+		Assert.AreEqual( (ushort)9, guest.Boost, "a second visit adds on top: 3 + 6" );
+	}
+
+	[TestMethod]
+	public void ASugarBoostIsAddedOnceAndDecaysWithinAFewTurns()
+	{
+		Assert.AreEqual( (ushort)3, GuestSpeed.RaiseBoost( 0, GuestSpeed.SugarIngredient, GuestSpeed.DefaultIngredientAmount ) );
+		var boost = GuestSpeed.RaiseBoost( 0, GuestSpeed.SugarIngredient, GuestSpeed.DefaultIngredientAmount );
+		var turns = 0;
+		var speed = 1f;
+		var baseline = 1f;
+		var peak = 0f;
+		while ( boost > 0 )
+		{
+			(speed, boost, _, _) = GuestSpeed.Update( speed, 100, 0, boost );
+			baseline = GuestSpeed.Smooth( baseline, 100, 0, 0 );
+			peak = Math.Max( peak, speed - baseline );
+			turns++;
+		}
+		Assert.AreEqual( 3, turns, "3 -> 2 -> 1 -> 0 (the decay is trunc(boost x 99 / 100))" );
+		Assert.IsTrue( peak > 0.005f && peak < 0.02f, $"a sugar rush moves the smoothed speed of 1.0 by about one percent: {peak}" );
+	}
+
+	[TestMethod]
+	public void TheSugarBoostFollowsTheOriginalArithmetic()
+	{
+		// 0xeb0cc: (amount byte x 6) / 100, added to the u16 boost (wraps); amounts above 255 are masked to the byte (0xe2384).
+		Assert.AreEqual( (ushort)0, GuestSpeed.RaiseBoost( 0, 4, 0 ) );
+		Assert.AreEqual( (ushort)0, GuestSpeed.RaiseBoost( 0, 4, 16 ), "96 / 100" );
+		Assert.AreEqual( (ushort)1, GuestSpeed.RaiseBoost( 0, 4, 17 ), "102 / 100" );
+		Assert.AreEqual( (ushort)6, GuestSpeed.RaiseBoost( 0, 4, 100 ) );
+		Assert.AreEqual( (ushort)15, GuestSpeed.RaiseBoost( 0, 4, 255 ), "the most one use adds" );
+		Assert.AreEqual( (ushort)3, GuestSpeed.RaiseBoost( 0, 4, 256 + 50 ) );
+		Assert.AreEqual( (ushort)14, GuestSpeed.RaiseBoost( 0xFFFF, 4, 255 ), "65,535 + 15 wraps" );
+		foreach ( var ingredient in new[] { 0, 1, 2, 3, 5, -1 } )
+			Assert.AreEqual( (ushort)77, GuestSpeed.RaiseBoost( 77, ingredient, 255 ) );
 	}
 
 	[TestMethod]

@@ -291,9 +291,13 @@ public class QueueTests
 		var park = EconomyTestData.Park();
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1100, out var ride ) );
 		var before = park.Balance;
-		Assert.AreEqual( 50, park.ScrapPercent( ride! ), "year-0 scrap percentage" );
-		Assert.AreEqual( 75 * 50 / 100, park.RefundQueueCell( ride!.Id ) );
-		Assert.AreEqual( before + 37, park.Balance );
+		Assert.AreEqual( 100, park.ScrapPercent( ride! ), "a ride nobody used, in its first 30 days (0xE2424: 100)" );
+		Assert.AreEqual( 75, park.RefundQueueCell( ride!.Id ) );
+		Assert.AreEqual( before + 75, park.Balance );
+		park.RecordRideUse( ride.Id ); park.RecordUseFinished( ride.Id );
+		Assert.AreEqual( 50, park.ScrapPercent( ride ), "year-0 scrap percentage once the ride has been used" );
+		Assert.AreEqual( 75 * 50 / 100, park.RefundQueueCell( ride.Id ) );
+		Assert.AreEqual( before + 75 + 37, park.Balance );
 		Assert.AreEqual( 0, park.RefundQueueCell( 99999 ), "no ride, no refund" );
 	}
 

@@ -76,7 +76,8 @@ public class DeterminismTests
 				shopScript.Advance( Tick );
 				foreach ( var script in dice )
 					script.Advance( Tick );
-				Economy.AdvanceFixedTick();
+				// The fixture runs the economy at its Fastest speed, four ticks to a step (the staff pool draws within the run).
+				Economy.Advance( (int)Economy.Speed );
 				// Both halves of a save/load run reach this tick, so the script stream is consumed after a load.
 				if ( ++Ticks == HalfRun * 3 / 2 )
 					AddDice();
@@ -178,7 +179,7 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0xA51B682C587D0689UL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( 0x373368AA3A0DB3A0UL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]
@@ -405,7 +406,7 @@ public class DeterminismAssetTests
 				for ( var tick = 0; tick < ticks; tick++ )
 				{
 					guests.Tick( 1f / FixedStepClock.TicksPerSecond );
-					park.Economy.AdvanceFixedTick();
+					park.Economy.Advance( (int)park.Economy.Speed );
 				}
 			}
 			park.Economy.Speed = GameSpeed.Fastest;

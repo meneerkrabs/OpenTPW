@@ -112,7 +112,9 @@ Mutation checks (`test_oracle.py`):
   `CanChangeCellType` rule `old == 21 → old == 20` (2), rule 7 back to `lastCell` (2), the money
   test in 64 bits (2), the UNBOUNCE window `/ 200 → / 250` (39), `IsOpen` dropped from the park points
   counts-test, the loan instalment `… / months → … / months + 1` and the loan credit booked as other income instead of
-  `LoanReceived` and the sign of the join excitement refusal swapped (`queue-join-gate`). A no-op "mutation" fails the
+  `LoanReceived` and the sign of the join excitement refusal swapped (`queue-join-gate`), the working energy rate `0.025f → 0.026f` (`staff-vitals`), the rest test `>` to `>=` (`staff-rest-seek`), the grievance `< 15` to
+  `<= 15` (`staff-strike-grievance`), the age gate `< 24` to `<= 24` (`staff-strike-month`), the seconds per park turn 3750 → 3751
+  (`calendar-date`), the day detection `!=` → `>` (`calendar-update`, which misses 31 → 1), the ticket remainder 0 → 1 (`golden-ticket-cadence`) and the fixed tick 1/60 → 1/54 s (`park-turn-cadence-frames`). A no-op "mutation" fails the
   test.
 
 ## 4. Targets, stubs and results (seed `oracle-v1`, 500 random + boundaries)
@@ -128,6 +130,7 @@ Mutation checks (`test_oracle.py`):
 | `board-bounce` | `0xadf40` | `0x10e844` clock (returns the chosen `now`) | 505 (incl. a full table and holes) | **agree** (BOARD-plan §5) | **agree** (OV2-6 fixed: `TakeBounceSlot`) |
 | `walk-speed-setter` | `0xffe38` | none | 518 | **agree** (WALK-plan §1, incl. NaN/±inf/huge) | **agree** (`GuestSpeed.Caps`, wired in WALK-F) |
 | `walk-smoothing` | `0xe6b28` + `0xffe38` | `0xffd4c`, `0xd2394` (later movement updates, no value used) | 507 | **F6**: 99 differ (98 in the last bit of `s`, 2 in the boost wrap, one input both). Fused reading: 2 (wrap) | **agree** (`GuestSpeed.Update`: fused multiply-add and the u16 product, F6 fixed in WALK-I; wired in WALK-F) |
+| `walk-boost` | `0xeaaf8` (the outcome routine of one completed use; its `0xeb0cc..0xeb0f4` stores the boost), `0xdc320` (type lookup), `0xe2384` (amount byte), `0x105328` (world LCG) | `0x118018` type record (synthetic, registry and type id checked), `0xfa9a4` thing id, `0xfb7b4` thought, `0xea318` ride outcome (checked: called once), `0xe1f78`/`0xe2094` goods, `0xe1e58` charge, `0xeb6f4` happiness change, `0xe6d20` and the log `0x5fbcc` (all recorded). Appearance word `+348` 0 and the toilet flag clear: the balloon and costume blocks are not entered | 521 | **F20**: **agree** 521/521 with the reading (type `+344` 4 Sugar: boost += trunc(6 x amount byte / 100), u16; 1 Fat, 2 Salt, 3 Ice change the toilet and thirst floats; nothing else touches the boost). The old claim (nothing raises it) differs wherever the ingredient is 4 | `GuestSpeed.RaiseBoost` through `guest_ingredient_boost`: **agree** 521/521 (boost only) |
 | `coast-rating-step` | `0x415b4` | none | 509 | **F7**: 440 differ with the stale term = 0. **Agree** 509/509 with the stale term = Fz. Previous force and bank are 0 in every input (OV-7, F7) | COAST-I not on main (hook `coaster_rating_step`) |
 | `coast-rating-final` | `0x41900` | none | 506 | **F8**: 280 differ. **Agree** 506/506 with the corrected count | hook `coaster_rating_final` |
 | `arrival-group` | `0xcb4e8` | `0x1082b4` game → park (sentinel, checked), `0xc1fb4` counted guests (chosen count; argument 20 checked), `0xc24c0` park points (chosen), `0x1083c8` thing lookup (synthetic thing, `+48` chosen: the weather's mCurrentDrops), `0x5fbcc` debug print (logged). The GameType object is marked constructed, so its constructor `0x12bb64` must not run | 515 | **F9** (factor and online cut fixed): 49 differ from GUESTS.md, all from the missing floor. **Agree** 515/515 with the routine reading | **F9**: 49 differ, the same inputs as the plan (`arrival_group`: `GuestSimulation.ArrivalGroupSize`) |
@@ -146,10 +149,32 @@ Mutation checks (`test_oracle.py`):
 | `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `ParkEconomy.TryBuy` through `shop_sale_litter` (delta of `LitterScaled`): the same 213 (C# has no guest meter, so its delta is added to the oracle's meter) |
 | `guest-litter-trigger` | the first lines of the litter test in the guest update (`0xebd20..0xebd3c`) | none | 521 | no plan side. **Agree** 521/521 with the routine reading: the meter truncated, taken as a byte, `>= 90` | no hook (CSHARP_PENDING): OpenTPW has no guest litter meter |
 | `staff-training-split` | `0xfc1c4` (the month-end training split), the list walkers `0x10507c` / `0x1050a4` / `0xfa9a4`, `0xf3588` (train one member), `0x108424` / `0x1082b4` (bank and park things of the game) and the debit `0xcbfdc` with its statistics | `0xb678` assertion (a zero condition fails the run) and the debug print `0x5fbcc` (logged) | 507 | **F17**: 358 differ from the former rule (the plan). **Agree** 507/507 with the routine reading | `ParkStaff.Train` through `staff_training`: **agree** (358 differed before the fix) |
+| `ride-repair-duration` | `0xd9c0c` (the mechanic's repair-state entry), `0xdfe0c`/`0xdfe88`/`0xdfe90` (ride state 1, maintenance word `+96`, state 2), `0xd2290` (sub-state setter) | `0xfa9a4` thing id, `0xdfb94` the ride's mechanic id, `0xe6454` arrival state (chosen), `0xdc320` type record (the word at `+508 + 64 · level` chosen), `0xd99ac` release (recorded), `0xb678` assertion and `0x5fbcc` log (recorded); the balance block word `+1004 + 8 · grade` is `WorkDuration` | 529 jobs | **F19** (fixed in C#): 396 differ from the old claim (a flat `WorkDuration`, `plan`; the same without the upgrade factor, `flat-repair`, differs on 352). The routine reading **agrees** 529/529 | `ParkEconomy.RepairTimer` through `repair_timer`: **agree** 529/529 |
+| `ride-repair-arrival` | the same | the same | 515 | **F19**: the flow (another mechanic on the ride: log and release; still walking: let go; no broken, upgrade or maintenance state: log and release; else timer, state 13, sub-state 18) **agrees** 515/515 | no hook (CSHARP_PENDING): OpenTPW starts a mechanic at once and has no walk or release |
+| `object-scrap-value` | `0xe25e8` (the scrap value getter), `0xe2424` (the age percentage), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic: percentages at `+392 + 64 · level + 4 · year`, costs at `+440 + 64 · level`; registry checked), `0xe4394` the clock stamp (turn × 15000 / 4 × 10^7 as 100 ns units, the value `0xdad90` stores to thing `+20`) and the glue `0x1c5c64` (the signed 64-bit stamp subtraction, as at `0xdc520`). Thing: type `+14`, stamp `+20`, level byte `+76`, use word `+412`. No thing bought after the current turn | 572 | **F21** (fixed in C#): the old rule (catalogue costs summed through the level, no 100 %) differs on 280. The routine reading **agrees** 572/572 | `ParkEconomy.ScrapValue` through `object_scrap_value`: **agree** 572/572 (the use count passed as `ParkObjectState.TimesUsed`) |
+| `staff-vitals` | `0xf44c0` (moving step), `0xf459c` (working step), `0xf3d8c` (rest step), `0xf448c` (energy byte below `RestLevel`) | `0xf4d00` (frees the rest area), the role actions `0xd99ac`, `0xd5a3c`, `0xd2b04`, `0xd4b74`, `0xf0380` (logged), `0xb678`. The settings block (`RestLevel`, the grade's recuperation rates) is written in the data section | 526 | **F22**: 427 differ from the old claim (happiness fixed at 100, no energy, no rest). **Agree** 526/526 with the routine reading | `StaffVitals.Walk`, `Work`, `Rest`, `IsBelowRestLevel` through `staff_vitals`: **agree** 526/526 |
+| `staff-rest-seek` | the tail of `0xf4900` (`0xf4a60..0xf4c04`) and the world LCG `0x105328` | `0xfb54c` thought, `0xf4c18` navigation (a rest area found or not), `0xf311c` state change, `0x5fbcc` log | 509 | **F22**: 81 differ from the old claim. **Agree** 509/509 with the routine reading (energy byte against `RestLevel`, the thoughts, the one-in-sixteen happiness hit with the world draw) | `StaffVitals.SeekRest` through `staff_rest_seek` (the world draw is passed in): **agree** 509/509 |
+| `staff-strike-grievance` | `0xf8410` | `0x1082b4` game -> park, the two analyser sums `0xc21f4` / `0xc2264` (chosen words, arguments checked), `0xb678`, `0x5fbcc`. One chain of staff per role, decoys in the other roles | 515 | **F22**: 313 differ from the old claim (no strikes). **Agree** 515/515 with the routine reading | `StaffStrikeBoard.Grievance` through `staff_grievance`: **agree** 515/515 |
+| `staff-strike-month` | `0xf7e18` (the month-end consideration), `0xf7fe0` (the escalation), `0xf8410`, `0xf8bc0` / `0xf8bd0` (active flag), `0x1091ac` (park closed word), `0x1c4100` (64-bit divide) | `0xfc1c4` training, `0xc1fb4` guests in the park (chosen), `0xe4628` clock stamp (chosen), `0x116590` / `0x11688c` message construction and posting (logged as role and kind), the grievance stubs. One run replays 1 to 6 month ends in one sandbox | 513 scripts | **F22**: 442 differ from the old claim (no strikes). **Agree** 513/513 with the routine reading (levels, flags, turns considered, messages and every debug line) | `StaffStrikeBoard.ConsiderMonth` through `staff_strike_month`: **agree** 513/513 |
+| `profit-ticket` | `0xd31d0` (the six local golden tickets; ticket 4 is `0xd33dc..0xd3410`), the bank year profit `0xccfa8`, the earned flag `0x128d6c` / `0x12a438` | `0x1082b4` and `0x108424` (game checked; synthetic park and bank), `0xd3664` (the award, logged) | 523 | **F23**: 154 differ from the former rule (`>=`), every one with profit equal to the threshold. **Agree** 523/523 with the routine reading (`test_profit_ticket_reading_is_sharp`) | `ParkObjectives.CheckGoldenTickets` through `profit_ticket`: **agree** (154 differed before the fix) |
+| `profit-ticket-hint` | `0x13fdc` (the advisor's "near the profit ticket" hint), `0xccfa8`, `0x128d6c` / `0x12a438` | `0x108424` (game checked; synthetic bank) | 621 | no plan side. **Agree** 621/621 with the routine reading | none: OpenTPW has no advisor hints (`CSHARP_PENDING`) |
+| `local-tickets` | all six arms of `0xd31d0`, `0x128d6c` / `0x12a438` (earned flags) | `0xc3b7c`, `0xc3684`, `0xc19e4` (float), `0xc5510`, `0xc3b88` (month count checked), `0xe4628` / `0x1c4100` (the age in months), `0x1082b4`, `0x108424`, award `0xd3664` (logged) | 541 | **F23**: 458 differ from the former rule (every `>=`, average truncated). **Agree** 541/541 with the routine reading | `ParkObjectives.CheckGoldenTickets` through `local_tickets`: **agree** |
+| `global-tickets` | `0xd34c0` (four statistics against `+1900`, `+1904`, `+1908`, `+1916`) | `0x1082b4`, `0xc73bc`, `0xc6cec`, `0xc710c`, `0xc8cc0`, award `0xd3748` (logged) | 515 | no plan side. **Agree** 515/515 with the routine reading | `CheckGoldenTickets` through `global_tickets`: **agree** |
+| `calendar-date` | `0xe4394` (the world turn → date), `0x10a9a4` (game pointer), `0x1c4100` (signed 64-bit divide), the import glue | the bullfrog time-stamp API by import name: `operator+` (64-bit add of the time difference) and `GetTime` (Python proleptic-Gregorian decomposition, the Mac OS default calendar; null pointers skipped) | 652 (every month boundary of 2000-2003, the leap days of 2000, 2004 and 2400, the missing one of 2100, random turns to 6 × 10^7) | **F30**: **agree** (start + floor(turn × 15000 / 4) s); rates other than 15000 floor the seconds, not round (`test_calendar_rate_floors_the_seconds`) | `ParkCalendar.DateAtTurn` through `calendar_date`: **agree** |
+| `calendar-update` | `0xe3f0c` (the calendar update), `0xe4394`, the message constructors `0x116488` / `0x1164a4` / `0x1164c0` | the time-stamp API as above, the dispatcher `0x11688c` (the message type is read from its vtable), the day notification `0x18f4cc` and the month hooks `0x15bbd8` / `0x151698` / `0x155234` (logged with their arguments) | 579 scripts of 1-24 turns from a synchronised calendar | **F30**: **agree** (messages, their order day → month → year, and the stored month / day / year); routine reading agrees | `ParkEconomy.Advance` events and `ParkCalendar.FieldsAtTurn` through `calendar_update`: **agree** |
+| `calendar-first-update` | the constructor `0xe3c90` with `0xe4348` (start 2000-01-01), then `0xe3f0c` | as `calendar-update`, plus `GetLocalTime` (a fixed host time) and `SetTime` | 503 scripts from a constructed calendar | **F30**: 503 differ (the stored day is -1, the year 0, the month 0: the first update posts a day and a year message, and a month message outside January). Routine reading **agrees** 503/503 | no hook: OpenTPW starts synchronised (CSHARP_PENDING) |
+| `park-turn-cadence` | the world callback's catch-up fragment `0x1c22b0..0x1c24d0` (the registers its prologue loads from the TOC run first), the scheduler clock `0x10e844` → `0x11a588` → `0x10ed54` → `0x117d74` → `0x127cd0`, `0x1c3fbc` (float → u32), the mode wrapper `0x10565c` | the library clock `LbTime_GetClock` (the chosen raw millisecond), the script passes `0xb2838` / `0x9f748` / `0x20688`, the even-substep passes `0x63dd0` / `0xb7ac0`, the park turn `0x10536c` (counted), `0xb5da4`, `0x1aa614` and the six calls of the every-32nd-substep body (all logged) | 508 scripts of raw-clock gaps | **F30**: 57 differ by 1 ms (the clock accumulates gap × scale with one fused multiply-add in binary64 and truncates: ten 16 ms gaps at scale 0.8 give 127, not 128). Routine reading **agrees** 508/508 | no hook: OpenTPW samples turns from a 60 Hz clock (CSHARP_PENDING) |
+| `golden-ticket-cadence` | `0xd67f0` (the world's park-turn update) and `0xd2f1c` (the ticket dispatcher), including the unsigned remainder by 100 and the game type word (the lazy object marked constructed) | the bank update `0xcb278`, the staff pool `0xf6e24`, the calendar update `0xe3f0c` and the three ticket checks `0xd31d0` / `0xd34c0` / `0xd35b4`, each logged with its object argument checked | 507 scripts of turn updates (every multiple of 100 and its neighbours, the top of the 32-bit range, game type words 0, 1, 2, 3, -1 and random) | **F31**: **agree** (a check on every 100th turn, unsigned, for game type 0 only: 3 checks after the calendar update). The order differed in C# (checks first, 148 scripts) and a signed remainder differs on 5 | `ParkEconomy.RunsGoldenTicketCheck` through `golden_check_turns`: **agree** |
+| `park-turn-cadence-frames` | as `park-turn-cadence` | as `park-turn-cadence` | 506 frame loops with every gap within 150 ms of scaled time, at scales 0.25 to 4 (OpenTPW's x4 included) | **F32**: as `park-turn-cadence` (53 differ by 1 ms); routine reading **agrees** 506/506 | `FixedStepClock` fed with each frame's time × the scale, and `ParkCalendar.Turn` of its tick count, through `park_turns`: **agree** as a window (never ahead of the original, at most one turn behind at every frame) |
+| `clock-speed-scale` | the three speed-key release callbacks `0x11315c` / `0x113184` / `0x1131ac`, the clamping setters `0x127c88` / `0x127c48`, the direct setter `0x127c40`, and the scheduler clock read `0x10e844` (→ `0x11a588` → `0x10ed54` → `0x117d74` → `0x127cd0`, `0x1c3fbc`) | the library clock `LbTime_GetClock` (the chosen raw millisecond) | 509 scripts of key presses and clock reads (start scales 0, 0.1, 0.25, 0.8, 1, 2, 3, 4 and random; a wrapping raw counter) | **F32**: the keys step the scale by 1.25 within 0.25..2.0 and the clock adds gap × scale: routine reading **agrees** 509/509; the plan's exact scaled time differs by 1 ms (1 script) | no hook: OpenTPW has four buttons, not three stepping keys (CSHARP_PENDING); the scale's path into OpenTPW is `park-turn-cadence-frames` |
 
 The C# comparisons use these seams:
 
 - `ParkEconomy.TryBuy` (`shop_sale_litter`): the litter store delta of one sale.
+- `ParkObjectives.CheckGoldenTickets` (`local_tickets`, `global_tickets`): the won ticket indices for chosen statistics and limits; the guest
+  statistics are a stub, the year profit comes from `ImportOriginalBank`, the records from `ParkCounters.Max`.
+- `ParkObjectives.CheckGoldenTickets` (`profit_ticket`): whether the yearly profit ticket is newly won, on a park whose bank holds the
+  given year profit and whose Standard.sam has the given `GoldenTicketLocal.ProfitYear`.
 - `RideVisitorBridge.ComputeQueueLimit`.
 - `ParkCellMap.CanChangeCellType`.
 - `ParkEconomy.TrySpendCell` in `ParkPathBuilder.Validate` order: refuse, then the same type
@@ -157,7 +182,8 @@ The C# comparisons use these seams:
 - `RideVisitorBridge.TakeUnbounced` and `RideVisitorBridge.TakeBounceSlot`, called by reflection because they are
   internal.
 - `GuestSpeed.Caps` and `GuestSpeed.Update` (`guest_speed_limits`, `guest_speed_smoothing`), with s passed and
-  returned as single bits. `CSharpMutation` flips the fused multiply-add to a plain one and the floor 655 to 654.
+  returned as single bits. `GuestSpeed.RaiseBoost` (`guest_ingredient_boost`): the boost, the ingredient and the amount byte; the
+  thirst and toilet words of the other ingredients have no C# model and are compared with the plan only. `CSharpMutation` flips the fused multiply-add to a plain one, the floor 655 to 654 and the Sugar factor 6 to 5 (`walk-boost`).
 - `GuestSimulation.ArrivalGroupSize` (`arrival_group`) on a fresh simulation: world mode 4 sets `ArrivalsHalted`, and
   the counted guests fill the simulation's guest list (a field) by reflection. The weather thing's `+48` word is passed as
   `WeatherDropsFalling` (word > 0) and the GameType mode word 1 as `OnlineVisit` (the 500 cut).
@@ -177,22 +203,99 @@ The C# comparisons use these seams:
   relief flag with the wear gauge as a single. The type's `+1960` word (`Info.WhichUIType`) 2 maps to `Sideshow`, anything else
   to `Ride`. The thing behind ride `+36` is not sent: C# has none (QUEUE-004), so the inputs with one are the remainder.
   `test_queue_join_csharp_remainder` pins that every remaining mismatch is such an input.
+- `ParkEconomy.ScrapValue` (`object_scrap_value`) on an economy with one synthetic ride type whose three upgrade levels carry the
+  input's `CostOfUpgrade` and `ScrapValueYear1..4`; reflection puts the build tick and the final tick on the first tick of the input
+  turns, as for `park_points`, and the thing `+412` word is passed as `ParkObjectState.TimesUsed`.
 
 - `LoanMath.MonthlyRepayment` (`loan_offers`) for each offer of an input; `LoanMath.Pay`, `ParkLedger.Post` and
   `ParkLedger.ChargeLoanInterest` (`loan_term`) run month by month exactly as `ParkEconomy.EndMonth` does, with the
   instalment M given (the original's, as C# now computes it); the real `EndMonth` is covered by
   `ParkEconomyTests`. `ParkEconomy.TryRepayLoan` (`loan_payoff`) on an imported bank with one bought loan; `ParkEconomy.TakeLoan` (`loan_take`) on an economy with the one offer (a second take refused for
   an offer already bought); the changes of balance, year profit and the month's money-in total are compared.
+- `ParkEconomy.RepairTimer` (`repair_timer`) with the work duration, the gauge as single bits and, for a ride in state 2, the upgrade duration, as
+  `DispatchMechanics` sends them for a job.
 
 - `ParkStaff.Train` (`staff_training`) on a fresh `ParkStaff` over the synthetic `Standard.sam`, with each role's five
   `PoundsPerTrainingPoint` values replaced by the input's, members added with the internal `AddImported` (reflection) at the input's
   grade and points, and the five budgets set. The members' grade and points and the amount `Train` returns are compared; the
   bridge sends only real staff (the original's list may carry other things, which neither side touches).
+- `StaffVitals.Walk`, `Work`, `Rest` and `IsBelowRestLevel` (`staff_vitals`) on a staff member with the chosen grade, energy and
+  happiness; the rates and the rest level come from the settings in the original and are passed as the settings' singles.
+  `StaffVitals.SeekRest` (`staff_rest_seek`) with the world draw passed in. `StaffStrikeBoard.Grievance` (`staff_grievance`) and
+  `ConsiderMonth` (`staff_strike_month`, one call per month end on a board restored with the input's levels, flags and turns).
+  The handymen's analyser sums (`0xc21f4`, `0xc2264`) are passed for the grievance; `ParkEconomy` never supplies them.
+
+- `ParkCalendar.DateAtTurn` (`calendar_date`): the date of a park turn at the default clock rate 15000 and the 2000-01-01 start. The
+  calendar's other rates are compared with the plan only (`test_calendar_rate_floors_the_seconds`). `ParkEconomy.Advance`
+  (`calendar_update`): a park started at the turn before the first step through the internal `StartAtOriginalTurn` (reflection) and
+  advanced turn by turn; the `DayEnded`, `MonthEnded` and `YearEnded` events of each turn, in order, are compared with the messages
+  `0xe3f0c` posts, and `ParkCalendar.FieldsAtTurn` with the stored fields.
+
+- `ParkEconomy.RunsGoldenTicketCheck` (`golden_check_turns`): the predicate `AdvanceTurn` asks per turn; the game type word 0 is Full
+  Simulation, any other word Instant Action (no tickets on either side). The order inside the turn is the plan reading
+  `plan-tickets-before-calendar` against the executed order and is covered by `ParkEconomyTests`.
+
+- `FixedStepClock` and `ParkCalendar.Turn` (`park_turns`): each frame's elapsed milliseconds times the speed scale go to
+  `FixedStepClock.Advance` exactly as `Level.Update` feeds it (`Time.Delta × SimulationTimeScale`), and the turns so far are read after each frame.
+  The oracle's loop runs a turn when the scaled time passes 248 j − 31 ms, OpenTPW at the first 60 Hz tick of 248 j ms, so the comparison is a
+  window: the C# count is never ahead and at most one turn behind at every frame (`cadence_frames_equal`).
 
 The pricing domain is the free byte clear, `game+36 == 0` and bank `+276 ≠ 0`. Old 1 → new 3
 belongs to `path-can-change`.
 
 ## 5. Findings
+**F23, the yearly profit golden ticket (ECON-039, `ParkObjectives.CheckGoldenTickets`, `0xd33dc`; fixed in C#).** The register said the
+profit ticket compares the year's profit with `ProfitYear` directly, while the original (`0x13fdc`) "scales the threshold by a per-objective
+factor". Both routines are executed (`profit-ticket`, `profit-ticket-hint`) and they are not the same rule:
+
+- The award is the local ticket check `0xd31d0` (called from `0xd2f1c`, game type 0, every 100 turns). For each local ticket it asks the
+  earned flags (`0x128d6c(flag set, index)` over the byte `flags[index]`) and, when the ticket is not earned, compares a park statistic
+  with a word of the Standard.sam block (TOC `-30084`). Ticket 4 is `0xd33dc..0xd3410`: `0x108424(game)` is the bank, `0xccfa8` is its
+  `+292` word (the year profit), and `cmpw` (signed) of that word against the word at `+1888` (`GoldenTicketLocal.ProfitYear`) with a
+  branch on "not greater" decides; the award is `0xd3664(this, 4)`. **There is no factor, and equal is not enough.** The executed
+  routine agrees with that reading on 523/523 inputs, and a `>=` compare, an unsigned compare and the 0.9 multiplier each break it
+  (`test_profit_ticket_reading_is_sharp`).
+- `0x13fdc` is a virtual method of the advisor's rule object (a large vtable of rule methods; the neighbours `0x13de8`, `0x13ec4` do the
+  same for people and happiness). Its fields are the advisor's rule table: `this+1492` is `GoldTicketNearToXProfit.ProfitMultiplier` (the
+  layout of the Advisor.sam record table puts it 12 bytes lower than the object offset, and the same shift fits the people and happiness
+  rules), `this+1496` is that rule's `.Score`. It computes `trunc(single(single(ProfitYear) * multiplier))`, tests the same bank word
+  `>` that value (signed) and, while the ticket is not earned (`0x128d6c(flag set, 4)`), returns the score, else 0. With the shipped
+  Advisor.sam (multiplier 0.9, score 100) that is the advisor's "you are close to the profit golden ticket" message at 90 % of
+  `ProfitYear`. The routine reading agrees with the executed routine on 621/621 inputs, and the missing multiplier, the missing earned
+  test and a `>=` compare each break it. This is the "per-objective factor" ECON-039 found: it belongs to the advisor, not to the award.
+
+Before the fix OpenTPW compared `profit >= ProfitYear`; the original is `profit > ProfitYear`. The two differ only when the year's profit is
+exactly the threshold: with the shipped jungle value 15000, a year profit of exactly 15000 won the ticket in OpenTPW and wins nothing in the
+original (it needs 15001). The oracle's former-rule side and C# both showed 154 mismatches, every one with profit equal to the threshold
+(first counterexample: profit 15000, threshold 15000: original no award, old rule ticket 4), and C# now agrees on 523/523.
+**Fixed in C#:** `profitThisYear > rules.ProfitYear`; the `[APPROX:ECON-039]` is gone. The statistic was already the right one
+(`mProfitThisYear`, the bank's `+292`, a signed 32-bit word). Extension: every other ticket (`local-tickets`, `global-tickets`, executed arm by arm; the earned flags are the real `0x128d6c`, the park
+statistics are stubbed). All are `cmpw` and a branch on "not greater" (signed, strictly greater, no factor), with these exact reads:
+
+| Ticket | Original (`0xd31d0` / `0xd34c0`) | OpenTPW before | OpenTPW now |
+| --- | --- | --- | --- |
+| Visitors | `0xc3b7c(park) > [1872]` | `>=` | `>` |
+| People in park | `0xc3684(park) > [1876]` | `>=` | `>` |
+| Happiness | single `0xc19e4(park, 0)` (average happiness, `fcmpo`) `> single([1880])` **and** `0xc3684(park) > [1884]` | the average truncated to an integer, `>=`, plus a count of guests at least that happy `>=` `AtLeastThisManyHappyPeople` | the single average `> Happiness` and the guests in the park `> AtLeastThisManyHappyPeople`; nobody is filtered by happiness (`IParkGuestStatistics.AverageHappiness` is now a float: the mean of each in-park guest's `(u8)trunc(happiness)`, 0 while the park is closed, as `0xc19e4` computes it per PPC-scenarios; the routine itself is stubbed here) |
+| All researched and built | `0xc5510(park)` low byte nonzero | same | same (no C# input in the oracle) |
+| Profit | bank `+292 > [1888]` | `>=` | `>` |
+| Recent visitors | `0xc3b88(park, [1896]) > [1892]` **and** the park age in 30-day months `> [1896]` | the last N closed months `>=` | the last N closed months `>`; the age gate is still "N closed months" (ECON-052) |
+| Coaster height, go-kart excitement, water length | `0xc73bc` / `0xc6cec` / `0xc710c` `> [1900]` / `[1904]` / `[1908]` | `>=` | `>` |
+| Big park | `0xc8cc0 > [1916]` (`MinCellsCovered`) | `>=` `MinCellsOwned` | `>` `MinCellsOwned` (key mapping is ECON-038) |
+
+The global tickets are a small routine of their own (`0xd34c0`, four statistics against four words, each award `0xd3748` tests its own earned
+flag), so they are executed too. The secret camera ticket (`0xd35b4`: `0xc8b08 == 100` percent covered) and the never-awarded all-land
+ticket are not run, and C# keeps its `>= MinCellsCovered` records for them. Wherever the ticket checks differ from C# only at the limit
+itself, the shipped files give limits of 100 visitors, 200 and 150 guests, average happiness 75, 15000 profit, 350 recent visitors and the
+global 105, 90, 50 and 2000 / 3000, so for example a park with exactly 100 admissions no longer wins the visitors ticket (it needs 101) and
+a go-kart excitement of exactly 90 no longer wins (91). Not compared with C#: the age gate of the recent-visitors ticket (the original
+counts 30-day months of park age, OpenTPW closed calendar months; the oracle inputs keep the age at least three months away from the
+month count, and the boundary is executed in `test_local_tickets_arms_and_boundaries`) and the big-park key. Inputs with a negative
+`RecentVisitors` limit also differ (a short park passes in C#); no shipped file has one.
+
+The gate around the
+routine (game type 0, every 100 turns) is not executed, and the advisor hint has no C# counterpart (the advisor slice is unused).
+
 **F17, the month-end staff training (ECON-013, `ParkStaff.Train`).**
 `staff-training-split` executes `0xfc1c4` over a staff list built in memory (the list walkers, the thing array, the settings prices,
 a bank and a park thing for the debit `0xcbfdc` and its statistics). The routine reading agrees on 507/507, C# agrees after the fix,
@@ -315,7 +418,7 @@ table, free slots included.
   equivalent.
 - `0xe6bbc..0xe6bd8` stores `boost · 99` as a **u16** (`sth`) before the `/100`. For a boost
   above 661 the product wraps: boost 662 gives 0, not 655. Whether a boost above 661 can occur
-  depends on `0xeb0f4`'s amounts (not traced).
+  depends on `0xeb0f4`'s amounts: answered in F20 (one use adds at most 15, so it cannot happen in play).
 
 The speed setter `0xffe38` agrees with WALK-plan §1 on all 518 inputs, including NaN → 655,
 ±inf and negative s.
@@ -778,6 +881,335 @@ the old rule for every shipped value, so ECON-020 stays an `[APPROX]` with the s
 per-guest meter, its clamp and the 90 threshold are not modelled. The `shop-sale-litter` plan and C# sides keep their 213 mismatches
 (first counterexample: meter 60, effect 50: original 100, old rule 110) until the guest meter lands, and every one is a sum outside 0..100
 (`test_shop_sale_litter_rule_differs_only_where_the_meter_clamps`).
+**F19, the mechanic's job timer (ECON-021, `ParkEconomy.RepairTimer`, `0xd9c0c`; fixed in C#).** The arrival routine of the mechanic state
+machine (dispatch `0xd991c` on mechanic `+412`; the generic update `0xfa9b0` runs it for every live thing each turn, PPC-review §6) was executed
+with its callees stubbed (`ride-repair-duration`, `ride-repair-arrival`, 529 and 515 inputs). The mechanic's `+532` names the ride; the ride's
+mechanic id (`0xdfb94`) must be the mechanic's own, else it logs and releases. With `0xe6454` (arrival, not executed) returning 0 it starts when the ride
+is broken (`+408 == 1`, `0xdfe0c`), being upgraded (`+408 == 2`, `0xdfe90`) or has the maintenance word `+96` set (`0xdfe88`), writes the sub-state 18
+(`0xd2290`), the timer into the mechanic's `+528` and state 13 into `+412`:
+
+- *Upgrade (ride state 2):* `WorkDuration[grade] × word at +508 + 64 × level` of the ride's type record (balance `+1004 + 8 × grade` is
+  `MechanicConstsPerGrade[grade].WorkDuration`). The ride's `+76` is still the old level (`0xdef2c` adds one on completion), and the type record's `+444`
+  is `Upgrades[0].DurationOfUpgrade` (PPC-economy), so `+508 + 64 × level` is `Upgrades[level + 1].DurationOfUpgrade`: the duration of the level being installed.
+  A 32-bit product, stored as an unsigned word, with no minimum (a duration of 0 gives timer 0).
+- *Any other job (broken, or the maintenance word):* `WorkDuration × (100 − (fctiwz(+64) & 0xFF)) / 100`: the state of repair truncated and taken as a
+  byte (the same byte as F15), a 32-bit `mullw` and the signed multiply-high division by 100 (truncating toward zero). A ride at 100 % needs no time;
+  above 100 the factor goes negative and the word wraps (not reachable: wear clamps to 0..100).
+- *The ride's own upgrade level does not matter for a repair.* The static reading "plus an upgrade factor at `+0x1FC`" belongs to the upgrade job only.
+- *Counting.* The repair-state handler `0xd9e04` calls the working update (`0xf459c`), then decrements a nonzero timer once per call. At zero it
+  calls the full repair `0xdef2c` (`+64` to 100, level + 1 in state 2), clears the mechanic's target and releases it; in ride state 1 it first
+  reads the script's `VAR_BROKEN` (`0xdfea4`/`0xdfed4`) and logs when that is not above zero. Not executed here and not seen in this routine: a wait for
+  a fix animation (PPC-economy says so). One call per park turn (the dispatcher cadence, static) makes the
+  unit **park turns**: timer + 1 updates until completion. The old claim was game hours.
+
+First counterexample (the plan, C# before): a grade-0 mechanic (`WorkDuration` 80, the Jungle data) on a ride at 40 % repair. The original's timer is 48;
+the old claim said 80 hours. At 0 % the two agree in number (80; hours and turns differ by 4 %: a turn is 62.5 park minutes), at 100 % the original needs
+no time at all, and the ride's level changes nothing (a fully upgraded ride at 40 % is also 48). The shipped upgrade durations 0 / 2 / 4 give a timer of
+`WorkDuration × 2` for level 0 to 1 and `WorkDuration × 4` for level 1 to 2 (160 and 320 at grade 0; the old rule had the same factors, and took
+`max(1, ·)`). Per grade (80, 60, 40, 30, 20) a repair at 40 % takes 48, 36, 24, 18, 12 turns. Not changed in C#: the walk to the ride (state 2 of
+`0xe6454`) (ECON-021 stays an approximation) and the choice of job. A
+saved job is written as `BusyTurns`; an older save with only `BusyTicks` (tenths of a park hour, 360 park seconds each) is converted at 3750 park seconds per turn, rounded up (800 becomes 77), by `ParkSaveFile.BusyTurnsOf` (save version unchanged).
+
+The reading is sharp (`test_repair_duration_reading_is_sharp`): the flat claim differs on 352 inputs, dropping the byte on 17, the division by 100 on 353, the
+upgrade branch on state 1 on 246.
+
+**F20, the speed boost (WALK-001, `GuestSpeed.RaiseBoost`, `0xeaaf8`; fixed in C#).** `0xeb0f4` is not a routine but the `sth r0,196(r28)`
+that ends a four-instruction block at `0xeb0cc` inside `0xeaaf8(guest, ride)`, the outcome of one completed use of an object (shop, sideshow or ride).
+Scanning the whole code section for `bl 0xeaaf8` finds one call site, `0xe9ff8` in `0xe9fa4`, which `0xeec78` in the ride's release step `0xeeb30` calls
+when the guest leaves the object (state 15). `0xe9fa4` calls `0xeaaf8` when the guest's byte `+497` is nonzero. `+497` is the result of the win draw `0xe2940` (`rand % 100 <= chance byte`, ride `+396`, 100 minus
+`InitChanceOfLoosing`) made when the guest enters state 14 (`0xef8e0`, `0xef920`: called aboard); it is always 1 for rides and shops (chance 100, the routine asserts it
+for every type but sideshows). A lost sideshow goes to `0xeb49c` (happiness down) instead. After the type's need effects (`+324` thirst and `+328` hunger subtracted, `+332` vomit and `+336` happiness added, all
+clamped to 0..100), `0xeaf44` switches on type `+344` (`UsageInfo.SpecialIngredient`: 0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar) with the amount byte of the ride
+(`+404`, `mAmountOfSpecialIngredient`, getter `0xe2384`):
+
+| `+344` | Ingredient | Effect (single precision, clamped to 0..100 unless said) |
+| --- | --- | --- |
+| 1 | Fat | toilet `+428` += amount |
+| 2 | Salt | thirst `+420` += amount |
+| 3 | Ice | thirst `+420` += trunc(type `+324` x amount / 100) |
+| 4 | Sugar | **boost `+196` += trunc(6 x amount / 100)**, stored as a u16 (`0xeb0cc..0xeb0f4`; no clamp, wraps at 65,536) |
+| other | | nothing |
+
+The next block (`0xeb0f8`, the lead's list of callees `0x105360`, `0x6a730`, `0x6a7a8`, `0xb882c`, `0xe234c`) switches on `+348` (`UsageInfo.AppearanceEffect`:
+1 balloon, 2 costume): the balloon and costume use (ECON-044), which draws random numbers and creates objects; it does not touch the boost.
+The only other writers of `+196` are the constructor (0, `0xe4878`) and the decay of `0xe6b28`. `walk-boost` executes the whole `0xeaaf8` on 521 inputs
+(ingredient 0..5, -1 and 9, amount word 0..255 and above, boost 0..65,535, thirst effect, ride and shop type words): the reading above **agrees** 521/521
+(boost, thirst and toilet). It is sharp: a factor 5 or 7, an unmasked amount, a clamped sum, Sugar read as Ice or Fat as Salt each differ
+(`test_walk_boost_reading_is_sharp`).
+
+*Which event, how much.* Only a guest leaving an object whose type has Sugar, which is the Ice Cream Shop of every theme (executed data check:
+`ShopType` 2, ingredient 4; the burger shop has Fat, the fries shop Salt, the drinks shop Ice, nothing else has an ingredient; `GuestAssetTests.OnlyTheIceCreamShopsCarrySugar`).
+The ride build `0xdab58` stores 50 in `+404` (and 50 in the quality byte `+392`), so an ice cream adds trunc(6 x 50 / 100) = **3** to the boost. The only code
+that changes `+404` is the setter `0xe237c`, called from two UI handlers (`0x1685b4`, `0x168640`; the shop screen: they also store x 50 in `+392`), whose range is
+not traced; as a byte the amount is at most 255, so one use adds at most 15 (6 at an amount of 100). The boost decays by trunc(x 99 / 100) per park turn
+(3 -> 2 -> 1 -> 0), and the smoothed speed `s <- (3 s + sum / 100) / 4` moves by about 0.01 (one percent of a speed of 1.0) for those turns. The "sugar rush" is
+real but almost invisible.
+
+*The F6 question (can the boost exceed 661?).* No, not in play. One use adds at most 15, so the u16 wrap of `boost x 99` (662 or more) needs 45 or more uses in
+quick succession: with the decay of at least one point per turn a boost stays under 15 unless a guest leaves a Sugar shop every turn, and the walk to the next shop
+takes tens of turns. (Used every single turn the boost would settle near 1,485, which is why the wrap is not formally excluded, but no guest can do that.)
+No other writer of `+196` exists in the code (a scan of every `sth` to that offset).
+
+*Not traced.* The shop screen that sets `+404` (and the range it allows), and the amount saved as `mAmountOfSpecialIngredient` (no OpenTPW field). Fat, Salt and Ice
+change toilet and thirst in the original but not in OpenTPW (the visit still resets the satisfied needs to 0, GUESTS.md); they are a separate gap (the need effects of
+`0xeaaf8`, `+324..+340`), not part of WALK-001.
+
+**Fixed in C#** (before -> after: the boost stayed 0 in every game; now `ApplyVisit` adds `GuestSpeed.RaiseBoost( boost, ingredient, amount )` when a guest leaves an
+object; `RideVisitorBridge.SpecialIngredient` comes from `UsageInfo.SpecialIngredient` through `OriginalObjectRuntime.CreateVisitorBridge`, the amount is the build default
+50 (`[APPROX:WALK-001]` keeps the missing shop screen and save field). `walk-boost` C# 521/521; the factor 6 -> 5 mutation is detected. The determinism hash does not change: its
+scenes have no Sugar shop.
+
+**F21, the sale refund (ECON-025, `ParkEconomy.ScrapValue`; fixed in C#).** The sale `0xdbfa8` calls the getter `0xe25e8` at `0xdc05c`
+and credits the result with `0xcbf50` (`0xdc070`); the same getter fills the "Scrap value" lines of the object panels
+(`0x14c624`, `0x14f968`, `0x14fc64`, `0x165764`, `0x167f74`, `0x16b884`, `0x16c758`, `0x16e9f8`, `0x16ec60`) and `0xe2424` also prices
+the queue-cell refund (callers `0x85dcc`, `0x85ed4`, `0x8bf20`, `0x74940`). They were found by scanning the whole code section for
+`bl` to the two entries, after PPC-economy.md had read the sale statically; `object-scrap-value` now executes the getter. It agrees with
+the routine reading on 572 of 572 inputs, and each part of the reading is needed (`test_scrap_reading_is_sharp`: eight variants). What
+the original does:
+
+1. **Basis.** `Upgrades[0].CostOfUpgrade` only (type record `+440`, read without the level offset: the other levels' costs sit at
+   `+440 + 64 · level` and are never read). The money paid for upgrades does not enter. The refund is `cost × percentage`, a 32-bit
+   `mullw`, divided by 100 as an unsigned word (`mulhwu` with `0x51EB851F`, then `srwi 5`): the product wraps at 32 bits, so a
+   cost of 50,000,000 at 100 % refunds 7,050,327 (inputs with such costs are in the target; C# wraps the same way).
+2. **Age.** The clock's stamp minus the thing's `+20` (the stamp `0xdad90` stores at the purchase), a signed 64-bit difference in 100 ns
+   units. It is divided with the signed divide `0x1c4100` by exactly 365 days (`(73425 << 32) + 0x78C6C000` = 315,360,000,000,000), and
+   only the low word of the quotient is compared: 0 is the first year, 1 and 2 the second and third, anything else (3 and up, and a
+   negative quotient) the fourth. Years are therefore 365 days of park clock, 8409.6 turns of 3750 s; the boundaries are exact to the
+   turn (turn 8409 is year 1, turn 8410 year 2).
+3. **Row.** The percentage is `Upgrades[level].ScrapValueYearN`, the thing's current level byte (`+76`) selecting the row at record
+   `+392 + 64 · level + 4 · column`. The base level's row is not used for an upgraded ride.
+4. **First 30 days.** In the first year, a thing whose word `+412` is 0 and whose age divided by exactly 30 days
+   (`(6034 << 32) + 0xF8648000` = 25,920,000,000,000) has the low word 0 is refunded **100 %**, provided the type record's `+392`
+   (level 0's year-1 percentage, read without the level offset) is above 0. After 30 days, or after the first use, the ordinary row
+   applies. The word `+412` is a lifetime use counter: the constructor clears it (`0xda960`), and the use-finished handler raises it
+   together with the history record at `+420` when a guest **leaves** (the release path `0xeaa00` calls `0xe1b44` for rides, shops and
+   sideshows; the boarding does not count, so while the first guest is aboard the object still counts as unused); no ride-side store resets it
+   (its staff-state stores in `0xd2cbc`, `0xd9b20`, `0xf03d8` and others use the same offset for another object class).
+
+Before → after in C# (the old rule: catalogue costs of all levels up to the current one × the current level's percentage, no 100 %): a
+Belly Bounce (costs 500 / 400 / 500, the jungle `Rides.sam` rows 50 / 30 / 20 / 10, 60 / 40 / 30 / 15, 65 / 45 / 35 / 20) at level 2 that
+guests used, sold when two years old, refunds 500 × 35 % = **175**; the old rule gave 1400 × 35 % = 490. A ride or shop sold within 30 days
+of its purchase before any guest used it refunds its whole price (500 for the Belly Bounce; the old rule gave 250); once used, 250. On the
+shipped data that is every buyable object but two: the Halloween Firework Show and the Space Laser Show have a level 0 year-1 percentage of 0 and
+refund nothing from the first day (`ShippedScrapRowsGiveTheOriginalsRefunds`: 242 objects over the four themes, 76 with upgrade levels).
+
+**Fixed in C#.** `ParkEconomy.ScrapValue` is `Upgrades[0].CostOfUpgrade × ScrapPercent / 100`; `ScrapPercent` is the whole of `0xe2424`
+(the current level's row, exact 365-day years, year 4 from the third year on, the 100 % case). `ParkObjectState.TimesUsed` is the new
+lifetime counter (raised by `RecordUseFinished`, which `GuestSimulation` calls when a guest is released, not on boarding; saved as an
+optional field, an older save restoring it as this and last month's customers, a lower bound). An object imported from an original save
+takes the saved customer count as its use count and the saved attraction time stamp as its build time (`OriginalEconomyImport`), so an
+imported used or old object never gets the unused refund; that the save's customer count is `+412` and its time stamp `+20` is read from
+the serializer order and the `0xdad90` store, not captured (SAVE-006 says so). `RefundQueueCell` uses the same percentage, so queue cells of a new, unused ride are refunded in
+full, as the original does. Two things stay as they were and are approximations: **the park value** (ECON-026) keeps summing the old
+rule (catalogue costs through the level × the percentage), because the original's valuation is a different quote (PPC-economy.md); and
+**the Windows build**: this is the Mac routine, and the tp.exe counterpart was not executed (ECON-025's text now says so), as is the
+mapping of `+412` to a use counter (a read of the stores and of the one increment, not a captured sale). The stubs are the type
+record and the stamp conversion (the same assumption as `park-points`); the age of a thing bought after the current turn (a negative
+quotient picks the fourth year in the original, the first in C#) cannot occur in a park and is outside the inputs.
+
+**F22, staff vitals, rest and strikes (ECON-014, `StaffVitals`, `StaffStrikeBoard`).** The register said "staff start at happiness 100 and it
+never changes (no strikes)". The four oracle targets above execute the routines that refute it. First a correction of what the routines are:
+`0xf29fc` is the staff constructor (both vitals start at the single 100.0; it also adds the member to its role's chain), not a strike test.
+The strike test is `0xf8410`; the staff happiness step is spread over `0xf44c0`, `0xf459c`, `0xf3d8c` and `0xf4900`; the strike levels live in
+`0xf7e18` / `0xf7fe0`. Each reading agrees with the routine on every input (`test_staff_*_reading_is_sharp` holds the variants that do not),
+and the old claim differs on 427 of 526, 81 of 509, 313 of 515 and 442 of 513 inputs.
+
+What a staff member does (all singles, clamped to 0..100; energy is `+504`, happiness `+500`):
+
+| Step | Routine | Rule |
+| --- | --- | --- |
+| Walking | `0xf44c0` | energy -= `f32(0.012 x (6 - grade))`, happiness -= `f32(0.005 x (6 - grade))` (binary64 products rounded to single) |
+| Working | `0xf459c` | energy -= `0.025f x (6 - grade)` (single product), happiness -= `f32(0.01 x (6 - grade))` |
+| Resting | `0xf3d8c` | energy += `PerGradeStaffConsts[g].RecuperationRate` (0.2, 0.3, 0.4, 0.5, 0.75), happiness += `HappinessRecuperationRate` (1, 2, 2, 3, 3); the rest ends when the truncated energy byte is 100 (the rest area is freed and the role's next action runs) |
+| Tired | `0xf4900` tail | energy byte (the truncated low byte) at most `RestLevel` (1, signed compare): seek a rest area (thought 20) and, with one found, rest. With none, a world draw with `(draw & 15) == 0` takes `HappyHitCosNoRestArea` (2) off the happiness, one turn in sixteen. Above the level: no change (only walking-speed tiers and the thoughts 18 and 19) |
+| Rest area | `0xf47a0` | any object whose `UsageInfo.ChillsYouOut` is set (type `+252`, thing `+46` bit `0x2`): in the shipped data the Staff Room of each theme only (jungle 1411, fantasy 4401, hallow 2408, space 3405). The nearest one by squared distance |
+
+Training (`0xf3588`, static reading): a promotion (the training percentage reaching 100) sets the happiness to 100.0 (`0xf36e4`); energy is untouched.
+
+The vitals only fall while a member walks (raw state 1 with a navigation in progress: `0xd2e20`, `0xf0530`) or works (raw state 14, researchers 15).
+An idle member (raw state 0) does not drain. A grade 0 member walking from 100 reaches the rest level after 100 / 0.072 = 1389 turns (about 60 game
+days of 23.04 turns), a grade 4 member after 4167; working halves that. A rest from nothing takes 500 turns at grade 0, 133 at grade 4.
+
+The strike test `0xf8410(manager, role)` returns 1 at once when the manager's forced word (`+100`) is nonzero (`li r3,1`, any value). Otherwise,
+handymen first test the ratio of two analyser sums `0xc2264(park, 1) / 0xc21f4(park, 1)` (single precision) against `0.2f` (a quotient above it,
+infinite included, NaN not). Then the role's staff chain (first index at `game + 0x1da73c..` per role: 0 `-22724`, 1 `-22722`, 2 `-22720`, 3
+`-22716`, 4 `-22718`; next at staff `+524`) is walked twice, energies (`+504`, debug text "fatigue") then happinesses (`+500`, "unhappiness"):
+the truncated low bytes are summed unsigned, and **more than three members whose floor average is below 15** (14 or less) have a grievance. A role
+outside 0..4 asserts and gives 0. Values over 255 or below 0 wrap through the byte (256.0 counts as 0, -1.0 as 255).
+
+The month routine `0xf7e18` (the staff manager's end-of-month message) trains first, then, unless the forced word is set, is skipped (debug "park
+is closed") while the park is closed (`game + 0x1da710` nonzero) **or** `0xc1fb4(park, 5)` counts a guest standing on a park cell (the guests of
+`PeopleInPark`: the cell test `0xe6c6c`). Then each role with staff that was not already considered in this turn (`+44`) is marked, and:
+an active strike (`+40`) is only ended; otherwise the escalation `0xf7fe0` runs: the clock stamp (`0xe4628`, 100 ns units) divided by
+25.92e12 (30 days, signed 64-bit divide `0x1c4100`) must be at least 24 in its signed low word, then the strike test decides.
+
+| Level (`+36`) | Grievance | No grievance |
+| --- | --- | --- |
+| 0 | level 1, warning (kind 0) | nothing |
+| 1 | level 2, strike flag set, kind 2 | "called off" (kind 3), level 0 |
+| 2, 3 | level + 1, strike flag set, kind 2 | level 0, flag cleared |
+| 4 | stays 4, strike flag set, kind 2 | level 0, flag cleared |
+
+The five kinds are the five groups of `TAG_SYSTEM.str` 38..62 (warning, reminder, strike, called off, over; five roles each: mechanics, cleaners, guards,
+entertainers, scientists); the routine sends kinds 0, 2 and 3 only. A strike therefore lasts to the next month end, where it is ended without a
+new one: a role with a standing grievance is warned at one month end, strikes at the next and then at every second month end. After a month
+of contented staff the level returns to 0.
+
+What a strike does to a member (static reading, not executed): the strike flag makes a free member that reaches `0xf4900` (idle, or after a job)
+set `+392`, pick a random cell of the strike area (`FixedItemInfo.StrikeAreaStartX/Y`, `SizeX/Y`: 40, 9, 6 x 1), walk there and enter raw state 4 (broad
+state "On strike") when navigation succeeds, and only while the world state `0x1091b8` is 1. A member in raw state 4 (`0xf3f64`, per turn) ends its
+role's strike when the park is closed with no guest in it (`0xc3684`), and walks back to work once the role's flag is clear. A working member finishes its job
+first. UITEXT 370, 376 and 382 ("UPGRADE: Mechanics are on strike!", "CLEANING: Cleaners ...", "REPAIR: Mechanics ...") and TAG_SYSTEM 152 are the object
+status texts selected by `0x138b0c..0x138c40` through `0xf8bc0`.
+
+Fixed in C# (before -> after: no energy and a happiness of 100 forever, no rest, no strike, to the table above). A hired member walks
+(Patrolling) or works (a mechanic on a job) and loses energy and happiness every park turn; at the rest level it goes to rest when a Staff Room is
+built and loses happiness one turn in sixteen when none is (`StaffVitals.SeekRest`); a resting member is not dispatched. At every month end
+`StaffStrikeBoard.ConsiderMonth` runs with the park's state, raises a `StaffStrikeMessage` event (role, kind, the `TAG_SYSTEM` index) and a striking
+role's free members go on strike (`OnStrike`: no dispatch, no research) until the next month end. Saves carry `Energy`, a float `Happiness` and the
+strike board; older saves load as rested staff without strikes; imported staff keep their saved energy and happiness.
+The decision of `0xf4900` runs for a free member each turn and once when a job ends, before the next job is dispatched, which skips members on strike, resting or tired with a rest area (static reading: the original's working member finishes its job and then reaches `0xf4900`). Selling the last Staff Room ends a rest at once (the original's rest-area association `+516` is freed by `0xf4d00` when the rest ends; what it does when the rest thing vanishes is not traced). The HUD message area shows the `TAG_SYSTEM` text of each message.
+
+Example a player notices: 4 grade 0 mechanics in a park with no Staff Room: after about 1400 turns of walking they are at energy 0, lose 2
+happiness about one turn in sixteen, and once the park is 24 thirty-day months old and a month end finds it open and empty of guests, the mechanics are
+warned (TAG_SYSTEM 38), strike at the next month end (48) and no ride is repaired until the following one. With a Staff Room they rest 500 turns at
+a time instead and never reach a grievance (OpenTPW before: happiness 100 forever, no strike).
+
+Not changed or not established, kept in the ECON-014 register entry:
+
+- The staff state machine: OpenTPW's Patrolling stands for every walking state (the moving drain applies each turn), Working for a job in progress and Resting
+  for a member at the room, without the walk to it; idle members are not told apart, the rest search runs every turn (the original at idle and arrival), and the
+  thoughts and the walking-speed tiers of `0xf4900` have no counterpart.
+- The handymen's analyser statistics (`0xc21f4`, `0xc2264`: a sum over 1024 history records each; "Clean your park up"): not supplied, so the litter
+  grievance never applies. The forced-strike word (a debug flag) is never set. The game-type gate of the caller is not traced.
+- The clock stamp `0xe4628` goes through imports (`0x1c5c34`, `0x1c5c4c`, `0x1c5c64`); whether it counts from an absolute epoch before 2000 (then the test
+  "at least 24 units" is always true) or from the park's start is not established. OpenTPW takes the latter: a strike needs a park of 24 thirty-day months.
+- The second gate (a guest on a park cell skips the month) makes the strike path rare in a busy park: it runs on a month end at which the park is open and
+  empty. The Mac Easy Guide's FAQ says strikes were removed; the routines are present and reachable.
+- The world state `0x1091b8` that a member needs to walk out is not modelled (members go on strike at once), and the world draw of the rest-area hit
+  comes from the economy's own stream (DET-015).
+
+**F30, the park calendar and the cadence of park turns (ECON-001, ECON-002, ECON-003, UI-023; `ParkCalendar`, `ParkEconomy.AdvanceTurn`; C# gains a
+calendar API, its behaviour is unchanged).** The static trace called the ECON-001 claim contradicted: the calendar is not driven by a fixed
+tick count per day, it converts the world turn (game `+0x1da70c`) with the clock rate at calendar `+28`. `ParkCalendar` already did that
+(turn × 15000 / 4 = 3750 s from 2000-01-01, 248 ms turns, `[BIN:STP-PPC:0x100E4394]`); what had not been executed was the conversion, the
+change detection and the real-time rate of the turn counter. Four targets now run them.
+
+1. **`0xe4394`, the conversion** (`calendar-date`). A 64-bit product turn × rate (both `u32`: `mulhwu` / `mullw` pairs), a signed 64-bit divide by 4
+   (`0x1c4100`), a multiplication by 10^7 and an addition to the start time stamp (`operator+` of the bullfrog `TbTimeStamp`, the 100 ns unit
+   since 1601) give the new time stamp, which `GetTime` decomposes through the operating system's calendar (`LongSecondsToDate`, proleptic
+   Gregorian) into year, month, day, hour, minute and second. Executed with those two library calls stubbed by import name (Python civil
+   arithmetic) the routine agrees with `2000-01-01 + floor(turn × 15000 / 4) s` on all 652 inputs (every month boundary of 2000-2003, the leap days of 2000,
+   2004 and 2400, the missing one of 2100, random turns to 6 × 10^7), and C# `ParkCalendar.DateAtTurn` agrees too. With another saved
+   rate the division floors (5 turns at rate 3 are 3 s, not 4). Turn 24 is the first of 2 January (23.04 turns make a day), turn 715 the
+   first of February, turn 8,433 the first of 2001 (00:22:30; the leap year has 8,432.64 turns).
+2. **`0xe3f0c`, the update** (`calendar-update`, `calendar-first-update`). Once per park turn (`0xd67f0`, which runs the bank update `0xcb278`, the staff pool
+   `0xf6e24`, this update and then the golden-ticket check) it decomposes the date of the current turn and compares the day (1-based), the month (0-based) and the
+   year with the fields stored at `+20`, `+16` and `+24`. Each difference posts one message: a day message (type 11) followed by a notification
+   call `0x18f4cc` with the date's second, minute, hour, day, month and year − 1900, a month message (type 12) followed by three hooks that take the
+   new month (1-based), a year message (type 13). The order is day, month, year. The dispatcher `0x11688c` delivers a message to every registered
+   thing at once (a loop over the subscribers calling `0xfab68`; read, not executed), so the bank's year handler and the monthly loan and training handlers run
+   inside the update, before the golden-ticket check of the same turn (F31). Then the three fields are stored. At most one message of each
+   kind comes however many days have passed; a turn is 3750 s, so one day at the most does. The executed update agrees with the rule C#
+   implements (`ParkEconomy.AdvanceTurn`, now through `ParkCalendar.Update`) on 579 scripts, and the C# events (`DayEnded`, `MonthEnded`,
+   `YearEnded` of `ParkEconomy.Advance`) agree with the messages on every turn, including 31 January → 1 February, the leap day, the end of
+   2100's February and the year change (all three at turn 8,433). The one difference is the start: the constructor `0xe3c90` stores
+   month 0, day -1 and year 0, so the **first update of a new calendar posts a day and a year message** (and a month message outside
+   January) whatever the date, 503 of 503 constructed inputs. A loaded save keeps the calendar's stored fields, so only a new park shows it, and
+   its effect there is a day message and a year message at the first turn; the bank's year handler resets a profit that is 0 anyway. OpenTPW starts
+   synchronised and does not post them (the text of ECON-001 says so); what the day listeners would do with a first message is unknown.
+3. **`0x1c22b0..0x1c24d0`, how real time becomes park turns** (`park-turn-cadence`). The world callback keeps a scheduled time and samples the scheduler clock
+   `0x10e844` (executed down to the library clock `LbTime_GetClock`, a millisecond counter). The scheduler adds each raw gap times its scale
+   (`+24`, 1.0 from the constructor `0x127c08`) to a binary64 accumulator with one fused multiply-add and truncates it (`0x127cd0`,
+   `0x1c3fbc`). The loop then drops a backlog above 2000 ms (`previous = now − 2000`) and, while `now > previous`, advances `previous` by 31,
+   counts a substep and runs its body: a script pass, on every second substep two more passes, on every eighth substep **the park turn** (at most 3
+   in one call; the surplus phases are skipped, not queued) and on every 32nd a slow body; with application flag 8 clear and gameplay flag 1 set
+   the bodies are skipped. Executed over 508 scripts the loop agrees with that reading (the 57 differences with the plan are the 1 ms of
+   the fused rounding at non-dyadic scales). In real time, with frames of 16, 17 or 33 ms alike (`test_park_turns_per_real_second_by_scale`):
+
+   | Clock scale | Park turns per real second | A game day (23.04 turns) | A 30-day month | A 365.25-day year |
+   | --- | --- | --- | --- | --- |
+   | 0.25 (the lowest) | 1.00 | 23 s | 11.5 min | 140 min |
+   | 1.0 (the default) | 4.03 | 5.7 s | 2.9 min | 34.8 min |
+   | 1.25 / 1.5625 / 1.953125 | 5.04 / 6.30 / 7.87 | 4.6 / 3.7 / 2.9 s | 2.3 / 1.8 / 1.5 min | 28 / 22 / 18 min |
+   | 2.0 (the highest) | 8.06 | 2.9 s | 1.4 min | 17.4 min |
+
+   A gap of 2000 ms or more (or a stall of 5000 ms, 3000 of which are dropped first) runs 65 substeps and 3 park turns and ends 15 ms ahead, so a
+   frame rate below about 4 a second loses park time. The turn arrives when the scaled time passes 248 j − 31 ms (the substep ceiling), up to 31
+   ms before OpenTPW's 60 Hz sampling reaches 248 j ms; the average rate is the same.
+
+**What bounds the rate.** The rate is exact only if the library clock is wall-clock milliseconds. `LbTime_GetClock` is `UTimer::GetAbsolute() / 1000`
+(`SamsUtilities::UMicroseconds`); the route that call takes (a function pointer, a flag-selected hardware route with the constants 60.15 and
+60,000,000, or the Toolbox `Microseconds`) is chosen at run time and none of them is executed, so the real-time rate stays bounded (turn =
+248 ms of the library clock × the scale), not measured. The scale starts at 1.0 and the only writers of `+24` are the clock constructor and the three speed
+callbacks (F32). The 100,000 µs interval of the application's own timer is an allocator guard, not a game rate (PPC-clock.md).
+
+**C# and players.** `ParkCalendar` gains `DateAtTurn`, `FieldsAtTurn` and `Update` (the original's comparison of the stored month, day and
+year) and `ParkEconomy.AdvanceTurn` raises its day, month and year events through them. Nothing changes for a player: at normal speed a game day
+is 5.7 s (it was before), January is 177 s and the leap year 2000 34.9 minutes; the oracle now shows these figures are the original's and that
+the day, month and year events fall on the same turns. ECON-001 stays an `[APPROX]` with its text narrowed to what is left: the 60 Hz sampling,
+the catch-up limits of the loop above, the substep phases and the clock route. ECON-002 stays (the OS calendar is a Python stand-in for
+`LongSecondsToDate`, the default Gregorian calendar). Not changed: by the listing the original keeps running the calendar when the park is bankrupt (the turn update
+skips only the thing loop at world mode 4, `0x1053a8`; read, not executed), where OpenTPW stops (ECON-030).
+
+**F31, when the golden tickets are checked (ECON-033, `ParkEconomy.RunsGoldenTicketCheck`, `0xd67f0`, `0xd2f1c`; the cadence was right, the order inside the turn is fixed).**
+The static trace called "checked at month end" contradicted: the tickets are checked each time the world turn is a multiple of 100, in game
+type 0 only. `ParkEconomy` already did that (`[BIN:STP-PPC:0x100D67F0]`); `golden-ticket-cadence` now executes it. `0xd67f0` is the park-turn
+update of the world object (called once per turn from `0x10536c`). It runs the bank update `0xcb278` (world `+708`), the staff pool `0xf6e24`,
+the calendar update `0xe3f0c` (world `+672`, F30) and then tests the world turn (game `+0x1da70c`, unsigned): the remainder by 100 is
+`turn − 100 × (turn / 100)` with the quotient from a multiply-high by `0x51eb851f` and a shift by 5, so 2^32 − 96 is a multiple and a signed
+remainder is wrong at the top of the range. A multiple of 100 calls the dispatcher `0xd2f1c` (world `+704`), which constructs the game type
+object lazily (`0x12bb64`) and runs the three checks `0xd31d0`, `0xd34c0` and `0xd35b4` (read as the local, global and secret conditions; here stubs that
+are logged) only while that object's word 0 is 0. Executed over 507 scripts the plan (a check on every 100th turn in Full Simulation, as C#) agrees on every call,
+and so does C# (`ParkEconomy.RunsGoldenTicketCheck`, 0 mismatches); the game type words 1, 2, 3 and -1 run no check (OpenTPW has two modes: word 0 is
+Full Simulation, any other word has no tickets). A check every 100 turns is 4.34 game days apart (the 4.34 of PPC-scenarios), 24.8 s of real time at
+the default clock scale; tickets are not month-end events.
+
+**Fixed in C#:** the calls inside one turn run in the other order. The original runs the calendar update first, and the dispatcher delivers its
+day, month and year messages to their listeners at once (F30), so the checks see the closed month's admissions and the year's profit after the
+year message reset it. `ParkEconomy.AdvanceTurn` ran the check first. Example (`TheGoldenTicketCheckSeesTheStateAfterTheCalendarUpdateOfItsTurn`):
+turn 648,000 is the first turn of 2077 and a multiple of 100; with a year's profit of 20,000 (the jungle's `ProfitYear` is 15,000) the old order
+awarded the profit ticket from the old year's profit, the original and the new order find none. At any other multiple of 100 nothing differs;
+a month or year change that is also a multiple of 100 is rare (1 in 100). The determinism hash did not change. The oracle pins the old order as
+`plan-tickets-before-calendar` (148 of 507 scripts differ).
+
+**F32, the speed scale and what it scales (ECON-004, UI-022; `GameSpeed`, `GameSpeedScale`, `ParkEconomy.AdvanceFixedTick`, `Level.Update`).**
+OpenTPW's speed buttons sped up the economy clock only ("faster speeds only speed up the economy clock, not rides/guests", UI-022), a design
+choice with no evidence. The original has **one clock scale**, and it multiplies everything that runs on the scheduler.
+
+1. **The keys** (`clock-speed-scale`). The game input group has three speed records, ids 6, 7 and 8 (tokens `0x6d00`, `0x6b00`, `0x6a00`; their physical names are
+   not qualified). Their release callbacks `0x11315c`, `0x113184` and `0x1131ac` act on the scheduler object behind TOC -30168: divide its scale (`+24`) by
+   1.25, multiply it by 1.25, and store 1.0 (through the direct setter `0x127c40`). The first two clamp the result to 0.25..2.0, so from 1.0 the
+   scales are 1.25, 1.5625, 1.953125, 2.0 and, downwards, 0.8, 0.64, 0.512, 0.4096, 0.32768, 0.262144, 0.25; a scale above 2.0 (only a direct store gives
+   one) steps back to 2.0 on the next key, and each callback returns 1. The constructor `0x127c08` (one caller) stores 1.0. These four routines are the only callers of the scale setters
+   (a scan of the branch-and-link sites; a direct store to `+24` by other code, such as a clock restore, is not excluded). Executed over 509 scripts the reading agrees. There is no x4.
+2. **What the scale scales** (`clock-speed-scale`, `test_scaled_clock_callers`). The scheduler clock `0x10e844` returns the sum of every raw millisecond gap
+   times the scale at that read (a fused multiply-add into a binary64 accumulator, truncated to a `u32`; a scale change applies to the whole gap since the previous read:
+   1000 raw ms at 1.0, then a faster key, then 1000 raw ms give 1000 and 2250). It has 60 call sites: the world callback (the substeps and
+   so the park turns, F30), the RSE interpreter (GETTIME `0xaf6d8`, WAIT `0xb0674`, WAITABS `0xb0764`, SETTIMER `0xb1fec`, GETTIMER `0xb200c`), the
+   board bounce code (`0xad350..0xae600`) and the animation updater `0xa6f70` (`0xa6fa0`). Only 11 sites read the unscaled clock `0x10e864`, among them the
+   advisor's speech chain and the animation channels flagged `0x40` (`0xa6fd8`). Ride scripts, guests (through the park turn and the animations) and
+   the economy therefore all run at the scale; the UI and the advisor's lip-sync do not. "The economy only" is contradicted.
+3. **No speed control in the UI.** `UITEXT 426 "Speed :"` has no code reference, and the only speed strings are debug text (PPC-ui.md); no button or menu entry that
+   calls the key callbacks was found. The three keys exist, so the scale is a real original feature, but OpenTPW's pause / x1 / x2 / x4 buttons are its own,
+   and x4 exceeds the original's maximum of 2.0 (the clock itself does not clamp; only the keys do).
+
+**Changed in C#.** A speed is now the clock scale of the whole simulation. `GameSpeedScale.Of` maps pause, x1, x2 and x4 to 0, 1, 2 and 4, the HUD's `TimeScale`
+carries it (also for a level without an economy), `Level.Update` feeds the fixed clock `Time.Delta × scale` (as before), and the economy runs one tick per
+fixed tick (`AdvanceFixedTick` used to run `Speed` ticks, so at x2 the economy's turn ran twice as fast as the guests' own turn and the rides). Before → after
+for a player at x2: the park clock and the economy ran at x2 (a day 2.9 s) while guests walked and rides cycled at x1; now guests, rides, scripts and the
+economy all run at x2 and stay on one park turn. Real time per game period (23.04 turns a day, 4.03 turns a second at x1):
+
+| Speed | Park turns a second | A day | A 30-day month | A 365.25-day year |
+| --- | --- | --- | --- | --- |
+| x1 | 4.03 | 5.7 s | 171 s | 34.8 min |
+| x2 (the original's maximum scale 2.0) | 8.06 | 2.9 s | 86 s | 17.4 min |
+| x4 (OpenTPW only) | 16.1 | 1.4 s | 43 s | 8.7 min |
+
+The fixed clock accepts 16 ticks (267 ms of scaled time) per frame, so x4 keeps up down to 15 frames a second; below that it loses time (the original
+carries a backlog of 2000 ms, ECON-001). The determinism hash did not change (its fixtures advance the economy four ticks a step themselves, as the
+old Fastest did); `ParkSaveFile` keeps storing the speed, and an old save at x2 now runs everything at x2. ECON-004 and UI-022 stay open with narrower texts:
+the keys' physical names, whether the shipped game shows a speed control, and the x4 and the 1.25 steps that OpenTPW does not follow.
 
 ## 6. Adding a target or a C# hook
 
@@ -878,6 +1310,10 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpi-exe-loan-offers` | TPI `0x5bfb70`..`0x5bfc73` (bank constructor, the 8-offer loop; the TPW `0x4cf7c0`), the runtime's own `pow` (`0x871c00`, `0x87c410`..) and `_ftol`, executed | `0x403d19` base constructor (header only, arguments checked) | 506 offer sets (the TPW target's inputs, seeded by this key) | **X8**: 505/506 **agree** with the Mac plan, records and bank words included; the one set is the same out-of-range set as in tp.exe | **agree** 506/506 |
 | `tpi-exe-loan-term`, `tpi-exe-loan-month` | TPI `0x5c0b25`..`0x5c0c49` (the loan loop of the monthly handler `0x5c0b10`; the TPW `0x4d0370`) | `0x40144c` game to park (sentinel, checked), `0x403e45` print (logged by message) | 503 whole terms, 506 random bank states | **X9**: **agree** 503/503 with the Mac plan | **agree** 503/503 and 506/506 (the Mac reading minus its two assertion events, which this build lacks) |
 | `tpi-exe-park-points` | TPI `0x5b05d0`, park record searches `0x5cfd70`/`0x5cfcf0` and their thunks, `0x608d50` (turns to 100 ns), the 64-bit divide and multiply helpers (the TPW `0x4c8240`) | `0x40c1d0` type record (registry checked), `0x40998a` counts-test (chosen flag), `0x403bb6` own age (signed timestamp difference in days) | 507 | **X10**: **agree** 507/507 | (the plan is the Mac routine reading) |
+| `tpw-exe-coast-rating-step` | tp.exe `0x43dc50`..`0x43df8f` (cdecl; reset `0x43dbf0`; the Mac `0x415b4`) | none (the routine calls nothing); static state block `0x7923a8`..`0x7923dc` written before the call | 509 (the Mac target's inputs) | **X11**: 469 differ from the Mac routine (F7, the stale term = Fz, what C# follows); 229 from COAST-plan 6.3 (term 0). With the Windows term (u) in the Mac plan: 190 left, rounding only (at most 3 ulps) | **agree** 509/509 (x87 reading, 53-bit sums) |
+| `tpw-exe-coast-rating-final` | tp.exe `0x43df90`..`0x43e0a7` (cdecl; the Mac `0x41900`) | none | 506 | **X12**: 23 differ from the Mac routine (F8, what C# follows), all in the last bit of the excitement; 315 from COAST-plan 6.4 (section count). **Agree** 506/506 at the single-precision word `0x7F` | **agree** 506/506 |
+| `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
+| `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
 
 The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
 rotate the result right by 13 bits, store that, and return its signed absolute value (the
@@ -1251,3 +1687,82 @@ truncate-then-integer-divide, add the exit for the mode object word 3 (meaning u
 at moved offsets. A TPI mode also has the shifted world-object and bank layouts above if it ever imports original saves.
 Not examined: the arrival update loop and the timer settings, loan payoff and take, the counts-test, the TPI-only systems
 the settings table lists, and which x87 control word is live at run time.
+### 7.8 Findings X11 and X12: the coaster rating on tp.exe and on the Theme Park Inc Game.exe
+
+(Numbers X7 to X10 are the Theme Park Inc arrival, loan and park-points findings of section 7.7.)
+
+Question: do the Windows executables run the Mac coaster rating that C# follows (`CoasterRating.Step` and
+`FinalFor`: the step `0x415b4` with the stale term Fz, F7, and the final `0x41900` with the both-flags section count, F8)? A
+Theme Park Inc mode is a coaster game, so this is the rule that matters most for it. Method as in 7.6: find the routines by
+constants, record layout and call structure (static, Capstone in a scratch directory, terminal only), execute them with the
+inputs of the Mac targets (`oracle/targets.py`: plans, inputs and equality are imported, not copied) and compare. Addresses are virtual
+addresses at the preferred base.
+
+**Identification (high confidence for both executables).** The step, the reset and the final sit next to each other, as on the Mac
+(Mac reset `0x41510`, step `0x415b4`, final `0x41900`):
+
+| | tp.exe (TPW v2.0) | Game.exe (TPI no-CD) |
+| --- | --- | --- |
+| reset | `0x43dbf0` | `0x4803a0` |
+| step (per sample) | `0x43dc50` | `0x480630` |
+| final | `0x43df90` | `0x4809c0` |
+| static state block (S, E, peaks, previous force and bank, scream words) | `0x7923a8`..`0x7923dc` | `0xa191f0`..`0xa19224` |
+
+- The step reads exactly the Mac's definition offsets in the Mac's roles: `+0x32c` g-force sickness, `+0x330` upside-down
+  sickness, `+0x334` speed, `+0x338` g-force excitement, `+0x340` bank excitement, `+0x344` X-g uncomfortableness, `+0x348` inverted
+  uncomfortableness, `+0x34c`/`+0x350` normal and terror scream start, `+0x354`/`+0x358` their sustain; `+0x33c` (the
+  unread upside-down excitement weight) is not touched. The reset reads `+0x320`/`+0x324` (initial sickness and excitement) for S, E and the previous
+  excitement and zeroes the rest.
+- The constants are the Mac's: pi/2 and 0.1 and 3.0 as singles, the decay 1/2 (in tp.exe as a negated half), 1.7, 100.0 and 0.0
+  in the final, and the 1.0 of `u = U + (U != 0)`.
+- The controller layout is the Mac's: definition `+4`, samples `+0x9c` (56-byte records, flags at sample `+0`, forces `+32..+40`, bank
+  `+24`, speed `+28` as arguments), the section list head `+0x54` with next at `+0x64` and flags at `+8`, and the final's
+  results at `+0x100` sickness, `+0x104` excitement, `+0x108` counted sections, `+0x10c` length (`+0xa8` times `+0xac`),
+  `+0x110` max Y, `+0x114` max speed. Two getters read the result fields by controller id (tp.exe `0x43e0b0` and `0x43e0e0`).
+- Call structure (the rating pass, tp.exe near `0x43c4bb`; Game.exe near `0x47e605`): the reset once, then the step for samples 1 to n-2
+  with the speed, bank and force just computed, then the final with the maximum Y and speed. In each executable the static block is
+  referenced only by the reset, the step and the final (scan of absolute operands), so the previous force and bank words are read
+  by the step, zero from the reset and never written: the Mac's OV-7 situation, and "magnitude equals change" holds on the PC.
+
+**X11, the rating step differs in one rule and in rounding.** Executed on the Mac target's 509 inputs; both executables give the same
+rule, so the numbers are for both.
+
+- *The rule.* When the inverted arm does not apply (u = 0, or Fy is 0.1 or more) the Mac adds the stale register f0 = Fz to the
+  uncomfortableness (F7). The Windows step adds **u itself**, the single stored for 1 + U (U the part of |bank| beyond pi/2; 0 when
+  U is 0), in both executables. Where the inverted arm applies (u not 0 and Fy below 0.1: u times the inverted weight, tripled for
+  negative Fy) the rules agree. So an ordinary upright sample (u = 0) loses nothing on the PC where the Mac subtracts Fz, and a track
+  that is upside down while pitched upright (Fy at least 0.1) loses u (above 1) where the Mac loses Fz. Neither equals the term 0
+  of COAST-plan 6.3. Example, default weights (0.5, 3.0, 0.1, 1.0, 5.0, 1.0, 2.0), force (0.4, 1.3, 0.5), speed 20, bank 0.2, E = 1:
+  Windows E = 5.3 (executed on both), Mac 4.8; with force (0.4, 0.5, 0.5) and bank 3.0: Windows 16.0708, Mac 18.0; with
+  Fy = 0.05 or -0.5 (inverted arm): both 13.19 and 3.92. S is unaffected (S 1.1 / 7.9876 in all of these). Of the 509 inputs 445 (tp.exe) and 439
+  (Game.exe) take the non-inverted arm, and u differs from Fz in all but one of them; 469 and 470 inputs differ from C# in S or E or in what follows (peaks, scream
+  flags and states: 25 flag words differ on tp.exe).
+- *Rounding (precision only).* With the Windows term put into the Mac plan 190 (tp.exe) and 181 (Game.exe) inputs are left, all within 3
+  ulps in S, E and the peaks and with no scream decision changed on these inputs. The x87 builds the sums in a different order
+  (g-force part, then bank, then speed) in the wider register and rounds to single at different points than the Mac's single-by-single
+  chain, and the two Windows builds round differently from each other: tp.exe rounds the g-force sickness term to single and never the
+  excitement sum, Game.exe rounds the whole sickness delta and the excitement sum to single and not the g-force sickness term. On the same
+  inputs 89 of 509 step results differ between tp.exe and Game.exe (last bits of S and E), the final not at all. Control words `0x27F` and `0x37F` give the same results
+  on every input; the 24-bit word `0x7F` changes only the rounding. These are routine-reading differences, not rule differences, and each
+  reading agrees with its own executable on 509/509.
+
+**X12, the final is the Mac's rule with a wider sum.** Sickness = clamp(S + peak S), excitement = clamp(1/2 E + 1.7 peak E), 0 to 100, the section count at `+0x108` of
+sections with **both** flags `0x40` and `0x80` (F8), the length `+0xa8 * +0xac`, max Y and max speed stored unchanged. All of
+it is identical to the Mac routine and to C# except the excitement's last bit: the x87 adds the exact product 1.7 * peak E to E/2 and rounds once, the Mac rounds the
+product to single before its fused add. 23 of 506 (tp.exe) and 30 of 506 (Game.exe) differ, by 1 ulp
+where the result is large (7.6e-6 at most in absolute value); the Game.exe maximum of 78 ulps is a near-cancellation (result 0.092, off by 5.8e-7). At the
+single-precision word `0x7F` all 506 agree. Example: S 30, peak S 40, E 20, peak E 30 gives sickness 70 and excitement 61 on both executables and on the Mac. No third rating (intensity) is stored by
+either final: TPW's excitement and sickness are what the Windows executables compute, uncomfortableness folded into excitement. The
+documented COAST-plan 6.4 count (neither flag set) differs from both executables, 315 and 271 inputs, as it does from the Mac (F8).
+
+**What a Theme Park Inc coaster mode would need.** The rating step and final exist in TPI with the same record layout and definition offsets
+as TPW, so the machinery C# already has (`CoasterRating.Step` and `FinalFor`, the 56-byte samples, the definition fields) carries over; no TPI-only rating
+term was found. Two decisions follow. First, which step rule: C# follows the Mac (Fz); both Windows executables add u, so a mode that
+reproduces the Windows games (and a TPW PC mode) must change that one term in the non-inverted arm, which does not exist as a decision yet and changes the
+excitement of every sample with a non-zero Fz. Second, precision: the Windows builds round at different points and differ from each other
+and from the Mac's single arithmetic in the last bits of S and E (the final's excitement too); a "bit-exact" claim for one executable
+needs that executable's rounding points (the readings in `x86_targets.py`), and the two Windows builds differ from each other. Not examined: the
+rest of the rating pass (the speed model and force computation that feed the step; the Windows counterpart of `0x3fc18`), the defaults of the
+definition weights in TPI (its coaster definition files and loader at `0x46d6bc`/`0x48044e` carry the same offsets but their values were not read),
+the TPI build rules and curve fit, any TPI-specific rating (for example a separate intensity or an effect of the new coaster types), and which control
+word is live while the game runs. No C# behaviour was changed.

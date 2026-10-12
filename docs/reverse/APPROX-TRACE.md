@@ -398,7 +398,8 @@ Still open, with the reason:
 
 - **ECON-031** (park closed on load): the flag is the World Structure field `mParkClosed`
   (`0x10106708`), but its offset in `Easymode.TPWI` is not mapped yet.
-- **ECON-014** (strikes): the strike test is known (a role with at least four staff strikes
+- **ECON-014** (strikes; resolved in part by the oracle, ORACLE.md F22: the vitals steps, the rest search, the strike test and the month levels are
+  executed and in C#; the text below is the earlier static state): the strike test is known (a role with at least four staff strikes
   when average fatigue is below 15 or average happiness is 14 or less, `0x100F8410`), but
   the rules that lower fatigue and happiness are not decoded, so a strike could never start.
 - **ECON-026** (park value): known in part. Objects add the sum of `Upgrades[0..level].CostOfUpgrade`

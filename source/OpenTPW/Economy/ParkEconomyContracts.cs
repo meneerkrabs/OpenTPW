@@ -44,7 +44,12 @@ public enum ParkEventKind
 	ChallengeCompleted,
 	ChallengeFailed,
 	GoldenTicketWon,
-	CoasterTrackBuilt
+	CoasterTrackBuilt,
+	/// <summary>
+	/// A staff strike message (ECON-014): <see cref="ParkEvent.InfoId"/> the role (<see cref="StaffType"/>), <see cref="ParkEvent.Amount"/> the
+	/// <see cref="StrikeMessageKind"/>, <see cref="ParkEvent.Detail"/> "TAG_SYSTEM n" with the index of the message text.
+	/// </summary>
+	StaffStrikeMessage
 }
 
 /// <summary>
@@ -99,8 +104,8 @@ public sealed class NoRideOperations : IRideOperations
 public interface IParkGuestStatistics
 {
 	int PeopleInPark { get; }
-	/// <summary>Average visitor happiness, 0–100.</summary>
-	int AverageHappiness { get; }
+	/// <summary>Average visitor happiness, 0–100, as the original's 0xc19e4 returns it: a single, the mean of each guest's truncated happiness, 0 while the park is closed.</summary>
+	float AverageHappiness { get; }
 	/// <summary>Visitors whose happiness is at least <see cref="GoldenTicketSettings.Happiness"/>.</summary>
 	int CountHappierThan( int happiness );
 	int KidsWithBalloonsPercent { get; }
@@ -112,7 +117,7 @@ public sealed class NoGuestStatistics : IParkGuestStatistics
 {
 	public static readonly NoGuestStatistics Instance = new();
 	public int PeopleInPark => 0;
-	public int AverageHappiness => 0;
+	public float AverageHappiness => 0;
 	public int CountHappierThan( int happiness ) => 0;
 	public int KidsWithBalloonsPercent => 0;
 	public int KidsWithCostumesPercent => 0;
@@ -183,6 +188,12 @@ public sealed class ParkObjectState
 	public bool ScriptBroken { get; set; }
 	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
 	public int MechanicId { get; set; }
+	/// <summary>
+	/// Guests who have used the object since it was built, never reset: the original's object word +412, which the
+	/// use-finished handler raises (0xEAA00 calls 0xE1B44) and only the object constructor clears. The scrap value's
+	/// first-30-days refund requires it to be 0 (<see cref="ParkEconomy.ScrapPercent"/>, ORACLE.md F21).
+	/// </summary>
+	public long TimesUsed { get; set; }
 	public long CustomersThisMonth { get; set; }
 	public long CustomersLastMonth { get; set; }
 	public long TakingsThisMonth { get; set; }

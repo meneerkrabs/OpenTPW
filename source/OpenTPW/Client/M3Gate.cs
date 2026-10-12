@@ -1574,18 +1574,18 @@ internal sealed class M3GateRun
 	/// <summary>
 	/// Park turns from a wear or breakdown event until the repair must be done, from ParkEconomy's staff timing: the
 	/// event is raised at a day end, the next turn's park-hour update dispatches a free mechanic (a turn is 3,750
-	/// park-clock seconds, so every turn runs at least one hour update), and a job takes
-	/// <c>WorkDuration</c> hours (at least 1). With one job per ride ahead of it, the window is
-	/// 1 + rides × the longest WorkDuration of the hired mechanics' grades.
+	/// park-clock seconds, so every turn runs at least one hour update), and a job takes at most
+	/// <c>WorkDuration</c> park turns (a ride at zero repair; <see cref="ParkEconomy.RepairTimer"/>) plus the update that completes it.
+	/// With one job per ride ahead of it, the window is 1 + rides × (the longest WorkDuration of the hired mechanics' grades + 1).
 	/// </summary>
 	private (long Turns, string Derivation) RepairWindow()
 	{
 		var role = economy.Settings[StaffType.Mechanic];
 		var mechanics = economy.Staff.Members.Where( member => member.Type == StaffType.Mechanic ).ToList();
-		var hours = mechanics.Count == 0 ? 1 : mechanics.Max( member => Math.Max( 1, role.WorkDuration[member.Grade] ) );
+		var work = mechanics.Count == 0 ? 0 : mechanics.Max( member => Math.Max( 0, role.WorkDuration[member.Grade] ) );
 		var rides = economyLinks.Count( link => economy.TryGetObject( link.Instance, out var state ) && state.Kind == ParkObjectKind.Ride );
-		var turns = 1 + Math.Max( 1, rides ) * (long)hours;
-		return (turns, $"1 turn to dispatch + {Math.Max( 1, rides )} ride job(s) x WorkDuration {hours} h (>= 1 hour update per turn: {ParkCalendar.SecondsPerTurn} s per turn) = {turns} turns");
+		var turns = 1 + Math.Max( 1, rides ) * (work + 1L);
+		return (turns, $"1 turn to dispatch + {Math.Max( 1, rides )} ride job(s) x (WorkDuration {work} turns at zero repair + 1 completing update) = {turns} turns");
 	}
 
 	private static long RepairDeadline( long eventTick, long turns ) => ParkCalendar.TickOfTurn( ParkCalendar.Turn( eventTick ) + turns );

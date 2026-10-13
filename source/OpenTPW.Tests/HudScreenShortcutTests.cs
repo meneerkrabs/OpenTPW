@@ -1,0 +1,101 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
+using Veldrid;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// The HUD's original keyboard shortcuts (window keys, time keys, blueprint turning) and the happiness gauge:
+/// a pressed key must reach the model (the window state, the park clock or the sampled visitors), not just a handler.
+/// </summary>
+[TestClass]
+public class HudScreenShortcutTests
+{
+	[TestMethod]
+	public void OriginalShortcutKeysMapToTheirHudWindowActions()
+	{
+		Assert.AreEqual( HudScreenShortcut.BuyWindow, ParkHud.ShortcutFor( InputButton.BuyAttractions ), "B" );
+		Assert.AreEqual( HudScreenShortcut.ParkInfo, ParkHud.ShortcutFor( InputButton.ParkInfo ), "I" );
+		Assert.AreEqual( HudScreenShortcut.FinanceWindow, ParkHud.ShortcutFor( InputButton.FinancialInfo ), "F" );
+		Assert.AreEqual( HudScreenShortcut.ResearchWindow, ParkHud.ShortcutFor( InputButton.Research ), "R (help 472 'Click for research (R)')" );
+		Assert.AreEqual( HudScreenShortcut.MapWindow, ParkHud.ShortcutFor( InputButton.MapScreen ), "Space (help 473 'view the map (Space)')" );
+		Assert.AreEqual( HudScreenShortcut.LoansWindow, ParkHud.ShortcutFor( InputButton.Loans ), "L" );
+		Assert.AreEqual( HudScreenShortcut.StaffCosts, ParkHud.ShortcutFor( InputButton.StaffBudgets ), "T" );
+		Assert.AreEqual( HudScreenShortcut.EntryPrice, ParkHud.ShortcutFor( InputButton.EntryPrice ), "G" );
+		Assert.AreEqual( HudScreenShortcut.StaffApplicants, ParkHud.ShortcutFor( InputButton.HireStaff ), "H" );
+		Assert.AreEqual( HudScreenShortcut.StaffEmployed, ParkHud.ShortcutFor( InputButton.AllStaff ), "S" );
+		Assert.AreEqual( HudScreenShortcut.TimeFaster, ParkHud.ShortcutFor( InputButton.TimeSpeedUp ), "numpad +" );
+		Assert.AreEqual( HudScreenShortcut.TimeSlower, ParkHud.ShortcutFor( InputButton.TimeSlowDown ), "numpad -" );
+		Assert.AreEqual( HudScreenShortcut.TimeNormal, ParkHud.ShortcutFor( InputButton.TimeReset ), "numpad *" );
+		Assert.AreEqual( HudScreenShortcut.TurnBlueprintLeft, ParkHud.ShortcutFor( InputButton.TurnBlueprintLeft ), "comma" );
+		Assert.AreEqual( HudScreenShortcut.TurnBlueprintRight, ParkHud.ShortcutFor( InputButton.TurnBlueprintRight ), "full stop" );
+		Assert.AreEqual( HudScreenShortcut.LocateNextStaff, ParkHud.ShortcutFor( InputButton.StaffLocator ), "Ctrl+S" );
+		Assert.AreEqual( HudScreenShortcut.LocateNextVisitor, ParkHud.ShortcutFor( InputButton.VisitorLocator ), "Ctrl+V" );
+		// Keys whose screens do not exist stay unhandled rather than guessing a window.
+		foreach ( var button in new[] { InputButton.AllAttractions, InputButton.AllVisitors, InputButton.CamcorderMode,
+			InputButton.SendEmailPostcard, InputButton.ToggleHelpBar, InputButton.Help, InputButton.Menu, InputButton.RideView } )
+			Assert.AreEqual( HudScreenShortcut.None, ParkHud.ShortcutFor( button ), button.ToString() );
+	}
+
+	[TestMethod]
+	public void WindowKeysActOverTheHudWindowsOnly()
+	{
+		Assert.IsTrue( ParkHud.WindowShortcutsAllowed( true, null ), "with no window open the park gate decides" );
+		Assert.IsTrue( ParkHud.WindowShortcutsAllowed( false, "buy" ), "a window key may close its own window" );
+		Assert.IsTrue( ParkHud.WindowShortcutsAllowed( false, "map" ) );
+		Assert.IsFalse( ParkHud.WindowShortcutsAllowed( false, "pause" ), "the pause menu keeps the keys" );
+		Assert.IsFalse( ParkHud.WindowShortcutsAllowed( false, "confirmQuit" ), "a dialog keeps the keys" );
+		Assert.IsFalse( ParkHud.WindowShortcutsAllowed( false, null ), "an overlay without a window name keeps the keys" );
+		Assert.IsFalse( ParkHud.WindowShortcutsAllowed( false, "lobby" ), "the front end is not a HUD window" );
+		foreach ( var shortcut in new[] { HudScreenShortcut.TimeFaster, HudScreenShortcut.TurnBlueprintLeft, HudScreenShortcut.LocateNextStaff } )
+			Assert.IsFalse( ParkHud.OpensWindow( shortcut ), $"{shortcut} follows the plain park gate" );
+		foreach ( var shortcut in new[] { HudScreenShortcut.BuyWindow, HudScreenShortcut.MapWindow, HudScreenShortcut.StaffEmployed } )
+			Assert.IsTrue( ParkHud.OpensWindow( shortcut ), $"{shortcut} is a window key" );
+	}
+
+	[TestMethod]
+	public void TimeKeysStepTheActualParkClockScale()
+	{
+		// The keys reach the park status the HUD is bound to (the same object the speed buttons use).
+		var status = new StubParkStatus( 1000 );
+		status.Speed = ParkHud.SteppedSpeed( status.Speed, 1 );
+		Assert.AreEqual( (GameSpeed.Fast, 2f), (status.Speed, status.TimeScale), "numpad + twice from normal reaches the x2 clock scale" );
+		status.Speed = ParkHud.SteppedSpeed( status.Speed, 1 );
+		Assert.AreEqual( GameSpeed.Fastest, status.Speed );
+		status.Speed = ParkHud.SteppedSpeed( status.Speed, 1 );
+		Assert.AreEqual( GameSpeed.Fastest, status.Speed, "stepping up clamps at fastest" );
+		Assert.AreEqual( GameSpeed.Fast, ParkHud.SteppedSpeed( GameSpeed.Fastest, -1 ), "one step down from fastest is the x2 scale" );
+		status.Speed = ParkHud.SteppedSpeed( status.Speed, -3 );
+		Assert.AreEqual( (GameSpeed.Paused, 0f), (status.Speed, status.TimeScale), "stepping down three times from fastest reaches the pause scale" );
+		status.Speed = ParkHud.SteppedSpeed( status.Speed, -1 );
+		Assert.AreEqual( GameSpeed.Paused, status.Speed, "stepping down clamps at paused" );
+		Assert.AreEqual( GameSpeed.Paused, ParkHud.SteppedSpeed( GameSpeed.Fastest, -9 ), "a long hold down clamps at paused" );
+	}
+
+	[TestMethod]
+	public void HappinessGaugeFillFollowsTheSampledVisitors()
+	{
+		Assert.AreEqual( 0f, ParkHud.GaugeFill( 0f ) );
+		Assert.AreEqual( 0.5f, ParkHud.GaugeFill( 50f ) );
+		Assert.AreEqual( 1f, ParkHud.GaugeFill( 100f ) );
+		Assert.AreEqual( 1f, ParkHud.GaugeFill( 140f ), "the fill clamps at a full dish" );
+		Assert.AreEqual( 0f, ParkHud.GaugeFill( -20f ), "a negative mean does not fill below empty" );
+		Assert.IsNull( ParkHud.GaugeFill( null ), "no visitors in the park leaves the dish empty" );
+		var empty = ParkHud.GaugeColour( 0 );
+		var pleased = ParkHud.GaugeColour( 100 );
+		Assert.IsTrue( empty.R > pleased.R && empty.G < pleased.G, "unhappy visitors fill red, happy visitors green" );
+		Assert.AreEqual( 210, empty.A );
+		Assert.AreEqual( (empty.R, empty.G, empty.B), (ParkHud.GaugeColour( 0 ).R, ParkHud.GaugeColour( 0 ).G, ParkHud.GaugeColour( 0 ).B), "the colour is deterministic for tests and drawing" );
+	}
+
+	[TestMethod]
+	public void PauseMenuEntriesDisableWithoutTheirHostActions()
+	{
+		Assert.IsTrue( ParkHud.PauseMenuEntryEnabled( readOnlyVisit: false, UIStrings.Save, canLoad: false, canOptions: false ), "save works in a writable park" );
+		Assert.IsFalse( ParkHud.PauseMenuEntryEnabled( readOnlyVisit: true, UIStrings.Save, canLoad: true, canOptions: true ), "a read-only visit cannot save" );
+		Assert.IsFalse( ParkHud.PauseMenuEntryEnabled( false, UIStrings.Load, canLoad: false, canOptions: true ), "load without a host load screen is disabled" );
+		Assert.IsFalse( ParkHud.PauseMenuEntryEnabled( false, UIStrings.Options, canLoad: true, canOptions: false ), "options without a host options screen is disabled" );
+		Assert.IsTrue( ParkHud.PauseMenuEntryEnabled( true, UIStrings.Load, canLoad: true, canOptions: true ), "a read-only visit may still load another park" );
+		Assert.IsTrue( ParkHud.PauseMenuEntryEnabled( false, UIStrings.QuitGame, canLoad: false, canOptions: false ), "quit never depends on the host" );
+	}
+}

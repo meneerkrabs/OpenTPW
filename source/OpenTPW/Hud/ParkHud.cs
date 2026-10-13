@@ -124,6 +124,9 @@ public sealed partial class ParkHud
 		// [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
+		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
+		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge
+		hud.Add( new HappinessGaugeFill( this ) { Id = "gaugeFill", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiModelImage { Id = "dateDisplay", Model = "date", Bounds = new UiRect( 152.6f, 1043.6f, 251.7f, 77.5f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 478 ) } );
 		// [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text
 		// (control 47, (258,60,720,260), white font slot 1) sits at the top left of the screen, not in the panel, whose
@@ -430,7 +433,7 @@ public sealed partial class ParkHud
 				Id = entry.Label.ToString(),
 				Text = () => strings[entry.Label],
 				Clicked = entry.Clicked,
-				Enabled = !level.IsReadOnlyVisit || entry.Label != UIStrings.Save,
+				Enabled = PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null ),
 				Bounds = new UiRect( window.X + 160, window.Y + 190 + index * 140, window.Width - 400, 116 ),
 				Anchor = UiAnchor.Center
 			} );
@@ -445,6 +448,15 @@ public sealed partial class ParkHud
 		while ( Stack.Screens.Count > 1 )
 			Stack.Pop();
 	}
+
+	/// <summary>
+	/// Whether a pause-menu entry is clickable: a read-only visit never saves, and an entry without its host
+	/// action (Load, Options) is disabled instead of clicking to nothing.
+	/// </summary>
+	internal static bool PauseMenuEntryEnabled( bool readOnlyVisit, UIStrings label, bool canLoad, bool canOptions ) =>
+		!(readOnlyVisit && label == UIStrings.Save) &&
+		!(label == UIStrings.Load && !canLoad) &&
+		!(label == UIStrings.Options && !canOptions);
 
 	private void SavePark()
 	{
@@ -499,6 +511,7 @@ public sealed partial class ParkHud
 			rideButton.Enabled = level.IsReadOnlyVisit && (IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate )));
 
 		TrackCashChange( context.Delta );
+		SampleHappiness( context.Delta );
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		var consumed = Stack.Update( context, input );
@@ -534,6 +547,10 @@ public sealed partial class ParkHud
 			if ( Input.Pressed( InputButton.ClosePark ) && doorEconomy.IsParkOpen )
 				doorEconomy.ClosePark();
 		}
+
+		// The original window keys (the key table the InputButton defaults document; the research and map buttons'
+		// own help rows name "(R)" and "(Space)"), the time keys and the blueprint-turn keys.
+		HandleScreenShortcuts( shortcutsAllowed );
 
 		if ( level.LastActionMessage != lastLevelMessage )
 		{

@@ -26,6 +26,15 @@ public sealed class ObjectSignImages
 	private Texture? leftTexture;
 	private Texture? rightTexture;
 
+	/// <summary>Releases the GPU textures made so far, for images owned by one entity (the park gate's own sign); type signs are shared and stay.</summary>
+	internal void ReleaseTextures()
+	{
+		leftTexture?.ReleaseOwned();
+		rightTexture?.ReleaseOwned();
+		leftTexture = null;
+		rightTexture = null;
+	}
+
 	/// <summary>GPU texture of the <c>sign1</c> half (created on first use, shared by every object of the type).</summary>
 	public Texture LeftTexture => leftTexture ??= new Texture( Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
 	/// <summary>GPU texture of the <c>sign2</c> half.</summary>

@@ -565,6 +565,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// times <see cref="ScrapPercent"/>, divided by 100 (ORACLE.md F21).
 	/// </summary>
 	// [BIN:STP-PPC:0x100E25E8 scrap value] Upgrades[0].CostOfUpgrade × the percentage 0xE2424, unsigned division by 100
+	// [BIN:TPW-EXE:0x004E2400 scrap value] the same product: the percentage 0x004E2290 × record +0x1B8 (Upgrades[0].CostOfUpgrade), unsigned division by 100; the sale 0x004DD0A0 credits it (executed by the x86 oracle target tpw-exe-scrap-value, ORACLE.md X13)
 	public long ScrapValue( ParkObjectState item )
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
@@ -580,9 +581,9 @@ public sealed class ParkEconomy : IParkEconomy
 	/// percentage is above 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100E2424 scrap percentage] age = clock stamp − thing +20 as signed 100 ns units; quotient by 365 days (exactly) 0 → year 1, 1, 2, else (also negative) year 4; in year 1, quotient by 30 days 0 and thing +412 = 0 and record +392 > 0 give 100; the row is record +392 + 64 × level
+	// [BIN:TPW-EXE:0x004E2290 scrap percentage] the same rule at the PC offsets: stamp thing +0x18, level byte +0x50, use counter +0x1A0 (cleared by the constructor 0x004DB090, raised with the history word +0x1A8 by 0x004E1690 when a guest leaves, 0x004FD970), percentages at record +0x188 + 64 × level; identical to 0x100E2424 on 572 inputs (ORACLE.md X13)
 	public int ScrapPercent( ParkObjectState item )
 	{
-		// [APPROX:ECON-025] the scrap rule is the Mac build's (0xE25E8 / 0xE2424: base cost x the age percentage, 100 for an unused object in its first 30 days); the Windows build's counterpart is not executed, and the object use counter (thing +412) is ParkObjectState.TimesUsed — evidence needed: the tp.exe counterpart of 0xE25E8 run in the x86 oracle, or a capture of a sale
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );

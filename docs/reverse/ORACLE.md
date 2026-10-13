@@ -1041,8 +1041,8 @@ the serializer order and the `0xdad90` store, not captured (SAVE-006 says so). `
 full, as the original does. Two things stay as they were and are approximations: **the park value** (ECON-026) kept summing the old
 rule (catalogue costs through the level × the percentage), because the original's valuation is a different quote (PPC-economy.md; since F29 the park value follows the
 original's `0xc1d4c` instead); and
-**the Windows build**: this is the Mac routine, and the tp.exe counterpart was not executed (ECON-025's text now says so), as is the
-mapping of `+412` to a use counter (a read of the stores and of the one increment, not a captured sale). The stubs are the type
+**the Windows build**: this was the Mac routine only; the tp.exe counterpart `0x4e2400` is now executed and identical (section 7.9, X13,
+which also finds the use counter's clear and its one increment at `+0x1a0`; ECON-025 is retired). The stubs are the type
 record and the stamp conversion (the same assumption as `park-points`); the age of a thing bought after the current turn (a negative
 quotient picks the fourth year in the original, the first in C#) cannot occur in a park and is outside the inputs.
 
@@ -1596,6 +1596,8 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-coast-rating-final` | tp.exe `0x43df90`..`0x43e0a7` (cdecl; the Mac `0x41900`) | none | 506 | **X12**: 23 differ from the Mac routine (F8, what C# follows), all in the last bit of the excitement; 315 from COAST-plan 6.4 (section count). **Agree** 506/506 at the single-precision word `0x7F` | **agree** 506/506 |
 | `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
 | `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
+| `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
+| `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
 The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
 rotate the result right by 13 bits, store that, and return its signed absolute value (the
@@ -2048,3 +2050,76 @@ rest of the rating pass (the speed model and force computation that feed the ste
 definition weights in TPI (its coaster definition files and loader at `0x46d6bc`/`0x48044e` carry the same offsets but their values were not read),
 the TPI build rules and curve fit, any TPI-specific rating (for example a separate intensity or an effect of the new coaster types), and which control
 word is live while the game runs. No C# behaviour was changed.
+
+### 7.9 Finding X13: the sale refund in tp.exe is the Mac rule
+
+Question: does the Windows build refund a sold object by the Mac rule that C# follows (`ParkEconomy.ScrapValue` /
+`ScrapPercent`, the Mac `0xe25e8` / `0xe2424`, F21)? ECON-025 asked for exactly this execution.
+
+**Identification (high confidence).** The two 64-bit divisors of the Mac percentage occur together once in tp.exe: 365 days in
+100 ns units (`0x11ED1:0x78C6C000`) only at `0x4e22ce`, and 30 days (`0x1792:0xF8648000`) right after it, both inside
+`0x4e2290`. Its one value-returning caller with the price is `0x4e2400`; the sale `0x4dd0a0` computes the same product inline
+and credits it. The routines were located with REA (a Ghidra MCP front end, run locally on the identified tp.exe; Ghidra's
+output is read, not committed) and then executed here.
+
+**Executed.** `0x4e2400`, `0x4e2290`, the clock stamp `0x4f8690` (clock `+0` plus turn × rate / 4 × 10^7, the Mac `0xe4394`
+with its epoch), the 64-bit add / subtract `0x5fc530` / `0x5fc550` and the divide and multiply helpers. Stubs: the type record
+lookup `0x412e90` (synthetic record, registry and type id checked) and `0x5fc660`, which converts the stamp with
+FileTimeToSystemTime into eight field pointers (all null here, checked) and writes a status word into one of `0x4f8690`'s own
+argument slots, which nothing reads; the stub writes the success status 0 there. The clock base is random (0, below 2^32, anywhere in
+64 bits) and stored in both stamps, so the test also shows that it cancels.
+
+**Result: identical.** All 572 inputs (the Mac target's edges and random inputs) agree with the Mac routine reading:
+
+1. the refund is the percentage × record `+0x1b8` (the Mac `+440`, `Upgrades[0].CostOfUpgrade`), a 32-bit product divided by
+   100 unsigned (`0x51EB851F`, shift 5);
+2. the age is the signed 64-bit difference of the clock stamp and thing `+0x18` (the Mac `+20`); the low word of its quotient
+   by 365 days picks the column (0, 1, 2, else the fourth);
+3. the row is record `+0x188 + 64 · level + 4 · column` (the Mac `+392`), the level byte at thing `+0x50` (the Mac `+76`);
+4. in the first year, the low word of the quotient by 30 days is 0, the thing's word `+0x1a0` (the Mac `+412`) is 0 and record
+   `+0x188` is positive give **100**.
+
+The three wrong readings in the target (every level's cost summed, no first-month refund, the base level's row) differ on 221, 57 and 181 inputs.
+
+**The use counter.** Thing `+0x1a0` is cleared, with `+0x19c..+0x1a8`, by the object constructor `0x4db090`, and the only
+increment the scan below finds is `0x4e1690`, which raises it together with `+0x1a8` (the Mac `0xe1b44` raises `+412` with the history word `+420`).
+`0x4e1690` has one direct caller, `0x4fd970`, the guest's leave handler (it records the object in the guest's history, counts the visit by
+kind and logs "Person lost this sideshow"), with `ecx` the object. So the counter counts guests who left, not boardings, as on the Mac.
+The other stores to `+0x1a0` belong to other structures: the guest constructor `0x4faec0` (happiness 50.0 at `+0x19c`, a computed
+word at `+0x1a0`) and library code from `0x6460c0` on (`0x646ee0` stores an allocated block there). This part is static: a byte scan
+for register-plus-`0x1a0` stores (`mov`, `inc`, `add 1`, `mov 0`) and a read of each hit, not an execution; other encodings were not scanned.
+
+ECON-025 is retired; C# was already the rule. Not examined: the TPI `Game.exe` counterpart, and the save field that fills the counter on load
+(SAVE-006).
+
+### 7.10 Finding X14: the queue re-evaluation has one exit
+
+Question (QUEUE-005): when a queue is edited, which guests leave? C# followed the Mac plan. The plan read two exits from the strings of
+`0xee8f8`: "queue was shortened" and "queue edited underneath me" (a guest whose standing cell left the queue).
+
+**Identification (high confidence).** In tp.exe the queue edit `0x4de1f0` logs "Object's queue is now %d cells long" and "Telling people
+in queue to reevaluate". It then walks the ride's queue list (`+0x3c`, next guest `+0x228`) and calls `0x501390` for every guest but the
+called one (ride `+0x6c`). `0x501390` carries both strings.
+
+**Executed: one exit.** `0x501390` first logs "Person %d: Queue edited underneath me while Standing In Queue (I'm in state %d)" for every
+guest it is called for, and nothing depends on it. It then asks the ride for the guest's position (`0x4ddf50`, the list walk) and
+compares it, unsigned, with 4 × the ride's queue cells (`+0x40`). Only when the position is at or beyond that room and the guest is not in
+state 14 (waiting to be taken) does it leave, in this order:
+1. the log "The queue was shortened and there's no room for me any more";
+2. animation 13 for a guest whose id is a multiple of 3;
+3. the unlink `0x4ddd20`;
+4. the dismissal `0x5012f0` (which logs "dismissed from queue", records event 6 for the ride, plays a sound for one guest in eight and
+   clears the queue words);
+5. ride word `+0x1dc` = 0 and state 6.
+
+Every other guest is left as it is; there is no exit for a guest whose cell left the queue. Across 548 inputs (states 11 to 14, positions
+around 4 × cells) the routine agrees with that reading; without the state-14 exemption 70 differ.
+
+**C#.** `GuestSimulation.ReevaluateQueue` sends away a non-called guest in state 13 beyond the room too, as the original does; state 14
+is still never visited, and the leave-for-room rule agrees on all inputs. Two differences remain, now named by QUEUE-005. First, the
+original changes nothing for a guest that stays. C# keeps its own recovery: a guest whose cell left the queue leaves (Confused), because
+OpenTPW's queue walk cannot route it back from a removed cell, and the guests that stay are given their walk again. Second, the departure's
+effects differ: C# sets the QueueTooLong thought and plays no animation.
+
+Also seen: after re-evaluating, `0x4de1f0` reopens a ride that is closed but openable (not broken or condemned, back of queue connected,
+and for coasters, karts and water rides their extra conditions); this is not compared here.

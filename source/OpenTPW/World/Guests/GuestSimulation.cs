@@ -938,31 +938,38 @@ public sealed class GuestSimulation : IRideVisitorHost
 	}
 
 	/// <summary>
-	/// "Queue edited" (<c>0xdd57c</c>): every queued guest except the called one re-evaluates. Guests beyond the
-	/// new room leave ("queue was shortened"), guests whose cell left the queue leave ("queue edited underneath
-	/// me"), the others walk to their position again.
+	/// "Queue edited" (<c>0xdd57c</c>): every queued guest except the called one re-evaluates. A guest whose place
+	/// is beyond the new room leaves ("queue was shortened"), unless it is already waiting to be taken (state 14);
+	/// the others walk to their position again.
 	/// </summary>
-	// [APPROX:QUEUE-005] the re-evaluation exits of 0xee8f8 are reduced to "position beyond 4 × cells" and "standing cell no longer in the queue" — evidence needed: 0x100EE8F8 in detail
+	// [BIN:TPW-EXE:0x00501390 queue re-evaluation] the only exit is position ≥ 4 × cells (unsigned) with the guest not in state 14; "Queue edited underneath me while Standing In Queue" is the entry log every guest prints, not an exit; the caller 0x004DE1F0 visits every guest in the queue list but the called one (ride +0x6C); executed by the x86 oracle target tpw-exe-queue-reevaluate (ORACLE.md X14)
 	private void ReevaluateQueue( IRideVisitorBridge attraction )
 	{
 		var cells = attraction.QueueCells;
 		var room = RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells;
 		foreach ( var guest in guests )
 		{
-			if ( guest.AttractionId != attraction.AttractionId || guest.State is not (GuestState.Queueing or GuestState.MovingUpQueue) || guest.Id == attraction.CalledGuest )
+			if ( guest.AttractionId != attraction.AttractionId || guest.State is not (GuestState.Queueing or GuestState.MovingUpQueue or GuestState.Boarding) || guest.Id == attraction.CalledGuest )
 				continue;
 			var position = attraction.GetQueuePosition( guest.Id );
+			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
+			if ( position < 0 || position >= room )
+			{
+				LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+				continue;
+			}
+			if ( guest.State == GuestState.Boarding )
+				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			if ( position < 0 || position >= room )
-				LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
-			else if ( index < 0 && !onJoinCell )
-				LeaveQueue( guest, attraction, GuestThought.Confused );
-			else
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest plays no animation and gets the QueueTooLong thought, where the original plays animation 13 for one guest in three (id % 3 = 0, 0x0050BE80) and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what animation 13 and the event-6 record are
+			if ( index < 0 && !onJoinCell )
 			{
-				guest.QueueCellIndex = index < 0 ? cells.Count : index;
-				MoveToQueuePosition( guest, attraction );
+				LeaveQueue( guest, attraction, GuestThought.Confused );
+				continue;
 			}
+			guest.QueueCellIndex = index < 0 ? cells.Count : index;
+			MoveToQueuePosition( guest, attraction );
 		}
 	}
 

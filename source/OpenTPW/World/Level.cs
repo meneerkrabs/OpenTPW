@@ -72,6 +72,21 @@ public partial class Level : IDisposable
 	private OnlineFolders onlineFolders = null!;
 
 	/// <param name="start">How a writable original level starts; ignored for the sandbox and for read-only visits (which load the shipped save and run no economy).</param>
+	private static readonly List<WeakReference<Level>> created = new();
+
+	/// <summary>Levels still reachable (the current one included): after a full collection, more than one means an old park is kept alive.</summary>
+	public static int AliveCount
+	{
+		get
+		{
+			lock ( created )
+			{
+				created.RemoveAll( reference => !reference.TryGetTarget( out _ ) );
+				return created.Count;
+			}
+		}
+	}
+
 	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
 		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null ) { }
 
@@ -84,6 +99,11 @@ public partial class Level : IDisposable
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
 		LevelName = levelName;
+		lock ( created )
+		{
+			created.RemoveAll( reference => !reference.TryGetTarget( out _ ) );
+			created.Add( new WeakReference<Level>( this ) );
+		}
 		Seed = seed ?? WorldSeed.Default;
 		Visit = visit;
 		resumeState = resume;

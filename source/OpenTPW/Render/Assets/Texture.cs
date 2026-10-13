@@ -11,7 +11,35 @@ public partial class Texture : Asset
 	public uint Width { get; private set; }
 	public uint Height { get; private set; }
 
-	public static Texture Missing => new Texture( [255, 255, 255, 255], 1, 1 );
+	private static readonly Lazy<Texture> missing = new( () => new Texture( [255, 255, 255, 255], 1, 1 ) );
+
+	/// <summary>
+	/// The white placeholder for a missing image: one texture shared by every user and never released (it used to be a new texture
+	/// on every call, each kept for the rest of the session).
+	/// </summary>
+	public static Texture Missing => missing.Value;
+
+	/// <summary>
+	/// Releases a texture its owner made from bytes and no one else uses: it leaves <see cref="Asset.All"/> and its GPU objects go
+	/// after the last frame that may draw them. Never for a texture loaded by path (those are shared through the cache) or for
+	/// <see cref="Missing"/>.
+	/// </summary>
+	internal void ReleaseOwned()
+	{
+		if ( ReferenceEquals( this, missing.IsValueCreated ? missing.Value : null ) || !string.IsNullOrEmpty( Path ) )
+			return;
+		Asset.All.Remove( this );
+		var (texture, view) = (NativeTexture, NativeTextureView);
+		void Dispose()
+		{
+			view?.Dispose();
+			texture?.Dispose();
+		}
+		if ( global::Global.Render is { } renderer )
+			renderer.ScheduleDelete( Dispose );
+		else
+			Dispose();
+	}
 
 	internal Veldrid.Texture NativeTexture;
 	internal TextureView NativeTextureView;
@@ -43,8 +71,16 @@ public partial class Texture : Asset
 	/// </summary>
 	public Texture( byte[] data, int width, int height, TextureFlags flags = TextureFlags.None )
 	{
+		if ( TrackOrigins )
+			Origin = string.Join( " < ", new System.Diagnostics.StackTrace( 1, false ).GetFrames().Take( 3 ).Select( frame => $"{frame.GetMethod()?.DeclaringType?.Name}.{frame.GetMethod()?.Name}" ) );
 		CreateTexture( "", data, (uint)width, (uint)height, flags );
 	}
+
+	/// <summary>Records where textures made from bytes come from (<see cref="Origin"/>), for the memory diagnostics of the browser harness.</summary>
+	internal static bool TrackOrigins { get; set; }
+
+	/// <summary>The methods that made this texture from bytes, when <see cref="TrackOrigins"/> was on.</summary>
+	internal string? Origin { get; private set; }
 
 	public Texture( Stream stream, TextureFlags flags = TextureFlags.None )
 	{

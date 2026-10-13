@@ -113,6 +113,19 @@ public class CrowdAudioTests
 	}
 
 	[TestMethod]
+	public void ForgettingACategoryDropsItsSamplesAndLateDecodesDoNotBringThemBack()
+	{
+		var decoded = (Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem )
+			.GetField( "decoded", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( system )!;
+		Assert.IsTrue( decoded.Keys.Any( key => key.Item1 == kids ), "the setup cached the category's samples" );
+		system.Forget( kids, null );
+		Assert.IsFalse( decoded.Keys.Any( key => key.Item1 == kids ), "a park's categories leave the cache when it ends" );
+		var sample = kids.Catalog.Find( GameAudio.CrowdEvent )!.Sounds[0].Samples[0];
+		system.RememberDecoded( kids, sample, new Mp2Audio( AudioMixer.OutputRate, 1, new short[32], 1, 0 ), retainLong: false );
+		Assert.IsFalse( decoded.Keys.Any( key => key.Item1 == kids ), "a decode that finishes afterwards does not put the category back" );
+	}
+
+	[TestMethod]
 	public void APlacedSoundDrawsLikePlayAtAndStartsOnceItsSampleIsDecoded()
 	{
 		var seed = typeof( SoundEventSystem ).GetField( "seed", BindingFlags.NonPublic | BindingFlags.Instance )!;

@@ -25,6 +25,7 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `jungle` | the cold start of Full Simulation Jungle (the construction frame) with its load profile, then a steady window |
 | `buy` | the first buy-menu open (Aztec Mayhem selected) and the first Belly Bounce, Balloon Shop, Burger Shop and Drinks Shop selections |
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
+| `switch` | memory across park changes (Jungle, the lobby, the next island's park, the lobby, Jungle again), each point after a full collection: wasm, live managed memory, live parks, entities, live textures by source, archive and sound bytes, and in the lobby the static fields that hold the most |
 | `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
@@ -155,6 +156,73 @@ In these runs decoding was about 6 % of the AOT start (10 % in the interpreter),
 decoded textures could save at most about 60 ms of a Jungle start, less the time to read it back;
 the browser plan's phase 3 therefore waits. The larger shares are the object catalogue, the kid sprite sets, starting the park
 audio and the object placement: those, or spreading the start over frames, are the next targets.
+
+## Files read on demand, and the textures that stayed (13 October)
+
+The second part of the memory phase closed the three items left open below:
+
+- **Whole files in memory.** A WAD archive opened from a path keeps its directory and reads a member
+  from the file when it is asked for (the file is opened for that read and closed again, so it can
+  still be replaced, also on Windows); an SDT sound bank read from a file keeps its offset table and
+  reads one entry at a time. A file that changed length since its directory was read gives a clear
+  error instead of other bytes, and a closed archive refuses reads. Both used to hold the whole
+  file (about 29 MB of archives and 35 MB of banks in a park), which the browser already holds.
+  `OnDemandReadTests` compares every member of every original WAD and every entry of every original
+  SDT bank, read both ways, byte for byte, and damaged banks behave the same.
+- **Textures that stayed after their park.** Tracking where textures made from bytes come from
+  (`PerfTrackTextureOrigins`) found three makers: `Texture.Missing` made a new texture on every call
+  (now one shared texture), and the coaster palette and the park gate's own sign were never released
+  (now `Texture.ReleaseOwned` when their entity goes, together with the material each made for them).
+- **The mixer's growth.** It was the sound banks: with entries read on demand the mixer's share stays
+  about 11 MB across park changes.
+
+| Step | Live managed before | After | Wasm before → after | Textures without a path |
+| --- | ---: | ---: | --- | ---: |
+| Jungle | 94 MB | 41 MB | 254 → 176 MB | 20 |
+| Lobby | 47 MB | 24 MB | 254 → 176 MB | 1 (25 before) |
+| Fantasy | 109 MB | 48 MB | 305 → 254 MB | 20 |
+| Lobby again | 58 MB | 28 MB | 305 → 254 MB | 1 (25 before, growing) |
+| Jungle again | 113 MB | 51 MB | 305 → 254 MB | 20 |
+
+What still grows a little (24 → 28 MB in the lobby) is the cache of each theme visited for the first
+time: its textures stay cached by path (Fantasy's 57), and so does its part of the object catalogue,
+which makes a revisit faster. Visiting a park of a theme seen before adds nothing (Jungle again holds
+the same textures); with all themes visited the cache is at its largest, and a limit on it is not
+part of this phase.
+Three alternating runs against the build without this change: the digest's hashes are unchanged,
+the cold Jungle frame is the same (625 against 586 ms, medians of four), and the page's wasm memory in
+the park is 31 % lower.
+
+## Memory across park changes (13 October)
+
+The `switch` scenario takes each point after a full collection, so the managed figure is live
+memory. On the AOT build (M5 setup) it found two leaks:
+
+- **The first park stayed alive for the session.** `RootPanel` (an entity) stored the first one ever
+  made in a static `Instance` that nothing used; through it the first park's `Level` and everything it
+  held stayed reachable. The diagnostic `PerfStaleLevelPaths` (a walk from the static fields to any
+  park but the current one) named the path. The field is gone.
+- **Each park left its sound banks behind.** The decoded-sample cache is keyed by sound category; after
+  a park the old categories, with their whole sound banks, stayed reachable through it.
+  `SoundEventSystem.Forget` now drops a park's and the lobby's categories when they end, and a decode
+  that finishes later does not put them back. `PerfMemoryRoots` (bytes of arrays per static field)
+  showed the mixer's share.
+
+| Step | Live managed before | After | Live parks before → after |
+| --- | ---: | ---: | --- |
+| Jungle | 94 MB | 94 MB | 1 → 1 |
+| Lobby | 67 MB | 47 MB | 1 → 0 |
+| Fantasy | 124 MB | 109 MB | 2 → 1 |
+| Lobby again | 81 MB | 58 MB | 1 → 0 |
+| Jungle again | 132 MB | 113 MB | 2 → 1 |
+
+These are one run of the scenario on one machine. Still open, and larger: the textures made at run
+time without a path (signs, object textures, colour blocks) stay in `Asset.All` and on the GPU after
+their park (textures held 265 → 251 → 333 → 319 → 345 over the scenario: Fantasy's own textures stay
+cached by path, and about a dozen path-less ones remain per park); the archive files (22–29 MB read
+so far; archives are never closed) and the sound banks (about 35 MB) are kept whole in managed memory
+although the browser already holds the files; and the mixer's share still grows by about 6 MB a park.
+The page's wasm memory peaks at 305 MB after the second park and does not shrink.
 
 ## Three start costs removed (13 October)
 

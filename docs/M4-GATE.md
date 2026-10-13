@@ -127,7 +127,7 @@ removed. Nothing else can be done: OpenTPW has no track builder.
   `readRideClosedTick`.
 - **Charges and credits** come from the object's `.sam` layers (`Upgrades[0].CostOfUpgrade`,
   `UsageInfo.GoldenTicketCost`, `ScrapValueYear1..4`); the ticket rule is the traced
-  purchase (`BIN:STP-PPC:0x100DA874`); the scrap rule is the Mac's `0xe25e8` (ORACLE.md F21; the Windows counterpart is not executed, ECON-025).
+  purchase (`BIN:STP-PPC:0x100DA874`); the scrap rule is the Mac's `0xe25e8` (ORACLE.md F21), which tp.exe `0x4e2400` implements identically (X13).
 - **Unit tests.** A unit test is an asset-free test in one of the script test classes
   (`RideOpcodeTestMapTests.ScriptTestClasses`). The asset-gated corpus run
   (`RideVMCorpusTests`, which executes 83 of the 84 corpus opcodes) is not counted:

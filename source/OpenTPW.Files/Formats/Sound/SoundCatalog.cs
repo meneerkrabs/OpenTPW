@@ -170,32 +170,74 @@ public sealed class SoundCatalog
 /// A sample bank (<c>.sdt</c>) read by entry number: entries keep their position in the offset table even
 /// when a damaged entry is skipped, because catalogues address samples by number.
 /// </summary>
+/// <summary>
+/// An SDT sound bank: a count, a table of entry offsets, and entries (a header with the size, then the MPEG audio). From a file it
+/// keeps only the offset table and reads an entry when it is asked for: a bank is tens of megabytes, and the browser already holds
+/// the file (docs/BROWSER-PERFORMANCE.md). Both sources check entries the same way, against the bank's length.
+/// </summary>
 public sealed class SoundBank
 {
-	private readonly byte[] data;
+	private readonly byte[]? data;
+	private readonly Func<Stream>? open;
+	private readonly long length;
 	private readonly int count;
+	private readonly int[] offsets;
 
 	public SoundBank( byte[] data )
 	{
 		this.data = data ?? throw new ArgumentNullException( nameof( data ) );
+		length = data.Length;
 		count = data.Length >= 4 ? Math.Clamp( BinaryPrimitives.ReadInt32LittleEndian( data ), 0, Math.Min( SdtArchive.MaximumEntryCount, (data.Length - 4) / 4 ) ) : 0;
+		offsets = new int[count];
+		for ( var index = 0; index < count; index++ )
+			offsets[index] = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 4 + index * 4 ) );
+	}
+
+	/// <summary>A bank read from <paramref name="open"/> (a fresh stream of the whole bank per call) of <paramref name="length"/> bytes.</summary>
+	public SoundBank( Func<Stream> open, long length )
+	{
+		this.open = open ?? throw new ArgumentNullException( nameof( open ) );
+		this.length = length;
+		count = length >= 4 ? (int)Math.Clamp( BinaryPrimitives.ReadInt32LittleEndian( Read( 0, 4 ) ), 0, Math.Min( SdtArchive.MaximumEntryCount, (length - 4) / 4 ) ) : 0;
+		var table = Read( 4, count * 4 );
+		offsets = new int[count];
+		for ( var index = 0; index < count; index++ )
+			offsets[index] = BinaryPrimitives.ReadInt32LittleEndian( table.AsSpan( index * 4 ) );
 	}
 
 	public int Count => count;
+
+	/// <summary><paramref name="size"/> bytes at <paramref name="offset"/> (the caller has checked they lie inside the bank).</summary>
+	private byte[] Read( long offset, int size )
+	{
+		if ( data != null )
+			return data.AsSpan( (int)offset, size ).ToArray();
+		var bytes = new byte[size];
+		if ( size == 0 )
+			return bytes;
+		using var stream = open!();
+		// A file of another length is not the bank whose offset table was read (replaced on disk): a clear error, not other bytes.
+		if ( stream.Length != length )
+			throw new IOException( $"The sound bank changed after its offset table was read ({stream.Length} bytes, was {length})." );
+		stream.Seek( offset, SeekOrigin.Begin );
+		stream.ReadExactly( bytes );
+		return bytes;
+	}
 
 	/// <summary>The MPEG audio of 1-based entry <paramref name="number"/>, or null when the entry is missing or damaged.</summary>
 	public byte[]? GetMpeg( uint number )
 	{
 		if ( number == 0 || number > count )
 			return null;
-		var offset = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 4 + (int)(number - 1) * 4 ) );
-		if ( offset < 4 + count * 4 || offset > data.Length - SdtArchive.MinimumEntryHeaderBytes )
+		var offset = offsets[number - 1];
+		if ( offset < 4 + count * 4 || offset > length - SdtArchive.MinimumEntryHeaderBytes )
 			return null;
-		var header = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( offset ) );
-		var size = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( offset + 4 ) );
-		if ( header < SdtArchive.MinimumEntryHeaderBytes || size < 0 || (long)offset + header + size > data.Length )
+		var head = Read( offset, 8 );
+		var header = BinaryPrimitives.ReadInt32LittleEndian( head );
+		var size = BinaryPrimitives.ReadInt32LittleEndian( head.AsSpan( 4 ) );
+		if ( header < SdtArchive.MinimumEntryHeaderBytes || size < 0 || (long)offset + header + size > length )
 			return null;
-		return data.AsSpan( offset + header, size ).ToArray();
+		return Read( offset + header, size );
 	}
 
 	/// <summary>The name stored in an entry's header (16 bytes, NUL padded).</summary>
@@ -203,9 +245,9 @@ public sealed class SoundBank
 	{
 		if ( number == 0 || number > count )
 			return null;
-		var offset = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 4 + (int)(number - 1) * 4 ) );
-		if ( offset < 0 || offset > data.Length - SdtArchive.MinimumEntryHeaderBytes )
+		var offset = offsets[number - 1];
+		if ( offset < 0 || offset > length - SdtArchive.MinimumEntryHeaderBytes )
 			return null;
-		return Encoding.Latin1.GetString( data, offset + 8, 16 ).TrimEnd( '\0' );
+		return Encoding.Latin1.GetString( Read( offset + 8, 16 ) ).TrimEnd( '\0' );
 	}
 }

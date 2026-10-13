@@ -143,7 +143,7 @@ class MergedGateDocs(unittest.TestCase):
         self.assertNotIn('process-wide counter', read(SOURCE / 'Client' / 'M3Gate.cs'))
 
     def test_register_count_matches_the_sentence(self):
-        # Round 2 merged DET and GATE ("eight"); later registers raise the count, which must stay in words.
+        # Later registers raise the count; the generator uses words through twenty, then digits.
         tool = read(REPO / 'tools' / 'fidelity_register.py')
         self.assertIn('"DET": "source/OpenTPW/World/DeterminismApproximations.cs",', tool)
         self.assertIn('"GATE": "source/OpenTPW/Client/M3GateApproximations.cs",', tool)
@@ -152,9 +152,10 @@ class MergedGateDocs(unittest.TestCase):
         count = len(re.findall(r'^\s+"[A-Z][A-Z0-9]*": "source/', registers.group(1), re.M))
         words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty']
         # WALK-F (review WALK-V, WV-10): the sentence is generated from len(REGISTERS), so a merge that adds a register
-        # cannot leave a stale count; the generated document carries the word.
+        # cannot leave a stale count; the generated document carries its formatted count.
         self.assertIn('the {in_words(data.register_count)} configured C# registers', tool)
-        self.assertIn(f'the {words[count]} configured C# registers', read(REPO / 'docs' / 'FIDELITY-REGISTER.md'))
+        expected_count = words[count] if count < len(words) else str(count)
+        self.assertIn(f'the {expected_count} configured C# registers', read(REPO / 'docs' / 'FIDELITY-REGISTER.md'))
 
 
 if __name__ == '__main__':

@@ -269,6 +269,16 @@ preview; original runtime fidelity and the complete offline scope remain open.
   Windows builds add `u` (the single 1 + U), the Mac the stale `Fz` that C# follows, so 469 of 509 Mac-target inputs differ; the rest is x87
   rounding (at most 3 ulps), and the two Windows builds round differently from each other. A TPI coaster mode reuses the layout and the C# machinery but needs that
   one term and a rounding decision. No C# change.
+- The x86 oracle now executes the Windows sale refund: tp.exe `0x4e2400` with its percentage `0x4e2290` and the clock stamp `0x4f8690`
+  (ORACLE.md 7.9, finding X13). It is the Mac rule of F21 that C# follows, identical on all 572 inputs (random 64-bit clock bases included):
+  base price × the current level's age percentage / 100, 100 % in the first 30 days of an object nobody used. The use counter is thing
+  `+0x1a0`, cleared by the constructor and raised when a guest leaves (`0x4e1690` from `0x4fd970`, the one increment a byte scan finds), as on the Mac. ECON-025 is retired;
+  no C# behaviour change. The routines were located with REA (a Ghidra MCP front end, local only) from the 365- and 30-day constants.
+- The x86 oracle now executes the queue re-evaluation tp.exe `0x501390` (ORACLE.md 7.10, finding X14, QUEUE-005): a queue edit sends
+  away only guests whose place is at or beyond 4 × the queue cells, and never one in state 14. "Queue edited underneath me" turned out
+  to be the log line every guest prints, not a second exit. C# now also sends away a non-called guest in state 13 beyond the room; it
+  keeps its Confused departure for a guest whose cell left the queue (its walk cannot route that guest back), which QUEUE-005 now names
+  as the remaining difference. Found in the REA research round over the register (2026-10-13).
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the
@@ -797,6 +807,21 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Files read on demand (October 13):** WAD archives opened from a path and SDT sound banks now read
+  a member or entry from the file when it is needed instead of holding the whole file (byte-identical
+  on every original archive member and bank entry); `Texture.Missing` is one shared texture, and the
+  coaster palette and the park gate's sign release their textures and materials. Live memory in Jungle fell from 94
+  to 41 MB and in the lobby from 47 to 24 MB, the page's wasm memory from 254 to 176 MB after the
+  first park; textures without a path no longer accumulate, and the mixer stops growing. Digest
+  unchanged, start time the same. Phase 4 of the browser plan, second part.
+- **Memory across park changes (October 13):** the harness's `switch` scenario (Jungle, lobby,
+  another park, lobby, Jungle) with live counters found two leaks. A static `RootPanel.Instance`
+  that nothing used kept the first park alive for the whole session; it is gone. The decoded-sample
+  cache kept every park's sound categories and banks alive; `SoundEventSystem.Forget` drops them
+  when a park or the lobby ends. In the measured run, live memory in the lobby after a park fell from
+  67 to 47 MB, after a second park from 81 to 58 MB, and no old park stayed alive. Diagnostics for the harness name the
+  static paths to stale parks and the largest holders. Still open: run-time textures without a path,
+  whole archive and sound-bank files in memory. Phase 4 of the browser plan, first part.
 - **Three start costs removed (October 13):** the RefPack decoder of the WAD archives reflected over
   the assembly on every call and built its output byte by byte (269 ms of the Jungle start); it is
   now one pass, byte-identical to the former decoder on every compressed member of the original

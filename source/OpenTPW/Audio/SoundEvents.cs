@@ -68,7 +68,9 @@ public sealed class SoundCategory
 			{
 				if ( fileSystem.FileExists( candidate ) )
 				{
-					bank = new SoundBank( fileSystem.ReadAllBytes( candidate ) );
+					// Read entry by entry from the file, not held whole (a bank is tens of megabytes).
+					var path = candidate;
+					bank = new SoundBank( () => fileSystem.OpenRead( path ), fileSystem.GetSize( path ) );
 					break;
 				}
 			}
@@ -98,6 +100,8 @@ public sealed class SoundEventSystem
 	public const int CacheFrameLimit = 220500;
 	internal const int LongCacheByteLimit = 8 * 1024 * 1024;
 	internal long RetainedSentenceBytes { get { lock ( decoded ) return retainedSentenceBytes; } }
+	/// <summary>Bytes of every decoded sample kept in memory, short and long (for the memory accounting of the browser harness).</summary>
+	public long DecodedBytes { get { lock ( decoded ) return decoded.Values.Sum( audio => (long)(audio?.Samples.Length ?? 0) * sizeof( short ) ); } }
 	private readonly List<SoundSentence> sentences = new();
 	private readonly List<SoundChain> chains = new();
 	private readonly List<PlacedSound> placements = new();
@@ -213,11 +217,16 @@ public sealed class SoundEventSystem
 		}
 	}
 
+	private static readonly object Ended = new();
+	private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SoundCategory, object> ended = new();
+
 	internal Mp2Audio? RememberDecoded( SoundCategory category, SoundSample sample, Mp2Audio? audio, bool retainLong )
 	{
 		var key = (category, (int)sample.BankNumber, sample.SampleNumber);
 		lock ( decoded )
 		{
+			if ( ended.TryGetValue( category, out _ ) )
+				return audio;
 			if ( decoded.TryGetValue( key, out var existing ) )
 				return existing;
 			if ( audio == null || audio.SampleFrames < CacheFrameLimit )
@@ -240,6 +249,32 @@ public sealed class SoundEventSystem
 			}
 		}
 		return audio;
+	}
+
+	/// <summary>
+	/// Forgets every decoded sample of the given categories. A park's and the lobby's own categories end when they are left; their
+	/// cache entries would otherwise keep each category, and with it its sound banks, alive for the rest of the session.
+	/// </summary>
+	public void Forget( params SoundCategory?[] categories )
+	{
+		var gone = categories.Where( category => category != null ).ToHashSet();
+		if ( gone.Count == 0 )
+			return;
+		lock ( decoded )
+		{
+			// A decode still running for one of them must not put it back (the table does not keep them alive).
+			foreach ( var category in gone )
+				ended.AddOrUpdate( category!, Ended );
+			foreach ( var key in decoded.Keys.Where( key => gone.Contains( key.Item1 ) ).ToList() )
+			{
+				if ( longDecodedOrder.Find( key ) is { } entry )
+				{
+					retainedSentenceBytes -= decoded[key]!.Samples.LongLength * sizeof( short );
+					longDecodedOrder.Remove( entry );
+				}
+				decoded.Remove( key );
+			}
+		}
 	}
 
 	/// <summary>Decodes a sample (thread safe); long sentence samples share an additional bounded PCM cache.</summary>

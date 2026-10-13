@@ -24,5 +24,6 @@ public static class SaveApproximations
 		("SAVE-921", "the coaster header and section flag words are remapped controller and node flags whose mapping the traced serializer does not state; they are kept raw and no bit is interpreted", "the remap in the coaster saver 0x394b8 / loader 0x39f98"),
 		("SAVE-922", "the coaster header's controller words (+8, +12, +16, +20, +28, +32, +244, +240), the block's three globals, the auxiliary ordinals' meaning, the word section+112 and the section floats +220/+224/+248 are saved but their meaning is not traced; they are reported raw (+248 matches the loop-rotate slider's node +248 by offset only)", "their writers and readers in the original coaster module"),
 		("SAVE-923", "the train/car/passenger payload that follows each coaster's sections (serializer 0x38da4) is not decoded; it is preserved as raw bytes and never interpreted, and no original coaster chunk is written", "the nested helper's field layout"),
+		("SAVE-930", "application-owned TPI layout checkpoints retain typed cells, placed objects, open flags, seeds and ids, but load as new experimental sessions with fresh guests, script execution, clock and audio; prototype/coaster layouts are refused", "original TPI continuation/save semantics; native render and original-data qualification remain deferred"),
 	};
 }

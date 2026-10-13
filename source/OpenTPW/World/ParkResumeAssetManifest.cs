@@ -64,6 +64,13 @@ internal static class ParkResumeAssetManifest
 	{
 		ArgumentNullException.ThrowIfNull( catalog );
 		ArgumentNullException.ThrowIfNull( settings );
+		return Capture(catalog, settings.Theme, settings.IsEasy);
+	}
+
+	/// <summary>Trusted asset identity without constructing economy rules (the experimental TPI layout path).</summary>
+	internal static IReadOnlyDictionary<string, string> Capture(ObjectCatalog catalog, string theme, bool easy)
+	{
+		ArgumentNullException.ThrowIfNull(catalog);
 
 		var manifest = new SortedDictionary<string, string>( StringComparer.Ordinal );
 		// The full pinned catalog set, not the currently surviving objects: a resumed park can still place
@@ -77,7 +84,6 @@ internal static class ParkResumeAssetManifest
 
 		// The category default .sam under each present category's object files. Bonus archives read these from
 		// the game data root too, so they are keyed there once per category instead of per entry.
-		var theme = settings.Theme;
 		foreach ( var (directory, defaults) in CategoryDefaults )
 		{
 			if ( !catalog.Entries.Any( entry => IsInCategoryDirectory( entry.ArchivePath, theme, directory ) ) )
@@ -86,7 +92,7 @@ internal static class ParkResumeAssetManifest
 		}
 
 		// The balance layers exactly as BalanceSettings.Load read them.
-		foreach ( var layer in BalanceSettings.GetStandardLayers( theme, settings.IsEasy ) )
+		foreach ( var layer in BalanceSettings.GetStandardLayers( theme, easy ) )
 			AddWhenPresent( manifest, layer );
 		AddWhenPresent( manifest, "/Challenges.sam" );
 		AddWhenPresent( manifest, $"/levels/{theme}/global.sam" );

@@ -453,6 +453,35 @@ public class QueueTests
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
 	}
 
+	private sealed class ReliefPayments : IGuestPayments
+	{
+		public readonly List<int> Relief = new();
+		public int AdmissionFee => 0;
+		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return true; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
+		public void ReliefUsed( IRideVisitorBridge attraction, int toiletByte ) => Relief.Add( toiletByte );
+	}
+
+	[TestMethod]
+	public void AReliefVisitWearsTheToiletAndClearsHighIllness()
+	{
+		// tp.exe 0x004FE1E0: the toilet wears by the guest's toilet meter as a byte, the meter goes to 0, an illness byte above 90 to 0
+		var rig = new Rig( satisfies: GuestNeeds.Toilet, takesGuests: true, capacity: 1 );
+		var payments = new ReliefPayments();
+		rig.Simulation.Payments = payments;
+		var guest = rig.Send();
+		var deadline = rig.Simulation.ParkTurn + 400;
+		while ( payments.Relief.Count == 0 && rig.Simulation.ParkTurn < deadline )
+		{
+			guest.Toilet = 77.9f;
+			guest.Nausea = 95.5f;
+			rig.Step();
+		}
+		CollectionAssert.AreEqual( new[] { 77 }, payments.Relief );
+		Assert.AreEqual( 0f, guest.Toilet );
+		Assert.AreEqual( 0f, guest.Nausea );
+	}
+
 	[TestMethod]
 	public void ClosingTheParkPullsQueuedGuestsOutAndDropsGoingToRideReservations()
 	{

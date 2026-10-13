@@ -41,5 +41,15 @@ public class PriceTestTests
 	}
 
 	[TestMethod]
+	public void LiveFreeTermsAreNotMistakenForMissingOnes()
+	{
+		var shop = new RideVisitorBridge( 1, "Free shop", RideVisitorKind.Shop, 1, 0, 10, price: 50 );
+		Assert.AreEqual( 50, GuestSimulation.PriceTermsOf( shop ).Price, "no live terms: the bridge's own price" );
+		shop.Sideshow = new SideshowTerms( 0, 0, 0 );
+		Assert.AreEqual( 0, GuestSimulation.PriceTermsOf( shop ).Price, "a price set to 0 in play is a free visit" );
+		Assert.IsFalse( QueueJoinRules.TooExpensive( GuestSimulation.PriceTermsOf( shop ), 0f, 0f, 0f, 0f, 0 ) );
+	}
+
+	[TestMethod]
 	public void AFreeVisitNeverFails() => Assert.IsFalse( QueueJoinRules.TooExpensive( Shop( 0 ), 0f, 0f, 0f, 100f, 0 ) );
 }

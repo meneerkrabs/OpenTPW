@@ -18,6 +18,9 @@ public sealed class FrontEndActions
 {
 	public Action<LobbyIslandInfo, GameMode> StartPark { get; init; } = ( _, _ ) => { };
 	public Action<ParkLoadEntry> Load { get; init; } = _ => { };
+	/// <summary>Lightweight own-save availability for the selected theme; assets are checked only on actual resume.</summary>
+	public Func<string, ParkContinueEntry?> ContinueEntry { get; init; } = _ => null;
+	public Action<ParkContinueEntry>? ContinuePark { get; init; }
 	public Action Quit { get; init; } = () => { };
 	public Func<UiScreenStack, Action, UiScreen>? CreateOptions { get; init; }
 	/// <summary>Called when the selected island changes (moves the lobby camera).</summary>
@@ -31,10 +34,10 @@ public sealed class FrontEndActions
 /// The front end over the 3D lobby: the original island lobby panel (islandlobby.MD2 with the
 /// f_lobbutbg button background) holding the island name and the previous/enter/next island buttons
 /// with their original tooltips, a title, and Load / Options / Quit Game buttons. Entering a park asks
-/// for the game mode first. Player profiles and the online world are not implemented. Positions of
+/// for continuation when an own save is available, or for the new park mode. Player profiles are not implemented. Positions of
 /// code-placed elements are approximations (docs/UI.md).
 /// </summary>
-public sealed class FrontEndMenu
+public sealed partial class FrontEndMenu
 {
 	private readonly UiStringTable strings;
 	private readonly FrontEndActions actions;
@@ -91,7 +94,7 @@ public sealed class FrontEndMenu
 			Anchor = UiAnchor.BottomLeft
 		} );
 		IslandButton( "previousIsland", "b_lobleft", 135, 343, () => NextIsland( -1 ) );
-		var enter = IslandButton( "enterPark", "b_entpark", 252, 345, ShowGameMode );
+		var enter = IslandButton( "enterPark", "b_entpark", 252, 345, ShowThemeStart );
 		IslandButton( "nextIsland", "b_lobright", 369, 344, () => NextIsland( 1 ) );
 
 		// [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby

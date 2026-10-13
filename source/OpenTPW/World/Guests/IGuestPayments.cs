@@ -18,4 +18,6 @@ public interface IGuestPayments
 	bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid );
 	/// <summary>A guest has left the attraction (the original's use counter, +412, rises on release).</summary>
 	void VisitFinished( IRideVisitorBridge attraction ) { }
+	/// <summary>A guest used a relief object with this toilet meter (as a byte): the toilet's gauge wears (tp.exe 0x004E2440).</summary>
+	void ReliefUsed( IRideVisitorBridge attraction, int toiletByte ) { }
 }

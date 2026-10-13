@@ -1,5 +1,40 @@
 # Saving and resuming a park
 
+## Experimental Theme Park Inc layout checkpoints
+
+The TPI experimental HUD's pause menu has **Save layout checkpoint** and **Load layout — new session**.
+These use a separate application-owned format (`opentpw-tpi-layout`, version 1, `.tpilayout`), one slot
+per theme in the existing save folder: `opentpw-science.tpilayout`, for example. They do not use the
+TPW world-save picker or write native TPWS/TPWI/GMS/GMI/COS files. Native TPI saves, campaign,
+economy, staff and sharing remain unsupported.
+
+A checkpoint records every typed cell and placed catalog object, its anchor/rotation/open flag,
+creation seed and attraction ID, the ID/seed allocators and world seed. Load explicitly confirms
+replacing the current world and starting a **new experimental session**: guests, queues' live
+membership, script instruction/variable/animation progress, fixed-step clock and audio restart.
+The saved queue geometry remains. Camera, speed and menu focus start fresh. This is layout
+persistence, never continuation or original TPI parity (SAVE-930). Prototype and coaster layouts
+are refused instead of losing their state.
+
+The format uses the existing trusted simulation-asset manifest without constructing TPW economy
+rules. Manifest identifiers from the file are compared with hashes captured from the selected
+catalog and terrain; they are never opened as paths. Changed/missing assets, wrong theme/dimensions,
+invalid objects/cells/IDs, unknown or duplicate JSON fields, unsupported versions/policies and native
+suffixes are refused. The strict file has the world-save size limit (64 MiB), contains metadata and
+layout records only, and stores no original asset bytes. File writes use a flushed unique sibling
+temporary file and move, preserving the prior checkpoint on ordinary validation/write/move failure.
+
+Restoration reuses `ParkLayoutSnapshot.RestoreObjects` and `RestoreCellMap` before guests are wired,
+and skips shipped/default placement so fixed items are not duplicated. The candidate and its HUD
+are built under `EntityConstructionScope` before retiring the current world. Preflight or candidate
+construction failure preserves the live world; retirement callbacks throwing after replacement
+begins are outside this rollback guarantee. Successful load stops the retired HUD/frame immediately;
+later drawing uses the current HUD. Synthetic tests reconstruct actual CPU object/runtime/cell state
+with a valid dummy-only model, and check staged rollback/commit and callback lifetime. They do not
+qualify original data, GPU/browser persistence, crash recovery, disk-full or native save behavior.
+
+The remainder of this document describes Theme Park World continuation saves.
+
 OpenTPW saves parks in its **own world-save format** (`"Format": "opentpw-world"`, version 1): one
 file holds the whole running park, and Load resumes it where it left off. This is separate from the
 original game's save format — original `TPWS`/`TPWI` files stay read-only imports
@@ -84,7 +119,9 @@ refused this way before anything is replaced.
   than accepted as opaque state. Player-built coasters are saved too (see above). The
   original `TPWS` import stays partial and read-only ([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)).
 - **Transient sounds are not saved.** A park cannot be saved while a ride scream is playing or the
-  advisor is speaking — save again a moment later. No voice, music or audio state persists through a
+  advisor is speaking, or while a placed object owns a live flag-`0x8` looping EVENT voice. The latter
+  remains a live-audio persistence limitation: stop the owning object/sound before saving; one-shots,
+  finished loop voices and headless/stopped owners do not trigger it. No voice, music or audio state persists through a
   save.
 - **The camera and menu focus are not saved**; the view and interface start fresh after a load.
 - **The save is pinned to the game data it was made with.** It carries a SHA-256 manifest of the
@@ -175,3 +212,7 @@ rejected with the running park's state unchanged. The browser also re-saved and 
 park with eight placed objects, fourteen visitors, two staff and two same-type shops priced at
 $60/$120. The save bytes, object/guest/staff ids, prices and closed-park state survived the page and
 WebAssembly restart. The 600-tick equality check above was performed in the native processes.
+
+## Continuing a theme from the lobby
+
+The explicit Continue choice described in [UI.md](UI.md#explicit-theme-continuation) reuses the existing manual own-world slot and staged resume. It does not create an automatic save, rewrite a manual checkpoint, change saved game mode or resume a TPI layout checkpoint. New Park remains a distinct action. A readable matching save makes Continue available; trusted game-asset and full candidate validation still happen on activation, and failures preserve the existing world instead of falling back to New.

@@ -342,6 +342,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   menu was open. `ParkHud.TimeScaleFor` returns 0 while the pause menu (or a screen opened from it) is on the stack, and the speed
   setting is left alone, so the park resumes at the same speed (`ParkPauseTests`, front-end smoke check). UI-096 names the
   original's other pausing screens (full-screen map, message dialog, Load dialog, `0x15f67c`) that do not stop the park here yet.
+- Toilets now wear and handymen clean them (tp.exe `0x4e2440`, `0x4d7880`, `0x4dfd80`, ORACLE.md 7.13, X17, QUEUE-008). Every visit
+  lowers a toilet's gauge by 0.05 × the guest's toilet meter. Below 25 the toilet is dirty, and guests in its queue give up (the worn-toilet
+  exit now fires). A free handyman takes the dirtiest dirty toilet and is busy for WorkDuration + 1 park turns, after which the toilet is
+  back at 100. A toilet visit also clears an illness above 90. The walk to the toilet and the litter-first rule wait for handyman
+  positions (ECON-022).
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the
@@ -870,12 +875,19 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
+  of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
+  a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.
 - **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
   write's bytes can no longer end up under another's hash; writes to different files stay independent.
 - **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),
   the manifest first marks it as not stored and only marks it kept, with the new hash, once the new bytes are written; a clear or
   folder change in between drops the write. A failed rewrite therefore makes the file count as missing instead of offering stale
   bytes under the new hash (BROWSER-ORIGINAL-CACHE-RECOVERY.md).
+- **Experimental TPI layout checkpoints (October 13):** the Theme Park Inc slice's pause menu can save its world's layout (cells
+  and objects, with asset hashes) to `opentpw-<theme>.tpilayout` and load it as a new experimental session: a versioned, strictly
+  validated file written atomically, staged beside the live world before it is retired. Guests, script progress and the clock
+  restart; it is not an original TPI save (SAVE-930). Theme Park World paths are unaffected.
 - **WAD ranges checked before allocating (October 13):** a WAD's header, directory and member ranges are checked
   against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
   instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive

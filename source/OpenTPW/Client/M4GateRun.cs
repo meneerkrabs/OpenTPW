@@ -230,6 +230,7 @@ internal sealed class M4GateRun
 					state.IsOpen = item.IsOpen;
 					state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, Grid );
 					item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );   // the price test reads the live words, as Level does
+					item.Visitors.WearGauge = state.Repair;   // the worn-toilet exit reads the gauge the relief visits wear, as Level does
 				}
 			}
 			Guests.Tick( Tick );

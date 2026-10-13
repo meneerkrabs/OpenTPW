@@ -1598,6 +1598,7 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
 | `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
 | `tpw-exe-counts-test` | tp.exe `0x4dd920`..`0x4dda1f` (thiscall, `ecx` = thing; the Mac `0xdc834`) | `0x4de130` back of queue (chosen, checked for the thing), `0x4ddf50` list length (checked to be asked for guest 0), `0x412e90` type record (track type chosen), `0x441970` coaster controller test (cdecl, chosen); stack balance checked | 515 (15 edges, one per condition, 500 random) | **X15**: **agree** 515/515 with the routine reading | the C# rule transcribed (`CountsForParkPoints` with `QueueCountsForParkPoints`): 29 differ, all coasters, karts and water rides (ARRIVAL-003); for every other track type **agree**. The back cell and list length are stubbed, so this checks the routine's logic, not OpenTPW's queue geometry |
+| `tpw-exe-toilet-wear` | tp.exe `0x4e2440`..`0x4e2646` (thiscall, `ecx` = the relief object, argument the guest's toilet byte), offline game type, and `_ftol` | `0x4d8460` / `0x4d8440` dirty-toilet messages (recorded with their cell), `0x5da3c0` log (counted); the GameType object marked constructed; stack balance checked; x87 control word `0x27F` | 528 (28 edges around gauge 25 and 0, 500 random) | **X17**: **agree** 528/528 (the stored single, the messages and the log); with a double −0.05 one input differs in the last bit | `ParkEconomy.UseRelief`, unit-tested (`ToiletTests`) |
 | `tpw-exe-price-test` | tp.exe `0x4fde50`..`0x4fe181` (thiscall, `ecx` = guest, argument the ride), the price, cost-of-goods and win-byte getters and `_ftol` | `0x4dd4e0` type record (synthetic), `0x4e2740` park type record (word `+0xc` chosen), `0x519510` park, `0x4c74b0` statistic (recorded); stack balance checked; x87 control word `0x27F` | 530 (30 boundary inputs, among them meters that round to the next integer as float32; 500 random) | **X16**: **agree** 530/530 with the reading, decision and price statistics; without the money test 56 differ | `QueueJoinRules.TooExpensive` / `WillingnessToPay`: unit-tested on seven willingness values the routine produced (`PriceTestTests`) |
 | `tpw-exe-guest-state6` | tp.exe `0x4fec90`..`0x4ff4d7` (thiscall, `ecx` = guest; its SEH frame through `fs`), `_ftol` and the debug print | the draw (scripted), `0x4fc800` activity, `0x4d93b0` litter, `0x50c100` event, `0x4faa00` sound, `0x4fea70` happiness change, `0x51a280` closed word, `0x4d86d0` gate cells, `0x4fa530` gate route, `0x501020` / `0x4c8eb0` presentation look-ups (none), `0x4fcb10` choice (`+0x1dc` chosen), `0x4f9490` wander (chosen), `0x501db0` state (all recorded and checked for their object); stack balance checked; x87 control word `0x27F` | 518 (18 edges at the cheering, vomiting and 30-turn boundaries, 500 random; litter meter and prank byte 0) | **X18**: **agree** 518/518 with WANDER-plan §2 as `GuestDecision` runs it, each branch's original effects included | (the plan is the routine reading) |
 | `tpw-exe-wander-destination` | tp.exe `0x4f9490`..`0x4f9e3d` (thiscall, `ecx` = guest; SEH frame), the cell readers `0x522770` / `0x522810` / `0x522850` / `0x536310`..`0x53635b`, the map bounds test `0x4d8300`, the counter `0x4d8c50` | the draw (scripted), `0x4fa670`, `0x510100` route request (on the steering state `+0xd4`; always found, its point recorded), `0x50be80` stranded animation, `0x50b350` thing id; the staff calls `0x506ed0` / `0x506f30` and the stranded test `0x4fa770` must not run. Synthetic cell records (`[0x8023a0]`, type `+8`, links `+0xc`, queue link `+0xd`) and the direction table as `0x4d9a65` writes it | 527 (7 corridors, 20 sparse grids with unlinked or queue-only starts, 500 random 7 × 7 patches, some links one-sided) | **X19**: **agree** 527/527 with `GuestWander.Pick`: cell, sub-cell bytes and the number of draws | a step that also follows a neighbour's link back (OpenTPW's `AreConnected`): 164 differ |
@@ -2197,6 +2198,33 @@ GUEST-003 keeps four things:
 - animation 6;
 - the guest record of event 10;
 - the walk-away count and the price statistic.
+
+### 7.13 Finding X17: toilets wear by use, handymen clean them
+
+Question (QUEUE-008): does a toilet's gauge fall, and who restores it? OpenTPW wore only rides, so the worn-toilet exit of the queue
+(`0xdfe34`, F15) never fired.
+
+**Executed: the wear step.** The use routine `0x4fe1e0` calls `0x4e2440` for an object with the relief flag (`+0x32` bit 0). It
+passes the guest's toilet meter as a byte, then empties the meter and clears an illness byte above 90. In the offline game type,
+`0x4e2440` computes `(int64)toilet × −0.05f + gauge` in x87 precision, keeps it within 0..100 and stores it as a single. A gauge byte
+that falls below 25 logs "Toilet has become dirty and smelly" and posts messages 1 and 6 for the toilet's cell. Across 528 inputs the
+routine agrees with that reading. In the online game type, a toilet that is dirty cleans itself back to 100 at once; that branch is not
+compared.
+
+**Read: the cleaning job.** The handyman's state machine is `0x4d73c0`. A free handyman's job search `0x4d7100` takes litter within
+`DetectionRange` first. Otherwise `0x4d7880` picks the nearest toilet flagged by the ride's `mRequestedService` (`+0x64`), or one below
+25 within `DetectionRange` cells, and walks there (state 10). On arrival it cleans (state 11) until the turn passes its start +
+`WorkDuration[grade]`. `0x4dfd80` then sets the gauge back to 100.0 and clears `mRequestedService`. The grade table `0x7853ec` holds
+`HandymanConstsPerGrade {WorkDuration, DetectionRange, PoundsPerTrainingPoint}`, in the order of tp.exe's key table.
+
+**C#.** `ParkEconomy.UseRelief` wears the toilet with the same arithmetic (exact in double precision) and raises `ToiletDirty` on the
+crossing; `GuestSimulation.ApplyVisit` calls it through `IGuestPayments.ReliefUsed` and clears illness above 90. Every park turn,
+`DispatchToiletCleaning` gives each free handyman the dirtiest unclaimed toilet below 25. The handyman is busy for WorkDuration + 1
+staff updates, and `FinishJob` sets the gauge back to 100 and raises `ToiletCleaned`. The level and the M3/M4 gate loops mirror the
+gauge into the visitor bridge, so the worn-toilet exit now fires.
+
+Handymen have no position (ECON-022), so the walk, the litter-first rule, DetectionRange and the nearest-toilet choice are not
+modelled. QUEUE-008 keeps the online branch and the handlers of the two messages.
 
 ### 7.14 Findings X18 and X19: the guest's decision state and its wander walk
 

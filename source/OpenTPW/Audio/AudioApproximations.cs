@@ -48,6 +48,7 @@ public static class AudioApproximations
 		("AUDIO-905", "the forecast shows as one banner line at the top centre, drawn in the overlay pass with the original GAME8AA font above every screen (pause menus included); which surface the original warned on is unknown"),
 		("AUDIO-906", "the forecast's kind classifies the pending quality by the converter's bands, the undecided snow/rain tie reads 'snow or rain' and the lightning band composes 'thunderstorms'; the wording is OpenTPW's, with no weather text in the shipped Language tables"),
 		("AUDIO-907", "one message when a forecast appears and one when it applies, plus one transient current-weather line on attach shown for six seconds of simulation time; a park resumed mid-warning announces the pending forecast once; the original's cadence is not traced"),
+		("AUDIO-908", "routed placed EVENT sounds sample the rendered placement origin at instruction time; native emitter anchor and update timing remain unqualified, and no scream box midpoint is inferred"),
 	};
 
 	private static bool logged;

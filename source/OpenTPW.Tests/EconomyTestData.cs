@@ -84,7 +84,7 @@ internal static class EconomyTestData
 		new EconomyObjectInfo( 1203, "Drinks Shop", ParkObjectKind.Shop, ResearchCategory.Shop, 0, new[] { Level( 0, 650, 0 ) }, 30, 20, null, 4, 3, 0, 0, 50, 0, "shops/coconut.wad" ),
 		new EconomyObjectInfo( 1303, "Jungle Spray", ParkObjectKind.Sideshow, ResearchCategory.Sideshow, 0, new[] { Level( 0, 1750, 0 ) }, 20, 50, 70, 0, 0, 0, 0, 0, 0, "sideshow/junspray.wad" ),
 		new EconomyObjectInfo( 1112, "Eruption", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { Level( 0, 2500, 0, 5 ) }, null, null, null, 0, 0, 3, 0, 0, 25, "rides/volcano.wad" ),
-		new EconomyObjectInfo( 1402, "Small Toilet", ParkObjectKind.Feature, ResearchCategory.Feature, 0, new[] { Level( 0, 100, 0 ) }, null, null, null, 0, 0, 0, 0, 0, 10, "features/toilet.wad" ),
+		new EconomyObjectInfo( 1402, "Small Toilet", ParkObjectKind.Feature, ResearchCategory.Feature, 0, new[] { Level( 0, 100, 0 ) }, null, null, null, 0, 0, 0, 0, 0, 10, "features/toilet.wad", ProvidesRelief: true ),
 		new EconomyObjectInfo( 1601, "Gates", ParkObjectKind.FixedItem, ResearchCategory.Ride, 0, new[] { Level( 0, 0, 0 ) }, null, null, null, 0, 0, 0, 0, 0, 0, "features/gates.wad" ),
 		new EconomyObjectInfo( 1500, "Dino Karts Jump", ParkObjectKind.Upgrade, ResearchCategory.Upgrade, 0, new[] { Level( 0, 750, 1000 ) }, null, null, null, 0, 0, 0, 1180, 0, 0, "upgrades/lavajump.wad" )
 	} );

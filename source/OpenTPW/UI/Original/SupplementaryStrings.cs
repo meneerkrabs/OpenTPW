@@ -83,6 +83,8 @@ public enum OpenTpwText
 	RidingNow,
 	VisitorThought,
 	SelectInPark,
+	NewPark,
+	ContinueSavedPark,
 }
 
 public static class SupplementaryStrings
@@ -138,6 +140,8 @@ public static class SupplementaryStrings
 		[OpenTpwText.SaveFailed] = new[] { "Save failed: {0}", "Kunne ikke gemme: {0}", "Opslaan mislukt: {0}", "Échec de la sauvegarde : {0}", "Speichern fehlgeschlagen: {0}", "Det gick inte att spara: {0}" },
 		[OpenTpwText.OriginalParkEntry] = new[] { "{0} - original park (read-only)", "{0} - original park (skrivebeskyttet)", "{0} - origineel park (alleen-lezen)", "{0} - parc d'origine (lecture seule)", "{0} - Originalpark (schreibgeschützt)", "{0} - originalpark (skrivskyddad)" },
 		[OpenTpwText.SandboxParkEntry] = new[] { "OpenTPW sandbox park", "OpenTPW-sandkassepark", "OpenTPW-zandbakpark", "Parc bac à sable OpenTPW", "OpenTPW-Sandkastenpark", "OpenTPW-sandlådepark" },
+		[OpenTpwText.NewPark] = new[] { "New park", "Ny park", "Nieuw park", "Nouveau parc", "Neuer Park", "Ny park" },
+		[OpenTpwText.ContinueSavedPark] = new[] { "Continue saved park", "Fortsæt gemt park", "Opgeslagen park voortzetten", "Continuer le parc sauvegardé", "Gespeicherten Park fortsetzen", "Fortsätt sparad park" },
 		[OpenTpwText.NoSavedParks] = new[] { "No saved parks", "Ingen gemte parker", "Geen opgeslagen parken", "Aucun parc sauvegardé", "Keine gespeicherten Parks", "Inga sparade parker" },
 		[OpenTpwText.CannotBuildHere] = new[] { "You can't build here", "Du kan ikke bygge her", "U kunt hier niet bouwen", "Impossible de construire ici", "Hier kann nicht gebaut werden", "Du kan inte bygga här" },
 		[OpenTpwText.NotSimulated] = new[] { "Not simulated yet", "Endnu ikke simuleret", "Nog niet gesimuleerd", "Pas encore simulé", "Noch nicht simuliert", "Inte simulerad ännu" },

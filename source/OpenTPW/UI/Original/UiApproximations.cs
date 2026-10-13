@@ -93,6 +93,8 @@ public static class UiApproximations
 		("UI-910", "row and button semantics: an attractions row activation or the select button selects the object in the park (info arm) and closes, a visitors row activation or b_gopeep locates the visitor's live position and closes, b_erase deletes through the existing removal and confirmation", "the original lists' row activation handlers (b_goto's art also has no texture in ui.wad)"),
 		("UI-920", "Ctrl+H toggles the existing top-edge contextual popup through a HUD-local override; until toggled it follows the global popup-help option", "original help-bar geometry and toggle state lifetime"),
 		("UI-930", "world visitor presses hit the current sprite rectangle, selecting nearest projected depth then lowest id; transparent pixels, terrain/object occlusion and partially clipped sprites are not reproduced", "original visitor picking geometry, occlusion and input precedence"),
+
+		("UI-931", "theme entry offers an explicit New/Continue choice for an application-owned saved park; saved mode/start kind remain authoritative and no native profile or autosave flow is reproduced", "original profile and theme-entry UI behavior"),
 	};
 
 	private static bool logged;

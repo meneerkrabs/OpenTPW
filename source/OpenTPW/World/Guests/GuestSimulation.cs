@@ -1303,12 +1303,19 @@ public sealed class GuestSimulation : IRideVisitorHost
 	{
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
-		// the live words the level mirrors from the economy; a bridge nobody mirrors into keeps its constructor price
+		return QueueJoinRules.TooExpensive( PriceTermsOf( attraction ), guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
+	}
+
+	/// <summary>
+	/// The price test's words for <paramref name="attraction"/>: the live words the level mirrors from the economy (a free visit's
+	/// all-zero terms included); a bridge nobody mirrors into keeps its constructor price.
+	/// </summary>
+	internal static PriceTerms PriceTermsOf( IRideVisitorBridge attraction )
+	{
 		var live = attraction.Sideshow;
-		var price = live == default ? attraction.Price : live.PricePerUse;
-		var terms = new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
+		var price = attraction.HasSideshowTerms ? live.PricePerUse : attraction.Price;
+		return new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
 			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, 0 );
-		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
 	}
 
 	/// <summary>The cell the walking guest stands on, and its queue index when it is a queue cell.</summary>
@@ -1365,7 +1372,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
-		// [APPROX:QUEUE-008] relief objects do not wear in OpenTPW, so a toilet's state of repair stays 100 and this exit never fires. In tp.exe each use lowers the gauge +0x44 by 0.05 × the guest's toilet meter taken as a byte (0x004E2440, called from the use routine 0x004FE1E0, clamped to 0..100), a toilet falling below 25 posts the dirty-toilet events, and a handyman with no litter in reach walks to the nearest toilet flagged at +0x64, or one below 25 within his grade's range (0x004D7880), cleans it for a per-grade time (state 11) and sets it back to 100 (0x004DFD80). Wear without that job would leave toilets dirty for good, so it waits for the handyman's toilet job (ECON-014, ECON-022) — evidence needed: the per-grade cleaning time and range rows (data 0x007853EC / 0x007853F0, filled at load) and the writer of +0x64
+		// [APPROX:QUEUE-008] the predicate follows the original and relief objects now wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning); the online game type's branch of the wear step (a dirty toilet cleans itself back to 100 at once, tp.exe 0x004E2440) and the dirty-toilet messages' own handlers (0x004D8460 / 0x004D8440 with 1 and 6, raised here as ToiletDirty) are not modelled — evidence needed: what the two message handlers do with the toilet's cell
 		if ( attraction.ReliefWornOut )
 		{
 			LeaveQueue( guest, attraction, GuestThought.FeelingSick );
@@ -1600,7 +1607,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
-	// [APPROX:GUEST-005] a relief object sets the toilet meter to 0 and the litter effect stays in the park's store (ECON-020); the original's toilet branch (0xeb2b0, 0xeb2e0 clears the toilet, 0xeb32c clears illness above 90), the ingredient and appearance effects and the guest litter meter are not modelled — evidence needed: the toilet branch and what the litter meter feeds
+	// [APPROX:GUEST-005] the litter effect stays in the park's store (ECON-020); a relief visit now wears the toilet, empties the toilet meter and clears an illness byte above 90 (tp.exe 0x004FE1E0), but its guest records (events 0x11 and 0x12) and the guest litter meter are not modelled, nor the ingredient and appearance effects beyond the speed boost — evidence needed: what the guest records and the litter meter feed
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
@@ -1618,8 +1625,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 		(guest.Happiness, guest.Thirst, guest.Hunger, _, guest.Nausea) = effects;
 		// then 0xeaaf8 switches on the type's special ingredient (0xeaf44; its sole caller 0xe9ff8 runs when a guest leaves the object): Sugar raises the speed boost
 		guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
-		if ( ride.Satisfies.HasFlag( GuestNeeds.Toilet ) )
+		if ( ride.ProvidesRelief )
+		{
+			// [BIN:TPW-EXE:0x004FE1E0 relief visit] for an object with the relief flag: the toilet wears by the guest's toilet meter as a byte (0x004E2440), the meter goes to 0, and an illness byte above 90 goes to 0 as well
+			Payments?.ReliefUsed( ride, (int)((long)guest.Toilet & 0xFF) );
 			guest.Toilet = 0;
+			if ( ((long)guest.Nausea & 0xFF) > 90 )
+				guest.Nausea = 0;
+		}
 	}
 
 	/// <summary>

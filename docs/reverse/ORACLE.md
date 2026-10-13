@@ -1389,7 +1389,8 @@ needs penalties and to an empty decision). A guest leaves at the moment its coun
 time in the former model). Closing the park (the economy's open/closed switch) now sends every guest that is walking around home, each losing `BigHappinessChange`. Riding no longer extends a visit. First counterexample:
 happiness 1.0 and a counter of 120: the original stays, the former rule leaves (`happiness <= 10`); 181 of 513 inputs differ.
 
-*Not changed / open.* OpenTPW has no state 6 or 7 separately: the test runs on every park turn for guests that are walking around or doing nothing (GUEST-010), which is more often than the original's dwell in state 6;
+*Not changed / open.* OpenTPW had no state 6 or 7 separately: the test ran on every park turn for guests that were walking around or doing nothing (GUEST-010), more often than the original's dwell in state 6. Since the
+WANDER lane (section 7.14, X18) it runs in state 6 only, as in the original;
 the state-18 recall is implemented (the leaving handler's opening test, `0xedc98`: counter above 0, happiness byte nonzero, park open — back to deciding, so a closed-park dismissal unwinds when the park reopens), but its cell
 predicate `0xe6c6c` (the guest's cell record through `0x10a9b0` and `0x85190..0x851d0`) is untraced, so OpenTPW approximates it by the state boundary: only a guest still walking the paths to the exit recalls, and the road ends
 it — the booth refusal enters on a lane and is exempt, like the original's zeroed counter `0xecacc` (GUEST-012);
@@ -1599,6 +1600,8 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-counts-test` | tp.exe `0x4dd920`..`0x4dda1f` (thiscall, `ecx` = thing; the Mac `0xdc834`) | `0x4de130` back of queue (chosen, checked for the thing), `0x4ddf50` list length (checked to be asked for guest 0), `0x412e90` type record (track type chosen), `0x441970` coaster controller test (cdecl, chosen); stack balance checked | 515 (15 edges, one per condition, 500 random) | **X15**: **agree** 515/515 with the routine reading | the C# rule transcribed (`CountsForParkPoints` with `QueueCountsForParkPoints`): 29 differ, all coasters, karts and water rides (ARRIVAL-003); for every other track type **agree**. The back cell and list length are stubbed, so this checks the routine's logic, not OpenTPW's queue geometry |
 | `tpw-exe-toilet-wear` | tp.exe `0x4e2440`..`0x4e2646` (thiscall, `ecx` = the relief object, argument the guest's toilet byte), offline game type, and `_ftol` | `0x4d8460` / `0x4d8440` dirty-toilet messages (recorded with their cell), `0x5da3c0` log (counted); the GameType object marked constructed; stack balance checked; x87 control word `0x27F` | 528 (28 edges around gauge 25 and 0, 500 random) | **X17**: **agree** 528/528 (the stored single, the messages and the log); with a double −0.05 one input differs in the last bit | `ParkEconomy.UseRelief`, unit-tested (`ToiletTests`) |
 | `tpw-exe-price-test` | tp.exe `0x4fde50`..`0x4fe181` (thiscall, `ecx` = guest, argument the ride), the price, cost-of-goods and win-byte getters and `_ftol` | `0x4dd4e0` type record (synthetic), `0x4e2740` park type record (word `+0xc` chosen), `0x519510` park, `0x4c74b0` statistic (recorded); stack balance checked; x87 control word `0x27F` | 530 (30 boundary inputs, among them meters that round to the next integer as float32; 500 random) | **X16**: **agree** 530/530 with the reading, decision and price statistics; without the money test 56 differ | `QueueJoinRules.TooExpensive` / `WillingnessToPay`: unit-tested on seven willingness values the routine produced (`PriceTestTests`) |
+| `tpw-exe-guest-state6` | tp.exe `0x4fec90`..`0x4ff4d7` (thiscall, `ecx` = guest; its SEH frame through `fs`), `_ftol` and the debug print | the draw (scripted), `0x4fc800` activity, `0x4d93b0` litter, `0x50c100` event, `0x4faa00` sound, `0x4fea70` happiness change, `0x51a280` closed word, `0x4d86d0` gate cells, `0x4fa530` gate route, `0x501020` / `0x4c8eb0` presentation look-ups (none), `0x4fcb10` choice (`+0x1dc` chosen), `0x4f9490` wander (chosen), `0x501db0` state (all recorded and checked for their object); stack balance checked; x87 control word `0x27F` | 518 (18 edges at the cheering, vomiting and 30-turn boundaries, 500 random; litter meter and prank byte 0) | **X18**: **agree** 518/518 with WANDER-plan §2 as `GuestDecision` runs it, each branch's original effects included | (the plan is the routine reading) |
+| `tpw-exe-wander-destination` | tp.exe `0x4f9490`..`0x4f9e3d` (thiscall, `ecx` = guest; SEH frame), the cell readers `0x522770` / `0x522810` / `0x522850` / `0x536310`..`0x53635b`, the map bounds test `0x4d8300`, the counter `0x4d8c50` | the draw (scripted), `0x4fa670`, `0x510100` route request (on the steering state `+0xd4`; always found, its point recorded), `0x50be80` stranded animation, `0x50b350` thing id; the staff calls `0x506ed0` / `0x506f30` and the stranded test `0x4fa770` must not run. Synthetic cell records (`[0x8023a0]`, type `+8`, links `+0xc`, queue link `+0xd`) and the direction table as `0x4d9a65` writes it | 527 (7 corridors, 20 sparse grids with unlinked or queue-only starts, 500 random 7 × 7 patches, some links one-sided) | **X19**: **agree** 527/527 with `GuestWander.Pick`: cell, sub-cell bytes and the number of draws | a step that also follows a neighbour's link back (OpenTPW's `AreConnected`): 164 differ |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
@@ -2222,3 +2225,50 @@ gauge into the visitor bridge, so the worn-toilet exit now fires.
 
 Handymen have no position (ECON-022), so the walk, the litter-first rule, DetectionRange and the nearest-toilet choice are not
 modelled. QUEUE-008 keeps the online branch and the handlers of the two messages.
+
+### 7.14 Findings X18 and X19: the guest's decision state and its wander walk
+
+Question (GUEST-010): when does a guest decide, and where does it walk? OpenTPW decided every 3 s (a seconds timer) and wandered one
+random neighbour cell at a time, and it tested the leaving rule for every walking guest on every park turn. The research and the
+plan are in docs/reverse/WANDER-plan.md.
+
+**X18, state 6 (`0x4fec90`).** Executed with the callees stubbed and recorded. On 518 inputs the handler does what WANDER-plan §2
+describes, in this order, each branch returning after its state change:
+1. cheering: activity 5 when the turn is more than 100 after `+0x208` (unsigned) and the happiness byte is above 80;
+2. vomiting: activity 7, litter 7, event 18, sound 0xcc and illness 0, when the illness byte is 100 and `R % 3 == 0`;
+3. the leaving gate: on happiness byte 0, an exit counter of 0 or the closed word, the big happiness change and then the gate routes
+   (both cells, twice); a route sets state 18, none goes on;
+4. `R % 3`: 0 → the choice when the turn is above `+0x1fc + 30` (event 2 and state 10, or event 1, activity 4, the small change and
+   `+0x1fc` = turn); 1 → the wander (state 7, or `+0x1fc` = turn); 2 → nothing.
+
+The litter step (meter `+0x1b4` at 90 or more), the presentation turns and the pranks are passed over in these inputs (meter and prank
+byte 0); WANDER-plan §2 describes them from the instructions.
+
+**X19, the wander destination (`0x4f9490`).** Executed with the cell readers, on synthetic cell records. On 527 inputs the destination
+cell, the sub-cell bytes and the number of draws agree with `GuestWander.Pick`: `rand % 5 + 1` steps (one more each time the last
+step ends on the start), candidates the current cell's own links in the order 16, 4, 1, 64 (+Y, +X, −Y, −X) — a neighbour's link
+back does not count (164 inputs with one-sided links differ when it does) — the first one left when fewer than two remain,
+else the first from `rand & 3` that is not the way back, and bytes `rand & 0x7f` clamped to 5..123 (the first quarter of the cell).
+A path cell without links walks to its own centre; one whose links lead only to queue cells is stranded (no destination). The
+direction table `0x7cdba0..` is filled at start-up by `0x4d9a65`: link 1 is (0, −1), 4 is (+1, 0), 16 is (0, +1), 64 is (−1, 0).
+
+**Two fields the queue already had.** The state-6 stamps are words OpenTPW kept for the queue: `+0x1fc` is the state-11 entry turn
+(the state setter `0x501db0` writes it on entering 11; the Mac `+508`, `QueueStandingSinceTurn`), and `+0x208` is the interlude stamp
+(`+520`, `InterludeTurn`), which every activity and every entry into state 8 rewrite. The guest constructor zeroes both (`0x4faf75`, `0x4faf87`), so the first major
+decision of a guest in a new park waits for turn 31. An excitement refusal in state 10 clears `+0x1fc` (`0x4ffcf6`).
+
+**Fixed in C#.** `GuestSimulation` runs states 6 and 7 once per park turn (`GuestDecision`, `GuestWander`); the activity is state 8
+for ten turns (`Guest.Activity`); the seconds timer and the one-cell walk are gone. The leaving test runs in state 6 only, so a guest
+that walks through the four turns its counter reads 0 keeps a negative counter and stays. A decision that finds no attraction costs
+the small happiness change. The harness gives routines with a frame handler an `fs` segment over a zeroed TIB page.
+
+A walk whose route ahead loses a cell or a link to a grid edit ends where the guest stands, as the original's walk step reports "stuck". A park
+without arrival lanes lets its leaving guests vanish, as before.
+
+GUEST-010 keeps:
+- the litter step and the vomit's litter (GUEST-005, ECON-020);
+- the presentation turns towards shows and performers;
+- the pranks (GUEST-007);
+- the gate routes, tested as a path to an arrival lane's end;
+- the walk's "stuck" result and the off-path search;
+- the stranded mark (`+0x198`, animation 0x11).

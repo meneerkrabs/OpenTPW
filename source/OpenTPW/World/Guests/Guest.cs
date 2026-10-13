@@ -124,12 +124,15 @@ public sealed class Guest
 	public int QueueMoveDelay { get; internal set; }
 	/// <summary>Called forward by the attraction [+504].</summary>
 	public bool QueueCalled { get; internal set; }
-	/// <summary>Park turn of the last entry into state 11 [+508].</summary>
+	/// <summary>Park turn of the last entry into state 11 [+508]. The same word is the decision stamp of state 6 (tp.exe <c>+0x1FC</c>):
+	/// a major decision waits until 30 turns after it, and a failed decision or wander sets it to the turn.</summary>
 	public long QueueStandingSinceTurn { get; internal set; }
-	/// <summary>Park turn of the last idle interlude [+520].</summary>
+	/// <summary>Park turn of the last idle interlude or activity [+520] (tp.exe <c>+0x208</c>, set when state 8 starts).</summary>
 	public long InterludeTurn { get; internal set; }
 	/// <summary>In an idle interlude (original state 8, entered from state 11 and restored to it).</summary>
 	public bool InQueueInterlude { get; internal set; }
+	/// <summary>The activity of a guest in state 6 that is in the original's state 8 (ten park turns from <see cref="InterludeTurn"/>, then back to state 6); <see cref="GuestActivity.None"/> otherwise.</summary>
+	public GuestActivity Activity { get; internal set; }
 	/// <summary>Happiness when the guest joined [+524].</summary>
 	public float QueueJoinHappiness { get; internal set; }
 
@@ -167,7 +170,6 @@ public sealed class Guest
 	internal int LaneIndex;
 	internal bool LaneReversed;
 	internal float StateTimer;
-	internal float DecisionTimer;
 	internal int QueueCellIndex;      // index of the queue cell the guest is on (cell count = still on the join cell)
 	internal int QueueTargetIndex;    // queue cell of the destination slot
 	internal float QueueTargetX;

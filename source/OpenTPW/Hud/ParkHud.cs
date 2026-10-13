@@ -284,6 +284,7 @@ public sealed partial class ParkHud
 		{
 			if ( IsRiding )
 				StopRide();
+			else if ( CancelCamcorder() ) { }
 			else if ( level.IsCoasterToolActive )
 				level.ExitCoasterTool();
 			else if ( level.CellTool.IsActive )
@@ -525,6 +526,7 @@ public sealed partial class ParkHud
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		var ridingAtStart = IsRiding;
+		var walkingAtStart = CamcorderArmed || level.FreeWalk != null;
 		foreach ( var element in infoElements )
 			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false }
 				// The visit button uses the same ride camera as the park's keyboard shortcut.
@@ -561,6 +563,9 @@ public sealed partial class ParkHud
 		}
 		var shortcutsAllowed = ParkShortcutsAllowed( paused, Stack.Screens.Count > 1, Input.TextEntryActive, keyboardCaptured.Value || textCaptured.Value );
 
+		var camcorderOwnsInput = UpdateCamcorder( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
+			!shortcutsAllowed || overUi || consumed || mouseCaptured.Value || input.Text.Length > 0 || ridingAtStart ) || walkingAtStart;
+
 		// Ride It (E) rides the selected ride; a right click (RMB cancel on) or E again leaves the ride view.
 		// [APPROX:UI-093] the key stands in for the ride window's "Ride it!" button (gui_CameraFlags 4), whose art is not in the repository
 		if ( shortcutsAllowed )
@@ -585,12 +590,22 @@ public sealed partial class ParkHud
 
 		// The original window keys (the key table the InputButton defaults document; the research and map buttons'
 		// own help rows name "(R)" and "(Space)"), the time keys and the blueprint-turn keys.
-		HandleScreenShortcuts( shortcutsAllowed );
+		HandleScreenShortcuts( shortcutsAllowed && !camcorderOwnsInput );
 		if ( TryOpenPostcard( shortcutsAllowed && !overUi && !consumed && !mouseCaptured.Value && input.Text.Length == 0 && !ridingAtStart ) )
 		{
 			overUi = consumed = true;
 			if ( input.LeftDown || input.LeftPressed ) toolPress = true;
 		}
+
+		if ( level.FreeWalk is { } walk )
+		{
+			walk.UiCapturesMouse = overUi || consumed || mouseCaptured.Value;
+			walk.UiCapturesKeyboard = !shortcutsAllowed;
+			walk.ModalOpen = ridingAtStart || Stack.Screens.Any( screen => screen != hud && screen.Modal );
+		}
+		// Returning restores the saved pose before orbit controls resume next frame.
+		if ( walkingAtStart && level.FreeWalk == null && Camera.Mode is ParkCameraMode returningCamera )
+			returningCamera.ModalOpen = true;
 
 		if ( level.LastActionMessage != lastLevelMessage )
 		{
@@ -610,7 +625,7 @@ public sealed partial class ParkHud
 			GameAudio.PlayUi( ParkViewClickEvent );
 
 		// The ride view is a view of one ride: the park's clicks and tools wait until it is left.
-		var rideOwnsInput = ridingAtStart || IsRiding;
+		var rideOwnsInput = ridingAtStart || IsRiding || camcorderOwnsInput;
 		var inPark = !overUi && !consumed && !rideOwnsInput && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;

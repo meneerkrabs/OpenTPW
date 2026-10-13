@@ -1174,6 +1174,424 @@ WEAR_TARGET = Target(
            'with their cell), 0x5da3c0 log (counted); the GameType object is marked constructed. x87 control word 0x27F. '
            'ParkEconomy.UseRelief computes the same in double precision (the product of a byte and a single plus a single is exact).'])
 
+# ============================================================================== tp.exe guest decision state 6 0x4fec90 (GUEST-010)
+STATE6_ENTRY = 0x4FEC90        # thiscall (guest), no arguments: the state-6 handler (dispatcher 0x5019f0 case 6)
+STATE6_RANGES = [(0x4FEC90, 0x4FF4D8), FTOL, (DEBUG_PRINT, DEBUG_PRINT + 1)]
+STATE6_GUEST = {'x': 0x5, 'y': 0x7, 'happiness': 0x19C, 'illness': 0x1B0, 'litter': 0x1B4, 'exit': 0x1BC, 'prank': 0x1C0,
+                'ride': 0x1DC, 'decision': 0x1FC, 'activity': 0x208, 'state': 0x220}
+STATE6_CALLS = {
+    'rand': 0x516330,          # thiscall (game) -> the world draw; scripted
+    'activity': 0x4FC800,      # thiscall (guest, n), ret 4: animation n, +0x208 = turn, +0x224 = state, state 8; recorded
+    'litter': 0x4D93B0,        # thiscall (cell record, type), ret 4: litter on the cell; recorded
+    'event': 0x50C100,         # thiscall (guest + 0x30, event, thing word), ret 8: a guest event for the log and thoughts; recorded
+    'sound': 0x4FAA00,         # thiscall (guest, bank, id), ret 8; recorded
+    'bin': 0x500DC0,           # thiscall (guest, out, radius), ret 8: the bin search; never reached (litter meter 0)
+    'happiness': 0x4FEA70,     # thiscall (guest, selector), ret 4: the small, medium or big happiness change; recorded
+    'closed': 0x51A280,        # thiscall (game): the park-closed word; from the input
+    'gate_prep': 0x51A290,     # thiscall (game): called before the gate routes; nothing to model
+    'gate_cell': 0x4D86D0,     # thiscall (cell array, out, index), ret 8: the two gate cells; synthetic ids
+    'route': 0x4FA530,         # thiscall (guest, cell), ret 4: a route to a gate cell; from the input
+    'show': 0x501020,          # thiscall (guest, out), ret 4: the nearest show (presentation); none
+    'performers': 0x4C8EB0,    # thiscall (park, 6, cell, 1), ret 0xc: a performer near the cell (presentation); none
+    'choice': 0x4FCB10,        # thiscall (guest): the major choice 0x4fcb10 (X16 loop); sets +0x1dc from the input; recorded
+    'wander': 0x4F9490,        # thiscall (guest): the wander destination (target tpw-exe-wander-destination); from the input; recorded
+    'state': 0x501DB0,         # thiscall (guest, state), ret 4: the state setter; recorded
+    'guest_id': 0x50B350,      # thiscall (guest, out), ret 4: the guest's thing id
+}
+STATE6_CELLS = 0x8023A0        # global: the map's cell records (0x44 bytes each, id = y * 128 + x + 1)
+STATE6_STATE = type('State6State', (), {})()
+
+
+def state6_stubs(target: Target) -> dict:
+    state = STATE6_STATE
+    c = STATE6_CALLS
+
+    def guest(sb, what):
+        thiscall_check(sb, state.guest, what)
+
+    def rand(sb):
+        thiscall_check(sb, state.game, '0x516330')
+        if not state.draws:
+            raise AssertionError('state 6 drew more than scripted')
+        return state.draws.pop(0), 0
+
+    def activity(sb):
+        guest(sb, '0x4fc800')
+        target.log.append(('activity', sb.arg(0)))
+        return 0, 4
+
+    def litter(sb):
+        target.log.append(('litter', sb.arg(0)))
+        return 0, 4
+
+    def event(sb):
+        thiscall_check(sb, state.guest + 0x30, '0x50c100')
+        target.log.append(('event', sb.arg(0)))
+        return 0, 8
+
+    def sound(sb):
+        guest(sb, '0x4faa00')
+        target.log.append(('sound', sb.arg(1)))
+        return 0, 8
+
+    def bin_search(sb):
+        raise AssertionError('the bin search ran: the litter meter is 0 in every input')
+
+    def happiness(sb):
+        guest(sb, '0x4fea70')
+        target.log.append(('happiness', sb.arg(0)))
+        return 0, 4
+
+    def closed(sb):
+        thiscall_check(sb, state.game, '0x51a280')
+        return int(state.x['closed']), 0
+
+    def gate_prep(sb):
+        return 0, 0
+
+    def gate_cell(sb):
+        sb.write(sb.arg(0), 'H', 0x1000 + sb.arg(1))
+        return sb.arg(0), 8
+
+    def route(sb):
+        guest(sb, '0x4fa530')
+        target.log.append(('route', sb.arg(0) & 0xFFFF))
+        return int(state.x['way_out']), 4
+
+    def show(sb):
+        sb.write(sb.arg(0), 'H', 0)
+        return sb.arg(0), 4
+
+    def park(sb):
+        return state.park, 0
+
+    def performers(sb):
+        return 0, 0xC
+
+    def choice(sb):
+        guest(sb, '0x4fcb10')
+        target.log.append(('choice',))
+        sb.write(state.guest + STATE6_GUEST['ride'], 'H', state.x['ride'])
+        return 0, 0
+
+    def wander(sb):
+        guest(sb, '0x4f9490')
+        target.log.append(('wander',))
+        return int(state.x['wander']), 0
+
+    def set_state(sb):
+        guest(sb, '0x501db0')
+        target.log.append(('state', sb.arg(0)))
+        return 0, 4
+
+    def guest_id(sb):
+        sb.write(sb.arg(0), 'H', 7)
+        return sb.arg(0), 4
+
+    return {c['rand']: rand, c['activity']: activity, c['litter']: litter, c['event']: event, c['sound']: sound,
+            c['bin']: bin_search, c['happiness']: happiness, c['closed']: closed, c['gate_prep']: gate_prep,
+            c['gate_cell']: gate_cell, c['route']: route, c['show']: show, PARK_OF_GAME: park, c['performers']: performers,
+            c['choice']: choice, c['wander']: wander, c['state']: set_state, c['guest_id']: guest_id}
+
+
+def state6_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """(the recorded effects without the gate routes, +0x1fc after, the illness bits after). The routes to the gate cells are
+    checked here instead: the gate passes iff a route was tried, and the first route found ends the tries."""
+    state = STATE6_STATE
+    state.x = x
+    state.draws = [x['r']]
+    state.game = bind_game(sb, fields={WORLD_RNG + 4: ('I', x['turn'] & MASK32)})
+    state.park = sb.object(16)
+    sb.write(STATE6_CELLS, 'I', sb.object(0x44 * 0x80 * 0x40))
+    g = STATE6_GUEST
+    state.guest = sb.object(0x400, {g['x']: ('B', 20), g['y']: ('B', 30), g['happiness']: ('f', x['happiness']),
+                                    g['illness']: ('f', x['illness']), g['litter']: ('f', 0.0), g['exit']: ('i', x['exit']),
+                                    g['prank']: ('B', 0), g['decision']: ('I', x['decision'] & MASK32),
+                                    g['activity']: ('I', x['activity'] & MASK32), g['state']: ('I', 6)})
+    sb.set_fpcw(X87_CONTROL_WORD)
+    result = sb.call(STATE6_ENTRY, this=state.guest)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    routes = [e for e in log if e[0] == 'route']
+    if routes and x['way_out'] and len(routes) != 1:
+        raise AssertionError('more routes tried after one was found')
+    if routes and not x['way_out'] and len(routes) != 4:
+        raise AssertionError('the gate tries both cells twice')
+    effects = tuple(e for e in log if e[0] != 'route')
+    if routes:
+        effects = (('gate',),) + effects
+    return effects, sb.read(state.guest + g['decision'], 'I'), sb.read(state.guest + g['illness'], 'I')
+
+
+def _f32_bits(value: float) -> int:
+    return struct.unpack('<I', struct.pack('<f', value))[0]
+
+
+def state6_plan(x: dict) -> tuple:
+    """docs/reverse/WANDER-plan.md §2 as GuestDecision runs it, with the original's own effects of each branch: cheering
+    (activity 5), vomiting (activity 7, litter 7, event 18, sound 0xcc, illness 0), the leaving gate (the big change, a
+    route, state 18), the major choice (event 2 and state 10, or event 1, activity 4, the small change and the stamp) and
+    the wander (state 7, or the stamp)."""
+    turn, r = x['turn'] & MASK32, x['r']
+    decision, illness = x['decision'] & MASK32, _f32_bits(x['illness'])
+    happiness = _byte(x['happiness'])
+    if (turn - x['activity']) & MASK32 > 100 and happiness > 80:
+        return (('activity', 5),), decision, illness
+    ill = _byte(x['illness'])
+    if ill > 80 and ill == 100 and r % 3 == 0:
+        return (('activity', 7), ('litter', 7), ('event', 0x12), ('sound', 0xCC)), decision, 0
+    effects = []
+    if happiness == 0 or x['exit'] == 0 or x['closed']:
+        effects += [('gate',), ('happiness', 2)]
+        if x['way_out']:
+            return tuple(effects + [('state', 18)]), decision, illness
+    if r % 3 == 0:
+        if (decision + 30) & MASK32 < turn:
+            effects.append(('choice',))
+            if x['ride']:
+                effects += [('event', 2), ('state', 10)]
+            else:
+                effects += [('event', 1), ('activity', 4), ('happiness', 0)]
+                decision = turn
+    elif r % 3 == 1:
+        effects.append(('wander',))
+        if x['wander']:
+            effects.append(('state', 7))
+        else:
+            decision = turn
+    return tuple(effects), decision, illness
+
+
+def state6_inputs(rng: random.Random, n: int) -> list:
+    def meter(edges):
+        return rng.choice(edges + [float(rng.randrange(0, 101)), rng.uniform(0, 100)])
+
+    def make(**kw) -> dict:
+        turn = rng.choice([rng.randrange(0, 1 << 32), rng.randrange(0, 200), rng.randrange(1000, 100000)])
+        x = {'turn': turn,
+             'activity': rng.choice([(turn - rng.randrange(0, 200)) & MASK32, turn, (turn + 5) & MASK32, rng.randrange(0, 1 << 32)]),
+             'decision': rng.choice([(turn - rng.randrange(0, 60)) & MASK32, (turn - 30) & MASK32, (turn - 31) & MASK32, 0,
+                                     rng.randrange(0, 1 << 32)]),
+             'happiness': meter([0.0, 0.5, 1.0, 14.9, 50.0, 80.0, 80.99, 81.0, 100.0]),
+             'illness': meter([0.0, 80.0, 99.99, 100.0, 100.0]),
+             'exit': rng.choice([0, 0, -1, 1, 50, rng.randrange(-100, 300)]),
+             'closed': rng.random() < 0.1, 'r': rng.randrange(0, 1 << 31),
+             'way_out': rng.random() < 0.7, 'ride': rng.choice([0, 0, 3, 0x1234]), 'wander': rng.random() < 0.7}
+        x.update(kw)
+        return x
+    edges = [make(turn=t, activity=a, happiness=h, illness=0.0, exit=50, closed=False, r=2)
+             for t, a in ((200, 99), (200, 100), (5, 450)) for h in (80.99, 81.0)]
+    edges += [make(illness=i, r=r, happiness=50.0, activity=0, turn=50, exit=50, closed=False) for i in (99.99, 100.0) for r in (3, 4, 5)]
+    edges += [make(turn=t, decision=100, r=r, happiness=50.0, illness=0.0, activity=t, exit=50, closed=False)
+              for t in (130, 131) for r in (0, 1, 2)]
+    return edges + [make() for _ in range(n)]
+
+
+STATE6_TARGET = Target(
+    'tpw-exe-guest-state6', 'tpw', 'tp.exe guest state 6 0x4fec90', 'WANDER-plan §2 / GuestDecision (GUEST-010)',
+    STATE6_ENTRY, STATE6_RANGES, state6_stubs, state6_binary, state6_plan, state6_inputs,
+    notes=['Executed: 0x4fec90 with its SEH frame, _ftol and the debug print. Stubs: the draw (scripted), the activity '
+           '0x4fc800, litter 0x4d93b0, events 0x50c100, sound 0x4faa00, the happiness change 0x4fea70, the closed word '
+           '0x51a280, the gate cells 0x4d86d0 and routes 0x4fa530, the presentation look-ups 0x501020 / 0x4c8eb0 (none), '
+           'the choice 0x4fcb10 (+0x1dc from the input), the wander 0x4f9490 and the state setter 0x501db0, all recorded. '
+           'The litter meter (+0x1b4) and the prank byte (+0x1c0) are 0, so steps 3 and 7 are passed over; the routes are '
+           'reduced to one "gate" entry. x87 control word 0x27F.'])
+
+
+# ============================================================================== tp.exe wander destination 0x4f9490 (GUEST-010)
+WANDER_ENTRY = 0x4F9490        # thiscall (guest) -> 1 when a destination is set
+WANDER_RANGES = [(0x4F9490, 0x4F9E3E), (0x4D8C50, 0x4D8C5C), (0x4D8300, 0x4D8330), (0x522770, 0x522787), (0x522810, 0x522847),
+                 (0x522850, 0x522854), (0x536310, 0x53635C), (DEBUG_PRINT, DEBUG_PRINT + 1)]
+WANDER_DIRECTIONS = {0x7CDBA0: (0, -1), 0x7CDBA8: (0, 1), 0x7CDBC8: (1, 0), 0x7CDBD0: (-1, 0)}   # link 1, 16, 4, 64 (0x4d9a65..)
+WANDER_CALLS = {'rand': 0x516330, 'clear': 0x4FA670, 'route': 0x510100, 'animation': 0x50BE80, 'stranded': 0x4FA770,
+                'guest_id': 0x50B350, 'in_area': 0x506ED0, 'area_cell': 0x506F30}
+WANDER_ORIGIN = (20, 30)       # the synthetic grid's corner in the 128 x 128 map
+WANDER_SIZE = 7
+WANDER_STATE = type('WanderState', (), {})()
+LINK_OF = {(0, -1): 1, (1, 0): 4, (0, 1): 16, (-1, 0): 64}
+
+
+def wander_stubs(target: Target) -> dict:
+    state = WANDER_STATE
+    c = WANDER_CALLS
+
+    def rand(sb):
+        thiscall_check(sb, state.game, '0x516330')
+        if not state.draws:
+            raise AssertionError('the wander drew more than scripted')
+        state.used += 1
+        return state.draws.pop(0), 0
+
+    def clear(sb):
+        thiscall_check(sb, state.guest, '0x4fa670')
+        return 0, 4
+
+    def route(sb):
+        thiscall_check(sb, state.guest + 0xD4, '0x510100')   # the steering state +0xd4 (the Mac +212)
+        target.log.append(('route', sb.arg(0), sb.arg(1)))
+        return 1, 8
+
+    def animation(sb):
+        target.log.append(('animation', sb.arg(0)))
+        return 0, 8
+
+    def guest_id(sb):
+        sb.write(sb.arg(0), 'H', 7)
+        return sb.arg(0), 4
+
+    def refuse(what):
+        def stub(sb):
+            raise AssertionError(f'{what} ran for a guest')
+        return stub
+
+    return {c['rand']: rand, c['clear']: clear, c['route']: route, c['animation']: animation, c['guest_id']: guest_id,
+            c['stranded']: refuse('0x4fa770'), c['in_area']: refuse('0x506ed0'), c['area_cell']: refuse('0x506f30')}
+
+
+def wander_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """(cell, byte x, byte y, draws used) of the route request, or (None, draws used, stranded) when no destination was set."""
+    state = WANDER_STATE
+    state.draws, state.used = list(x['draws']), 0
+    state.game = bind_game(sb)
+    for address, (dx, dy) in WANDER_DIRECTIONS.items():
+        sb.write(address, 'i', dx)
+        sb.write(address + 4, 'i', dy)
+    cells = sb.object(0x44 * 0x80 * 0x80)
+    sb.write(STATE6_CELLS, 'I', cells)
+    for cx, cy, kind, links, queue_link in x['cells']:
+        record = cells + 0x44 * (cy * 0x80 + cx)
+        sb.write(record + 8, 'I', kind)
+        sb.write(record + 0xC, 'B', links)
+        sb.write(record + 0xD, 'B', queue_link)
+    sx, sy = x['start']
+    state.guest = sb.object(0x400, {0x2: ('B', 1), 0x5: ('B', sx), 0x7: ('B', sy)})
+    result = sb.call(WANDER_ENTRY, this=state.guest)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    routes = [e for e in log if e[0] == 'route']
+    if result.eax & 0xFF == 0:
+        if routes:
+            raise AssertionError('a route was asked for but the routine returned 0')
+        return None, state.used, ('animation', 0x11) in log
+    if len(routes) != 1:
+        raise AssertionError(f'{len(routes)} route requests')
+    _, ax, ay = routes[0]
+    return ((ax >> 16, ay >> 16), (ax >> 8) & 0xFF, (ay >> 8) & 0xFF, state.used)
+
+
+def wander_plan(x: dict, either_side: bool = False) -> tuple:
+    """GuestWander.Pick: candidates are the current cell's links (& 0x55) to path cells, in the order +Y, +X, -Y, -X; fewer than two:
+    the first (none: stranded); else the first from draw & 3 that is not the way back; draw % 5 steps plus one, one more each time the
+    last ends on the start; bytes draw & 0x7f clamped to 5..123. A path cell without links gives its own centre."""
+    draws = list(x['draws'])
+    used = 0
+
+    def draw():
+        nonlocal used
+        used += 1
+        return draws.pop(0)
+    cells = {(cx, cy): (kind, links, queue_link) for cx, cy, kind, links, queue_link in x['cells']}
+
+    def path(c):
+        return cells.get(c, (0, 0, 0))[0] == 1
+    order = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    start = tuple(x['start'])
+    remaining = draw() % 5
+    if not path(start):
+        return None, used, False
+    cell, back = start, -1
+
+    def linked(d):
+        n = (cell[0] + d[0], cell[1] + d[1])
+        back_link = either_side and path(n) and cells[n][1] & LINK_OF[(-d[0], -d[1])]
+        return path(n) and bool(cells[cell][1] & LINK_OF[d] or back_link)
+    # The step branch needs a link of the start cell (0x522810); either-side links count a neighbour's link back as one.
+    if not (any(linked(d) for d in order) if either_side else cells[start][1] & 0x55):
+        return start, 0x80, 0x80, used
+    while True:
+        candidates = [d if linked(d) else None for d in order]
+        count = sum(1 for d in candidates if d)
+        if count == 0:
+            return None, used, True
+        if count < 2:
+            chosen = next(i for i, d in enumerate(candidates) if d)
+        else:
+            first = draw() & 3
+            chosen = first
+            for offset in range(4):
+                chosen = (first + offset) & 3
+                if candidates[chosen] and chosen != back:
+                    break
+        d = candidates[chosen]
+        cell = (cell[0] + d[0], cell[1] + d[1])
+        back = (chosen + 2) & 3
+        if cell == start and remaining == 0:
+            remaining = 1
+        if remaining == 0:
+            break
+        remaining -= 1
+    bx = min(max(draw() & 0x7F, 5), 123)
+    by = min(max(draw() & 0x7F, 5), 123)
+    return cell, bx, by, used
+
+
+def wander_inputs(rng: random.Random, n: int) -> list:
+    ox, oy = WANDER_ORIGIN
+
+    def grid(queues: float, density: float) -> dict:
+        cells = {}
+        for cx in range(ox, ox + WANDER_SIZE):
+            for cy in range(oy, oy + WANDER_SIZE):
+                roll = rng.random()
+                if roll < density:
+                    cells[(cx, cy)] = [1, 0, 0]
+                elif roll < density + queues:
+                    cells[(cx, cy)] = [3, 0, rng.choice([1, 4, 16, 64])]
+        for (cx, cy), cell in cells.items():
+            if cell[0] != 1:
+                continue
+            for d, link in LINK_OF.items():
+                other = cells.get((cx + d[0], cy + d[1]))
+                if other is None:
+                    continue
+                if other[0] == 1 and (cx, cy) < (cx + d[0], cy + d[1]) and rng.random() < 0.85:
+                    side = rng.random()   # mostly both sides, as the path builder links; some one-sided links
+                    if side < 0.9:
+                        cell[1] |= link
+                    if side > 0.1:
+                        other[1] |= LINK_OF[(-d[0], -d[1])]
+                elif other[0] == 3 and rng.random() < 0.5:
+                    cell[1] |= link
+        return {c: tuple(v) for c, v in cells.items()}
+
+    def make(queues=0.15, density=0.6, linked=True) -> dict:
+        while True:
+            cells = grid(queues, density)
+            starts = [c for c, v in cells.items() if v[0] == 1 and (not linked or any(
+                cells.get((c[0] + d[0], c[1] + d[1]), (0,))[0] == 1 and v[1] & link for d, link in LINK_OF.items()))]
+            if starts:
+                return {'cells': sorted((c[0], c[1]) + v for c, v in cells.items()), 'start': rng.choice(sorted(starts)),
+                        'draws': [rng.randrange(0, 1 << 31) for _ in range(24)]}
+
+    def corridor(length: int, draws: list) -> dict:
+        cells = [(ox + i, oy, 1, (4 if i + 1 < length else 0) | (64 if i > 0 else 0), 0) for i in range(length)]
+        return {'cells': cells, 'start': (ox, oy), 'draws': draws + [0] * 20}
+    edges = [corridor(2, [k]) for k in range(5)] + [corridor(1, [3]), corridor(5, [4, 0, 0, 0, 0, 0x7F, 0xFF])]
+    edges += [make(linked=False, density=0.2) for _ in range(20)]
+    return edges + [make() for _ in range(n)]
+
+
+WANDER_TARGET = Target(
+    'tpw-exe-wander-destination', 'tpw', 'tp.exe wander destination 0x4f9490', 'WANDER-plan §3 / GuestWander (GUEST-010)',
+    WANDER_ENTRY, WANDER_RANGES, wander_stubs, wander_binary, wander_plan, wander_inputs,
+    alternatives={'either-side-links': lambda x: wander_plan(x, either_side=True)},
+    notes=['Executed: 0x4f9490 with its SEH frame, the cell readers 0x522770 / 0x522810 / 0x522850 / 0x536310..0x536350, the '
+           'map bounds test 0x4d8300, the counter 0x4d8c50 and the debug print. Synthetic: the cell records ([0x8023a0], 0x44 '
+           'bytes; type +8, links +0xc, queue link +0xd) on a 7 x 7 patch at (20, 30), path links mostly on both sides and some '
+           'on one, path-to-queue links one way, no links to empty cells (the map keeps none); the direction table 0x7cdba0.. as its initialiser 0x4d9a65 writes it. Stubs: the draw (scripted), '
+           '0x4fa670, the route request 0x510100 (always found; its point is the result), the stranded animation 0x50be80, '
+           'the thing id 0x50b350; the staff calls 0x506ed0 / 0x506f30 and the stranded test 0x4fa770 must not run.'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -1793,5 +2211,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

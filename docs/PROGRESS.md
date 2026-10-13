@@ -807,6 +807,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting
+  visitors directly instead of building their cell groups a second time (1,500 visitors: 165,168 to 680
+  bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the
+  header before decoding another mesh (every shipped model still parses); new save/weather roundtrip
+  tests cover real files, paused and fast speeds, live weather, pending thunder and malformed JSON.
 - **Files read on demand (October 13):** WAD archives opened from a path and SDT sound banks now read
   a member or entry from the file when it is needed instead of holding the whole file (byte-identical
   on every original archive member and bank entry); `Texture.Missing` is one shared texture, and the

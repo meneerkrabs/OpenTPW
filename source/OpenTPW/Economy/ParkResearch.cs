@@ -188,7 +188,7 @@ public sealed class ParkResearch
 	}
 
 	/// <summary>Whether a researcher in this state does research (the original skips states 3, 4 and 5 of 0x100F4170).</summary>
-	// [APPROX:ECON-015] researchers on strike or picked up are the original's excluded states 3, 4 and 5 — evidence needed: the staff state values behind 0x100F4170
+	// [BIN:TPW-EXE:0x00502960 researcher update] research is skipped in display states 3, 4 and 5 of 0x005064F0, which maps the internal state +0x19C to the STAFFSTATES index (0 Idle, 1 Patrolling, 2 and 3 Resting, 4 and 5 On strike, 7 Picked up, anything else Working); StaffState is that index, so walking to a rest area or a strike counts as Resting or On strike, as here; points come every 20th turn (the Mac 0x100F0284 and 0x100F4170)
 	public static bool CanResearch( StaffMember member ) => member.State is not (StaffState.Resting or StaffState.OnStrike or StaffState.PickedUp);
 
 	/// <summary>Adds one researcher's contribution of <paramref name="ability"/> points; returns the items completed.</summary>

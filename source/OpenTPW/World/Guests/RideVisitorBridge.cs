@@ -86,6 +86,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int HungerEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.VomitEffect</c> (<c>+332</c>).</summary>
 	public int VomitEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.InitCostOfGoods</c> (<c>+320</c>).</summary>
+	public int InitCostOfGoods { get; set; }
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
 	public int HappinessEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>).</summary>
@@ -500,10 +502,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 
 	/// <summary>The queue cell behind (x, y): a neighbour of type 3 whose link points back at (x, y) (<c>0xdda18</c>).</summary>
-	// [APPROX:QUEUE-002] neighbours are tried in GuestPathGrid.Directions order; the original pairs run-time offsets with links 16, 1, 64, 4 whose order is not established — evidence needed: the neighbour offset tables at run time
+	// [BIN:TPW-EXE:0x004DE670 queue predecessor] the neighbours are tried −Y (its link 16), +Y (link 1), +X (link 64), −X (link 4), through the run-time table 0x007CDBA0 (entries 0, 1, 5, 6); the first queue cell (type 3, not 9) whose link points back is taken
+	private static readonly int[] PredecessorOrder = { 0, 2, 1, 3 };   // Directions indices: −Y, +Y, +X, −X
+
 	public static (int X, int Y)? NextQueueCell( GuestPathGrid grid, (int X, int Y) cell )
 	{
-		for ( var direction = 0; direction < 4; direction++ )
+		foreach ( var direction in PredecessorOrder )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
 			var (nx, ny) = (cell.X + dx, cell.Y + dy);
@@ -513,7 +517,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return null;
 	}
 
-	// [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue; the original connection test 0xdd744 is not traced — evidence needed: 0xdd744 and the state-10 walk to the back cell
+	// [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue. In tp.exe the back of the queue counts as connected (0x004DE4A0, for objects with flag +0x32 bit 8) when its connection bits hold more than its own link, and the path cell it is attached to is the first neighbour in the order 1, 4, 16, 64 (the same −Y, +X, +Y, −X) whose connection bit is set and which is a path cell (type 1; 0x004DE840). OpenTPW keeps no connection bits for queue cells (the queue tool, QUEUE-012..014), so it uses adjacency — evidence needed: the queue tool's connection writes, then the state-10 walk to the back cell
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];

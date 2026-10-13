@@ -121,7 +121,7 @@ public sealed class GuestPathGrid
 
 	/// <summary>The original link value (map cell <c>+13</c>) for a <see cref="Directions"/> index.</summary>
 	// [BIN:STP-PPC:0x1006E228 queue link read] map cell +13 holds the queue link direction; the values are 1, 4, 16 and 64
-	// [APPROX:QUEUE-001] the queue link (+13) uses the compass of the connection bits (+12): Directions order (−Y, +X, +Y, −X) is 1, 4, 16, 64 as in SavePathConnections (78 Easymode path cells); for +13 itself this is assumed — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file)
+	// [BIN:TPW-EXE:0x004D97E0 link compass] the run-time neighbour table (0x007CDBA0.., filled by static initialisers) maps 1, 4, 16, 64 to (0, −1), (1, 0), (0, 1), (−1, 0), i.e. Directions order −Y, +X, +Y, −X; the queue's predecessor search 0x004DE670 reads the link byte +13 (0x00522850) with the same table: the −Y neighbour is taken when its link is 16, the +Y neighbour when its link is 1
 	public static byte LinkValue( int direction ) => direction is >= 0 and < 4 ? (byte)(1 << (2 * direction)) : throw new ArgumentOutOfRangeException( nameof( direction ) );
 
 	/// <summary>The <see cref="Directions"/> index a link value points to, or −1.</summary>

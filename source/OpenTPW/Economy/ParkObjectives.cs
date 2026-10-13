@@ -259,7 +259,7 @@ public sealed class ParkObjectives
 	}
 
 	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets.</summary>
-	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions )
+	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue )
 	{
 		var won = new List<GoldenTicketKind>();
 		if ( !settings.CanEarnTickets )
@@ -267,8 +267,13 @@ public sealed class ParkObjectives
 		var rules = settings.GoldenTickets;
 		long MaxRecord( ParkRecordKind kind ) => counters.Values.Where( pair => pair.Key.StartsWith( $"record:{kind}:", StringComparison.Ordinal ) ).Select( pair => pair.Value ).DefaultIfEmpty( 0 ).Max();
 		// [BIN:STP-PPC:0x100D33F8 local golden tickets] the profit ticket is won when the bank's year profit (+292, mProfitThisYear) is signed GREATER than ProfitYear, with no factor (oracle F23); the multiplier at 0x10013FDC belongs to the advisor's near-ticket hint, not to the award
-		var recentMonths = Math.Max( 1, rules.RecentVisitorMonths );
-		var recent = monthlyAdmissions.Count >= recentMonths ? monthlyAdmissions.Skip( monthlyAdmissions.Count - recentMonths ).Sum() : 0;
+		// [BIN:TPW-EXE:0x004C94D0 visitors since a month close] the lifetime visitor counter (+0x21C08, raised per admission by 0x004C7530) minus its snapshot at the close RecentVisitorMonths back (a 144-entry ring written at each month close, 0x004C7720); 0 unless that close exists, so the open month counts and RecentVisitorMonths + 1 closes are needed. The snapshot is the dropped history plus the closed months through it.
+		var recentMonths = rules.RecentVisitorMonths;
+		var recent = 0L;
+		if ( recentMonths >= 0 && recentMonths < ParkLedger.MaximumHistoryMonths && recentMonths <= monthlyAdmissions.Count - 1 )
+			recent = counters[ParkCounters.Admissions] - (droppedAdmissions + monthlyAdmissions.Take( monthlyAdmissions.Count - recentMonths ).Sum());
+		// [BIN:TPW-EXE:0x004D4BC0 recent visitors ticket] recent > RecentVisitors and the park clock's age in exact 30-day months (0x004F8800 divided by 0x1792F8648000) > RecentVisitorMonths, both strict
+		var ageMonths = parkSeconds / (30 * ParkCalendar.SecondsPerDay);
 		var allBuilt = research.IsAllResearched && catalog.Objects.Where( info => info.IsBuyable ).All( info => counters[ParkCounters.Built( info.InfoId )] > 0 );
 		void Check( GoldenTicketKind kind, bool condition )
 		{
@@ -282,8 +287,7 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.Happiness, guests.AverageHappiness > (float)rules.Happiness && guests.PeopleInPark > rules.AtLeastThisManyHappyPeople );
 		Check( GoldenTicketKind.AllResearchedAndBuilt, allBuilt );
 		Check( GoldenTicketKind.ProfitYear, profitThisYear > rules.ProfitYear );
-		// [APPROX:ECON-052] the original compares the visitor counter minus its history value RecentVisitorMonths back with RecentVisitors (strictly greater) and also needs the park age in 30-day months to exceed RecentVisitorMonths; OpenTPW sums the last closed calendar months and needs that many closed months — evidence needed: the history value at 0x100C3B88 and the age in calendar months
-		Check( GoldenTicketKind.RecentVisitors, recent > rules.RecentVisitors );
+		Check( GoldenTicketKind.RecentVisitors, recent > rules.RecentVisitors && ageMonths > recentMonths );
 		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) > rules.CoasterHeight );
 		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) > rules.GokartExcitement );
 		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) > rules.WaterLength );

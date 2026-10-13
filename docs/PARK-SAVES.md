@@ -55,6 +55,9 @@ staff and prices, the same weather and clock, and the park open or closed as it 
 gameplay mode and start kind (Full Simulation, Instant Action, reference) come back with it, so an
 Instant Action park resumes under its saved balance layer and a closed park stays closed.
 
+The [save/weather roundtrip audit](SAVE-WEATHER-ROUNDTRIP.md) records synthetic file,
+clock and weather continuation coverage and the remaining asset-backed integration limits.
+
 A save that does not validate is refused with its reason (a dialog in the UI), and the park or lobby
 you were in stays untouched — a rejected load never half-applies. Corrupt files, unknown or missing
 members, unsupported versions, inconsistent theme or balance values, and changed game assets are all

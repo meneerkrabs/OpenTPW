@@ -49,6 +49,10 @@ internal static class CoasterSave
 	public const int MaximumRides = 256;
 	/// <summary>Bound on one track's nodes (the station node, every pylon and the station end node).</summary>
 	public const int MaximumNodes = 16384;
+	/// <summary>Bound on one coaster's trains in the saved part (the catalog check is exact: the definition's <c>uiMaxTrains</c>, 30 for the largest shipped coaster).</summary>
+	public const int MaximumTrains = 64;
+	/// <summary>Bound on one train's cars in the saved part (the catalog check is exact: the definition's <c>uiMaxCars</c>, 6 for the largest shipped train).</summary>
+	public const int MaximumCarsPerTrain = 32;
 	/// <summary>The node flag bits a save may carry; anything else is a format this code does not know, and load refuses it.</summary>
 	public const uint KnownNodeFlags = (uint)(CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.Loop | CoasterNodeFlags.ZeroBank | CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid);
 

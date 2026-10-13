@@ -639,9 +639,10 @@ internal static class ParkResumeSaveFile
 	/// every entry joined to one placed object by a strictly increasing attraction id, the track's shape (station node,
 	/// pylons, one station end node exactly when the track completed, the closure rules, cell bounds, known node flag
 	/// bits only), the controller scalars' ranges, the trains (only on a completed track, defined states, bounded
-	/// riders), and every rider — seated or leaving — a guest the snapshot holds aboard that very attraction. The
-	/// catalog checks (which stations are coaster stations, the definition's train and car bounds) are
-	/// <see cref="ValidateSnapshot"/>'s.
+	/// riders), and every rider — seated or leaving — a guest the snapshot holds aboard that very attraction, or one
+	/// still in the boarding hand-over (called, VAR_LETMEON written, waiting at the stand point while the script has
+	/// already handed it to a car). The catalog checks (which stations are coaster stations, the definition's train and
+	/// car bounds) are <see cref="ValidateSnapshot"/>'s.
 	/// </summary>
 	private static void ValidateCoasters( ParkResumeSnapshot snapshot )
 	{
@@ -659,7 +660,8 @@ internal static class ParkResumeSaveFile
 		var height = snapshot.Layout.Cells.Height;
 		bool InBounds( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
 		var placedAttractions = snapshot.Layout.Objects!.Select( record => record!.AttractionId ).ToHashSet();
-		var aboardByAttraction = snapshot.Guests!.Attractions!.ToDictionary( attraction => attraction!.AttractionId, attraction => attraction.OnRide!.ToHashSet() );
+		var bridgesById = snapshot.Guests!.Attractions!.ToDictionary( attraction => attraction!.AttractionId );
+		var aboardByAttraction = snapshot.Guests.Attractions!.ToDictionary( attraction => attraction!.AttractionId, attraction => attraction.OnRide!.ToHashSet() );
 		var guestsById = snapshot.Guests.Guests!.ToDictionary( guest => guest!.Id );
 		var ridersEverywhere = new HashSet<int>();
 		var previousAttractionId = 0;
@@ -746,16 +748,32 @@ internal static class ParkResumeSaveFile
 			Require( ride.LastDispatch is null || double.IsFinite( ride.LastDispatch.Value ),
 				$"coaster {ride.AttractionId}'s last dispatch is not finite" );
 			Require( ride.Trains != null && ride.Leaving != null, $"coaster {ride.AttractionId} holds no train or leaving list" );
+			Require( ride.Trains!.Count <= CoasterSave.MaximumTrains,
+				$"coaster {ride.AttractionId} holds {ride.Trains.Count} trains, above {CoasterSave.MaximumTrains}" );
 			Require( track.IsComplete || ride.Trains!.Count == 0,
 				$"coaster {ride.AttractionId} holds {ride.Trains!.Count} trains on a track that never completed" );
 			void RequireRider( int guestId, string where )
 			{
 				Require( guestsById.TryGetValue( guestId, out var guest ),
 					$"{where} of coaster {ride.AttractionId} holds guest {guestId}, which the guest snapshot does not hold" );
-				Require( guest!.State == GuestState.Using && guest.AttractionId == ride.AttractionId,
-					$"guest {guestId} rides coaster {ride.AttractionId} in its trains, but walks the park in state {guest.State}" );
-				Require( aboardByAttraction.TryGetValue( ride.AttractionId, out var aboard ) && aboard.Contains( guestId ),
-					$"guest {guestId} rides coaster {ride.AttractionId} in its trains, but is not aboard it in the guest snapshot" );
+				if ( guest!.State == GuestState.Using )
+				{
+					Require( guest.AttractionId == ride.AttractionId,
+						$"guest {guestId} rides coaster {ride.AttractionId} in its trains, but the guest snapshot holds it aboard attraction {guest.AttractionId}" );
+					Require( aboardByAttraction.TryGetValue( ride.AttractionId, out var aboard ) && aboard.Contains( guestId ),
+						$"guest {guestId} rides coaster {ride.AttractionId} in its trains, but is not aboard it in the guest snapshot" );
+				}
+				else
+				{
+					// The boarding hand-over: the station script took the guest from VAR_LETMEON into a car with COAST 1,
+					// but the bridge marks it aboard only one host step later, when the script consumes VAR_LETMEON or
+					// HUSHes it. A save between the two holds the guest still waiting at the stand point: WaitingToBoard,
+					// bound to this coaster, still queued, called with VAR_LETMEON written (proved against the real
+					// Jungle station script — see GuestsBoardingARealCoasterStaySaveConsistentAtEveryTickBoundary).
+					Require( guest.State == GuestState.WaitingToBoard && guest.AttractionId == ride.AttractionId
+						&& bridgesById.TryGetValue( ride.AttractionId, out var bridge ) && bridge.CalledGuest == guestId && bridge.LetMeOnWritten,
+						$"guest {guestId} rides coaster {ride.AttractionId} in its trains, but walks the park in state {guest.State}" );
+				}
 				Require( ridersEverywhere.Add( guestId ),
 					$"guest {guestId} rides two coasters in the save" );
 			}
@@ -772,6 +790,8 @@ internal static class ParkResumeSaveFile
 				Require( double.IsFinite( saved.BoardingSince ) && saved.BoardingSince >= 0,
 					$"coaster {ride.AttractionId}'s train {train} boarded at {saved.BoardingSince}s, negative or not finite" );
 				Require( saved.Cars != null, $"coaster {ride.AttractionId}'s train {train} holds no car list" );
+				Require( saved.Cars!.Count <= CoasterSave.MaximumCarsPerTrain,
+					$"coaster {ride.AttractionId}'s train {train} holds {saved.Cars.Count} cars, above {CoasterSave.MaximumCarsPerTrain}" );
 				var riders = 0;
 				for ( var car = 0; car < saved.Cars!.Count; car++ )
 				{

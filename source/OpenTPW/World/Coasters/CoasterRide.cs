@@ -605,8 +605,9 @@ public sealed class CoasterRide
 	/// node): the track verbatim, then the controller scalars — before the rebuild, whose rating pass reads the speed
 	/// cap — then the rebuild itself for a runnable track (the curve, rating, winch marks, braking point and train
 	/// count are re-derived by the same deterministic pass completion ran, never copied from the save), then the
-	/// trains and riders the save holds over the placed ones. Any mismatch throws
-	/// <see cref="InvalidDataException"/> without leaving a half-restored controller.
+	/// trains and riders the save holds over the placed ones. A count mismatch throws
+	/// <see cref="InvalidDataException"/> — the restore is a park-resume candidate's step, and the failed candidate is
+	/// discarded whole, so a half-restored controller never simulates.
 	/// </summary>
 	internal void RestoreSnapshot( CoasterRideSaveData saved )
 	{

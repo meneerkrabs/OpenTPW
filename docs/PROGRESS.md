@@ -882,6 +882,9 @@ research batch was included in this merge.
   bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the
   header before decoding another mesh (every shipped model still parses); new save/weather roundtrip
   tests cover real files, paused and fast speeds, live weather, pending thunder and malformed JSON.
+- **Satisfaction map without regrouping (October 13):** the live map's satisfaction overlay counts each cell's pleased and
+  dissatisfied visitors directly, in the order the grouping gave, instead of building transient groups every draw; the drawn
+  result is the same (MapCellAggregationTests compares it with the old grouping).
 - **Parks built over frames (October 13):** a park chosen in the front end, loaded or visited is built
   over several frames beside the running lobby, with a progress line, instead of in one frame; the
   construction runs the same steps in the same order, and the smoke test finds the same world hash,

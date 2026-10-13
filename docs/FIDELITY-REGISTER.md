@@ -908,12 +908,12 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-084 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:115` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.Staff.cs:437` | [APPROX:UI-084] Repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:97` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
-| UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:196` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
+| UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:197` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
 | UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:103` | [APPROX:UI-086] clicking a category filters placed-object footprints to that type; clicking it again restores all types. |
-| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:216` | [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art. |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:217` | [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art. |
 | UI-087 | `source/OpenTPW/Hud/ParkHud.Map.cs:71` | [APPROX:UI-087] the table has zoom buttons but no decoded zoom factor; half steps keep the visible area usable. |
 | UI-087 | `source/OpenTPW/Hud/ParkHud.Map.cs:77` | [APPROX:UI-087] one map pan moves 1/8 of the currently visible image. |
-| UI-089 | `source/OpenTPW/Hud/ParkHud.Map.cs:219` | [APPROX:UI-089] the generic sandbox has no 2dmap.tga; use its live grid and height as a simple terrain base. |
+| UI-089 | `source/OpenTPW/Hud/ParkHud.Map.cs:220` | [APPROX:UI-089] the generic sandbox has no 2dmap.tga; use its live grid and height as a simple terrain base. |
 | UI-090 | `source/OpenTPW/Hud/ParkHud.Staff.cs:109` | [APPROX:UI-090] Control 9366 has no decoded handler; its authored rectangle toggles the applicant and employee views — evidence needed: original control 9366 handler. |
 | UI-090 | `source/OpenTPW/Hud/ParkHud.Staff.cs:320` | [APPROX:UI-090] The unhandled title-side control 9366 toggles the employee view and original applicant view. |
 | UI-091 | `source/OpenTPW/Hud/ParkHud.Locate.cs:3` | [APPROX:UI-091] actual actor locators use host ID cycling and ground camera focus; original locate flow remains unqualified |

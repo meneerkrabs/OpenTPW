@@ -173,6 +173,7 @@ public sealed partial class ParkHud
 	private sealed class ParkMapView : UiElement
 	{
 		private readonly ParkHud owner;
+		private readonly ParkMapMetrics.OutcomeScratch outcomeCells = new();
 		public ParkMapView( ParkHud owner ) => this.owner = owner;
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
@@ -258,9 +259,12 @@ public sealed partial class ParkHud
 				foreach ( var cell in ParkMapGuestLayers.Cells( owner.level.Guests?.Guests ?? Array.Empty<Guest>(), width, height ) )
 					Mark( cell.X, cell.Y, owner.mapHappiness ? ParkMapGuestLayers.HappinessColor( cell.Happiness ) : new RgbaByte( 75, 180, 255, 240 ) );
 			// [PROVISIONAL:MAP] A thought outcome is an observation proxy, not the original game's satisfaction score.
-			if ( owner.mapSatisfaction )
-				foreach ( var cell in ParkMapMetrics.Outcomes( owner.level.Guests?.Guests ?? Array.Empty<Guest>(), width, height ) )
-					Mark( cell.X, cell.Y, cell.Pleased > 0 && cell.Dissatisfied > 0 ? new RgbaByte( 255, 165, 35, 240 ) : cell.Pleased > 0 ? new RgbaByte( 35, 235, 35, 240 ) : new RgbaByte( 235, 35, 35, 240 ) );
+			var outcomes = outcomeCells.Rebuild( owner.level.Guests?.Guests ?? Array.Empty<Guest>(), width, height, owner.mapSatisfaction );
+			for ( var index = 0; index < outcomes.Count; index++ )
+			{
+				var cell = outcomes[index];
+				Mark( cell.X, cell.Y, cell.Pleased > 0 && cell.Dissatisfied > 0 ? new RgbaByte( 255, 165, 35, 240 ) : cell.Pleased > 0 ? new RgbaByte( 35, 235, 35, 240 ) : new RgbaByte( 235, 35, 35, 240 ) );
+			}
 		}
 	}
 }
@@ -312,6 +316,37 @@ internal static class ParkMapMetrics
 		guests.Where( guest => IsObservedOutcome( guest, width, height ) )
 			.GroupBy( guest => ((int)MathF.Floor( guest.X ), (int)MathF.Floor( guest.Y )) )
 			.Select( group => (group.Key.Item1, group.Key.Item2, group.Count( guest => guest.Thought == GuestThought.Pleased ), group.Count( guest => guest.Thought == GuestThought.Dissatisfied )) );
+
+	/// <summary>View-owned counts rebuilt each draw, in the first encounter order of the live guests.</summary>
+	internal sealed class OutcomeScratch
+	{
+		private readonly Dictionary<(int X, int Y), int> indexes = new();
+		private readonly List<(int X, int Y, int Pleased, int Dissatisfied)> cells = new();
+
+		public IReadOnlyList<(int X, int Y, int Pleased, int Dissatisfied)> Rebuild( IReadOnlyList<Guest> guests, int width, int height, bool enabled )
+		{
+			indexes.Clear();
+			cells.Clear();
+			if ( !enabled ) return cells;
+			for ( var index = 0; index < guests.Count; index++ )
+			{
+				var guest = guests[index];
+				if ( !IsObservedOutcome( guest, width, height ) ) continue;
+				var key = ((int)MathF.Floor( guest.X ), (int)MathF.Floor( guest.Y ));
+				if ( !indexes.TryGetValue( key, out var cellIndex ) )
+				{
+					cellIndex = cells.Count;
+					indexes.Add( key, cellIndex );
+					cells.Add( (key.Item1, key.Item2, 0, 0) );
+				}
+				var cell = cells[cellIndex];
+				if ( guest.Thought == GuestThought.Pleased ) cell.Pleased = checked(cell.Pleased + 1);
+				else cell.Dissatisfied = checked(cell.Dissatisfied + 1);
+				cells[cellIndex] = cell;
+			}
+			return cells;
+		}
+	}
 
 	/// <summary>Fresh legend totals; no cell grouping is needed when positions are not drawn.</summary>
 	public static (int Pleased, int Dissatisfied) OutcomeTotals( IEnumerable<Guest> guests, int width, int height )

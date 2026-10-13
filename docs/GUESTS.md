@@ -598,7 +598,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
-| QUEUE-003 | Guests step onto the back cell from its first walkable neighbour | `0xdd744` and the state-10 walk to the back cell |
+| QUEUE-003 | Guests step onto the back cell from its first walkable neighbour; the original (tp.exe `0x4de4a0`, `0x4de840`) takes the first neighbour in the order 1, 4, 16, 64 that is connected and a path cell, and OpenTPW keeps no connection bits for queue cells | The queue tool's connection writes (QUEUE-012..014) and the state-10 walk |
 | QUEUE-004 | The join excitement gate, clamped difference and live excitement follow the original (ORACLE.md F16, executed); only the excitement of a ride with a thing behind ride `+36` (60 % of the level plus up to 40 from three piece counts of `0x1ea40`) is not modelled | What ride `+36` and the three counts are (no OpenTPW object has one) |
 | QUEUE-005 | The leave-for-room rule is the original's (position ≥ 4 × cells, not in state 14; tp.exe `0x501390`, ORACLE.md X14). OpenTPW also sends away a guest whose cell left the queue (Confused) and re-walks the others, where the original changes nothing for them; a leaving guest plays no animation | How the original's state-12 walk recovers a guest standing off the queue; animation 13 and the event-6 record |
 | QUEUE-006 | Queue places follow tp.exe `0x4de840` (depths 0/63/127/191, the axis per link, the fourth place on the axis of the cell behind); only the back cell's fourth place takes its axis from OpenTPW's join cell (QUEUE-003) | QUEUE-003's join cell |

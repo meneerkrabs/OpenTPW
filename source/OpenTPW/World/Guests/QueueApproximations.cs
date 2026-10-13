@@ -9,7 +9,7 @@ public static class QueueApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("QUEUE-003", "guests step onto the back of a queue from its first walkable neighbour (the join cell)"),
+		("QUEUE-003", "guests join the back of the queue from an adjacent walkable cell; the original takes the first connected path neighbour (1, 4, 16, 64), and OpenTPW keeps no connection bits for queue cells"),
 		("QUEUE-004", "the join excitement of a ride with a thing behind ride +36 (60 % of the level plus up to 40 from three piece counts) is not modelled; the gate, the clamped difference and the live excitement (sideshow, speed and duration ratios, coaster) follow the original (ORACLE.md F16)"),
 		("QUEUE-005", "after a queue edit, a guest whose cell left the queue leaves (Confused) and the others re-walk, where the original only sends away guests beyond the room; a leaving guest plays no animation"),
 		("QUEUE-006", "queue places follow the original's axis per link; the back cell's fourth place takes its axis from OpenTPW's join cell"),

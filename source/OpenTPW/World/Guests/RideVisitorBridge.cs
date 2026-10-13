@@ -515,7 +515,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return null;
 	}
 
-	// [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue; the original connection test 0xdd744 is not traced — evidence needed: 0xdd744 and the state-10 walk to the back cell
+	// [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue. In tp.exe the back of the queue counts as connected (0x004DE4A0, for objects with flag +0x32 bit 8) when its connection bits hold more than its own link, and the path cell it is attached to is the first neighbour in the order 1, 4, 16, 64 (the same −Y, +X, +Y, −X) whose connection bit is set and which is a path cell (type 1; 0x004DE840). OpenTPW keeps no connection bits for queue cells (the queue tool, QUEUE-012..014), so it uses adjacency — evidence needed: the queue tool's connection writes, then the state-10 walk to the back cell
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];

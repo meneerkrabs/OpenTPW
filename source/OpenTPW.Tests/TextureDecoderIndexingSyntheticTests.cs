@@ -210,7 +210,8 @@ public class TextureDecoderIndexingSyntheticTests
 		using var w = new BinaryWriter( ms );
 		w.Write( Encoding.ASCII.GetBytes( "BILZ" ) );
 		w.Write( raw.Length );
-		w.Write( (int)deflated.Length );
+		// The stream size counts the whole chunk, this 28-byte header included (as every retail BILZ chunk does).
+		w.Write( 0x1C + (int)deflated.Length );
 		w.Write( 15 );
 		w.Write( 9 );
 		w.Write( 0 );

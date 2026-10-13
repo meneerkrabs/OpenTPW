@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
+using System.Collections.Generic;
 using System.IO;
 using Veldrid;
 using NVector2 = System.Numerics.Vector2;
@@ -120,5 +121,24 @@ public class HudScreenShortcutTests
 		Assert.AreEqual( 0, clicked, "Space does not activate the focused button" );
 		screen.Update( context, UiInput.Key( UiKeys.Accept ) );
 		Assert.AreEqual( 1, clicked, "Enter still activates the focused button" );
+	}
+
+	[TestMethod]
+	public void PauseIsThePlainPNotThePostcardsCtrlP()
+	{
+		// The original key table reserves Ctrl+P for the e-mail postcard (InputButton.SendEmailPostcard);
+		// the pause key must not fire as part of that combination. Each case uses a fresh source so the
+		// key is a new edge in both.
+		try
+		{
+			Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.ControlLeft, Key.P } );
+			Assert.IsFalse( new UiInputSource().Poll( 1, 1 ).Has( UiKeys.Pause ), "Ctrl+P is not pause" );
+			Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.P } );
+			Assert.IsTrue( new UiInputSource().Poll( 1, 1 ).Has( UiKeys.Pause ), "the plain P pauses" );
+		}
+		finally
+		{
+			Input.Keyboard = new Input.KeyboardInfo();
+		}
 	}
 }

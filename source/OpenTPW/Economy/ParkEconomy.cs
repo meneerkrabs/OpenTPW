@@ -158,6 +158,7 @@ public sealed class ParkEconomy : IParkEconomy
 				StrikeOrRest( member, HasRestArea );
 			}
 		}
+		DispatchToiletCleaning();
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
@@ -380,6 +381,13 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		member.AssignedInstanceId = 0;
 		item.MechanicId = 0;
+		if ( member.Type == StaffType.Handyman )
+		{
+			// [BIN:TPW-EXE:0x004DFD80 toilet cleaned] the end of the handyman's state 11 sets the gauge back to 100.0 and clears the ride's mRequestedService (+0x64) and assigned staff (+0x5E)
+			item.Repair = RideRepair.FullGauge;
+			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+			return;
+		}
 		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
@@ -456,6 +464,52 @@ public sealed class ParkEconomy : IParkEconomy
 		_ => -1,
 	};
 
+	/// <summary>The gauge below which a toilet is dirty and handymen clean it (the single 25.0 at 0x00700550).</summary>
+	public const int DirtyToiletGauge = 25;
+
+	/// <summary>
+	/// A guest has used a relief object (tp.exe <c>0x004E2440</c>, from the use routine <c>0x004FE1E0</c>): its gauge falls by 0.05 × the guest's
+	/// toilet meter taken as a byte, clamped to 0..100 and stored as a single. Returns true when the toilet has just become dirty (below 25).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E2440 toilet wear] (int64)toilet × −0.05f + gauge in x87 precision, compared with 100 and 0, stored as a single; a gauge byte falling below 25 logs "Toilet has become dirty and smelly" and posts the dirty-toilet messages
+	public bool UseRelief( int instanceId, int toiletByte )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) || !Catalog.TryGet( item.InfoId, out var info ) || !info.ProvidesRelief )
+			return false;
+		var wasDirty = (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
+		var gauge = (double)(toiletByte & 0xFF) * (double)-0.05f + (double)(float)item.Repair;
+		item.Repair = (float)(gauge > 100 ? 100 : gauge >= 0 ? gauge : 0);
+		var dirty = (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
+		if ( dirty && !wasDirty )
+			Raise( ParkEventKind.ToiletDirty, 0, item.Id, item.InfoId );
+		return dirty && !wasDirty;
+	}
+
+	/// <summary>
+	/// The handyman's toilet job (tp.exe states 10 and 11): a free handyman takes a dirty toilet (gauge byte below 25) that nobody cleans yet and
+	/// is busy for <c>HandymanConstsPerGrade[grade].WorkDuration</c> park turns and the update that ends state 11; the toilet is then back at 100.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D7880 dirty toilet search] a handyman without litter in reach takes the nearest toilet flagged by mRequestedService, else one whose gauge byte is below 25 within DetectionRange cells; state 11 lasts until the turn passes its start + WorkDuration[grade] (0x004D73C0, the grade table 0x007853EC {WorkDuration, DetectionRange, PoundsPerTrainingPoint})
+	private void DispatchToiletCleaning()
+	{
+		var dirty = objects.Values.Where( item => item.MechanicId == 0 && Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief
+			&& (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge ).OrderBy( item => item.Repair ).ThenBy( item => item.Id ).ToList();
+		if ( dirty.Count == 0 )
+			return;
+		var role = Settings[StaffType.Handyman];
+		foreach ( var handyman in Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
+		{
+			if ( dirty.Count == 0 )
+				break;
+			var toilet = dirty[0];
+			dirty.RemoveAt( 0 );
+			handyman.BusyTicks = role.WorkDuration[handyman.Grade] + 1;
+			handyman.AssignedInstanceId = toilet.Id;
+			handyman.State = StaffState.Working;
+			toilet.MechanicId = handyman.Id;
+		}
+	}
+
 	/// <summary>Each free handyman removes one litter item per <c>HandymanConstsPerGrade[grade].WorkDuration</c> game minutes (<b>approximation</b>).</summary>
 	private void CleanLitter()
 	{
@@ -463,7 +517,7 @@ public sealed class ParkEconomy : IParkEconomy
 			return;
 		var role = Settings[StaffType.Handyman];
 		foreach ( var handyman in Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable ) )
-			// [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide — evidence needed: capture of cleaning speed
+			// [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide, and takes dirty toilets dirtiest first (DispatchToiletCleaning); handymen have no position, so the walk to the litter or the toilet (state 10), the litter-first rule within DetectionRange, the nearest-toilet choice and the mRequestedService flag are not modelled — evidence needed: capture of cleaning speed, and the writer of mRequestedService
 			LitterScaled = Math.Max( 0, LitterScaled - 60L * LitterScale / Math.Max( 1, role.WorkDuration[handyman.Grade] ) );
 	}
 

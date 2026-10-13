@@ -335,6 +335,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   menu was open. `ParkHud.TimeScaleFor` returns 0 while the pause menu (or a screen opened from it) is on the stack, and the speed
   setting is left alone, so the park resumes at the same speed (`ParkPauseTests`, front-end smoke check). UI-096 names the
   original's other pausing screens (full-screen map, message dialog, Load dialog, `0x15f67c`) that do not stop the park here yet.
+- Toilets now wear and handymen clean them (tp.exe `0x4e2440`, `0x4d7880`, `0x4dfd80`, ORACLE.md 7.13, X17, QUEUE-008). Every visit
+  lowers a toilet's gauge by 0.05 × the guest's toilet meter. Below 25 the toilet is dirty, and guests in its queue give up (the worn-toilet
+  exit now fires). A free handyman takes the dirtiest dirty toilet and is busy for WorkDuration + 1 park turns, after which the toilet is
+  back at 100. A toilet visit also clears an illness above 90. The walk to the toilet and the litter-first rule wait for handyman
+  positions (ECON-022).
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

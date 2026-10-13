@@ -7,6 +7,7 @@
 //   jungle  the cold start of Full Simulation Jungle (the construction frame), then a steady window in the park
 //   buy     the first buy-menu open and four first selections (the 12 October table)
 //   memory  memory samples over a longer park session
+//   switch  memory across park changes: Jungle, the lobby, the next island's park, the lobby, Jungle again
 //   revisit a second visit in the same profile without the served folder: Play starts from the files kept in the browser
 //           (needs --keep), then Jungle opens from them
 //   digest  deterministic work that must give the same result in every build (texture decoding, a fixed park run), timed
@@ -69,7 +70,7 @@ function usage() {
 	return `Usage: node tools/web-perf/run.mjs --web <published wwwroot> --game <Theme Park World folder> [options]
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,memory,digest (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
@@ -278,6 +279,50 @@ const scenarios = {
 		return JSON.parse(await page.eval(`opentpwPerf.program.PerfDigest(${JSON.stringify(state.level)})`, 900000));
 	},
 
+	async switch(page) {
+		const state = await page.state();
+		if (!state.hud || state.level !== 'jungle')
+			throw new Error('The switch scenario starts in Jungle: run it after jungle');
+		const steps = [];
+		// Each point after a full collection, so it shows live memory; wasm memory only grows, so it shows the peak so far.
+		const record = async name => {
+			await page.eval('opentpwPerf.program.PerfCollect()');
+			const memory = await page.memory();
+			const stale = memory.levelsAlive > (name.startsWith('lobby') ? 0 : 1) ? JSON.parse(await page.eval('opentpwPerf.program.PerfStaleLevelPaths()', 120000)) : [];
+			const textureGroups = JSON.parse(await page.eval('opentpwPerf.program.PerfTextureGroups()'));
+			const roots = name.startsWith('lobby') ? JSON.parse(await page.eval('opentpwPerf.program.PerfMemoryRoots()', 180000)) : undefined;
+			steps.push({ step: name, ...memory, textureGroups, ...(roots ? { roots } : {}), ...(stale.length ? { staleLevelPaths: stale } : {}) });
+		};
+		const toLobby = async () => {
+			await page.call('PerfOpenPauseMenu');
+			await page.waitFor('the pause menu', current => current.hudScreen === 'pause', 10000);
+			await page.call('PerfClick', 'ExitToLobby');
+			await page.waitFor('the lobby', current => current.menu === 'lobby' && !current.hud, 60000);
+			await sleep(2000);
+		};
+		const enterPark = async island => {
+			await page.call('PerfClick', 'enterPark');
+			await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+			await page.call('PerfClick', 'fullSimulation');
+			await page.waitFor(`the ${island} park`, current => current.hud && current.level === island, 300000);
+			await sleep(3000);
+		};
+		await record('jungle');
+		await toLobby();
+		await record('lobby');
+		await page.call('PerfClick', 'nextIsland');
+		const other = (await page.waitFor('the next island', current => current.island && current.island !== 'jungle', 10000)).island;
+		await enterPark(other);
+		await record(other);
+		await toLobby();
+		await record('lobby again');
+		await page.call('PerfKey', 'Left');
+		await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+		await enterPark('jungle');
+		await record('jungle again');
+		return { steps };
+	},
+
 	async memory(page, options) {
 		const state = await page.state();
 		if (!state.hud)
@@ -335,6 +380,9 @@ function markdown(report) {
 		lines.push(`- Revisit from kept files (${results.revisit.kept}): Play shown after ${results.revisit.playShownMs} ms, first frame ${results.revisit.firstFrameMs} ms and lobby ${results.revisit.lobbyMs} ms after the click, Jungle ready in ${results.revisit.jungleReadyMs} ms`);
 	if (results.digest?.simulationHash)
 		lines.push('', `- Digest: ${results.digest.textures} textures in ${results.digest.textureMs} ms (hash ${results.digest.textureHash}); fixed park run in ${results.digest.simulationMs} ms (hash ${results.digest.simulationHash})`);
+	if (results.switch?.steps)
+		lines.push('', '| Step | Wasm MB | Live managed MB | Levels alive | Entities | Textures held | Archive files read MB | Archive members MB | Decoded sound MB | JS heap MB |', '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+			...results.switch.steps.map(step => `| ${step.step} | ${(step.wasmBytes / 1048576).toFixed(0)} | ${(step.managedBytes / 1048576).toFixed(0)} | ${step.levelsAlive} | ${step.entities} | ${step.texturesHeld} | ${(step.archiveBytes / 1048576).toFixed(0)} | ${(step.archiveMemberBytes / 1048576).toFixed(0)} | ${(step.decodedSampleBytes / 1048576).toFixed(0)} | ${(step.jsHeapBytes / 1048576).toFixed(0)} |`));
 	if (results.memory && !results.memory.error)
 		lines.push('', `- Memory over ${results.memory.minutes} min: wasm +${(results.memory.wasmGrowthBytes / 1048576).toFixed(1)} MB (peak ${(results.memory.peakWasmBytes / 1048576).toFixed(0)} MB), managed +${(results.memory.managedGrowthBytes / 1048576).toFixed(1)} MB`);
 	for (const [name, entry] of Object.entries(results))

@@ -131,6 +131,9 @@ public static class GameAudio
 
 	/// <summary>Loads a level's categories and starts its park music.</summary>
 	/// <param name="seed">The park's sound seed (<see cref="WorldSeed.SoundStream"/>); null keeps the running chooser.</param>
+	/// <summary>Bytes of the decoded samples the sound events keep (<see cref="SoundEventSystem.DecodedBytes"/>).</summary>
+	public static long DecodedSampleBytes => events?.DecodedBytes ?? 0;
+
 	public static void EnterPark( string level, uint? seed = null )
 	{
 		if ( !EnsureStarted() )
@@ -154,6 +157,7 @@ public static class GameAudio
 
 	public static void LeavePark()
 	{
+		var (leftMusic, leftSpeech, leftAmbient, leftRides) = (LevelMusic, LevelSpeech, LevelAmbient, LevelRides);
 		music?.Stop();
 		music = null;
 		LevelMusic = null;
@@ -164,6 +168,7 @@ public static class GameAudio
 		SetRain( 0 );
 		StopPlacedAmbients();
 		events?.StopChains();
+		events?.Forget( leftMusic, leftSpeech, leftAmbient, leftRides );
 		staffTurn = -1;
 		staffVoiceLogged = false;
 	}
@@ -249,6 +254,7 @@ public static class GameAudio
 
 	public static void LeaveLobby()
 	{
+		events?.Forget( LobbyMusic, LobbySfx );
 		lobbyMusic?.Stop();
 		lobbyAmbience?.Stop();
 		lobbyMusic = null;

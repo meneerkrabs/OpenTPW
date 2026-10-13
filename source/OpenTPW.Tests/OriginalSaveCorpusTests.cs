@@ -57,6 +57,12 @@ public class OriginalSaveCorpusTests
 						Assert.IsTrue( park.Cells[x, y].IsPath, $"{name}: initial path ({x}, {y})" );
 
 			var attractions = park.Attractions;
+			// The Coasters block reader runs on every save through Import; a listed coaster must parse to a coaster.
+			Assert.IsNotNull( park.CoasterBlock, name );
+			Assert.AreEqual( park.CoasterBlock.Count, (uint)park.CoasterBlock.Coasters.Count, name );
+			foreach ( var coaster in park.CoasterBlock.Coasters )
+				foreach ( var section in coaster.Sections )
+					Assert.IsTrue( section.CellX < map.CellCountX && section.CellY < map.CellCountY, $"{name}: coaster section inside the grid" );
 			Assert.AreEqual( park.World.Block.End, park.World.Things[^1].End, $"{name}: the thing list closes at the World delimiter" );
 			// A park save keeps one attraction record per saved object (as in Easymode); the initial INTS saves keep none.
 			var expected = Path.GetExtension( path ).Equals( ".INTS", StringComparison.OrdinalIgnoreCase ) ? Array.Empty<int>()

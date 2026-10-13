@@ -1,5 +1,10 @@
 namespace OpenTPW;
 
+/// <summary>A structural section/object join; matching attraction ids require the same cell and Info.Id.
+/// This does not identify the controller's station or assign runtime track nodes.</summary>
+public sealed record ImportedCoasterSection( SaveCoasterSection Section, IReadOnlyList<SaveObject> Objects,
+	IReadOnlyList<SaveAttraction> Attractions );
+
 /// <summary>A placed object whose footprint was cross-checked against the save cell grid.</summary>
 public readonly record struct ImportedParkObject( SaveObject Record, int MinX, int MinY, int MaxX, int MaxY );
 
@@ -18,22 +23,27 @@ public sealed class OriginalParkImport
 	private OriginalParkImport( MapFile map, SavePayloadLayout layout, SaveWorld world, IReadOnlyList<(int X, int Y)> pathCells,
 		IReadOnlyList<ImportedParkObject> placedObjects, IReadOnlyList<SaveObject> fixedItems, IReadOnlyList<SaveObject> unresolvedObjects,
 		IReadOnlyList<SaveAttraction> attractions, SaveEconomyRecords economy, IReadOnlyList<SaveStaff> staff, SaveStaffHq? staffHq,
-		SaveAdvisorController? advisor, SaveResearchLab? researchLab )
+		SaveAdvisorController? advisor, SaveResearchLab? researchLab, SaveCoasterBlock coasters )
+		: this( map, layout, world.Cells, pathCells, placedObjects, fixedItems, unresolvedObjects )
 	{
-		Map = map;
-		Layout = layout;
 		this.world = world;
-		cells = world.Cells;
 		Attractions = attractions;
 		this.economy = economy;
 		Staff = staff;
 		StaffHq = staffHq;
 		Advisor = advisor;
 		ResearchLab = researchLab;
-		PathCells = pathCells;
-		PlacedObjects = placedObjects;
-		FixedItems = fixedItems;
-		UnresolvedObjects = unresolvedObjects;
+		CoasterBlock = coasters;
+		var objectsByCell = placedObjects.Select( item => item.Record ).Concat( unresolvedObjects ).Concat( fixedItems )
+			.ToLookup( record => (record.X, record.Y) );
+		var attractionsByCell = attractions.ToLookup( attraction => (attraction.CellX, attraction.CellY) );
+		CoasterSections = coasters.Coasters.SelectMany( coaster => coaster.Sections ).Select( section =>
+		{
+			var objects = objectsByCell[(section.CellX, section.CellY)].ToArray();
+			var ids = objects.Select( record => record.InfoId ).ToHashSet();
+			var matching = attractionsByCell[(section.CellX, section.CellY)].Where( attraction => ids.Contains( attraction.InfoId ) ).ToArray();
+			return new ImportedCoasterSection( section, objects, matching );
+		} ).ToArray();
 	}
 
 	private OriginalParkImport( MapFile map, SavePayloadLayout layout, SaveCellGrid cells, IReadOnlyList<(int X, int Y)> pathCells,
@@ -68,6 +78,24 @@ public sealed class OriginalParkImport
 	public IReadOnlyList<SaveObject> FixedItems { get; }
 	/// <summary>Placed records whose rotation/size combination has no verified footprint rule.</summary>
 	public IReadOnlyList<SaveObject> UnresolvedObjects { get; }
+	/// <summary>
+	/// The parsed Coasters block (between the stored EMAK and SAOC delimiters): count, globals and, for each saved
+	/// coaster, its header, auxiliary links, track sections with links and the raw train payload. Null for the
+	/// Theme Park Inc viewer, whose coaster semantics are separate (no Theme Park Inc coaster chunk is inferred).
+	/// </summary>
+	public SaveCoasterBlock? CoasterBlock { get; }
+	/// <summary>Original TPW track sections joined to scene records and matching attraction things.
+	/// Missing or ambiguous matches stay visible; neither record index nor header words are guessed as station ids.</summary>
+	public IReadOnlyList<ImportedCoasterSection> CoasterSections { get; } = Array.Empty<ImportedCoasterSection>();
+
+	/// <summary>Guard before constructing runtime objects from an original TPW park. Structural inspection remains
+	/// available, but nonempty original controllers cannot safely be resumed until station joins and train data are decoded.
+	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.</summary>
+	public void RequireSupportedCoasterRuntime()
+	{
+		if ( CoasterBlock is { Count: > 0 } )
+			throw new InvalidDataException( "Original TPW coaster runtime import is unsupported: controller-to-station identity, flag remapping and train/car/passenger data are not qualified. Use the structural CoasterBlock and CoasterSections for inspection." );
+	}
 
 	public bool IsOccupiedByObject( int x, int y )
 	{
@@ -98,10 +126,33 @@ public sealed class OriginalParkImport
 	}
 
 	/// <summary>
+	/// Every recognized saved object record (placed, unresolved or fixed) whose leading cell is (<paramref name="x"/>,
+	/// <paramref name="y"/>). A saved coaster section's cell joins to the park through this: on the sibling Theme Park
+	/// Inc prebuilt save the one saved section's cell (65, 67) carries its own 1×1 record (Info.Id 1181), while the
+	/// station object (1180) stands apart — which section is the station node is not qualified, so no such claim is
+	/// made here. Only recognized scene kinds (815/865) are joined: other kinds, including the sibling pylon kind 1018, are not scanned.
+	/// </summary>
+	public IReadOnlyList<SaveObject> ObjectsAt( int x, int y )
+	{
+		var records = new List<SaveObject>();
+		foreach ( var item in PlacedObjects )
+			if ( item.Record.X == x && item.Record.Y == y )
+				records.Add( item.Record );
+		foreach ( var record in UnresolvedObjects.Concat( FixedItems ) )
+			if ( record.X == x && record.Y == y )
+				records.Add( record );
+		return records;
+	}
+
+	/// <summary>Every attraction thing whose buildable position is cell (<paramref name="x"/>, <paramref name="y"/>).</summary>
+	public IReadOnlyList<SaveAttraction> AttractionsAt( int x, int y ) =>
+		Attractions.Where( attraction => attraction.CellX == x && attraction.CellY == y ).ToList();
+
+	/// <summary>
 	/// Imports <paramref name="payload"/> against <paramref name="map"/>. Throws
 	/// <see cref="InvalidDataException"/> when the payload does not split into its blocks, the thing list does not
-	/// close at the World delimiter, the save's cell attributes differ from the map (wrong level) or a placed object's
-	/// footprint is outside the grid or not marked occupied.
+	/// close at the World delimiter, the save's cell attributes differ from the map (wrong level), a placed object's
+	/// footprint is outside the grid or not marked occupied, or the Coasters block does not follow its traced contract.
 	/// </summary>
 	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map )
 	{
@@ -155,8 +206,11 @@ public sealed class OriginalParkImport
 		var hq = world.Variables.StaffHq == 0 ? null : SaveStaffHq.Read( span, world.Find( world.Variables.StaffHq )!.Value );
 		var advisor = world.OfModel( SaveThingModel.AdvisorController ).Any() ? SaveAdvisorController.Read( span, world.Single( SaveThingModel.AdvisorController ) ) : null;
 		var lab = world.Variables.ResearchLab == 0 ? null : SaveResearchLab.Read( span, world.Find( world.Variables.ResearchLab )!.Value );
+		// The coaster block's reader is as strict as the rest of the import: a block that does not follow the traced
+		// contract refuses the save instead of importing a guessed track.
+		var coasters = SaveCoasterBlock.Parse( span, layout, map.CellCountX, map.CellCountY );
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
-			SaveAttractionList.Parse( span, world ), SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), hq, advisor, lab );
+			SaveAttractionList.Parse( span, world ), SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), hq, advisor, lab, coasters );
 	}
 
 	/// <summary>

@@ -240,6 +240,7 @@ public sealed class ParkObjects
 	// [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour
 	public int ImportOriginal( OriginalParkImport save )
 	{
+		save.RequireSupportedCoasterRuntime();
 		var count = 0;
 		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
 		{

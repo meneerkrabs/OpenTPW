@@ -176,20 +176,33 @@ public sealed partial class FrontEndMenu
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.LoadPark] );
 		if ( entries.Count == 0 )
 			screen.Add( new UiLabel { Id = "empty", Text = () => strings.Extra( OpenTpwText.NoSavedParks ), Align = UiAlign.Center, Bounds = new UiRect( window.X + 100, window.Y + 200, window.Width - 400, 80 ), Anchor = UiAnchor.Center } );
-		for ( var index = 0; index < entries.Count && index < 8; index++ )
+		// [APPROX:UI-934] eight-row scroll viewport and selection/activation controls are host UI; native Load navigation is not qualified.
+		var parks = entries.ToArray();
+		var list = screen.Add( new UiScrollList
 		{
-			var entry = entries[index];
-			screen.Add( new UiListItem
-			{
-				Id = entry.OwnSavePath != null ? $"load:own:{entry.Level}" : entry.Sandbox ? "load:sandbox" : $"load:{entry.Level}",
-				Text = () => entry.OwnSavePath != null ? entry.DisplayName ?? entry.Level : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
-					: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ),
-				Help = strings.Help( 318 ),
-				Clicked = () => load( entry ),
-				Bounds = new UiRect( window.X + 100, window.Y + 170 + index * 90, window.Width - 360, 80 ),
-				Anchor = UiAnchor.Center
-			} );
-		}
+			Id = "parks",
+			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? entry.DisplayName ?? entry.Level : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
+				: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ) ).ToArray(),
+			Help = strings.Help( 318 ),
+			Selected = parks.Length == 0 ? -1 : 0,
+			Enabled = parks.Length != 0,
+			Visible = parks.Length != 0,
+			RowActivated = index => load( parks[index] ),
+			RowHeight = 90,
+			Margin = 10,
+			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 360, 740 ),
+			Anchor = UiAnchor.Center
+		} );
+		screen.Add( new UiButton
+		{
+			Id = "loadSelected",
+			Text = () => strings[UIStrings.LoadPark],
+			Help = strings.Help( 318 ),
+			Enabled = parks.Length != 0,
+			Clicked = list.Activate,
+			Bounds = new UiRect( window.X + 620, window.Bottom - 190, 420, 104 ),
+			Anchor = UiAnchor.Center
+		} );
 		screen.Add( new UiButton
 		{
 			Id = "back",

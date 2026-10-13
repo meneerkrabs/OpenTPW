@@ -149,8 +149,16 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   whatever mode was chosen before (UI-041).
   The original fixes the mode per player and resumes each theme's autosave; every
   OpenTPW entry starts a new park (UI-015).
-- Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
-  save. Quit asks with the original confirmation (9).
+- Load Park (202): own saved parks, original Easymode parks (read-only) and the
+  OpenTPW sandbox save. The shared lobby/pause chooser shows eight rows at once
+  in the existing scroll-list widget, retaining every supplied entry. The wheel
+  scrolls; Left/Right selects and keeps that row visible. A first click selects,
+  Enter, a second click or the localized Load Park button activates that exact
+  entry; Back closes without loading. Reopening starts with fresh entries and
+  selection. This navigation is OpenTPW's UI (UI-934), not an original-game pagination claim.
+  `LoadChooserScrollTests` cover actual chooser and HUD pause input, beyond-eight
+  selection, 0/1/8/9/17 boundaries, entry metadata, cancellation and fresh state.
+  Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
   golden tickets/keys, credits. (The start-up movies now play before the lobby: docs/TGQ-MOVIES.md.)
 

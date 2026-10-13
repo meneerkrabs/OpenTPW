@@ -27,7 +27,8 @@ public class OriginalUiAssetTests
 		"mainpanel", "gauge", "date", "b_buy", "b_info", "b_money", "b_resrch", "b_map", "panel", "b_srides", "b_sshop", "b_sshow", "b_sfeature",
 		"b_retract", "b_door", "b_erase", "f_tagl", "f_tagm", "f_tagr", "islandlobby", "f_lobbutbg", "b_lobleft", "b_entpark", "b_lobright",
 		"tpwlogo", "w_med", "w_dialog", "f_optpanel2", "b_sleft", "b_sright", "b_okay",
-		"w_big", "!frame", "!slider", "f_buyitem", "b_up", "b_down", "b_scroller", "b_exit", "b_allstaff", "i_dollar", "cashtrend", "gkey", "gtick"
+		"w_big", "!frame", "!slider", "f_buyitem", "b_up", "b_down", "b_scroller", "b_exit", "b_allstaff", "i_dollar", "cashtrend", "gkey", "gtick",
+		"list_all", "b_svisit", "b_gopeep"
 	};
 
 	/// <summary>UITEXT entries drawn by the screens.</summary>

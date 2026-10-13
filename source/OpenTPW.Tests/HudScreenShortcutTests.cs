@@ -27,8 +27,12 @@ public class HudScreenShortcutTests
 		Assert.AreEqual( HudScreenShortcut.StaffCosts, ParkHud.ShortcutFor( InputButton.StaffBudgets ), "T" );
 		Assert.AreEqual( HudScreenShortcut.EntryPrice, ParkHud.ShortcutFor( InputButton.EntryPrice ), "G" );
 		Assert.AreEqual( HudScreenShortcut.StaffApplicants, ParkHud.ShortcutFor( InputButton.HireStaff ), "H" );
+		Assert.AreEqual( HudScreenShortcut.VisitorWindow, ParkHud.ShortcutFor( InputButton.AllVisitors ),
+			"V opens the All Visitors window (the plain key pans nothing; Ctrl+V stays the locator)" );
 		Assert.AreEqual( HudScreenShortcut.None, ParkHud.ShortcutFor( InputButton.AllStaff ),
 			"S stays unhandled: the host camera pans with S (Input's WASD axes), and one press cannot be both" );
+		Assert.AreEqual( HudScreenShortcut.None, ParkHud.ShortcutFor( InputButton.AllAttractions ),
+			"A pans with the camera too; the All Attractions window opens through the buy window instead" );
 		Assert.AreEqual( HudScreenShortcut.TimeFaster, ParkHud.ShortcutFor( InputButton.TimeSpeedUp ), "numpad +" );
 		Assert.AreEqual( HudScreenShortcut.TimeSlower, ParkHud.ShortcutFor( InputButton.TimeSlowDown ), "numpad -" );
 		Assert.AreEqual( HudScreenShortcut.TimeNormal, ParkHud.ShortcutFor( InputButton.TimeReset ), "numpad *" );
@@ -37,7 +41,7 @@ public class HudScreenShortcutTests
 		Assert.AreEqual( HudScreenShortcut.LocateNextStaff, ParkHud.ShortcutFor( InputButton.StaffLocator ), "Ctrl+S" );
 		Assert.AreEqual( HudScreenShortcut.LocateNextVisitor, ParkHud.ShortcutFor( InputButton.VisitorLocator ), "Ctrl+V" );
 		// Keys whose screens do not exist stay unhandled rather than guessing a window.
-		foreach ( var button in new[] { InputButton.AllAttractions, InputButton.AllVisitors, InputButton.CamcorderMode,
+		foreach ( var button in new[] { InputButton.CamcorderMode,
 			InputButton.SendEmailPostcard, InputButton.ToggleHelpBar, InputButton.Help, InputButton.Menu, InputButton.RideView } )
 			Assert.AreEqual( HudScreenShortcut.None, ParkHud.ShortcutFor( button ), button.ToString() );
 	}

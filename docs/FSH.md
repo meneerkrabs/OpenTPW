@@ -201,6 +201,14 @@ Invalid index, malformed/truncated or oversized input and existing/blocked outpu
 controls preserve source/output/foreign files. These prove current decoded pixels,
 not original-game alpha, filtering, appearance, or large-image performance.
 
+Independent controls additionally run every truncated synthetic input prefix and
+assert that the actual CLI leaves game filesystems, renderer, shader flags and
+an existing profile record untouched. A Darwin-only FIFO probe held the real
+desktop CLI after its destination precheck, created a foreign destination, then
+fed a valid synthetic FSH: the final move refused, the foreign bytes remained,
+the owned temporary file disappeared, and no profile directory was created.
+This is host-specific race evidence, not Windows or power-loss qualification.
+
 ## Not verified
 
 - How TPI uses or draws these textures: filtering, mipmaps, blending, alpha test,

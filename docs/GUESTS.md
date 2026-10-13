@@ -44,7 +44,10 @@ not read newly written files.
 The counter is saved display metadata and does not drive gameplay. Both the world
 canonical guest digest and the guest gameplay hash exclude it, consistently with
 presentation-only fields. Known and unknown duration metadata can therefore
-produce the same gameplay hash while their displayed values differ.
+produce the same gameplay hash while their displayed values differ. Duration
+range validation is a separate input/display failure: at the supported bound it
+can refuse a tick even though the gameplay digest excludes the counter. Hash
+equality alone does not establish that display metadata passes its range checks.
 
 Native visitor timing and display units remain untraced (`GUEST-920`, `UI-908`).
 `GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,

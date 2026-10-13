@@ -1418,14 +1418,16 @@ def wander_plan(x: dict, either_side: bool = False) -> tuple:
     remaining = draw() % 5
     if not path(start):
         return None, used, False
-    if cells[start][1] & 0x55 == 0:
-        return start, 0x80, 0x80, used
     cell, back = start, -1
+
+    def linked(d):
+        n = (cell[0] + d[0], cell[1] + d[1])
+        back_link = either_side and path(n) and cells[n][1] & LINK_OF[(-d[0], -d[1])]
+        return path(n) and bool(cells[cell][1] & LINK_OF[d] or back_link)
+    # The step branch needs a link of the start cell (0x522810); either-side links count a neighbour's link back as one.
+    if not (any(linked(d) for d in order) if either_side else cells[start][1] & 0x55):
+        return start, 0x80, 0x80, used
     while True:
-        def linked(d):
-            n = (cell[0] + d[0], cell[1] + d[1])
-            back_link = either_side and path(n) and cells[n][1] & LINK_OF[(-d[0], -d[1])]
-            return path(n) and bool(cells[cell][1] & LINK_OF[d] or back_link)
         candidates = [d if linked(d) else None for d in order]
         count = sum(1 for d in candidates if d)
         if count == 0:

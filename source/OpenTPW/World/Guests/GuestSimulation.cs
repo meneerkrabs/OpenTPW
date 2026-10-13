@@ -813,10 +813,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 		if ( guest.HasWaypoint )
 		{
 			var arrived = Move( guest );
-			// The guest's cell follows the walk: the cell it stands on, and the destination's cell on arrival.
-			var navigation = guest.Navigation;
-			var cell = arrived ? (navigation.TargetX >> 16, navigation.TargetY >> 16) : navigation.Cell;
-			if ( cell != (guest.CellX, guest.CellY) && Grid.IsWalkable( cell.Item1, cell.Item2 ) )
+			// The guest's cell is the one it stands on (the original's thing cell +5/+7), which the next wander starts from;
+			// arriving within reach of a point near a cell's edge can leave it in the cell before.
+			var cell = guest.Navigation.Cell;
+			if ( cell != (guest.CellX, guest.CellY) && Grid.IsWalkable( cell.X, cell.Y ) )
 			{
 				(guest.PreviousCellX, guest.PreviousCellY) = (guest.CellX, guest.CellY);
 				(guest.CellX, guest.CellY) = cell;
@@ -830,14 +830,15 @@ public sealed class GuestSimulation : IRideVisitorHost
 	}
 
 	/// <summary>
-	/// After a grid edit, a wander walk whose route lost a path cell ends where the guest stands, as the original's walk step reports
-	/// "stuck" (2); the guest then picks again or decides at its next turn. A guest left off the paths steps back onto the nearest one.
+	/// After a grid edit, a wander walk whose route ahead lost a path cell or a link ends where the guest stands, as the original's walk
+	/// step reports "stuck" (2); the guest then picks again or decides at its next turn (state 7). A guest left off the paths is put on the
+	/// nearest one.
 	/// </summary>
 	private void EndBrokenWalks()
 	{
 		foreach ( var guest in guests )
 		{
-			if ( guest.State != GuestState.WalkingAround || !guest.HasWaypoint || guest.Navigation.Route.All( cell => Grid.IsWalkable( cell.X, cell.Y ) ) )
+			if ( guest.State != GuestState.WalkingAround || !guest.HasWaypoint || RouteAheadHolds( guest.Navigation ) )
 				continue;
 			var navigation = guest.Navigation;
 			navigation.SetDestination( navigation.X, navigation.Y, [] );
@@ -846,8 +847,28 @@ public sealed class GuestSimulation : IRideVisitorHost
 			if ( Grid.IsWalkable( cell.X, cell.Y ) )
 				(guest.CellX, guest.CellY) = cell;
 			else
-				ReturnToPath( guest, cell );
+			{
+				var (x, y) = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
+				PlaceOnGrid( guest, x, y );
+			}
 		}
+	}
+
+	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
+	private bool RouteAheadHolds( GuestNavigation navigation )
+	{
+		var route = navigation.Route;
+		var from = Math.Max( 0, Array.IndexOf( route, navigation.Cell ) );
+		for ( var index = from; index < route.Length; index++ )
+		{
+			var (x, y) = route[index];
+			if ( !Grid.IsWalkable( x, y ) )
+				return false;
+			if ( index + 1 < route.Length && GuestPathGrid.DirectionBetween( x, y, route[index + 1].X, route[index + 1].Y ) is var direction
+				&& (direction < 0 || !Grid.AreConnected( x, y, direction )) )
+				return false;
+		}
+		return true;
 	}
 
 	/// <summary>Sets a wander destination (<see cref="GuestWander"/>) and the shortest route to it; false when there is none.</summary>

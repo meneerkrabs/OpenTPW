@@ -90,8 +90,8 @@ EXPECTED = {
     ('tpw-exe-guest-state6', 'plan'): AGREE,
     # X19 (wander destination 0x4f9490, GUEST-010): GuestWander's steps, draws and sub-cell bytes on synthetic cells.
     ('tpw-exe-wander-destination', 'plan'): AGREE,
-    # The rule a step reads is the current cell's own link; with links on either side 159 differ (inputs with one-sided links).
-    ('tpw-exe-wander-destination', 'either-side-links'): (159, ((25, 34), 33265851)),
+    # The rule a step reads is the current cell's own link; with links on either side 164 differ (inputs with one-sided links).
+    ('tpw-exe-wander-destination', 'either-side-links'): (164, ((24, 31), 1062577813)),
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],

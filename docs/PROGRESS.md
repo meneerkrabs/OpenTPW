@@ -329,8 +329,8 @@ preview; original runtime fidelity and the complete offline scope remain open.
   major choice at most every 30 turns, or picks a wander destination one to five cells away and walks there (state 7); the 3-second
   decision timer and the one-cell wander are gone. A choice that finds nothing costs a little happiness, so a park without rides empties.
   The leaving test runs in state 6 only: a guest that walks through the four turns its counter reads 0 stays. Saves move to guest schema
-  3 (schema 1 and 2 still load), the world hash schema to 13, and three behaviour pins moved (the fixed-run hash, the cross-grid run
-  63 admissions, the Jungle run's hash). The x86 sandbox gives routines with a frame handler an `fs` segment.
+  3 (schema 1 and 2 still load), the world hash schema to 13, and three behaviour pins moved (the fixed-run hash, the cross-grid run's
+  hash with 60 admissions, the Jungle run with 23). The x86 sandbox gives routines with a frame handler an `fs` segment.
 - ECON-015 is retired: tp.exe's researcher update `0x502960` skips display states 3, 4 and 5 of `0x5064f0`, which maps the internal
   staff state to the STAFFSTATES names (Idle, Patrolling, Working, Resting, On strike, Picked up); C#'s StaffState is that index, and its
   exclusion of Resting, OnStrike and PickedUp is the original's. GUEST-007 is narrowed with the prank rule of the state-6 handler.

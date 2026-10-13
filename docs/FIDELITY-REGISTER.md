@@ -740,7 +740,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-020 | `source/OpenTPW/Online/OnlineScreens.cs:635` | [APPROX:ONLINE-020] the original's last row showed the Instant action mode flag, which the package does |
 | ONLINE-021 | `source/OpenTPW/Online/OnlineScreens.cs:1023` | [APPROX:ONLINE-021] which action each original button carried is not decoded: the bar is vote, earmuffs, |
 | ONLINE-022 | `source/OpenTPW/Online/OnlineScreens.cs:825` | park's map view. [APPROX:ONLINE-022] the camcorder snapshot is not reproduced, and no park reference is |
-| ONLINE-023 | `source/OpenTPW.Server/ServerProgram.cs:430` | [APPROX:ONLINE-023] the original showed swear words in park names as asterisks (FAQ, S2), so the name is |
+| ONLINE-023 | `source/OpenTPW.Server/ServerProgram.cs:432` | [APPROX:ONLINE-023] the original showed swear words in park names as asterisks (FAQ, S2), so the name is |
 | ONLINE-024 | `source/OpenTPW.Server/ChatHub.cs:317` | [APPROX:ONLINE-024] the original notification's string is not recovered; CHAT_COMMANDS 111-113 ("Your buddy ") |
 | ONLINE-024 | `source/OpenTPW/Online/OnlineSession.cs:44` | [APPROX:ONLINE-024] the original notification's string is not recovered; the wording is OpenTPW's own |
 | ONLINE-076 | `source/OpenTPW.Server/ServerStore.cs:841` | [APPROX:ONLINE-076] every visit earned the owner Platinum Tickets (FAQ, S2), but the original's guard against |
@@ -1001,9 +1001,9 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:12` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
 | ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:652` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
 | ONLINE-056 | `source/OpenTPW.Server/NewsFeed.cs:10` | [EXT:ONLINE-056] the original fetched news from EA's news server; an OpenTPW server serves the operator's text files |
-| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:62` | [EXT:ONLINE-057] the project website reads the public news and website park list from the browser |
-| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:310` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
-| ONLINE-058 | `source/OpenTPW.Server/ServerProgram.cs:246` | [EXT:ONLINE-058] a release asks the host to update: the server only leaves a file in its data folder, which the |
+| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:63` | [EXT:ONLINE-057] the project website reads the public news and website park list from the browser |
+| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:312` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
+| ONLINE-058 | `source/OpenTPW.Server/ServerProgram.cs:248` | [EXT:ONLINE-058] a release asks the host to update: the server only leaves a file in its data folder, which the |
 | ONLINE-059 | `source/OpenTPW.Server/CityDirectory.cs:11` | [EXT:ONLINE-059] the original city list came from EA's city server and is lost: only "North Pole" (the Bullfrog |
 | ONLINE-060 | `source/OpenTPW/Online/OnlineFolders.cs:7` | [EXT:ONLINE-060] The player's online folder: exported parks, downloaded (visited) parks and the |
 | ONLINE-061 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:14` | &lt;summary&gt;[EXT:ONLINE-061] Edition label; OpenTPW cannot yet tell Theme Park World from Sim Theme Park installs.&lt;/summary&gt; |
@@ -1063,8 +1063,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | maexah/OpenTPW park-gate.md | `source/OpenTPW/World/ParkGate.cs:30` | [EXT:maexah/OpenTPW park-gate.md] led this port; the Mac addresses above were verified in |
 | online-email | `source/OpenTPW.Server/EmailSender.cs:19` | [EXT:online-email] Sends through the Resend API (&lt;c&gt;POST https://api.resend.com/emails&lt;/c&gt;). The API key comes from the |
 | online-email | `source/OpenTPW.Server/EmailTexts.cs:7` | [EXT:online-email] Account e-mails in the six languages of the game (the player's game language, else English). |
-| online-email | `source/OpenTPW.Server/ServerProgram.cs:92` | [EXT:online-email] account e-mails go through Resend when a key is set; without one, e-mail is off |
-| online-email | `source/OpenTPW.Server/ServerProgram.cs:340` | [EXT:online-email] the address of a new account, confirmed with a code; then recovery by e-mail. |
+| online-email | `source/OpenTPW.Server/ServerProgram.cs:93` | [EXT:online-email] account e-mails go through Resend when a key is set; without one, e-mail is off |
+| online-email | `source/OpenTPW.Server/ServerProgram.cs:342` | [EXT:online-email] the address of a new account, confirmed with a code; then recovery by e-mail. |
 | online-email | `source/OpenTPW/Online/OnlineScreens.cs:397` | [EXT:online-email] recovery by e-mail; the server answers the same whether the account exists |
 | online-email | `source/OpenTPW/Online/OnlineScreens.cs:454` | [EXT:online-email] the recovery address of the new account, confirmed with a code before the account exists |
 | online-email | `source/OpenTPW/Online/OnlineScreens.cs:493` | [EXT:online-email] Recovery by e-mail: a code sent to the account's address sets a new password, and on request sets up |

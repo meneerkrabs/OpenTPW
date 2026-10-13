@@ -74,7 +74,7 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - run: docker build -f source/OpenTPW.Server/Dockerfile -t opentpw-server .
+      - run: docker build --build-arg BUILD_REVISION="${{ github.sha }}" -f source/OpenTPW.Server/Dockerfile -t opentpw-server .
       - name: Serve the page and the API from the image
         run: |
           docker run -d --name opentpw -p 127.0.0.1:8080:8080 opentpw-server

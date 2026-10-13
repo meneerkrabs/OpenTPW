@@ -7,10 +7,11 @@
 ARG WEB_CLIENT=true
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS server
+ARG BUILD_REVISION
 WORKDIR /src
 COPY source/OpenTPW.Online/ source/OpenTPW.Online/
 COPY source/OpenTPW.Server/ source/OpenTPW.Server/
-RUN dotnet publish source/OpenTPW.Server/OpenTPW.Server.csproj -c Release -o /app --nologo
+RUN dotnet publish source/OpenTPW.Server/OpenTPW.Server.csproj -c Release -o /app --nologo -p:SourceRevisionId="$BUILD_REVISION"
 
 # The browser build compiles the game's own sources (no game data) to WebAssembly, ahead of time:
 # AOT halves the cold park construction and the first buy-menu frames against the interpreter, with

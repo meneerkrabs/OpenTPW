@@ -103,6 +103,7 @@ public class OriginalObject : Entity
 				: new OriginalObjectRuntime( entry, world, seed, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
+			Runtime.SetEventOrigin(() => System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, Placement.ModelToEngine));
 			BuildModels();
 			UpdateTransforms();
 		}

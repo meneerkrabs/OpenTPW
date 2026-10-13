@@ -21,6 +21,34 @@ staff chatter, so those runs do not verify their natural gameplay triggers. The
 weather cadence, staff presentation stream, listener mapping and held-chain timing
 retain the qualifications in the approximation register.
 
+## Placed sound EVENT origins
+
+Placed objects now route sound EVENT types 3–9 through the existing positional audio
+API. The origin is the same placement/render transform applied to model-space zero,
+sampled when the instruction executes. It does not follow an animated dummy key.
+Headless runtimes, an absent origin or a nonfinite result keep the existing flat
+fallback. Types 0, 1, 2 and 10 never sample an audio origin or produce sound through
+this route. AUDIO-908 qualifies the unverified relation to the native emitter anchor
+and its update timing; no native box midpoint for screams is inferred.
+
+The existing positioned API's flag `0x8` loop policy (AUDIO-019) remains intact;
+formerly flat placed calls now reach that policy. Returned loop voices belong to
+the object runtime, including events from its children, and stop when that runtime
+stops or the object is deleted. Park teardown deletes the park's objects and follows
+the same cleanup. One-shots keep their existing mixer lifetime. This adds no new
+audio handle encoding or controller rule and does not stop another object's voices.
+
+An alive looping EVENT voice makes runtime/world-save capture refuse with a clear
+reason: live audio persistence is unsupported. One-shots, finished voices and
+headless/no-audio or stopped owners remain eligible. No save schema changes or
+audio continuation/parity claim are introduced by this eligibility restriction.
+
+Synthetic tests use a valid dummy-only model with no render parts, actual placed
+objects, the real VM/effects path and the real mixer with synthetic decoded PCM.
+They check every routed type, coordinates/range, flat refusal controls, per-call
+sampling and loop ownership. Original assets, GPU behavior and native emitter
+geometry/timing remain unqualified.
+
 ## RSE particle events are outside the sound service
 
 Static inspection of the identified Feral Mac application corrects the earlier

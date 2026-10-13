@@ -684,3 +684,12 @@ The developer prototype Totem shares the ordinary objects' per-tick economy
 synchronization: its visitor bridge receives the linked instance's wear, age
 and sideshow terms, while its script supplies open and broken status.
 `PrototypeEconomySyncTests` checks this without original assets or a GPU.
+
+The All Visitors window consumes the plain V edge only when the registered
+Ctrl+V visitor-locator chord is not down. The locator retains its existing park,
+modal and ride-view gates, while plain V retains the existing window toggle
+behavior. `HudModifierShortcutTests` checks both physical Ctrl with injected V
+and a fully injected chord through actual button rebuilding; Ctrl+S remains
+the staff locator (plain S stays unhandled here), and Ctrl+P remains excluded
+from the pause key. Global bindings and help shortcuts are unchanged by this fix.
+These are synthetic model/input checks, not rendered or original-game parity.

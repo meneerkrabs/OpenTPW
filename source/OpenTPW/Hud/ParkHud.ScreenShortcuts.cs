@@ -129,7 +129,7 @@ public sealed partial class ParkHud
 			HudScreenShortcut.StaffCosts => Input.Pressed( InputButton.StaffBudgets ),
 			HudScreenShortcut.EntryPrice => Input.Pressed( InputButton.EntryPrice ),
 			HudScreenShortcut.StaffApplicants => Input.Pressed( InputButton.HireStaff ) && !HelpChordDown,
-			HudScreenShortcut.VisitorWindow => Input.Pressed( InputButton.AllVisitors ),
+			HudScreenShortcut.VisitorWindow => VisitorWindowShortcutPressed(),
 			HudScreenShortcut.TimeFaster => Input.Pressed( InputButton.TimeSpeedUp ),
 			HudScreenShortcut.TimeSlower => Input.Pressed( InputButton.TimeSlowDown ),
 			HudScreenShortcut.TimeNormal => Input.Pressed( InputButton.TimeReset ),
@@ -140,6 +140,9 @@ public sealed partial class ParkHud
 			_ => false,
 		};
 	}
+
+	/// <summary>The plain V window edge; the registered Ctrl+V locator chord owns its raw V match.</summary>
+	internal static bool VisitorWindowShortcutPressed() => Input.Pressed( InputButton.AllVisitors ) && !Input.Down( InputButton.VisitorLocator );
 
 	private void ApplyShortcut( HudScreenShortcut shortcut )
 	{

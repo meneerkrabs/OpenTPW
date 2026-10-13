@@ -42,6 +42,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private OriginalObject? secondObject;
 	private BuildItem? secondItem;
 	private bool queueToolAfterSecond;
+	private string[] visitBaselineFiles = Array.Empty<string>();
 	private int purchaseEvents;
 	private int smokeStaffId;
 
@@ -733,6 +734,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
+		// The park-resume lane cannot snapshot the advisor while a response is being spoken (the speech has no
+		// snapshot seam), so the save below waits for the end of any active advisor speech first.
+		steps.Enqueue( ("advisor speech ends", () => flow.Advisor?.IsSpeechActive != true) );
 		Do( "pause menu", () =>
 		{
 			Require( flow.Hud!.Paused, "Escape opens the pause menu" );
@@ -741,10 +745,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );
 			Click( flow.Hud.Stack.Top!, nameof( UIStrings.Save ) );
 		} );
-		Wait( "save refused", 3 );
-		Do( "save refused", () =>
+		Wait( "save completes", 3 );
+		Do( "save completes", () =>
 		{
-			Require( !flow.Hud!.Paused && flow.Hud.Messages.Contains( flow.Strings.Extra( OpenTpwText.OriginalParkReadOnly ) ), "original parks report that they cannot be saved" );
+			// The park-resume lane saves a front-end-started original-level park as an own-format world save
+			// (GameFlow.Resume.cs SaveCurrentPark); the old read-only refusal is gone.
+			var savedPath = Path.Combine( temporaryDirectory, $"opentpw-{flow.Level!.LevelName}-world.json" );
+			Log.Trace( $"Front-end smoke: save check paused={flow.Hud!.Paused} file={File.Exists( savedPath )} ({savedPath}) messages=[{string.Join( " | ", flow.Hud.Messages )}]" );
+			Require( !flow.Hud!.Paused && File.Exists( savedPath ) && flow.Hud.Messages.Contains( flow.Strings.Extra( OpenTpwText.ParkSaved ) ),
+				"the pause-menu Save writes the own-format world save and reports it" );
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
@@ -812,6 +821,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
+			// The own-format world save of the earlier pause-menu Save is legitimate; the visit must add nothing.
+			visitBaselineFiles = Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).ToArray();
 			flow.StartLevel( "jungle", original: true, developerPanels: false, visit: readOnlyVisit );
 		} );
 		Wait( "read-only visit loads", 40 );
@@ -845,7 +856,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			hud.OpenPauseMenu();
 			// The online game type's pause menu (STP-PPC 0x10197D90) offers no Save or Load during a visit.
 			Require( hud.Stack.Top!.Find( nameof( UIStrings.Save ) ) == null && hud.Stack.Top.Find( nameof( UIStrings.Load ) ) == null, "the visit pause menu has no save or load" );
-			Require( !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "a visit writes no save" );
+			Require( !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Except( visitBaselineFiles ).Any(), "a visit writes no save" );
 			CaptureFrame( "read-only-visit.png" );
 			Click( hud.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );

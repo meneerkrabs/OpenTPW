@@ -27,7 +27,10 @@ interrupted hashing, file write/close rejection, manifest write/close rejection,
 failed cached reads, failed replacement publication, and failed pre-replacement
 invalidation. They complement existing successful caching, real SHA-256 content
 comparison, overlapping manifest flush, folder replacement and removal checks.
-All 45 browser-helper Node tests pass, including the texture and performance
+Independent controls also keep the old bytes/hash readable during deferred
+hashing without opening a writable file, and verify pre-invalidation write and
+close failure/retry with content-sensitive hashes.
+All 47 browser-helper Node tests pass, including the texture and performance
 helper selections; these results are functional checks, not performance data.
 
 Failed rewrites can temporarily invalidate cache availability, even when the

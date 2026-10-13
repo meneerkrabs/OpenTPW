@@ -136,6 +136,50 @@ test('a failed content digest leaves the previously kept bytes and manifest cons
 	assert.equal(await store.matches('Data/ui.wad', bytes('UI')), true);
 });
 
+test('a pending digest leaves the old cache readable without opening a writable file', async () => {
+	const root = new FakeDirectory();
+	let delay = false;
+	let started;
+	let reject;
+	const hashing = new Promise(resolve => started = resolve);
+	const contentDigest = async data => {
+		if (delay) {
+			started();
+			return await new Promise((resolve, fail) => reject = fail);
+		}
+		return new TextDecoder().decode(data);
+	};
+	const store = await openOriginalStore(root, { digest: contentDigest });
+	await store.begin('lazy', folder);
+	await store.write('Data/ui.wad', bytes('ui'));
+	await store.flush();
+	const directory = await root.getDirectoryHandle('opentpw-originals');
+	const file = await (await directory.getDirectoryHandle('Data')).getFileHandle('ui.wad');
+	const original = file.createWritable.bind(file);
+	let opened = 0;
+	file.createWritable = async () => { opened++; return original(); };
+	delay = true;
+	const pending = store.write('Data/ui.wad', bytes('UI'));
+	await hashing;
+	assert.equal(new TextDecoder().decode(await store.read('Data/ui.wad')), 'ui');
+	const during = await openOriginalStore(root, { digest: contentDigest });
+	assert.equal(new TextDecoder().decode(await during.read('Data/ui.wad')), 'ui');
+	assert.equal(during.manifest.files['Data/ui.wad'].sha256, 'ui');
+	assert.equal(opened, 0);
+	const failed = assert.rejects(pending, /delayed digest failed/);
+	reject(new Error('delayed digest failed'));
+	await failed;
+	assert.equal(store.has('Data/ui.wad'), true);
+	assert.equal(store.manifest.files['Data/ui.wad'].sha256, 'ui');
+	assert.equal(opened, 0);
+	delay = false;
+	await store.write('Data/ui.wad', bytes('UI'));
+	await store.flush();
+	const retried = await openOriginalStore(root, { digest: contentDigest });
+	assert.equal(new TextDecoder().decode(await retried.read('Data/ui.wad')), 'UI');
+	assert.equal(retried.manifest.files['Data/ui.wad'].sha256, 'UI');
+});
+
 test('a digest finishing after the folder was cleared cannot overwrite the new installation', async () => {
 	const root = new FakeDirectory();
 	let release;
@@ -199,22 +243,33 @@ for (const operation of ['write', 'close']) {
 	});
 }
 
-test('a failed pre-replacement manifest flush retries invalidation before changing bytes', async () => {
-	const root = new FakeDirectory();
-	const store = await openOriginalStore(root, { digest });
-	await store.begin('lazy', folder);
-	await store.write('Data/ui.wad', bytes('ui'));
-	await store.flush();
-	const directory = await root.getDirectoryHandle('opentpw-originals');
-	rejectNext(await directory.getFileHandle('manifest.json'), 'write');
-	await assert.rejects(store.write('Data/ui.wad', bytes('UI')));
-	const previous = await openOriginalStore(root, { digest });
-	assert.equal(new TextDecoder().decode(await previous.read('Data/ui.wad')), 'ui');
-	await store.write('Data/ui.wad', bytes('UI'));
-	assert.equal((await openOriginalStore(root, { digest })).has('Data/ui.wad'), false);
-	await store.flush();
-	assert.equal(new TextDecoder().decode(await (await openOriginalStore(root, { digest })).read('Data/ui.wad')), 'UI');
-});
+for (const operation of ['write', 'close']) {
+	test(`a failed pre-replacement manifest ${operation} retries invalidation before changing bytes`, async () => {
+		const root = new FakeDirectory();
+		const contentDigest = async data => new TextDecoder().decode(data);
+		const store = await openOriginalStore(root, { digest: contentDigest });
+		await store.begin('lazy', folder);
+		await store.write('Data/ui.wad', bytes('ui'));
+		await store.flush();
+		const directory = await root.getDirectoryHandle('opentpw-originals');
+		const file = await (await directory.getDirectoryHandle('Data')).getFileHandle('ui.wad');
+		const original = file.createWritable.bind(file);
+		let opened = 0;
+		file.createWritable = async () => { opened++; return original(); };
+		rejectNext(await directory.getFileHandle('manifest.json'), operation);
+		await assert.rejects(store.write('Data/ui.wad', bytes('UI')));
+		assert.equal(opened, 0, 'A failed invalidation cannot open the replacement file');
+		const previous = await openOriginalStore(root, { digest: contentDigest });
+		assert.equal(new TextDecoder().decode(await previous.read('Data/ui.wad')), 'ui');
+		assert.equal(previous.manifest.files['Data/ui.wad'].sha256, 'ui');
+		await store.write('Data/ui.wad', bytes('UI'));
+		assert.equal((await openOriginalStore(root, { digest })).has('Data/ui.wad'), false);
+		await store.flush();
+		const retried = await openOriginalStore(root, { digest: contentDigest });
+		assert.equal(new TextDecoder().decode(await retried.read('Data/ui.wad')), 'UI');
+		assert.equal(retried.manifest.files['Data/ui.wad'].sha256, 'UI');
+	});
+}
 
 test('the modes and the browser check', () => {
 	assert.deepEqual(MODES, ['lazy', 'all', 'off']);

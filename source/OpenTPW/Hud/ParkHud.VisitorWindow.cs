@@ -137,7 +137,7 @@ public sealed partial class ParkHud
 	private string[] KidStates => kidStates ??= GameLanguage.Current.LoadStrings( "KIDSTATES.str" ).Entries;
 	private string[] Thoughts => thoughts ??= GameLanguage.Current.LoadStrings( "THOUGHTS.str" ).Entries;
 
-	/// <summary>The selected visitor's detail rows: the original visitor labels, then the live thought row.</summary>
+	/// <summary>The selected visitor's detail rows: the original labels, elapsed simulation duration (unknown stays an em dash), then the live thought row.</summary>
 	// [EXT:overview] the current thought is a live OpenTPW row with a supplementary label (no original label is decoded).
 	private (string Label, string Value)[] VisitorDetailRows( Guest? guest )
 	{

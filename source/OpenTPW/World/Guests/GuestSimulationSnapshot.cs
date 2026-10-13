@@ -51,6 +51,8 @@ public sealed record GuestSnapshot
 	/// schema 1 store the former seconds-based value as a fraction; the restore truncates it toward zero, and the two
 	/// units nearly agree (one count per 0.992 s, ORACLE.md F26).</summary>
 	public required double ExitLevel { get; init; }
+	/// <summary>Optional display duration in simulated seconds. Older saves omit it; null stays unknown.</summary>
+	public double? TimeInParkSeconds { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
 	public required GuestThought Thought { get; init; }

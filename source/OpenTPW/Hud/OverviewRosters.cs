@@ -116,15 +116,24 @@ internal static class ParkVisitorRoster
 	/// Detail rows of <paramref name="guest"/> from the original visitor labels (UITEXT 66 status,
 	/// 114-118 cash/time/rides/happiness): live values where simulated, null = "not simulated".
 	/// </summary>
-	// [APPROX:UI-908] time in park is not simulated (no arrival time is recorded) — evidence needed: the original visitor detail bindings
+	// [APPROX:UI-908] time in park displays OpenTPW simulated elapsed HH:MM:SS (unknown is an em dash) — evidence needed: the original visitor detail bindings and time display units
 	public static (UIStrings Label, string? Value)[] StatRows( Guest guest, string[] kidStates, Func<long, string> money ) => new[]
 	{
 		(UIStrings.CurrentStatus, StatusOf( guest, kidStates )),
 		(UIStrings.CashRemainingVisitor, money( guest.Money )),
-		(UIStrings.TimeInParkVisitor, (string?)null),
+		(UIStrings.TimeInParkVisitor, TimeInPark( guest )),
 		(UIStrings.RidesRiddenVisitor, guest.RidesTaken.ToString( System.Globalization.CultureInfo.InvariantCulture )),
 		(UIStrings.HappinessVisitor, $"{HappinessPercent( guest.Happiness )}%"),
 	};
+
+	/// <summary>Elapsed simulation time, floored to whole seconds; old-save unknown durations stay unknown.</summary>
+	public static string TimeInPark( Guest guest )
+	{
+		if ( guest.TimeInParkSeconds is not { } elapsed )
+			return "—";
+		var seconds = (long)Math.Floor( elapsed );
+		return FormattableString.Invariant( $"{seconds / 3600:D2}:{seconds / 60 % 60:D2}:{seconds % 60:D2}" );
+	}
 
 	/// <summary>Happiness as a whole percent, clamped 0..100 (like the staff window's happiness row).</summary>
 	public static int HappinessPercent( float happiness ) => (int)Math.Round( Math.Clamp( happiness, 0, 100 ) );

@@ -93,6 +93,11 @@ public sealed class Guest
 	/// needs phase of the guest (every fourth park turn, 0.992 s: the .sam's "seconds"), in every state. It is a signed word and runs negative after 0.
 	/// </summary>
 	public int ExitLevel { get; internal set; }
+	/// <summary>Display-only simulated seconds since admission; null means the prior duration is unknown.
+	/// Seeded in-park guests start at zero. Outside travel and the queue before admission do not count.</summary>
+	public double? TimeInParkSeconds { get; internal set; }
+	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
+	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }
 	public int RidesTaken { get; internal set; }
 	public GuestThought Thought { get; internal set; }

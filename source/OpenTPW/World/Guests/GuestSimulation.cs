@@ -230,6 +230,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var guest = Create();
 		PlaceOnGrid( guest, x, y );
 		guest.State = GuestState.WalkingAround;
+		guest.TimeInParkSeconds = 0;
 		guest.DecisionTimer = 0;
 		return guest;
 	}
@@ -285,8 +286,12 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	public void Tick( float deltaSeconds )
 	{
-		if ( !float.IsFinite( deltaSeconds ) || deltaSeconds < 0 )
+		if ( !float.IsFinite( deltaSeconds ) || deltaSeconds < 0 || deltaSeconds > Guest.MaximumTimeInParkSeconds )
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
+		// Preflight the display counter before mutating the simulation, rather than wrapping or inventing a duration.
+		foreach ( var guest in guests )
+			if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed && deltaSeconds > Guest.MaximumTimeInParkSeconds - elapsed )
+				throw new OverflowException( $"Guest {guest.Id} time in park exceeds the supported duration." );
 		TickCount++;
 		TimeSeconds += deltaSeconds;
 		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
@@ -369,8 +374,13 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
 		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone);
 
+	private bool CountsParkTime( Guest guest ) => InPark( guest ) && !guest.LaneReversed;
+
 	private void UpdateGuest( Guest guest, float dt )
 	{
+		// [APPROX:GUEST-920] elapsed simulated seconds begin at successful admission (seeded guests at zero), stop on road-home travel, and omit the admission tick — evidence needed: original visitor elapsed-time update and admission boundary
+		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
+			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
 			UpdateSpeed( guest );
 		if ( turnStarted )
@@ -700,6 +710,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			return;
 		}
 		guest.Money -= fee;
+		guest.TimeInParkSeconds = 0;
 		Admissions++;
 		if ( fee > 0 )
 			MoneySpent?.Invoke( guest, fee, 0 );
@@ -1565,6 +1576,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Happiness = guest.Happiness,
 			Money = guest.Money,
 			ExitLevel = guest.ExitLevel,
+			TimeInParkSeconds = guest.TimeInParkSeconds,
 			SecondsSinceRide = guest.SecondsSinceRide,
 			RidesTaken = guest.RidesTaken,
 			Thought = guest.Thought,
@@ -1809,6 +1821,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Bounded( guest.Id, guest.Happiness, nameof( guest.Happiness ), 0, 100 );
 			Bounded( guest.Id, guest.Nausea, nameof( guest.Nausea ), 0, 100 );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
+			if ( guest.TimeInParkSeconds is { } elapsed && (!double.IsFinite( elapsed ) || elapsed < 0 || elapsed > Guest.MaximumTimeInParkSeconds) )
+				Error( $"Guest {guest.Id} time in park is negative, not finite or exceeds the supported duration." );
 			Bounded( guest.Id, guest.SecondsSinceRide, nameof( guest.SecondsSinceRide ), 0, 1_000_000 );
 			// Schema 1 predates the histories (they start empty); from schema 2 on they must be whole.
 			foreach ( var (name, history) in new[] { (nameof( guest.UsedHistory ), guest.UsedHistory), (nameof( guest.TemporaryHistory ), guest.TemporaryHistory) } )
@@ -2087,6 +2101,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.Money = snapshot.Money;
 		// Schema 1 stored the former seconds-based value as a fraction; truncating toward zero keeps it a counter (one per 0.992 s).
 		guest.ExitLevel = (int)Math.Truncate( snapshot.ExitLevel );
+		guest.TimeInParkSeconds = snapshot.TimeInParkSeconds;
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
 		guest.Thought = snapshot.Thought;
@@ -2150,7 +2165,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			navigation.Buffer[index] = navigation.Route[navigationSnapshot.Cursor + index];
 	}
 
-	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: every field the next tick reads, in id order.</summary>
+	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: gameplay fields, in id order.
+	/// TimeInParkSeconds is saved display metadata and is excluded, like interpolated draw positions.</summary>
 	internal void AddCanonicalState( StateHasher hash )
 	{
 		hash.Add( TickCount );
@@ -2247,7 +2263,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 	}
 
-	/// <summary>FNV-1a over every guest's simulation state, the RNG and the counters.</summary>
+	/// <summary>FNV-1a over guest gameplay state, the RNG and counters; display-only TimeInParkSeconds is excluded.</summary>
 	public ulong ComputeStateHash()
 	{
 		var hash = 14695981039346656037UL;

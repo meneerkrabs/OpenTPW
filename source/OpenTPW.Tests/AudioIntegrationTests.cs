@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -218,6 +219,65 @@ public class AudioIntegrationTests
 			Assert.IsTrue( other.IsStopped );
 		}
 		finally { first.Stop(); second.Stop(); }
+	}
+
+	[TestMethod]
+	public void OriginalParticleEventInstructionsRemainUnimplementedWithoutCreatingAudio()
+	{
+		// [BIN:STP-PPC:0x100AE97C particle EVENT] types 1/2 resolve model keys and allocate particle pool handles, never sound voices
+		// Inject shipped EVENT operands through the VM handler and real object-effects hook; do not run unrelated ride triggers.
+		var entry = ObjectCatalog.Load( "jungle" ).Entries.Single( item => item.ScriptPath?.EndsWith( "Totem.RSE", StringComparison.OrdinalIgnoreCase ) == true );
+		var owner = new OriginalObjectRuntime( entry, seed: 1 );
+		var counts = new int[3];
+		var negativeKeys = 0;
+		try
+		{
+			// Load real categories so refusing particles cannot pass merely because audio is unavailable.
+			foreach ( var (property, category) in new[] { ("Rides", "cat_rides"), ("LevelRides", "cat_rides"), ("LevelAmbient", "cat_ambient") } )
+			{
+				var directory = property.StartsWith( "Level", StringComparison.Ordinal ) ? "/levels/jungle/Sound" : "/global/sound";
+				var loaded = SoundCategory.TryLoad( FileSystem, directory, category );
+				Assert.IsNotNull( loaded );
+				SetField( $"<{property}>k__BackingField", loaded );
+			}
+			Assert.IsNotNull( GameAudio.FindRseEvent( 3, 43 ), "a control sound ID really resolves in these loaded catalogs" );
+			foreach ( var level in new[] { "jungle", "space", "fantasy", "hallow" } )
+				foreach ( var item in ObjectCatalog.Load( level ).Entries.Where( item => item.ScriptPath != null ) )
+				{
+					using var original = FileSystem.OpenRead( item.ScriptPath! );
+					RideScriptFile script;
+					try { script = new RideScriptFile( original ); }
+					catch ( InvalidDataException ) { continue; }
+					foreach ( var instruction in script.Instructions.Where( instruction => instruction.Opcode == (ushort)Opcode.EVENT ) )
+					{
+						var type = instruction.Operands[0];
+						if ( type.Kind != RideScriptOperandKind.Literal || type.Value is not (1 or 2) )
+							continue;
+						counts[type.Value]++;
+						if ( instruction.Operands[1] == new RideScriptOperand( RideScriptOperandKind.Literal, 0xffff ) )
+							negativeKeys++;
+						var words = new[] { 0x8000_0000u | (uint)Opcode.EVENT }
+							.Concat( instruction.Operands.Select( operand => ((uint)operand.Kind << 16) | operand.Value ) )
+							.Append( 0x8000_0000u | (uint)Opcode.ENDSLICE ).ToArray();
+						using var injected = new MemoryStream( RseScriptTests.CreateScript( words, Array.Empty<string>(), script.VariableNames.ToArray() ) );
+						var vm = new RideVM( injected, new RideVMOptions { Effects = owner.Script!.Effects, Seed = 1 } );
+						// Variable operands remain zero-initialized; this check qualifies dispatch/refusal, not particle identity or transform parity.
+						vm.Advance( FixedStepClock.TickDuration );
+						Assert.AreEqual( 1, vm.UnimplementedEffects[Opcode.EVENT], item.ScriptPath );
+						Assert.AreNotEqual( RideVMState.Faulted, vm.State, item.ScriptPath );
+						Assert.IsNull( GameAudio.RseEventCategory( type.Value ) );
+						Assert.IsNull( GameAudio.FindRseEvent( type.Value, 43 ), "matching numeric catalog IDs cannot turn particles into sounds" );
+						vm.Stop();
+					}
+				}
+			system.Pump();
+			Assert.AreEqual( 0, mixer!.Voices.Count, "particle requests never allocate audio voices" );
+			Assert.IsTrue( mixer.Mix( 4096 ).All( sample => sample == 0 ), "particle requests produce no PCM" );
+			Assert.IsTrue( counts[1] > 0 && counts[2] > 50, "both original particle dispatch types must be exercised" );
+			Assert.IsTrue( negativeKeys > 0, "the shipped -1 key sentinel reaches the existing hook" );
+			Console.WriteLine( $"Particle EVENT instructions checked: type 1={counts[1]}, type 2={counts[2]}, key -1={negativeKeys}." );
+		}
+		finally { owner.Stop(); }
 	}
 
 	[TestMethod]

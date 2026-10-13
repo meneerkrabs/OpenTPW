@@ -493,8 +493,8 @@ public static class GameAudio
 
 	/// <summary>
 	/// The sound category an RSE <c>EVENT</c> instruction's type operand selects, or null for a type the traced switch
-	/// does not route. One row per traced route: the type, the category, the sound-manager offset the submit loads the
-	/// category handle from and the submit's call site.
+	/// does not route. Types 1/2 create particles (0x1009FD70/0x1009F968), not sounds. One row per traced route:
+	/// the type, the category, the sound-manager offset the submit loads the category handle from and the submit's call site.
 	/// </summary>
 	// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] each type loads its category handle from the sound-manager offset and submits the id operand as the event at the object's position
 	public static readonly (int Type, string Category, int HandleOffset, uint SubmitAt)[] RseEventRoutes =
@@ -508,7 +508,7 @@ public static class GameAudio
 		(9, "cat_ui", 12, 0x100AEE10),          // global UI
 	};
 
-	/// <summary>The category an RSE <c>EVENT</c> instruction's type operand selects, or null for a type the traced switch does not route.</summary>
+	/// <summary>The audio category selected by an RSE <c>EVENT</c> type; null for particles (1/2), the default (0) or the unsupported custom bank (10).</summary>
 	public static SoundCategory? RseEventCategory( int type ) => type switch
 	{
 		3 => LevelRides,

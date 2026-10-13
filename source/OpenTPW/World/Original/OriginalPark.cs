@@ -52,7 +52,9 @@ public sealed class OriginalPark
 		// [APPROX:COMPAT-019] Theme Park Inc ships its lake as a separate model; the finished lake (dlake.MD2, not lake.MD2 with its building site) is drawn
 		var lakePath = FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
 		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
-		var catalog = LoadCatalog( levelName );
+		IReadOnlyDictionary<int, OriginalObjectInfo> catalog;
+		using ( LoadProfile.Measure( "object-catalog" ) )
+			catalog = LoadCatalog( levelName );
 		OriginalParkImport? save = null;
 		// [DATA:PreBuilt/prebuilt.TPWS:cell grid] The sole shipped Theme Park Inc prebuilt save matches science/base.map in every cell.
 		var tpiPrebuilt = GameEditions.IsThemeParkInc && levelName.Equals( "science", StringComparison.OrdinalIgnoreCase );
@@ -64,6 +66,7 @@ public sealed class OriginalPark
 		// [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag)
 		if ( savePath != null )
 		{
+			using var saveProfile = LoadProfile.Measure( "shipped-save" );
 			using var stream = FileSystem.OpenRead( $"{saveDirectory}/{Path.GetFileName( savePath )}" );
 			using var reader = new SaveReader( stream );
 			var payload = reader.ReadFile();

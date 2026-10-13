@@ -797,6 +797,12 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Where the park start goes (October 13):** `LoadProfile` times named sections of a park start
+  for the browser harness (off by default). Cold Jungle in the AOT build: about 1,040 ms, of which
+  texture decoding is 63 ms (6 %) and model parsing 64 ms; the object catalogue (121 ms), the kid
+  sprite sets (108 ms), starting the park audio (131 ms) and placing the objects (253 ms) are the
+  large shares. A decoded-texture cache (phase 3 of the browser plan) would save too little and
+  waits; those sections are the next targets.
 - **Game files kept in the browser (October 13):** the browser page can keep the player's own
   game files in OPFS, so a later visit starts with Play instead of choosing the folder. The setup
   screen chooses what is kept: what the parks use (default), all at once, or nothing; a manifest

@@ -22,7 +22,7 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | --- | --- |
 | `start` (always first) | loading until the first frame and the lobby |
 | `lobby` | a steady window (`--window`, 30 s) in the lobby |
-| `jungle` | the cold start of Full Simulation Jungle (the construction frame), then a steady window |
+| `jungle` | the cold start of Full Simulation Jungle (the construction frame) with its load profile, then a steady window |
 | `buy` | the first buy-menu open (Aztec Mayhem selected) and the first Belly Bounce, Balloon Shop, Burger Shop and Drinks Shop selections |
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
 | `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
@@ -127,6 +127,34 @@ In these samples a 30 fps cap took 43 % off the main thread rather than half; th
 second and the page still runs one animation-frame callback per display frame. A cap at the
 display rate drew practically every frame. Input is read once per drawn frame, so a 30 fps cap
 can add about one display frame of input delay; that is why it stays off by default.
+
+## Where the cold park start goes (13 October)
+
+`LoadProfile` (`source/OpenTPW.Common/LoadProfile.cs`) times named sections of the park start when
+the harness turns it on (`PerfProfile`): the start's steps in `GameFlow.StartLevel` and the `Level`
+constructor, and the building blocks texture decoding, texture creation, model parsing and WAD
+reads. Off, a section costs a thread-id read and a comparison. Sections nest, so a parent includes
+its children. The harness reads the profile when the park is ready and again five seconds later; for
+cold Jungle the two are identical, so all of this happens during the start. Two runs of the AOT
+build on the M5 setup (interpreter in brackets, one run):
+
+| Section | AOT, ms | Within it |
+| --- | ---: | --- |
+| Whole start (`start-level`) | 1,010–1,047 (2,338) | |
+| Objects placed | 250–256 (386) | |
+| Original park read | 186 (297) | object catalogue 121 |
+| Guests | 151 (222) | kid sprite sets 107–108 |
+| Park audio started | 131–133 | |
+| Economy | 76 (132) | |
+| Terrain | 75–78 (257) | |
+| Texture decoding, 90 textures | 61–64 (243) | spread over the sections above |
+| Model parsing, 14 models | 62–64 (102) | spread over the sections above |
+| Texture creation, 129 / WAD reads, 295 | 5 / 2–3 | |
+
+In these runs decoding was about 6 % of the AOT start (10 % in the interpreter), so a cache of
+decoded textures could save at most about 60 ms of a Jungle start, less the time to read it back;
+the browser plan's phase 3 therefore waits. The larger shares are the object catalogue, the kid sprite sets, starting the park
+audio and the object placement: those, or spreading the start over frames, are the next targets.
 
 ## Game files kept in the browser (13 October)
 

@@ -92,19 +92,23 @@ public partial class Level : IDisposable
 		Current = this;
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
-			OriginalPark = OriginalPark.Load( levelName, readShippedSave: resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
+			using ( LoadProfile.Measure( "original-park" ) )
+				OriginalPark = OriginalPark.Load( levelName, readShippedSave: resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
 			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the
 			// balance keys it reads, so its worlds run without one and building stays free (docs/THEME-PARK-INC.md).
+			using var economyProfile = LoadProfile.Measure( "economy" );
 			if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
 				Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
 					: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 		}
 
-		SetupEntities();
+		using ( LoadProfile.Measure( "entities" ) )
+			SetupEntities();
 		if ( resume != null ) RestoreResumeSimulation( resume );
-		SetupHud( onlineFolders );
+		using ( LoadProfile.Measure( "level-hud" ) )
+			SetupHud( onlineFolders );
 		resumeState = null;
 		if ( visitLayout != null )
 			ApplyVisitedLayout();
@@ -181,7 +185,8 @@ public partial class Level : IDisposable
 		}
 		else
 		{
-			OriginalTerrain = new OriginalTerrain( OriginalPark );
+			using ( LoadProfile.Measure( "terrain" ) )
+				OriginalTerrain = new OriginalTerrain( OriginalPark );
 			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global ); }
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
@@ -207,13 +212,17 @@ public partial class Level : IDisposable
 				+ (save == null ? "; no original save." : $"; Easymode import: {save.PathCells.Count} path cells, {save.PlacedObjects.Count} placed objects, {save.FixedItems.Count} fixed items.")
 				+ (visitLayout != null ? $"; shared layout: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters." : "") );
 		}
-		SetupObjects();
-		SetupCoasters();
+		using ( LoadProfile.Measure( "objects" ) )
+			SetupObjects();
+		using ( LoadProfile.Measure( "coasters" ) )
+			SetupCoasters();
 		Camera.SetCameraMode<ParkCameraMode>();
 		if ( OriginalPark != null )
 		{
-			SetupGuests( OriginalPark );
-			SetupPaths();
+			using ( LoadProfile.Measure( "guests" ) )
+				SetupGuests( OriginalPark );
+			using ( LoadProfile.Measure( "paths" ) )
+				SetupPaths();
 			if ( OriginalTerrain != null && Guests != null )
 			{
 				var cells = Guests.Grid.Cells;
@@ -228,6 +237,7 @@ public partial class Level : IDisposable
 			ConnectObjectsToGuests();
 			if ( Guests != null )
 				Guests.WeatherDropsFalling = () => Weather is { CurrentDrops: > 0 };
+			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			SetupStaff();
 			SetupParkGate();
@@ -242,7 +252,9 @@ public partial class Level : IDisposable
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: GuestPathGrid.FromOriginal( park.Map, park.Save );
 		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream ) { OnlineVisit = Visit != null };
-		var sprites = GuestSpriteAtlas.LoadKids();
+		List<GuestSpriteAtlas> sprites;
+		using ( LoadProfile.Measure( "guest-sprites" ) )
+			sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );

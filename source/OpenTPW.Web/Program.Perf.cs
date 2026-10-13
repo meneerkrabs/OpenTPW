@@ -31,6 +31,20 @@ public static partial class Program
 		return state.ToJsonString();
 	}
 
+	/// <summary>Turns the load profile (<see cref="LoadProfile"/>) on, clearing it, or off.</summary>
+	[JSExport]
+	public static void PerfProfile( bool enabled ) => LoadProfile.Enable( enabled );
+
+	/// <summary>The load profile's sections as JSON: name → total milliseconds and count, largest first.</summary>
+	[JSExport]
+	public static string PerfLoadProfile()
+	{
+		var result = new JsonObject();
+		foreach ( var (name, (milliseconds, count)) in LoadProfile.Snapshot().OrderByDescending( entry => entry.Value.Milliseconds ) )
+			result[name] = new JsonObject { ["ms"] = Math.Round( milliseconds, 1 ), ["count"] = count };
+		return result.ToJsonString();
+	}
+
 	/// <summary>Frames the renderer has drawn; a frame the cap skips leaves it unchanged, so the page can tell drawn frames from skipped calls.</summary>
 	[JSExport]
 	public static double PerfFramesDrawn() => renderer?.FramesDrawn ?? 0;

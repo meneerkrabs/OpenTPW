@@ -422,7 +422,8 @@ glyph in all 14 UI fonts of each language.
   and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
   keep acting over their own window. Keys whose screens do not exist
-  (camcorder, postcard) stay unhandled. Ctrl+H toggles the existing contextual
+  (camcorder) stay unhandled. Postcard ingress uses its dedicated full-frame
+  action below. Ctrl+H toggles the existing contextual
   help popup (UI-920); it never activates the H staff window. Both Ctrl keys
   work, held chords toggle once, and input owners consume blocked presses.
   Until toggled, the HUD follows the global popup-help option. An explicit
@@ -572,7 +573,7 @@ the real assets. Approximation tags refer to the register below.
 | Quit Game (confirmation 9) | quits | wired | `OriginalUiTests` |
 
 Not implemented (no screen exists; their keys stay unhandled): camcorder mode
-(C), e-mail postcard (Ctrl+P), F1 advisor help speech,
+(C), F1 advisor help speech,
 player profiles, online world, golden keys. The All Attractions (A) and All
 Staff (S) keys stay with the camera's WASD pan by policy; the attractions
 window opens from both the buy window and the staff window's visitor corner
@@ -712,6 +713,12 @@ to the opened composer, without activating a path or selecting a visitor/object.
 `PostcardShortcutIngressTests` exercises actual injected button rebuilding and
 the full HUD frame, including the GameFlow composer and a temporary local outbox.
 Original assets, native/GPU layout and network delivery are not qualified here.
+Ctrl+P does not change the selected simulation speed. The composer retains the
+existing modal pause while open; closing it removes that modal pause.
+The registered default uses left Ctrl; right Ctrl+P remains excluded from plain
+P pause but has no postcard action under the existing global bindings. Independent
+full-frame tests also cover held chords after a capture owner releases input and
+a simultaneous press over a pickable visitor, followed by release and a new click.
 
 ### Visitor selection in the park view
 

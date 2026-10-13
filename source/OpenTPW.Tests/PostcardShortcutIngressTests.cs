@@ -126,7 +126,7 @@ public class PostcardShortcutIngressTests
 		var input = gate == "typedText" ? UiInput.Type( "p" ) : UiInput.Idle( gate == "hud" ? new( 20, 20 ) : new( -1, -1 ) );
 		hud.Update( Context(), input, gate == "mouse", gate == "keyboard", gate == "text" );
 		Assert.AreEqual( gate is "success" or "readonly" ? 1 : 0, calls );
-		Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed, "The postcard chord never pauses the simulation." );
+		Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed, "Ctrl+P does not toggle the selected simulation speed." );
 	}
 
 	[DataTestMethod]

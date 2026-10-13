@@ -866,6 +866,8 @@ research batch was included in this merge.
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.
+- **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
+  write's bytes can no longer end up under another's hash; writes to different files stay independent.
 - **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),
   the manifest first marks it as not stored and only marks it kept, with the new hash, once the new bytes are written; a clear or
   folder change in between drops the write. A failed rewrite therefore makes the file count as missing instead of offering stale
@@ -878,11 +880,17 @@ research batch was included in this merge.
   of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
   flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's
   Haunted Tower reads `HOUR` and its hour reaches the world hash; the game keeps the host clock.
+- **Pick visitors in the park (October 13):** a mouse press on a visible visitor in the park view selects it in the visitors'
+  roster, using the same sprite rectangle the renderer draws; HUD controls, tools, overlays and the ride view keep the press, and
+  the pick only reads the simulation (UI-930: rectangle picking without occlusion or transparent pixels).
 - **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting
   visitors directly instead of building their cell groups a second time (1,500 visitors: 165,168 to 680
   bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the
   header before decoding another mesh (every shipped model still parses); new save/weather roundtrip
   tests cover real files, paused and fast speeds, live weather, pending thunder and malformed JSON.
+- **Satisfaction map without regrouping (October 13):** the live map's satisfaction overlay counts each cell's pleased and
+  dissatisfied visitors directly, in the order the grouping gave, instead of building transient groups every draw; the drawn
+  result is the same (MapCellAggregationTests compares it with the old grouping).
 - **Parks built over frames (October 13):** a park chosen in the front end, loaded or visited is built
   over several frames beside the running lobby, with a progress line, instead of in one frame; the
   construction runs the same steps in the same order, and the smoke test finds the same world hash,

@@ -49,6 +49,150 @@ const bytes = text => new TextEncoder().encode(text);
 const digest = async data => `len${data.byteLength}`;
 const folder = [['Data/ui.wad', 2], ['Data/levels/jungle/terrain.wad', 7], ['Dutch/data/global/speech/speechHD.SDT', 6]];
 
+function pauseNextClose(file, fail = false) {
+	const original = file.createWritable.bind(file);
+	let release;
+	let closing;
+	const resume = new Promise(resolve => release = resolve);
+	const started = new Promise(resolve => closing = resolve);
+	file.createWritable = async () => {
+		file.createWritable = original;
+		const writable = await original();
+		return { ...writable, close: async () => {
+			closing();
+			await resume;
+			if (fail) throw new Error('paused close failed');
+			await writable.close();
+		} };
+	};
+	return { started, release: () => release() };
+}
+
+test('a rejected mutation does not block queued or later writes to the same path', async () => {
+	const root = new FakeDirectory();
+	const contentDigest = async data => new TextDecoder().decode(data);
+	const store = await openOriginalStore(root, { digest: contentDigest });
+	await store.begin('lazy', folder);
+	await store.write('Data/ui.wad', bytes('ui'));
+	await store.flush();
+	const directory = await root.getDirectoryHandle('opentpw-originals');
+	const file = await (await directory.getDirectoryHandle('Data')).getFileHandle('ui.wad');
+	const pause = pauseNextClose(file, true);
+	const rejected = assert.rejects(store.write('Data/ui.wad', bytes('AA')), /paused close failed/);
+	await pause.started;
+	const queued = store.write('Data/ui.wad', bytes('BB'));
+	await new Promise(resolve => setImmediate(resolve));
+	pause.release();
+	await Promise.all([rejected, queued]);
+	await store.flush();
+	const again = await openOriginalStore(root, { digest: contentDigest });
+	assert.equal(new TextDecoder().decode(await again.read('Data/ui.wad')), 'BB');
+	assert.equal(again.manifest.files['Data/ui.wad'].sha256, 'BB');
+	await store.write('Data/ui.wad', bytes('CC'));
+	await store.flush();
+	assert.equal(new TextDecoder().decode(await store.read('Data/ui.wad')), 'CC');
+	assert.equal(store.manifest.files['Data/ui.wad'].sha256, 'CC');
+});
+
+test('an unrelated path can finish and flush while another path waits for close', async () => {
+	const root = new FakeDirectory();
+	const contentDigest = async data => new TextDecoder().decode(data);
+	const store = await openOriginalStore(root, { digest: contentDigest });
+	await store.begin('lazy', folder);
+	await store.write('Data/ui.wad', bytes('ui'));
+	await store.flush();
+	const directory = await root.getDirectoryHandle('opentpw-originals');
+	const file = await (await directory.getDirectoryHandle('Data')).getFileHandle('ui.wad');
+	const pause = pauseNextClose(file);
+	const pending = store.write('Data/ui.wad', bytes('AA'));
+	await pause.started;
+	const manifestFile = await directory.getFileHandle('manifest.json');
+	const original = manifestFile.createWritable.bind(manifestFile);
+	let manifestWrites = 0;
+	manifestFile.createWritable = async () => { manifestWrites++; return original(); };
+	let finished = false;
+	const independent = store.write('Data/levels/jungle/terrain.wad', bytes('terrain')).then(() => finished = true);
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(finished, true, 'Only the matching path waits for the active mutation');
+	assert.equal(manifestWrites, 0, 'An initial lazy write adds no manifest checkpoint');
+	await independent;
+	await store.flush();
+	const during = await openOriginalStore(root, { digest: contentDigest });
+	assert.equal(await during.read('Data/ui.wad'), null);
+	assert.equal(new TextDecoder().decode(await during.read('Data/levels/jungle/terrain.wad')), 'terrain');
+	pause.release();
+	await pending;
+	await store.flush();
+	const again = await openOriginalStore(root, { digest: contentDigest });
+	assert.equal(new TextDecoder().decode(await again.read('Data/ui.wad')), 'AA');
+	assert.equal(again.manifest.files['Data/ui.wad'].sha256, 'AA');
+});
+
+test('a mutation queued before clearing cannot write into the replacement folder', async () => {
+	const root = new FakeDirectory();
+	const contentDigest = async data => new TextDecoder().decode(data);
+	const store = await openOriginalStore(root, { digest: contentDigest });
+	await store.begin('lazy', folder);
+	await store.write('Data/ui.wad', bytes('ui'));
+	await store.flush();
+	const directory = await root.getDirectoryHandle('opentpw-originals');
+	const file = await (await directory.getDirectoryHandle('Data')).getFileHandle('ui.wad');
+	const pause = pauseNextClose(file);
+	const active = store.write('Data/ui.wad', bytes('AA'));
+	await pause.started;
+	const stale = store.write('Data/ui.wad', bytes('BB'));
+	await new Promise(resolve => setImmediate(resolve));
+	await store.clear();
+	await store.begin('lazy', folder);
+	pause.release();
+	await Promise.all([active, stale]);
+	const after = await openOriginalStore(root, { digest: contentDigest });
+	assert.equal(after.has('Data/ui.wad'), false);
+	assert.equal((await directory.getDirectoryHandle('Data', { create: true })).children.has('ui.wad'), false, 'A stale queued request must not create replacement-folder bytes');
+	await store.write('Data/ui.wad', bytes('CC'));
+	await store.flush();
+	const kept = await openOriginalStore(root, { digest: contentDigest });
+	assert.equal(new TextDecoder().decode(await kept.read('Data/ui.wad')), 'CC');
+	assert.equal(kept.manifest.files['Data/ui.wad'].sha256, 'CC');
+});
+
+test('overlapping same-path closes cannot publish another writers bytes under the wrong hash', async () => {
+	const root = new FakeDirectory();
+	const contentDigest = async data => new TextDecoder().decode(data);
+	const store = await openOriginalStore(root, { digest: contentDigest });
+	await store.begin('lazy', folder);
+	await store.write('Data/ui.wad', bytes('ui'));
+	await store.flush();
+	const directory = await root.getDirectoryHandle('opentpw-originals');
+	const file = await (await directory.getDirectoryHandle('Data')).getFileHandle('ui.wad');
+	const original = file.createWritable.bind(file);
+	let opened = 0;
+	let closing;
+	let release;
+	const firstCommitted = new Promise(resolve => closing = resolve);
+	const finishClose = new Promise(resolve => release = resolve);
+	file.createWritable = async () => {
+		const writable = await original();
+		if (++opened !== 1) return writable;
+		return { ...writable, close: async () => {
+			await writable.close();
+			closing();
+			await finishClose;
+		} };
+	};
+	const first = store.write('Data/ui.wad', bytes('AA'));
+	await firstCommitted;
+	const second = store.write('Data/ui.wad', bytes('BB'));
+	// Let the synthetic promise-only second write finish if it is not serialized.
+	await new Promise(resolve => setImmediate(resolve));
+	release();
+	await Promise.all([first, second]);
+	await store.flush();
+	const again = await openOriginalStore(root, { digest: contentDigest });
+	const contents = new TextDecoder().decode(await again.read('Data/ui.wad'));
+	assert.equal(contents, again.manifest.files['Data/ui.wad'].sha256, 'The final file bytes and published content hash must belong to one writer');
+});
+
 // Reject one stream operation before committing bytes; later streams work normally.
 function rejectNext(file, operation) {
 	const original = file.createWritable.bind(file);

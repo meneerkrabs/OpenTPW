@@ -642,7 +642,7 @@ Scripts of repeated calls, with the vehicle phase and report flag chosen per cal
 Result: ARRIVAL-004 changes no guest or timer behaviour. The C# floor at 0 produces the same guests and timer as the
 original's negative group, differing only in the stored group word and the untraced empty-group vehicle step. The
 brief's static reading, a negative group holding the state, differs on 66 scripts and is refuted. The
-`plan` side models the stop gate as the vehicle phase 2, where `UpdateArrivals` uses a fixed 0.4 s spacing (ARRIVAL-001). C# is not compared.
+`plan` side models the stop gate as the vehicle phase 2. `UpdateArrivals` steps once per park turn from the turn after a group starts, because tp.exe's twin `0x4cf3e0` runs once per world turn (at the end of `0x516380`, through `0x4d7b20`); only the bus's drive to the stop is missing (ARRIVAL-001). C# is not compared.
 
 **F12, loan instalment (ECON-006, `LoanMath.MonthlyRepayment`, `0xcb7a8`; fixed in C#).** The constructor of the bank object fills
 eight loan records. Its loop (`0xcb84c..0xcb904`, run as a fragment) reads amount P, APR A, months N and lender from the

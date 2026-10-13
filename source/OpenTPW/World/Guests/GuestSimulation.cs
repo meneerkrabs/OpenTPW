@@ -58,7 +58,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public const float TicketBoothSeconds = 1.0f;
 	public const float ExitRideSeconds = 1.0f;
 	public const float WaitForBusSeconds = 3.0f;
-	public const float SpawnSpacingSeconds = 0.4f;
 
 	private readonly List<Guest> guests = new();
 	private readonly Dictionary<int, Guest> byId = new();
@@ -68,7 +67,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
 	private bool deliveringArrivals;
-	private float spawnTimer;
+	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (ARRIVAL-001)
 	private int pendingArrivals;
 	private int laneToggle;
 	private int seenGridVersion = -1;
@@ -313,11 +312,12 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	/// <summary>
 	/// The original's arrivals: when more than <see cref="GuestSettings.ArrivalTimeBetween"/> timer units (four park turns each)
-	/// have passed since the last group was dropped off, a new group of <see cref="ArrivalGroupSize"/> guests arrives; its guests
-	/// step off one by one, and the timer restarts once the group is empty.
+	/// have passed since the last group was dropped off, a new group of <see cref="ArrivalGroupSize"/> guests arrives; from the
+	/// next park turn on one guest steps off per turn, and the timer restarts at the first turn the group is empty.
 	/// </summary>
 	// [BIN:STP-PPC:0x100CB2AC arrival update] if no group is active and 0x101210F8's (turn >> 2) − (start >> 2) exceeds Arrival.TimeBetweenArrivals (settings +0x2D4), the group size is set and the group starts; at each stop one guest is created and the count falls; at 0 the timer restarts (0x10121098)
-	// [APPROX:ARRIVAL-001] guests step off every 0.4 s instead of at the original bus's stops (bus sizes 1/2/3 for groups under 36, under 61, larger) — evidence needed: the arrival vehicle's stop cycle (0x10109784 states)
+	// [BIN:TPW-EXE:0x004CF3E0 arrival update] runs once per park turn at the end of the world turn update 0x00516380 (through 0x004D7B20); the call that starts a group only sends the bus (0x0051A2F0 with size 1, 2 or 3 for groups under 36, up to 60, larger); while the bus is at its stop (vehicle state 2) each call creates one guest (0x004CF720) and counts the group down, and the call that finds it empty restarts the timer (0x0041A960) and sends the bus away
+	// [APPROX:ARRIVAL-001] the bus is not modelled: the first guest steps off on the turn after the group starts, where the original waits for the bus to drive to its stop (vehicle state 2, the bus animation's own time), and guests appear at the arrival lanes — evidence needed: the bus animation's length up to its stop
 	private void UpdateArrivals( float deltaSeconds )
 	{
 		if ( !ArrivalsEnabled )
@@ -330,11 +330,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 		{
 			pendingArrivals = ArrivalGroupSize();
 			deliveringArrivals = true;
+			return;   // this turn's call only sends the bus
 		}
-		if ( !deliveringArrivals )
-			return;
-		spawnTimer -= deltaSeconds;
-		if ( spawnTimer > 0 )
+		if ( !deliveringArrivals || !turnStarted )
 			return;
 		if ( pendingArrivals < 1 )
 		{
@@ -342,7 +340,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 			arrivalTimerStart = turn;
 			return;
 		}
-		spawnTimer = SpawnSpacingSeconds;
 		pendingArrivals--;
 		if ( guests.Count < Settings.MaximumGuests )
 			SpawnArrival();

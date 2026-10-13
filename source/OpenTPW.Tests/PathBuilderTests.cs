@@ -333,7 +333,8 @@ public class PathBuilderTests
 	/// phase. The cell map is still the only path source; the run is the same with or without it. The traced arrival rule
 	/// re-pinned it: groups of four arrive five timer units after the last group emptied (88 → 60 admissions). The traced needs (ORACLE.md F25) re-pinned it
 	/// once more: a guest starts with drawn needs and a drawn exit counter that counts once per needs phase, so the guests spend the run differently (60 → 61 admissions). The traced leaving test (ORACLE.md F26: happiness below 1 or the counter exactly 0, no "at most 10")
-	/// moved it again (61 → 62).
+	/// moved it again (61 → 62). Guests stepping off once per park turn instead of every 0.4 s (tp.exe 0x004CF3E0, ARRIVAL-001)
+	/// moved it to 60.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsGuestPathingIdentical()
@@ -341,8 +342,8 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 62, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0x9D143462F5F54F83UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 60, simulation.Admissions, $"{simulation.Admissions}" );
+		Assert.AreEqual( 0x67DB4916BBCD28DAUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

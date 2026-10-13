@@ -202,7 +202,7 @@ internal static class ParkResumeSaveFile
 	/// The envelope's own consistency, with no catalog or settings: header bounds, the embedded economy's format
 	/// and invariants, the layout's pure allocator/identity rules, the script world's graph, one runtime per
 	/// layout object with matching entry/attraction/script identity and every world root claimed (the prototype
-	/// part claims the developer Totem's the same way), the
+	/// part claims the developer Totem's the same way, and its guest cells join the guests' records both ways), the
 	/// attraction-to-economy-instance associations, the guests' structural cross-references and map bounds, the
 	/// coaster part's shape (when the park held coasters), the optional parts' bounds, and the asset manifest's
 	/// shape. This is what <see cref="Serialize"/> checks before
@@ -345,6 +345,23 @@ internal static class ParkResumeSaveFile
 				&& Math.Abs( prototype.PositionY ) <= PrototypeRideSave.MaximumCoordinate
 				&& Math.Abs( prototype.PositionZ ) <= PrototypeRideSave.MaximumCoordinate,
 				"the prototype stands at a position that is not finite or outside the map-scale bound" );
+			// The guest cells the live bridge queued at, saved verbatim (their placement-time derivation is history:
+			// the live park keeps it across later grid edits, so it cannot be re-derived from this save's grid). Both
+			// or neither — and present cells sit inside the cell map the guests walk.
+			Require( prototype.EntranceCell.HasValue == prototype.ExitCell.HasValue,
+				"the prototype holds one guest cell but not the other" );
+			if ( prototype.EntranceCell is { } entrance )
+			{
+				Require( (uint)entrance.X < (uint)layout.Cells.Width && (uint)entrance.Y < (uint)layout.Cells.Height,
+					$"the prototype's entrance cell ({entrance.X}, {entrance.Y}) is outside the cell map" );
+				var exit = prototype.ExitCell!.Value;
+				Require( (uint)exit.X < (uint)layout.Cells.Width && (uint)exit.Y < (uint)layout.Cells.Height,
+					$"the prototype's exit cell ({exit.X}, {exit.Y}) is outside the cell map" );
+			}
+			// A live Totem only ever got an economy instance through the guest registration (LinkPrototypeToEconomy
+			// runs after the entrance derivation), so an instance without cells is not a state this format saved.
+			Require( prototype.EconomyInstanceId == null || prototype.EntranceCell != null,
+				"the prototype holds an economy instance without the guest cells its registration derived" );
 			if ( prototype.Runtime.HasScript && !prototype.Runtime.Stopped )
 			{
 				Require( prototype.RootScriptId != 0, "the prototype runs a script but names no root script" );
@@ -537,6 +554,18 @@ internal static class ParkResumeSaveFile
 				Require( InBounds( x, y ), $"attraction {attraction.AttractionId}'s queue cell ({x}, {y}) is outside the cell map" );
 			if ( attraction.JoinCell is { } join )
 				Require( InBounds( join.X, join.Y ), $"attraction {attraction.AttractionId}'s join cell ({join.X}, {join.Y}) is outside the cell map" );
+		}
+		// The prototype's guest record and its part's guest cells join both ways: the live park registered the Totem's
+		// bridge exactly when it derived its cells (one placement step), and the capture wrote both sides of that.
+		// A record without cells would die on the restore's missing bridge; cells without a record would register a
+		// queue the saved guests never knew.
+		if ( snapshot.Prototype is { } prototype )
+		{
+			var record = guests.Attractions!.Any( item => item!.AttractionId == prototype.AttractionId );
+			Require( record == (prototype.EntranceCell != null),
+				record
+					? $"the guests hold attraction {prototype.AttractionId}'s record, but the prototype part carries no guest cells"
+					: $"the prototype part carries guest cells, but the guests hold no attraction {prototype.AttractionId} record" );
 		}
 		var seenEdits = new HashSet<int>();
 		for ( var index = 0; index < guests.SeenQueueEdits!.Length; index++ )

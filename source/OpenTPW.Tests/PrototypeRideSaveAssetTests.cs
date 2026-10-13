@@ -12,9 +12,11 @@ namespace OpenTPW.Tests;
 /// Inca Totem — its original Totem.RSE script, animator and head slots — runs beside real guests that queue, board and
 /// ride it; the captured part (runtime, script world, guests) survives the codec, rebuilds into a fresh runtime and
 /// guest simulation, and both parks continue deterministically (the canonical world hash, bridges and script world
-/// included, is equal at the boundary and after further simulation). A full envelope around the Totem validates
-/// against the real catalog, balance and asset manifest, and doctored parts are refused with their reason.
-/// Runtimes are built headless (no entities, no GPU), exactly like the other park-resume fixtures.
+/// included, is equal at the boundary and after further simulation). A Totem whose nearest path changed after
+/// placement (the placement's entrance derivation is history the saved grid cannot reproduce) resumes its own
+/// entrance, not a fresh derivation. A full envelope around the Totem validates against the real catalog, balance
+/// and asset manifest, and doctored parts are refused with their reason. Runtimes are built headless (no entities,
+/// no GPU), exactly like the other park-resume fixtures.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -89,17 +91,19 @@ public class PrototypeRideSaveAssetTests
 		var scripts = ParkResumeJson.Deserialize<RideScriptWorldSnapshot>( ParkResumeJson.Serialize( rig.World.CaptureSnapshot() ) );
 		var guests = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
 		Assert.AreNotEqual( 0, part.RootScriptId, "the Totem's live script is claimed as a world root" );
+		Assert.AreEqual( ((39, 21)), part.EntranceCell, "the part carries the bridge's guest cells" );
+		Assert.AreEqual( ((39, 21)), part.ExitCell, "the part carries the bridge's exit cell" );
 
 		// The candidate: the restore order of a resumed level — the fresh runtime (saved id, saved seed, no
-		// allocation), its bridge registered with fresh guests, the script world over the roots, the guests last.
+		// allocation), its bridge registered with fresh guests through its saved cells, the script world over the
+		// roots, the guests last.
 		var candidateWorld = new RideScriptWorld( WorldSeed.Default.ScriptStream );
 		var candidate = OriginalObjectRuntime.CreateForRestore( rig.Entry, candidateWorld, part.ScriptSeed, part.Open, part.AttractionId );
 		var gaps = candidate.RestoreSnapshot( part.Runtime );
 		Assert.AreEqual( 0, gaps.Count, $"no restore gap: {string.Join( "; ", gaps )}" );
 		var candidateGuests = new GuestSimulation( GuestPathGrid.FromOriginal( rig.Park.Map, rig.Park.Save ), rig.Settings, 99 ) { ArrivalsEnabled = false };
-		candidate.Visitors.EntranceCell = candidate.Visitors.ExitCell = (39, 21);
-		candidate.Visitors.HasCells = true;
-		candidateGuests.Register( candidate.Visitors );
+		Assert.IsTrue( PrototypeRideSave.RestoreGuestCells( part, candidate.Visitors, candidateGuests ), "the saved cells register the bridge" );
+		Assert.AreEqual( ((39, 21)), (candidate.Visitors.EntranceCell.X, candidate.Visitors.EntranceCell.Y), "the bridge queues at the saved cell" );
 		candidateWorld.RestoreSnapshot( scripts, new Dictionary<int, RideVM> { [part.RootScriptId] = candidate.Script! } );
 		candidateGuests.RestoreSnapshot( guests );
 
@@ -116,6 +120,100 @@ public class PrototypeRideSaveAssetTests
 			candidate.Simulate( Tick );
 		}
 		Assert.AreEqual( HashOf( rig.Simulation, rig.World ), HashOf( candidateGuests, candidateWorld ), "the continuation is deterministic" );
+	}
+
+	[TestMethod]
+	public void ATotemWhoseNearestPathChangedAfterPlacementResumesItsOwnEntrance()
+	{
+		// The regression the guest cells exist for: the live park derives the Totem's entrance once, at placement,
+		// and never re-derives it (RecomputeQueue keeps the queue's front at that cell through every later grid
+		// edit). A path built nearer the Totem afterwards changes what a fresh derivation over the saved grid would
+		// pick — re-deriving on resume resumed a different park than the one saved (a boundary hash mismatch) or,
+		// once the guest cache had caught up, made the restore refuse the park's own save at the queue-geometry
+		// check ("Attraction N's queue does not match the saved cell map"). The part carries the cells verbatim.
+		var park = OriginalPark.Load( "jungle" );
+		var grid = GuestPathGrid.FromOriginal( park.Map, park.Save );
+		int BoxDistance( int x, int y, int cx, int cy ) =>
+			Math.Max( 0, Math.Max( x - 2 - cx, cx - (x + 2) ) ) + Math.Max( 0, Math.Max( y - 2 - cy, cy - (y + 2) ) );
+		(int X, int Y) site = default;
+		var best = -1;
+		for ( var y = 2; y < grid.CountY - 2; y += 3 )
+			for ( var x = 2; x < grid.CountX - 2; x += 3 )
+			{
+				if ( OriginalParkPlacement.Check( park, x - 2, y - 2, x + 2, y + 2 ) != OriginalPlacementResult.Allowed )
+					continue;
+				var nearest = int.MaxValue;
+				for ( var cy = 0; cy < grid.CountY && nearest > 12; cy++ )
+					for ( var cx = 0; cx < grid.CountX; cx++ )
+						if ( grid.IsWalkable( cx, cy ) )
+							nearest = Math.Min( nearest, BoxDistance( x, y, cx, cy ) );
+				if ( nearest > best ) { best = nearest; site = (x, y); }
+			}
+		Assert.IsTrue( best >= 4, $"find a Totem site at least 4 cells from a walkable cell (best {best})" );
+		var position = OriginalParkPlacement.GetCellCenter( park.Heightfield, site.X, site.Y );
+		var live = Level.FindRideEntrance( grid, site.X - 2, site.Y - 2, site.X + 2, site.Y + 2 )!.Value;
+
+		// The live rig: the Totem registered with the placement-time derivation, guests walking near it.
+		var world = new RideScriptWorld( WorldSeed.Default.ScriptStream );
+		var entry = ObjectCatalog.Load( "jungle" ).Find( PrototypeRide.InfoId )!;
+		var totem = new OriginalObjectRuntime( entry, world, seed: null, open: false );
+		totem.Open();
+		var simulation = new GuestSimulation( grid, GuestSettings.Load( "jungle" ), 99 ) { ArrivalsEnabled = false };
+		Assert.IsTrue( PrototypeRideSave.RestoreGuestCells( new PrototypeRideSaveData
+		{
+			AttractionId = totem.AttractionId, PositionX = position.X, PositionY = position.Y, PositionZ = position.Z,
+			Open = true, ScriptSeed = 0, RootScriptId = 0, Runtime = totem.CaptureSnapshot(),
+			EntranceCell = live, ExitCell = live
+		}, totem.Visitors, simulation ), "the placement's registration shape" );
+		foreach ( var index in new[] { 0, 1, 2 } )
+			simulation.SpawnInPark( live.X, live.Y );
+		for ( var tick = 0; tick < 120; tick++ )
+		{
+			simulation.Tick( Tick );
+			totem.Simulate( Tick );
+		}
+
+		// The player builds a path right beside the Totem — nearer than the cell the placement derived.
+		var fresh = (X: site.X, Y: site.Y + 3);
+		Assert.IsFalse( grid.IsWalkable( fresh.X, fresh.Y ), "the fresh cell was not walkable before the edit" );
+		grid.Cells.SetType( fresh.X, fresh.Y, ParkCellType.Path );
+		grid.Cells.Touch();
+		for ( var tick = 0; tick < 3; tick++ )
+		{
+			simulation.Tick( Tick );
+			totem.Simulate( Tick );
+		}
+		Assert.AreEqual( (live.X, live.Y), (totem.Visitors.EntranceCell.X, totem.Visitors.EntranceCell.Y),
+			"the live park keeps its placement-time entrance after the edit" );
+		Assert.AreNotEqual( live, Level.FindRideEntrance( grid, site.X - 2, site.Y - 2, site.X + 2, site.Y + 2 ),
+			"a fresh derivation over the edited grid would now pick a different cell" );
+
+		// The save and the restore, both through the codec and the level's own steps.
+		var part = ParkResumeJson.Deserialize<PrototypeRideSaveData>( ParkResumeJson.Serialize(
+			PrototypeRideSave.Capture( totem, position, totem.IsOpen, economyInstance: null, economyBought: false ) ) );
+		var guests = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( simulation.CaptureSnapshot() ) );
+		var layout = ParkLayoutSnapshot.CaptureSnapshot( grid.Cells,
+			new ParkObjects( ObjectCatalog.Load( "jungle" ), new OriginalParkGrid( park ), WorldSeed.Default ) );
+		Assert.AreEqual( live, part.EntranceCell, "the part carries the live entrance, not a re-derivation" );
+		var restoredGrid = new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( layout ) );
+		var candidate = OriginalObjectRuntime.CreateForRestore( entry, new RideScriptWorld( WorldSeed.Default.ScriptStream ),
+			part.ScriptSeed, part.Open, part.AttractionId );
+		Assert.AreEqual( 0, candidate.RestoreSnapshot( part.Runtime ).Count, "the runtime restores without gaps" );
+		var candidateGuests = new GuestSimulation( restoredGrid, GuestSettings.Load( "jungle" ), 99 ) { ArrivalsEnabled = false };
+		Assert.IsTrue( PrototypeRideSave.RestoreGuestCells( part, candidate.Visitors, candidateGuests ), "the saved cells register the restored bridge" );
+
+		Level.ValidateResumeQueueGeometry( guests, candidateGuests );
+		candidateGuests.RestoreSnapshot( guests );
+		ulong Hash( GuestSimulation sim ) => WorldStateHash.Compute( new WorldStateSources { Guests = sim } );
+		Assert.AreEqual( Hash( simulation ), Hash( candidateGuests ), "the resumed park holds the saved entrance, not the fresh derivation" );
+		for ( var tick = 0; tick < 120; tick++ )
+		{
+			simulation.Tick( Tick );
+			totem.Simulate( Tick );
+			candidateGuests.Tick( Tick );
+			candidate.Simulate( Tick );
+		}
+		Assert.AreEqual( Hash( simulation ), Hash( candidateGuests ), "the continuation is deterministic" );
 	}
 
 	[TestMethod]
@@ -186,5 +284,9 @@ public class PrototypeRideSaveAssetTests
 		Rejects( snapshot with { Prototype = part with { ScriptSeed = part.ScriptSeed + 1 } }, "not the part's" );
 		Rejects( snapshot with { Prototype = part with { EconomyInstanceId = instance + 99 } }, "which the economy does not hold" );
 		Rejects( snapshot with { Prototype = part with { Runtime = part.Runtime with { AttractionId = 5 } } }, "its runtime is attraction 5" );
+		Rejects( snapshot with { Prototype = part with { EntranceCell = (snapshot.Layout.Cells.Width * 4, 0), ExitCell = (snapshot.Layout.Cells.Width * 4, 0) } },
+			"entrance cell" );
+		Rejects( snapshot with { Prototype = part with { EntranceCell = null, ExitCell = null, EconomyInstanceId = null } },
+			"carries no guest cells" );
 	}
 }

@@ -46,7 +46,7 @@ refused this way before anything is replaced.
 | Layout | every path, queue and placed object with its cell, rotation, attraction id and creation seed, plus the id allocators — a demolished object leaves its id hole, ids are never renumbered |
 | Guests | every guest: needs, money, route and navigation buffers, arrival lane, queue/boarding/riding/walk-off/limbo/bounce state, and each attraction's queue cells and membership |
 | Ride scripts | the whole script world: every script's identity and graph position, program state, stacks, variables, timers and waits, RNG state, animation channels and rider head slots |
-| Prototype ride | the developer Totem (the sandbox ride you place in a park): its position, open state, script seed and full runtime state — animator, head slots, cycle counters — with its economy association re-linked to the saved instance, never bought again; the entrance cell guests queue at is re-derived from the restored paths on load |
+| Prototype ride | the developer Totem (the sandbox ride you place in a park): its position, open state, script seed and full runtime state — animator, head slots, cycle counters — with its economy association re-linked to the saved instance, never bought again; the entrance and exit cells its guests queue at are saved and restored verbatim (the placement's derivation is history: the live park keeps it across later path edits, so re-deriving from the saved paths would resume a different park) |
 | Coasters | every live coaster station's track (station ends, pylons with height, pylon kind and stack, node flags), controller state (open, breakdown, speed, seats, money, clocks) and trains with every rider on board or leaving — joined by attraction id, a rider mid-hand-over (the script has seated it, the bridge has not marked it aboard yet) included; the curve, rating and braking are re-derived on load, so a loaded coaster continues exactly where it was |
 | Economy | the full economy record (bank, loans, ledger, objects with price/level/repair/statistics, staff, research, challenges, golden tickets, RNG streams) and the exact attraction-to-economy-instance links, so two identical rides never swap their money |
 | World | the fixed-step clock, the sound-event seed, weather with its pending thunder, the park gate, staff positions, and the advisor's pending advice and history when the park had them |
@@ -134,6 +134,13 @@ embedded by value, so both formats' validators run on every load.
   the own-format save and screenshot readbacks, without original game files.
   These are controlled, accelerated fixtures that validate persistence of current OpenTPW behaviour,
   not original-game fidelity.
+- **Smoke hook, prototype variant** (same command with `OPENTPW_SMOKE_PROTOTYPE=1` exported for
+  both phases): the fixture also places the developer Totem beside the path spine, so the pair
+  proves the prototype part natively — the save written through the HUD handler carries the Totem,
+  the cold resume rebuilds it with its saved guest cells and re-links its saved economy instance
+  (never buying again), the Totem's own corrupt candidates (the part dropped, its guest cells moved
+  off the map) are rejected like the rest, and the post-load checks remove the resumed Totem to see
+  its instance sold exactly once when the live park had bought it (deregistered when it had not).
 
 Verified in October 2026 development builds: the native capture/restore pair above passed as two
 separate processes on real Metal with identical section hashes throughout the continuation; the

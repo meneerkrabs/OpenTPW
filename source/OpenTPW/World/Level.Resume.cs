@@ -108,11 +108,11 @@ public partial class Level
 	/// <summary>
 	/// Rebuilds the saved developer Totem, or null when the save holds none: a fresh candidate with the saved
 	/// position, script seed, open flag and attraction id (the id is adopted, nothing allocated or charged), its
-	/// runtime restored like a placed object's, its bridge registered with the guests through the same entrance
-	/// derivation the placement ran (RegisterRideWithGuests without its purchase — the saved economy instance is
-	/// re-linked, never bought), and its script handed to the world restore as a root. A restore whose entrance
-	/// derivation finds nothing leaves the Totem unregistered, exactly like the live placement would — the guest
-	/// restore then fails with its reason when the saved guests still reference it.
+	/// runtime restored like a placed object's, its bridge registered with the guests through its saved guest cells
+	/// (restored verbatim — the placement's entrance derivation is history the saved grid cannot reproduce, so the
+	/// resumed queue is exactly the saved one; a Totem the live park never registered stays unregistered), the saved
+	/// economy instance re-linked when it registered (never bought), and its script handed to the world restore as a
+	/// root.
 	/// </summary>
 	private PrototypeRide? RestorePrototypeRideSnapshot( PrototypeRideSaveData? saved, Dictionary<int, RideVM> roots )
 	{
@@ -123,23 +123,13 @@ public partial class Level
 			saved.ScriptSeed, saved.Open, saved.AttractionId );
 		var gaps = ride.Runtime.RestoreSnapshot( saved.Runtime );
 		if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
-		if ( Guests != null && OriginalPark != null
-			&& OriginalParkPlacement.TryGetCell( OriginalPark.Heightfield, ride.Position.X, ride.Position.Y, out var x, out var y )
-			&& FindRideEntrance( Guests.Grid, x - OriginalRideFootprintRadiusCells, y - OriginalRideFootprintRadiusCells,
-				x + OriginalRideFootprintRadiusCells, y + OriginalRideFootprintRadiusCells ) is { } entrance )
+		if ( PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! ) && saved.EconomyInstanceId is int instance )
 		{
-			ride.Visitors.EntranceCell = entrance;
-			ride.Visitors.ExitCell = entrance;
-			ride.Visitors.HasCells = true;
-			Guests.Register( ride.Visitors );
-			if ( saved.EconomyInstanceId is int instance )
-			{
-				if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.InfoId != ride.Entry.InfoId )
-					throw new InvalidDataException( "The saved prototype does not match its economy instance." );
-				prototypeInstance = instance;
-				prototypeBought = saved.EconomyBought;
-				Park.Guests?.Link( ride.Visitors.AttractionId, instance );
-			}
+			if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.InfoId != ride.Entry.InfoId )
+				throw new InvalidDataException( "The saved prototype does not match its economy instance." );
+			prototypeInstance = instance;
+			prototypeBought = saved.EconomyBought;
+			Park.Guests?.Link( ride.Visitors.AttractionId, instance );
 		}
 		if ( saved.Runtime.HasScript && !saved.Runtime.Stopped )
 			roots.Add( saved.RootScriptId, ride.Runtime.Script! );

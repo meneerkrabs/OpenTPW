@@ -11,8 +11,10 @@ namespace OpenTPW.Tests;
 /// Totem saves and reloads its part through the codec, a save from before the prototype slice (no member) still
 /// validates, the guests' queue snapshot resolves the Totem through the part — and dropping the part from a park
 /// whose guests still reference the Totem is refused — while doctored parts (wrong entry, wrong attraction id,
-/// out-of-allocator id, a placed object's id, a non-finite position, root-script claims that do not resolve, and
-/// economy associations that do not join) are each refused with their reason.
+/// out-of-allocator id, a placed object's id, a non-finite position, root-script claims that do not resolve,
+/// guest cells that are half-present, out of the cell map, dropped while the guests still hold the record, or
+/// carry an economy instance without them, and economy associations that do not join) are each refused with
+/// their reason.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -20,9 +22,10 @@ public class PrototypeRideSaveTests
 {
 	private const string TotemArchive = "/levels/jungle/rides/totem";
 
-	/// <summary>The synthetic scriptless prototype part: the Totem's identity with a hand-built runtime state.</summary>
+	/// <summary>The synthetic scriptless prototype part: the Totem's identity with a hand-built runtime state and
+	/// guest cells (null when the scenario tests the unregistered Totem).</summary>
 	private static PrototypeRideSaveData Part( int attractionId = 1, int infoId = PrototypeRide.InfoId, string archive = TotemArchive,
-		int? economyInstance = null, bool economyBought = false ) => new()
+		int? economyInstance = null, bool economyBought = false, (int X, int Y)? entrance = null ) => new()
 	{
 		AttractionId = attractionId,
 		PositionX = 390f,
@@ -32,6 +35,8 @@ public class PrototypeRideSaveTests
 		ScriptSeed = 0,
 		RootScriptId = 0,
 		Runtime = ParkResumeSaveFileTests.RuntimeSnapshot( attractionId, infoId, archive ),
+		EntranceCell = entrance,
+		ExitCell = entrance,
 		EconomyInstanceId = economyInstance,
 		EconomyBought = economyBought
 	};
@@ -49,7 +54,7 @@ public class PrototypeRideSaveTests
 			Scripts = snapshot.Scripts with { NextAttractionId = 2 },
 			Runtimes = new List<ParkResumeRuntime>(),
 			EconomyBindings = new List<ParkResumeEconomyBinding>(),
-			Prototype = Part()
+			Prototype = Part( entrance: (5, 5) )
 		};
 	}
 
@@ -105,10 +110,17 @@ public class PrototypeRideSaveTests
 			Runtime = ParkResumeSaveFileTests.RuntimeSnapshot( 1, PrototypeRide.InfoId, TotemArchive ) with { HasScript = true, ScriptIdentityHash = 12345 },
 			RootScriptId = 9
 		}, "root script 9, which the world does not hold as a root" );
+		// The guest cells: half-present, outside the cell map, dropped while the guests still hold the record, or an
+		// economy instance without the registration that derived it.
+		Rejects( Part( entrance: (5, 5) ) with { ExitCell = null }, "one guest cell but not the other" );
+		Rejects( Part( entrance: (20, 5) ), "entrance cell (20, 5) is outside the cell map" );
+		Rejects( Part(), "carries no guest cells" );
+		var bound = ParkResumeSaveFileTests.Envelope();
+		Rejects( Part( economyInstance: bound.EconomyBindings[0].InstanceId ), "without the guest cells" );
 		// The economy joins: an instance the economy does not hold, and one that is not the Totem's.
-		Rejects( Part( economyInstance: 99 ), "economy object 99, which the economy does not hold" );
+		Rejects( Part( entrance: (5, 5), economyInstance: 99 ), "economy object 99, which the economy does not hold" );
 		var drinks = ParkResumeSaveFileTests.Envelope();
-		Rejects( Part( economyInstance: drinks.EconomyBindings[0].InstanceId ), $"not the Inca Totem's {PrototypeRide.InfoId}" );
+		Rejects( Part( entrance: (5, 5), economyInstance: drinks.EconomyBindings[0].InstanceId ), $"not the Inca Totem's {PrototypeRide.InfoId}" );
 	}
 
 	[TestMethod]
@@ -126,15 +138,16 @@ public class PrototypeRideSaveTests
 				() => ParkResumeSaveFile.ValidateShape( snapshot with { Prototype = part } ) ).Message, message );
 		Rejects( Part( attractionId: 1 ) with { Runtime = ParkResumeSaveFileTests.RuntimeSnapshot( 1, PrototypeRide.InfoId, TotemArchive ) },
 			"is also a placed object's" );
-		Rejects( Part( attractionId: 2 ) with
+		Rejects( Part( attractionId: 2, entrance: (5, 5) ) with
 		{
 			Runtime = ParkResumeSaveFileTests.RuntimeSnapshot( 2, PrototypeRide.InfoId, TotemArchive ),
 			EconomyInstanceId = bound
 		}, "is bound to a placed attraction and the prototype" );
-		// The same part without an economy association is fine: the allocator covers attraction 2.
+		// The same part without an economy association is fine: the allocator covers attraction 2, and the guests hold
+		// no record for it (its cells are absent, as for a Totem the live park never registered).
 		ParkResumeSaveFile.ValidateShape( snapshot with
 		{
-			Prototype = Part( attractionId: 2 ) with { Runtime = ParkResumeSaveFileTests.RuntimeSnapshot( 2, PrototypeRide.InfoId, TotemArchive ) }
+			Prototype = Part( attractionId: 2, entrance: null ) with { Runtime = ParkResumeSaveFileTests.RuntimeSnapshot( 2, PrototypeRide.InfoId, TotemArchive ) }
 		} );
 	}
 }

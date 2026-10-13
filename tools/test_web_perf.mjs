@@ -32,6 +32,7 @@ test('frame summaries count rate, slow frames and the largest gap', () => {
 	assert.equal(summary.fps, 5);
 	assert.equal(summary.maxMs, 60);
 	assert.equal(summary.over50Ms, 1);
+	assert.deepEqual(summary.longFramesMs, [60]);
 	assert.equal(summary.largestGapMs, 67);
 	assert.equal(summary.totalMs, 74);
 	assert.deepEqual(summarizeFrames([], 1000).maxMs, null);

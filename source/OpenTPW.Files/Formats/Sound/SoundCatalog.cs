@@ -212,14 +212,14 @@ public sealed class SoundBank
 	{
 		if ( data != null )
 			return data.AsSpan( (int)offset, size ).ToArray();
-		var bytes = new byte[size];
 		if ( size == 0 )
-			return bytes;
+			return Array.Empty<byte>();
 		using var stream = open!();
 		// A file of another length is not the bank whose offset table was read (replaced on disk): a clear error, not other bytes.
 		if ( stream.Length != length )
 			throw new IOException( $"The sound bank changed after its offset table was read ({stream.Length} bytes, was {length})." );
 		stream.Seek( offset, SeekOrigin.Begin );
+		var bytes = new byte[size];
 		stream.ReadExactly( bytes );
 		return bytes;
 	}
@@ -237,7 +237,7 @@ public sealed class SoundBank
 		var size = BinaryPrimitives.ReadInt32LittleEndian( head.AsSpan( 4 ) );
 		if ( header < SdtArchive.MinimumEntryHeaderBytes || size < 0 || (long)offset + header + size > length )
 			return null;
-		return Read( offset + header, size );
+		return Read( (long)offset + header, size );
 	}
 
 	/// <summary>The name stored in an entry's header (16 bytes, NUL padded).</summary>
@@ -246,8 +246,8 @@ public sealed class SoundBank
 		if ( number == 0 || number > count )
 			return null;
 		var offset = offsets[number - 1];
-		if ( offset < 0 || offset > length - SdtArchive.MinimumEntryHeaderBytes )
+		if ( offset < 4 + count * 4 || offset > length - SdtArchive.MinimumEntryHeaderBytes )
 			return null;
-		return Encoding.Latin1.GetString( Read( offset + 8, 16 ) ).TrimEnd( '\0' );
+		return Encoding.Latin1.GetString( Read( (long)offset + 8, 16 ) ).TrimEnd( '\0' );
 	}
 }

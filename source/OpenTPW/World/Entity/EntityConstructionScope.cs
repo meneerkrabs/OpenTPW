@@ -2,17 +2,22 @@ using System.Numerics;
 
 namespace OpenTPW;
 
-/// <summary>Stages a level's entities without retiring the current scene. Used synchronously between frames.</summary>
+/// <summary>
+/// Stages a level's entities without retiring the current scene. Used synchronously between frames, or across frames with
+/// <see cref="Pause"/> and <see cref="Resume"/>: the live scene runs its frames while the candidate waits.
+/// </summary>
 internal sealed class EntityConstructionScope : IDisposable
 {
 	private static EntityConstructionScope? active;
-	private readonly SceneState previous;
+	private SceneState previous;
 	private readonly List<Entity> entities = new();
 	private readonly HashSet<Asset> retainedAssets;
 	private SceneState? candidate;
+	private SceneState? paused;
+	private HashSet<Asset>? assetsAtPause;
 	private bool finished;
 
-	internal static bool IsStaging => active != null && active.candidate == null;
+	internal static bool IsStaging => active != null && active.candidate == null && active.paused == null;
 
 	private readonly record struct SceneState( List<Entity> Entities, Level? Level, CameraMode Camera,
 		float TargetExtent, Vector3 InitialTarget, Vector3 ListenerPosition, Vector3 ListenerForward )
@@ -41,6 +46,38 @@ internal sealed class EntityConstructionScope : IDisposable
 		retainedAssets = new HashSet<Asset>( Asset.All, ReferenceEqualityComparer.Instance );
 		active = this;
 		Entity.All = entities;
+	}
+
+	/// <summary>Sets the candidate aside and brings the live scene back, so a frame of the live scene can run.</summary>
+	public void Pause()
+	{
+		RequireActive();
+		if ( candidate != null || paused != null || !ReferenceEquals( Entity.All, entities ) )
+			throw new InvalidOperationException( "The candidate scene is not active." );
+		paused = SceneState.Capture();
+		previous.Restore();
+		assetsAtPause = new HashSet<Asset>( Asset.All, ReferenceEqualityComparer.Instance );
+	}
+
+	/// <summary>Makes the paused candidate current again. What the live scene changed meanwhile is what is restored later.</summary>
+	public void Resume()
+	{
+		RequireActive();
+		if ( paused is not { } waiting || !ReferenceEquals( Entity.All, previous.Entities ) )
+			throw new InvalidOperationException( "The candidate scene is not paused." );
+		previous = SceneState.Capture();
+		RetainLiveAssets();
+		paused = null;
+		waiting.Restore();
+	}
+
+	/// <summary>Assets the live scene registered during its frames are its own, not the candidate's: a rejected candidate keeps them.</summary>
+	private void RetainLiveAssets()
+	{
+		foreach ( var asset in Asset.All )
+			if ( !assetsAtPause!.Contains( asset ) )
+				retainedAssets.Add( asset );
+		assetsAtPause = null;
 	}
 
 	/// <summary>Retains the candidate and restores the live scene for its normal retirement, after all validation succeeds.</summary>
@@ -79,7 +116,13 @@ internal sealed class EntityConstructionScope : IDisposable
 	{
 		if ( finished ) return;
 		RequireActive();
-		var staged = candidate ?? SceneState.Capture();
+		// Paused, the live scene is current: that is the state to come back to, not the one from before its last frames.
+		if ( paused != null )
+		{
+			previous = SceneState.Capture();
+			RetainLiveAssets();
+		}
+		var staged = candidate ?? paused ?? SceneState.Capture();
 		var failures = new List<Exception>();
 		try
 		{

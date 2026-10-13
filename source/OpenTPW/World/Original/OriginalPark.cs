@@ -43,18 +43,29 @@ public sealed class OriginalPark
 	public string DescribeObject( int infoId ) => Catalog.TryGetValue( infoId, out var info ) ? info.Name : $"Info.Id {infoId}";
 
 	/// <param name="readShippedSave">False starts the level without its shipped save (a new Full Simulation park, <see cref="ParkStart.ReadsShippedSave"/>).</param>
-	public static OriginalPark Load( string levelName, bool readShippedSave = true )
+	public static OriginalPark Load( string levelName, bool readShippedSave = true ) => LoadSteps( levelName, readShippedSave ).Last()!;
+
+	/// <summary>
+	/// <see cref="Load"/> in steps, for a park built over frames (docs/BROWSER-PERFORMANCE.md): null after each part of the work,
+	/// then the park.
+	/// </summary>
+	internal static IEnumerable<OriginalPark?> LoadSteps( string levelName, bool readShippedSave = true )
 	{
 		if ( string.IsNullOrWhiteSpace( levelName ) || levelName.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Original level names are plain directory names such as 'jungle'.", nameof( levelName ) );
 		var map = new MapFile( $"/levels/{levelName}/terrain/base.map" );
+		yield return null;
 		var model = new ModelFile( $"/levels/{levelName}/terrain/base.MD2" );
+		yield return null;
 		// [APPROX:COMPAT-019] Theme Park Inc ships its lake as a separate model; the finished lake (dlake.MD2, not lake.MD2 with its building site) is drawn
 		var lakePath = FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
 		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
-		IReadOnlyDictionary<int, OriginalObjectInfo> catalog;
+		var catalog = new Dictionary<int, OriginalObjectInfo>();
 		using ( LoadProfile.Measure( "object-catalog" ) )
-			catalog = LoadCatalog( levelName );
+		{
+			foreach ( var _ in LoadCatalogSteps( levelName, catalog ) )
+				yield return null;
+		}
 		OriginalParkImport? save = null;
 		// [DATA:PreBuilt/prebuilt.TPWS:cell grid] The sole shipped Theme Park Inc prebuilt save matches science/base.map in every cell.
 		var tpiPrebuilt = GameEditions.IsThemeParkInc && levelName.Equals( "science", StringComparison.OrdinalIgnoreCase );
@@ -66,6 +77,7 @@ public sealed class OriginalPark
 		// [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag)
 		if ( savePath != null )
 		{
+			yield return null;
 			using var saveProfile = LoadProfile.Measure( "shipped-save" );
 			using var stream = FileSystem.OpenRead( $"{saveDirectory}/{Path.GetFileName( savePath )}" );
 			using var reader = new SaveReader( stream );
@@ -81,13 +93,20 @@ public sealed class OriginalPark
 					throw new InvalidDataException( $"Original save object {item.Index} has Info.Id {item.InfoId}, which no {levelName} object archive declares." );
 			}
 		}
-		return new OriginalPark( levelName, map, model, lake, save, catalog );
+		yield return new OriginalPark( levelName, map, model, lake, save, catalog );
 	}
 
 	/// <summary>Reads Info.Id and Info.Name from every object archive's .sam under the level.</summary>
 	public static IReadOnlyDictionary<int, OriginalObjectInfo> LoadCatalog( string levelName )
 	{
 		var catalog = new Dictionary<int, OriginalObjectInfo>();
+		foreach ( var _ in LoadCatalogSteps( levelName, catalog ) ) { }
+		return catalog;
+	}
+
+	/// <summary><see cref="LoadCatalog"/> into <paramref name="catalog"/>, one object archive per step.</summary>
+	private static IEnumerable<bool> LoadCatalogSteps( string levelName, Dictionary<int, OriginalObjectInfo> catalog )
+	{
 		foreach ( var category in ObjectDirectories )
 		{
 			var categoryPath = $"/levels/{levelName}/{category}";
@@ -106,9 +125,9 @@ public sealed class OriginalPark
 					var name = nameMatch.Success ? nameMatch.Groups[1].Value.Trim() : Path.GetFileNameWithoutExtension( file );
 					catalog.TryAdd( id, new OriginalObjectInfo( id, name, archivePath ) );
 				}
+				yield return true;
 			}
 		}
-		return catalog;
 	}
 
 	// Entries inside archives come back data-root-relative, loose entries absolute.

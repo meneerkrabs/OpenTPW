@@ -261,8 +261,8 @@ public class OriginalUiTests
 		var screen = FrontEndMenu.CreateLoadScreen( stack, FakeStrings(), entries, loaded.Add );
 		stack.Push( screen );
 		Assert.AreEqual( "ui202", ((UiLabel)screen.Find( "title" )!).Text() );
-		Assert.AreEqual( "OpenTPW sandbox park", ((UiListItem)screen.Find( "load:sandbox" )!).Text() );
-		Assert.AreEqual( "Lost Kingdom - original park (read-only)", ((UiListItem)screen.Find( "load:jungle" )!).Text() );
+		Assert.AreEqual( "OpenTPW sandbox park", ((UiScrollList)screen.Find( "parks" )!).Rows()[0] );
+		Assert.AreEqual( "Lost Kingdom - original park (read-only)", ((UiScrollList)screen.Find( "parks" )!).Rows()[1] );
 		stack.Update( FakeContext(), UiInput.Key( UiKeys.Accept ) );
 		Assert.AreSame( entries[0], loaded.Single() );
 		var empty = FrontEndMenu.CreateLoadScreen( stack, FakeStrings(), Array.Empty<ParkLoadEntry>(), loaded.Add );
@@ -560,7 +560,7 @@ public class OriginalUiTests
 		Assert.AreEqual( "Window mode: Full screen", mode.Text(), "wheel down cycles back and wraps" );
 		stack.Update( context, UiInput.Click( center ) );
 		Assert.AreEqual( "Window mode: Windowed", mode.Text(), "a click cycles forward and wraps" );
-		Assert.IsTrue( page.Elements.OfType<UiLabel>().Where( label => label.Id.EndsWith( "Label" ) ).All( label => label.Group != null && label.Shadow == false ), "dark labels without shadow in one group" );
+		Assert.IsTrue( page.Elements.OfType<UiLabel>().Where( label => label.Id.EndsWith( "Label" ) ).All( label => label.Group != null && !label.Shadow ), "dark labels without shadow in one group" );
 		Assert.AreSame( ((UiLabel)page.Find( "languageLabel" )!).Group, mode.Group );
 	}
 

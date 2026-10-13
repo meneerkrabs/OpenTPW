@@ -96,6 +96,7 @@ public static class UiApproximations
 
 		("UI-931", "theme entry offers an explicit New/Continue choice for an application-owned saved park; saved mode/start kind remain authoritative and no native profile or autosave flow is reproduced", "original profile and theme-entry UI behavior"),
 		("UI-932", "plain C arms a terrain click for a host first-person inspection camera; terrain height, eye height, movement/look tuning and flat-plane entry picking are approximations, without object collision, photo or recording", "native camcorder entry, walk movement, collision, eye height, look controls and camera persistence"),
+		("UI-934", "shared Load chooser uses an eight-row scroll viewport with explicit selection and activation; every supplied own, sandbox and original-reference entry remains reachable", "original Load chooser navigation, selection and viewport behavior"),
 	};
 
 	private static bool logged;

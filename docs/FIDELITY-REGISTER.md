@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **388 unresolved unique APPROX IDs**, 462 APPROX occurrences, 156 EXT occurrences, 170 DATA occurrences and 505 BIN occurrences.
+Current inventory: **389 unresolved unique APPROX IDs**, 463 APPROX occurrences, 156 EXT occurrences, 170 DATA occurrences and 505 BIN occurrences.
 
-Of these, 364 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 365 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -44,7 +44,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES | 35 | 35 |
 | SAVE | 16 | 16 |
 | TPI | 5 | 7 |
-| UI | 86 | 117 |
+| UI | 87 | 118 |
 | VM | 3 | 4 |
 | WALK | 10 | 10 |
 
@@ -427,6 +427,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-930 | Original-fidelity area (scope unadjudicated) | world visitor presses hit the current sprite rectangle, selecting nearest projected depth then lowest id; transparent pixels, terrain/object occlusion and partially clipped sprites are not reproduced | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:95` |
 | UI-931 | Original-fidelity area (scope unadjudicated) | theme entry offers an explicit New/Continue choice for an application-owned saved park; saved mode/start kind remain authoritative and no native profile or autosave flow is reproduced | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:97` |
 | UI-932 | Original-fidelity area (scope unadjudicated) | plain C arms a terrain click for a host first-person inspection camera; terrain height, eye height, movement/look tuning and flat-plane entry picking are approximations, without object collision, photo or recording | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:98` |
+| UI-934 | Original-fidelity area (scope unadjudicated) | shared Load chooser uses an eight-row scroll viewport with explicit selection and activation; every supplied own, sandbox and original-reference entry remains reachable | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:99` |
 | VM-900 | Original-fidelity area (scope unadjudicated) | MULT: dest = a × b with the SUB/DIV/MOD dest-first operand order, 32-bit wrap and flags; inferred from the upstream three-operand signature and Theme Park Inc's sole &#96;MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE&#96; (followed by SETTIMER). No original dispatch of interpreter case 48 is traced, so the native accumulation and flags are unqualified | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:12` |
 | VM-901 | Original-fidelity area (scope unadjudicated) | WAITABS: STP-PPC 0xb0710 proves now + operand stored without speed division, first-encounter yield and unsigned-deadline comparison; the port keeps that deadline in its non-wrapping double script clock, so the original's 2^32 wrap and zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:13` |
 | VM-902 | Original-fidelity area (scope unadjudicated) | YEAR/MONTH/DAY/HOUR: the TPW object hook samples managed host-local civil time using the Feral C time/localtime field mapping. Provider/current host input is not saved or hashed; VM variable writes/flags remain saved and hashed. Replay depends on the same external samples. Managed timezone, clock changes, invalid/rollover dates and Windows/TPI parity are unqualified; existing destination/literal/flag behavior is not established by the clock-domain witness | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:14` |
@@ -960,6 +961,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-930 | `source/OpenTPW/Hud/GuestWorldPicker.cs:9` | [APPROX:UI-930] rectangle hits choose the nearest projected depth, then lowest guest id; transparent pixels and terrain/object occlusion are not tested — evidence needed: original visitor picking geometry and occlusion policy |
 | UI-931 | `source/OpenTPW/FrontEnd/FrontEndMenu.Continue.cs:8` | [APPROX:UI-931] the theme entry offers distinct New/Continue actions for an own save; the native per-player theme-entry flow is not reproduced — evidence needed: original profile/theme-entry UI behavior |
 | UI-932 | `source/OpenTPW/World/FreeWalkCameraMode.cs:4` | [APPROX:UI-932] terrain-sampled eye height, movement and look tuning are host choices, not native camcorder reconstruction. |
+| UI-934 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:179` | [APPROX:UI-934] eight-row scroll viewport and selection/activation controls are host UI; native Load navigation is not qualified. |
 | VM-900 | `source/OpenTPW/VM/Handlers/Math.cs:59` | [APPROX:VM-900] MULT's native dispatch (interpreter case 48) is traced on no original build (the Mac jump table is data:0x3f2a4, unvisited for this case), so the destination order and the wrap/flags policy are family inference, not static evidence. Evidence needed: the case-48 handler in any original executable; the Theme Park Inc corpus only proves &#96;MULT dest a b&#96; shape and a SETTIMER consumer. |
 | VM-901 | `source/OpenTPW/VM/Handlers/Scheduling.cs:23` | [APPROX:VM-901] The traced facts are STP-PPC 0xb0710–0xb0798: WAITABS stores now + operand as a 32-bit deadline word in the field WAIT uses (no script-speed division), its first encounter always yields, and later encounters wait while unsigned now &lt; deadline. The port models that deadline in its non-wrapping double script clock, so the original's unsigned comparison, its 2^32 wrap and its zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled; a session that never nears 2^31 ms of scheduler clock cannot observe the difference. |
 | VM-901 | `source/OpenTPW/VM/RideVM.cs:456` | [APPROX:VM-901] The deadline lives in this VM's non-wrapping double script clock, not the original's wrapping unsigned 32-bit word with its zero-deadline sentinel (docs/reverse/PPC-clock.md); wrap-past-2^31/2^32 behaviour is unmodelled. |

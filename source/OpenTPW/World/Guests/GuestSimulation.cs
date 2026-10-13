@@ -1188,12 +1188,19 @@ public sealed class GuestSimulation : IRideVisitorHost
 	{
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
-		// the live words the level mirrors from the economy; a bridge nobody mirrors into keeps its constructor price
+		return QueueJoinRules.TooExpensive( PriceTermsOf( attraction ), guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
+	}
+
+	/// <summary>
+	/// The price test's words for <paramref name="attraction"/>: the live words the level mirrors from the economy (a free visit's
+	/// all-zero terms included); a bridge nobody mirrors into keeps its constructor price.
+	/// </summary>
+	internal static PriceTerms PriceTermsOf( IRideVisitorBridge attraction )
+	{
 		var live = attraction.Sideshow;
-		var price = live == default ? attraction.Price : live.PricePerUse;
-		var terms = new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
+		var price = attraction.HasSideshowTerms ? live.PricePerUse : attraction.Price;
+		return new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
 			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, 0 );
-		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
 	}
 
 	/// <summary>The cell the walking guest stands on, and its queue index when it is a queue cell.</summary>

@@ -863,6 +863,9 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
+  of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
+  a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.
 - **WAD ranges checked before allocating (October 13):** a WAD's header, directory and member ranges are checked
   against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
   instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive

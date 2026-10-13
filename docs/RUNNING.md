@@ -269,7 +269,7 @@ the directory with `OPENTPW_CONFIG_DIR`. These settings are never in saves. Malf
 settings file falls back to defaults with a warning. Only the 3D world is scaled: BF4 text,
 ImGui and movies render at output size, and 4x MSAA stays on independently. The Options
 screen can use the `OpenTPW.IDisplaySettings` API (including a keep-or-revert timeout).
-Window mode, upscaling, render scale and interface scale are on the OpenTPW page of Game Options. Status and limits: UPSCALING-DESIGN.md.
+Window mode, upscaling, render scale, the frame rate limit (off, 30 or 60 fps; off by default) and interface scale are on the OpenTPW page of Game Options. Status and limits: UPSCALING-DESIGN.md.
 
 ## Native integration smoke test
 

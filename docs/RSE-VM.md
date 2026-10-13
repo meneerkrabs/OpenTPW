@@ -114,7 +114,9 @@ implementation against those inputs, not equivalence to an executed PC game.
 ## Managed root-fault containment
 
 A faulted VM freezes its own clock and stops both owned child slots before
-another child slice can run. A live object runtime checks its root before and
+another child slice can run. The parent is checked again after each descendant
+advance, so a callback fault cannot run the next child slot; the current child
+slice remains the servicing boundary. A live object runtime checks its root before and
 after the root slice; a fault uses the existing object `Stop()` teardown before
 coaster or animation progression. This releases riders, unregisters scripts,
 stops owned sound chains and clears animation channels. The root's fault state

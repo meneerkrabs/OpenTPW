@@ -57,6 +57,30 @@ public class RootVmFaultContainmentTests
 		root.Stop();
 	}
 
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void DescendantCallbackFaultStopsRemainingOwnedScheduling( bool fromSound )
+	{
+		var world = new RideScriptWorld();
+		var root = new RideVM( Script( Loop() ), new RideVMOptions { World = world, ResolveScript = _ => Script( Loop() ) } );
+		root.SpawnChild( "child", false );
+		root.SpawnChild( "sound", true );
+		var child = root.Child!;
+		var sound = root.SoundChild!;
+		(fromSound ? sound : child).InstructionExecuting = ( _, _ ) => root.Abort( "descendant callback" );
+		root.Advance( Tick );
+		Assert.AreEqual( RideVMState.Faulted, root.State );
+		Assert.AreEqual( "descendant callback", root.FaultMessage );
+		if ( !fromSound ) Assert.AreEqual( 0L, sound.ExecutedInstructions, "The next owned slot cannot run after its root faults." );
+		Assert.IsNull( root.Child );
+		Assert.IsNull( root.SoundChild );
+		Assert.AreEqual( RideVMState.Halted, child.State );
+		Assert.AreEqual( RideVMState.Halted, sound.State );
+		Assert.AreEqual( 1, world.Scripts.Count );
+		root.Stop();
+	}
+
 	[TestMethod]
 	public void NormalCompletionKeepsItsOwnedChildScheduling()
 	{

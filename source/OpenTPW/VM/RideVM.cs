@@ -197,15 +197,23 @@ public sealed class RideVM
 			World.ObserveClock( SchedulerMilliseconds );
 			RunSlice();
 		}
-		// Managed host containment: a faulted parent cannot keep driving its owned descendants.
-		if ( State == RideVMState.Faulted )
-		{
-			RemoveChild();
-			RemoveSoundChild();
+		if ( StopChildrenIfFaulted() )
 			return;
-		}
 		Child?.Advance( deltaSeconds );
+		if ( StopChildrenIfFaulted() )
+			return;
 		SoundChild?.Advance( deltaSeconds );
+		StopChildrenIfFaulted();
+	}
+
+	private bool StopChildrenIfFaulted()
+	{
+		// Managed host containment also covers a descendant callback faulting its parent.
+		if ( State != RideVMState.Faulted )
+			return false;
+		RemoveChild();
+		RemoveSoundChild();
+		return true;
 	}
 
 	private void RunSlice()

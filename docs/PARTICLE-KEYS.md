@@ -75,6 +75,11 @@ Independent review also exercises variable-operand copies, sound-child ownership
 explicit Stop clearing, other-owner isolation, and exclusion from runtime
 snapshots and canonical effect state. These are managed diagnostic controls;
 they add no native execution or event-delivery qualification.
+The combined runtime also has an actual root-fault control: Stop clears its
+diagnostic, placement/resolver and looping EVENT voice while another owner
+retains its diagnostic and audible loop. Stopped capture becomes eligible; the
+other live loop retains its existing capture refusal. Sound-route fixtures use
+a listener-local source without changing the global listener.
 
 Verification:
 

@@ -39,7 +39,7 @@ public class ParticleEventRequestTests
 			new ObjectShape(new[] { "*" }), "/model.MD2", null, "/script.RSE", new[] { "/child.RSE" }, Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem(root), null);
 		mixer = new AudioMixer(null); var system = new SoundEventSystem(mixer, 7); var category = Empty<SoundCategory>(); var catalog = Empty<SoundCatalog>();
 		var sample = new SoundSample(1, 65535, 0, 1, 0); var sound = new SoundEntry(100, 100, 0, 0, 0, 0, 1, 100, new[] { sample }, Array.Empty<SoundLink>(), Array.Empty<byte>());
-		Set(catalog, "Events", new[] { new SoundEvent(43, 0, 0, 0, new[] { sound }) }); Set(category, "Catalog", catalog);
+		Set(catalog, "Events", new[] { new SoundEvent(43, 0, 0, 0, new[] { sound }), new SoundEvent(44, 0, 8, 0, new[] { sound }) }); Set(category, "Catalog", catalog);
 		((Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof(SoundEventSystem).GetField("decoded", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(system)!)[(category, 1, 1)] = new Mp2Audio(AudioMixer.OutputRate, 1, new short[] { 1000, 1000, 1000 }, 1, 0);
 		Audio("events", system); foreach (var property in new[] { "LevelRides", "LevelAmbient", "Rides", "Kids", "Staff", "Ambient", "Ui" }) Audio("<" + property + ">k__BackingField", category);
 	}
@@ -68,7 +68,8 @@ public class ParticleEventRequestTests
 	[DataRow(0)][DataRow(3)][DataRow(4)][DataRow(5)][DataRow(6)][DataRow(7)][DataRow(8)][DataRow(9)][DataRow(10)]
 	public void OtherEventTypesDoNotMutateParticleDiagnostic(int type)
 	{
-		var placed = Placed(); Emit(placed.Runtime, 1); var previous = placed.Runtime.LastParticleEventAttempt; Emit(placed.Runtime, type);
+		var placed = Placed(); Emit(placed.Runtime, 1); var previous = placed.Runtime.LastParticleEventAttempt;
+		placed.Runtime.SetEventOrigin(() => AudioListener.Position); Emit(placed.Runtime, type);
 		Assert.AreEqual(previous, placed.Runtime.LastParticleEventAttempt); if (type is >= 3 and <= 9) Assert.IsTrue(mixer.Mix(1).Any(value => value != 0), "real sound positive control remains connected");
 	}
 	[TestMethod]
@@ -135,6 +136,31 @@ public class ParticleEventRequestTests
 		Emit(placed.Runtime, 2); Assert.IsNull(placed.Runtime.LastParticleEventAttempt); Assert.AreEqual(otherAttempt, other.Runtime.LastParticleEventAttempt);
 		Assert.AreEqual(ParticleEventPreparationStatus.Prepared, retained.Status); Assert.IsNotNull(retained.Request);
 		foreach (var effect in new[] { -1, -32768, 105, 32767 }) { Emit(other.Runtime, 2, 7, effect); Assert.IsNull(other.Runtime.LastParticleEventAttempt!.Value.Request); }
+	}
+
+	[TestMethod]
+	public void ActualRootFaultClearsItsDiagnosticAndLoopButKeepsOtherOwnerAndCapturePolicy()
+	{
+		var world = new RideScriptWorld(); var first = Placed(world: world); var other = Placed(90, world);
+		Emit(first.Runtime, 2); Emit(other.Runtime, 1); var retained = first.Runtime.LastParticleEventAttempt!.Value;
+		var otherAttempt = other.Runtime.LastParticleEventAttempt;
+		AudioVoice Loop(OriginalObjectRuntime owner)
+		{
+			var listener = AudioListener.Position; owner.SetEventOrigin(() => listener); Emit(owner, 3, -1, 44);
+			return ((List<AudioVoice>)typeof(OriginalObjectEffects).GetField("ownedEventLoops", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(owner.Script!.Effects)!).Single();
+		}
+		var ownLoop = Loop(first.Runtime); var otherLoop = Loop(other.Runtime);
+		Assert.AreEqual(retained, first.Runtime.LastParticleEventAttempt); Assert.IsTrue(ownLoop.Loops); Assert.IsTrue(otherLoop.Loops);
+		Assert.IsTrue(mixer.Mix(4).Any(value => value != 0));
+		StringAssert.Contains(Assert.ThrowsException<NotSupportedException>(() => first.Runtime.CaptureSnapshot()).Message, "looping EVENT");
+		first.Script!.Abort("integration particle-owner fault"); first.Runtime.Simulate(FixedStepClock.TickDuration);
+		Assert.IsNull(first.Runtime.LastParticleEventAttempt); Assert.IsTrue(ownLoop.IsFinished); Assert.IsFalse(otherLoop.IsFinished);
+		Assert.AreEqual(otherAttempt, other.Runtime.LastParticleEventAttempt); Assert.IsTrue(mixer.Mix(4).Any(value => value != 0));
+		foreach (var name in new[] { "particlePlacement", "particleKeys", "eventOrigin" }) Assert.IsNull(typeof(OriginalObjectRuntime).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(first.Runtime), name);
+		var stopped = first.Runtime.CaptureSnapshot(); Level.RequireResumableAudio(stopped); Assert.AreEqual("integration particle-owner fault", stopped.StoppedScriptFault);
+		StringAssert.Contains(Assert.ThrowsException<NotSupportedException>(() => other.Runtime.CaptureSnapshot()).Message, "looping EVENT");
+		first.Runtime.Simulate(FixedStepClock.TickDuration); Emit(first.Runtime, 2); Assert.IsNull(first.Runtime.LastParticleEventAttempt); Assert.IsFalse(otherLoop.IsFinished);
+		Assert.AreEqual(ParticleEventPreparationStatus.Prepared, retained.Status); Assert.IsNotNull(retained.Request);
 	}
 
 }

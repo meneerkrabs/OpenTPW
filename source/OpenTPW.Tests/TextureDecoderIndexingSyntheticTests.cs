@@ -85,8 +85,8 @@ public class TextureDecoderIndexingSyntheticTests
 		new( "strip1x256-half-a", "7C9CA6D8AAC33F55475C3FF61CCA1B25B9D5F2775B43F031F76FB796B60C723E", null, null ),
 		new( "unknown-flag-half", "BC91D0D91F0EEFB128E17628AE546A5F5CEA2F39E19CD738FF177F9B06D59B3D", null, null ),
 		new( "unknown-flag-full", "6F0CAF5A21DC751028FAAF1716E7F33A0D365A499BBDABC2D24CAEDC26602F66", null, null ),
-		new( "trunc-color", null, "IndexOutOfRangeException", null ),
-		new( "trunc-alpha", null, "IndexOutOfRangeException", null ),
+		new( "trunc-color", null, "InvalidDataException", null ),
+		new( "trunc-alpha", null, "InvalidDataException", null ),
 		new( "lzss-garbage", null, "Exception", "Offset > stream length" ),
 	};
 

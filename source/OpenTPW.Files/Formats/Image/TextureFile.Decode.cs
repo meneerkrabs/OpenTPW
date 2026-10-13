@@ -84,26 +84,32 @@ partial class TextureFile
 	{
 		int count = size * (size / 2);
 		int index = 0;
+		if ( pSrc.Length < size * size )
+			throw new InvalidDataException( "Truncated WCT channel coefficients." );
 
 		//
 		// Step 1: Dequantize
 		//
 		for ( int i = 0; i < count; i++ )
 		{
+			if ( index >= pSrc.Length ) throw new InvalidDataException( "Truncated WCT channel coefficients." );
 			int val = (sbyte)pSrc[index++];
 
 			if ( val == sbyte.MinValue )
 			{
+				if ( pSrc.Length - index < sizeof( short ) ) throw new InvalidDataException( "Truncated WCT coefficient escape." );
 				val = BitConverter.ToInt16( pSrc, index );
 				index += sizeof( short );
 			}
 
 			state.DequantizationBuffer[i * 2] = (float)val;
 
+			if ( index >= pSrc.Length ) throw new InvalidDataException( "Truncated WCT channel coefficients." );
 			val = (sbyte)pSrc[index++];
 
 			if ( val == sbyte.MinValue )
 			{
+				if ( pSrc.Length - index < sizeof( short ) ) throw new InvalidDataException( "Truncated WCT coefficient escape." );
 				val = BitConverter.ToInt16( pSrc, index );
 				index += sizeof( short );
 			}
@@ -111,7 +117,7 @@ partial class TextureFile
 			state.DequantizationBuffer[i * 2 + 1] = (float)val;
 		}
 
-		Array.Copy( pSrc, index, pSrc, 0, pSrc.Length - index );
+		pSrc = pSrc[index..]; // Only unconsumed bytes belong to the next channel.
 
 		//
 		// Step 2: decode rows

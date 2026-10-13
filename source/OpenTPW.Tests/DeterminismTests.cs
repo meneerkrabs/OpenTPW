@@ -300,6 +300,11 @@ public class DeterminismTests
 		+ @"|\.GetHashCode\s*\(|\bHashCode\.\w+|new\s+HashCode\s*\(",
 		RegexOptions.CultureInvariant );
 
+	private const string ApprovedCivilTimeProvider = "civilTime = GameEditions.Current == GameEdition.ThemeParkWorld ? clock ?? (() => DateTime.Now) : null;";
+
+	internal static bool IsApprovedCivilTimeProvider( string relativePath, string line ) =>
+		relativePath.Replace( '\\', '/' ) == "VM/RideScriptWorld.cs" && line.Trim() == ApprovedCivilTimeProvider;
+
 	/// <summary>Top-level World files that are presentation (cameras, sky, advisor UI, sandbox file I/O); every other World file is scanned.</summary>
 	private static readonly string[] PresentationWorldFiles =
 	{
@@ -307,7 +312,7 @@ public class DeterminismTests
 		"GlobeCameraMode.cs", "LobbyCameraMode.cs", "ParkCameraMode.cs", "SandboxSave.cs", "Sky.cs", "Sun.cs"
 	};
 
-	/// <summary>Simulation folders must not reach process-wide or unseeded randomness or the wall clock.</summary>
+	/// <summary>Simulation folders reject uncontrolled sources except one explicitly qualified host-civil provider boundary.</summary>
 	[TestMethod]
 	public void SimulationCodeUsesNoProcessWideRandomnessOrClock()
 	{
@@ -321,10 +326,13 @@ public class DeterminismTests
 		var world = Directory.EnumerateFiles( Path.Combine( source, "World" ), "*.cs", SearchOption.TopDirectoryOnly )
 			.Where( path => !PresentationWorldFiles.Contains( Path.GetFileName( path ) ) ).ToList();
 		CollectionAssert.IsSubsetOf( new[] { "Level.cs", "Level.Objects.cs", "FixedStepClock.cs", "PrototypeRide.cs", "Ride.cs" }, world.Select( Path.GetFileName ).ToArray() );
-		var hits = folders.SelectMany( folder => Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories ) )
+		var lines = folders.SelectMany( folder => Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories ) )
 			.Concat( world )
-			.SelectMany( path => File.ReadLines( path ).Select( ( line, index ) => (path, line, index) ) )
-			.Where( item => ForbiddenInSimulation.IsMatch( item.line ) )
+			.SelectMany( path => File.ReadLines( path ).Select( ( line, index ) => (path, line, index) ) ).ToList();
+		Assert.AreEqual( 1, lines.Count( item => IsApprovedCivilTimeProvider( Path.GetRelativePath( source, item.path ), item.line ) ),
+			"Only the exact single TPW-gated provider boundary is approved (VM-902)." );
+		var hits = lines.Where( item => ForbiddenInSimulation.IsMatch( item.line )
+			&& !IsApprovedCivilTimeProvider( Path.GetRelativePath( source, item.path ), item.line ) )
 			.Select( item => $"{Path.GetRelativePath( root.FullName, item.path )}:{item.index + 1}: {item.line.Trim()}" ).ToList();
 		Assert.AreEqual( 0, hits.Count, string.Join( Environment.NewLine, hits ) );
 	}
@@ -373,6 +381,22 @@ public class DeterminismTests
 			Assert.IsTrue( ForbiddenInSimulation.IsMatch( line ), line );
 		foreach ( var line in allowed )
 			Assert.IsFalse( ForbiddenInSimulation.IsMatch( line ), line );
+	}
+
+	[TestMethod]
+	public void CivilTimeBoundaryDoesNotExemptOtherClockExpressionsOrFiles()
+	{
+		Assert.IsTrue( IsApprovedCivilTimeProvider( "VM/RideScriptWorld.cs", ApprovedCivilTimeProvider ) );
+		Assert.IsTrue( ForbiddenInSimulation.IsMatch( ApprovedCivilTimeProvider ), "The underlying guard still detects the clock." );
+		Assert.IsFalse( IsApprovedCivilTimeProvider( "Economy/RideScriptWorld.cs", ApprovedCivilTimeProvider ) );
+		Assert.IsFalse( IsApprovedCivilTimeProvider( "VM/Other.cs", ApprovedCivilTimeProvider ) );
+		foreach ( var line in new[] { "var leak = DateTime.Now;", "var leak = DateTime.UtcNow;", "var leak = DateTimeOffset.Now;",
+			"var leak = DateTimeOffset.UtcNow;", ApprovedCivilTimeProvider + " var leak = DateTime.Now;",
+			ApprovedCivilTimeProvider.Replace( "GameEditions.Current == GameEdition.ThemeParkWorld", "true" ) } )
+		{
+			Assert.IsTrue( ForbiddenInSimulation.IsMatch( line ), line );
+			Assert.IsFalse( IsApprovedCivilTimeProvider( "VM/RideScriptWorld.cs", line ), line );
+		}
 	}
 }
 

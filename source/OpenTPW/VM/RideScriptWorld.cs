@@ -3,20 +3,37 @@ namespace OpenTPW;
 /// <summary>
 /// The set of live scripts that can see each other through FINDSCRIPTRAND, GETREMOTEVAR and SETREMOTEVAR.
 /// Script IDs are positive; 0 means "no script". One world belongs to one park: it also allocates the park's
-/// attraction ids and seeds scripts that are created without an explicit seed, so nothing about a run
-/// depends on what else ran earlier in the process.
+/// attraction ids and seeds scripts that are created without an explicit seed, so its
+/// allocations and random streams do not depend on what else ran earlier in the process. Host civil-time queries
+/// are external inputs and require the same supplied samples for reproducible continuation.
 /// </summary>
 public sealed class RideScriptWorld
 {
 	private readonly Dictionary<int, RideVM> scripts = new();
+	private readonly Func<DateTime>? civilTime;
 	private int nextId = 1;
 	private int nextAttractionId = 1;
 
 	/// <param name="seed">Start state of the seed stream for scripts without an explicit seed (<see cref="WorldSeed.ScriptStream"/>).</param>
-	public RideScriptWorld( ulong seed = 0 )
+	public RideScriptWorld( ulong seed = 0 ) : this( seed, null )
+	{
+	}
+
+	/// <param name="seed">The world's script and coaster seed.</param>
+	/// <param name="clock">Host-local civil time for each executed query; null selects the system host clock. Unavailable on TPI worlds.</param>
+	public RideScriptWorld( ulong seed, Func<DateTime>? clock )
 	{
 		RandomState = seed;
 		Coasters = new CoasterWorld( seed );
+		civilTime = GameEditions.Current == GameEdition.ThemeParkWorld ? clock ?? (() => DateTime.Now) : null;
+	}
+
+	/// <summary>Samples external host civil time; it is never reconstructed from scheduler or park turns.</summary>
+	// [APPROX:VM-902] managed host-local time is an external, unsaved/unhashed input; variable writes and flags remain VM state. Native timezone/clock changes and destination/flag ordering are unqualified (PPC-clock.md).
+	internal bool TryReadCivilTime( out DateTime value )
+	{
+		value = civilTime == null ? default : civilTime();
+		return civilTime != null;
 	}
 
 	public IReadOnlyCollection<RideVM> Scripts => scripts.Values;

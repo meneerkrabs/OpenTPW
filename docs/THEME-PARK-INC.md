@@ -104,7 +104,8 @@ no front end or online world; no advisor. The prebuilt save's economy, guests, r
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
-(`WAITABS`, `MULT`, see the VM section) still fault the scripts that reach them. Textures are not
+(`WAITABS`, `MULT`) have VM handlers since October 13, 2026 (see RSE-VM.md's gap-opcode section;
+the science smoke never reached them, so retail execution is not claimed). Textures are not
 checked against the original game's alpha or colour handling (COMPAT-014/015).
 
 **Textures.** `Texture` now loads `.fsh` (first image of the SHPI file, `FshFile`) and stb images

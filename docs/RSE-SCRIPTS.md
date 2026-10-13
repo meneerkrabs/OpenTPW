@@ -97,9 +97,11 @@ Histogram (opcode:count), pinned by the private test:
 Superseded by [RSE-VM.md](RSE-VM.md): `RideVM` now loads `RideScriptFile`
 (variables, strings, code-word branch targets) and has a handler for each of the
 84 corpus opcodes (33 implemented, 51 hooked). Of the 22 named opcodes that
-never occur (SETLV, ADDOBJ_EXT, EVENT_EXT, GETANIM, FLUSHANIM_CH, WAITANIM_CH,
-TRIGWAITANIM_CH, DBGMSG, PUSH, POP, WAITABS, MULT, END, SETVARINPARENT, the four
-light opcodes, GETCUSTPTCLCODE, YEAR/MONTH/DAY), 18 remain without a handler.
+never occur in the Theme Park World corpus (SETLV, ADDOBJ_EXT, EVENT_EXT,
+GETANIM, FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH, DBGMSG, PUSH, POP, WAITABS,
+MULT, END, SETVARINPARENT, the four light opcodes, GETCUSTPTCLCODE,
+YEAR/MONTH/DAY), 16 remain without a handler: WAITABS and MULT gained handlers
+for the Theme Park Inc corpus (RSE-VM.md's gap-opcode section).
 
 ## Golden scripts
 

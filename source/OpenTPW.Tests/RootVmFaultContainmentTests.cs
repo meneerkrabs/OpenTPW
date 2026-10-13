@@ -238,6 +238,47 @@ public class RootVmFaultContainmentTests
 	}
 
 	[TestMethod]
+	public void FaultStopsItsRealEventLoopAndRetainsOtherOwnerAndCaptureEligibility()
+	{
+		using var fixture = new Fixture( FaultScript() );
+		using var mixer = new AudioMixer( null );
+		var system = new SoundEventSystem( mixer, 7 );
+		var category = (SoundCategory)RuntimeHelpers.GetUninitializedObject( typeof( SoundCategory ) );
+		var catalog = (SoundCatalog)RuntimeHelpers.GetUninitializedObject( typeof( SoundCatalog ) );
+		var sample = new SoundSample( 1, 65535, 0, 1, 0 );
+		var sound = new SoundEntry( 100, 100, 0, 0, 0, 0, 1, 100, new[] { sample }, Array.Empty<SoundLink>(), Array.Empty<byte>() );
+		typeof( SoundCatalog ).GetField( "<Events>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( catalog, new[] { new SoundEvent( 44, 0, 8, 0, new[] { sound } ) } );
+		typeof( SoundCategory ).GetField( "<Catalog>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( category, catalog );
+		((System.Collections.Generic.Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem ).GetField( "decoded", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( system )!)[(category, 1, 1)] = new Mp2Audio( AudioMixer.OutputRate, 1, Enumerable.Repeat( (short)1000, 256 ).ToArray(), 1, 0 );
+		var events = typeof( GameAudio ).GetField( "events", BindingFlags.Static | BindingFlags.NonPublic )!;
+		var kids = typeof( GameAudio ).GetField( "<LevelRides>k__BackingField", BindingFlags.Static | BindingFlags.NonPublic )!;
+		var previousEvents = events.GetValue( null ); var previousKids = kids.GetValue( null );
+		var runtime = new OriginalObjectRuntime( fixture.Entry ); var other = new OriginalObjectRuntime( fixture.Entry );
+		try
+		{
+			events.SetValue( null, system ); kids.SetValue( null, category );
+			AudioVoice EventLoop( OriginalObjectRuntime owner )
+			{
+				owner.SetEventOrigin( () => System.Numerics.Vector3.Zero );
+				using var stream = new MemoryStream( new Asm().I( Opcode.EVENT, 3, -1, 44 ).I( Opcode.ENDSLICE ).Build( Array.Empty<string>() ) );
+				var vm = new RideVM( stream, new RideVMOptions { Effects = owner.Script!.Effects } );
+				vm.Advance( Tick ); Assert.AreNotEqual( RideVMState.Faulted, vm.State ); vm.Stop();
+				return ((System.Collections.Generic.List<AudioVoice>)typeof( OriginalObjectEffects ).GetField( "ownedEventLoops", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( owner.Script.Effects )!).Single();
+			}
+			var held = EventLoop( runtime ); var otherHeld = EventLoop( other );
+			Assert.IsTrue( held.Loops ); Assert.IsTrue( otherHeld.Loops ); Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ) );
+			StringAssert.Contains( Assert.ThrowsException<NotSupportedException>( () => runtime.CaptureSnapshot() ).Message, "looping EVENT" );
+			runtime.Script!.Abort( "review fault" ); runtime.Simulate( Tick );
+			Assert.IsTrue( held.IsFinished ); Assert.IsFalse( otherHeld.IsFinished );
+			var stopped = runtime.CaptureSnapshot(); Assert.IsFalse( stopped.HeldScream ); Assert.AreEqual( 0, stopped.OwnedScreamCount );
+			Level.RequireResumableAudio( stopped ); Assert.AreEqual( "review fault", stopped.StoppedScriptFault );
+			Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ), "The healthy owner remains audible." );
+			runtime.Stop(); Assert.IsFalse( otherHeld.IsFinished );
+		}
+		finally { runtime.Stop(); other.Stop(); events.SetValue( null, previousEvents ); kids.SetValue( null, previousKids ); }
+	}
+
+	[TestMethod]
 	public void UnservicedRootFaultKeepsExistingLiveSnapshotUntilContainmentTick()
 	{
 		using var fixture = new Fixture( FaultScript() ); var runtime = new OriginalObjectRuntime( fixture.Entry );

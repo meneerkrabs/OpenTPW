@@ -779,6 +779,14 @@ The menu reads the existing own codec's structural metadata; it does not load or
 
 Synthetic tests drive actual Enter/Continue/New/Back dispatch with a tiny own-world file, pass its restored economy and saved clock/guest metadata through the real continuation handler, and exercise the real resume path refusing missing synthetic assets before replacement. Other-theme, deleted/corrupt, changed-mode/easy and TPI refusal controls preserve live references. Original-data/GPU/browser resume and native profile/theme-entry parity remain unqualified; retirement callback exceptions retain the existing staging limitation.
 
+The Load chooser owns its dispatch: Back/Escape or right-click cancellation wins
+over activation in the same input batch, and combined mouse release plus Enter
+loads at most once per update. Removed chooser list, Load and Back callbacks
+cannot load stale entries or remove a fresh screen. Separate valid updates and
+a retry after a refused loader remain available; selected entry references and
+metadata are unchanged. These are bounded host chooser rules under UI-934, not
+changes to generic screen input or qualified native navigation.
+
 ### Host terrain walk (C)
 
 In a Theme Park World terrain park, press plain **C**, then press the terrain to enter the host first-person inspection camera. Press **C** again or **Escape** to cancel entry or return to the exact previous park camera instance and pose. A ride entered from walking returns to that walking camera; leaving the walk then restores the original park camera. Read-only visits allow this inspection without park edits. Theme Park Inc and the terrain-free sandbox refuse entry.

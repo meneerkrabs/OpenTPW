@@ -171,7 +171,7 @@ public sealed partial class FrontEndMenu
 	/// <summary>The Load Park screen (UITEXT 202), shared with the pause menu.</summary>
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
-		var screen = new UiScreen( "load" );
+		var screen = new LoadChooserScreen();
 		var window = UiDialogs.CenteredWindow( 1500, 1100 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.LoadPark] );
 		if ( entries.Count == 0 )
@@ -187,7 +187,7 @@ public sealed partial class FrontEndMenu
 			Selected = parks.Length == 0 ? -1 : 0,
 			Enabled = parks.Length != 0,
 			Visible = parks.Length != 0,
-			RowActivated = index => load( parks[index] ),
+			RowActivated = index => { if ( screen.TryBeginActivation() ) load( parks[index] ); },
 			RowHeight = 90,
 			Margin = 10,
 			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 360, 740 ),
@@ -208,13 +208,46 @@ public sealed partial class FrontEndMenu
 			Id = "back",
 			Text = () => strings.Extra( OpenTpwText.Back ),
 			Help = strings.Help( 2 ),
-			Clicked = stack.Pop,
+			Clicked = CloseChooser,
 			Bounds = new UiRect( window.X + 120, window.Bottom - 190, 420, 104 ),
 			Anchor = UiAnchor.Center
 		} );
-		screen.Back = stack.Pop;
+		screen.Back = CloseChooser;
+		void CloseChooser()
+		{
+			if ( !screen.IsRemoved && ReferenceEquals( stack.Top, screen ) ) stack.Pop();
+		}
 		screen.Focus( screen.FocusableElements.First() );
 		return screen;
+	}
+
+	/// <summary>Load-only dispatch ownership; other screens keep their existing input policy.</summary>
+	private sealed class LoadChooserScreen() : UiScreen( "load" )
+	{
+		private bool dispatching;
+		private bool activated;
+
+		public bool TryBeginActivation()
+		{
+			if ( IsRemoved || dispatching && activated ) return false;
+			if ( dispatching ) activated = true;
+			return true;
+		}
+
+		public override bool Update( UiContext context, UiInput input )
+		{
+			if ( IsRemoved ) return true;
+			// Cancellation owns a combined input batch before a row or button can load.
+			if ( input.Has( UiKeys.Back ) || input.RightPressed && Modal )
+			{
+				Back?.Invoke();
+				return true;
+			}
+			dispatching = true;
+			activated = false;
+			try { return base.Update( context, input ); }
+			finally { dispatching = false; }
+		}
 	}
 
 	public void ShowOptions()

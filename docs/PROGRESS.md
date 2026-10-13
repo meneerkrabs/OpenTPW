@@ -6,6 +6,25 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Native smokes on a 120 Hz arm64 Mac (October 13, 2026)
+
+- **Retail WCT textures decode again.** The WCT bounds audit (`docs/WCT-ROBUSTNESS.md`) was written
+  without original data and refused 5,055 of the 8,416 shipped textures: every BILZ chunk (its stream
+  size counts the 28-byte header too) and every LZSS chunk of odd length (the last 16-bit word is the
+  final byte plus zero bits). Both are now read as the retail data stores them; all 8,412 textures the
+  decoder handled before the audit decode to byte-identical RGBA, and a corpus-wide test
+  (`EveryOriginalTextureDecodesExceptThePinnedFailures`) walks every shipped WCT.
+- **Front-end smoke and advisor speech.** The pause-menu save waits for the Jungle welcome line
+  (response 1, 28.63 s, the right clip from the level bank). The speech plays in real time, so the frames
+  it takes follow the display: with the frame cap off, a 120 Hz screen spent the whole 3,000-frame budget
+  waiting. Those frames no longer count against the budget; the wait is bounded by the clip's remaining
+  length plus 5 s instead. Measured: the speech ended 24.16 s into a predicted 24.17 s wait; the test
+  passed at 2560×1440 px, UI scale 2, in 3,697 frames, 2,897 of them speech.
+- **Sandbox smoke ride-view click.** The guard clicked the first cell of the first removable object, which
+  at 1280×720 logical projects below the bottom edge of the park camera's view. It now clicks a removable
+  object's cell that is in view, picks back to itself and is occupied by that object. The sandbox smoke
+  passed in 2,032 frames at the same size.
+
 ## Merged PowerPC evidence lanes
 
 The reviewed clock/PEF, economy/save, VM, UI-binding, advisor/audio, guest

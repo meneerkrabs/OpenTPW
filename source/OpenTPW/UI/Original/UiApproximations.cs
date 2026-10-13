@@ -96,6 +96,7 @@ public static class UiApproximations
 
 		("UI-931", "theme entry offers an explicit New/Continue choice for an application-owned saved park; saved mode/start kind remain authoritative and no native profile or autosave flow is reproduced", "original profile and theme-entry UI behavior"),
 		("UI-932", "plain C arms a terrain click for a host first-person inspection camera; terrain height, eye height, movement/look tuning and flat-plane entry picking are approximations, without object collision, photo or recording", "native camcorder entry, walk movement, collision, eye height, look controls and camera persistence"),
+		("UI-933", "an editable selected shop or sideshow exposes a host decimal price editor in the information arm; it changes only the mapped instance Price using the existing nonnegative int API, without native slider/layout or quality/prize policy reconstruction", "original shop/sideshow control placement, native slider bounds and mode gating"),
 	};
 
 	private static bool logged;

@@ -53,3 +53,17 @@ animation versus retained bind pose, explicit refusals, and shipped ride model
 metadata with a moving animation witness. The identity-pinned checker reads
 selected operands/constants from the supplied original binary; it executes no
 original instructions and emits no disassembly or binary copy.
+
+Independent review (2026-10-13) added separate synthetic cases for a malformed
+first duplicate, a same-value camera entry before a particle entry, independent
+numeric placement/direction witnesses, zero/NaN/infinite/overflowing directions,
+non-affine frames, nonfinite placement, input-stream lifetime and result snapshots.
+The resolver refuses grid anchors whose shared placement calculation (`X * 10`,
+`Y * 10` in integer arithmetic) would overflow, before producing any pose.
+
+The reviewed resolver suite passes 13 synthetic cases; the build succeeds with
+existing repository warnings. Fidelity validation and its 11 tests pass. The
+shipped-model case was excluded and the static identity checker was skipped:
+reads of the private USBSSD asset volume were blocked. Those checks remain
+required qualification, alongside the documented native refresh/event timing;
+this review does not establish original-runtime particle behavior.

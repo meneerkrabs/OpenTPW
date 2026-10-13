@@ -51,6 +51,8 @@ public sealed class ParticleKeyResolver
 		if ( key < 0 )
 			return Refuse( ParticleKeyStatus.UnsupportedFallback );
 		if ( nodeTransforms.Count != model.Nodes.Count || !ObjectFootprint.IsValidRotation( placement.Rotation )
+			|| placement.X < int.MinValue / 10 || placement.X > int.MaxValue / 10
+			|| placement.Y < int.MinValue / 10 || placement.Y > int.MaxValue / 10
 			|| !float.IsFinite( placement.BaseHeight ) || !float.IsFinite( placement.GridOrigin.X ) || !float.IsFinite( placement.GridOrigin.Y ) )
 			return Refuse( ParticleKeyStatus.InvalidTransform );
 		for ( var attribute = 0; attribute < model.DummyAttributes.Count; attribute++ )

@@ -863,6 +863,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting
+  visitors directly instead of building their cell groups a second time (1,500 visitors: 165,168 to 680
+  bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the
+  header before decoding another mesh (every shipped model still parses); new save/weather roundtrip
+  tests cover real files, paused and fast speeds, live weather, pending thunder and malformed JSON.
 - **Parks built over frames (October 13):** a park chosen in the front end, loaded or visited is built
   over several frames beside the running lobby, with a progress line, instead of in one frame; the
   construction runs the same steps in the same order, and the smoke test finds the same world hash,

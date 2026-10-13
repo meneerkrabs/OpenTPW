@@ -35,5 +35,7 @@ internal sealed partial class GameFlow
 		{
 			Log.Warning($"Layout loaded as a new experimental session; audio could not start: {error.Message}");
 		}
+		// The HUD that asked is retired: the new world's HUD tells the player.
+		candidateHud.PostMessage("Layout loaded as a new experimental session.");
 	}
 }

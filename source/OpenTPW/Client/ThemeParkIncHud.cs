@@ -328,9 +328,10 @@ public sealed class ThemeParkIncHud
 		Stack.Push( menu );
 	}
 
-	private bool RunLayoutAction(Action action, string success)
+	/// <summary>Runs a layout action; <paramref name="success"/> is posted here, or nowhere when the action replaced this HUD (it posts on the new one).</summary>
+	private bool RunLayoutAction(Action action, string? success)
 	{
-		try { action(); PostMessage(success); return true; }
+		try { action(); if (success != null) PostMessage(success); return true; }
 		catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
 		{
 			Stack.Push(UiDialogs.Message("layoutFailed", () => error.Message,
@@ -344,7 +345,7 @@ public sealed class ThemeParkIncHud
 		Stack.Push(UiDialogs.Message("confirmLayoutLoad",
 			() => "Replace this world with the saved layout and start a NEW experimental session? Guests, ride script progress, simulation clock and audio restart. This is not a continuation or original TPI save.",
 			(() => "Cancel", () => Stack.Pop()),
-			(() => "Load new session", () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction(host.LoadLayout!, "Layout loaded as a new experimental session."); })));
+			(() => "Load new session", () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction(host.LoadLayout!, null); })));
 	}
 
 	private static UiButton MenuButton( UiScreen menu, string id, Func<string> text, Action clicked, float top ) => menu.Add( new UiButton
@@ -359,7 +360,7 @@ public sealed class ThemeParkIncHud
 	private static UiButton MenuButton( UiScreen menu, string id, string text, Action clicked, float top ) =>
 		MenuButton( menu, id, () => text, clicked, top );
 
-	private void PostMessage( string text )
+	internal void PostMessage( string text )
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
 			return;

@@ -834,7 +834,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPI-903 | `source/OpenTPW/Client/GameFlow.ThemeParkInc.cs:11` | [APPROX:TPI-903] the slice's frame is gated by OpenTPW's capability policy, not by traced Theme Park Inc behaviour |
 | TPI-903 | `source/OpenTPW/Client/Setup/GameEdition.cs:81` | [APPROX:TPI-903] the slice's capability gates are OpenTPW's honest limits, not traced Theme Park Inc behaviour |
 | TPI-903 | `source/OpenTPW/Client/Setup/GameEdition.cs:185` | [APPROX:TPI-903] the slice's stated limits are OpenTPW's honest capability gates, not traced Theme Park Inc behaviour |
-| TPI-904 | `source/OpenTPW/Client/ThemeParkIncHud.cs:422` | [APPROX:TPI-904] the tools follow the traced Theme Park World flow; Theme Park Inc's own build tools are untraced |
+| TPI-904 | `source/OpenTPW/Client/ThemeParkIncHud.cs:423` | [APPROX:TPI-904] the tools follow the traced Theme Park World flow; Theme Park Inc's own build tools are untraced |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:61` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
@@ -868,7 +868,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-025 | `source/OpenTPW/Hud/ParkHud.cs:33` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
 | UI-026 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:270` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
 | UI-026 | `source/OpenTPW/Hud/PreviewIcon.cs:14` | [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu |
-| UI-027 | `source/OpenTPW/Client/ThemeParkIncHud.cs:402` | [APPROX:UI-027] select by occupied grid cell; original cursor picking is not verified. |
+| UI-027 | `source/OpenTPW/Client/ThemeParkIncHud.cs:403` | [APPROX:UI-027] select by occupied grid cell; original cursor picking is not verified. |
 | UI-027 | `source/OpenTPW/Hud/ParkHud.cs:604` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
 | UI-028 | `source/OpenTPW/Hud/ParkHud.cs:298` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
 | UI-029 | `source/OpenTPW/Hud/ParkHud.cs:199` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |

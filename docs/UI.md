@@ -422,7 +422,8 @@ glyph in all 14 UI fonts of each language.
   and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
   keep acting over their own window. Keys whose screens do not exist
-  (camcorder, postcard) stay unhandled. Ctrl+H toggles the existing contextual
+  (camcorder) stay unhandled. Postcard ingress uses its dedicated full-frame
+  action below. Ctrl+H toggles the existing contextual
   help popup (UI-920); it never activates the H staff window. Both Ctrl keys
   work, held chords toggle once, and input owners consume blocked presses.
   Until toggled, the HUD follows the global popup-help option. An explicit
@@ -572,7 +573,7 @@ the real assets. Approximation tags refer to the register below.
 | Quit Game (confirmation 9) | quits | wired | `OriginalUiTests` |
 
 Not implemented (no screen exists; their keys stay unhandled): camcorder mode
-(C), e-mail postcard (Ctrl+P), F1 advisor help speech,
+(C), F1 advisor help speech,
 player profiles, online world, golden keys. The All Attractions (A) and All
 Staff (S) keys stay with the camera's WASD pan by policy; the attractions
 window opens from both the buy window and the staff window's visitor corner
@@ -701,6 +702,24 @@ the staff locator (plain S stays unhandled here), and Ctrl+P remains excluded
 from the pause key. Global bindings and help shortcuts are unchanged by this fix.
 These are synthetic model/input checks, not rendered or original-game parity.
 
+Ctrl+P opens the existing postcard composer directly from a Theme Park World park,
+including a read-only visit. It keeps plain P as pause and follows modal, text,
+ImGui, build/removal/cell/coaster and ride-view input ownership. An unavailable
+host callback or edition sharing capability reports the existing unavailable
+message. The chord opens a form once; it never sends a message automatically.
+The existing composer, local outbox and map-thumbnail attachment are reused
+(ONLINE-022 still qualifies the photo). A simultaneous park press/release belongs
+to the opened composer, without activating a path or selecting a visitor/object.
+`PostcardShortcutIngressTests` exercises actual injected button rebuilding and
+the full HUD frame, including the GameFlow composer and a temporary local outbox.
+Original assets, native/GPU layout and network delivery are not qualified here.
+Ctrl+P does not change the selected simulation speed. The composer retains the
+existing modal pause while open; closing it removes that modal pause.
+The registered default uses left Ctrl; right Ctrl+P remains excluded from plain
+P pause but has no postcard action under the existing global bindings. Independent
+full-frame tests also cover held chords after a capture owner releases input and
+a simultaneous press over a pickable visitor, followed by release and a new click.
+
 ### Visitor selection in the park view
 
 A genuine left press on a visible in-park visitor opens the existing All Visitors window and selects that visitor, scrolling its row into view. Picking uses the current guest renderer's interpolated DrawX/DrawY terrain position, selected animation frame/hotspot, mirroring, camera axes and UnitsPerPixel. Overlapping rectangles choose the nearest projected depth, then the lowest visitor id. A successful press consumes the existing tool/release latch before automatic path activation; a miss preserves ordinary path input. The roster's existing live selection healing applies when the visitor leaves.
@@ -745,3 +764,11 @@ The satisfaction overlay now reuses view-owned coordinate/index and struct-count
 A warmed Release .NET 10 synthetic 1500-visitor/32×32 map draw with tiered compilation disabled allocated 327,656 bytes/frame before and 176,672 after: 150,984 fewer bytes/frame. Satisfaction enabled minus disabled fell from 152,240 to 1,256 bytes/frame, while the old isolated grouping measured 150,984. Actual UiBatch output tests preserve ordered reaction rectangles/colours through live movement, thought/state/bounds changes and off/on/empty redraws. These are managed allocation measurements, not browser timing, GPU results or original overlay parity. Remaining visitor/happiness grouping allocations require a separate measured slice.
 
 Independent scratch tests compare every visitor state/thought and fixed-point edge against the prior grouping, including empty/negative and very large numeric bounds. Reordered and replaced sources, non-observed first encounters, disabled frames and empty redraws preserve fresh counts and order. The returned scratch list is borrowed for the current draw and changes at the next rebuild; its collections retain peak capacity for the view's lifetime, without retaining visitors.
+
+### Explicit theme continuation
+
+Entering a TPW theme with a readable matching application-owned world save now offers **Continue saved park**, **New park**, and **Back** (UI-931). Continue uses the existing `opentpw-{theme}-world.json` manual slot, preserving its start kind, Full Simulation/Instant Action mode and easy-layer choice. New opens the existing mode chooser and leaves that file alone until a later explicit manual Save. A theme without a valid matching slot keeps the existing new-game mode flow. There is no autosave, profile progression/key gate or native-save writer in this ingress.
+
+The menu reads the existing own codec's structural metadata; it does not load or hash game assets. Activation re-reads the trusted generated slot and rejects missing/corrupt files or changed theme/start/mode/easy metadata. The existing `ResumePark` performs complete trusted-asset validation and builds the staged candidate before old-world retirement. Failure shows the existing-style error dialog and preserves the live world and manual slot; it never silently starts an empty park. The ordinary Load picker and native original-reference import remain separate. TPI's layout checkpoint continues to start a new experimental session and is never offered as TPW continuation.
+
+Synthetic tests drive actual Enter/Continue/New/Back dispatch with a tiny own-world file, pass its restored economy and saved clock/guest metadata through the real continuation handler, and exercise the real resume path refusing missing synthetic assets before replacement. Other-theme, deleted/corrupt, changed-mode/easy and TPI refusal controls preserve live references. Original-data/GPU/browser resume and native profile/theme-entry parity remain unqualified; retirement callback exceptions retain the existing staging limitation.

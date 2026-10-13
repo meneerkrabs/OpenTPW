@@ -78,8 +78,9 @@ public sealed partial class ParkHud
 	public const uint ParkViewClickEvent = 0x1F;
 
 	public OriginalObject? SelectedObject => selectedObject;
-	/// <summary>True while a menu is on top of the HUD; the buy and staff windows do not pause.</summary>
-	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != buyScreen && screen != staffScreen );
+	/// <summary>True while a menu is on top of the HUD; the buy, staff, attractions and visitors windows do not pause.</summary>
+	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != buyScreen && screen != staffScreen
+		&& screen != attractionScreen && screen != visitorScreen );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 
 	// [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original

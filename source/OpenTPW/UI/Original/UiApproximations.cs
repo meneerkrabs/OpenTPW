@@ -84,6 +84,12 @@ public static class UiApproximations
 		("UI-902", "the original time keys (numpad +/−/*) step OpenTPW's four named speeds and reset to normal; the original steps its clock scale by 1.25 within 0.25..2", "the original key tokens' names and their handler"),
 		("UI-903", "the blueprint-turn keys (comma/full stop) rotate the pending object by the level's 90-degree build-rotation steps", "the original blueprint-turn key handler's step and smoothing"),
 		("UI-904", "the staff-locator key (Ctrl+S) cycles staff roles in the staff window's role order", "the original staff-locator key handler's cycling order"),
+		("UI-905", "the All Attractions window: staff/buy window geometry with the shipped list_all frame, four category tabs, name/status list columns and seven equal detail rows", "the original all-attractions window's layout table and handlers"),
+		("UI-906", "attraction detail: state of repair is the live wear gauge and sideshow excitement the bridge's live level; monthly users, profit and customer satisfaction say 'not simulated'", "the original window's value bindings"),
+		("UI-907", "the All Visitors window: staff/buy window geometry, number/status/happiness list columns, six equal detail rows", "the original all-visitors window's layout table and handlers"),
+		("UI-908", "visitor detail: live state (KIDSTATES), cash, rides and happiness; time in park says 'not simulated'", "the original visitor detail bindings"),
+		("UI-909", "entry points: a text button above b_allstaff opens the attractions window (its rides tab, UITEXT 78) from the buy window — the shipped b_allthinginfo art cannot be used, its model's texture b_allthginfo is absent from ui.wad — b_svisit opens the visitors window from the staff window, and the plain V key toggles the visitors window (A/S stay with the WASD pan)", "the original entry buttons' handlers and rectangles, and the original A/V key dispatch"),
+		("UI-910", "row and button semantics: an attractions row activation or the select button selects the object in the park (info arm) and closes, a visitors row activation or b_gopeep locates the visitor's live position and closes, b_erase deletes through the existing removal and confirmation", "the original lists' row activation handlers (b_goto's art also has no texture in ui.wad)"),
 	};
 
 	private static bool logged;

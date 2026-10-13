@@ -77,6 +77,10 @@ public enum OpenTpwText
 	MapNoObservations,
 	MapReactionLegend,
 	MapExcitementLegend,
+	QueueLength,
+	RidingNow,
+	VisitorThought,
+	SelectInPark,
 }
 
 public static class SupplementaryStrings
@@ -213,6 +217,10 @@ public static class SupplementaryStrings
 		[OpenTpwText.MapNoObservations] = new[] { "No observations yet", "Ingen observationer endnu", "Nog geen waarnemingen", "Aucune observation pour le moment", "Noch keine Beobachtungen", "Inga observationer ännu" },
 		[OpenTpwText.MapReactionLegend] = new[] { "Green: pleased {0}; red: dissatisfied {1}; orange: mixed", "Grøn: tilfredse {0}; rød: utilfredse {1}; orange: blandet", "Groen: tevreden {0}; rood: ontevreden {1}; oranje: gemengd", "Vert : satisfaits {0} ; rouge : insatisfaits {1} ; orange : mixte", "Grün: zufrieden {0}; rot: unzufrieden {1}; orange: gemischt", "Grön: nöjda {0}; röd: missnöjda {1}; orange: blandat" },
 		[OpenTpwText.MapExcitementLegend] = new[] { "Red: 0; green: 100", "Rød: 0; grøn: 100", "Rood: 0; groen: 100", "Rouge : 0 ; vert : 100", "Rot: 0; grün: 100", "Röd: 0; grön: 100" },
+		[OpenTpwText.QueueLength] = new[] { "In queue:", "I kø:", "In de wachtrij:", "Dans la file :", "In der Warteschlange:", "I kön:" },
+		[OpenTpwText.RidingNow] = new[] { "Riding now:", "Kører nu:", "Rijdt nu:", "En attraction :", "Fährt jetzt:", "Åker nu:" },
+		[OpenTpwText.VisitorThought] = new[] { "Thought:", "Tanke:", "Gedachte:", "Pensée :", "Gedanke:", "Tanke:" },
+		[OpenTpwText.SelectInPark] = new[] { "Select in park", "Vælg i parken", "Kies in het park", "Sélectionner dans le parc", "Im Park auswählen", "Välj i parken" },
 		[OpenTpwText.OpenTpwPage] = new[] { "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {

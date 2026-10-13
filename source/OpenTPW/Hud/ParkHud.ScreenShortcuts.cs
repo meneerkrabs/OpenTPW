@@ -13,6 +13,7 @@ internal enum HudScreenShortcut
 	StaffCosts,
 	EntryPrice,
 	StaffApplicants,
+	VisitorWindow,
 	TimeFaster,
 	TimeSlower,
 	TimeNormal,
@@ -26,7 +27,8 @@ internal enum HudScreenShortcut
 /// The original keyboard shortcuts of the HUD screens: the game's key table (the <see cref="InputButton"/>
 /// default keys and their documented actions; the buy and map buttons' own help rows name B/"(R)"/"(Space)")
 /// opened the screen windows directly. OpenTPW wires the keys whose windows exist; a key whose screen is not
-/// implemented (All Attractions, All Visitors, camcorder, postcard, help bar) stays unhandled.
+/// implemented (camcorder, postcard, help bar) stays unhandled, as do the keys the host camera pans with
+/// (All Attractions A, All Staff S: Input's WASD axes).
 /// </summary>
 public sealed partial class ParkHud
 {
@@ -34,7 +36,7 @@ public sealed partial class ParkHud
 	/// <summary>Non-modal HUD windows a window key may close when one is the top screen.</summary>
 	internal static readonly HashSet<string> TogglableWindowNames = new()
 	{
-		"buy", "staff", "map", "finance", "loans", "research", "parkInfo", "entryPrice", "staffCosts"
+		"buy", "staff", "map", "finance", "loans", "research", "parkInfo", "entryPrice", "staffCosts", "attractions", "visitors"
 	};
 
 	/// <summary>The action the pressed original shortcut key performs; None for keys without a wired screen.</summary>
@@ -49,8 +51,11 @@ public sealed partial class ParkHud
 		InputButton.StaffBudgets => HudScreenShortcut.StaffCosts,
 		InputButton.EntryPrice => HudScreenShortcut.EntryPrice,
 		InputButton.HireStaff => HudScreenShortcut.StaffApplicants,
-		// All Staff (S) stays unhandled: the host camera pans with S (Input's WASD axes, documented in the
-		// sandbox panel), and a key press cannot be both — re-wire it once the pan no longer claims S.
+		InputButton.AllVisitors => HudScreenShortcut.VisitorWindow,
+		// All Staff (S) and All Attractions (A) stay unhandled: the host camera pans with S and A
+		// (Input's WASD axes, documented in the sandbox panel), and a key press cannot be both —
+		// re-wire them once the pan no longer claims those keys. The attractions window opens through
+		// the buy window's all-things button instead.
 		InputButton.TimeSpeedUp => HudScreenShortcut.TimeFaster,
 		InputButton.TimeSlowDown => HudScreenShortcut.TimeSlower,
 		InputButton.TimeReset => HudScreenShortcut.TimeNormal,
@@ -89,7 +94,7 @@ public sealed partial class ParkHud
 	internal static bool OpensWindow( HudScreenShortcut shortcut ) => shortcut is HudScreenShortcut.BuyWindow
 		or HudScreenShortcut.ParkInfo or HudScreenShortcut.FinanceWindow or HudScreenShortcut.ResearchWindow
 		or HudScreenShortcut.MapWindow or HudScreenShortcut.LoansWindow or HudScreenShortcut.StaffCosts
-		or HudScreenShortcut.EntryPrice or HudScreenShortcut.StaffApplicants;
+		or HudScreenShortcut.EntryPrice or HudScreenShortcut.StaffApplicants or HudScreenShortcut.VisitorWindow;
 
 	private static readonly HudScreenShortcut[] AllShortcuts = Enum.GetValues<HudScreenShortcut>();
 
@@ -121,6 +126,7 @@ public sealed partial class ParkHud
 			HudScreenShortcut.StaffCosts => Input.Pressed( InputButton.StaffBudgets ),
 			HudScreenShortcut.EntryPrice => Input.Pressed( InputButton.EntryPrice ),
 			HudScreenShortcut.StaffApplicants => Input.Pressed( InputButton.HireStaff ),
+			HudScreenShortcut.VisitorWindow => Input.Pressed( InputButton.AllVisitors ),
 			HudScreenShortcut.TimeFaster => Input.Pressed( InputButton.TimeSpeedUp ),
 			HudScreenShortcut.TimeSlower => Input.Pressed( InputButton.TimeSlowDown ),
 			HudScreenShortcut.TimeNormal => Input.Pressed( InputButton.TimeReset ),
@@ -163,6 +169,9 @@ public sealed partial class ParkHud
 			case HudScreenShortcut.StaffApplicants:
 				ToggleStaffWindow();
 				break;
+			case HudScreenShortcut.VisitorWindow:
+				ToggleWindow( VisitorWindowOpen, OpenVisitorWindow, CloseVisitorWindow );
+				break;
 			case HudScreenShortcut.TimeFaster:
 				Status.Speed = SteppedSpeed( Status.Speed, 1 );
 				break;
@@ -188,7 +197,7 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Opens the window, or closes it when it is already open (UI-900).</summary>
-	private static void ToggleWindow( bool open, Action openAction, Action closeAction )
+	internal static void ToggleWindow( bool open, Action openAction, Action closeAction )
 	{
 		if ( open )
 			closeAction();

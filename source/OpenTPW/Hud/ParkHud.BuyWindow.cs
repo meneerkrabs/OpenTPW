@@ -224,6 +224,11 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window.
 		screen.Add( new UiButton { Id = "exit", Model = BuyExitModel, Help = strings.Help( 2 ), Clicked = CloseBuyWindow, Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "allStaff", Model = BuyStaffModel, Help = strings.Help( 153 ), Clicked = OpenStaffWindow, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
+		// [APPROX:UI-909] a text button above b_allstaff opens the All Attractions window (its rides tab,
+		// UITEXT 78 'All Rides'); the shipped b_allthinginfo button art cannot be used — its model's
+		// texture 'b_allthginfo' is absent from ui.wad. The original entry point is not decoded.
+		screen.Add( new UiButton { Id = "allAttractions", Text = () => strings[UIStrings.AllRides], Font = fonts => fonts.Label,
+			Clicked = OpenAttractionsWindow, Bounds = Rect( 1866, 458, 1968, 594 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
 		return screen;
 	}

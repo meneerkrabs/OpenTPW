@@ -689,6 +689,22 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void QueueSlotsFollowTheOriginalAxisPerLink()
+	{
+		// tp.exe 0x004DE840: the rig's queue runs from (2, 5) back to (2, 1), its front towards +Y (link 16), so a place sits at
+		// (lateral, 255 − depth) with depths 0, 63, 127, 191; the fourth place takes the axis of the cell behind it, and the back
+		// cell's fourth place the direction from its path cell (2, 0), here +Y as well.
+		var rig = new Rig();
+		const byte lateral = 120;
+		(int, int, int) Slot( int position ) => GuestSimulation.QueueSlotPoint( rig.Ride, position, lateral );
+		Assert.AreEqual( (0, GuestNavigation.BytePoint( (2, 5), 120, 255 ).X, GuestNavigation.BytePoint( (2, 5), 120, 255 ).Y), Slot( 0 ) );
+		Assert.AreEqual( (0, GuestNavigation.BytePoint( (2, 5), 120, 192 ).X, GuestNavigation.BytePoint( (2, 5), 120, 192 ).Y), Slot( 1 ) );
+		Assert.AreEqual( (0, GuestNavigation.BytePoint( (2, 5), 120, 128 ).X, GuestNavigation.BytePoint( (2, 5), 120, 128 ).Y), Slot( 2 ) );
+		Assert.AreEqual( (0, GuestNavigation.BytePoint( (2, 5), 120, 64 ).X, GuestNavigation.BytePoint( (2, 5), 120, 64 ).Y), Slot( 3 ) );
+		Assert.AreEqual( (4, GuestNavigation.BytePoint( (2, 1), 120, 64 ).X, GuestNavigation.BytePoint( (2, 1), 120, 64 ).Y), Slot( 19 ) );
+	}
+
+	[TestMethod]
 	public void QueueEditsSendGuestsAway()
 	{
 		var rig = new Rig();

@@ -284,7 +284,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void CheckGoldenTickets()
 	{
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions ) )
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ) ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 

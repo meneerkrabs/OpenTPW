@@ -149,9 +149,9 @@ public sealed partial class ParkHud
 		var text = new List<string>();
 		if ( mapSatisfaction )
 		{
-			var outcomes = ParkMapMetrics.Outcomes( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Objects.Grid.Width, level.Objects.Grid.Height ).ToArray();
-			text.Add( strings.Extra( OpenTpwText.MapRecordedVisitorReactions ) + "\n" + (outcomes.Length == 0 ? strings.Extra( OpenTpwText.MapNoObservations ) :
-				string.Format( strings.Extra( OpenTpwText.MapReactionLegend ), outcomes.Sum( cell => cell.Pleased ), outcomes.Sum( cell => cell.Dissatisfied ) )) );
+			var totals = ParkMapMetrics.OutcomeTotals( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Objects.Grid.Width, level.Objects.Grid.Height );
+			text.Add( strings.Extra( OpenTpwText.MapRecordedVisitorReactions ) + "\n" + (totals.Pleased == 0 && totals.Dissatisfied == 0 ? strings.Extra( OpenTpwText.MapNoObservations ) :
+				string.Format( strings.Extra( OpenTpwText.MapReactionLegend ), totals.Pleased, totals.Dissatisfied )) );
 		}
 		if ( mapExcitement ) text.Add( strings.Extra( OpenTpwText.MapAttractionExcitement ) + "\n" +
 			strings.Extra( level.Guests?.Attractions.Count > 0 ? OpenTpwText.MapExcitementLegend : OpenTpwText.MapNoObservations ) );
@@ -309,10 +309,28 @@ internal static class ParkMapGuestLayers
 internal static class ParkMapMetrics
 {
 	public static IEnumerable<(int X, int Y, int Pleased, int Dissatisfied)> Outcomes( IEnumerable<Guest> guests, int width, int height ) =>
-		guests.Where( guest => guest.IsVisible && guest.Thought is GuestThought.Pleased or GuestThought.Dissatisfied &&
-			float.IsFinite( guest.X ) && float.IsFinite( guest.Y ) && guest.X >= 0 && guest.Y >= 0 && guest.X < width && guest.Y < height )
+		guests.Where( guest => IsObservedOutcome( guest, width, height ) )
 			.GroupBy( guest => ((int)MathF.Floor( guest.X ), (int)MathF.Floor( guest.Y )) )
 			.Select( group => (group.Key.Item1, group.Key.Item2, group.Count( guest => guest.Thought == GuestThought.Pleased ), group.Count( guest => guest.Thought == GuestThought.Dissatisfied )) );
+
+	/// <summary>Fresh legend totals; no cell grouping is needed when positions are not drawn.</summary>
+	public static (int Pleased, int Dissatisfied) OutcomeTotals( IEnumerable<Guest> guests, int width, int height )
+	{
+		var pleased = 0;
+		var dissatisfied = 0;
+		foreach ( var guest in guests )
+		{
+			if ( !IsObservedOutcome( guest, width, height ) ) continue;
+			if ( guest.Thought == GuestThought.Pleased ) pleased = checked(pleased + 1);
+			else dissatisfied = checked(dissatisfied + 1);
+		}
+		return (pleased, dissatisfied);
+	}
+
+	private static bool IsObservedOutcome( Guest guest, int width, int height ) => guest.IsVisible
+		&& (guest.Thought is GuestThought.Pleased or GuestThought.Dissatisfied)
+		&& float.IsFinite( guest.X ) && float.IsFinite( guest.Y ) && guest.X >= 0 && guest.Y >= 0 && guest.X < width && guest.Y < height;
+
 	public static RgbaByte ExcitementColor( int rating ) => ParkMapGuestLayers.HappinessColor( rating );
 }
 

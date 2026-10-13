@@ -233,7 +233,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival step-off | A group's guests appear 0.4 s apart, lanes A/B alternating, instead of at a bus's stops (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
+| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts from level 70 (GUEST-009) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | every 3 s (cadence approximated): the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10, otherwise wander (random link, no U-turn). Leaving is tested every park turn instead ([below](#lifecycle)) |
@@ -598,11 +598,10 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
-| QUEUE-002 | The next queue cell is searched in grid direction order | Same tables; the order paired with links 16, 1, 64, 4 |
-| QUEUE-003 | Guests step onto the back cell from its first walkable neighbour | `0xdd744` and the state-10 walk to the back cell |
+| QUEUE-003 | Guests step onto the back cell from its first walkable neighbour; the original (tp.exe `0x4de4a0`, `0x4de840`) takes the first neighbour in the order 1, 4, 16, 64 that is connected and a path cell, and OpenTPW keeps no connection bits for queue cells | The queue tool's connection writes (QUEUE-012..014) and the state-10 walk |
 | QUEUE-004 | The join excitement gate, clamped difference and live excitement follow the original (ORACLE.md F16, executed); only the excitement of a ride with a thing behind ride `+36` (60 % of the level plus up to 40 from three piece counts of `0x1ea40`) is not modelled | What ride `+36` and the three counts are (no OpenTPW object has one) |
 | QUEUE-005 | The leave-for-room rule is the original's (position ≥ 4 × cells, not in state 14; tp.exe `0x501390`, ORACLE.md X14). OpenTPW also sends away a guest whose cell left the queue (Confused) and re-walks the others, where the original changes nothing for them; a leaving guest plays no animation | How the original's state-12 walk recovers a guest standing off the queue; animation 13 and the event-6 record |
-| QUEUE-006 | Depth from the cell's front edge; the 4th position stays in its cell | `0xdde74` and the sub-cell axis selection |
+| QUEUE-006 | Queue places follow tp.exe `0x4de840` (depths 0/63/127/191, the axis per link, the fourth place on the axis of the cell behind); only the back cell's fourth place takes its axis from OpenTPW's join cell (QUEUE-003) | QUEUE-003's join cell |
 | QUEUE-008 | The ride-failure exit follows `0xdfe34` (ORACLE.md F15, executed): a relief object whose wear gauge is below 25. Relief objects do not wear in OpenTPW, so the exit never fires; in tp.exe every use lowers the gauge by 0.05 × the guest's toilet meter (`0x4e2440`) and handymen clean toilets back to 100 (`0x4d7880`, `0x4dfd80`), which waits for the handyman's toilet job (ECON-014) | The per-grade cleaning time and range rows, the writer of the dirty flag `+0x64` |
 | QUEUE-009 | Facing-change sign from the 1-in-10 draw | The sign selection in `0xed244` |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once | The state-6 transition after a queue exit |

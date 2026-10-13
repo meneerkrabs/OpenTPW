@@ -58,7 +58,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public const float TicketBoothSeconds = 1.0f;
 	public const float ExitRideSeconds = 1.0f;
 	public const float WaitForBusSeconds = 3.0f;
-	public const float SpawnSpacingSeconds = 0.4f;
 
 	private readonly List<Guest> guests = new();
 	private readonly Dictionary<int, Guest> byId = new();
@@ -68,7 +67,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
 	private bool deliveringArrivals;
-	private float spawnTimer;
+	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (ARRIVAL-001)
 	private int pendingArrivals;
 	private int laneToggle;
 	private int seenGridVersion = -1;
@@ -313,11 +312,12 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	/// <summary>
 	/// The original's arrivals: when more than <see cref="GuestSettings.ArrivalTimeBetween"/> timer units (four park turns each)
-	/// have passed since the last group was dropped off, a new group of <see cref="ArrivalGroupSize"/> guests arrives; its guests
-	/// step off one by one, and the timer restarts once the group is empty.
+	/// have passed since the last group was dropped off, a new group of <see cref="ArrivalGroupSize"/> guests arrives; from the
+	/// next park turn on one guest steps off per turn, and the timer restarts at the first turn the group is empty.
 	/// </summary>
 	// [BIN:STP-PPC:0x100CB2AC arrival update] if no group is active and 0x101210F8's (turn >> 2) − (start >> 2) exceeds Arrival.TimeBetweenArrivals (settings +0x2D4), the group size is set and the group starts; at each stop one guest is created and the count falls; at 0 the timer restarts (0x10121098)
-	// [APPROX:ARRIVAL-001] guests step off every 0.4 s instead of at the original bus's stops (bus sizes 1/2/3 for groups under 36, under 61, larger) — evidence needed: the arrival vehicle's stop cycle (0x10109784 states)
+	// [BIN:TPW-EXE:0x004CF3E0 arrival update] runs once per park turn at the end of the world turn update 0x00516380 (through 0x004D7B20); the call that starts a group only sends the bus (0x0051A2F0 with size 1, 2 or 3 for groups under 36, up to 60, larger); while the bus is at its stop (vehicle state 2) each call creates one guest (0x004CF720) and counts the group down, and the call that finds it empty restarts the timer (0x0041A960) and sends the bus away
+	// [APPROX:ARRIVAL-001] the bus is not modelled: the first guest steps off on the turn after the group starts, where the original waits for the bus to drive to its stop (vehicle state 2, the bus animation's own time), and guests appear at the arrival lanes — evidence needed: the bus animation's length up to its stop
 	private void UpdateArrivals( float deltaSeconds )
 	{
 		if ( !ArrivalsEnabled )
@@ -330,11 +330,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 		{
 			pendingArrivals = ArrivalGroupSize();
 			deliveringArrivals = true;
+			return;   // this turn's call only sends the bus
 		}
-		if ( !deliveringArrivals )
-			return;
-		spawnTimer -= deltaSeconds;
-		if ( spawnTimer > 0 )
+		if ( !deliveringArrivals || !turnStarted )
 			return;
 		if ( pendingArrivals < 1 )
 		{
@@ -342,7 +340,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 			arrivalTimerStart = turn;
 			return;
 		}
-		spawnTimer = SpawnSpacingSeconds;
 		pendingArrivals--;
 		if ( guests.Count < Settings.MaximumGuests )
 			SpawnArrival();
@@ -392,7 +389,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
 			// would strand every guest whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the
 			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
-			// [APPROX:GUEST-011] what the original does with queued guests at mParkClosed is not traced — evidence needed: a closing-word read in the state-11 handler 0xed244 or the ride update 0xe0aec
+			// [APPROX:GUEST-011] OpenTPW pulls queued and boarding guests out when the park closes; in tp.exe nothing in the queue reads the closed word (game +0x1DA710, 0x0051A280): its readers are the guest state handlers for states 2, 3, 5, 6, 10 and 18 (0x004FF730, 0x004FF7F0, 0x004FFB20, 0x004FEC90, 0x004FFBC0, 0x00500A50; the state dispatcher 0x005019F0), the strike test 0x00508E70, staff code 0x00506300, the park's average happiness 0x004C7BB0 (0 while closed), 0x004C9050 and the UI 0x00498D80, so the original's queues keep running and their guests leave only after the ride — evidence needed: whether OpenTPW's rides keep admitting in a closed park (oracle F26), which decides whether the safeguard can go
 			if ( Payments?.ParkClosed == true )
 			{
 				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding && FindAttraction( guest.AttractionId ) is { } closed )
@@ -837,14 +834,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// </summary>
 	// [BIN:STP-PPC:0x100E8FF4 choice loop] executed by the PowerPC oracle (attraction-choice); the tie rule reads the world turn's bit 0 (game +0x1da70c)
 	// [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original's counts-test 0xdc834 also tests the ride state, the open word, the queue room and the coaster controller (ARRIVAL-003)
-	// [APPROX:GUEST-003] a guest only chooses an attraction it can afford (price ≤ money); the original's price eligibility is not traced (PPC-guests) — evidence needed: the callers of 0xe9164's candidates and the shop price test
+	// [BIN:TPW-EXE:0x004FCB10 choice loop] no price or money test in the choice: a candidate needs flag +0x32 bit 4, a back-of-queue cell, a score above 9 that beats the best (ties on an odd turn), the counts-test 0x004DD920 and a route; the price is tested when the guest is called forward (0x004FDE50)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest )
 	{
 		IEnumerable<AttractionChoice.Candidate> Candidates()
 		{
 			foreach ( var attraction in attractions )
 			{
-				var canJoin = attraction.JoinCell != null && attraction.Price <= guest.Money;
+				var canJoin = attraction.JoinCell != null;
 				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
 					() => attraction.IsOpen && !attraction.IsBroken && attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
 			}
@@ -955,6 +952,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
 			if ( position < 0 || position >= room )
 			{
+				// the dismissal 0x005012F0 lowers happiness by the medium step (0x004FEA70 with 1)
+				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 				LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
 				continue;
 			}
@@ -962,7 +961,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest plays no animation and gets the QueueTooLong thought, where the original plays animation 13 for one guest in three (id % 3 = 0, 0x0050BE80) and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what animation 13 and the event-6 record are
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest plays no animation and gets the QueueTooLong thought, where the original plays animation 13 for one guest in three (id % 3 = 0, 0x0050BE80) and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what animation 13 and the event-6 record are
 			if ( index < 0 && !onJoinCell )
 			{
 				LeaveQueue( guest, attraction, GuestThought.Confused );
@@ -1073,7 +1072,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// depth byte trunc(255 × 0.25 × remaining) (0, 63, 127, 191) along the cell from its front edge and the
 	/// sideways byte <paramref name="lateral"/> (114..141) across it, each byte / 256 of a cell (<c>0xe68cc</c>).
 	/// </summary>
-	// [APPROX:QUEUE-006] depth runs from the cell's edge toward its predecessor and the lateral byte across it, and the fourth position (depth 191 > 128) stays in its cell; the original sub-cell axis per link and the 0xdde74 branch are not traced — evidence needed: 0x100DDE74 and the axis selection after it
+	// [BIN:TPW-EXE:0x004DE840 queue slot] depth = trunc(255 × 0.25 × the place within the cell); lateral = 0x72 + rand % 28. Up to depth 128 the cell's own link to the front picks the axis: link 1 (−Y) gives (lateral, depth), 4 (+X) (255 − depth, lateral), 16 (+Y) (lateral, 255 − depth), 64 (−X) (depth, lateral). Beyond 128 (the fourth place) the axis is the link of the queue cell behind (0x004DE670), for the back cell the direction from its attached path cell (the first of its connections 1, 4, 16, 64 that leads to a path cell, reversed), and link 4 then gives depth − 128 instead of 255 − depth
+	// [APPROX:QUEUE-006] the back cell's fourth place takes its axis from OpenTPW's join cell (QUEUE-003) where the original takes the first connected path neighbour in the order 1, 4, 16, 64 — evidence needed: none for the rule (static); QUEUE-003's join cell decides the difference
 	public (int CellIndex, float X, float Y) QueuePositionPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
 		var (index, x, y) = QueueSlotPoint( attraction, position, lateral );
@@ -1084,14 +1084,26 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public static (int CellIndex, int X, int Y) QueueSlotPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
 		var (index, depth) = QueueSlot( position, attraction.QueueSizeInCells );
-		var cell = attraction.QueueCells[Math.Min( index, attraction.QueueCells.Count - 1 )];
-		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( index )];
-		// The byte along the axis towards the front counts from the front edge; the lateral byte runs along (−dy, dx).
-		int bx, by;
-		if ( dx != 0 )
-			(bx, by) = (dx > 0 ? 255 - depth : depth, dx > 0 ? lateral : 255 - lateral);
+		var cells = attraction.QueueCells;
+		var cellIndex = Math.Min( index, cells.Count - 1 );
+		var cell = cells[cellIndex];
+		var far = depth > 128;
+		int direction;
+		if ( !far )
+			direction = attraction.DirectionTowardsFront( cellIndex );
+		else if ( cellIndex + 1 < cells.Count )
+			direction = attraction.DirectionTowardsFront( cellIndex + 1 );
+		else if ( attraction.JoinCell is { } join && Math.Abs( join.X - cell.X ) + Math.Abs( join.Y - cell.Y ) == 1 )
+			direction = GuestPathGrid.DirectionBetween( join.X, join.Y, cell.X, cell.Y );
 		else
-			(bx, by) = (dy < 0 ? lateral : 255 - lateral, dy > 0 ? 255 - depth : depth);
+			direction = attraction.DirectionTowardsFront( cellIndex );
+		var (bx, by) = direction switch
+		{
+			0 => (lateral, depth),                                // link 1, front towards −Y
+			1 => (far ? depth - 128 : 255 - depth, (int)lateral), // link 4, front towards +X
+			2 => (lateral, 255 - depth),                          // link 16, front towards +Y
+			_ => (depth, (int)lateral)                            // link 64, front towards −X
+		};
 		var (x, y) = GuestNavigation.BytePoint( cell, bx, by );
 		return (index, x, y);
 	}
@@ -1156,8 +1168,32 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Step( guest ); // state 13 keeps stepping (braking) until the ride takes the guest's offer
 		if ( guest.State == GuestState.MovingUpQueue )
 			EnterStanding( guest );
+		else if ( TooExpensive( guest, attraction ) )
+			// [BIN:TPW-EXE:0x005006B0 called forward] at the stand point the price test 0x004FDE50 comes before the ride takes the guest (AdmitPerson); a guest that refuses leaves the queue ("Object %d is too expensive, I'm leaving the queue") and keeps its thought
+			// [APPROX:GUEST-003] the refusal costs happiness twice at the medium step (0x004FEA70 with 1, once for the refusal and once in the dismissal 0x005012F0), but its other effects are not modelled: animation 6, the guest record of event 10 (0x0050C100), the ride's walk-away count (mNumWalkAways, 0x004E1670) and the price perception statistic per shop category (0x004C74B0); the park's per-type word +0xC (0x004E2740) is taken as 0 — evidence needed: the writers of that word (script opcodes around 0x004CA47F) and the uses of the walk-away count and the statistic
+			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
+	}
+
+	/// <summary>A called guest refuses the price: two medium happiness drops (the refusal and the dismissal), then it leaves the queue.</summary>
+	private void RefusePrice( Guest guest, IRideVisitorBridge attraction )
+	{
+		guest.Happiness = Math.Max( 0, guest.Happiness - 2 * Settings.MediumHappinessChange );
+		LeaveQueue( guest, attraction, guest.Thought );
+	}
+
+	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
+	private static bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
+	{
+		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
+			return false;
+		// the live words the level mirrors from the economy; a bridge nobody mirrors into keeps its constructor price
+		var live = attraction.Sideshow;
+		var price = live == default ? attraction.Price : live.PricePerUse;
+		var terms = new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
+			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, 0 );
+		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
 	}
 
 	/// <summary>The cell the walking guest stands on, and its queue index when it is a queue cell.</summary>

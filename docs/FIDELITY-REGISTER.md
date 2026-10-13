@@ -1121,7 +1121,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:177` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:57` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:101` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
-| tpi-viewer | `source/OpenTPW.Web/Program.cs:103` | [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals. |
+| tpi-viewer | `source/OpenTPW.Web/Program.cs:104` | [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:90` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:128` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:280` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |

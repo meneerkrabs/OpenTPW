@@ -18,11 +18,36 @@ public static class BrowserStartup
 	}
 
 	/// <summary>Starts a fresh import in the runtime-owned staging folder, before any renderer or world exists.</summary>
-	public static void BeginImport( string gameRoot, bool rendererCreated )
+	public static string[] BeginImport( string gameRoot, bool rendererCreated, IEnumerable<string>? themeDirectories = null )
 	{
 		if ( rendererCreated )
 			throw new InvalidOperationException( "The game has already started loading. Reload the page before choosing another installation." );
+		var directories = ValidatedDirectories( themeDirectories ?? Array.Empty<string>() );
 		if ( Directory.Exists( gameRoot ) )
 			Directory.Delete( gameRoot, recursive: true );
+		return directories;
 	}
+
+	/// <summary>Preserves observed source directories before edition detection; never marks their payload loaded.</summary>
+	public static void PreserveThemeDirectories( string dataDirectory, IEnumerable<string> themeDirectories )
+	{
+		foreach ( var directory in ValidatedDirectories( themeDirectories ) )
+		{
+			var parts = directory.Split( '/' );
+			// Anchor to the actual copied Data/levels spelling rather than creating a differently cased root.
+			var levels = GameLanguage.FindEntry( dataDirectory, parts[1], true ) ?? Path.Combine( dataDirectory, parts[1] );
+			if ( GameLanguage.FindEntry( levels, parts[2], true ) == null )
+				Directory.CreateDirectory( Path.Combine( levels, parts[2] ) );
+		}
+	}
+
+	private static string[] ValidatedDirectories( IEnumerable<string> directories ) => directories.Select( directory =>
+	{
+		var parts = directory?.Replace( '\\', '/' ).Split( '/', StringSplitOptions.RemoveEmptyEntries );
+		if ( parts == null || parts.Length != 3 || !parts[0].Equals( "data", StringComparison.OrdinalIgnoreCase )
+			|| !parts[1].Equals( "levels", StringComparison.OrdinalIgnoreCase )
+			|| !(GameEditions.IsViewableLevel( parts[2] ) || new[] { "jungle", "fantasy", "hallow", "space" }.Contains( parts[2], StringComparer.OrdinalIgnoreCase )) )
+			throw new ArgumentException( "The game folder information has an unsupported theme path. Choose the installation again." );
+		return string.Join( '/', parts );
+	} ).Distinct( StringComparer.OrdinalIgnoreCase ).ToArray();
 }

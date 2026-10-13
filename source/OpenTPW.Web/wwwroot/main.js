@@ -246,7 +246,7 @@ function replaceStore(relative) {
 		keepGeneration++;
 		try {
 			await store.clear();
-			await store.begin(keepMode, attemptFiles.all.map(([path, , size]) => [path, size ?? null]));
+			await store.begin(keepMode, attemptFiles.manifestSources.map(([path, , size]) => [path, size ?? null]));
 		} catch (error) {
 			keepFailed = true;
 			console.warn('Replacing the kept game files failed; this visit keeps nothing more', error);
@@ -322,13 +322,13 @@ async function copyAndStart(files, fromFolder) {
 	await importStartup(program, files, async () => {
 		if (store && keepMode !== 'off' && !keepFailed) {
 			try {
-				await store.begin(keepMode, files.all.map(([relative, , size]) => [relative, size ?? null]));
+				await store.begin(keepMode, files.manifestSources.map(([relative, , size]) => [relative, size ?? null]));
 			} catch (error) {
 				keepFailed = true;
 				console.warn('Keeping the game files could not start', error);
 			}
 		}
-		const kept = plan(keeping(files.all, fromFolder), files.theme);
+		const kept = plan(keeping(files.all, fromFolder), files.theme, files.themeDirectories);
 		speechSources = kept.speech;
 		levelSources = kept.levels;
 		copiedSpeech.clear();

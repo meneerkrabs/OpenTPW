@@ -14,6 +14,7 @@ public static partial class Program
 	private const string GameRoot = "/game";
 	private static Renderer? renderer;
 	private static GameFlow? flow;
+	private static string[] sourceThemeDirectories = Array.Empty<string>();
 	private static readonly HashSet<string> loadedLevels = new( StringComparer.OrdinalIgnoreCase );
 	private static readonly HashSet<string> requestedLevels = new( StringComparer.OrdinalIgnoreCase );
 	private static readonly HashSet<string> loadedLanguages = new( StringComparer.OrdinalIgnoreCase );
@@ -66,9 +67,9 @@ public static partial class Program
 
 	/// <summary>Clears only this runtime's game-file staging before a new setup attempt.</summary>
 	[JSExport]
-	public static void BeginImport()
+	public static void BeginImport( string[] themeDirectories )
 	{
-		BrowserStartup.BeginImport( GameRoot, renderer != null || flow != null );
+		sourceThemeDirectories = BrowserStartup.BeginImport( GameRoot, renderer != null || flow != null, themeDirectories );
 		loadedLevels.Clear();
 		requestedLevels.Clear();
 		loadedLanguages.Clear();
@@ -101,6 +102,7 @@ public static partial class Program
 		var dataDirectory = GameLanguage.FindEntry( GameRoot, "data", true )
 			?? throw new DirectoryNotFoundException( "No Data folder among the chosen files." );
 		// [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals.
+		BrowserStartup.PreserveThemeDirectories( dataDirectory, sourceThemeDirectories );
 		var edition = BrowserStartup.Validate( dataDirectory, theme );
 		GameEditions.Select( edition.Edition );
 		// The game data changes only through AddFile, which invalidates the remembered lookups.

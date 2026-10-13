@@ -570,3 +570,26 @@ test('changing cached editions keeps the existing installation replacement polic
 	assert.deepEqual(Object.keys(restored.manifest.files).sort(), tpi.map(([path]) => path).sort());
 	assert.deepEqual(plan(tpi.map(([path]) => [path]), 'water').levels, []);
 });
+
+test('a filtered actual directory witness survives cache reopening without cached or imported media', async () => {
+	const root = new FakeDirectory(); let store = await openOriginalStore(root, { digest });
+	const sources = [['Data/Ver.txt', null, 1], ['Data/levels/water/a.wad', null, 1], ['Data/levels/space/preview.mpg', null, 1000]];
+	const planned = plan(sources);
+	await store.begin('lazy', planned.manifestSources.map(([path, , size]) => [path, size]));
+	await store.write('Data/Ver.txt', bytes('v')); await store.flush();
+	store = await openOriginalStore(root, { digest });
+	assert.equal(store.has('Data/levels/space/preview.mpg'), false);
+	assert.equal(store.manifest.version, 1);
+	assert.equal(store.manifest.files['Data/levels/space/preview.mpg'].stored, false);
+	assert.equal(store.manifest.files['Data/levels/space/preview.mpg'].sha256, undefined);
+	assert.equal(await store.read('Data/levels/space/preview.mpg'), null);
+	const reopened = plan(Object.entries(store.manifest.files).map(([path, entry]) => [path, () => store.read(path), entry.size]));
+	assert.deepEqual(reopened.themeDirectories, ['Data/levels/water', 'Data/levels/space']);
+	assert.deepEqual(reopened.start.map(([path]) => path), ['Data/Ver.txt']);
+	assert.equal(reopened.all.some(([path]) => path.endsWith('.mpg')), false);
+	let witnesses; const loaded = [];
+	await importStartup({ BeginImport(dirs) { witnesses = dirs; }, LevelLoaded(theme) { loaded.push(theme); } }, reopened, async sources => {
+		for (const [, read] of sources) assert.equal((await read()).byteLength, 1);
+	});
+	assert.deepEqual(witnesses, reopened.themeDirectories); assert.deepEqual(loaded, []);
+});

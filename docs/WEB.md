@@ -107,7 +107,15 @@ The setup screen also offers an explicit **experimental Theme Park Inc** start i
 Science or Water. Choose the extracted installation folder containing `Data`, then choose
 the theme before importing or pressing Play. That theme's complete browser-supported file
 set is copied at startup. The existing edition detector checks its identity or structure,
-and an edition/theme mismatch refuses before renderer creation. No Theme Park World lobby
+and an edition/theme mismatch refuses before renderer creation. Before deferral,
+the complete source list retains the native detector's actual theme-directory witnesses.
+A structural Theme Park Inc list refuses the default Theme Park World choice immediately.
+Only observed directory names are preserved under the actual copied Data root before
+detection; no marker files, media bytes or loaded-theme flags are created for them.
+This also preserves mixed-source classification and the unchanged Standard.sam identity
+precedence. Up to seven real witness filenames may remain as metadata in the existing
+cache manifest when their media payload is excluded; they stay unread, unstored and
+unhashed. Secondary planning and cache reopening retain those full-source witnesses. No Theme Park World lobby
 is opened for Theme Park Inc. The browser calls the same `GameFlow.StartLevel` route as
 desktop `--load-original-level`, including its existing shipped-layout eligibility.
 The experimental HUD and capability policy stay unchanged: free building and guests, no

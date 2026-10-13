@@ -100,9 +100,13 @@ public class FreeWalkCameraTests
 			Input.Keyboard.KeysDown.AddRange(keys); Input.UpdateButtons();
 			hud.Update(context,UiInput.Idle(new N.Vector2(500)),gate=="mouse",gate=="keyboard",false);
 			Assert.AreEqual(gate is "plain" or "readonly",hud.CamcorderArmed);
+			var messages=(List<(string Text,float Age)>)typeof(ParkHud).GetField("messages",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(hud)!;
+			Assert.AreEqual(gate is "plain" or "readonly" ? 1 : 0,messages.Count,"Only successful arming shows the prompt.");
+			if(messages.Count>0) Assert.AreEqual("Click the ground to walk. C or Escape returns to the park view.",messages[0].Text);
 			Input.TextEntryActive=false; level.IsPlacing=false; if(gate=="modal") hud.Stack.Pop(); if(gate=="ride") level.ExitRideView();
 			Input.UpdateButtons(); hud.Update(context,UiInput.Idle(new N.Vector2(500)),false,false,false);
 			Assert.AreEqual(gate is "plain" or "readonly",hud.CamcorderArmed,"A held C never arms when ownership clears.");
+			Assert.AreEqual(gate is "plain" or "readonly" ? 1 : 0,messages.Count,"Holding or clearing a gate cannot repeat or manufacture a prompt.");
 			if(gate is "plain" or "readonly") {
 				// Ctrl-click cannot complete an armed entry.
 				Input.Keyboard.KeysDown.Add(Key.ControlRight); Input.UpdateButtons();
@@ -116,7 +120,7 @@ public class FreeWalkCameraTests
 				Assert.IsFalse(level.CellTool.IsActive); Assert.AreSame(level.FreeWalk,Camera.Mode);
 				Input.Keyboard.KeysDown.Clear(); Input.UpdateButtons(); hud.Update(context,UiInput.Idle(new N.Vector2(500)),false,false,false);
 				Input.Keyboard.KeysDown.Add(Key.C); Input.UpdateButtons(); hud.Update(context,UiInput.Idle(new N.Vector2(500)),false,false,false);
-				Assert.IsNull(level.FreeWalk); Assert.IsInstanceOfType(Camera.Mode,typeof(ParkCameraMode));
+				Assert.IsNull(level.FreeWalk); Assert.IsInstanceOfType(Camera.Mode,typeof(ParkCameraMode)); Assert.AreEqual(1,messages.Count,"Returning from walking does not announce a new armed entry.");
 			}
 		} finally { Input.Keyboard=oldKeyboard; Input.TextEntryActive=oldText; Input.UpdateButtons(); Input.KeysDown=oldDown; Input.LastKeysDown=oldLast; Camera.Mode=oldCamera; Camera.ViewMatrix=oldView; Camera.ProjMatrix=oldProj; GameEditions.Select(oldEdition); }
 	}
@@ -128,7 +132,7 @@ public class FreeWalkCameraTests
 		try {
 			Input.KeysDown=new(); Input.LastKeysDown=new(); Camera.Mode=new ParkCameraMode(); var hud=Fixture(out var level);
 			using(Input.InjectKeyDown(Key.ControlRight,Key.C)) { Input.UpdateButtons(); hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false); }
-			Assert.IsFalse(hud.CamcorderArmed); Input.UpdateButtons();
+			Assert.IsFalse(hud.CamcorderArmed); Assert.AreEqual(0,((List<(string Text,float Age)>)typeof(ParkHud).GetField("messages",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(hud)!).Count); Input.UpdateButtons();
 			Assert.IsTrue(level.EnterFreeWalk(Vector3.Zero)); level.IsPlacing=true;
 			level.UpdateWorldInput(true,false,new N.Vector2(500),new N.Vector2(1000)); Assert.IsNull(level.PlacedRide);
 			level.ExitFreeWalk(); level.UpdateWorldInput(true,false,new N.Vector2(500),new N.Vector2(1000)); Assert.IsNull(level.PlacedRide,"Held click remains consumed on return.");

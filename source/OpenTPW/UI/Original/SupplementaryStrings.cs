@@ -85,6 +85,7 @@ public enum OpenTpwText
 	SelectInPark,
 	NewPark,
 	ContinueSavedPark,
+	CamcorderArmed,
 }
 
 public static class SupplementaryStrings
@@ -142,6 +143,13 @@ public static class SupplementaryStrings
 		[OpenTpwText.SandboxParkEntry] = new[] { "OpenTPW sandbox park", "OpenTPW-sandkassepark", "OpenTPW-zandbakpark", "Parc bac à sable OpenTPW", "OpenTPW-Sandkastenpark", "OpenTPW-sandlådepark" },
 		[OpenTpwText.NewPark] = new[] { "New park", "Ny park", "Nieuw park", "Nouveau parc", "Neuer Park", "Ny park" },
 		[OpenTpwText.ContinueSavedPark] = new[] { "Continue saved park", "Fortsæt gemt park", "Opgeslagen park voortzetten", "Continuer le parc sauvegardé", "Gespeicherten Park fortsetzen", "Fortsätt sparad park" },
+		[OpenTpwText.CamcorderArmed] = new[] {
+			"Click the ground to walk. C or Escape returns to the park view.",
+			"Klik på jorden for at gå. C eller Escape vender tilbage til parkvisningen.",
+			"Klik op de grond om te lopen. C of Escape keert terug naar het parkbeeld.",
+			"Cliquez sur le sol pour marcher. C ou Échap revient à la vue du parc.",
+			"Zum Gehen auf den Boden klicken. C oder Escape kehrt zur Parkansicht zurück.",
+			"Klicka på marken för att gå. C eller Escape återgår till parkvyn." },
 		[OpenTpwText.NoSavedParks] = new[] { "No saved parks", "Ingen gemte parker", "Geen opgeslagen parken", "Aucun parc sauvegardé", "Keine gespeicherten Parks", "Inga sparade parker" },
 		[OpenTpwText.CannotBuildHere] = new[] { "You can't build here", "Du kan ikke bygge her", "U kunt hier niet bouwen", "Impossible de construire ici", "Hier kann nicht gebaut werden", "Du kan inte bygga här" },
 		[OpenTpwText.NotSimulated] = new[] { "Not simulated yet", "Endnu ikke simuleret", "Nog niet gesimuleerd", "Pas encore simulé", "Noch nicht simuliert", "Inte simulerad ännu" },

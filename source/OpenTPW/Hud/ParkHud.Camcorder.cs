@@ -30,7 +30,11 @@ public partial class ParkHud
 		if ( pressed && !control && !blocked && !tools && !IsRiding && GameEditions.Current == GameEdition.ThemeParkWorld )
 		{
 			if ( owned ) CancelCamcorder();
-			else if ( Camera.Mode is ParkCameraMode && level.OriginalPark != null ) CamcorderArmed = true;
+			else if ( Camera.Mode is ParkCameraMode && level.OriginalPark != null )
+			{
+				CamcorderArmed = true;
+				PostMessage( strings.Extra( OpenTpwText.CamcorderArmed ) );
+			}
 		}
 		owned |= CamcorderArmed || level.FreeWalk != null;
 		if ( CamcorderArmed && !control && !blocked && !tools && !IsRiding && !wasMouseDown && input.LeftPressed )

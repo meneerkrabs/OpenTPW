@@ -670,3 +670,8 @@ online), cursor drawing, button/arm animations (`b_door` etc. have no animation
 members; arm slide-in is not reproduced), sounds, original thousands separators
 and currency handling in French/German, D3D11/Vulkan runs, captures from the
 original game for comparison.
+
+The developer prototype Totem shares the ordinary objects' per-tick economy
+synchronization: its visitor bridge receives the linked instance's wear, age
+and sideshow terms, while its script supplies open and broken status.
+`PrototypeEconomySyncTests` checks this without original assets or a GPU.

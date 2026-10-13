@@ -1020,7 +1020,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:62` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:44` | [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:448` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
-| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:559` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:564` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.cs:547` | [EXT:developer-prototype] the original window had no developer prototype to list; the Totem joins the placed rides as one more row |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:467` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |

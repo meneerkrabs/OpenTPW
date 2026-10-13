@@ -218,6 +218,54 @@ public class ThemeParkIncGlobalSaveTests
 		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( Create( new Layout { Parks = new[] { new string( 'A', ThemeParkIncGlobalSave.MaximumNameBytes ) } } ) ) );
 	}
 
+	[TestMethod]
+	public void BmpBoundaryUnitsRemainLiteralLittleEndianText()
+	{
+		const string text = "\u0001\u007F\u0080\u00FF\u0100\uD7FF\uE000\uFFFD\uFFFE\uFFFF";
+		var bytes = Create( new Layout { SignLine1 = text, SignLine2 = text, CompanyName = text } );
+		var save = ThemeParkIncGlobalSave.Read( bytes );
+		Assert.AreEqual( text, save.Parks[0].SignLine1 );
+		Assert.AreEqual( text, save.Parks[0].SignLine2 );
+		Assert.AreEqual( text, save.Shares.CompanyName );
+		Assert.IsTrue( bytes.AsSpan().IndexOf( new byte[] { 0x00, 0x01, 0xFF, 0xD7, 0x00, 0xE0 } ) >= 0,
+			"the company name fixture contains literal UTF-16LE boundary units" );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 1 )]
+	[DataRow( 2 )]
+	public void AHighSurrogateBeforeNulCannotUseIgnoredPaddingAsItsPair( int field )
+	{
+		const string text = "A\uD800\0\uDC00";
+		var layout = field switch
+		{
+			0 => new Layout { SignLine1 = text },
+			1 => new Layout { SignLine2 = text },
+			_ => new Layout { CompanyName = text }
+		};
+		var error = Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( Create( layout ) ) );
+		StringAssert.Contains( error.Message, "unpaired UTF-16 surrogate" );
+		StringAssert.Contains( error.Message, "code unit 1" );
+		var empty = ThemeParkIncGlobalSave.Read( Create( new Layout
+		{
+			SignLine1 = "\0\uD800", SignLine2 = "\0\uDC00", CompanyName = "\0\uDC00\uD800"
+		} ) );
+		Assert.AreEqual( "", empty.Parks[0].SignLine1 );
+		Assert.AreEqual( "", empty.Parks[0].SignLine2 );
+		Assert.AreEqual( "", empty.Shares.CompanyName );
+	}
+
+	[TestMethod]
+	public void AdjacentPairsRemainIntactAndFailureIndexCountsCodeUnits()
+	{
+		const string pairs = "\uD800\uDC00\uDBFF\uDFFF";
+		var save = ThemeParkIncGlobalSave.Read( Create( new Layout { CompanyName = pairs } ) );
+		Assert.AreEqual( pairs, save.Shares.CompanyName );
+		var error = Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( Create( new Layout { CompanyName = pairs + "\uDC00" } ) ) );
+		StringAssert.Contains( error.Message, "code unit 4" );
+	}
+
 	/// <summary>
 	/// <c>OPENTPW_TPI_SAVES</c>: a folder with original Theme Park Inc <c>.GMS</c> files and any <c>.GMI</c> files (kept private).
 	/// Each must read to its last byte with every marker in place.

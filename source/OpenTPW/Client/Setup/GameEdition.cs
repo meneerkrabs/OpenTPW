@@ -150,7 +150,7 @@ public static class GameEditions
 		return new( GameEdition.ThemeParkWorld, GameEditionEvidence.None );
 	}
 
-	/// <summary>The themes the Theme Park Inc viewer may load.</summary>
+	/// <summary>The Theme Park Inc worlds the experimental slice may load.</summary>
 	public static bool IsViewableLevel( string level ) => ThemeParkInc.Contains( level, StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>Options that need a playable Theme Park World game or a save/sharing format the slice refuses.</summary>

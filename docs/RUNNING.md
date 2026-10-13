@@ -172,14 +172,18 @@ folder, read in place; see FSH.md).
 bash scripts/run.sh --game-path '/path/to/Theme Park Inc' --load-original-level arabian
 ```
 
-Shows a Theme Park Inc world (`arabian`, `science` or `water`) in 3D with a free camera, without
-economy, HUD or advisor. Esc quits, P pauses the simulation. `--capture-world out.png
---capture-frames 300` writes a screenshot. The folder must hold Theme Park Inc's `Data` folder (an
-installation, or the cabinets extracted as below); it is detected by its retail `levels/Standard.sam`
-or by `Ver.txt` beside the Theme Park Inc theme folders. Theme Park Inc data given to any other start
-(no `--load-original-level`, a Theme Park World level, `--sandbox`, `--front-end`, `--smoke-test`) is
-refused with a message that points here. The setup window and the saved game folder still reject it.
-See [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-level-viewer) for what works.
+Runs a Theme Park Inc world (`arabian`, `science` or `water`) as the experimental playable slice: the
+world in 3D with the park camera, an OpenTPW text HUD (build window, remove/rotate tools, speed
+control, pause menu on Esc) and guests under the ported Theme Park World guest rules — building is
+free because the slice runs no economy, staff, advisor, saves or Theme Park Inc interface. P pauses
+the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
+hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
+detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
+Theme Park Inc data given to any other start (no `--load-original-level`, a Theme Park World level,
+`--sandbox`, `--front-end`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
+`--visit-park`) is refused with a message that points here. The setup window and the saved game
+folder still reject it. See [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for
+what works.
 
 Extracting the CD: the data sits in the InstallShield cabinets `data1.cab`/`data2.cab` on the retail CD.
 With [unshield](https://github.com/twogood/unshield) (`brew install unshield`):

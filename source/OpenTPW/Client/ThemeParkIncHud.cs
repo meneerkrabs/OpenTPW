@@ -63,6 +63,9 @@ public sealed class ThemeParkIncHud
 		ToolButton( "speed", SpeedText, "Simulation speed: paused, normal, fast, fastest", CycleSpeed, 4 );
 		ToolButton( "menu", () => "Menu", "Pause menu (Esc)", OpenPauseMenu, 5 );
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
+		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
+		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
+		level.Objects.ObjectPlaced += OnObjectPlaced;
 		// [APPROX:PATH-011] Escape inside a tool ends it without writing; only a Back outside every tool opens the menu
 		hud.Back = () =>
 		{
@@ -76,6 +79,24 @@ public sealed class ThemeParkIncHud
 				OpenPauseMenu();
 		};
 	}
+
+	/// <summary>The catalog entry the build window armed (null: the object came from somewhere else).</summary>
+	private ObjectCatalogEntry? armedEntry;
+
+	private void OnObjectPlaced( OriginalObject item )
+	{
+		if ( armedEntry == null || armedEntry != item.Entry )
+			return;
+		armedEntry = null;
+		level.BuildEntry = null;
+		// The placed object is free (TPI-901); the queue tool follows as in the Theme Park World place flow.
+		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemNameOf( item.Entry ) ) );
+		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
+			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
+	}
+
+	private string ItemNameOf( ObjectCatalogEntry entry ) => entry.ObjectNameIndex is int index && !string.IsNullOrWhiteSpace( strings.Object( index ) )
+		? strings.Object( index ) : entry.DisplayName;
 
 	public UiScreenStack Stack { get; } = new();
 	/// <summary>The HUD screen itself (below every open menu on the same stack).</summary>
@@ -203,11 +224,8 @@ public sealed class ThemeParkIncHud
 
 	private string ItemText( BuildItem item )
 	{
-		var name = item.Entry != null && item.Entry.ObjectNameIndex is int index ? strings.Object( index ) : "";
-		if ( string.IsNullOrWhiteSpace( name ) )
-			name = item.Entry?.DisplayName ?? item.Id;
 		// [APPROX:TPI-901] builds are free because the slice runs no economy; the original would charge its own prices
-		return $"{name} — free";
+		return $"{(item.Entry != null ? ItemNameOf( item.Entry ) : item.Id)} — free";
 	}
 
 	private string SelectedText => selectedObject is not { IsDeleted: false } item ? "" : $"Selected: {item.Entry.DisplayName}{(item.Entry.IsFixedItem ? " (fixed item)" : "")}";
@@ -246,12 +264,17 @@ public sealed class ThemeParkIncHud
 	private void ArmBuild( ObjectCatalogEntry entry )
 	{
 		level.BuildEntry = entry;
+		armedEntry = entry;
 		level.IsRemovingObjects = false;
 		CloseBuildWindow();
-		PostMessage( $"{entry.DisplayName}: click the park to place it (free); the Rotate button turns it, Esc puts it away." );
+		PostMessage( $"{ItemNameOf( entry )}: click the park to place it (free); the Rotate button turns it, Esc puts it away." );
 	}
 
-	private void DisarmBuild() => level.BuildEntry = null;
+	private void DisarmBuild()
+	{
+		level.BuildEntry = null;
+		armedEntry = null;
+	}
 
 	private void DisarmAll()
 	{
@@ -368,7 +391,7 @@ public sealed class ThemeParkIncHud
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark )
 	{
 		var tool = level.CellTool;
-		if ( MenuOpen || level.BuildEntry != null || level.IsRemovingObjects || level.IsCoasterToolActive )
+		if ( MenuOpen || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );

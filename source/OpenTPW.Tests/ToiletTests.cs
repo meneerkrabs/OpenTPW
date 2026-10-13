@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -69,5 +70,41 @@ public class ToiletTests
 		EconomyTestData.AdvanceToTurn( park, park.Turn + 3 );
 		Assert.AreEqual( 0, toilet.MechanicId );
 		Assert.AreEqual( 0L, handyman.BusyTicks );
+	}
+
+	[TestMethod]
+	public void SellingAToiletMidJobFreesTheHandyman()
+	{
+		var park = EconomyTestData.Park();
+		var toilet = park.RegisterExisting( Toilet );
+		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
+		while ( !park.UseRelief( toilet.Id, 255 ) ) { }
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 1 );
+		Assert.AreEqual( toilet.Id, handyman.AssignedInstanceId );
+		park.Sell( toilet.Id );
+		Assert.AreEqual( 0L, handyman.BusyTicks );
+		Assert.AreEqual( 0, handyman.AssignedInstanceId );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 3 );
+	}
+
+	[TestMethod]
+	public void AToiletJobSurvivesASaveAndLoad()
+	{
+		var park = EconomyTestData.Park();
+		var toilet = park.RegisterExisting( Toilet );
+		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
+		while ( !park.UseRelief( toilet.Id, 255 ) ) { }
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 2 );
+		var remaining = handyman.BusyTicks;
+		Assert.IsTrue( remaining > 1 );
+		var json = ParkSaveFile.Serialize( park );
+		var loaded = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
+		Assert.IsTrue( loaded.TryGetObject( toilet.Id, out var loadedToilet ) );
+		var loadedHandyman = loaded.Staff.Members.Single( member => member.Id == handyman.Id );
+		Assert.AreEqual( toilet.Id, loadedHandyman.AssignedInstanceId );
+		Assert.AreEqual( handyman.Id, loadedToilet!.MechanicId );
+		EconomyTestData.AdvanceToTurn( loaded, loaded.Turn + remaining );
+		Assert.AreEqual( 100.0, loadedToilet.Repair, "the loaded job still cleans the toilet" );
+		Assert.AreEqual( 0, loadedToilet.MechanicId );
 	}
 }

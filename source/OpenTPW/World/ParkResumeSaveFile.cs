@@ -7,7 +7,8 @@ namespace OpenTPW;
 /// park (JSON through <see cref="ParkResumeJson"/>, <c>"Format": "opentpw-world"</c>). The economy is embedded by
 /// value as the legacy <see cref="ParkSaveFile.Data"/> (never re-implemented), the layout, guests, script world,
 /// runtimes, economy associations, clock and streams join by identity, the coasters (tracks, controller state and
-/// trains) ride along when the park held them, and the optional weather/gate/staff/advisor
+/// trains) ride along when the park held them, the developer Totem rides along as the prototype part, and the
+/// optional weather/gate/staff/advisor
 /// snapshots ride along. Serialization checks the envelope's shape before a byte is written; loading checks the
 /// format and version, then the shape, before anything is used; full validation against the current catalog,
 /// balance and asset manifest is <see cref="ValidateSnapshot"/> (root's step, before a candidate level is built).
@@ -200,7 +201,8 @@ internal static class ParkResumeSaveFile
 	/// <summary>
 	/// The envelope's own consistency, with no catalog or settings: header bounds, the embedded economy's format
 	/// and invariants, the layout's pure allocator/identity rules, the script world's graph, one runtime per
-	/// layout object with matching entry/attraction/script identity and every world root claimed, the
+	/// layout object with matching entry/attraction/script identity and every world root claimed (the prototype
+	/// part claims the developer Totem's the same way), the
 	/// attraction-to-economy-instance associations, the guests' structural cross-references and map bounds, the
 	/// coaster part's shape (when the park held coasters), the optional parts' bounds, and the asset manifest's
 	/// shape. This is what <see cref="Serialize"/> checks before

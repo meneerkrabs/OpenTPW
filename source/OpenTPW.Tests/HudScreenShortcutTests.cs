@@ -1,6 +1,9 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
+using OpenTPW.UI.Original;
+using System.IO;
 using Veldrid;
+using NVector2 = System.Numerics.Vector2;
 
 namespace OpenTPW.Tests;
 
@@ -23,7 +26,8 @@ public class HudScreenShortcutTests
 		Assert.AreEqual( HudScreenShortcut.StaffCosts, ParkHud.ShortcutFor( InputButton.StaffBudgets ), "T" );
 		Assert.AreEqual( HudScreenShortcut.EntryPrice, ParkHud.ShortcutFor( InputButton.EntryPrice ), "G" );
 		Assert.AreEqual( HudScreenShortcut.StaffApplicants, ParkHud.ShortcutFor( InputButton.HireStaff ), "H" );
-		Assert.AreEqual( HudScreenShortcut.StaffEmployed, ParkHud.ShortcutFor( InputButton.AllStaff ), "S" );
+		Assert.AreEqual( HudScreenShortcut.None, ParkHud.ShortcutFor( InputButton.AllStaff ),
+			"S stays unhandled: the host camera pans with S (Input's WASD axes), and one press cannot be both" );
 		Assert.AreEqual( HudScreenShortcut.TimeFaster, ParkHud.ShortcutFor( InputButton.TimeSpeedUp ), "numpad +" );
 		Assert.AreEqual( HudScreenShortcut.TimeSlower, ParkHud.ShortcutFor( InputButton.TimeSlowDown ), "numpad -" );
 		Assert.AreEqual( HudScreenShortcut.TimeNormal, ParkHud.ShortcutFor( InputButton.TimeReset ), "numpad *" );
@@ -49,7 +53,7 @@ public class HudScreenShortcutTests
 		Assert.IsFalse( ParkHud.WindowShortcutsAllowed( false, "lobby" ), "the front end is not a HUD window" );
 		foreach ( var shortcut in new[] { HudScreenShortcut.TimeFaster, HudScreenShortcut.TurnBlueprintLeft, HudScreenShortcut.LocateNextStaff } )
 			Assert.IsFalse( ParkHud.OpensWindow( shortcut ), $"{shortcut} follows the plain park gate" );
-		foreach ( var shortcut in new[] { HudScreenShortcut.BuyWindow, HudScreenShortcut.MapWindow, HudScreenShortcut.StaffEmployed } )
+		foreach ( var shortcut in new[] { HudScreenShortcut.BuyWindow, HudScreenShortcut.MapWindow, HudScreenShortcut.StaffApplicants } )
 			Assert.IsTrue( ParkHud.OpensWindow( shortcut ), $"{shortcut} is a window key" );
 	}
 
@@ -97,5 +101,24 @@ public class HudScreenShortcutTests
 		Assert.IsFalse( ParkHud.PauseMenuEntryEnabled( false, UIStrings.Options, canLoad: true, canOptions: false ), "options without a host options screen is disabled" );
 		Assert.IsTrue( ParkHud.PauseMenuEntryEnabled( true, UIStrings.Load, canLoad: true, canOptions: true ), "a read-only visit may still load another park" );
 		Assert.IsTrue( ParkHud.PauseMenuEntryEnabled( false, UIStrings.QuitGame, canLoad: false, canOptions: false ), "quit never depends on the host" );
+	}
+
+	[TestMethod]
+	public void SpaceBelongsToTheMapKeyNotTheHoveredButton()
+	{
+		// Hovering focuses a HUD button, but Space is the original map key (ShortcutFor(MapScreen)):
+		// it must not also click whatever the pointer happens to rest on; Enter activates, as for a text field.
+		var context = new UiContext( OriginalUiTests.FakeStrings(), null!,
+			new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 1024, 768 ) };
+		var screen = new UiScreen( "park" );
+		var clicked = 0;
+		var button = screen.Add( new UiButton { Id = "buy", Clicked = () => clicked++, Bounds = new UiRect( 100, 100, 300, 180 ) } );
+		var centre = button.ScreenRect( context.Canvas ).Center;
+		screen.Update( context, new UiInput( centre, false, false, false, false, UiKeys.None ) );
+		Assert.AreSame( button, screen.Focused, "hovering the button focuses it" );
+		screen.Update( context, new UiInput( centre, false, false, false, false, UiKeys.Accept | UiKeys.Space ) );
+		Assert.AreEqual( 0, clicked, "Space does not activate the focused button" );
+		screen.Update( context, UiInput.Key( UiKeys.Accept ) );
+		Assert.AreEqual( 1, clicked, "Enter still activates the focused button" );
 	}
 }

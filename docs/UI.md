@@ -399,8 +399,11 @@ glyph in all 14 UI fonts of each language.
 - Original keyboard shortcuts (`ParkHud.ScreenShortcuts.cs`): the game's key table
   (the `InputButton` defaults; the research and map tooltips themselves say
   "(R)" and "(Space)") opens the HUD windows: B buy, I park info, F finance,
-  R research, Space map, L loans, T staff training budgets, G entry price, H staff
-  applicants and S employed staff. A second press of a window key closes the
+  R research, Space map, L loans, T staff training budgets, G entry price and
+  H staff applicants. Space activates no hovered button (Enter does, as for a
+  text field) so the map key never co-fires with the panel under the pointer.
+  The All Staff key S stays unhandled: the host camera pans with S (WASD), and
+  one press cannot be both. A second press of a window key closes the
   window (UI-900); dialogs and the pause menu keep the keys. The time keys
   (numpad +/−/*) step and reset the four-speed clock model (UI-902),
   comma/full stop turn the pending blueprint by the level's 90° steps (UI-903),
@@ -450,7 +453,8 @@ glyph in all 14 UI fonts of each language.
   purchase (−3,250; research marked complete as smoke setup) with one paid
   economy object linked to guests, info arm, economy pause, sale (+1,625),
   a second naturally researched catalogue object, exact charges, overlap refusal
-  without a charge, selected-object open/close, pause menu, refused save, lobby;
+  without a charge, selected-object open/close, pause menu, own-format world save
+  (verified on disk), lobby;
   a prepared read-only visit verifies disabled build/open/delete/save controls
   and their direct callbacks without mutating the park or writing a save; the visit
   exits to the lobby and jungle starts again in Instant Action (seed imported, no
@@ -612,7 +616,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-089 | `Hud/ParkHud.Map.cs` | the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base | original generic-sandbox map presentation is an OpenTPW design choice |
 | UI-090 | `Hud/ParkHud.Staff.cs` | staff table control 9366 toggles between applicant and employed views | original control 9366 handler |
 | UI-091 | `Hud/ParkHud.Staff.cs` | staff and visitor locate controls cycle actual actor positions and focus the host park camera; native locate flow remains unqualified | staff and visitor world positions and locate handlers |
-| UI-900 | `Hud/ParkHud.ScreenShortcuts.cs` | a second press of an original window key (B/I/F/R/Space/L/T/G/S/H) closes that window | the original key dispatch while a screen window is open |
+| UI-900 | `Hud/ParkHud.ScreenShortcuts.cs` | a second press of an original window key (B/I/F/R/Space/L/T/G/H) closes that window; the All Staff key S stays unhandled because the host camera pans with S | the original key dispatch while a screen window is open |
 | UI-901 | `Hud/ParkHud.cs`, `Hud/ParkHud.Gauge.cs` | the happiness gauge shows the visitors' mean happiness as a rising red-yellow-green bar in the gauge model's empty dish | capture of the original gauge and its value drawing |
 | UI-902 | `Hud/ParkHud.ScreenShortcuts.cs` | the original time keys (numpad +/−/*) step OpenTPW's four named speeds and reset to normal | the original key tokens' names and their handler |
 | UI-903 | `Hud/ParkHud.ScreenShortcuts.cs` | the blueprint-turn keys (comma/full stop) rotate the pending object by the level's 90-degree build-rotation steps | the original blueprint-turn key handler's step and smoothing |

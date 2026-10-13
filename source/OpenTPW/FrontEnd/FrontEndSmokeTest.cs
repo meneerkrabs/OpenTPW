@@ -1107,7 +1107,14 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
-		Do( "window keys while paused", () => Input.InjectKeyDown( Key.V, Key.B ) );
+		long? pausedTick = null;
+		GameSpeed? pausedSpeed = null;
+		Do( "window keys while paused", () =>
+		{
+			pausedTick = flow.Level!.Park?.Economy.Tick;
+			pausedSpeed = flow.Hud!.Status.Speed;
+			Input.InjectKeyDown( Key.V, Key.B );
+		} );
 		Wait( "pause owns keyboard", 2 );
 		Do( "pause blocks window keys", () =>
 			Require( flow.Hud!.Paused && flow.Hud.Stack.Top?.Name == "pause"
@@ -1118,6 +1125,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "pause menu", () =>
 		{
 			Require( flow.Hud!.Paused, "Escape opens the pause menu" );
+			// The original's pause menu pauses the game (Mac 0x10198514 → 0x10110518): the park clock stands still, the speed setting is kept.
+			Require( flow.Level!.SimulationTimeScale == 0 && flow.Level.Park?.Economy.Tick == pausedTick && flow.Hud.Status.Speed == pausedSpeed,
+				"the pause menu stops the park simulation and keeps the speed setting" );
 			var capture = CaptureFrame( "pause.png" );
 			VerifyText( capture, flow.Strings[UIStrings.Paused], "PAUSED title" );
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );

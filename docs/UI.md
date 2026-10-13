@@ -538,6 +538,7 @@ the real assets. Approximation tags refer to the register below.
 | Options | opens the options screen; disabled when the host provides none | wired | `OriginalUiTests` |
 | Go Online | opens the online screens when built | wired | online suite |
 | Exit To Lobby / Quit Game (confirmation) | leave the park / quit | wired | `FrontEndSmokeTest` |
+| (open menu) | stops the park simulation while the menu or a screen opened from it is open, as the original's pause menu pauses the game (Mac `0x10198514` → `0x10110518`); the speed setting is kept, so the park resumes at the same speed (UI-096 covers the other pausing screens) | wired | `ParkPauseTests`, `FrontEndSmokeTest` |
 
 ### Windows
 
@@ -664,6 +665,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-093 | `Hud/ParkHud.cs`, `World/Level.RideView.cs` | the ride view is entered with the E key on the selected ride, not the ride window's "Ride it!" button | the ride window's Ride it button art and layout, and the Ride it handler (maexah/OpenTPW hud.md, FUN_004e15b0) |
 | UI-094 | `World/RideCameraMode.cs` | the ride view's eye sits on the first train's front car (coaster) or the carriage's height (prototype); the walk, sway and field of view are not reproduced | CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies |
 | UI-095 | `World/Level.RideView.cs` | leaving the ride view restores the park camera it was entered from; the walking first-person view is not implemented | the first-person walk's camera state (gui_CameraFlags 0x400) and the exit handler FUN_0042a190 |
+| UI-096 | `Hud/ParkHud.cs` | only the pause menu (and the screens opened from it) stops the park simulation; the original's other game-pause callers — the full-screen map (`0x101B9CA0`), the message dialog when its last argument is 0 (`0x1019057C`), the Load dialog (`0x10153988`) and `0x1015F6DC` — do not stop it here | which OpenTPW windows those screens correspond to and whether the pause gate `+0x3C` is set when they open in normal play |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

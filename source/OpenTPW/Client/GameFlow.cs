@@ -454,8 +454,8 @@ internal sealed partial class GameFlow : IDisposable
 		{
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			UpdateParkGlobe( Hud );
-			// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
-			Level.SimulationTimeScale = Hud.Stack.Screens.Any( screen => screen.Name == "texturePackDownload" ) ? 0 : Hud.Status.TimeScale;
+			// The pause menu and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
+			Level.SimulationTimeScale = Hud.SimulationTimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );

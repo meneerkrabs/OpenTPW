@@ -7,5 +7,10 @@ html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 15px 
 #status { min-height: 1.4em; color: #9ab; }
 label { display: inline-block; padding: 10px 18px; border-radius: 8px; background: #3b4cc0; color: #fff; cursor: pointer; }
 input { display: none; }
+button { padding: 10px 18px; border: 0; border-radius: 8px; background: #3b4cc0; color: #fff; font: inherit; cursor: pointer; }
+button.secondary { padding: 6px 12px; background: #2a3138; color: #ddd; }
+select { padding: 6px 8px; border-radius: 6px; background: #1c2228; color: #ddd; border: 1px solid #3a444e; font: inherit; }
+#play { margin-top: 8px; font-weight: 600; }
+#kept[hidden], #keepRow[hidden], button[hidden] { display: none; }
 #loading { position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: rgba(16, 20, 24, .85); color: #fff; font-weight: 600; }
 #loading[hidden] { display: none; }

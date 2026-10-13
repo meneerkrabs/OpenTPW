@@ -797,6 +797,14 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Game files kept in the browser (October 13):** the browser page can keep the player's own
+  game files in OPFS, so a later visit starts with Play instead of choosing the folder. The setup
+  screen chooses what is kept: what the parks use (default), all at once, or nothing; a manifest
+  rebuilds the file list, a theme not kept yet asks for the folder once more, and Remove kept files
+  deletes them. Writing waits until the game has started, so the first start is not slower
+  (1,974 against about 1,990 ms); a revisit shows Play after about 165 ms and the lobby 1.6-1.7 s
+  after it. `opentpw-originals.js` has Node tests against an in-memory OPFS, and the harness gained
+  `--keep` and a `revisit` scenario. Phase 2 of the browser performance plan.
 - **Frame rate limit (October 13):** the OpenTPW options page has a frame rate limit (off by
   default, 30 or 60 fps) for the desktop and the browser. It caps drawing only (`FrameLimiter`:
   a grid of 1/cap seconds with jitter slack; the browser skips early animation frames, the

@@ -25,6 +25,7 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `jungle` | the cold start of Full Simulation Jungle (the construction frame), then a steady window |
 | `buy` | the first buy-menu open (Aztec Mayhem selected) and the first Belly Bounce, Balloon Shop, Burger Shop and Drinks Shop selections |
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
+| `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
 `tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by
@@ -126,6 +127,23 @@ In these samples a 30 fps cap took 43 % off the main thread rather than half; th
 second and the page still runs one animation-frame callback per display frame. A cap at the
 display rate drew practically every frame. Input is read once per drawn frame, so a 30 fps cap
 can add about one display frame of input delay; that is why it stays off by default.
+
+## Game files kept in the browser (13 October)
+
+With the game files kept in OPFS (docs/WEB.md), interpreter build, M5 setup; the harness's
+`--keep` and its `revisit` scenario (the same profile reopened without the served folder):
+
+| Measure | Value |
+| --- | --- |
+| First visit, first frame, without keeping / keeping what the parks use | 1,974 / about 1,990 ms (medians of three alternating runs; within the noise) |
+| First visit, Jungle ready | 2,880 / 2,931 ms |
+| Revisit, Play button shown after loading the page | 160–170 ms |
+| Revisit, lobby after Play | 1,630–1,700 ms (97 MB kept: the start and Jungle) |
+| Revisit, Jungle ready from the kept files | 2,800–2,870 ms |
+| All at once: first visit, first frame / revisit lobby | 3,406–4,658 ms (307 MB kept before the start) / 1,709–1,752 ms |
+
+Writing first ran during the copy and slowed the first start by about a quarter; it now waits
+until the game has started.
 
 ## Measured workload
 

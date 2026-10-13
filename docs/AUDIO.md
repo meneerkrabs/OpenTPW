@@ -223,7 +223,8 @@ Traced in the binary but not triggered yet:
 * The placed records of type 3 (a sound that follows the listener in a rectangle) are counted, not
   played; a sentence-type placed effect plays its first sound once (AUDIO-020).
 * The visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and visitor
-  panel sounds (`cat_ui` 95 at `0x101125D8`): OpenTPW selects objects, not visitors.
+  panel sounds (`cat_ui` 95 at `0x101125D8`) remain deferred: world visitor selection
+  now opens the existing roster, with no new visitor-specific audio trigger.
 * Global lobby effects (`cat_globallobbysfx` 1 thunder with the lobby lightning flash `0x1009533C`, 4 at
   `0x10183DA4`, 2/3 in the online globe `0x100923A8`): the lobby has no lightning or globe to trigger them.
 * The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and

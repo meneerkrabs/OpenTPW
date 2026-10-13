@@ -49,7 +49,8 @@ public sealed record EconomyObjectInfo(
 	int TrackType = 0,
 	bool IsChoosable = true,
 	bool ChillsYouOut = false,
-	int WhichUIType = -1 )
+	int WhichUIType = -1,
+	bool ProvidesRelief = false )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -151,7 +152,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			// [BIN:STP-PPC:0x100DABD0 object constructor] type record +0xFC (UsageInfo.ChillsYouOut) nonzero sets thing +46 bit 0x2, the only test of the rest-area search 0x100F47A0 (ORACLE.md F22): any such object is a rest area for staff
 			settings.GetInt( "UsageInfo.ChillsYouOut", 0, optional: true ) != 0,
 			// [DATA:<object>.sam:Info.WhichUIType] type record +1960, which 0xc7b24 counts objects by
-			settings.GetInt( "Info.WhichUIType", -1, optional: true ) );
+			settings.GetInt( "Info.WhichUIType", -1, optional: true ),
+			// [DATA:<object>.sam:UsageInfo.ProvidesRelief] the relief flag (thing +0x32 bit 0 on the PC): the toilet's gauge wears with every use and handymen clean it (tp.exe 0x004E2440, 0x004D7880)
+			settings.GetInt( "UsageInfo.ProvidesRelief", 0, optional: true ) != 0 );
 	}
 
 	/// <summary>

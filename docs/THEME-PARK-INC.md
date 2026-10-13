@@ -55,7 +55,7 @@ starts the playable slice below (older links still land here).
 
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). It is not Theme Park Inc support: there is
-no Theme Park Inc interface, front end, economy, rules or save writing, and nothing it draws has been
+no Theme Park Inc interface, front end, economy, rules or native save writing, and nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
@@ -66,7 +66,7 @@ Theme Park Inc rules or data OpenTPW has not traced: economy (its `Standard.sam`
 balance keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage`; measured
 October 13, 2026), staff, advisor, front end, park saves, sharing (export/import/visit), the mission
 campaign, the Global Master Save and the disc's COS files (TPI-903). `Level` gates its economy on the
-policy; the refusals stay real, not deleted: nothing writes or reads a Theme Park Inc park save, GMS
+policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save, GMS
 or COS file, and the start-up command line additionally refuses `--sandbox`, `--front-end`,
 `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`, `--park-resume-smoke`,
 `--export-park`, `--import-park` and `--visit-park` on Theme Park Inc data.
@@ -81,8 +81,8 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
 - The **experimental HUD** (`ThemeParkIncHud`, TPI-900): an OpenTPW text interface — a state line that
   names the experiment and its refused systems, a guest counter, a message line, a build window over
   the world's own catalog, remove/rotate/cancel tools, a speed control and a pause menu (Esc) whose
-  Quit is the only way out. Building is **free** (TPI-901): the slice runs no economy, so nothing is
-  charged, refunded or saved. If the HUD cannot be built the world falls back to the bare viewer
+  application-owned layout checkpoint controls are described below. Building is **free** (TPI-901): the slice runs no economy, so nothing is
+  charged or refunded. If the HUD cannot be built the world falls back to the bare viewer
   (Esc quits, P pauses) with a warning.
 - **Building** through the same rules as a Theme Park World park (`ParkObjects` terrain and occupancy
   checks, `Level.PlaceObject` without the purchase), including the path and queue tools of the traced
@@ -99,7 +99,14 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
 (headless composition of the build rules, a placed object's original script, free path laying and
 guest arrivals; `OPENTPW_TPI_PATH`). None of it compares with the original game.
 
-**What it leaves out.** No money, calendar, research, challenges or staff; no park saving or loading;
+**Layout checkpoints** (SAVE-930) are separate from continuation and native park saves. The experimental
+pause menu can save the built layout and explicitly confirm loading it as a new session. Typed cells,
+objects, open flags, IDs and creation seeds persist; guests, script progress, clock and audio restart.
+Prototype/coaster layouts are refused. Trusted asset checks and staged candidate construction preserve
+the current world on preflight/construction failure. See [PARK-SAVES.md](PARK-SAVES.md#experimental-theme-park-inc-layout-checkpoints)
+for the separate `.tpilayout` format, exact state boundaries and verification limits.
+
+**What it leaves out.** No money, calendar, research, challenges or staff; no continuation or native park saving/loading;
 no front end or online world; no advisor. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride

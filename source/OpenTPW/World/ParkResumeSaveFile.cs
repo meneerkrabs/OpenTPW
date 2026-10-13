@@ -6,7 +6,8 @@ namespace OpenTPW;
 /// OpenTPW's own-format world save: one versioned, bounded, atomic envelope around every snapshot of a running
 /// park (JSON through <see cref="ParkResumeJson"/>, <c>"Format": "opentpw-world"</c>). The economy is embedded by
 /// value as the legacy <see cref="ParkSaveFile.Data"/> (never re-implemented), the layout, guests, script world,
-/// runtimes, economy associations, clock and streams join by identity, and the optional weather/gate/staff/advisor
+/// runtimes, economy associations, clock and streams join by identity, the coasters (tracks, controller state and
+/// trains) ride along when the park held them, and the optional weather/gate/staff/advisor
 /// snapshots ride along. Serialization checks the envelope's shape before a byte is written; loading checks the
 /// format and version, then the shape, before anything is used; full validation against the current catalog,
 /// balance and asset manifest is <see cref="ValidateSnapshot"/> (root's step, before a candidate level is built).
@@ -103,7 +104,8 @@ internal static class ParkResumeSaveFile
 	/// <summary>
 	/// Validates the complete envelope against the loading park: the shape (see <see cref="ValidateShape"/>),
 	/// the layout against the current <paramref name="catalog"/>, the theme, balance layer and mode against
-	/// <paramref name="settings"/>, coaster entries refused explicitly, every economy binding's instance against
+	/// <paramref name="settings"/>, every live coaster station saved with a matching coaster part, every economy
+	/// binding's instance against
 	/// the economy catalogue, and the asset manifest's exact key and digest agreement with
 	/// <paramref name="currentAssetHashes"/> (computed from verified catalog/game-data paths — a path saved in
 	/// the file is never read back). Pure: no live object is touched, so root can reject a save before building a
@@ -126,11 +128,41 @@ internal static class ParkResumeSaveFile
 			$"the object catalog is for theme '{catalog.Theme}', not the saved '{snapshot.Theme}'" );
 		Require( string.Equals( settings.Theme, snapshot.Theme, StringComparison.OrdinalIgnoreCase ) && settings.IsEasy == snapshot.Economy.Easy,
 			$"the balance is {settings.Theme}{( settings.IsEasy ? " (easy)" : "" )}, not the saved {snapshot.Economy.Theme}{( snapshot.Economy.Easy ? " (easy)" : "" )}" );
-		foreach ( var record in snapshot.Layout.Objects )
+		// Coasters: every live (not stopped) coaster station must be saved — a stopped station's controller was torn
+		// down at capture, so it holds no state — and every saved entry must fit its entry's coaster definition.
+		var liveCoasterStations = new HashSet<int>();
+		var definitionsByAttraction = new Dictionary<int, CoasterDefinition>();
+		for ( var index = 0; index < snapshot.Layout.Objects.Count; index++ )
 		{
-			var entry = catalog.Find( record!.InfoId )!;
-			Require( entry.Settings == null || !CoasterDefinition.IsCoaster( entry.Settings ),
-				$"{entry.DisplayName} is a coaster station; coaster state is not part of the park-resume slice" );
+			var record = snapshot.Layout.Objects[index]!;
+			var entry = catalog.Find( record.InfoId )!;
+			if ( entry.Settings == null || !CoasterDefinition.IsCoaster( entry.Settings ) )
+				continue;
+			if ( !snapshot.Runtimes[index].State.Stopped )
+			{
+				liveCoasterStations.Add( record.AttractionId );
+				definitionsByAttraction[record.AttractionId] = CoasterDefinition.FromSettings( entry.Settings );
+			}
+		}
+		if ( snapshot.Coasters == null )
+		{
+			foreach ( var attractionId in liveCoasterStations )
+				Require( false, $"attraction {attractionId} is a live coaster station, but the save carries no coaster part" );
+		}
+		else
+		{
+			Require( snapshot.Coasters.Rides.Count == liveCoasterStations.Count
+				&& snapshot.Coasters.Rides.All( ride => liveCoasterStations.Contains( ride.AttractionId ) ),
+				$"the save holds {snapshot.Coasters.Rides.Count} coasters, but the park places {liveCoasterStations.Count} live coaster stations" );
+			foreach ( var ride in snapshot.Coasters.Rides )
+			{
+				var definition = definitionsByAttraction[ride.AttractionId];
+				Require( ride.Trains.Count <= definition.MaxTrains,
+					$"coaster {ride.AttractionId} holds {ride.Trains.Count} trains, above the definition's {definition.MaxTrains}" );
+				foreach ( var train in ride.Trains )
+					Require( train.Cars.Count == definition.MaxCars,
+						$"a train of coaster {ride.AttractionId} holds {train.Cars.Count} cars, not the definition's {definition.MaxCars}" );
+			}
 		}
 		var instancesById = snapshot.Economy.Objects.ToDictionary( item => item.Id );
 		var bindingsByAttraction = snapshot.EconomyBindings.ToDictionary( binding => binding.AttractionId );
@@ -162,7 +194,8 @@ internal static class ParkResumeSaveFile
 	/// and invariants, the layout's pure allocator/identity rules, the script world's graph, one runtime per
 	/// layout object with matching entry/attraction/script identity and every world root claimed, the
 	/// attraction-to-economy-instance associations, the guests' structural cross-references and map bounds, the
-	/// optional parts' bounds, and the asset manifest's shape. This is what <see cref="Serialize"/> checks before
+	/// coaster part's shape (when the park held coasters), the optional parts' bounds, and the asset manifest's
+	/// shape. This is what <see cref="Serialize"/> checks before
 	/// writing; the catalog/theme/balance/asset checks that need the loading park are
 	/// <see cref="ValidateSnapshot"/>'s.
 	/// </summary>
@@ -303,6 +336,7 @@ internal static class ParkResumeSaveFile
 		}
 
 		ValidateGuests( snapshot );
+		ValidateCoasters( snapshot );
 
 		// Clock: the clock's own pure validator, on a fresh instance it never mutates.
 		new FixedStepClock().ValidateSnapshot( snapshot.Clock! );
@@ -599,6 +633,163 @@ internal static class ParkResumeSaveFile
 		foreach ( var (guestId, attractionId) in aboardOf )
 			Require( guestIds.Contains( guestId ), $"attraction {attractionId}'s riders hold guest {guestId}, which does not exist" );
 	}
+
+	/// <summary>
+	/// The coaster part's pure consistency (null means the park held no coasters — saves from before the coaster slice):
+	/// every entry joined to one placed object by a strictly increasing attraction id, the track's shape (station node,
+	/// pylons, one station end node exactly when the track completed, the closure rules, cell bounds, known node flag
+	/// bits only), the controller scalars' ranges, the trains (only on a completed track, defined states, bounded
+	/// riders), and every rider — seated or leaving — a guest the snapshot holds aboard that very attraction. The
+	/// catalog checks (which stations are coaster stations, the definition's train and car bounds) are
+	/// <see cref="ValidateSnapshot"/>'s.
+	/// </summary>
+	private static void ValidateCoasters( ParkResumeSnapshot snapshot )
+	{
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"World save is inconsistent: {message}." );
+		}
+		if ( snapshot.Coasters is not { } coasters )
+			return;
+		Require( coasters.Rides != null, "the coaster part holds no ride list" );
+		Require( coasters.Rides!.Count <= CoasterSave.MaximumRides,
+			$"the coaster part holds {coasters.Rides.Count} rides, above {CoasterSave.MaximumRides}" );
+		var width = snapshot.Layout!.Cells!.Width;
+		var height = snapshot.Layout.Cells.Height;
+		bool InBounds( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
+		var placedAttractions = snapshot.Layout.Objects!.Select( record => record!.AttractionId ).ToHashSet();
+		var aboardByAttraction = snapshot.Guests!.Attractions!.ToDictionary( attraction => attraction!.AttractionId, attraction => attraction.OnRide!.ToHashSet() );
+		var guestsById = snapshot.Guests.Guests!.ToDictionary( guest => guest!.Id );
+		var ridersEverywhere = new HashSet<int>();
+		var previousAttractionId = 0;
+		for ( var index = 0; index < coasters.Rides.Count; index++ )
+		{
+			var ride = coasters.Rides[index];
+			Require( ride != null, $"coaster entry {index} is missing" );
+			Require( ride!.AttractionId > previousAttractionId,
+				$"coaster entry {index} names attraction {ride.AttractionId}, which does not follow {previousAttractionId} in creation order" );
+			previousAttractionId = ride.AttractionId;
+			Require( placedAttractions.Contains( ride.AttractionId ),
+				$"the coaster part names attraction {ride.AttractionId}, which the park does not place" );
+			Require( ride.Track != null && ride.Track.Nodes != null, $"coaster {ride.AttractionId} holds no track" );
+			var track = ride.Track!;
+			Require( track.Nodes!.Count <= CoasterSave.MaximumNodes,
+				$"coaster {ride.AttractionId}'s track holds {track.Nodes.Count} nodes, above {CoasterSave.MaximumNodes}" );
+			Require( track.Version >= 0, $"coaster {ride.AttractionId}'s track version {track.Version} is negative" );
+			Require( track.DepartCell.HasValue == track.ReturnCell.HasValue,
+				$"coaster {ride.AttractionId}'s track names one station end but not the other" );
+			if ( track.DepartCell is { } depart && track.ReturnCell is { } @return )
+			{
+				Require( InBounds( depart.X, depart.Y ) && InBounds( @return.X, @return.Y ),
+					$"coaster {ride.AttractionId}'s station end ({depart.X}, {depart.Y})/({@return.X}, {@return.Y}) is outside the cell map" );
+				Require( depart != @return, $"coaster {ride.AttractionId}'s station ends share one cell" );
+			}
+			else
+				Require( track.Nodes.Count == 0 && !track.IsClosed && !track.IsComplete,
+					$"coaster {ride.AttractionId}'s track holds nodes without station ends" );
+			var pylons = 0;
+			var stationNodes = 0;
+			for ( var node = 0; node < track.Nodes.Count; node++ )
+			{
+				var saved = track.Nodes[node];
+				Require( saved != null, $"coaster {ride.AttractionId}'s node {node} is missing" );
+				Require( InBounds( saved!.X, saved.Y ),
+					$"coaster {ride.AttractionId}'s node {node} stands at ({saved.X}, {saved.Y}), outside the cell map" );
+				Require( float.IsFinite( saved.Height ) && float.IsFinite( saved.T ) && float.IsFinite( saved.Bank ),
+					$"coaster {ride.AttractionId}'s node {node} holds a height, parameter or bank that is not finite" );
+				Require( saved.T is >= 0 and <= 1, $"coaster {ride.AttractionId}'s node {node} height parameter {saved.T} is outside 0..1" );
+				Require( saved.StackIndex >= 0, $"coaster {ride.AttractionId}'s node {node} stack index {saved.StackIndex} is negative" );
+				Require( (saved.Flags & ~CoasterSave.KnownNodeFlags) == 0,
+					$"coaster {ride.AttractionId}'s node {node} carries flag bits 0x{saved.Flags:X}, which this format does not know" );
+				if ( saved.IsStation )
+				{
+					stationNodes++;
+					Require( node == 0, $"coaster {ride.AttractionId}'s node {node} is a second station node" );
+				}
+				if ( IsPylonlessNode( saved ) )
+				{
+					Require( !saved.LoopPylon && saved.StackIndex == 0,
+						$"coaster {ride.AttractionId}'s pylon-less node {node} is a stacked loop pylon" );
+					Require( node == 0 || node == track.Nodes.Count - 1,
+						$"coaster {ride.AttractionId}'s node {node} is a station end node outside the ends of the track" );
+				}
+				else
+					pylons++;
+			}
+			if ( track.Nodes.Count > 0 )
+			{
+				Require( stationNodes == 1, "a track with nodes holds no station node" );
+				Require( track.DepartCell == (track.Nodes[0]!.X, track.Nodes[0].Y),
+					$"coaster {ride.AttractionId}'s station node does not stand at its depart end" );
+			}
+			Require( !track.IsComplete || track.IsClosed, $"coaster {ride.AttractionId}'s track completed without closing" );
+			Require( !track.IsClosed || pylons >= 2, $"coaster {ride.AttractionId}'s circuit closes over {pylons} pylons" );
+			if ( track.IsComplete )
+			{
+				var end = track.Nodes[^1]!;
+				Require( end.IsStationEnd, $"coaster {ride.AttractionId}'s completed track holds no station end node" );
+				Require( track.ReturnCell == (end.X, end.Y),
+					$"coaster {ride.AttractionId}'s station end node does not stand at its return end" );
+				Require( track.Nodes.Count( node => node!.IsStationEnd ) == 1,
+					$"coaster {ride.AttractionId}'s completed track holds more than one station end node" );
+			}
+			else
+				Require( track.Nodes.All( node => !node!.IsStationEnd ),
+					$"coaster {ride.AttractionId}'s open track holds a station end node" );
+			Require( ride.BreakdownState is >= 0 and <= 2, $"coaster {ride.AttractionId}'s breakdown state {ride.BreakdownState} is not 0, 1 or 2" );
+			Require( ride.SpeedSetting >= 0, $"coaster {ride.AttractionId}'s speed setting {ride.SpeedSetting} is negative" );
+			Require( ride.SeatsPerTrain >= 1, $"coaster {ride.AttractionId}'s trains seat {ride.SeatsPerTrain}" );
+			Require( float.IsFinite( ride.SpeedCap ) && ride.SpeedCap >= 0, $"coaster {ride.AttractionId}'s speed cap {ride.SpeedCap} is negative or not finite" );
+			Require( ride.PaidCost >= 0, $"coaster {ride.AttractionId} paid {ride.PaidCost} for its track" );
+			Require( double.IsFinite( ride.TimeSeconds ) && ride.TimeSeconds >= 0, $"coaster {ride.AttractionId}'s clock {ride.TimeSeconds}s is negative or not finite" );
+			Require( ride.LastDispatch is null || double.IsFinite( ride.LastDispatch.Value ),
+				$"coaster {ride.AttractionId}'s last dispatch is not finite" );
+			Require( ride.Trains != null && ride.Leaving != null, $"coaster {ride.AttractionId} holds no train or leaving list" );
+			Require( track.IsComplete || ride.Trains!.Count == 0,
+				$"coaster {ride.AttractionId} holds {ride.Trains!.Count} trains on a track that never completed" );
+			void RequireRider( int guestId, string where )
+			{
+				Require( guestsById.TryGetValue( guestId, out var guest ),
+					$"{where} of coaster {ride.AttractionId} holds guest {guestId}, which the guest snapshot does not hold" );
+				Require( guest!.State == GuestState.Using && guest.AttractionId == ride.AttractionId,
+					$"guest {guestId} rides coaster {ride.AttractionId} in its trains, but walks the park in state {guest.State}" );
+				Require( aboardByAttraction.TryGetValue( ride.AttractionId, out var aboard ) && aboard.Contains( guestId ),
+					$"guest {guestId} rides coaster {ride.AttractionId} in its trains, but is not aboard it in the guest snapshot" );
+				Require( ridersEverywhere.Add( guestId ),
+					$"guest {guestId} rides two coasters in the save" );
+			}
+			for ( var train = 0; train < ride.Trains!.Count; train++ )
+			{
+				var saved = ride.Trains[train];
+				Require( saved != null, $"coaster {ride.AttractionId}'s train {train} is missing" );
+				Require( Enum.IsDefined( (CoasterTrainState)saved!.State ),
+					$"coaster {ride.AttractionId}'s train {train} state {saved.State} is not a train state" );
+				Require( float.IsFinite( saved.Position ) && saved.Position >= 0,
+					$"coaster {ride.AttractionId}'s train {train} stands at {saved.Position}, negative or not finite" );
+				Require( float.IsFinite( saved.Speed ) && saved.Speed >= 0,
+					$"coaster {ride.AttractionId}'s train {train} runs at {saved.Speed}, negative or not finite" );
+				Require( double.IsFinite( saved.BoardingSince ) && saved.BoardingSince >= 0,
+					$"coaster {ride.AttractionId}'s train {train} boarded at {saved.BoardingSince}s, negative or not finite" );
+				Require( saved.Cars != null, $"coaster {ride.AttractionId}'s train {train} holds no car list" );
+				var riders = 0;
+				for ( var car = 0; car < saved.Cars!.Count; car++ )
+				{
+					Require( saved.Cars[car] != null, $"coaster {ride.AttractionId}'s train {train} car {car} is missing" );
+					riders += saved.Cars[car]!.Count;
+					foreach ( var guestId in saved.Cars[car]! )
+						RequireRider( guestId, $"train {train} car {car}" );
+				}
+				Require( riders <= ride.SeatsPerTrain,
+					$"coaster {ride.AttractionId}'s train {train} holds {riders} riders above its {ride.SeatsPerTrain} seats" );
+			}
+			foreach ( var guestId in ride.Leaving! )
+				RequireRider( guestId, "the leaving queue" );
+		}
+	}
+
+	/// <summary>Whether a saved node is a pylon-less station or station end node.</summary>
+	private static bool IsPylonlessNode( CoasterNodeSaveData node ) => node.IsStation || node.IsStationEnd;
 
 	/// <summary>
 	/// Runs one inner validator and converts the crashes a null or malformed nested part can cause (the lane

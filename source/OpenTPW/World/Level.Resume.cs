@@ -8,8 +8,8 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
-		if ( PlacedRide != null || Coasters.Count != 0 )
-			throw new NotSupportedException( "Saving prototype rides and roller coasters is not supported yet." );
+		if ( PlacedRide != null )
+			throw new NotSupportedException( "Saving prototype rides is not supported yet." );
 		var runtimes = Objects.Objects.Select( item =>
 		{
 			var state = item.Runtime.CaptureSnapshot();
@@ -40,6 +40,7 @@ public partial class Level
 			Gate = Gate?.CaptureSnapshot(),
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot(),
+			Coasters = CaptureCoastersSnapshot(),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
@@ -80,6 +81,9 @@ public partial class Level
 			(Gate ?? throw new InvalidDataException( "The saved park gate is unavailable." )).RestoreSnapshot( snapshot.Gate );
 		if ( snapshot.Staff != null )
 			(StaffWorld ?? throw new InvalidDataException( "The saved staff world is unavailable." )).RestoreSnapshot( snapshot.Staff );
+		// The coasters go last: their stations were placed above (each placement reset the track to its station
+		// node), and this restores the saved tracks, controller state, trains and riders over them.
+		RestoreCoastersSnapshot( snapshot.Coasters );
 		renderedCellVersion = Guests.Grid.Cells.Version;
 	}
 

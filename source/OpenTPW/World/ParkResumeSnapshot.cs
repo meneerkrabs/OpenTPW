@@ -77,6 +77,12 @@ internal sealed record ParkResumeSnapshot
 	/// <summary>The automatic advisor, or null when the park had none; never captured while a response is being spoken.</summary>
 	public AutomaticAdvisor.AutomaticAdvisorSnapshot? Advisor { get; init; }
 	/// <summary>
+	/// The park's coasters, or null when it held none: every live coaster station's track, controller state and trains
+	/// with their riders, joined by attraction id (the coaster part joined the envelope with the coaster slice; saves
+	/// from before it carry no part and hold no coaster stations).
+	/// </summary>
+	public CoasterWorldSaveData? Coasters { get; init; }
+	/// <summary>
 	/// SHA-256 manifest of the assets the park depends on: canonical expected-asset identifier → 64 lowercase hex
 	/// characters. Computed from verified catalog/game-data paths at load; a saved path is never read back.
 	/// </summary>

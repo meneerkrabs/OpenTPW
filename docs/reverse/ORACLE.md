@@ -1597,7 +1597,7 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
 | `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
 | `tpw-exe-counts-test` | tp.exe `0x4dd920`..`0x4dda1f` (thiscall, `ecx` = thing; the Mac `0xdc834`) | `0x4de130` back of queue (chosen, checked for the thing), `0x4ddf50` list length (checked to be asked for guest 0), `0x412e90` type record (track type chosen), `0x441970` coaster controller test (cdecl, chosen); stack balance checked | 515 (15 edges, one per condition, 500 random) | **X15**: **agree** 515/515 with the routine reading | the C# rule transcribed (`CountsForParkPoints` with `QueueCountsForParkPoints`): 29 differ, all coasters, karts and water rides (ARRIVAL-003); for every other track type **agree**. The back cell and list length are stubbed, so this checks the routine's logic, not OpenTPW's queue geometry |
-| `tpw-exe-price-test` | tp.exe `0x4fde50`..`0x4fe181` (thiscall, `ecx` = guest, argument the ride), the price, cost-of-goods and win-byte getters and `_ftol` | `0x4dd4e0` type record (synthetic), `0x4e2740` park type record (word `+0xc` chosen), `0x519510` park, `0x4c74b0` statistic (recorded); stack balance checked; x87 control word `0x27F` | 518 (18 boundary inputs, 500 random) | **X16**: **agree** 518/518 with the reading, decision and price statistics; without the money test 58 differ | `QueueJoinRules.TooExpensive` / `WillingnessToPay`: unit-tested on seven willingness values the routine produced (`PriceTestTests`) |
+| `tpw-exe-price-test` | tp.exe `0x4fde50`..`0x4fe181` (thiscall, `ecx` = guest, argument the ride), the price, cost-of-goods and win-byte getters and `_ftol` | `0x4dd4e0` type record (synthetic), `0x4e2740` park type record (word `+0xc` chosen), `0x519510` park, `0x4c74b0` statistic (recorded); stack balance checked; x87 control word `0x27F` | 530 (30 boundary inputs, among them meters that round to the next integer as float32; 500 random) | **X16**: **agree** 530/530 with the reading, decision and price statistics; without the money test 56 differ | `QueueJoinRules.TooExpensive` / `WillingnessToPay`: unit-tested on seven willingness values the routine produced (`PriceTestTests`) |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
@@ -2110,8 +2110,8 @@ state 14 (waiting to be taken) does it leave, in this order:
 1. the log "The queue was shortened and there's no room for me any more";
 2. animation 13 for a guest whose id is a multiple of 3;
 3. the unlink `0x4ddd20`;
-4. the dismissal `0x5012f0` (which logs "dismissed from queue", records event 6 for the ride, plays a sound for one guest in eight and
-   clears the queue words);
+4. the dismissal `0x5012f0` (which logs "dismissed from queue", records event 6 for the ride, plays a sound for one guest in eight,
+   lowers happiness by the medium step through `0x4fea70` and clears the queue words; C# applies the happiness drop since X16's review);
 5. ride word `+0x1dc` = 0 and state 6.
 
 Every other guest is left as it is; there is no exit for a guest whose cell left the queue. Across 548 inputs (states 11 to 14, positions
@@ -2178,7 +2178,8 @@ bytes of their truncated floats:
 
 The guest refuses when the price exceeds W or its money (both unsigned). A shop (kind 1) also records min(100, (W + 5)·10 − price·10)
 in the price statistic of its product category (`+0x158`: 1..4) and of `+0x15c` (6 or 7). A sideshow (kind 2) records it in
-category 9. Across 518 inputs the routine agrees with this reading, statistics included; without the money test 58 differ.
+category 9. Across 530 inputs the routine agrees with this reading, statistics included (the meters are float32 words, so a value such as
+1.99999999 is read as 2); without the money test 56 differ.
 
 **Fixed in C#.** The choice no longer filters on price (`ChooseAttraction`). At the stand point, `QueueJoinRules.TooExpensive` runs on
 the live price, cost of goods and win byte and on the type's InitCostOfGoods and effects; a guest that refuses leaves the queue with its
@@ -2187,6 +2188,7 @@ one that is refused. A check against the shipped data: in all four themes, each 
 the willingness of a guest whose needs are all 20. For example, a burger shop at price 30 gives W = 30, 39 and 48 at needs 20, 50 and 80.
 The rule therefore leaves the default prices just acceptable and lets needier guests pay more.
 
+A refusal lowers happiness twice by the medium step (`0x4fea70` with 1, for the refusal and again in the dismissal `0x5012f0`).
 GUEST-003 keeps four things:
 - the per-type park word (`0x4e2740`, park record `+0xc`, written by script opcodes; taken as 0);
 - animation 6;

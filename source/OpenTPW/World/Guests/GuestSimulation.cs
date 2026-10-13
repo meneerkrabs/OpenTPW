@@ -952,6 +952,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
 			if ( position < 0 || position >= room )
 			{
+				// the dismissal 0x005012F0 lowers happiness by the medium step (0x004FEA70 with 1)
+				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 				LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
 				continue;
 			}
@@ -959,7 +961,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest plays no animation and gets the QueueTooLong thought, where the original plays animation 13 for one guest in three (id % 3 = 0, 0x0050BE80) and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what animation 13 and the event-6 record are
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest plays no animation and gets the QueueTooLong thought, where the original plays animation 13 for one guest in three (id % 3 = 0, 0x0050BE80) and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what animation 13 and the event-6 record are
 			if ( index < 0 && !onJoinCell )
 			{
 				LeaveQueue( guest, attraction, GuestThought.Confused );
@@ -1168,10 +1170,17 @@ public sealed class GuestSimulation : IRideVisitorHost
 			EnterStanding( guest );
 		else if ( TooExpensive( guest, attraction ) )
 			// [BIN:TPW-EXE:0x005006B0 called forward] at the stand point the price test 0x004FDE50 comes before the ride takes the guest (AdmitPerson); a guest that refuses leaves the queue ("Object %d is too expensive, I'm leaving the queue") and keeps its thought
-			// [APPROX:GUEST-003] the refusal's own effects are not modelled: animation 6, the guest record of event 10 (0x0050C100), the ride's walk-away count (mNumWalkAways, 0x004E1670) and the price perception statistic per shop category (0x004C74B0); the park's per-type word +0xC (0x004E2740) is taken as 0 — evidence needed: the writers of that word (script opcodes around 0x004CA47F) and the uses of the walk-away count and the statistic
-			LeaveQueue( guest, attraction, guest.Thought );
+			// [APPROX:GUEST-003] the refusal costs happiness twice at the medium step (0x004FEA70 with 1, once for the refusal and once in the dismissal 0x005012F0), but its other effects are not modelled: animation 6, the guest record of event 10 (0x0050C100), the ride's walk-away count (mNumWalkAways, 0x004E1670) and the price perception statistic per shop category (0x004C74B0); the park's per-type word +0xC (0x004E2740) is taken as 0 — evidence needed: the writers of that word (script opcodes around 0x004CA47F) and the uses of the walk-away count and the statistic
+			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
+	}
+
+	/// <summary>A called guest refuses the price: two medium happiness drops (the refusal and the dismissal), then it leaves the queue.</summary>
+	private void RefusePrice( Guest guest, IRideVisitorBridge attraction )
+	{
+		guest.Happiness = Math.Max( 0, guest.Happiness - 2 * Settings.MediumHappinessChange );
+		LeaveQueue( guest, attraction, guest.Thought );
 	}
 
 	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
@@ -1179,8 +1188,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 	{
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
+		// the live words the level mirrors from the economy; a bridge nobody mirrors into keeps its constructor price
 		var live = attraction.Sideshow;
-		var terms = new PriceTerms( live.PricePerUse, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
+		var price = live == default ? attraction.Price : live.PricePerUse;
+		var terms = new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
 			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, 0 );
 		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
 	}

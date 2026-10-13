@@ -81,9 +81,9 @@ EXPECTED = {
     ('tpw-exe-counts-test', 'csharp-rule'): (29, {'flags': 4, 'state': 0, 'open': 1, 'cells': 2, 'back': 4660, 'length': 3,
                                                    'track': 3, 'controller_ok': False, 'track_word': 1}),
     ('tpw-exe-counts-test', 'csharp-rule-untracked'): AGREE,
-    # X16 (price test 0x4fde50, GUEST-003): the willingness and the statistic agree with the reading; without the money test 58 differ.
+    # X16 (price test 0x4fde50, GUEST-003): the willingness and the statistic agree with the reading; without the money test 56 differ.
     ('tpw-exe-price-test', 'plan'): AGREE,
-    ('tpw-exe-price-test', 'no-money-test'): (58, {'happiness': 60.0, 'thirst': 80.0, 'hunger': 10.0, 'illness': 0.0, 'money': 0, 'price': 1,
+    ('tpw-exe-price-test', 'no-money-test'): (56, {'happiness': 60.0, 'thirst': 80.0, 'hunger': 10.0, 'illness': 0.0, 'money': 0, 'price': 1,
                                                    'goods': 0, 'win': 0, 'kind': 1, 'base': 20, 'e_thirst': 40, 'e_hunger': 0, 'e_vomit': 0,
                                                    'e_happy': 10, 'product': 2, 'extra': 0, 'type_word': 0}),
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,

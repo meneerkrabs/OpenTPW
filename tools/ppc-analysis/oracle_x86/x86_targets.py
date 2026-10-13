@@ -1013,7 +1013,8 @@ def price_binary(sb: Sandbox, x: dict, log) -> tuple:
 
 
 def _byte(value: float) -> int:
-    return fistp_low32(value) & 0xFF
+    """The routine reads the meter as a float32 and truncates it (fistp), keeping the low byte."""
+    return fistp_low32(struct.unpack('<f', struct.pack('<f', value))[0]) & 0xFF
 
 
 def _sdiv100(value: int) -> int:
@@ -1075,6 +1076,10 @@ def price_inputs(rng: random.Random, n: int) -> list:
     edges = [make(price=p, money=m, kind=1, base=20, e_thirst=40, e_hunger=0, e_vomit=0, e_happy=10, type_word=0,
                   happiness=60.0, thirst=80.0, hunger=10.0, illness=0.0, goods=0, win=0, product=2, extra=0)
              for p in (0, 1, 30, 31, 32, 40) for m in (0, 31, 1000)]
+    # meters that round up to the next integer as float32 (1.99999999 is stored as 2.0) and that sit just below one
+    edges += [make(price=p, money=1000, kind=1, base=150, e_thirst=40, e_hunger=0, e_vomit=0, e_happy=-30, type_word=0,
+                   happiness=h, thirst=79.99999999, hunger=10.0, illness=0.0, goods=0, win=0, product=0, extra=0)
+              for h in (1.99999999, 1.9999, 2.0) for p in (163, 164, 165, 166)]
     return edges + [make() for _ in range(n)]
 
 

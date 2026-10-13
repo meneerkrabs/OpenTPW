@@ -274,6 +274,36 @@ public class ObjectTextureFrameTests
 		Assert.ThrowsException<ArgumentException>( () => restored.SetTextureFrameAvailability( 0, Array.Empty<bool>() ) );
 	}
 
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void HeadlessFrameHistoryRespectsDecodedArtAvailabilityOnRestore( bool invalidKey )
+	{
+		var model = new ModelFile( new MemoryStream( Geometry( frames: 4 ) ) );
+		var selected = Clip( 0, (0, 3) );
+		var holding = invalidKey ? Clip( 0, (0, 99), (10, 1) ) : Clip( 0, (10, 1) );
+		var headless = new ObjectAnimator( model );
+		headless.Play( 0, selected, "selected", loop: false );
+		headless.Play( 0, holding, "holding", loop: false );
+		var saved = ParkResumeJson.Deserialize<ObjectAnimatorSnapshot>( ParkResumeJson.Serialize( headless.CaptureSnapshot() ) );
+		Assert.AreEqual( 3, saved.TextureFrames!.Frames[0], "headless consumers retain raw decoded selection" );
+
+		var rendered = new ObjectAnimator( model );
+		rendered.SetTextureFrameAvailability( 0, new[] { true, true, true, false } );
+		rendered.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name, holding ) );
+		Assert.AreEqual( 0, rendered.GetTextureFrame( 0 ), "unavailable restored art starts at the base texture actually shown" );
+		Assert.AreEqual( saved.TextureFrames.Version + 1, rendered.TextureFrameVersion );
+		var lateRenderer = new ObjectAnimator( model );
+		lateRenderer.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name, holding ) );
+		lateRenderer.SetTextureFrameAvailability( 0, new[] { true, true, true, false } );
+		CollectionAssert.AreEqual( ParkResumeJson.Serialize( rendered.CaptureSnapshot() ), ParkResumeJson.Serialize( lateRenderer.CaptureSnapshot() ), "availability registration order preserves the complete resumed state" );
+		rendered.Advance( 0.334 );
+		lateRenderer.Advance( 0.334 );
+		Assert.AreEqual( 1, rendered.GetTextureFrame( 0 ), "the next available key resumes normally" );
+		CollectionAssert.AreEqual( ParkResumeJson.Serialize( rendered.CaptureSnapshot() ), ParkResumeJson.Serialize( lateRenderer.CaptureSnapshot() ), "both restored animators continue identically" );
+		Assert.AreEqual( 3, saved.TextureFrames.Frames[0], "restoring does not mutate saved history" );
+	}
+
 	// ---- synthetic files ----
 
 	/// <summary>

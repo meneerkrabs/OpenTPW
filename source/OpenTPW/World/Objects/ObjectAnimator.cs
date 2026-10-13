@@ -571,6 +571,15 @@ public sealed class ObjectAnimator
 			Array.Copy( restoredFrames.Frames, frameBySlot, frameBySlot.Length );
 			Array.Copy( restoredFrames.AnimatedSlots, slotAnimated, slotAnimated.Length );
 			textureFrameVersion = restoredFrames.Version;
+			// A headless save has raw selection history, without decoded-art availability. Restore
+			// must also respect availability already registered by a newly built renderer, just as
+			// registering availability after restore does: unavailable history starts at the base art.
+			for ( var slot = 0; slot < frameBySlot.Length; slot++ )
+				if ( frameBySlot[slot] != 0 && availableFramesBySlot[slot] is { } available && !available[frameBySlot[slot]] )
+				{
+					frameBySlot[slot] = 0;
+					textureFrameVersion++;
+				}
 		}
 		foreach ( var cached in snapshot.Meshes )
 		{

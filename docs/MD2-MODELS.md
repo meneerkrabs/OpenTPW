@@ -336,6 +336,9 @@ keys, and missing-art holds, continue from the same visible frame after the
 JSON codec and a fresh restore. Older saves without this optional field start
 at frame 0, then sample their restored channels. Slot counts and frame indices
 are validated against the model before mutation; no GPU references are saved.
+When a headless save selects art unavailable to the renderer, restore starts
+that slot at its base texture before sampling the restored channel. Availability
+registration before or after restore therefore produces the same selection.
 Object deletion clears instance bindings and retires its owned materials and
 shaders; shared decoded textures keep their existing process cache ownership.
 

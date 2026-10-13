@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **350 unresolved unique APPROX IDs**, 399 APPROX occurrences, 140 EXT occurrences, 161 DATA occurrences and 473 BIN occurrences.
+Current inventory: **350 unresolved unique APPROX IDs**, 399 APPROX occurrences, 140 EXT occurrences, 161 DATA occurrences and 475 BIN occurrences.
 
 Of these, 326 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -1469,7 +1469,9 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x100DEC2C wear step | `source/OpenTPW/Economy/ParkEconomy.cs:350` | [BIN:STP-PPC:0x100DEC2C wear step] state of repair (+0x40) loses the wear and the life gauge (+0x44) 0.02 × the wear, each clamped to 0..100 |
 | STP-PPC:0x100DEF2C repair | `source/OpenTPW/Economy/ParkEconomy.cs:392` | [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100.0 (the float at TOC -11016, ORACLE F27) and clears the worn flag; it does not restore the life gauge. It also opens the ride (the host reopens the ride on RideRepaired) |
 | STP-PPC:0x100DEF78 repair | `source/OpenTPW/Economy/RideStateRules.cs:89` | [BIN:STP-PPC:0x100DEF78 repair] lfs f0,-11016(r2): 100.0; the life gauge (+68) is not touched |
-| STP-PPC:0x100DF4D4 repair opens the ride | `source/OpenTPW/World/Level.cs:285` | [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again |
+| STP-PPC:0x100DF4D4 repair opens the ride | `source/OpenTPW/World/Level.cs:314` | [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again |
+| STP-PPC:0x100DF928 upgrade end | `source/OpenTPW/World/Level.cs:315` | [BIN:STP-PPC:0x100DF928 upgrade end] the upgrade's end leaves state 2 through SetState(0) like the repair (ORACLE.md F27, static): the same reopening, an incomplete coaster closed again |
+| STP-PPC:0x100DF928 upgrade start | `source/OpenTPW/World/Level.cs:285` | [BIN:STP-PPC:0x100DF928 upgrade start] the upgrade start writes state 2, which clears the open word +100 and writes VAR_RIDECLOSED = 1 (0xe0c3c, ORACLE.md F27) |
 | STP-PPC:0x100DFE34 ride failure | `source/OpenTPW/World/Guests/QueueJoinRules.cs:24` | [BIN:STP-PPC:0x100DFE34 ride failure] the low byte of the truncated float +64 is compared unsigned with 25 |
 | STP-PPC:0x100DFF70 ride excitement | `source/OpenTPW/World/Coasters/CoasterRating.cs:171` | [BIN:STP-PPC:0x100DFF70 ride excitement] track type 3: 0 without a coaster controller (0x100B5E24), else trunc(fmadds(E, 0.5, 50)) with E the controller's excitement (getter 0x10041A14) |
 | STP-PPC:0x100DFF70 ride excitement | `source/OpenTPW/World/Guests/QueueJoinRules.cs:66` | [BIN:STP-PPC:0x100DFF70 ride excitement] base · clamp(speed / InitSpeed) · clamp(duration / InitDuration); speed is the word +84, duration the byte +88 |

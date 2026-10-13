@@ -253,18 +253,47 @@ public partial class Level : IDisposable
 	{
 		if ( Park == null )
 			return;
-		Gate = ParkGate.ForLevel( Park.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime, EconomyStateOf );
+		BuildParkGate();
+		// The runtime forwards the events of whichever economy it holds, so the wiring survives an in-place load (LoadPark replaces the economy).
+		Park.EventRaised += item =>
+		{
+			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
+				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
+			else if ( item.Kind == ParkEventKind.RideRepaired )
+				OpenAfterRepair( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.UpgradeBought )
+				CloseForUpgrade( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
+				OpenAfterRepair( item.InstanceId );
+		};
+	}
+
+	/// <summary>The park door over the current economy; rebuilt by <see cref="LoadPark"/>, which replaces the economy.</summary>
+	private void BuildParkGate()
+	{
+		Gate = ParkGate.ForLevel( Park!.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime, EconomyStateOf );
 		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
 		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
 		// the initial OpenPark of AttachGuests raises its event before this wiring, so it commands nothing.
 		Gate.InitializeFromParkState();
-		Park.Economy.EventRaised += item =>
-		{
-			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
-				Gate.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
-			else if ( item.Kind == ParkEventKind.RideRepaired )
-				OpenAfterRepair( item.InstanceId );
-		};
+	}
+
+	/// <summary>
+	/// A purchased upgrade puts the ride in state 2 (<c>0xdf928</c> → <c>SetState(2)</c>): it closes until the upgrade is installed, which the reopening guard
+	/// enforces too (<see cref="RideOpening.MayOpen"/>). Without this the ride kept taking guests while its wear was stopped for the upgrade.
+	/// </summary>
+	// [BIN:STP-PPC:0x100DF928 upgrade start] the upgrade start writes state 2, which clears the open word +100 and writes VAR_RIDECLOSED = 1 (0xe0c3c, ORACLE.md F27)
+	private void CloseForUpgrade( int instance ) => AttractionRuntimeOf( instance )?.Close();
+
+	/// <summary>The attraction runtime linked to an economy instance (a placed object or the prototype ride), or null.</summary>
+	private OriginalObjectRuntime? AttractionRuntimeOf( int instance )
+	{
+		OriginalObjectRuntime? runtime = null;
+		foreach ( var (item, linked) in economyInstances )
+			if ( linked == instance )
+				runtime = item.Runtime;
+		runtime ??= prototypeInstance == instance ? PlacedRide?.Runtime : null;
+		return runtime is { IsAttraction: true } ? runtime : null;
 	}
 
 	/// <summary>The economy record behind a placed object's runtime (or the prototype ride's), or null.</summary>
@@ -283,14 +312,10 @@ public partial class Level : IDisposable
 	/// logs a warning when <c>0xde654</c> refuses), except that a coaster without a complete circuit is closed again (ORACLE.md F27).
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again
+	// [BIN:STP-PPC:0x100DF928 upgrade end] the upgrade's end leaves state 2 through SetState(0) like the repair (ORACLE.md F27, static): the same reopening, an incomplete coaster closed again
 	private void OpenAfterRepair( int instance )
 	{
-		OriginalObjectRuntime? runtime = null;
-		foreach ( var (item, linked) in economyInstances )
-			if ( linked == instance )
-				runtime = item.Runtime;
-		runtime ??= prototypeInstance == instance ? PlacedRide?.Runtime : null;
-		if ( runtime is not { IsAttraction: true } )
+		if ( AttractionRuntimeOf( instance ) is not { } runtime )
 			return;
 		var coaster = runtime.Coaster != null;
 		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.IsOperational ) )
@@ -543,6 +568,9 @@ public partial class Level : IDisposable
 	public void LoadPark( string path )
 	{
 		Streams.LoadPark( path );
+		// The gate holds the economy it was built over; the load replaced it.
+		if ( Park != null && Gate != null )
+			BuildParkGate();
 		// The saved open state goes back into the running scripts; SyncObjectEconomy would otherwise overwrite it with the live one on the next tick (park points count only open rides, ARRIVAL-003).
 		foreach ( var (item, instance) in economyInstances )
 		{

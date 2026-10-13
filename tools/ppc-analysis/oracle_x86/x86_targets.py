@@ -1398,11 +1398,10 @@ def wander_binary(sb: Sandbox, x: dict, log) -> tuple:
     return ((ax >> 16, ay >> 16), (ax >> 8) & 0xFF, (ay >> 8) & 0xFF, state.used)
 
 
-def wander_plan(x: dict) -> tuple:
-    """GuestWander.Pick: candidates are the neighbours AreConnected reaches (both path cells, either links towards the other)
-    in the order +Y, +X, -Y, -X; fewer than two: the first; else the first from draw & 3 that is not the way back; draw % 5
-    steps plus one, one more each time the last ends on the start; bytes draw & 0x7f clamped to 5..123. A path cell without
-    such a neighbour gives its own centre, unless its links lead to queue cells only (stranded)."""
+def wander_plan(x: dict, either_side: bool = False) -> tuple:
+    """GuestWander.Pick: candidates are the current cell's links (& 0x55) to path cells, in the order +Y, +X, -Y, -X; fewer than two:
+    the first (none: stranded); else the first from draw & 3 that is not the way back; draw % 5 steps plus one, one more each time the
+    last ends on the start; bytes draw & 0x7f clamped to 5..123. A path cell without links gives its own centre."""
     draws = list(x['draws'])
     used = 0
 
@@ -1414,24 +1413,23 @@ def wander_plan(x: dict) -> tuple:
 
     def path(c):
         return cells.get(c, (0, 0, 0))[0] == 1
-
-    def connected(c, d):
-        n = (c[0] + d[0], c[1] + d[1])
-        back = (-d[0], -d[1])
-        return path(c) and path(n) and bool(cells[c][1] & LINK_OF[d] or cells[n][1] & LINK_OF[back])
     order = [(0, 1), (1, 0), (0, -1), (-1, 0)]
     start = tuple(x['start'])
     remaining = draw() % 5
-    if not any(connected(start, d) for d in order):
-        to_queue = path(start) and any(cells[start][1] & LINK_OF[d] and cells.get((start[0] + d[0], start[1] + d[1]), (0,))[0] == 3
-                                       for d in order)
-        if to_queue:
-            return None, used, True
-        return (start, 0x80, 0x80, used) if path(start) else (None, used, False)
+    if not path(start):
+        return None, used, False
+    if cells[start][1] & 0x55 == 0:
+        return start, 0x80, 0x80, used
     cell, back = start, -1
     while True:
-        candidates = [d if connected(cell, d) else None for d in order]
+        def linked(d):
+            n = (cell[0] + d[0], cell[1] + d[1])
+            back_link = either_side and path(n) and cells[n][1] & LINK_OF[(-d[0], -d[1])]
+            return path(n) and bool(cells[cell][1] & LINK_OF[d] or back_link)
+        candidates = [d if linked(d) else None for d in order]
         count = sum(1 for d in candidates if d)
+        if count == 0:
+            return None, used, True
         if count < 2:
             chosen = next(i for i, d in enumerate(candidates) if d)
         else:
@@ -1474,8 +1472,11 @@ def wander_inputs(rng: random.Random, n: int) -> list:
                 if other is None:
                     continue
                 if other[0] == 1 and (cx, cy) < (cx + d[0], cy + d[1]) and rng.random() < 0.85:
-                    cell[1] |= link
-                    other[1] |= LINK_OF[(-d[0], -d[1])]
+                    side = rng.random()   # mostly both sides, as the path builder links; some one-sided links
+                    if side < 0.9:
+                        cell[1] |= link
+                    if side > 0.1:
+                        other[1] |= LINK_OF[(-d[0], -d[1])]
                 elif other[0] == 3 and rng.random() < 0.5:
                     cell[1] |= link
         return {c: tuple(v) for c, v in cells.items()}
@@ -1500,10 +1501,11 @@ def wander_inputs(rng: random.Random, n: int) -> list:
 WANDER_TARGET = Target(
     'tpw-exe-wander-destination', 'tpw', 'tp.exe wander destination 0x4f9490', 'WANDER-plan §3 / GuestWander (GUEST-010)',
     WANDER_ENTRY, WANDER_RANGES, wander_stubs, wander_binary, wander_plan, wander_inputs,
+    alternatives={'either-side-links': lambda x: wander_plan(x, either_side=True)},
     notes=['Executed: 0x4f9490 with its SEH frame, the cell readers 0x522770 / 0x522810 / 0x522850 / 0x536310..0x536350, the '
            'map bounds test 0x4d8300, the counter 0x4d8c50 and the debug print. Synthetic: the cell records ([0x8023a0], 0x44 '
-           'bytes; type +8, links +0xc, queue link +0xd) on a 7 x 7 patch at (20, 30), path links symmetric, path-to-queue '
-           'links one way; the direction table 0x7cdba0.. as its initialiser 0x4d9a65 writes it. Stubs: the draw (scripted), '
+           'bytes; type +8, links +0xc, queue link +0xd) on a 7 x 7 patch at (20, 30), path links mostly on both sides and some '
+           'on one, path-to-queue links one way, no links to empty cells (the map keeps none); the direction table 0x7cdba0.. as its initialiser 0x4d9a65 writes it. Stubs: the draw (scripted), '
            '0x4fa670, the route request 0x510100 (always found; its point is the result), the stranded animation 0x50be80, '
            'the thing id 0x50b350; the staff calls 0x506ed0 / 0x506f30 and the stranded test 0x4fa770 must not run.'])
 

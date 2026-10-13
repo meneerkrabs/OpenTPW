@@ -776,10 +776,16 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 	}
 
-	/// <summary>True when a path leads from the guest's cell to the end of an arrival lane, the way out <see cref="UpdateLeaving"/> takes.</summary>
+	/// <summary>
+	/// True when a path leads from the guest's cell to the end of an arrival lane, the way out <see cref="UpdateLeaving"/> takes. A park
+	/// without arrival lanes has no modelled gate: its guests leave and vanish, as <see cref="UpdateLeaving"/> handles it.
+	/// </summary>
 	private bool HasWayOut( Guest guest )
 	{
-		foreach ( var lane in new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) } )
+		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
+		if ( lanes.All( lane => lane == null ) )
+			return true;
+		foreach ( var lane in lanes )
 		{
 			if ( lane != null && Grid.Distance( guest.CellX, guest.CellY, lane[^1].X, lane[^1].Y ) >= 0 )
 				return true;
@@ -799,16 +805,49 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// pick the next wander destination and keep walking; otherwise the guest decides again (state 6).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501ABB state 7] the walk step 0x004FA2A0 returns 0 (arrived), 1 (walking) or 2 (stuck); on 0 or 2 one draw, and when its low two bits are 0 the wander destination 0x004F9490 keeps state 7 on success; every other case sets state 6
-	// [APPROX:GUEST-010] OpenTPW's walk has no stuck result (its steering reroutes, WALK-I), so only an arrival ends the walk
+	// [APPROX:GUEST-010] OpenTPW's walk has no stuck result (its steering reroutes, WALK-I): a walk ends on arrival, or as stuck when a grid edit takes a cell of its route (EndBrokenWalks)
 	private void UpdateWalkingAround( Guest guest )
 	{
 		if ( !turnStarted )
 			return;
-		if ( guest.HasWaypoint && !Move( guest ) )
-			return;
+		if ( guest.HasWaypoint )
+		{
+			var arrived = Move( guest );
+			// The guest's cell follows the walk: the cell it stands on, and the destination's cell on arrival.
+			var navigation = guest.Navigation;
+			var cell = arrived ? (navigation.TargetX >> 16, navigation.TargetY >> 16) : navigation.Cell;
+			if ( cell != (guest.CellX, guest.CellY) && Grid.IsWalkable( cell.Item1, cell.Item2 ) )
+			{
+				(guest.PreviousCellX, guest.PreviousCellY) = (guest.CellX, guest.CellY);
+				(guest.CellX, guest.CellY) = cell;
+			}
+			if ( !arrived )
+				return;
+		}
 		if ( (random.NextWord() & 3) == 0 && Wander( guest ) )
 			return;
 		guest.State = GuestState.DoingNothing;
+	}
+
+	/// <summary>
+	/// After a grid edit, a wander walk whose route lost a path cell ends where the guest stands, as the original's walk step reports
+	/// "stuck" (2); the guest then picks again or decides at its next turn. A guest left off the paths steps back onto the nearest one.
+	/// </summary>
+	private void EndBrokenWalks()
+	{
+		foreach ( var guest in guests )
+		{
+			if ( guest.State != GuestState.WalkingAround || !guest.HasWaypoint || guest.Navigation.Route.All( cell => Grid.IsWalkable( cell.X, cell.Y ) ) )
+				continue;
+			var navigation = guest.Navigation;
+			navigation.SetDestination( navigation.X, navigation.Y, [] );
+			guest.HasWaypoint = false;
+			var cell = navigation.Cell;
+			if ( Grid.IsWalkable( cell.X, cell.Y ) )
+				(guest.CellX, guest.CellY) = cell;
+			else
+				ReturnToPath( guest, cell );
+		}
 	}
 
 	/// <summary>Sets a wander destination (<see cref="GuestWander"/>) and the shortest route to it; false when there is none.</summary>
@@ -820,8 +859,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
 		if ( route.Count == 0 )
 			return false;
-		(guest.PreviousCellX, guest.PreviousCellY) = route.Count > 1 ? route[^2] : start;
-		(guest.CellX, guest.CellY) = destination.Cell;
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
 		return true;
 	}
@@ -980,6 +1017,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			seenGridVersion = Grid.Version;
 			foreach ( var attraction in attractions )
 				attraction.RecomputeQueue( Grid );
+			EndBrokenWalks();
 		}
 		foreach ( var attraction in attractions )
 		{

@@ -51,7 +51,7 @@ public class PathAssetTests
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( 22, simulation.Admissions );
-		Assert.AreEqual( 0x5C678AB6A68708F0UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 0x6BD052C25AAE2F64UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

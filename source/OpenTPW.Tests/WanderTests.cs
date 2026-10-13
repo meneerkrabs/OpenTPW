@@ -74,15 +74,25 @@ public class WanderTests
 	}
 
 	[TestMethod]
-	public void AnUnlinkedPathCellGivesItsOwnCentreAndAnotherCellNone()
+	public void AnUnlinkedPathCellGivesItsOwnCentreAndAStrandedOneNone()
 	{
-		var grid = Row( 1 );
+		var grid = new GuestPathGrid( 12, 12 );
+		grid.SetPath( 0, 0, true, connections: 0 );
 		Assert.AreEqual( new GuestWander.Destination( (0, 0), 0x80, 0x80 ), GuestWander.Pick( grid, (0, 0), Draws( 3 ) ) );
-		Assert.IsNull( GuestWander.Pick( grid, (5, 5), Draws( 3 ) ) );
-		// A path cell linked only to a queue cell: the queue neighbour is removed and none is left, so the guest is stranded (x86 oracle X19).
+		Assert.IsNull( GuestWander.Pick( grid, (5, 5), Draws( 3 ) ), "no path cell" );
+		// Links that lead to no path cell (here a queue cell) leave no candidate: stranded (x86 oracle X19).
+		grid.SetPath( 0, 0, true, connections: 0b0010 );
 		grid.SetQueue( 1, 0, 1 );
-		Assert.IsTrue( grid.IsQueue( 1, 0 ) );
 		Assert.IsNull( GuestWander.Pick( grid, (0, 0), Draws( 3 ) ) );
+	}
+
+	[TestMethod]
+	public void AStepFollowsTheCurrentCellsOwnLinks()
+	{
+		// (1, 0) links only to +X, although (0, 0) links back to it: the one candidate is (2, 0), taken without a draw.
+		var grid = Row( 3 );
+		grid.SetPath( 1, 0, true, connections: 0b0010 );
+		Assert.AreEqual( new GuestWander.Destination( (2, 0), 7, 9 ), GuestWander.Pick( grid, (1, 0), Draws( 0, 7, 9 ) ) );
 	}
 
 	private static GuestDecision.Input Input( uint turn = 500, uint activity = 450, uint decision = 400, float happiness = 50, float illness = 0, int exit = 50, bool closed = false, uint draw = 2 ) =>
@@ -166,6 +176,7 @@ public class WanderTests
 		var grid = Row( 12 );
 		var settings = GuestTests.CreateSettings();
 		settings.ExitLevelSeconds = 10_000;
+		settings.SmallHappinessChange = 0;   // a park without attractions would otherwise empty the guest's happiness and send it home
 		var simulation = new GuestSimulation( grid, settings, 11 ) { ArrivalsEnabled = false };
 		var guest = simulation.SpawnInPark( 6, 0 );
 		var walks = new List<int>();
@@ -179,10 +190,49 @@ public class WanderTests
 			if ( previous == GuestState.WalkingAround && guest.State == GuestState.DoingNothing )
 				walks.Add( Math.Abs( guest.Cell.X - from.X ) );
 			previous = guest.State;
+			Assert.IsTrue( Math.Abs( guest.Cell.X - guest.Navigation.Cell.X ) <= 1, $"the guest's cell {guest.Cell} follows its walk ({guest.Navigation.Cell})" );
 			Assert.IsTrue( guest.State is GuestState.DoingNothing or GuestState.WalkingAround, $"{guest.State}" );
 		}
 		Assert.IsTrue( walks.Count > 5, $"{walks.Count} walks" );
 		Assert.IsTrue( walks.Max() > 1, "a walk covers up to five cells, not one" );
+	}
+
+	[TestMethod]
+	public void AWalkThatLosesARouteCellEndsWhereTheGuestStands()
+	{
+		var grid = Row( 12 );
+		var settings = GuestTests.CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
+		settings.SmallHappinessChange = 0;   // a park without attractions would otherwise empty the guest's happiness and send it home
+		var simulation = new GuestSimulation( grid, settings, 11 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 6, 0 );
+		for ( var tick = 0; tick < 200 * 60 && !(guest.State == GuestState.WalkingAround && guest.Navigation.Route.Length >= 3); tick++ )
+			simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.IsTrue( guest.HasWaypoint && guest.Navigation.Route.Length >= 3, "a walk of at least two cells" );
+		var destination = guest.Navigation.Route[^1];
+		grid.SetPath( destination.X, destination.Y, false );
+		simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.IsFalse( guest.HasWaypoint, "the walk ended" );
+		Assert.IsTrue( grid.IsWalkable( guest.Cell.X, guest.Cell.Y ), $"the guest stays on the path at {guest.Cell}" );
+		for ( var tick = 0; tick < 60 * 60; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			Assert.IsTrue( guest.State is GuestState.DoingNothing or GuestState.WalkingAround );
+		}
+	}
+
+	[TestMethod]
+	public void AParkWithoutArrivalLanesStillLetsItsGuestsGo()
+	{
+		var settings = GuestTests.CreateSettings();
+		settings.ArrivalLaneA = null;
+		settings.ArrivalLaneB = null;
+		var simulation = new GuestSimulation( Row( 6 ), settings, 2 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 2, 0 );
+		guest.Happiness = 0.5f;
+		for ( var tick = 0; tick < 10 * 60 && simulation.Find( guest.Id ) != null; tick++ )
+			simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.IsNull( simulation.Find( guest.Id ), "with no gate modelled the leaving guest vanishes, as before" );
 	}
 
 	[TestMethod]

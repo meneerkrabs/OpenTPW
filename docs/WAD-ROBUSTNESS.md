@@ -41,9 +41,14 @@ counts and unsafe unsigned ranges before the fix. Valid controls cover memory
 and path reads, member stream isolation, direct-read padding and cached-data
 lifetime. Focused WAD/on-demand/filesystem checks pass without original assets.
 
-Qualification remains open: the private corpus is unavailable on USBSSD, so
-compatibility with unusual or historically tolerated original entry metadata
-has not been rechecked. Valid large archive construction still requires its
-initial buffer; no arbitrary resource cap, decompression policy, path-name
-policy or general reload transaction was introduced. The preexisting reopened
-`GetData` allocation/source-length check is assigned to a separate slice.
+Merged onto main, the original-data suite passes with the original archives (13 October,
+2413 tests): every member of every shipped WAD reads as before
+(`ArchivesFromAPathReadTheSameMembersAsArchivesInMemory`,
+`EveryCompressedMemberOfTheOriginalArchivesDecodesAsBefore`, `ReadsTheOriginalCdArchives`),
+so no original archive trips the new range or name checks. One behaviour change is
+deliberate: an archive with a member that points past its end is now refused as a whole
+instead of mounting with that member read as zeros; a dropped-in bonus WAD like that no
+longer mounts. Valid large archive construction still requires its initial buffer; no
+arbitrary resource cap, decompression policy, path-name policy or general reload
+transaction was introduced. A reopened read (`GetData` on a path-backed archive) checks the
+requested range before it reserves the member's buffer.

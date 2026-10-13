@@ -807,6 +807,10 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **WAD ranges checked before allocating (October 13):** a WAD's header, directory and member ranges are checked
+  against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
+  instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive
+  still reads byte for byte as before; an archive with a member past its end is now refused as a whole (WAD-ROBUSTNESS.md).
 - **Files read on demand (October 13):** WAD archives opened from a path and SDT sound banks now read
   a member or entry from the file when it is needed instead of holding the whole file (byte-identical
   on every original archive member and bank entry); `Texture.Missing` is one shared texture, and the

@@ -307,6 +307,14 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - Park points now apply the queue part of the original's counts-test (tp.exe `0x4dd920`, ORACLE.md 7.11, X15, ARRIVAL-003): an
   attraction counts only with queue cells from its entrance and a queue shorter than 4 × those cells, so a ride without a queue, or with
   a full one, adds no points and draws no arrivals. Only the coaster controller test and the kart/water word remain open.
+- The Escape pause menu now stops the park simulation, as the original's does: on the Mac, Escape in the park (`0x157968`, key 27)
+  calls `0x198514(0)`, which builds the pause menu `0x197d90` and then calls the game pause `0x110518` (`0x198580`) while the
+  game-state pause gate `+0x3c` is set; the menu's close routine `0x1985c0` re-arms the gate and calls the resume `0x110598`. The
+  pause freezes the scaled clock (`0x10e888` → `0x117c54`) that drives the scheduler's substeps and park turns, together with the
+  advisor's clock. Before, OpenTPW froze only the advisor and a front-end smoke run saw the park date move three days while the
+  menu was open. `ParkHud.TimeScaleFor` returns 0 while the pause menu (or a screen opened from it) is on the stack, and the speed
+  setting is left alone, so the park resumes at the same speed (`ParkPauseTests`, front-end smoke check). UI-096 names the
+  original's other pausing screens (full-screen map, message dialog, Load dialog, `0x15f67c`) that do not stop the park here yet.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

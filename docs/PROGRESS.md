@@ -863,6 +863,8 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
+  write's bytes can no longer end up under another's hash; writes to different files stay independent.
 - **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),
   the manifest first marks it as not stored and only marks it kept, with the new hash, once the new bytes are written; a clear or
   folder change in between drops the write. A failed rewrite therefore makes the file count as missing instead of offering stale

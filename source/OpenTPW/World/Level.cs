@@ -94,8 +94,11 @@ public partial class Level : IDisposable
 		: this( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy ) { }
 
 	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
-		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy )
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, ThemeParkIncLayoutCheckpoint? checkpoint = null )
 	{
+		if (checkpoint != null && !GameEditions.IsThemeParkInc)
+			throw new NotSupportedException("TPI layout checkpoints require Theme Park Inc data.");
+		incLayout = checkpoint;
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
 		LevelName = levelName;
@@ -113,7 +116,7 @@ public partial class Level : IDisposable
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
 			using ( LoadProfile.Measure( "original-park" ) )
-				OriginalPark = OriginalPark.Load( levelName, readShippedSave: resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
+				OriginalPark = OriginalPark.Load( levelName, readShippedSave: checkpoint == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
 			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the
@@ -130,6 +133,8 @@ public partial class Level : IDisposable
 		using ( LoadProfile.Measure( "level-hud" ) )
 			SetupHud( onlineFolders );
 		resumeState = null;
+		incLayout = null;
+		incLayoutCells = null;
 		if ( visitLayout != null )
 			ApplyVisitedLayout();
 		if ( visit?.Payload.PrototypeRide is { } ride )
@@ -249,7 +254,7 @@ public partial class Level : IDisposable
 				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				OriginalTerrain.QueueLinkSource = cells.QueueLinkAt;
-				if ( resumeState != null ) OriginalTerrain.RefreshPaths();
+				if ( resumeState != null || incLayout != null ) OriginalTerrain.RefreshPaths();
 				renderedCellVersion = cells.Version;
 			}
 			if ( Park != null && Guests != null )
@@ -267,7 +272,8 @@ public partial class Level : IDisposable
 	private void SetupGuests( OriginalPark park )
 	{
 		// A version 2 visit walks the shared park's own cell map (the owner's built paths and queues), not the shipped import.
-		var grid = resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout ) )
+		var grid = incLayoutCells != null ? new GuestPathGrid(incLayoutCells)
+			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: GuestPathGrid.FromOriginal( park.Map, park.Save );

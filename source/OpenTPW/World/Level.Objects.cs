@@ -28,7 +28,13 @@ public partial class Level
 			return;
 		int count;
 		string? skipped = null;
-		if ( resumeState != null )
+		if (incLayout != null)
+		{
+			incLayoutCells = incLayout.RestoreInto(Objects, ParkResumeAssetManifest.Capture(Objects.Catalog, theme, false),
+				OriginalPark.Map.CellCountX, OriginalPark.Map.CellCountY);
+			count = Objects.Objects.Count;
+		}
+		else if ( resumeState != null )
 			count = ParkLayoutSnapshot.RestoreObjects( resumeState.Layout, Objects ).Count;
 		else if ( visitLayout != null )
 		{

@@ -9,6 +9,10 @@ public sealed class ThemeParkIncHudHost
 {
 	/// <summary>Closes the window.</summary>
 	public Action Quit { get; init; } = () => { };
+	/// <summary>Application-owned layout only; guests, script progress and clock are not persisted.</summary>
+	public Action? SaveLayout { get; init; }
+	/// <summary>Replaces the world with a fresh experimental session after the HUD's explicit confirmation.</summary>
+	public Action? LoadLayout { get; init; }
 }
 
 /// <summary>
@@ -40,6 +44,7 @@ public sealed class ThemeParkIncHud
 	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
 	private bool toolPress;
 	private OriginalObject? selectedObject;
+	private bool retiredByLayoutLoad;
 
 	public ThemeParkIncHud( Level level, UiStringTable strings, ThemeParkIncHudHost host )
 	{
@@ -314,9 +319,32 @@ public sealed class ThemeParkIncHud
 		} );
 		MenuButton( menu, "resume", "Resume", () => Stack.Pop(), 760 );
 		MenuButton( menu, "pause", SpeedText, () => { speed = speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused; }, 880 );
-		MenuButton( menu, "quit", "Quit", host.Quit, 1000 );
+		if (host.SaveLayout != null)
+			MenuButton(menu, "saveLayout", "Save layout checkpoint", () => RunLayoutAction(host.SaveLayout, "Layout saved. Loading it starts a new session; guests, script progress and clock are not saved."), 1000);
+		if (host.LoadLayout != null)
+			MenuButton(menu, "loadLayout", "Load layout — new session", ConfirmLayoutLoad, 1120);
+		MenuButton( menu, "quit", "Quit", host.Quit, host.SaveLayout == null && host.LoadLayout == null ? 1000 : 1240 );
 		menu.Back = () => Stack.Pop();
 		Stack.Push( menu );
+	}
+
+	private bool RunLayoutAction(Action action, string success)
+	{
+		try { action(); PostMessage(success); return true; }
+		catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
+		{
+			Stack.Push(UiDialogs.Message("layoutFailed", () => error.Message,
+				(() => "Back", () => Stack.Pop())));
+			return false;
+		}
+	}
+
+	private void ConfirmLayoutLoad()
+	{
+		Stack.Push(UiDialogs.Message("confirmLayoutLoad",
+			() => "Replace this world with the saved layout and start a NEW experimental session? Guests, ride script progress, simulation clock and audio restart. This is not a continuation or original TPI save.",
+			(() => "Cancel", () => Stack.Pop()),
+			(() => "Load new session", () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction(host.LoadLayout!, "Layout loaded as a new experimental session."); })));
 	}
 
 	private static UiButton MenuButton( UiScreen menu, string id, Func<string> text, Action clicked, float top ) => menu.Add( new UiButton
@@ -347,6 +375,8 @@ public sealed class ThemeParkIncHud
 		SetBuildWindowVisible( buildOpen && !MenuOpen );
 		var overUi = Stack.Covers( context.Canvas, input.Mouse );
 		var consumed = Stack.Update( context, input );
+		// Successful load retired this HUD during its callback: leave the candidate camera and old tools alone.
+		if (retiredByLayoutLoad) return true;
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;

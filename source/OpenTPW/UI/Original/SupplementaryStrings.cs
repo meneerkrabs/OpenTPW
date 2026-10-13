@@ -50,6 +50,7 @@ public enum OpenTpwText
 	TexturePackClean,
 	TexturePackDetailed,
 	LoadingTextures,
+	BuildingPark,
 	TexturePackHelp,
 	TextureDownloadTitle,
 	TextureDownloadHelp,
@@ -160,6 +161,7 @@ public static class SupplementaryStrings
 		[OpenTpwText.TexturePackClean] = new[] { "Enhanced (legacy)", "Forbedret (tidligere)", "Verbeterd (eerder)", "Amélioré (ancien)", "Verbessert (bisherig)", "Förbättrad (tidigare)" },
 		[OpenTpwText.TexturePackDetailed] = new[] { "Detailed", "Detaljeret", "Gedetailleerd", "Détaillé", "Detailliert", "Detaljerad" },
 		[OpenTpwText.LoadingTextures] = new[] { "Updating textures in the background... {0} / {1}", "Opdaterer teksturer i baggrunden... {0} / {1}", "Textures worden op de achtergrond bijgewerkt... {0} / {1}", "Mise à jour des textures en arrière-plan... {0} / {1}", "Texturen werden im Hintergrund aktualisiert... {0} / {1}", "Uppdaterar texturer i bakgrunden... {0} / {1}" },
+		[OpenTpwText.BuildingPark] = new[] { "Building the park...", "Bygger parken...", "Het park wordt gebouwd...", "Construction du parc...", "Der Park wird gebaut...", "Bygger parken..." },
 		[OpenTpwText.TexturePackHelp] = new[]
 		{
 			"Original: the game's own textures, selected by default. Enhanced (Clarity): the Clarity texture pack. Enhanced (legacy): the earlier choice. Keep playing while textures update in the background.",

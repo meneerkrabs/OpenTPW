@@ -14,4 +14,9 @@
     <ProjectReference Include="..\OpenTPW.Common\OpenTPW.Common.csproj" />
   </ItemGroup>
 
+	<ItemGroup>
+		<!-- The tests compare the RefPack decoder with its former implementation on the real archives. -->
+		<InternalsVisibleTo Include="OpenTPW.Tests" />
+	</ItemGroup>
+
 </Project>

@@ -156,6 +156,44 @@ decoded textures could save at most about 60 ms of a Jungle start, less the time
 the browser plan's phase 3 therefore waits. The larger shares are the object catalogue, the kid sprite sets, starting the park
 audio and the object placement: those, or spreading the start over frames, are the next targets.
 
+## Three start costs removed (13 October)
+
+Splitting the profile's large sections further showed that two of them were not the work their
+names suggest:
+
+- **Opening archive members.** `Refpack.Decompress` (WAD members) found its command classes by
+  reflecting over the whole assembly on every call and built the output as a list of bytes with an
+  array per byte read: 269 ms for 426 members in the Jungle start. It is now one pass into a growing
+  array; `RefpackTests` compares it with the former decoder (kept as `LegacyRefpack`) on crafted
+  streams, 4,000 random streams and (with the game files) every compressed WAD member of the original
+  game folder, byte for byte.
+  The kid sprite sets (108 → 16 ms) and most of the object catalogue gained from this.
+- **Path lookups.** Every read listed the directories along its path twice (the case correction and
+  the archive search): 113 ms for 461 lookups. The game data's file system now remembers lookups
+  (`BaseFileSystem.CacheLookups`; an answer found before an invalidation is not kept); the browser's `AddFile` forgets them when it copies
+  a theme folder, and writes through the file system forget them too. Saves keep the plain lookups.
+- **Placed ambients.** The land's ambient sounds were decoded in the park's first frame (116 ms).
+  `SoundEventSystem.PlayAtWhenDecoded` draws the sound now and starts the voice when its sample is
+  decoded (cooperatively in the browser, on a worker on the desktop).
+
+AOT builds, three runs each taken alternately on the M5 setup (`compare.mjs`):
+
+| Measure | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Jungle cold, largest frame | 1,143 ms | 520 ms | −55 % |
+| Jungle cold, ready after the click | 1,421 ms | 804 ms | −43 % |
+| Whole start (`start-level`) | 992–1,083 ms | 431–451 ms | about −58 % |
+| Start, first frame | 1,603 ms | 1,131 ms | −29 % |
+| Open buy menu / first shop selections | 64 / 18–38 ms | 42 / 13–23 ms | −29 to −45 % |
+| Digest: texture decoding / fixed park run | 644 / 261 ms | 481 / 135 ms | −25 / −48 % |
+| Wasm memory in the park | 212 MB | 254 MB | +20 % |
+
+The digest's hashes are unchanged in every run. Live managed memory is the same (102 MB) and the
+start allocates less (555 against 736 MB in all), but with far fewer small allocations the garbage
+collector runs less often (16 against 57 gen0 collections), the heap grows further between them,
+and a page's WebAssembly memory never shrinks: its peak is 42 MB higher. The memory phase of the
+plan starts from that.
+
 ## Game files kept in the browser (13 October)
 
 With the game files kept in OPFS (docs/WEB.md), interpreter build, M5 setup; the harness's

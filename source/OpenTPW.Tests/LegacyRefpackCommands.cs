@@ -1,6 +1,12 @@
-﻿namespace OpenTPW;
+// The RefPack decoder as it was before it was rewritten (docs/BROWSER-PERFORMANCE.md), kept verbatim as the reference the new one must match.
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 
-partial class Refpack
+namespace OpenTPW.Tests;
+
+partial class LegacyRefpack
 {
 	internal interface IRefpackCommand
 	{

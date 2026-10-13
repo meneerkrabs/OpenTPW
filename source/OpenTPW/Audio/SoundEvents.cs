@@ -100,10 +100,16 @@ public sealed class SoundEventSystem
 	internal long RetainedSentenceBytes { get { lock ( decoded ) return retainedSentenceBytes; } }
 	private readonly List<SoundSentence> sentences = new();
 	private readonly List<SoundChain> chains = new();
+	private readonly List<PlacedSound> placements = new();
 
 	/// <summary>Starts decoded segments that were waiting for an asynchronous decode; call once per frame.</summary>
 	public void Pump()
 	{
+		foreach ( var placement in placements.ToArray() )
+		{
+			if ( placement.Pump() )
+				placements.Remove( placement );
+		}
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
 		sentences.RemoveAll( sentence => sentence.IsStopped );
@@ -323,6 +329,29 @@ public sealed class SoundEventSystem
 		return voice;
 	}
 
+	/// <summary>
+	/// <see cref="PlayAt"/> without waiting for the sample: the sound and sample are drawn now (the same draws, in the same order), a
+	/// sample not decoded yet is decoded like a sentence's (cooperatively in the browser, on a worker on the desktop) and the voice
+	/// starts at the <see cref="Pump"/> that finds it ready. A park's placed ambients start this way, so their decoding (about a tenth
+	/// of a second for the jungle in the browser) is not part of the park's first frame.
+	/// </summary>
+	public PlacedSound? PlayAtWhenDecoded( SoundCategory? category, uint eventId, AudioChannel channel, Vector3 position, float? range = null )
+	{
+		var soundEvent = category?.Catalog.Find( eventId );
+		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
+			return null;
+		var sound = soundEvent.Sounds[Math.Max( 0, ChooseSound( soundEvent.Sounds, Draw() ) )];
+		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
+		if ( index < 0 )
+			return null;
+		// [APPROX:AUDIO-019] as in PlayAt: the loop flag 0x8 applies to positioned one-shots
+		var placed = new PlacedSound( mixer, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
+			DecodeSentenceAsync( category, sound.Samples[index] ) );
+		if ( !placed.Pump() )
+			placements.Add( placed );
+		return placed;
+	}
+
 	/// <summary>Starts a sentence event; an optional chooser replaces only its sample draws. Null when the event is missing.</summary>
 	/// <param name="sampleDraw">Optional 16-bit sample chooser; does not alter sound selection, branch links or volume parameters.</param>
 	public SoundSentence? StartSentence( SoundCategory? category, uint eventId, AudioChannel channel, Func<uint>? sampleDraw = null )
@@ -376,6 +405,56 @@ public sealed class SoundEventSystem
 /// the previous one ends. The next sample is chosen and decoded ahead while the current one plays:
 /// native hosts decode in a background task, and browser hosts yield between bounded MPEG frame batches.
 /// </summary>
+/// <summary>A positioned sound that starts once its sample is decoded (<see cref="SoundEventSystem.PlayAtWhenDecoded"/>); it can be stopped before.</summary>
+public sealed class PlacedSound
+{
+	private readonly AudioMixer mixer;
+	private readonly AudioChannel channel;
+	private readonly float volume;
+	private readonly Vector3 position;
+	private readonly float range;
+	private readonly bool loops;
+	private readonly Task<Mp2Audio?> decoding;
+	private bool stopped;
+
+	internal PlacedSound( AudioMixer mixer, AudioChannel channel, float volume, Vector3 position, float range, bool loops, Task<Mp2Audio?> decoding )
+	{
+		this.mixer = mixer;
+		this.channel = channel;
+		this.volume = volume;
+		this.position = position;
+		this.range = range;
+		this.loops = loops;
+		this.decoding = decoding;
+	}
+
+	/// <summary>The voice once the sample is decoded and playing; null before, or when the sample could not be decoded.</summary>
+	public AudioVoice? Voice { get; private set; }
+
+	/// <summary>Starts the voice when the sample is ready; true once nothing is left to wait for.</summary>
+	internal bool Pump()
+	{
+		if ( stopped )
+			return true;
+		if ( !decoding.IsCompleted )
+			return false;
+		if ( decoding.IsFaulted )
+			Log.Warning( $"A placed sound was not started: its sample could not be decoded ({decoding.Exception?.GetBaseException().Message})." );
+		else if ( decoding.IsCompletedSuccessfully && decoding.Result is { } audio )
+		{
+			Voice = mixer.Play( audio, channel, volume, position, range );
+			Voice.Loops = loops;
+		}
+		return true;
+	}
+
+	public void Stop()
+	{
+		stopped = true;
+		Voice?.Stop();
+	}
+}
+
 public sealed class SoundSentence
 {
 	private readonly SoundEventSystem system;

@@ -62,7 +62,7 @@ public static class GameAudio
 	private static DeterministicRandom staffRandom = new( 1 );
 	private static DeterministicRandom crowdRandom = new( 1 );
 	private static bool staffVoiceLogged;
-	private static IReadOnlyList<AudioVoice>? placedAmbients;
+	private static IReadOnlyList<PlacedSound>? placedAmbients;
 
 	public static bool Enabled { get; set; } = true;
 	public static AudioMixer? Mixer => events?.Mixer;
@@ -185,7 +185,7 @@ public static class GameAudio
 		if ( events == null || !FileSystem.FileExists( path ) )
 			return;
 		var file = new PlacedObjectsFile( FileSystem.ReadAllBytes( path ) );
-		var voices = new List<AudioVoice>();
+		var voices = new List<PlacedSound>();
 		var type3 = 0;
 		foreach ( var record in file.Records )
 		{
@@ -198,12 +198,13 @@ public static class GameAudio
 				continue;
 			var category = record.Category == 0 ? Ambient : LevelAmbient;
 			var (x, height, z) = record.SoundPlace;
-			var voice = events.PlayAt( category, (uint)record.Sound, AudioChannel.Effects, new Vector3( x, height, z ), record.Range > 0 ? record.Range : null );
+			// Each starts once its sample is decoded, so the park's first frame does not wait for them (docs/BROWSER-PERFORMANCE.md).
+			var voice = events.PlayAtWhenDecoded( category, (uint)record.Sound, AudioChannel.Effects, new Vector3( x, height, z ), record.Range > 0 ? record.Range : null );
 			if ( voice != null )
 				voices.Add( voice );
 		}
 		placedAmbients = voices;
-		Log.Trace( $"Sound: {level} placed ambients {voices.Count} started, {type3} rectangle sounds not played (scape.omp type 3)." );
+		Log.Trace( $"Sound: {level} placed ambients {voices.Count} starting, {type3} rectangle sounds not played (scape.omp type 3)." );
 	}
 
 	/// <summary>Stops the land's own ambient voices (the level's <c>scape.omp</c> records).</summary>

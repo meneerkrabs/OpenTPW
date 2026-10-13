@@ -90,6 +90,7 @@ public static class UiApproximations
 		("UI-908", "visitor detail: live state (KIDSTATES), cash, rides and happiness; time in park says 'not simulated'", "the original visitor detail bindings"),
 		("UI-909", "entry points: a text button above b_allstaff opens the attractions window (its rides tab, UITEXT 78) from the buy window, and a text button beside it in the staff window's visitor corner opens it there (the original staff window navigated to the visitors and attractions windows, UI-MAP 0x1014b124) — the shipped b_allthinginfo art cannot be used, its model's texture b_allthginfo is absent from ui.wad — b_svisit opens the visitors window from the staff window, and the plain V key toggles the visitors window (A/S stay with the WASD pan)", "the original entry buttons' handlers and rectangles, and the original A/V key dispatch"),
 		("UI-910", "row and button semantics: an attractions row activation or the select button selects the object in the park (info arm) and closes, a visitors row activation or b_gopeep locates the visitor's live position and closes, b_erase deletes through the existing removal and confirmation", "the original lists' row activation handlers (b_goto's art also has no texture in ui.wad)"),
+		("UI-920", "Ctrl+H toggles the existing top-edge contextual popup for this HUD, respecting the global popup-help option", "original help-bar geometry and toggle state lifetime"),
 	};
 
 	private static bool logged;

@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **376 unresolved unique APPROX IDs**, 447 APPROX occurrences, 151 EXT occurrences, 166 DATA occurrences and 476 BIN occurrences.
+Current inventory: **377 unresolved unique APPROX IDs**, 448 APPROX occurrences, 151 EXT occurrences, 166 DATA occurrences and 476 BIN occurrences.
 
-Of these, 352 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 353 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -42,7 +42,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES | 35 | 35 |
 | SAVE | 11 | 11 |
 | TPI | 5 | 7 |
-| UI | 81 | 112 |
+| UI | 82 | 113 |
 | VM | 2 | 3 |
 | WALK | 10 | 10 |
 
@@ -414,6 +414,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-908 | Original-fidelity area (scope unadjudicated) | visitor detail: live state (KIDSTATES), cash, rides and happiness; time in park says 'not simulated' | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:90` |
 | UI-909 | Original-fidelity area (scope unadjudicated) | entry points: a text button above b_allstaff opens the attractions window (its rides tab, UITEXT 78) from the buy window, and a text button beside it in the staff window's visitor corner opens it there (the original staff window navigated to the visitors and attractions windows, UI-MAP 0x1014b124) — the shipped b_allthinginfo art cannot be used, its model's texture b_allthginfo is absent from ui.wad — b_svisit opens the visitors window from the staff window, and the plain V key toggles the visitors window (A/S stay with the WASD pan) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:91` |
 | UI-910 | Original-fidelity area (scope unadjudicated) | row and button semantics: an attractions row activation or the select button selects the object in the park (info arm) and closes, a visitors row activation or b_gopeep locates the visitor's live position and closes, b_erase deletes through the existing removal and confirmation | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:92` |
+| UI-920 | Original-fidelity area (scope unadjudicated) | Ctrl+H toggles the existing top-edge contextual popup for this HUD, respecting the global popup-help option | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:93` |
 | VM-900 | Original-fidelity area (scope unadjudicated) | MULT: dest = a × b with the SUB/DIV/MOD dest-first operand order, 32-bit wrap and flags; inferred from the upstream three-operand signature and Theme Park Inc's sole &#96;MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE&#96; (followed by SETTIMER). No original dispatch of interpreter case 48 is traced, so the native accumulation and flags are unqualified | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:12` |
 | VM-901 | Original-fidelity area (scope unadjudicated) | WAITABS: STP-PPC 0xb0710 proves now + operand stored without speed division, first-encounter yield and unsigned-deadline comparison; the port keeps that deadline in its non-wrapping double script clock, so the original's 2^32 wrap and zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:13` |
 | WALK-001 | Original-fidelity area (scope unadjudicated) | the speed boost +196 comes from the Sugar ingredient only, with the ride build's amount 50 (+3 per visit); the original's per-object amount (ride +404, set from the shop screen and saved) is not modelled | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:13` |
@@ -829,8 +830,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:162` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
 | UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:445` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
-| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:277` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
-| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:267` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
+| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:280` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
+| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:270` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
 | UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:65` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
 | UI-013 | `source/OpenTPW/UI/Original/UiDialogs.cs:9` | [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs |
@@ -909,11 +910,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-094 | `source/OpenTPW.Tests/RideCameraModeTests.cs:17` | [APPROX:UI-094] the eye is motion height plus PrototypeSeatHeight above the anchor; the heading is flattened (the Z part is dropped) |
 | UI-094 | `source/OpenTPW/World/RideCameraMode.cs:12` | [APPROX:UI-094] the view itself is an approximation: the eye sits half a car above the first train's front car |
 | UI-095 | `source/OpenTPW/World/Level.RideView.cs:32` | [APPROX:UI-095] the orbit camera is restored, not the walking first-person view: the first-person walk is not implemented, so the park camera is the only other view |
-| UI-900 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:35` | [APPROX:UI-900] a second press of a window key closes that window (toggle); the original's key handler for an open window is not traced — evidence needed: the original key dispatch while a screen window is open |
+| UI-900 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:36` | [APPROX:UI-900] a second press of a window key closes that window (toggle); the original's key handler for an open window is not traced — evidence needed: the original key dispatch while a screen window is open |
 | UI-901 | `source/OpenTPW/Hud/ParkHud.cs:129` | [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge |
-| UI-902 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:84` | [APPROX:UI-902] the original's time keys step its clock scale by 1.25 within 0.25..2 (ECON-004/UI-022); OpenTPW's four named speeds take their place — evidence needed: the original key tokens' names and handler |
-| UI-903 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:226` | [APPROX:UI-903] blueprint turning uses the level's 90-degree build-rotation steps; the original comma/full-stop handler's step and smoothing are not traced — evidence needed: the original blueprint-turn key handler |
-| UI-904 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:237` | [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S cycling order is not traced — evidence needed: the original staff-locator key handler |
+| UI-902 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:86` | [APPROX:UI-902] the original's time keys step its clock scale by 1.25 within 0.25..2 (ECON-004/UI-022); OpenTPW's four named speeds take their place — evidence needed: the original key tokens' names and handler |
+| UI-903 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:232` | [APPROX:UI-903] blueprint turning uses the level's 90-degree build-rotation steps; the original comma/full-stop handler's step and smoothing are not traced — evidence needed: the original blueprint-turn key handler |
+| UI-904 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:243` | [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S cycling order is not traced — evidence needed: the original staff-locator key handler |
 | UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:14` | [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry (no table is decoded for this window) — evidence needed: the original all-attractions window table |
 | UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:28` | [APPROX:UI-905] seven equal detail rows fill the stats frame's area (the sideshow category has |
 | UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:195` | [APPROX:UI-905] the staff/buy window frames at their authored rectangles; &#96;list_all&#96; is the shipped all-list frame art. |
@@ -930,6 +931,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:237` | [APPROX:UI-910] the select button selects the row's object in the park; the delete button sells it |
 | UI-910 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:110` | [APPROX:UI-910] activation locates the visitor and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler |
 | UI-910 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:195` | [APPROX:UI-910] the go-to button locates the selected visitor, like the row activation. |
+| UI-920 | `source/OpenTPW/Hud/ParkHud.Help.cs:8` | [APPROX:UI-920] Ctrl+H toggles the existing top-edge contextual popup instead of an untraced original help-bar layout — evidence needed: original help-bar geometry and toggle state lifetime |
 | VM-900 | `source/OpenTPW/VM/Handlers/Math.cs:59` | [APPROX:VM-900] MULT's native dispatch (interpreter case 48) is traced on no original build (the Mac jump table is data:0x3f2a4, unvisited for this case), so the destination order and the wrap/flags policy are family inference, not static evidence. Evidence needed: the case-48 handler in any original executable; the Theme Park Inc corpus only proves &#96;MULT dest a b&#96; shape and a SETTIMER consumer. |
 | VM-901 | `source/OpenTPW/VM/Handlers/Scheduling.cs:23` | [APPROX:VM-901] The traced facts are STP-PPC 0xb0710–0xb0798: WAITABS stores now + operand as a 32-bit deadline word in the field WAIT uses (no script-speed division), its first encounter always yields, and later encounters wait while unsigned now &lt; deadline. The port models that deadline in its non-wrapping double script clock, so the original's unsigned comparison, its 2^32 wrap and its zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled; a session that never nears 2^31 ms of scheduler clock cannot observe the difference. |
 | VM-901 | `source/OpenTPW/VM/RideVM.cs:436` | [APPROX:VM-901] The deadline lives in this VM's non-wrapping double script clock, not the original's wrapping unsigned 32-bit word with its zero-deadline sentinel (docs/reverse/PPC-clock.md); wrap-past-2^31/2^32 behaviour is unmodelled. |

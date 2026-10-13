@@ -40,9 +40,10 @@ public class HudScreenShortcutTests
 		Assert.AreEqual( HudScreenShortcut.TurnBlueprintRight, ParkHud.ShortcutFor( InputButton.TurnBlueprintRight ), "full stop" );
 		Assert.AreEqual( HudScreenShortcut.LocateNextStaff, ParkHud.ShortcutFor( InputButton.StaffLocator ), "Ctrl+S" );
 		Assert.AreEqual( HudScreenShortcut.LocateNextVisitor, ParkHud.ShortcutFor( InputButton.VisitorLocator ), "Ctrl+V" );
+		Assert.AreEqual( HudScreenShortcut.ToggleHelpBar, ParkHud.ShortcutFor( InputButton.ToggleHelpBar ), "Ctrl+H toggles contextual help" );
 		// Keys whose screens do not exist stay unhandled rather than guessing a window.
 		foreach ( var button in new[] { InputButton.CamcorderMode,
-			InputButton.SendEmailPostcard, InputButton.ToggleHelpBar, InputButton.Help, InputButton.Menu, InputButton.RideView } )
+			InputButton.SendEmailPostcard, InputButton.Help, InputButton.Menu, InputButton.RideView } )
 			Assert.AreEqual( HudScreenShortcut.None, ParkHud.ShortcutFor( button ), button.ToString() );
 	}
 

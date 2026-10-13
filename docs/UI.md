@@ -417,7 +417,12 @@ glyph in all 14 UI fonts of each language.
   and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
   keep acting over their own window. Keys whose screens do not exist
-  (camcorder, postcard, help bar) stay unhandled.
+  (camcorder, postcard) stay unhandled. Ctrl+H toggles the existing contextual
+  help popup (UI-920); it never activates the H staff window. Both Ctrl keys
+  work, held chords toggle once, and input owners consume blocked presses.
+  The HUD-local visibility gate combines with the global popup-help option
+  without changing it. `ParkHudHelpTests` checks actual input dispatch and
+  synthetic hover-help draws without original assets or a GPU.
   Mapping and gating are pure functions (`ParkHud.ShortcutFor`,
   `WindowShortcutsAllowed`, `SteppedSpeed`), tested in `HudScreenShortcutTests`
   and `OverviewWindowTests`. The native smoke test presses the real keys:
@@ -558,7 +563,7 @@ the real assets. Approximation tags refer to the register below.
 | Quit Game (confirmation 9) | quits | wired | `OriginalUiTests` |
 
 Not implemented (no screen exists; their keys stay unhandled): camcorder mode
-(C), e-mail postcard (Ctrl+P), help bar (Ctrl+H), F1 advisor help speech,
+(C), e-mail postcard (Ctrl+P), F1 advisor help speech,
 player profiles, online world, golden keys. The All Attractions (A) and All
 Staff (S) keys stay with the camera's WASD pan by policy; the attractions
 window opens from both the buy window and the staff window's visitor corner
@@ -651,6 +656,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-908 | `Hud/ParkHud.VisitorWindow.cs`, `Hud/OverviewRosters.cs` | visitor detail: live state (KIDSTATES), cash, rides and happiness; time in park says "not simulated" | the original visitor detail bindings |
 | UI-909 | `Hud/ParkHud.BuyWindow.cs`, `Hud/ParkHud.Staff.cs`, `Hud/ParkHud.ScreenShortcuts.cs` | entry points: a text button above `b_allstaff` opens the attractions window (its rides tab, UITEXT 78) from the buy window — the shipped `b_allthinginfo` art cannot be used, its model's texture `b_allthginfo` is absent from ui.wad — `b_svisit` opens the visitors window from the staff window, and the plain V key toggles the visitors window (A/S stay with the WASD pan) | the original entry buttons' handlers and rectangles, and the original A/V key dispatch |
 | UI-910 | `Hud/ParkHud.AttractionsWindow.cs`, `Hud/ParkHud.VisitorWindow.cs` | row and button semantics: an attractions row activation or the select button selects the object in the park (info arm) and closes, a visitors row activation or `b_gopeep` locates the visitor's live position and closes, `b_erase` deletes through the existing removal and confirmation | the original lists' row activation handlers (`b_goto`'s art also has no texture in ui.wad) |
+| UI-920 | `Hud/ParkHud.Help.cs`, `UI/Original/UiScreen.cs` | Ctrl+H toggles the existing top-edge contextual popup for this HUD, respecting the global popup-help option | original help-bar geometry and toggle state lifetime |
 | UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | original staff dismissal handler and placement |
 | UI-093 | `Hud/ParkHud.cs`, `World/Level.RideView.cs` | the ride view is entered with the E key on the selected ride, not the ride window's "Ride it!" button | the ride window's Ride it button art and layout, and the Ride it handler (maexah/OpenTPW hud.md, FUN_004e15b0) |
 | UI-094 | `World/RideCameraMode.cs` | the ride view's eye sits on the first train's front car (coaster) or the carriage's height (prototype); the walk, sway and field of view are not reproduced | CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies |

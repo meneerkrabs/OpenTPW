@@ -73,6 +73,10 @@ EXPECTED = {
     # X13 (object scrap value 0x4e2400 / percentage 0x4e2290 vs the Mac 0xe25e8 / 0xe2424, F21): identical on 572 inputs; the
     # three wrong readings (every level's cost, no first-month refund, the base level's row) are each caught.
     ('tpw-exe-scrap-value', 'plan'): AGREE,
+    # X14 (queue re-evaluation 0x501390 vs QUEUE-005): one exit, position >= 4 x cells unless in state 14; C#'s rule agrees.
+    ('tpw-exe-queue-reevaluate', 'plan'): AGREE,
+    ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
+    ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
                                                        'pct': [[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]], 'base': 0}),
     ('tpw-exe-scrap-value', 'no-first-month-refund'): (57, {'now': 1000, 'built': 1000, 'level': 0, 'used': 0,
@@ -739,6 +743,11 @@ class Oracle(CoastTests, unittest.TestCase):
             self.assertEqual(self.run_target(target, new), 500)
             self.assertEqual(self.run_target(target, {**new, 'used': 1}), 250)
             self.assertEqual(self.run_target(target, {**new, 'now': 1000 + 692}), 250)
+
+    # ------------------------------------------------------------------ X14: queue re-evaluation
+    def test_queue_reevaluation_has_one_exit(self):
+        for side in ('plan', 'csharp-rule', 'no-state-14-exemption'):
+            self.check(('tpw-exe-queue-reevaluate', side))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

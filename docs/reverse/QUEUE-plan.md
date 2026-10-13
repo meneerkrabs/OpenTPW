@@ -118,8 +118,9 @@ order them.
 - **Queue edited** (`0xdd57c`, called from the map/path build code family
   `0x70b98..0x8c7c0`): clear `+54`, recompute back and size, log "queue is
   now %d cells long". Every queued guest except the pending one re-evaluates
-  (`0xee8f8`, which has "queue was shortened" and "queue edited underneath me"
-  exits). Then it checks whether the back of the queue is connected
+  (`0xee8f8`; the tp.exe twin `0x501390` has one exit, "queue was shortened", for a position at or beyond
+  4 × cells unless the guest is in state 14; "queue edited underneath me" is the log line every guest prints on entry,
+  ORACLE.md X14). Then it checks whether the back of the queue is connected
   (`0xdd744`).
 - **Build tool** (bounded): 46 sites in `0x70b98..0x8c7c0` write the link byte.
   One traced site (`0x71768..0x717c4`) maps the object rotation to an

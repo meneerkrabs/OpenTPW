@@ -720,6 +720,135 @@ SCRAP_TARGET = Target(
            'into null out-pointers; its result is not read). The clock base (+0, a 64-bit stamp) is random and cancels.',
            'Thing fields at other offsets than the Mac: stamp +0x18 (little-endian), level byte +0x50, use counter +0x1a0.'])
 
+# ============================================================================== (g) tp.exe queue re-evaluation 0x501390
+QREEVAL_ENTRY = 0x501390       # thiscall (guest), called by the queue edit 0x4de1f0 for every listed guest but the called one
+QREEVAL_RANGE = (0x501390, 0x5014D2)
+QREEVAL_GUEST_ID = 0x50B350    # thiscall (guest, out) -> out holding the guest's u16 id, ret 4; stubbed
+QREEVAL_POSITION = 0x4DDF50    # thiscall (ride, u16 id) -> position in the queue list, ret 4 (Mac 0xdd88c); stubbed (chosen)
+QREEVAL_LOOKUP = 0x4754E0      # cdecl (handle, 4 out-pointers): a table read whose outputs are not used afterwards; stubbed
+QREEVAL_ANIMATION = 0x50BE80   # thiscall (guest + 0x30, animation, flag), ret 8; stubbed (recorded)
+QREEVAL_REMOVE = 0x4DDD20      # thiscall (ride, u16 id): unlink from the queue list, ret 4; stubbed (recorded)
+QREEVAL_DISMISS = 0x5012F0     # thiscall (guest): "dismissed from queue", clears the queue words; stubbed (recorded)
+QREEVAL_SET_STATE = 0x501DB0   # thiscall (guest, state), ret 4; stubbed (recorded)
+QREEVAL_GUEST = {'id': None, 'state': 0x220, 'ride': 0x1DC, 'handle': 0xC, 'animation': 0x30}   # ride: u16 thing index
+QREEVAL_CELLS = 0x40           # ride: queue size in cells (mQueueSizeInCells)
+QREEVAL_RIDE_INDEX = 7
+QREEVAL_STATE = type('QueueReevalState', (), {})()
+
+
+def qreeval_stubs(target: Target) -> dict:
+    state = QREEVAL_STATE
+
+    def guest_id(sb):
+        thiscall_check(sb, state.guest, '0x50b350')
+        sb.write(sb.arg(0), 'H', state.x['id'])
+        return sb.arg(0), 4
+
+    def position(sb):
+        thiscall_check(sb, state.ride, '0x4ddf50')
+        if sb.arg(0) & 0xFFFF != state.x['id']:
+            raise AssertionError('0x4ddf50 asked for another guest')
+        return state.x['position'] & MASK32, 4
+
+    def lookup(sb):
+        return 0, 0
+
+    def animation(sb):
+        thiscall_check(sb, state.guest + QREEVAL_GUEST['animation'], '0x50be80')
+        target.log.append(('animation', sb.arg(0), sb.arg(1)))
+        return 0, 8
+
+    def remove(sb):
+        thiscall_check(sb, state.ride, '0x4ddd20')
+        target.log.append(('remove', sb.arg(0) & 0xFFFF))
+        return 0, 4
+
+    def dismiss(sb):
+        thiscall_check(sb, state.guest, '0x5012f0')
+        target.log.append(('dismiss',))
+        return 0, 0
+
+    def set_state(sb):
+        thiscall_check(sb, state.guest, '0x501db0')
+        target.log.append(('state', sb.arg(0), sb.read(state.guest + QREEVAL_GUEST['ride'], 'H')))
+        return 0, 4
+
+    def log(sb):
+        target.log.append(('log', sb.arg(0), sb.arg(1)))
+        return 0, 0
+
+    return {QREEVAL_GUEST_ID: guest_id, QREEVAL_POSITION: position, QREEVAL_LOOKUP: lookup, QREEVAL_ANIMATION: animation,
+            QREEVAL_REMOVE: remove, QREEVAL_DISMISS: dismiss, QREEVAL_SET_STATE: set_state, DEBUG_PRINT: log}
+
+
+def qreeval_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """(left, ride word cleared): the recorded calls reduced to the decision. The whole call sequence is checked and fails
+    the run when it differs: the entry log and the ThingArray check, then on the exit the "shortened" log, animation 13
+    for an id divisible by 3, unlink, dismissal and state 6 with the ride word +0x1dc already 0; on the stay branch
+    nothing else and the ride word untouched. The stack must balance (stub pop sizes)."""
+    state = QREEVAL_STATE
+    state.x = x
+    state.ride = sb.object(0x400, {QREEVAL_CELLS: ('I', x['cells'] & MASK32)})
+    sb.write(POINTS_THINGS + 20 * QREEVAL_RIDE_INDEX, 'I', state.ride)
+    state.guest = sb.object(0x400, {QREEVAL_GUEST['state']: ('I', x['state'] & MASK32),
+                                    QREEVAL_GUEST['ride']: ('H', QREEVAL_RIDE_INDEX)})
+    result = sb.call(QREEVAL_ENTRY, this=state.guest)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta} after the call')
+    events = [e if e[0] != 'log' else ('log', e[1], sb.read(e[2], 'B') and e[2]) for e in log]
+    entry = ('log', 2, 0x75E05C)
+    left = ('remove', x['id']) in events
+    expected = [entry, ('log', 1, 0x747724)]   # the ThingArray check (condition: entry 0 empty, so 1 = holds)
+    if left:
+        expected += [('log', 2, 0x75E014)] + ([('animation', 13, 0)] if x['id'] % 3 == 0 else []) + \
+                    [('remove', x['id']), ('dismiss',), ('state', 6, 0)]
+    if events != expected:
+        raise AssertionError(f'unexpected call sequence {events}')
+    still = sb.read(state.guest + QREEVAL_GUEST['ride'], 'H')
+    if still != (0 if left else QREEVAL_RIDE_INDEX):
+        raise AssertionError('ride word +0x1dc changed on the stay branch or kept on the exit')
+    return left, left
+
+
+def qreeval_reading(x: dict) -> tuple:
+    """0x501390 as read: leave when the position, unsigned, is at least 4 x the queue cells (a 32-bit product) and the
+    guest is not in state 14; a leaving guest whose id is a multiple of 3 plays animation 13 first."""
+    left = (x['position'] & MASK32) >= ((4 * x['cells']) & MASK32) and x['state'] != 14
+    return left, left
+
+
+def qreeval_csharp_rule(x: dict) -> tuple:
+    """GuestSimulation.ReevaluateQueue's departure for a guest in the queue list (position >= 0, the only case the original
+    has; C# also sends away a guest missing from the list): a guest other than the called one in states 11, 12 or 13 leaves
+    when its position is at least PositionsPerCell (4) x QueueSizeInCells; a guest in state 14 is not visited. The
+    Confused departure of a guest standing off the queue (QUEUE-005) depends on the map and is not modelled here."""
+    left = x['state'] in (11, 12, 13) and x['position'] >= 4 * x['cells']
+    return left, left
+
+
+def qreeval_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        cells = rng.choice([0, 1, 2, 3, 5, 8, 12, 25, rng.randrange(0, 40)])
+        x = {'cells': cells, 'position': rng.choice([0, 4 * cells - 1, 4 * cells, 4 * cells + 1, rng.randrange(0, 4 * cells + 8)]),
+             'state': rng.choice([11, 12, 13, 14]), 'id': rng.randrange(1, 2000)}
+        x['position'] = max(0, x['position'])
+        x.update(kw)
+        return x
+    edges = [make(cells=c, position=p, state=s, id=i) for c in (1, 2, 3) for p in (4 * c - 1, 4 * c) for s in (11, 12, 13, 14)
+             for i in (3, 4)]
+    return edges + [make() for _ in range(n)]
+
+
+QREEVAL_TARGET = Target(
+    'tpw-exe-queue-reevaluate', 'tpw', 'tp.exe queue re-evaluation 0x501390', 'QUEUE-plan.md §4 / QUEUE-005 (Mac 0xee8f8)',
+    QREEVAL_ENTRY, [QREEVAL_RANGE], qreeval_stubs, qreeval_binary, qreeval_reading, qreeval_inputs,
+    alternatives={'csharp-rule': qreeval_csharp_rule,
+                  'no-state-14-exemption': lambda x: (x['position'] >= 4 * x['cells'],) * 2},
+    notes=['Executed: 0x501390. Stubs (recorded and checked for their object): 0x50b350 guest id, 0x4ddf50 position (chosen), '
+           '0x4754e0 table read (outputs unused), 0x50be80 animation, 0x4ddd20 unlink, 0x5012f0 dismissal, 0x501db0 state, '
+           '0x5da3c0 log (a level-0 message fails the run). The exit order is checked: animation 13 (id % 3 == 0), unlink, '
+           'dismissal, ride word +0x1dc cleared, state 6. Inputs are the states a listed guest can be in (11 to 14).'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -1339,5 +1468,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

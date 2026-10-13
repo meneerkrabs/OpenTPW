@@ -157,6 +157,42 @@ decoded textures could save at most about 60 ms of a Jungle start, less the time
 the browser plan's phase 3 therefore waits. The larger shares are the object catalogue, the kid sprite sets, starting the park
 audio and the object placement: those, or spreading the start over frames, are the next targets.
 
+## Files read on demand, and the textures that stayed (13 October)
+
+The second part of the memory phase closed the three items left open below:
+
+- **Whole files in memory.** A WAD archive opened from a path keeps its directory and reads a member
+  from the file when it is asked for (the file is opened for that read and closed again, so it can
+  still be replaced, also on Windows); an SDT sound bank read from a file keeps its offset table and
+  reads one entry at a time. A file that changed length since its directory was read gives a clear
+  error instead of other bytes, and a closed archive refuses reads. Both used to hold the whole
+  file (about 29 MB of archives and 35 MB of banks in a park), which the browser already holds.
+  `OnDemandReadTests` compares every member of every original WAD and every entry of every original
+  SDT bank, read both ways, byte for byte, and damaged banks behave the same.
+- **Textures that stayed after their park.** Tracking where textures made from bytes come from
+  (`PerfTrackTextureOrigins`) found three makers: `Texture.Missing` made a new texture on every call
+  (now one shared texture), and the coaster palette and the park gate's own sign were never released
+  (now `Texture.ReleaseOwned` when their entity goes, together with the material each made for them).
+- **The mixer's growth.** It was the sound banks: with entries read on demand the mixer's share stays
+  about 11 MB across park changes.
+
+| Step | Live managed before | After | Wasm before → after | Textures without a path |
+| --- | ---: | ---: | --- | ---: |
+| Jungle | 94 MB | 41 MB | 254 → 176 MB | 20 |
+| Lobby | 47 MB | 24 MB | 254 → 176 MB | 1 (25 before) |
+| Fantasy | 109 MB | 48 MB | 305 → 254 MB | 20 |
+| Lobby again | 58 MB | 28 MB | 305 → 254 MB | 1 (25 before, growing) |
+| Jungle again | 113 MB | 51 MB | 305 → 254 MB | 20 |
+
+What still grows a little (24 → 28 MB in the lobby) is the cache of each theme visited for the first
+time: its textures stay cached by path (Fantasy's 57), and so does its part of the object catalogue,
+which makes a revisit faster. Visiting a park of a theme seen before adds nothing (Jungle again holds
+the same textures); with all themes visited the cache is at its largest, and a limit on it is not
+part of this phase.
+Three alternating runs against the build without this change: the digest's hashes are unchanged,
+the cold Jungle frame is the same (625 against 586 ms, medians of four), and the page's wasm memory in
+the park is 31 % lower.
+
 ## Memory across park changes (13 October)
 
 The `switch` scenario takes each point after a full collection, so the managed figure is live

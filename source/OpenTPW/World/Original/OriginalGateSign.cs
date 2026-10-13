@@ -148,5 +148,8 @@ public sealed class OriginalGateSign : Entity
 	{
 		part.Delete();
 		model.ReleaseBuffers();
+		// The gate's sign material and images are its own (its park's name), unlike the shared type signs.
+		model.Material.ReleaseOwnedResources();
+		Images.ReleaseTextures();
 	}
 }

@@ -238,7 +238,9 @@ public sealed class CoasterRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
-		material?.ClearResourceSets();
+		// The material and its palette are this renderer's own; they used to stay on the GPU after its park.
+		material?.ReleaseOwnedResources();
+		palette?.ReleaseOwned();
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

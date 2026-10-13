@@ -307,6 +307,7 @@ const scenarios = {
 			await page.waitFor(`the ${island} park`, current => current.hud && current.level === island, 300000);
 			await sleep(3000);
 		};
+		await page.eval('opentpwPerf.program.PerfTrackTextureOrigins(true)');
 		await record('jungle');
 		await toLobby();
 		await record('lobby');

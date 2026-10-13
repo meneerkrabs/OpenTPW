@@ -31,6 +31,10 @@ public static partial class Program
 		return state.ToJsonString();
 	}
 
+	/// <summary>Records where textures made from bytes come from, for <see cref="PerfTextureGroups"/>.</summary>
+	[JSExport]
+	public static void PerfTrackTextureOrigins( bool enabled ) => Texture.TrackOrigins = enabled;
+
 	/// <summary>Turns the load profile (<see cref="LoadProfile"/>) on, clearing it, or off.</summary>
 	[JSExport]
 	public static void PerfProfile( bool enabled ) => LoadProfile.Enable( enabled );
@@ -203,7 +207,7 @@ public static partial class Program
 	public static string PerfTextureGroups()
 	{
 		var result = new JsonObject();
-		foreach ( var group in Asset.All.OfType<Texture>().GroupBy( texture => string.IsNullOrEmpty( texture.Path ) ? "(no path)"
+		foreach ( var group in Asset.All.OfType<Texture>().GroupBy( texture => string.IsNullOrEmpty( texture.Path ) ? $"(no path) {texture.Origin ?? "?"}"
 			: string.Join( '/', texture.Path.Replace( '\\', '/' ).Split( '/', StringSplitOptions.RemoveEmptyEntries ).Take( 2 ) ) ).OrderByDescending( group => group.Count() ) )
 			result[group.Key] = group.Count();
 		return result.ToJsonString();
@@ -291,6 +295,11 @@ internal static class PerfReachability
 			while ( queue.Count > 0 && seen.Count < maximumObjects )
 			{
 				var current = queue.Dequeue();
+				if ( current is string text )
+				{
+					bytes += text.Length * 2L;
+					continue;
+				}
 				// Arrays of numbers count their bytes; arrays of structs (a dictionary's entries) are followed into their fields.
 				if ( current is Array array && array.GetType().GetElementType() is { IsPrimitive: true } element )
 				{
@@ -327,7 +336,7 @@ internal static class PerfReachability
 	/// <summary>The objects <paramref name="value"/> refers to, at most <paramref name="limit"/> (a huge collection does not expand past the walk's budget).</summary>
 	private static IEnumerable<object> Children( object value, int limit )
 	{
-		static bool Skip( object child ) => child is string || child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo;
+		static bool Skip( object child ) => child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo;
 		var children = new List<object>();
 		switch ( value )
 		{

@@ -110,7 +110,14 @@ public static partial class Program
 
 		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
 		GameAudio.Enabled = true;
-		renderer = new Renderer( DisplaySettings.Default, null );
+		// The display choices the browser honours (render scale, interface scale, frame cap) are kept in /config like the desktop's;
+		// the canvas sets the size, so a stored window size or mode has no effect here.
+		var displayPath = DisplaySettings.GetDefaultPath();
+		var displayDiagnostics = new List<string>();
+		var displaySettings = DisplaySettings.Load( displayPath, displayDiagnostics );
+		foreach ( var diagnostic in displayDiagnostics )
+			Log.Warning( diagnostic );
+		renderer = new Renderer( displaySettings, displayPath );
 		Render = renderer;
 		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };
 		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.

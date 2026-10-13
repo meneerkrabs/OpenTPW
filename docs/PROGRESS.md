@@ -797,6 +797,28 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Frame rate limit (October 13):** the OpenTPW options page has a frame rate limit (off by
+  default, 30 or 60 fps) for the desktop and the browser. It caps drawing only (`FrameLimiter`:
+  a grid of 1/cap seconds with jitter slack; the browser skips early animation frames, the
+  desktop sleeps); the simulation keeps its fixed clock. In two browser runs per setting a 30 fps
+  cap took 43 % off the main thread in the lobby and in Jungle, and a 60 fps cap on a 60 Hz display drew
+  59.96–59.99 fps. The browser now keeps its display settings in `/config`, and the harness
+  counts drawn frames apart from skipped calls (`--frame-cap`). Phase 1b of the browser plan.
+- **Browser build compiled ahead of time (October 13):** the published page (server image) now
+  runs AOT-compiled WebAssembly instead of the interpreter. Measured with the harness, three
+  alternating runs each on an Apple M5: the cold Jungle construction frame fell from 2,540 to
+  1,136 ms, the first buy-menu frame from 104 to 54 ms, main-thread occupancy in the park from
+  23 to 15 %, texture decoding by 74 %; the download grows from 11.8 to 16.5 MB. Interpreter, AOT
+  and the desktop runtime give identical digests for the theme's textures and a fixed economy and
+  guest run (rides, scripts and weather are not in it). The harness gained the
+  `digest` scenario and `compare.mjs`. Phase 1 of the browser performance plan.
+- **Browser performance harness (October 13):** `tools/web-perf/run.mjs` repeats the browser
+  measurements with one command: a local server for the published page and the player's own
+  files, a fresh headless Chrome over the DevTools Protocol, and fixed scenarios (start, lobby,
+  cold Jungle, first buy-menu selections, memory). The page records frame times only with
+  `?perf=1`. The baseline on an Apple M5 (BROWSER-PERFORMANCE.md) is phase 0 of the browser
+  performance plan; its Node tests and the page's texture tests now run in CI.
+
 - **Browser:** `OpenTPW.Web` runs the shared game code on WebAssembly with a
   source-compatible WebGL2 replacement for Veldrid (docs/WEB.md). Theme folders
   load when a park first needs them, sound plays through WebAudio, and saves,

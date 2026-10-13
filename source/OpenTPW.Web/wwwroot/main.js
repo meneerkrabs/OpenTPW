@@ -7,7 +7,8 @@ import { createTextureDownloads } from './opentpw-textures.js';
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
 const status = document.getElementById('status');
-const { setModuleImports, getAssemblyExports, getConfig, runMain } = await dotnet.create();
+const runtime = await dotnet.create();
+const { setModuleImports, getAssemblyExports, getConfig, runMain } = runtime;
 setModuleImports('opentpw-gl', webgl);
 setModuleImports('opentpw-page', { requestLevel, requestLanguage, requestTexture });
 setModuleImports('opentpw-audio', audio);
@@ -15,6 +16,27 @@ const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
 await runMain();
 status.textContent = 'Ready.';
+
+// The performance harness (tools/web-perf, docs/BROWSER-PERFORMANCE.md): with ?perf=1 the page records the wall time of every
+// Program.Frame and exposes the game's harness hooks; ?perfSeed=<base64 JSON {path: text}> writes the options or display file
+// before the game starts (music muted, a frame cap). Only on a loopback address, where the harness serves the page: a link to the public page
+// cannot use them to write into a player's saved files. Without ?perf nothing here runs.
+const perfQuery = new URLSearchParams(location.search);
+const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.json']);
+const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+const perf = loopback && perfQuery.get('perf') === '1' ? {
+	program,
+	frames: [],
+	skipped: 0,
+	started: false,
+	wasmBytes: () => runtime.localHeapViewU8().buffer.byteLength,
+	state: () => JSON.parse(program.PerfState()),
+	counters: () => ({ ...JSON.parse(program.PerfCounters()), wasmBytes: runtime.localHeapViewU8().buffer.byteLength }),
+	take() { const frames = this.frames; this.frames = []; return frames; },
+	takeSkipped() { const skipped = this.skipped; this.skipped = 0; return skipped; },
+} : null;
+if (perf)
+	globalThis.opentpwPerf = perf;
 
 // Not copied: the movies and the start-up pictures (no movies in the browser yet).
 const notCopied = /\/data\/(movies|init)\/|\.(sf2|mpg)$/i;
@@ -190,6 +212,12 @@ async function start() {
 		console.warn('Saved games could not be read from this browser', error);
 	}
 	await loadSavedLanguage();
+	if (perf && perfQuery.get('perfSeed')) {
+		const seed = JSON.parse(atob(perfQuery.get('perfSeed')));
+		for (const [path, text] of Object.entries(seed))
+			if (perfSeedPaths.has(path) && typeof text === 'string')
+				program.RestoreFile(path, new TextEncoder().encode(text));
+	}
 	try {
 		const distribution = JSON.parse(program.ClarityDistribution());
 		textureDownloads = createTextureDownloads({
@@ -214,7 +242,22 @@ async function start() {
 		const frame = () => {
 			let running;
 			try {
-				running = program.Frame();
+				if (perf) {
+					// Only drawn frames are recorded; a call the frame cap skips is counted apart.
+					const drawn = program.PerfFramesDrawn();
+					const begin = performance.now();
+					running = program.Frame();
+					const end = performance.now();
+					if (program.PerfFramesDrawn() > drawn)
+						perf.frames.push([begin, end - begin]);
+					else
+						perf.skipped++;
+					// Bounded when nobody drains it (about half an hour at 60 fps).
+					if (perf.frames.length > 100000)
+						perf.frames.splice(0, 50000);
+					perf.started = true;
+				} else
+					running = program.Frame();
 			} catch (error) {
 				gameRunning = false;
 				// Stop instead of freezing silently, and say why.

@@ -218,11 +218,13 @@ keeps its own font.
 The "OpenTPW" button (purple text button left of the OK panel, `[EXT:opentpw-page]`) opens a
 second page built from the same original pieces: an `f_screen` page titled "OpenTPW"
 (title font and position of 120020) with `f_optpanel` bars in two columns (left x 57..690, right
-x 1331..1964, rows at y 167/323/479, the authored right column's panel size and pitch),
-each with a dark label in the shared size and a `b_on2` cycle button: window mode (windowed /
-borderless / exclusive "Full screen"), upscaling (Native/Linear/Nearest), render scale (Native,
-presets 77/67/59/50 %, others labelled with the original " Custom"), interface scale (Automatic
-or 1x-8x), enhanced textures (see below) and language. Clicking the button or wheel up/Right cycles
+x 1331..1964, rows every 156 units from y 167, the authored right column's panel size and pitch),
+each with a dark label in the shared size and a `b_on2` cycle button. The left column holds the
+four display rows, window mode (windowed / borderless / exclusive "Full screen"), upscaling
+(Native/Linear/Nearest), render scale (Native, presets 77/67/59/50 %, others labelled with the
+original " Custom") and the frame rate limit (the original " Off", 30 or 60 fps; `FrameLimiter`
+caps drawing only, the simulation keeps its fixed clock); the right column interface scale
+(Automatic or 1x-8x), enhanced textures (see below), language and the enhanced interface. Clicking the button or wheel up/Right cycles
 forward, wheel down/Left backward, both wrapping. The effective internal/output size and
 fallback reason are small dark text below the rows. Game files is a purple button where the
 main page has its OpenTPW button, and Back is the `b_okay` button in the OK place on the
@@ -244,7 +246,7 @@ restart notice appears for a texture pack.
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
 `ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's
 countdown - Yes -> `Confirm`, No -> `Revert`, and on No or the timeout the original 401
-message; upscaling, render scale and UI scale use `Apply`. A language change (and a
+message; upscaling, render scale, UI scale and the frame cap use `Apply`. A language change (and a
 graphics change that needs a restart) shows UITEXT 402 (RESTART GAME). `StubDisplaySettings`
 is only for tests/headless use. Audio code reads volumes via `GameOptions.Current`
 (`MovieGain` etc.).
@@ -283,7 +285,7 @@ as its logical size with every glyph texel a pixel-exact 2×2 block (verified wi
 ### OpenTPW supplementary strings
 
 Labels the original tables lack (window mode, upscaling, render/interface scale,
-language, back, date format, read-only/save/build messages, "not simulated yet")
+frame rate limit, language, back, date format, read-only/save/build messages, "not simulated yet")
 are in `UI/Original/SupplementaryStrings.cs`: repository-owned, clearly OpenTPW
 additions, translated for English, Danish, Dutch, French, German and Swedish
 (native-language names for the language row). They render with the original BF4

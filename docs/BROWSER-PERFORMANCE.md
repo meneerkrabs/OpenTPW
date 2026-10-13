@@ -4,6 +4,129 @@ OpenTPW shares its game code between native builds and the browser. The browser'
 WebAssembly runtime and WebGL bridge run much of that work on the page's main thread.
 A task that occupies that thread also postpones drawing and input.
 
+## Measuring
+
+`tools/web-perf/run.mjs` repeats the measurements below with one command. It serves a published
+`wwwroot` and the player's own game folder on 127.0.0.1 (the page's `?data=` route), opens them
+in a fresh headless Chrome profile through the DevTools Protocol, drives the game through the
+same UI calls as the native front-end smoke test and writes a JSON report plus a Markdown summary.
+It needs Node 22 or later and Chrome; it has no dependencies. The game files stay on the machine
+and no game data goes into the report.
+
+```sh
+dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -o out/web
+node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park World" --label interpreter --runs 3
+```
+
+| Scenario | What it measures |
+| --- | --- |
+| `start` (always first) | loading until the first frame and the lobby |
+| `lobby` | a steady window (`--window`, 30 s) in the lobby |
+| `jungle` | the cold start of Full Simulation Jungle (the construction frame), then a steady window |
+| `buy` | the first buy-menu open (Aztec Mayhem selected) and the first Belly Bounce, Balloon Shop, Burger Shop and Drinks Shop selections |
+| `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
+| `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
+
+`tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by
+side with the change per measure (and how many runs a row rests on when some lacked it), and
+fails unless every run of both builds has the same digest.
+
+Frame times are the wall time of each exported `Program.Frame`, recorded by the page only with
+`?perf=1`. "Main thread busy" is the renderer main thread's task time over wall time
+(`Performance.getMetrics`): how much of the time that thread is occupied, which is what postpones
+drawing and input. It is not the operating system's CPU time, and whether the October samples
+below used the same method is not recorded, so the two are not directly comparable.
+Music and speech are muted through the options file and effects stay on, as on 11 October
+(`--music` keeps them on); world textures are the default Original with the bundled HD interface.
+The hooks behind `?perf=1` (`Program.Perf.cs`: state, a click on an element by id, a key, a
+buy-window selection, memory counters) change nothing unless the harness calls them. The page
+honours `?perf` and `?perfSeed` only on a loopback address, and the seed may only write the
+options file and the display settings (`--frame-cap`), so a link to the public page cannot write
+into a player's saved files. In perf mode the page asks for the drawn-frame count around every
+call, a small extra cost on the main thread that both sides of a comparison share.
+
+**Baseline, 13 October** (interpreter build at `618ad830`, Chrome 155 headless, Apple M5 hardware
+Metal through ANGLE, 1280×900; median of three runs of the final harness, range in brackets). This
+is a different machine from the M4 numbers below, so compare runs of the harness with each other,
+not with them.
+
+| Measure | Value |
+| --- | --- |
+| Lobby, main thread busy | 16.5 % (9.5–17.0), 60 fps, frame p95 3.8 ms (3.2–4.0) |
+| Jungle, main thread busy | 16.6 % (11.8–21.1), 60 fps, frame p95 4.7 ms (4.6–5.1) |
+| Jungle cold construction, largest frame | 2,492 ms (2,468–2,549); park ready 2,808 ms after the click |
+| Open buy menu / Aztec Mayhem, largest frame | 80.3 ms (80.1–96.1) |
+| Belly Bounce | 71.5 ms (62.0–74.2) |
+| Balloon Shop | 25.6 ms (25.5–28.6) |
+| Burger Shop | 37.1 ms (27.6–38.9) |
+| Drinks Shop | 50.7 ms (35.0–55.6) |
+| Wasm memory in the park | 230 MB, no growth over 2 minutes |
+
+**How far a single run can be trusted.** Over six runs in two sessions (three with an earlier
+version of the harness) the cold construction stayed within ±3 % (2,399–2,549 ms): that is the
+measure to decide on (the AOT experiment in the browser plan). Main thread busy and the small
+first-use frames varied by up to about ±30 % between sessions on this laptop. Compare builds with
+`--runs 3` or more (medians, every run kept in the report) and run them alternately on an idle
+machine; a difference smaller than the ranges above is not a result.
+
+## Ahead-of-time compilation (13 October)
+
+The interpreter build against the same sources compiled ahead of time
+(`-p:RunAOTCompilation=true`, the `wasm-tools` workload), three runs each taken alternately on the
+M5 setup above:
+
+| Measure | Interpreter | AOT | Change |
+| --- | ---: | ---: | ---: |
+| Start: first frame | 1,914 ms | 1,367 ms | −29 % |
+| Lobby: main thread busy | 19.3 % | 10.8 % | −44 % |
+| Jungle cold construction, largest frame | 2,540 ms (2,539–2,554) | 1,136 ms (1,132–1,137) | −55 % |
+| Jungle: main thread busy | 23.0 % | 14.5 % | −37 % |
+| Jungle: frame p95 | 5.1 ms | 3.0 ms | −41 % |
+| Open buy menu / Aztec Mayhem | 103.6 ms | 53.5 ms | −48 % |
+| Belly Bounce / Balloon / Burger / Drinks Shop | 70 / 34 / 36 / 51 ms | 37 / 20 / 24 / 27 ms | −32 to −48 % |
+| Digest: 1,698 Jungle textures decoded | 2,396 ms | 626 ms | −74 % |
+| Digest: fixed park run (3000 ticks) | 478 ms | 257 ms | −46 % |
+| Wasm memory in the park | 229 MB | 211 MB | −8 % |
+
+The ranges do not overlap. In every run both builds gave the same digest, texture hash
+`1CC5AEB033691043` and world state hash `120A09CBAE070E0A`, and the desktop runtime gives the
+same two hashes for the same work, as does an AOT build made in the Linux server image. That
+covers decoding the theme's 1,698 textures and the fixed park run, which exercises the economy and
+the guests but not the rides, object scripts, weather or staff; within that coverage AOT changed
+the speed, not the result. These are three runs per build on one machine: they show a large
+improvement there, not a speed guarantee for every device.
+
+The cost is the build: the native module grows from 2.9 to 32.6 MB, the Brotli-compressed
+framework from 11.8 to 16.5 MB, and a publish takes about 110 s instead of 27 s. The browser
+plan's rule (AOT when the cold construction or the first menu frame gets at least 40 % faster,
+judged against the size of the original game the player supplies anyway) is met, so the
+published page (the server image, `source/OpenTPW.Server/Dockerfile`) is compiled ahead of time.
+A local `dotnet publish` stays an interpreter build without a workload (docs/WEB.md).
+
+## Frame cap (13 October)
+
+The frame rate limit on the OpenTPW options page (`DisplaySettings.FrameCap`: off by default, 30
+or 60 fps) caps drawing, not the simulation: `FrameLimiter` books frames on a grid of 1/cap
+seconds with a quarter interval of slack for timing jitter, the browser skips an animation frame
+that comes too early and the desktop sleeps until the next one is due, and the simulation's fixed
+clock (FixedStepClock) takes the elapsed time in larger steps. The browser now keeps its display
+settings in `/config` like the desktop, so the choice survives a reload.
+
+Interpreter build, two runs per setting taken alternately on the M5 setup (the harness's
+`--frame-cap`; frames are counted only when the renderer drew one):
+
+| Cap | Frames drawn | Calls skipped (30 s) | Main thread busy, lobby / Jungle |
+| --- | ---: | ---: | ---: |
+| Off | 60 fps | 0 | 17.5 % / 22.6 % |
+| 30 | 30.0 fps | about 900 | 10.0 % / 12.9 % (−43 %) |
+| 60 | 59.96–59.99 fps | 0–1 | 17.1 % / 17.2 % |
+
+In these samples a 30 fps cap took 43 % off the main thread rather than half; the likely reason
+(not measured apart) is that only the drawing halves, while the simulation keeps its 60 ticks a
+second and the page still runs one animation-frame callback per display frame. A cap at the
+display rate drew practically every frame. Input is read once per drawn frame, so a 30 fps cap
+can add about one display frame of input delay; that is why it stays off by default.
+
 ## Measured workload
 
 Two matched 30-second samples on 11 October 2026 used headless Chrome, Apple M4
@@ -100,8 +223,9 @@ construction frame, versus 10.8 seconds in its v0.7.12 baseline; loading the ori
 folder and copying theme files are outside that frame. Advisor response 587
 prepared in 87.9 ms, including 76.6 ms synchronous PCM decode; the first response
 measured 223.5 ms of PCM decoding. Those first-use costs are outside the matched steady
-windows and are not claimed as eliminated. Occasional smaller frame gaps remain as well. Broad visibility culling, ahead-of-time compilation
-and full scene-material lifetime work are separate optimization opportunities.
+windows and are not claimed as eliminated. Occasional smaller frame gaps remain as well. Broad visibility culling
+and full scene-material lifetime work are separate optimization opportunities; ahead-of-time
+compilation has since halved the cold construction (see above).
 
 ## Verification
 

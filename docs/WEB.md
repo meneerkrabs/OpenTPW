@@ -21,7 +21,14 @@ dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -o out/web
 
 Serve `out/web/wwwroot` over http (WebAssembly needs a server, not `file://`), open
 `index.html` and choose the game folder (the one that holds `Data`). No extra .NET workload
-is needed: the build runs .NET in interpreter mode.
+is needed: this build runs .NET in interpreter mode. The published page (the server image) is
+compiled ahead of time, which runs the game about twice as fast for about 5 MB more download
+(docs/BROWSER-PERFORMANCE.md); for that build install the workload once and add the property:
+
+```sh
+dotnet workload install wasm-tools
+dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=true -o out/web
+```
 
 An OpenTPW server can serve the published `wwwroot` itself, beside its API
 (`OpenTPW:WebClientDirectory`, docs/SERVER.md). The page then offers its own address as the
@@ -37,7 +44,7 @@ files, not symbolic links: ASP.NET reports a link's own size.
 
 | Check | Result |
 | --- | --- |
-| Published framework payload, Brotli-compressed | about 12.4 MB across the compressed framework files; the build includes 7.7 MB of compressed, predecoded HD interface art |
+| Published framework payload, Brotli-compressed | 11.8 MB for an interpreter build, 16.5 MB compiled ahead of time (the published page; 13 October); both include 7.7 MB of compressed, predecoded HD interface art |
 | Game files copied at start | everything in `Data` except movies, start-up pictures and the theme folders below `levels` (with the speech and global sound banks) |
 | Game files copied when a park starts | its theme folder, 122 files and 39 MB for the Lost Kingdom, most of it music |
 | MP2 decoding in the interpreter | 60 to 130 times faster than real time; a 17.5 s music segment takes about 280 ms, a short stutter on the page's only thread |
@@ -152,6 +159,10 @@ key press on the page.
 
 ### Saves and settings
 
+The display choices the browser honours (render scale, interface scale and the frame rate limit)
+are kept in `/config/display.json` like the desktop's; the canvas decides the size, so a stored
+window size or mode has no effect.
+
 The game writes saves and options to `/save`, online files to `/online` and display and graphics
 settings to `/config` (`OPENTPW_CONFIG_DIR`). `opentpw-storage.js` mirrors those folders into
 IndexedDB every five seconds and when the page is hidden or closed, and puts them back before the
@@ -226,7 +237,8 @@ framebuffer).
   open; the next visit asks for it again (a one-time copy into OPFS would remember it).
 - **Movies:** not copied or played yet; sound is in place (see Sound below).
 - **Decoding off the frame:** music segments decode on the page's only thread; decoding them in
-  pieces across frames (or AOT compilation) would remove the short stutter.
+  pieces across frames would remove the short stutter (the AOT build decodes textures about four
+  times faster; the music stutter itself has not been measured again).
 - **Developer panels:** they need ImGui, which is a native library.
 - **Typing without a keyboard event**: text arrives through key presses on the canvas, so
   input methods and on-screen keyboards that only insert text do not reach the game yet.
@@ -254,4 +266,7 @@ model and a texture parsed unchanged in about 430 ms, from a 2.4 MB download.
 ## Performance
 
 See [browser performance](BROWSER-PERFORMANCE.md) for measured CPU/frame costs,
-render binding reuse, cooperative audio decoding and remaining park-load stalls.
+render binding reuse, cooperative audio decoding and remaining park-load stalls. Its harness
+(`tools/web-perf/run.mjs`) opens the page with `?perf=1`, which records the time of every
+`Program.Frame` and exposes the measurement hooks of `Program.Perf.cs`; without it the page
+behaves as before.

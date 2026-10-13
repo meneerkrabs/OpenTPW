@@ -421,9 +421,8 @@ glyph in all 14 UI fonts of each language.
   comma/full stop turn the pending blueprint by the level's 90° steps (UI-903),
   and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
-  keep acting over their own window. Keys whose screens do not exist
-  (camcorder) stay unhandled. Postcard ingress uses its dedicated full-frame
-  action below. Ctrl+H toggles the existing contextual
+  keep acting over their own window. Camcorder terrain-walk ingress and postcard ingress use their dedicated full-frame
+  actions below. Ctrl+H toggles the existing contextual
   help popup (UI-920); it never activates the H staff window. Both Ctrl keys
   work, held chords toggle once, and input owners consume blocked presses.
   Until toggled, the HUD follows the global popup-help option. An explicit
@@ -572,8 +571,7 @@ the real assets. Approximation tags refer to the register below.
 | Go Online | opens the online screens when built | wired | online suite |
 | Quit Game (confirmation 9) | quits | wired | `OriginalUiTests` |
 
-Not implemented (no screen exists; their keys stay unhandled): camcorder mode
-(C), F1 advisor help speech,
+Not implemented (no screen exists; their keys stay unhandled): F1 advisor help speech,
 player profiles, online world, golden keys. The All Attractions (A) and All
 Staff (S) keys stay with the camera's WASD pan by policy; the attractions
 window opens from both the buy window and the staff window's visitor corner
@@ -670,7 +668,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | original staff dismissal handler and placement |
 | UI-093 | `Hud/ParkHud.cs`, `World/Level.RideView.cs` | the ride view is entered with the E key on the selected ride, not the ride window's "Ride it!" button | the ride window's Ride it button art and layout, and the Ride it handler (maexah/OpenTPW hud.md, FUN_004e15b0) |
 | UI-094 | `World/RideCameraMode.cs` | the ride view's eye sits on the first train's front car (coaster) or the carriage's height (prototype); the walk, sway and field of view are not reproduced | CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies |
-| UI-095 | `World/Level.RideView.cs` | leaving the ride view restores the park camera it was entered from; the walking first-person view is not implemented | the first-person walk's camera state (gui_CameraFlags 0x400) and the exit handler FUN_0042a190 |
+| UI-095 | `World/Level.RideView.cs` | leaving the ride view restores its prior camera instance, including the host terrain walk; native walking camera and exit behavior remain unverified | the first-person walk's camera state (gui_CameraFlags 0x400) and the exit handler FUN_0042a190 |
 | UI-096 | `Hud/ParkHud.cs` | only the pause menu (and the screens opened from it) stops the park simulation; the original's other game-pause callers — the full-screen map (`0x101B9CA0`), the message dialog when its last argument is 0 (`0x1019057C`), the Load dialog (`0x10153988`) and `0x1015F6DC` — do not stop it here | which OpenTPW windows those screens correspond to and whether the pause gate `+0x3C` is set when they open in normal play |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
@@ -772,3 +770,21 @@ Entering a TPW theme with a readable matching application-owned world save now o
 The menu reads the existing own codec's structural metadata; it does not load or hash game assets. Activation re-reads the trusted generated slot and rejects missing/corrupt files or changed theme/start/mode/easy metadata. The existing `ResumePark` performs complete trusted-asset validation and builds the staged candidate before old-world retirement. Failure shows the existing-style error dialog and preserves the live world and manual slot; it never silently starts an empty park. The ordinary Load picker and native original-reference import remain separate. TPI's layout checkpoint continues to start a new experimental session and is never offered as TPW continuation.
 
 Synthetic tests drive actual Enter/Continue/New/Back dispatch with a tiny own-world file, pass its restored economy and saved clock/guest metadata through the real continuation handler, and exercise the real resume path refusing missing synthetic assets before replacement. Other-theme, deleted/corrupt, changed-mode/easy and TPI refusal controls preserve live references. Original-data/GPU/browser resume and native profile/theme-entry parity remain unqualified; retirement callback exceptions retain the existing staging limitation.
+
+### Host terrain walk (C)
+
+In a Theme Park World terrain park, press plain **C**, then press the terrain to enter the host first-person inspection camera. Press **C** again or **Escape** to cancel entry or return to the exact previous park camera instance and pose. A ride entered from walking returns to that walking camera; leaving the walk then restores the original park camera. Read-only visits allow this inspection without park edits. Theme Park Inc and the terrain-free sandbox refuse entry.
+
+WASD moves in the horizontal view direction; the rotation keys turn, and holding the right mouse button and dragging looks around. Movement samples the existing bilinear heightfield and refuses outside-terrain or hole cells. Host tuning is an eye height of 1.6 engine units, speed 4 units/second, turn speed 90 degrees/second, 180 degrees of mouse look per viewport width/height and pitch limited to ±80 degrees. Frame delta is capped at 0.1 seconds. These values, flat Z=0 plane entry picking and field-of-view 55 are UI-932 approximations. Picking is not a ray/terrain intersection; the resulting X/Y is sampled on the actual terrain. There is no object/path collision, photo capture, recording, native walking physics or camera save continuation.
+
+Typing, overlays, captured mouse/keyboard input, ride view and build/removal/cell/coaster tools block entry. Both Control keys exclude C and terrain-click entry; existing Ctrl+C park closing stays separate. Blocked C holds and mouse presses are consumed through release, including current-frame injected keys and a hold spanning new HUD creation. This input snapshot is host ownership support, not native input parity. Walking owns park tool/selection clicks and the exit frame. Camera controls freeze under modal/captured input and while a replacement park is building. On level disposal, the owned camera is released without replacing another world's camera.
+
+Independent CPU controls in `FreeWalkCameraReviewTests` additionally pin nonplanar
+bilinear height sampling and hole refusal, raw snapshot stability without widening
+Ctrl bindings, RMB drag reset across capture/text/modal/focus gates, actual park
+closing and read-only refusal, and visitor press ownership with fresh-click recovery
+after walking exits. Guest canonical state remains unchanged by these camera actions.
+These synthetic controls do not qualify native terrain collision, pixel picking,
+renderer/audio behavior or original camcorder equivalence. Whole `Level.Dispose`
+remains source-reviewed because its renderer teardown needs a live renderer; the
+actual walking release and ride-return methods are covered independently.

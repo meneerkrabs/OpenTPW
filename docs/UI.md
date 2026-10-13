@@ -243,6 +243,11 @@ non-blocking line at the top centre ("Updating textures in the background... n /
 `OptionsScreen.DrawTextureSwitchProgress`) shows the progress and disappears when the switch is done. No
 restart notice appears for a texture pack.
 
+A park chosen in the front end, loaded or visited is built over several frames while the lobby (or
+the park being left) keeps drawing and playing, and input waits (`[EXT:park-build-over-frames]`,
+BROWSER-PERFORMANCE.md). The same kind of line shows "Building the park..." (in all six languages)
+with the construction's progress.
+
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
 `ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's
 countdown - Yes -> `Confirm`, No -> `Revert`, and on No or the timeout the original 401
@@ -538,6 +543,7 @@ the real assets. Approximation tags refer to the register below.
 | Options | opens the options screen; disabled when the host provides none | wired | `OriginalUiTests` |
 | Go Online | opens the online screens when built | wired | online suite |
 | Exit To Lobby / Quit Game (confirmation) | leave the park / quit | wired | `FrontEndSmokeTest` |
+| (open menu) | stops the park simulation while the menu or a screen opened from it is open, as the original's pause menu pauses the game (Mac `0x10198514` → `0x10110518`); the speed setting is kept, so the park resumes at the same speed (UI-096 covers the other pausing screens) | wired | `ParkPauseTests`, `FrontEndSmokeTest` |
 
 ### Windows
 
@@ -664,6 +670,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-093 | `Hud/ParkHud.cs`, `World/Level.RideView.cs` | the ride view is entered with the E key on the selected ride, not the ride window's "Ride it!" button | the ride window's Ride it button art and layout, and the Ride it handler (maexah/OpenTPW hud.md, FUN_004e15b0) |
 | UI-094 | `World/RideCameraMode.cs` | the ride view's eye sits on the first train's front car (coaster) or the carriage's height (prototype); the walk, sway and field of view are not reproduced | CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies |
 | UI-095 | `World/Level.RideView.cs` | leaving the ride view restores the park camera it was entered from; the walking first-person view is not implemented | the first-person walk's camera state (gui_CameraFlags 0x400) and the exit handler FUN_0042a190 |
+| UI-096 | `Hud/ParkHud.cs` | only the pause menu (and the screens opened from it) stops the park simulation; the original's other game-pause callers — the full-screen map (`0x101B9CA0`), the message dialog when its last argument is 0 (`0x1019057C`), the Load dialog (`0x10153988`) and `0x1015F6DC` — do not stop it here | which OpenTPW windows those screens correspond to and whether the pause gate `+0x3C` is set when they open in normal play |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V
@@ -701,3 +708,32 @@ A genuine left press on a visible in-park visitor opens the existing All Visitor
 UI-930 qualifies this host rectangle policy: transparent sprite pixels and terrain/object occlusion are not tested, and partially near/far-clipped sprites are refused. No original picking geometry or GPU parity is claimed. Hidden/removed/outside-park visitors and invalid/nonfinite/behind-camera projections are refused. Overlay/HUD controls, text entry, ImGui capture, build/removal/cell/coaster tools, ride view and its exit frame own their input. Read-only visits may inspect visitors without simulation or finance mutation. The public HUD update samples native capture flags at its existing point; an internal explicit-capture overload runs the same frame body in synthetic tests.
 
 Visitor-specific cat_kids event 129 is deferred: the existing generic park press sound remains, with no new hover/held/release audio trigger. Original assets, native geometry/occlusion and rendered interactions remain unqualified.
+### Live-map legend allocation (2026-10-13)
+
+The satisfaction legend now counts the current eligible visitors directly instead
+of grouping them into cells, allocating an array, and summing it. The drawn overlay
+still uses its existing per-cell groups. Both paths share the same visibility,
+thought and coordinate predicate, and totals are recomputed on every call; no
+result cache or invalidation policy was added. Map layers, category/role controls,
+projection, clipping, zoom and pan are unchanged.
+
+`MapOverlayAllocationTests` drives the real map view and legend label through the
+CPU `UiBatch`, with 1,500 synthetic guests on a 32×32 sandbox map and visitor,
+happiness and satisfaction layers enabled. In the same Release/.NET 10 fixture,
+with tiered compilation disabled and draw buffers warmed, allocated bytes changed:
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Map draw plus legend | 492,144 bytes/frame | 327,656 bytes/frame |
+| Legend alone | 165,168 bytes/call | 680 bytes/call |
+
+The allocation regression requires less than 2 KiB per legend call, with generous
+headroom above the measured result. Live tests independently check hidden guests,
+outside cells, changed thoughts, removal/return and metric toggles. Existing map
+projection/control tests remain green. These are allocation measurements, not
+wall-clock or browser/GPU/original-player performance claims; ordinary tiered-JIT
+runs can report different allocation counts. Per-cell overlay grouping remains
+an explicitly measured source of allocations for a separate bounded pass.
+
+The [independent map allocation review](MAP-ALLOCATION-REVIEW.md) records fresh
+marker/legend lifecycle coverage and matched managed red/green measurements.

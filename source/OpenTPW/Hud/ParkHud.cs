@@ -82,6 +82,29 @@ public sealed partial class ParkHud
 	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != buyScreen && screen != staffScreen
 		&& screen != attractionScreen && screen != visitorScreen );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
+	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
+	public float SimulationTimeScale => TimeScaleFor( Status.TimeScale, Stack.Screens.Select( screen => screen.Name ) );
+
+	/// <summary>
+	/// The park simulation's time scale: the speed setting's <paramref name="speedScale"/>, or 0 while the pause menu is
+	/// open (also under a screen opened from it, such as Load or Options) or a texture-pack download holds the park.
+	/// The speed setting itself is left as it is, so the park resumes at the same speed.
+	/// </summary>
+	// [BIN:STP-PPC:0x10198514 pause menu pauses the game] Escape in the park (0x10157968: key 27, no modifiers) calls
+	// 0x10198514 with 0, which builds the pause menu 0x10197D90 and then, while the game-state object's pause gate +0x3C is 1,
+	// calls the game pause 0x10110518 (0x10198580) and clears the gate; the menu's close routine 0x101985C0 sets the gate
+	// and calls the resume 0x10110598. The pause freezes the scaled clock (0x1010E888 → 0x10117C54) that drives the
+	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
+	// [APPROX:UI-096] only the pause menu (and screens opened from it) stops the park here; the original's other pause
+	// callers also include the full-screen map (0x101B9CA0 in 0x101B9C54), the message dialog when its last argument is 0
+	// (0x1019057C in 0x10190270), 0x1015F6DC in 0x1015F67C and the Load dialog (0x10153988) — evidence needed: which
+	// OpenTPW windows those screens correspond to and whether the pause gate +0x3C is set when they open in normal play
+	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
+	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
+		openScreens.Any( name => name is PauseMenuScreen or "texturePackDownload" ) ? 0 : speedScale;
+
+	/// <summary>The name of the Escape pause menu's screen.</summary>
+	public const string PauseMenuScreen = "pause";
 
 	// [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original
 	public string MoneyText => !Status.HasEconomy ? "" : FormatMoney( Status.Money );
@@ -406,7 +429,7 @@ public sealed partial class ParkHud
 	{
 		if ( Paused )
 			return;
-		var menu = new UiScreen( "pause" );
+		var menu = new UiScreen( PauseMenuScreen );
 		var window = UiDialogs.CenteredWindow( 1000, 1180 );
 		UiDialogs.AddWindow( menu, window, "w_med", () => strings[UIStrings.Paused] );
 		var entries = new List<(UIStrings Label, Action Clicked)>

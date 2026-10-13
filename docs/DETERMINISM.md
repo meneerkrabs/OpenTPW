@@ -2,11 +2,36 @@
 
 A park run in OpenTPW is reproducible: the same world seed and the same inputs
 give the same state. This holds for two runs in one process and for runs in
-separate processes. This page covers the DET-I1 slice of the contract in
+separate processes only when external host-civil-time query samples are also
+the same. A seed and player inputs alone do not pin those samples. This page
+covers the DET-I1 slice of the contract in
 [reverse/DET-plan.md](reverse/DET-plan.md) §4. The simulation still runs on the
 60 Hz `FixedStepClock` (ECON-001) and keeps its own generators. Moving to the
 original's 31 ms substep and its world LCG is DET-I2, a later fidelity step.
 That step changes every balance outcome.
+
+### External host civil time
+
+TPW `YEAR`/`MONTH`/`DAY`/`HOUR` read host-local civil time, not the park calendar
+or scheduler clock (the Feral witness is in reverse/PPC-clock.md, "RSE civil
+time is an independent clock domain"). A `RideScriptWorld` accepts an injected
+provider; its default samples the current host clock per executed instruction.
+TPI and unsupported-edition worlds cannot enable it. VM-902 records the managed
+timezone/conversion and native destination/flag qualification limits.
+
+The provider and its current host input are external: neither is serialized in
+`RideScriptWorldSnapshot` or fed to the canonical hash. Scheduler timestamps,
+returned VM variables, flags and branch state keep their existing save/hash
+rules. Restoring a saved script preserves prior results, but future clock
+queries may diverge unless the caller supplies the same external samples.
+The existing synthetic deterministic-run fixtures do not query host civil time;
+their pinned digests are unchanged. Real objects do: Halloween's Haunted Tower
+(Info.Id 2418) runs `Clock.RSE`, which reads `HOUR`, and the hour reaches the
+world state (`AParkWithACivilClockObjectHashesTheSameUnderAFixedClock`). Headless
+runs that pin or compare a hash therefore pass `RideScriptWorld.FixedClock` (noon on
+1 January 2000): the M4 gate and the browser digest do, and `ParkObjects` takes an
+optional clock for any other. The game itself keeps the host clock. No digest exclusion or schema change hides
+the results of a clock query.
 
 ## World seed
 
@@ -68,6 +93,12 @@ and `RideScriptWorld` counters are per instance.
   process, and a regular expression cannot tell a string receiver from another,
   so simulation code may not call them at all (`override GetHashCode`
   declarations are fine).
+
+The only clock exception is one exact TPW-gated provider expression in
+`VM/RideScriptWorld.cs`, with its unique occurrence checked. The rest of that
+file is scanned normally. `CivilTimeBoundaryDoesNotExemptOtherClockExpressionsOrFiles`
+checks that different files, other clock expressions, appended expressions and
+a weakened edition gate remain forbidden.
 
 `SourceGuardCatchesEachForbiddenForm` checks each form against sample lines,
 and each was also checked by inserting it into a scanned source file. Not
@@ -196,7 +227,8 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xA35A9A8C809310FB`, schema 12: the hashed fields are unchanged, but the park value that the ledger months record (hashed with the economy) is now the original's object rule (PPC oracle F29: the costs of an object's levels times its state of repair / 100) instead of the age-scaled catalogue costs, so the run's hash changes. Before that:
+  (`0xB7F84A5A989B61F7`, schema 12: the hashed fields are unchanged, but guests now step off the bus one per park turn instead of every 0.4 s (tp.exe `0x4cf3e0`, ARRIVAL-001), so the run changes. Before that:
+  `0xA35A9A8C809310FB`, schema 12: the hashed fields are unchanged, but the park value that the ledger months record (hashed with the economy) is now the original's object rule (PPC oracle F29: the costs of an object's levels times its state of repair / 100) instead of the age-scaled catalogue costs, so the run's hash changes. Before that:
   `0xC028F4EF0BED9D1C`, schema 12: the guests' used and temporary attraction histories and an integer exit counter join the hash, so the schema is bumped,
   and the run changes: guests choose and rate attractions by the original's score (PPC oracle F24), start and grow by the traced needs update and constructor
   (F25) and leave by the traced test (F26: happiness below 1, an exit counter of exactly 0 or a closed park, tested every park turn). Before that:

@@ -84,6 +84,66 @@ public sealed class EntityConstructionScopeTests
 	}
 
 	[TestMethod]
+	public void APausedCandidateWaitsWhileTheLiveSceneRunsItsFrames()
+	{
+		var live = new OwnedEntity();
+		var liveList = Entity.All;
+		using var transaction = new EntityConstructionScope();
+		var first = new OwnedEntity();
+		var candidateCamera = new CameraMode();
+		Camera.Mode = candidateCamera;
+		ParkCameraMode.TargetExtent = 200;
+		Assert.IsTrue( EntityConstructionScope.IsStaging );
+		transaction.Pause();
+
+		// A frame of the live scene: its own list, camera and settings, and what it changes is kept.
+		Assert.IsFalse( EntityConstructionScope.IsStaging );
+		Assert.AreSame( liveList, Entity.All );
+		Assert.AreEqual( 50f, ParkCameraMode.TargetExtent );
+		var lobbyCamera = new CameraMode();
+		Camera.Mode = lobbyCamera;
+		var liveLater = new OwnedEntity();
+
+		transaction.Resume();
+		Assert.AreSame( candidateCamera, Camera.Mode );
+		Assert.AreEqual( 200f, ParkCameraMode.TargetExtent );
+		var second = new OwnedEntity();
+		CollectionAssert.AreEqual( new[] { first, second }, Entity.All.ToArray() );
+		Assert.ThrowsException<InvalidOperationException>( transaction.Resume, "only a paused candidate resumes" );
+
+		transaction.Detach();
+		Assert.AreSame( lobbyCamera, Camera.Mode, "the live scene comes back as its last frame left it" );
+		CollectionAssert.AreEqual( new[] { live, liveLater }, Entity.All.ToArray() );
+		live.Delete();
+		liveLater.Delete();
+		transaction.Activate();
+		CollectionAssert.AreEqual( new[] { first, second }, Entity.All.ToArray() );
+		Assert.AreSame( candidateCamera, Camera.Mode );
+	}
+
+	[TestMethod]
+	public void ACandidateRejectedWhilePausedLeavesTheLiveSceneAsItIsNow()
+	{
+		var live = new OwnedEntity();
+		var liveList = Entity.All;
+		var transaction = new EntityConstructionScope();
+		var candidate = new OwnedEntity();
+		Camera.Mode = new CameraMode();
+		transaction.Pause();
+		var lobbyCamera = new CameraMode();
+		Camera.Mode = lobbyCamera;
+		ParkCameraMode.TargetExtent = 75;
+		transaction.Dispose();
+		Assert.AreSame( liveList, Entity.All );
+		Assert.AreSame( lobbyCamera, Camera.Mode, "not the camera from before the live scene's last frames" );
+		Assert.AreEqual( 75f, ParkCameraMode.TargetExtent );
+		CollectionAssert.AreEqual( new[] { live }, Entity.All.ToArray() );
+		Assert.AreEqual( (0, 1), (live.Deletes, candidate.Deletes) );
+		Assert.IsFalse( EntityConstructionScope.IsStaging );
+		using var next = new EntityConstructionScope();
+	}
+
+	[TestMethod]
 	public void DetachedCandidateCanBeRejectedWithoutRetiringTheLiveScene()
 	{
 		var live = new OwnedEntity();

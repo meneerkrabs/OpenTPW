@@ -580,10 +580,19 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private void VerifyArmedToolsInRideView()
 	{
 		var viewport = new Vector2( Screen.Size.X, Screen.Size.Y );
-		var removable = level.Objects.Objects.First( item => !item.Entry.IsFixedItem );
-		var cell = removable.Cells.First();
-		Require( level.TryProjectCell( cell.X, cell.Y, viewport, out var mouse ), "project a removable object for the ride-view click guard" );
-		Require( level.TryGetGridCell( mouse, viewport, out var x, out var y ) && x == cell.X && y == cell.Y, "the test click would hit the removable object in the park camera" );
+		// The click must land on a removable object in the park camera's view (its matrices still hold until the next
+		// Camera.Update). Which objects are on screen depends on the window's aspect, so the first object's first cell
+		// may project outside the viewport (at 1280x720 the Sun God's cell lands below the bottom edge); take a cell
+		// that is in view, picks back to itself and is occupied by that object.
+		var target = level.Objects.Objects.Where( item => !item.Entry.IsFixedItem )
+			.SelectMany( item => item.Cells.Select( cell => (Object: item, Cell: cell) ) )
+			.Select( candidate => (candidate.Object, candidate.Cell, Hits: level.TryProjectCell( candidate.Cell.X, candidate.Cell.Y, viewport, out var screen )
+				&& level.TryGetGridCell( screen, viewport, out var x, out var y ) && x == candidate.Cell.X && y == candidate.Cell.Y
+				&& ReferenceEquals( level.Objects.FindAt( x, y ), candidate.Object ), Screen: screen) )
+			.FirstOrDefault( candidate => candidate.Hits );
+		Require( target.Hits, $"the test click would hit a removable object in the park camera (no removable object's cell is in the {viewport.X}x{viewport.Y} view)" );
+		var removable = target.Object;
+		var mouse = target.Screen;
 		var oldPlacing = level.IsPlacing;
 		var oldRemoving = level.IsRemovingObjects;
 		var oldEntry = level.BuildEntry;

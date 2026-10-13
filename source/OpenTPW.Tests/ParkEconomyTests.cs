@@ -926,15 +926,36 @@ public class ParkEconomyTests
 		public int KidsWithCostumesPercent => 0;
 	}
 
+	[TestMethod]
+	public void RecentVisitorsCountTheOpenMonthAndNeedTheCloseBefore()
+	{
+		// tp.exe 0x004C94D0 / 0x004D4BC0: lifetime visitors minus the snapshot at the close RecentVisitorMonths (6) back, so the visitors
+		// of the open month count; the seventh close back must exist, and the park clock must be more than 6 exact 30-day months old.
+		bool Won( long[] months, long openMonth, long dropped = 0, long days = 400 )
+		{
+			var park = EconomyTestData.Park();
+			park.Counters.Add( ParkCounters.Admissions, dropped + months.Sum() + openMonth );
+			return park.Objectives.CheckGoldenTickets( park.Counters, new StatGuests( 0, 0 ), park.Research, 0, months, dropped, days * ParkCalendar.SecondsPerDay )
+				.Contains( GoldenTicketKind.RecentVisitors );
+		}
+		var seven = new long[] { 1000, 0, 0, 0, 0, 0, 300 };
+		Assert.IsFalse( Won( seven, openMonth: 50 ), "300 + 50 is not above 350" );
+		Assert.IsTrue( Won( seven, openMonth: 51 ), "the open month counts" );
+		Assert.IsFalse( Won( new long[] { 0, 0, 0, 0, 0, 400 }, openMonth: 0 ), "six closes: the snapshot six closes back does not exist" );
+		Assert.IsTrue( Won( seven, openMonth: 51, dropped: 5000 ), "dropped history is part of every snapshot" );
+		Assert.IsFalse( Won( seven, openMonth: 51, days: 6 * 30 + 29 ), "6 whole 30-day months is not more than 6" );
+		Assert.IsTrue( Won( seven, openMonth: 51, days: 7 * 30 ) );
+	}
+
 	private static bool TicketWon( GoldenTicketKind kind, int visitors = 0, int people = 0, float average = 0, long profit = 0, long recentVisitors = 0,
 		ParkRecordKind? record = null, long recordValue = 0 )
 	{
 		var park = EconomyTestData.Park();
-		park.Counters.Add( ParkCounters.Admissions, visitors );
+		park.Counters.Add( ParkCounters.Admissions, visitors + recentVisitors );
 		if ( record is { } kindOfRecord )
 			park.Counters.Max( ParkCounters.Record( kindOfRecord, 0 ), recordValue );
-		// six closed months; the last carries the recent visitors (RecentVisitorMonths 6)
-		var months = new long[] { 0, 0, 0, 0, 0, recentVisitors };
+		// seven closed months (RecentVisitorMonths 6 needs the seventh close back); the recent visitors came after the first close
+		var months = new long[] { visitors, 0, 0, 0, 0, 0, recentVisitors };
 		return park.Objectives.CheckGoldenTickets( park.Counters, new StatGuests( people, average ), park.Research, profit, months ).Contains( kind );
 	}
 

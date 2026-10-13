@@ -399,20 +399,23 @@ glyph in all 14 UI fonts of each language.
 - Original keyboard shortcuts (`ParkHud.ScreenShortcuts.cs`): the game's key table
   (the `InputButton` defaults; the research and map tooltips themselves say
   "(R)" and "(Space)") opens the HUD windows: B buy, I park info, F finance,
-  R research, Space map, L loans, T staff training budgets, G entry price and
-  H staff applicants. Space activates no hovered button (Enter does, as for a
-  text field) so the map key never co-fires with the panel under the pointer.
-  The All Staff key S stays unhandled: the host camera pans with S (WASD), and
-  one press cannot be both. A second press of a window key closes the
+  R research, Space map, L loans, T staff training budgets, G entry price,
+  H staff applicants and V all visitors. Space activates no hovered button
+  (Enter does, as for a text field) so the map key never co-fires with the panel
+  under the pointer. The All Staff key S and All Attractions key A stay
+  unhandled: the host camera pans with S and A (WASD), and one press cannot be
+  both; the All Attractions window opens through the buy window's all-things
+  button instead. A second press of a window key closes the
   window (UI-900); dialogs and the pause menu keep the keys. The time keys
   (numpad +/−/*) step and reset the four-speed clock model (UI-902),
   comma/full stop turn the pending blueprint by the level's 90° steps (UI-903),
   and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
   keep acting over their own window. Keys whose screens do not exist
-  (All Attractions, All Visitors, camcorder, postcard, help bar) stay unhandled.
+  (camcorder, postcard, help bar) stay unhandled.
   Mapping and gating are pure functions (`ParkHud.ShortcutFor`,
-  `WindowShortcutsAllowed`, `SteppedSpeed`), tested in `HudScreenShortcutTests`.
+  `WindowShortcutsAllowed`, `SteppedSpeed`), tested in `HudScreenShortcutTests`
+  and `OverviewWindowTests`.
 - Pause menu (Escape): PAUSED (403) with Resume (7), Save (4), Load (3), Options
   (6), Exit To Lobby (12), Quit Game (8, confirmation 9). Save writes the owning
   game flow's park save (the own-format world save for sandbox and front-end
@@ -490,6 +493,7 @@ the real assets. Approximation tags refer to the register below.
 | park clicks | select the object of the clicked grid cell; selection opens the info arm | wired | `FrontEndSmokeTest` |
 | comma / full stop while a blueprint is pending | turn the blueprint by the level's 90° steps (UI-903) | wired | — (key mapping in `HudScreenShortcutTests`) |
 | Ctrl+S / Ctrl+V | cycle staff roles / visitors and focus the camera (UI-904, UI-091) | wired | `MapStaffControlTests` |
+| key V | opens/closes the All Visitors window (plain V pans nothing; Ctrl+V stays the locator) | wired | `OverviewWindowTests` |
 
 ### Info arm (selected object)
 
@@ -516,8 +520,10 @@ the real assets. Approximation tags refer to the register below.
 
 | Window | Controls | Status | Test |
 | --- | --- | --- | --- |
-| Buy (`ParkHud.BuyWindow.cs`) | list select/sort/scroll, category buttons, purchase via row activation, staff button, exit/Back | wired | `BuyWindowTests`, `FrontEndSmokeTest` |
-| Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on activation, view toggle (UI-090), dismiss with confirmation (UI-092), scroll, locators, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
+| Buy (`ParkHud.BuyWindow.cs`) | list select/sort/scroll, category buttons, purchase via row activation, staff button, all-attractions button, exit/Back | wired | `BuyWindowTests`, `FrontEndSmokeTest` |
+| Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on activation, view toggle (UI-090), dismiss with confirmation (UI-092), scroll, locators, all-visitors button, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
+| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905/906), row activation selects the object, delete with the original category confirmations, exit/Back | wired | `OverviewWindowTests` |
+| Visitors (`ParkHud.VisitorWindow.cs`) | list select/number-sort/scroll, live visitor detail rows (UI-907/908), row activation locates the visitor, exit/Back, V key | wired | `OverviewWindowTests`, `HudScreenShortcutTests` |
 | Map (`ParkHud.Map.cs`) | pan, zoom, four category filters, track/visitor/staff/metric layer toggles, close | wired | `MapViewStateTests`, `MapStaffControlTests` |
 | Finance (`ParkHud.FinanceWindow.cs`) | 1/3/12-year periods, eight series toggles (bank balance/park value exclusive), loans/staff-cost/entry detail buttons, exit | wired | `FinanceWindowTests` |
 | Loans (`ParkHud.LoansWindow.cs`) | Available/Outstanding tabs, six sortable columns, list select/scroll, take/repay with confirmations and balance checks, summary rows, navigation buttons | wired | `FrontEndSmokeTest` (loan flow), model in economy suite |
@@ -536,10 +542,11 @@ the real assets. Approximation tags refer to the register below.
 | Go Online | opens the online screens when built | wired | online suite |
 | Quit Game (confirmation 9) | quits | wired | `OriginalUiTests` |
 
-Not implemented (no screen exists; their keys stay unhandled): All Attractions
-window (A), All Visitors window (V), camcorder mode (C), e-mail postcard
-(Ctrl+P), help bar (Ctrl+H), F1 advisor help speech, player profiles, online
-world, golden keys.
+Not implemented (no screen exists; their keys stay unhandled): camcorder mode
+(C), e-mail postcard (Ctrl+P), help bar (Ctrl+H), F1 advisor help speech,
+player profiles, online world, golden keys. The All Attractions (A) and All
+Staff (S) keys stay with the camera's WASD pan by policy; both windows open
+through their buttons instead.
 
 Project rule: every UI value or rule that is not original data or hard evidence is
 tagged at its site with `// [APPROX:UI-NNN] … — evidence needed: …` and logged once
@@ -621,6 +628,12 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-902 | `Hud/ParkHud.ScreenShortcuts.cs` | the original time keys (numpad +/−/*) step OpenTPW's four named speeds and reset to normal | the original key tokens' names and their handler |
 | UI-903 | `Hud/ParkHud.ScreenShortcuts.cs` | the blueprint-turn keys (comma/full stop) rotate the pending object by the level's 90-degree build-rotation steps | the original blueprint-turn key handler's step and smoothing |
 | UI-904 | `Hud/ParkHud.ScreenShortcuts.cs` | the staff-locator key (Ctrl+S) cycles staff roles in the staff window's role order | the original staff-locator key handler's cycling order |
+| UI-905 | `Hud/ParkHud.AttractionsWindow.cs` | the All Attractions window: staff/buy window geometry with the shipped `list_all` frame, four category tabs, name/status list columns and seven equal detail rows (no layout table is decoded for this window) | the original all-attractions window's layout table and handlers |
+| UI-906 | `Hud/ParkHud.AttractionsWindow.cs`, `Hud/OverviewRosters.cs` | attraction detail: state of repair is the live wear gauge and sideshow excitement the bridge's live level; monthly users, profit and customer satisfaction say "not simulated" | the original window's value bindings |
+| UI-907 | `Hud/ParkHud.VisitorWindow.cs` | the All Visitors window: staff/buy window geometry, number/status/happiness list columns, six equal detail rows | the original all-visitors window's layout table and handlers |
+| UI-908 | `Hud/ParkHud.VisitorWindow.cs`, `Hud/OverviewRosters.cs` | visitor detail: live state (KIDSTATES), cash, rides and happiness; time in park says "not simulated" | the original visitor detail bindings |
+| UI-909 | `Hud/ParkHud.BuyWindow.cs`, `Hud/ParkHud.Staff.cs`, `Hud/ParkHud.ScreenShortcuts.cs` | entry points: a text button above `b_allstaff` opens the attractions window (its rides tab, UITEXT 78) from the buy window — the shipped `b_allthinginfo` art cannot be used, its model's texture `b_allthginfo` is absent from ui.wad — `b_svisit` opens the visitors window from the staff window, and the plain V key toggles the visitors window (A/S stay with the WASD pan) | the original entry buttons' handlers and rectangles, and the original A/V key dispatch |
+| UI-910 | `Hud/ParkHud.AttractionsWindow.cs`, `Hud/ParkHud.VisitorWindow.cs` | row and button semantics: an attractions row activation or the select button selects the object in the park (info arm) and closes, a visitors row activation or `b_gopeep` locates the visitor's live position and closes, `b_erase` deletes through the existing removal and confirmation | the original lists' row activation handlers (`b_goto`'s art also has no texture in ui.wad) |
 | UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | original staff dismissal handler and placement |
 | UI-093 | `Hud/ParkHud.cs`, `World/Level.RideView.cs` | the ride view is entered with the E key on the selected ride, not the ride window's "Ride it!" button | the ride window's Ride it button art and layout, and the Ride it handler (maexah/OpenTPW hud.md, FUN_004e15b0) |
 | UI-094 | `World/RideCameraMode.cs` | the ride view's eye sits on the first train's front car (coaster) or the carriage's height (prototype); the walk, sway and field of view are not reproduced | CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies |

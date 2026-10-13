@@ -255,6 +255,24 @@ public class RideVMTests
 		Assert.AreEqual( 1, vm.Variables[3], "the zero flag drove the branch" );
 	}
 
+	/// <summary>
+	/// Both operands are read before the destination is written, so a destination that aliases an operand still
+	/// multiplies the pre-instruction values (`MULT V0 V0 V0`, the only alias shape a partial write would break).
+	/// </summary>
+	[TestMethod]
+	public void MultReadsItsOperandsBeforeWritingAnAliasingDestination()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.COPY, V( 0 ), 3 )
+			.I( Opcode.MULT, V( 0 ), V( 0 ), V( 0 ) ) // 3 × 3, not 3 × 9 or 9 × 9
+			.I( Opcode.MULT, V( 1 ), V( 0 ), -2 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( 9, vm.Variables[0], "the aliased destination still multiplies the pre-instruction value" );
+		Assert.AreEqual( -18, vm.Variables[1], "the second MULT sees the first one's result" );
+		Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags );
+	}
+
 	[DataTestMethod]
 	[DataRow( -5, 3 )]
 	[DataRow( 0, 1 )]

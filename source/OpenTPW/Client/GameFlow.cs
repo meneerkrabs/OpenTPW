@@ -473,9 +473,9 @@ internal sealed partial class GameFlow : IDisposable
 			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )
 				parkCamera.ModalOpen = true;
 			UpdateParkGlobe( Hud );
-			// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
+			// The pause menu and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
 			// The park being left waits too while the next one is built.
-			Level.SimulationTimeScale = parkBuild != null || Hud.Stack.Screens.Any( screen => screen.Name == "texturePackDownload" ) ? 0 : Hud.Status.TimeScale;
+			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );

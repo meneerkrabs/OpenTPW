@@ -279,18 +279,20 @@ public class OriginalObjectRuntimeSnapshotTests
 	}
 
 	[TestMethod]
-	public void CaptureRefusesACoasterStation()
+	public void ACoasterStationCapturesItsRuntimeAndWorld()
 	{
+		// The coaster slice: a station's runtime and script world capture with a live coaster controller — its
+		// track, trains and riders are the envelope's coaster part (CoasterSave), not this snapshot's.
 		var entry = ScriptedEntry( entry => CoasterDefinition.IsCoaster( entry.Settings ) );
 		if ( entry == null )
-			Assert.Inconclusive( "No coaster station in the Jungle data for the refusal check." );
-		var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld(), seed: 1, open: true );
-		var exception = Assert.ThrowsException<InvalidDataException>( runtime.CaptureSnapshot );
-		StringAssert.Contains( exception.Message, "coaster" );
+			Assert.Inconclusive( "No coaster station in the Jungle data for the capture check." );
 		var world = new RideScriptWorld();
-		_ = new OriginalObjectRuntime( entry, world, seed: 1, open: true );
-		var worldException = Assert.ThrowsException<InvalidDataException>( world.CaptureSnapshot );
-		StringAssert.Contains( worldException.Message, "coaster" );
+		var runtime = new OriginalObjectRuntime( entry, world, seed: 1, open: true );
+		var snapshot = runtime.CaptureSnapshot();
+		Assert.AreEqual( runtime.AttractionId, snapshot.AttractionId );
+		Assert.IsNotNull( runtime.Coaster );
+		var worldSnapshot = world.CaptureSnapshot();
+		Assert.AreEqual( runtime.AttractionId + 1, worldSnapshot.NextAttractionId );
 	}
 
 	[TestMethod]

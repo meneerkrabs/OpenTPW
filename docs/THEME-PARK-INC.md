@@ -283,7 +283,7 @@ about the readers.
 
 1. ~~`.fsh` (`SHPI`, code `0x7B`) reader.~~ Done (October 10, 2026): `FshFile`
    decodes all 7,283 files and WAD members to RGBA, with `--inspect-fsh`; see
-   [FSH.md](FSH.md). The [level viewer](#theme-park-inc-level-viewer) uses them (October 11, 2026).
+   [FSH.md](FSH.md). The [level viewer](#theme-park-inc-playable-slice) uses them (October 11, 2026).
    Not done: checking them against the original game's rendering. Opaque `0x24`
    palettes are approximation COMPAT-014.
 2. Use the `.rss` evidence in the VM: name `LIMBO`'s second operand as the limbo

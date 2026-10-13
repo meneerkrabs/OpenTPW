@@ -35,7 +35,7 @@ negative identity rejects the supplied Theme Park Inc / Sim Coaster retail
 `levels/Standard.sam` (SHA-256 `8966c8647104feb1878ff3c3d43f3b2ac6dc89856570f9aa5a5a0bf040e6749e`).
 Unknown or modified editions are not classified from generic folders; structural
 usability does not certify edition compatibility. The experimental Theme Park Inc level
-viewer (`--load-original-level`, [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-level-viewer))
+viewer (`--load-original-level`, [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice))
 has its own, wider edition check that also accepts edited Theme Park Inc folders; it never
 makes such a folder usable for setup, settings or normal play. The inspector warns, without
 refusing, when:

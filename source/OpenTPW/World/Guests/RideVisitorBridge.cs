@@ -86,6 +86,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int HungerEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.VomitEffect</c> (<c>+332</c>).</summary>
 	public int VomitEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.InitCostOfGoods</c> (<c>+320</c>).</summary>
+	public int InitCostOfGoods { get; set; }
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
 	public int HappinessEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>).</summary>

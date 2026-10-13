@@ -834,14 +834,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// </summary>
 	// [BIN:STP-PPC:0x100E8FF4 choice loop] executed by the PowerPC oracle (attraction-choice); the tie rule reads the world turn's bit 0 (game +0x1da70c)
 	// [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original's counts-test 0xdc834 also tests the ride state, the open word, the queue room and the coaster controller (ARRIVAL-003)
-	// [APPROX:GUEST-003] a guest only chooses an attraction it can afford (price ≤ money); the original's price eligibility is not traced (PPC-guests) — evidence needed: the callers of 0xe9164's candidates and the shop price test
+	// [BIN:TPW-EXE:0x004FCB10 choice loop] no price or money test in the choice: a candidate needs flag +0x32 bit 4, a back-of-queue cell, a score above 9 that beats the best (ties on an odd turn), the counts-test 0x004DD920 and a route; the price is tested when the guest is called forward (0x004FDE50)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest )
 	{
 		IEnumerable<AttractionChoice.Candidate> Candidates()
 		{
 			foreach ( var attraction in attractions )
 			{
-				var canJoin = attraction.JoinCell != null && attraction.Price <= guest.Money;
+				var canJoin = attraction.JoinCell != null;
 				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
 					() => attraction.IsOpen && !attraction.IsBroken && attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
 			}
@@ -1166,8 +1166,23 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Step( guest ); // state 13 keeps stepping (braking) until the ride takes the guest's offer
 		if ( guest.State == GuestState.MovingUpQueue )
 			EnterStanding( guest );
+		else if ( TooExpensive( guest, attraction ) )
+			// [BIN:TPW-EXE:0x005006B0 called forward] at the stand point the price test 0x004FDE50 comes before the ride takes the guest (AdmitPerson); a guest that refuses leaves the queue ("Object %d is too expensive, I'm leaving the queue") and keeps its thought
+			// [APPROX:GUEST-003] the refusal's own effects are not modelled: animation 6, the guest record of event 10 (0x0050C100), the ride's walk-away count (mNumWalkAways, 0x004E1670) and the price perception statistic per shop category (0x004C74B0); the park's per-type word +0xC (0x004E2740) is taken as 0 — evidence needed: the writers of that word (script opcodes around 0x004CA47F) and the uses of the walk-away count and the statistic
+			LeaveQueue( guest, attraction, guest.Thought );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
+	}
+
+	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
+	private static bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
+	{
+		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
+			return false;
+		var live = attraction.Sideshow;
+		var terms = new PriceTerms( live.PricePerUse, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
+			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, 0 );
+		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
 	}
 
 	/// <summary>The cell the walking guest stands on, and its queue index when it is a queue cell.</summary>

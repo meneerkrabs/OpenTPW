@@ -10,7 +10,7 @@ public static class GuestApproximations
 	{
 		("GUEST-001", "CELL MODIFIER: the environment record's component 4 at the attraction's cell divides the distance match (0xE9388); OpenTPW has no region effects (entertainers, vomit, toilets, guards), so it is 0 (oracle F24)"),
 		("GUEST-002", "BACK CELL AND QUEUE: the attraction's back-of-queue cell (0xDD3F4) is the bridge's last queue cell and its queue count the guests in OpenTPW's queue list; candidates run in attraction-id order, not the original's thing-list order (oracle F24)"),
-		("GUEST-003", "AFFORDABILITY: a guest only chooses an attraction it can afford; the original's price eligibility is not traced (oracle F24)"),
+		("GUEST-003", "PRICE: the original's price test at the stand point is applied (tp.exe 0x4FDE50); its per-type park word is taken as 0 and the refusal's animation, event record, walk-away count and price statistic are not modelled"),
 		("GUEST-004", "FULL QUEUE ROOM: a physically full queue (count at 4 per cell) refuses like the queue-too-long case for thought and happiness but pushes no history; its original path is the dismissal 0xEE804 (oracle F24)"),
 		("GUEST-005", "USE EFFECTS: a relief object sets the toilet meter to 0 and the litter effect stays in the park's store (ECON-020); the original's toilet branch (0xEB2B0, 0xEB32C clears illness above 90), the ingredient and appearance effects and the guest litter meter are not modelled (oracle F18)"),
 		("GUEST-006", "ENVIRONMENT AND THOUGHTS: the three words of the guest's cell environment record (happiness, illness, hunger, written by entertainers, toilets, vomit and guards) are 0 in the needs update, and the thought pick (a draw modulo 10) and thought countdown that follow it are not modelled (oracle F25)"),

@@ -300,6 +300,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - QUEUE-006 is narrowed: queue places follow tp.exe `0x4de840`. The lateral byte is no longer mirrored for queues whose front lies
   towards +Y or −X, and the fourth place in a cell takes the axis of the cell behind it (`depth − 128` for links towards +X). Only the back
   cell's fourth place still depends on OpenTPW's join cell.
+- Guests now test prices as the original does (tp.exe `0x4fde50`, ORACLE.md 7.12, X16, GUEST-003). They no longer skip an attraction
+  they cannot afford when choosing. When called forward at a shop or sideshow, a guest compares the price with a willingness to pay
+  (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
+  prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
+  now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

@@ -50,6 +50,9 @@ public static partial class Input
 
 	/// <summary>Keys queued by <see cref="InjectKeyDown"/> for the next button rebuild; drained when applied.</summary>
 	private static readonly List<InjectedKeyScope> injectedKeys = new();
+	// Snapshot before text entry suppresses mapped buttons; rebuilt every frame, including injected modifiers.
+	private static readonly HashSet<Key> frameKeys = new();
+	internal static bool IsFrameKeyDown( Key key ) => frameKeys.Contains( key );
 
 	/// <summary>
 	/// Queues a physical key press for the next frame only (the native smoke tests' keyboard steps): the key
@@ -170,6 +173,9 @@ public static partial class Input
 	{
 		var injected = injectedKeys.SelectMany( scope => scope.Keys ).ToArray();
 		injectedKeys.Clear();
+		frameKeys.Clear();
+		frameKeys.UnionWith( Keyboard.KeysDown );
+		frameKeys.UnionWith( injected );
 		bool IsDown( Key k ) => Keyboard.KeysDown.Contains( k ) || injected.Contains( k );
 
 		LastKeysDown = [.. KeysDown];

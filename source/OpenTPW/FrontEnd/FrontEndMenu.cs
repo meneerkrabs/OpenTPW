@@ -171,37 +171,83 @@ public sealed partial class FrontEndMenu
 	/// <summary>The Load Park screen (UITEXT 202), shared with the pause menu.</summary>
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
-		var screen = new UiScreen( "load" );
+		var screen = new LoadChooserScreen();
 		var window = UiDialogs.CenteredWindow( 1500, 1100 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.LoadPark] );
 		if ( entries.Count == 0 )
 			screen.Add( new UiLabel { Id = "empty", Text = () => strings.Extra( OpenTpwText.NoSavedParks ), Align = UiAlign.Center, Bounds = new UiRect( window.X + 100, window.Y + 200, window.Width - 400, 80 ), Anchor = UiAnchor.Center } );
-		for ( var index = 0; index < entries.Count && index < 8; index++ )
+		// [APPROX:UI-934] eight-row scroll viewport and selection/activation controls are host UI; native Load navigation is not qualified.
+		var parks = entries.ToArray();
+		var list = screen.Add( new UiScrollList
 		{
-			var entry = entries[index];
-			screen.Add( new UiListItem
-			{
-				Id = entry.OwnSavePath != null ? $"load:own:{entry.Level}" : entry.Sandbox ? "load:sandbox" : $"load:{entry.Level}",
-				Text = () => entry.OwnSavePath != null ? entry.DisplayName ?? entry.Level : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
-					: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ),
-				Help = strings.Help( 318 ),
-				Clicked = () => load( entry ),
-				Bounds = new UiRect( window.X + 100, window.Y + 170 + index * 90, window.Width - 360, 80 ),
-				Anchor = UiAnchor.Center
-			} );
-		}
+			Id = "parks",
+			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? entry.DisplayName ?? entry.Level : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
+				: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ) ).ToArray(),
+			Help = strings.Help( 318 ),
+			Selected = parks.Length == 0 ? -1 : 0,
+			Enabled = parks.Length != 0,
+			Visible = parks.Length != 0,
+			RowActivated = index => { if ( screen.TryBeginActivation() ) load( parks[index] ); },
+			RowHeight = 90,
+			Margin = 10,
+			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 360, 740 ),
+			Anchor = UiAnchor.Center
+		} );
+		screen.Add( new UiButton
+		{
+			Id = "loadSelected",
+			Text = () => strings[UIStrings.LoadPark],
+			Help = strings.Help( 318 ),
+			Enabled = parks.Length != 0,
+			Clicked = list.Activate,
+			Bounds = new UiRect( window.X + 620, window.Bottom - 190, 420, 104 ),
+			Anchor = UiAnchor.Center
+		} );
 		screen.Add( new UiButton
 		{
 			Id = "back",
 			Text = () => strings.Extra( OpenTpwText.Back ),
 			Help = strings.Help( 2 ),
-			Clicked = stack.Pop,
+			Clicked = CloseChooser,
 			Bounds = new UiRect( window.X + 120, window.Bottom - 190, 420, 104 ),
 			Anchor = UiAnchor.Center
 		} );
-		screen.Back = stack.Pop;
+		screen.Back = CloseChooser;
+		void CloseChooser()
+		{
+			if ( !screen.IsRemoved && ReferenceEquals( stack.Top, screen ) ) stack.Pop();
+		}
 		screen.Focus( screen.FocusableElements.First() );
 		return screen;
+	}
+
+	/// <summary>Load-only dispatch ownership; other screens keep their existing input policy.</summary>
+	private sealed class LoadChooserScreen() : UiScreen( "load" )
+	{
+		private bool dispatching;
+		private bool activated;
+
+		public bool TryBeginActivation()
+		{
+			if ( IsRemoved || dispatching && activated ) return false;
+			if ( dispatching ) activated = true;
+			return true;
+		}
+
+		public override bool Update( UiContext context, UiInput input )
+		{
+			if ( IsRemoved ) return true;
+			// Cancellation owns a combined input batch before a row or button can load.
+			if ( input.Has( UiKeys.Back ) || input.RightPressed && Modal )
+			{
+				Back?.Invoke();
+				return true;
+			}
+			dispatching = true;
+			activated = false;
+			try { return base.Update( context, input ); }
+			finally { dispatching = false; }
+		}
 	}
 
 	public void ShowOptions()

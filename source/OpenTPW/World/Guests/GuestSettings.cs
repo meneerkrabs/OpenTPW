@@ -57,7 +57,6 @@ public sealed class GuestSettings
 	public float EnergyDrainPerSecond { get; set; } = 0.15f;
 	public float EnergyRecoveryPerSecond { get; set; } = 1.0f;
 	public float NeedThoughtLevel { get; set; } = 70;
-	public float DecisionIntervalSeconds { get; set; } = 3;
 	public int MaximumGuests { get; set; } = 1000;
 
 	/// <summary>The seven decision weights in the order of the original's settings words.</summary>

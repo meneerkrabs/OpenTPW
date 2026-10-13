@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace OpenTPW;
 
 /// <summary>
-/// Strict reader for advisor <c>.LIP</c> lip-sync files (see docs/LIPS.md).
+/// Strict raw reader and writer for advisor <c>.LIP</c> lip-sync files (see docs/LIPS.md).
 /// The file is a strictly increasing list of little-endian <see cref="uint"/> marks
 /// followed by a single <c>0xFFFFFFFF</c> terminator; every observed file is a multiple
 /// of eight bytes (an odd number of marks). Marks are kept as raw values: the observed
@@ -18,6 +18,37 @@ public sealed class LipSyncFile : BaseFormat
 
 	public LipSyncFile( string path ) => ReadFromFile( path );
 	public LipSyncFile( Stream stream ) => ReadFromStream( stream );
+
+	/// <summary>Encodes raw marks in the reader's bounded little-endian representation, without timing conversion.</summary>
+	public static byte[] Encode( IReadOnlyList<uint> marks )
+	{
+		ArgumentNullException.ThrowIfNull( marks );
+		var count = marks.Count;
+		if ( count < 1 || count % 2 == 0 || count > MaximumFileBytes / 4 - 1 )
+			throw new ArgumentException( "LIP requires an odd, non-zero mark count within the input byte limit.", nameof( marks ) );
+		var data = new byte[(count + 1) * 4];
+		uint previous = 0;
+		for ( var index = 0; index < count; index++ )
+		{
+			var value = marks[index];
+			if ( value == Terminator || (index > 0 && value <= previous) )
+				throw new ArgumentException( $"LIP mark {index} is reserved or not strictly increasing.", nameof( marks ) );
+			BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( index * 4 ), value );
+			previous = value;
+		}
+		BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( count * 4 ), Terminator );
+		return data;
+	}
+
+	/// <summary>Validates and encodes all marks before writing at the output's current position; leaves it open.</summary>
+	public static void Write( Stream output, IReadOnlyList<uint> marks )
+	{
+		ArgumentNullException.ThrowIfNull( output );
+		if ( !output.CanWrite )
+			throw new NotSupportedException( "LIP output stream is not writable." );
+		var data = Encode( marks );
+		output.Write( data );
+	}
 
 	protected override void ReadFromStream( Stream stream )
 	{

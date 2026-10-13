@@ -291,7 +291,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			// Sprites are world geometry: their pixel footprint scales with the world target (render scale), not with the UI scale.
 			var minimumChanged = Math.Max( 50, 200L * (hidden.Length / 4) / (1280 * 720) );
 			Require( changed > minimumChanged, $"guest sprites change the world readback ({changed} > {minimumChanged} pixels at {Render.Scaling.Describe()})" );
-			Require( guests.Guests.Any( guest => guest.IsVisible && guests.Grid.IsWalkable( guest.Cell.X, guest.Cell.Y ) && guest.State is GuestState.WalkingAround or GuestState.GoingToRide or GuestState.ExitingRide ), "guests walk the imported paths" );
+			Require( guests.Guests.Any( guest => guest.IsVisible && guests.Grid.IsWalkable( guest.Cell.X, guest.Cell.Y ) && guest.State is GuestState.DoingNothing or GuestState.WalkingAround or GuestState.GoingToRide or GuestState.ExitingRide ), "guests walk the imported paths" );
 			Require( stats.Admissions > 0 || stats.Arriving > 0, "guests arrive from the bus stops" );
 			guestsVerified = true;
 		}

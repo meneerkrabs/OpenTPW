@@ -129,7 +129,9 @@ public class GuestAssetTests
 
 	/// <summary>
 	/// The lifecycle with the shipped balance on the Easymode park (ORACLE.md F26): guests that only walk (no attractions) head home when their exit counter reads 0, one count per
-	/// 0.992 s, so each leaves after about its starting counter in seconds (60..179 counts: one to three minutes), losing BigHappinessChange on the way.
+	/// 0.992 s, so each leaves after about its starting counter in seconds (60..179 counts: one to three minutes), losing BigHappinessChange on the way. The test runs in state 6
+	/// only (docs/reverse/WANDER-plan.md §2) and the counter reads 0 for four park turns, so a guest that spends all four walking to a wander destination or in an activity keeps
+	/// a negative counter and stays.
 	/// </summary>
 	[TestMethod]
 	public void ShippedGuestsWalkingAloneLeaveWhenTheirCounterReadsZero()
@@ -137,12 +139,15 @@ public class GuestAssetTests
 		var (grid, settings) = LoadJungle();
 		// OpenTPW's own boredom loss (GUEST-009) would drain a guest that never rides within a minute; it is switched off so that only the counter is measured
 		settings.Types = settings.Types.Select( type => new GuestType( type.PreferredExcitement, type.StartingCash, 1_000_000 ) ).ToList();
+		// and so is the small loss of every major decision that finds no attraction (state 6's "can't decide"), which in a park without rides would empty happiness first
+		settings.SmallHappinessChange = 0;
 		var simulation = new GuestSimulation( grid, settings, 41 ) { ArrivalsEnabled = false };
 		var entrance = settings.ArrivalLaneA![^1];
 		var guests = Enumerable.Range( 0, 30 ).Select( _ => simulation.SpawnInPark( entrance.X, entrance.Y ) ).ToList();
 		var start = guests.ToDictionary( guest => guest.Id, guest => guest.ExitLevel );
 		var leftAt = new Dictionary<int, double>();
 		var happinessAtLeaving = new Dictionary<int, float>();
+		var counterAtLeaving = new Dictionary<int, int>();
 		for ( var tick = 0; tick < 200 * 60; tick++ )
 		{
 			simulation.Tick( Tick );
@@ -150,16 +155,28 @@ public class GuestAssetTests
 			{
 				leftAt[guest.Id] = simulation.TimeSeconds;
 				happinessAtLeaving[guest.Id] = guest.Happiness;
+				counterAtLeaving[guest.Id] = guest.ExitLevel;
 			}
 		}
-		Assert.AreEqual( 30, leftAt.Count, "every walking guest went home within 200 s" );
-		foreach ( var guest in guests )
+		// Guests spend about three quarters of their time walking to wander destinations, so most miss the window; a fifth to a half leave by the counter
+		// (the share moves with the run's draws). A guest whose needs
+		// reach 100 loses happiness every needs phase (NeedsUpdate) and may leave earlier on a zero happiness byte.
+		var byCounter = leftAt.Keys.Where( id => counterAtLeaving[id] == 0 ).ToList();
+		Assert.IsTrue( byCounter.Count >= 5, $"{byCounter.Count} of 30 walking guests went home on their counter within 200 s" );
+		foreach ( var guest in guests.Where( guest => !leftAt.ContainsKey( guest.Id ) ) )
+			Assert.IsTrue( guest.ExitLevel < 0 && guest.State is GuestState.DoingNothing or GuestState.WalkingAround, $"guest {guest.Id} missed its zero counter and stays: {guest.ExitLevel}, {guest.State}" );
+		foreach ( var guest in guests.Where( guest => leftAt.ContainsKey( guest.Id ) ) )
 		{
+			if ( counterAtLeaving[guest.Id] != 0 )
+			{
+				Assert.AreEqual( 0f, happinessAtLeaving[guest.Id], $"guest {guest.Id} left at counter {counterAtLeaving[guest.Id]}, so on a zero happiness byte" );
+				continue;
+			}
 			var expected = start[guest.Id] * ParkCalendar.TurnMilliseconds * 4 / 1000.0;
 			Assert.AreEqual( expected, leftAt[guest.Id], 2.5, $"guest {guest.Id} started at {start[guest.Id]} counts" );
 			Assert.IsTrue( happinessAtLeaving[guest.Id] is >= 0 and <= 50 - 25 + 0.001f, $"guest {guest.Id} left at happiness {happinessAtLeaving[guest.Id]}: 50 less the {settings.BigHappinessChange} of the way out, less any full-need points" );
 		}
-		Assert.IsTrue( leftAt.Values.Min() >= 55 && leftAt.Values.Max() <= 180, $"{leftAt.Values.Min():F0}..{leftAt.Values.Max():F0} s" );
+		Assert.IsTrue( byCounter.Min( id => leftAt[id] ) >= 55 && byCounter.Max( id => leftAt[id] ) <= 180, $"{byCounter.Min( id => leftAt[id] ):F0}..{byCounter.Max( id => leftAt[id] ):F0} s" );
 	}
 
 	private static (GuestPathGrid Grid, GuestSettings Settings) LoadJungle()
@@ -204,7 +221,8 @@ public class GuestAssetTests
 		simulation.Register( bridge );
 		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
 			simulation.SpawnInPark( cell.Item1, cell.Item2 );
-		double? runningAt = null;
+		var runs = new List<(double At, int Riders)>();
+		var running = false;
 		// The 10 s passenger time-out starts after the opening WAITANIM, which plays the Totem's AnimID 0 clip.
 		double? openedAt = null;
 		var waitedForTheClip = false;
@@ -214,28 +232,27 @@ public class GuestAssetTests
 				openedAt ??= script.TimeMilliseconds;
 			waitedForTheClip |= instruction.Opcode == Opcode.WAITANIM;
 		};
-		var ridersAtStart = 0;
 		var maximumRiders = 0;
-		for ( var tick = 0; tick < 60 * 60; tick++ )
+		for ( var tick = 0; tick < 120 * 60; tick++ )
 		{
 			simulation.Tick( Tick );
 			bridge.HostStep();
 			vm.Advance( Tick );
 			totem.Animator.Advance( Tick );
 			maximumRiders = Math.Max( maximumRiders, vm[RideVariables.VAR_ONRIDE] );
-			if ( runningAt == null && vm[RideVariables.VAR_RUNNING] == 1 )
-				(runningAt, ridersAtStart) = (vm.TimeMilliseconds, vm[RideVariables.VAR_ONRIDE]);
+			if ( vm[RideVariables.VAR_RUNNING] == 1 && !running )
+				runs.Add( (vm.TimeMilliseconds, vm[RideVariables.VAR_ONRIDE]) );
+			running = vm[RideVariables.VAR_RUNNING] == 1;
 		}
 		Assert.AreNotEqual( RideVMState.Faulted, vm.State, vm.FaultMessage );
 		Assert.AreEqual( 6, maximumRiders, "Totem.RSE boarded a full load through HUSH/WALKON" );
-		Assert.IsNotNull( runningAt );
+		Assert.IsTrue( runs.Count > 0 );
 		Assert.IsNotNull( openedAt );
-		// The first run starts with a full load, not on the 10 s passenger time-out that starts after the opening clip.
-		// Since WALK-I it starts at about 17 s (was under 10 s): each called guest of this one-cell queue walks into the entrance cell to the traced stand point
-		// (about 8 park turns, QUEUE-007 closed) before the next is called, and the guests walk at their traced speed from
-		// s = 0, so the six boardings are spread over more time.
-		Assert.AreEqual( 6, ridersAtStart, $"started at {runningAt} ms with {ridersAtStart} riders" );
-		Assert.IsTrue( runningAt < 20_000, $"started at {runningAt} ms" );
+		// A run starts with a full load. The first may start on the 10 s passenger time-out that starts after the opening clip: guests
+		// make their first major decision only after park turn 30 (state 6: T > +0x1FC + 30, about 7.4 s) and on one turn in three, and
+		// each called guest of this one-cell queue walks into the entrance cell to the traced stand point (about 8 park turns, QUEUE-007
+		// closed) before the next is called.
+		Assert.IsTrue( runs.Any( run => run.Riders == 6 ), string.Join( ", ", runs.Select( run => $"{run.Riders} riders at {run.At:F0} ms" ) ) );
 		Assert.IsTrue( bridge.ReleasedTotal >= 6, "HOP/WALKOFF/WALKGET → VAR_LETMEOFF released the riders" );
 		Assert.IsTrue( simulation.Guests.Count( guest => guest.RidesTaken > 0 ) >= 6 );
 		Assert.IsTrue( simulation.Guests.All( guest => guest.State != GuestState.Using || bridge.Riders.Contains( guest.Id ) ) );

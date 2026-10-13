@@ -324,6 +324,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Guests now decide and wander as the original does (tp.exe `0x4fec90` and `0x4f9490`, ORACLE.md 7.14, X18 and X19, GUEST-010;
+  [WANDER-plan.md](reverse/WANDER-plan.md)). Once per park turn a guest standing on the paths (state 6) cheers, vomits, leaves, makes a
+  major choice at most every 30 turns, or picks a wander destination one to five cells away and walks there (state 7); the 3-second
+  decision timer and the one-cell wander are gone. A choice that finds nothing costs a little happiness, so a park without rides empties.
+  The leaving test runs in state 6 only: a guest that walks through the four turns its counter reads 0 stays. Saves move to guest schema
+  3 (schema 1 and 2 still load), the world hash schema to 13, and three behaviour pins moved (the fixed-run hash, the cross-grid run's
+  hash with 60 admissions, the Jungle run with 23). The x86 sandbox gives routines with a frame handler an `fs` segment.
 - ECON-015 is retired: tp.exe's researcher update `0x502960` skips display states 3, 4 and 5 of `0x5064f0`, which maps the internal
   staff state to the STAFFSTATES names (Idle, Patrolling, Working, Resting, On strike, Picked up); C#'s StaffState is that index, and its
   exclusion of Resting, OnStrike and PickedUp is the original's. GUEST-007 is narrowed with the prank rule of the state-6 handler.
@@ -897,6 +904,9 @@ research batch was included in this merge.
   bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the
   header before decoding another mesh (every shipped model still parses); new save/weather roundtrip
   tests cover real files, paused and fast speeds, live weather, pending thunder and malformed JSON.
+- **FSH image export (October 13):** `--export-fsh-png <file.fsh> <image index> <file.png>` writes one chosen image of an FSH
+  file as PNG without starting the game or its renderer; the file is decoded fully before any output exists, an existing
+  destination is never overwritten, and the result is moved into place from a temporary file (FSH.md, `[EXT:fsh-export]`).
 - **Satisfaction map without regrouping (October 13):** the live map's satisfaction overlay counts each cell's pleased and
   dissatisfied visitors directly, in the order the grouping gave, instead of building transient groups every draw; the drawn
   result is the same (MapCellAggregationTests compares it with the old grouping).

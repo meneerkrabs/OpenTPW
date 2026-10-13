@@ -29,10 +29,9 @@ internal enum HudScreenShortcut
 /// <summary>
 /// The original keyboard shortcuts of the HUD screens: the game's key table (the <see cref="InputButton"/>
 /// default keys and their documented actions; the buy and map buttons' own help rows name B/"(R)"/"(Space)")
-/// opened the screen windows directly. OpenTPW wires the keys whose windows exist; a key whose screen is not
-/// implemented (camcorder) stays unhandled, as do the keys the host camera pans with
+/// opened the screen windows directly. OpenTPW wires the keys whose windows exist; the keys the host camera pans with remain separate
 /// (All Attractions A, All Staff S: Input's WASD axes).
-/// Postcard ingress follows its own full-frame input ownership checks.
+/// Camcorder terrain-walk and postcard ingress follow their own full-frame input ownership checks.
 /// </summary>
 public sealed partial class ParkHud
 {

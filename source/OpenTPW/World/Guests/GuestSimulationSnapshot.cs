@@ -75,6 +75,9 @@ public sealed record GuestSnapshot
 	public required long QueueStandingSinceTurn { get; init; }
 	public required long InterludeTurn { get; init; }
 	public required bool InQueueInterlude { get; init; }
+	/// <summary>The state-6 activity (the original's state 8), <see cref="GuestActivity.None"/> when there is none. Absent in saves
+	/// written before schema 3, which then hold none.</summary>
+	public GuestActivity Activity { get; init; }
 	public required float QueueJoinHappiness { get; init; }
 	public required int QueueCellIndex { get; init; }
 	public required int QueueTargetIndex { get; init; }
@@ -107,7 +110,9 @@ public sealed record GuestSnapshot
 	public required int LaneIndex { get; init; }
 	public required bool LaneReversed { get; init; }
 	public required float StateTimer { get; init; }
-	public required float DecisionTimer { get; init; }
+	/// <summary>The former seconds-based decision timer, written by schemas 1 and 2 only. State 6 now decides once per park turn
+	/// (docs/reverse/WANDER-plan.md), so the restore ignores it.</summary>
+	public float? DecisionTimer { get; init; }
 }
 
 /// <summary>Every field of <see cref="GuestNavigation"/> the next steering step reads. The waypoint buffer itself is
@@ -183,10 +188,11 @@ public sealed record GuestSimulationSnapshot
 {
 	/// <summary>Bumped whenever the DTO fields or their meaning change; restore refuses other versions. Version 1
 	/// (before the histories and the integer exit counter) is still accepted and converted: the missing histories start
-	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero.</summary>
-	public const int CurrentSchemaVersion = 2;
-	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 2 as written now, 1 as written before F24–F26.</summary>
-	public static int[] AcceptedSchemaVersions { get; } = { 1, 2 };
+	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero. Versions 1 and 2
+	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped.</summary>
+	public const int CurrentSchemaVersion = 3;
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 3 as written now, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>

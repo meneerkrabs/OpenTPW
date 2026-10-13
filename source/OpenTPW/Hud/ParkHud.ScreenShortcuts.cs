@@ -13,7 +13,6 @@ internal enum HudScreenShortcut
 	StaffCosts,
 	EntryPrice,
 	StaffApplicants,
-	StaffEmployed,
 	TimeFaster,
 	TimeSlower,
 	TimeNormal,
@@ -50,7 +49,8 @@ public sealed partial class ParkHud
 		InputButton.StaffBudgets => HudScreenShortcut.StaffCosts,
 		InputButton.EntryPrice => HudScreenShortcut.EntryPrice,
 		InputButton.HireStaff => HudScreenShortcut.StaffApplicants,
-		InputButton.AllStaff => HudScreenShortcut.StaffEmployed,
+		// All Staff (S) stays unhandled: the host camera pans with S (Input's WASD axes, documented in the
+		// sandbox panel), and a key press cannot be both — re-wire it once the pan no longer claims S.
 		InputButton.TimeSpeedUp => HudScreenShortcut.TimeFaster,
 		InputButton.TimeSlowDown => HudScreenShortcut.TimeSlower,
 		InputButton.TimeReset => HudScreenShortcut.TimeNormal,
@@ -89,7 +89,7 @@ public sealed partial class ParkHud
 	internal static bool OpensWindow( HudScreenShortcut shortcut ) => shortcut is HudScreenShortcut.BuyWindow
 		or HudScreenShortcut.ParkInfo or HudScreenShortcut.FinanceWindow or HudScreenShortcut.ResearchWindow
 		or HudScreenShortcut.MapWindow or HudScreenShortcut.LoansWindow or HudScreenShortcut.StaffCosts
-		or HudScreenShortcut.EntryPrice or HudScreenShortcut.StaffApplicants or HudScreenShortcut.StaffEmployed;
+		or HudScreenShortcut.EntryPrice or HudScreenShortcut.StaffApplicants;
 
 	private static readonly HudScreenShortcut[] AllShortcuts = Enum.GetValues<HudScreenShortcut>();
 
@@ -121,7 +121,6 @@ public sealed partial class ParkHud
 			HudScreenShortcut.StaffCosts => Input.Pressed( InputButton.StaffBudgets ),
 			HudScreenShortcut.EntryPrice => Input.Pressed( InputButton.EntryPrice ),
 			HudScreenShortcut.StaffApplicants => Input.Pressed( InputButton.HireStaff ),
-			HudScreenShortcut.StaffEmployed => Input.Pressed( InputButton.AllStaff ),
 			HudScreenShortcut.TimeFaster => Input.Pressed( InputButton.TimeSpeedUp ),
 			HudScreenShortcut.TimeSlower => Input.Pressed( InputButton.TimeSlowDown ),
 			HudScreenShortcut.TimeNormal => Input.Pressed( InputButton.TimeReset ),
@@ -162,10 +161,7 @@ public sealed partial class ParkHud
 				ToggleNamedScreen( "entryPrice", OpenEntryPriceWindow );
 				break;
 			case HudScreenShortcut.StaffApplicants:
-				ToggleStaffWindow( false );
-				break;
-			case HudScreenShortcut.StaffEmployed:
-				ToggleStaffWindow( true );
+				ToggleStaffWindow();
 				break;
 			case HudScreenShortcut.TimeFaster:
 				Status.Speed = SteppedSpeed( Status.Speed, 1 );
@@ -208,7 +204,7 @@ public sealed partial class ParkHud
 			openAction();
 	}
 
-	private void ToggleStaffWindow( bool employed )
+	private void ToggleStaffWindow()
 	{
 		if ( Stack.Top?.Name == "staff" )
 		{
@@ -216,7 +212,6 @@ public sealed partial class ParkHud
 			return;
 		}
 		OpenStaffWindow();
-		ShowEmployedStaff( employed );
 	}
 
 	// [APPROX:UI-903] blueprint turning uses the level's 90-degree build-rotation steps; the original comma/full-stop handler's step and smoothing are not traced — evidence needed: the original blueprint-turn key handler
@@ -235,7 +230,8 @@ public sealed partial class ParkHud
 	private StaffType? lastLocatedRole;
 	private void LocateNextStaffRole()
 	{
-		var start = Math.Max( 0, Array.IndexOf( LocatorRoles, lastLocatedRole ?? StaffType.Handyman ) );
+		// Without a previous role the cycle starts at the first (handyman); afterwards it starts after it.
+		var start = lastLocatedRole is { } previous ? Math.Max( 0, Array.IndexOf( LocatorRoles, previous ) ) : -1;
 		for ( var offset = 1; offset <= LocatorRoles.Length; offset++ )
 		{
 			var role = LocatorRoles[(start + offset) % LocatorRoles.Length];

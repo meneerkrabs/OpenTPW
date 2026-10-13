@@ -4,8 +4,9 @@ Theme Park Inc (Europe, 2001; Sim Coaster in North America) is Bullfrog's follow
 to Theme Park World. This note records how far its data and engine match what
 OpenTPW reads, measured on October 9, 2026. It is a comparison, not a support claim:
 OpenTPW does not support Theme Park Inc. Since October 10, 2026 OpenTPW has a reader for
-its `.fsh` textures ([FSH.md](FSH.md)), and since October 11, 2026 an experimental
-[level viewer](#theme-park-inc-level-viewer) that shows its worlds.
+its `.fsh` textures ([FSH.md](FSH.md)), and since October 13, 2026 an experimental
+[playable slice](#theme-park-inc-playable-slice) that loads its worlds, builds in them
+and walks guests through them under an explicit capability policy.
 
 ## Sources
 
@@ -46,39 +47,65 @@ TPWS container, and its balance settings grow.
 | Movies | QuickTime `.mov` (Mac edition) | 2 `.tgq` (`SCHl`) | 2/2 |
 | Banner companions `.mtr` | none on the Mac CD | 7 | 0/7: header words differ from the TPW variant |
 
-## Theme Park Inc level viewer
+<a id="theme-park-inc-level-viewer"></a>
+## Theme Park Inc playable slice
 
-`--load-original-level arabian|science|water` with Theme Park Inc data shows that world in 3D
-(`[EXT:tpi-viewer]`, a viewing aid in the sense of the [PS2 export](PS2.md), October 11, 2026). It is
-not Theme Park Inc support: there is no Theme Park Inc interface, front end, economy, rules or
-save writing, and nothing it draws has been compared with the original game. How to extract the CD
-cabinets and start it: [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
+Until October 13, 2026 this section described the view-only "level viewer"; the same command now
+starts the playable slice below (older links still land here).
 
-**Edition detection.** `GameEditions.Detect` (Client/Setup/GameEdition.cs) classifies a `Data`
-folder as Theme Park Inc by the retail `levels/Standard.sam` (45,695 bytes, the SHA-256 that setup's
-negative identity already used), or, for edited copies, by structure: `Ver.txt` beside at least one
-of `levels/arabian|science|water` and none of `levels/jungle|fantasy|hallow|space`. The loaders
-switch on this (`GameEditions.IsThemeParkInc`). Setup, settings and the saved game folder keep
-rejecting Theme Park Inc (hash only, as before). A folder given through `--game-path` or
-`OPENTPW_GAME_PATH`, which skips that check, is now classified at start-up: Theme Park Inc data is
-refused unless the command is `--load-original-level` with a Theme Park Inc world and none of
-`--sandbox`, `--front-end`, `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`.
+`--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
+**playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). It is not Theme Park Inc support: there is
+no Theme Park Inc interface, front end, economy, rules or save writing, and nothing it draws has been
+compared with the original game. How to extract the CD cabinets and start it:
+[RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
-**What the viewer shows.** The base terrain (`base.MD2` heightfield and meshes), the lake, the path
-layer (`pathtex` textures), the monorail (part of the terrain meshes), guests with their sprites,
+**Edition capability policy.** `GameEditions.Capabilities` (Client/Setup/GameEdition.cs) is the one
+place that says what an edition's park runs. Theme Park World keeps every implemented system. The
+Theme Park Inc slice runs building and guests under an experimental HUD and refuses the systems whose
+Theme Park Inc rules or data OpenTPW has not traced: economy (its `Standard.sam` lacks 89 of the 155
+balance keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage`; measured
+October 13, 2026), staff, advisor, front end, park saves, sharing (export/import/visit), the mission
+campaign, the Global Master Save and the disc's COS files (TPI-903). `Level` gates its economy on the
+policy; the refusals stay real, not deleted: nothing writes or reads a Theme Park Inc park save, GMS
+or COS file, and the start-up command line additionally refuses `--sandbox`, `--front-end`,
+`--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`, `--park-resume-smoke`,
+`--export-park`, `--import-park` and `--visit-park` on Theme Park Inc data.
+
+**What the slice shows and runs.** The base terrain (`base.MD2` heightfield and meshes), the lake, the
+path layer (`pathtex` textures), the monorail (part of the terrain meshes), guests with their sprites,
 and the world's sound and music. Science also loads the sole shipped `PreBuilt/prebuilt.TPWS`: its
 paths, placed objects and fixed-item records. Arabian and water have no matching shipped prebuilt
-save and still use the default fixed items (RIDES-019). The camera is the
-park camera (pan, rotate, zoom); Esc quits and P pauses. The sandbox developer panels are off.
+save and still use the default fixed items (RIDES-019). The camera is the park camera (pan, rotate,
+zoom); the sandbox developer panels are off. On top of that the slice adds:
 
-**What it leaves out.** No economy (`ParkEconomyRuntime` is not created: Theme Park Inc's `Standard.sam`
-has other keys, e.g. no `PerGradeStaffConsts[0].BaseWage`), so no money, calendar or building; no
-HUD (the TW panels' models are not in Theme Park Inc's `ui.wad`); no advisor (its `Advisor.sam`
-differs). The viewer logs one line saying so. The save's economy, guests, ride state and untraced
-scene records are not restored. Arabian and water remain empty apart from default fixed items;
-the science save contains no Bus record, so none is inferred for that park. Several ride
-scripts report unimplemented effects in the log. Textures are not checked against the original
-game's alpha or colour handling (COMPAT-014/015).
+- The **experimental HUD** (`ThemeParkIncHud`, TPI-900): an OpenTPW text interface — a state line that
+  names the experiment and its refused systems, a guest counter, a message line, a build window over
+  the world's own catalog, remove/rotate/cancel tools, a speed control and a pause menu (Esc) whose
+  Quit is the only way out. Building is **free** (TPI-901): the slice runs no economy, so nothing is
+  charged, refunded or saved. If the HUD cannot be built the world falls back to the bare viewer
+  (Esc quits, P pauses) with a warning.
+- **Building** through the same rules as a Theme Park World park (`ParkObjects` terrain and occupancy
+  checks, `Level.PlaceObject` without the purchase), including the path and queue tools of the traced
+  Theme Park World flow (TPI-904): a click on an empty owned cell starts the path tool, Backspace
+  undoes, right-click cancels; a placed `Info.HasQueue` ride switches to the queue tool. The build
+  ghost markers now resolve their textures by name without extension, so Theme Park Inc's own
+  `blue.tga`/`red.tga` markers draw (Theme Park World keeps its `blue.wct`/`red.wct`).
+- **Guests** (TPI-902) under the ported Theme Park World guest rules over the Theme Park Inc world's
+  own guest settings: arrivals from the bus stop through the ticket booth, path walking, needs,
+  queues and rides. The slice's frame pumps guests, object scripts and crowd audio only — no advisor,
+  staff voices or weather sounds, which need the economy.
+
+`ThemeParkIncPlayTests` covers the policy (synthetic) and the supported gameplay route over the corpus
+(headless composition of the build rules, a placed object's original script, free path laying and
+guest arrivals; `OPENTPW_TPI_PATH`). None of it compares with the original game.
+
+**What it leaves out.** No money, calendar, research, challenges or staff; no park saving or loading;
+no front end or online world; no advisor. The prebuilt save's economy, guests, ride state and
+untraced scene records are not restored. Arabian and water remain empty apart from default fixed
+items; the science save contains no Bus record, so none is inferred for that park. Several ride
+scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
+(`WAITABS`, `MULT`, see the VM section) still fault the scripts that reach them. Textures are not
+checked against the original game's alpha or colour handling (COMPAT-014/015).
 
 **Textures.** `Texture` now loads `.fsh` (first image of the SHPI file, `FshFile`) and stb images
 (`.tga`, `.png`) from the game data as well as from disk; decoding is GPU-free
@@ -256,7 +283,7 @@ about the readers.
 
 1. ~~`.fsh` (`SHPI`, code `0x7B`) reader.~~ Done (October 10, 2026): `FshFile`
    decodes all 7,283 files and WAD members to RGBA, with `--inspect-fsh`; see
-   [FSH.md](FSH.md). The [level viewer](#theme-park-inc-level-viewer) uses them (October 11, 2026).
+   [FSH.md](FSH.md). The [level viewer](#theme-park-inc-playable-slice) uses them (October 11, 2026).
    Not done: checking them against the original game's rendering. Opaque `0x24`
    palettes are approximation COMPAT-014.
 2. Use the `.rss` evidence in the VM: name `LIMBO`'s second operand as the limbo

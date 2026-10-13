@@ -184,7 +184,7 @@ Since October 11, 2026 the experimental Theme Park Inc level viewer loads these 
 `Texture` decodes `.fsh` files and WAD members through `FshFile` (first image) and uploads the RGBA
 pixels through the normal texture path, and terrain, object and path textures are found by name without
 extension, so MD2 texture names resolve to `.fsh` (or `.tga`) members. See
-[THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-level-viewer). The extended TPWS save header and
+[THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice). The extended TPWS save header and
 the new `Standard.sam` keys remain follow-up work.
 
 ## Sources

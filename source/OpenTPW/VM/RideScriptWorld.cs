@@ -98,14 +98,12 @@ public sealed class RideScriptWorld
 
 	/// <summary>
 	/// Explicit state of this world: the seed streams (script and coaster), the shared clock, the allocator
-	/// frontiers and every live script with its graph. Fails explicitly while any coaster controller is live —
-	/// their state is not part of the park-resume slice — but the shared coaster generator's state is captured
-	/// either way, so a coasterless world restores it exactly.
+	/// frontiers and every live script with its graph. The coaster controllers themselves (tracks, trains, riders)
+	/// are the envelope's coaster part (<see cref="CoasterSave"/>); this carries only their shared generator's
+	/// state, so it captures a world with or without coasters alike.
 	/// </summary>
 	public RideScriptWorldSnapshot CaptureSnapshot()
 	{
-		if ( Coasters.Rides.Count > 0 )
-			throw new InvalidDataException( $"the script world holds {Coasters.Rides.Count} coaster controllers; coaster state is not part of the park-resume slice." );
 		return new RideScriptWorldSnapshot
 		{
 			RandomState = RandomState,
@@ -138,8 +136,8 @@ public sealed class RideScriptWorld
 		ArgumentNullException.ThrowIfNull( snapshot );
 		ArgumentNullException.ThrowIfNull( rootScripts );
 		snapshot.ValidateSnapshot();
-		if ( Coasters.Rides.Count > 0 )
-			throw new InvalidDataException( $"this world already holds {Coasters.Rides.Count} coaster controllers; coaster state is not part of the park-resume slice." );
+		// The coaster controllers the candidate's placed stations created stay live: their state is restored onto
+		// them afterwards by the envelope's coaster part, whose shared generator this restore sets below.
 
 		var byId = snapshot.Scripts.ToDictionary( script => script.ScriptId );
 		var rootIds = snapshot.Scripts.Where( script => script.ParentScriptId == 0 ).Select( script => script.ScriptId ).ToHashSet();

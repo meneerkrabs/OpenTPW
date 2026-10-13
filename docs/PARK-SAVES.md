@@ -46,14 +46,18 @@ refused this way before anything is replaced.
 | Layout | every path, queue and placed object with its cell, rotation, attraction id and creation seed, plus the id allocators — a demolished object leaves its id hole, ids are never renumbered |
 | Guests | every guest: needs, money, route and navigation buffers, arrival lane, queue/boarding/riding/walk-off/limbo/bounce state, and each attraction's queue cells and membership |
 | Ride scripts | the whole script world: every script's identity and graph position, program state, stacks, variables, timers and waits, RNG state, animation channels and rider head slots |
+| Prototype ride | the developer Totem (the sandbox ride you place in a park): its position, open state, script seed and full runtime state — animator, head slots, cycle counters — with its economy association re-linked to the saved instance, never bought again; the entrance and exit cells its guests queue at are saved and restored verbatim (the placement's derivation is history: the live park keeps it across later path edits, so re-deriving from the saved paths would resume a different park) |
+| Coasters | every live coaster station's track (station ends, pylons with height, pylon kind and stack, node flags), controller state (open, breakdown, speed, seats, money, clocks) and trains with every rider on board or leaving — joined by attraction id, a rider mid-hand-over (the script has seated it, the bridge has not marked it aboard yet) included; the curve, rating and braking are re-derived on load, so a loaded coaster continues exactly where it was |
 | Economy | the full economy record (bank, loans, ledger, objects with price/level/repair/statistics, staff, research, challenges, golden tickets, RNG streams) and the exact attraction-to-economy-instance links, so two identical rides never swap their money |
 | World | the fixed-step clock, the sound-event seed, weather with its pending thunder, the park gate, staff positions, and the advisor's pending advice and history when the park had them |
 | Header | theme, world seed, gameplay mode and start kind, park name, save date |
 
 ## Limits
 
-- **Roller coasters and prototype rides are not saved yet.** A park that has one cannot be saved;
-  the save is refused with that reason instead of writing a park that would come back wrong. The
+- **The prototype ride is saved as what it is.** The developer Totem (the sandbox ride) saves and
+  resumes like any attraction — its script mid-instruction, guests queuing, aboard or mid-boarding —
+  but the part describes exactly the Inca Totem; any other entry in that slot is refused rather
+  than accepted as opaque state. Player-built coasters are saved too (see above). The
   original `TPWS` import stays partial and read-only ([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)).
 - **Transient sounds are not saved.** A park cannot be saved while a ride scream is playing or the
   advisor is speaking — save again a moment later. No voice, music or audio state persists through a
@@ -75,20 +79,25 @@ embedded by value, so both formats' validators run on every load.
 
 ## Developer notes
 
-- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing prototype rides, coasters,
+- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing
   an attraction's active scream and active advisor speech); `ParkResumeSaveFile.Save`/`Load` do the
   atomic, size-capped, suffix-checked file I/O; `GameFlow.SaveCurrentPark` (the pause menu's Save)
-  and `GameFlow.ResumePark` (Load) wire it into the UI.
+  and `GameFlow.ResumePark` (Load) wire it into the UI. The developer Totem rides along as the
+  envelope's optional prototype part (`PrototypeRideSave`), joined by attraction id exactly like a
+  placed object — the version stays 1, so saves from before the part (parks without the Totem) load
+  unchanged.
 - **Loading is a transaction.** `ParkResumeSaveFile.ValidateSnapshot` validates purely against the
   freshly loaded catalog, balance settings and asset manifest; the park is then rebuilt into an
-  isolated candidate (runtimes, script world, queue geometry, guests, clock, then the optional
-  weather/gate/staff/advisor parts, with reference graphs restored in two passes), and only a
-  complete candidate replaces the live park. Every failure path keeps the current park running. Ids,
+  isolated candidate (runtimes, the prototype Totem, script world, queue geometry, guests, clock,
+  the coasters, then the
+  optional weather/gate/staff/advisor parts, with reference graphs restored in two passes), and only
+  a complete candidate replaces the live park. Every failure path keeps the current park running. Ids,
   iteration order and next-id allocators are restored exactly as saved: nothing is renumbered or
   re-registered, no construction fee is charged again, and no default fixed item appears twice.
 - **Validation layers.** The pure shape check (identity, order, allocator agreement, bounds,
   cross-references — run before a byte is written and again on load), the park check (theme, balance
-  layer, mode/start-kind pinning, catalog, economy bindings, coaster refusal, asset manifest), and
+  layer, mode/start-kind pinning, catalog, economy bindings, the coaster part against the live
+  coaster stations, asset manifest), and
   the destination modules' own validators during candidate construction.
 - **Asset manifest.** SHA-256 over the decompressed content of every `.sam`, `.rse` and `.MD2`
   member of the theme's object catalog (bonus objects included), the category default settings, the
@@ -125,6 +134,13 @@ embedded by value, so both formats' validators run on every load.
   the own-format save and screenshot readbacks, without original game files.
   These are controlled, accelerated fixtures that validate persistence of current OpenTPW behaviour,
   not original-game fidelity.
+- **Smoke hook, prototype variant** (same command with `OPENTPW_SMOKE_PROTOTYPE=1` exported for
+  both phases): the fixture also places the developer Totem beside the path spine, so the pair
+  proves the prototype part natively — the save written through the HUD handler carries the Totem,
+  the cold resume rebuilds it with its saved guest cells and re-links its saved economy instance
+  (never buying again), the Totem's own corrupt candidates (the part dropped, its guest cells moved
+  off the map) are rejected like the rest, and the post-load checks remove the resumed Totem to see
+  its instance sold exactly once when the live park had bought it (deregistered when it had not).
 
 Verified in October 2026 development builds: the native capture/restore pair above passed as two
 separate processes on real Metal with identical section hashes throughout the continuation; the

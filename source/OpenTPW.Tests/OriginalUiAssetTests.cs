@@ -27,7 +27,8 @@ public class OriginalUiAssetTests
 		"mainpanel", "gauge", "date", "b_buy", "b_info", "b_money", "b_resrch", "b_map", "panel", "b_srides", "b_sshop", "b_sshow", "b_sfeature",
 		"b_retract", "b_door", "b_erase", "f_tagl", "f_tagm", "f_tagr", "islandlobby", "f_lobbutbg", "b_lobleft", "b_entpark", "b_lobright",
 		"tpwlogo", "w_med", "w_dialog", "f_optpanel2", "b_sleft", "b_sright", "b_okay",
-		"w_big", "!frame", "!slider", "f_buyitem", "b_up", "b_down", "b_scroller", "b_exit", "b_allstaff", "i_dollar", "cashtrend", "gkey", "gtick"
+		"w_big", "!frame", "!slider", "f_buyitem", "b_up", "b_down", "b_scroller", "b_exit", "b_allstaff", "i_dollar", "cashtrend", "gkey", "gtick",
+		"list_all", "b_svisit", "b_gopeep"
 	};
 
 	/// <summary>UITEXT entries drawn by the screens.</summary>
@@ -40,7 +41,15 @@ public class OriginalUiAssetTests
 		UIStrings.MovieVolume, UIStrings.PopupHelp, UIStrings.No, UIStrings.Yes, UIStrings.Custom, UIStrings.Resolution512x384,
 		UIStrings.Resolution640x480, UIStrings.Resolution800x600, UIStrings.Resolution1024x768, UIStrings.Resolution1280x1024,
 		UIStrings.Resolution1600x1200, UIStrings.Resolution400x300, UIStrings.ChangeScreenResolution, UIStrings.ChangeScreenResolutionRestored,
-		UIStrings.RestartGame, UIStrings.Paused, UIStrings.ThemeParkWorld, UIStrings.Dollar, UIStrings.NegativeDollar
+		UIStrings.RestartGame, UIStrings.Paused, UIStrings.ThemeParkWorld, UIStrings.Dollar, UIStrings.NegativeDollar,
+		// The overview windows (UI-905..910): category titles, detail labels, statuses and delete confirmations.
+		UIStrings.CurrentStatus, UIStrings.AllRides, UIStrings.AllShops, UIStrings.AllSideshows, UIStrings.AllMiscItems,
+		UIStrings.UsersLastMonthAttr, UIStrings.StateOfRepairAttr, UIStrings.RemainingLifeAttr,
+		UIStrings.CustomersLastMonthShop, UIStrings.ProfitLastMonthShop, UIStrings.TotalProfitShop, UIStrings.CustomerSatisfactionShop,
+		UIStrings.CustomersLastMonthGame, UIStrings.ExcitementGame, UIStrings.ProfitLastMonthGame, UIStrings.TotalProfitGame, UIStrings.CustomerSatisfactionGame,
+		UIStrings.AllVisitors, UIStrings.VisitorNumber, UIStrings.CashRemainingVisitor, UIStrings.TimeInParkVisitor, UIStrings.RidesRiddenVisitor,
+		UIStrings.HappinessVisitor, UIStrings.NameAttr, UIStrings.Closed, UIStrings.BrokenDown,
+		UIStrings.DeleteRide, UIStrings.DeleteShop, UIStrings.DeleteSideshow, UIStrings.DeleteItem
 	};
 
 	/// <summary>UIHELPTEXT entries used as popup help or messages.</summary>
@@ -169,6 +178,34 @@ public class OriginalUiAssetTests
 		var (width, height, rgba) = UiImages.Load( UiImages.Resolve( "purple_button" )! );
 		Assert.AreEqual( (128, 128), (width, height) );
 		Assert.IsTrue( Enumerable.Range( 0, width * height ).Any( index => rgba[index * 4 + 3] == 0 ), "pink key becomes transparent" );
+	}
+
+	/// <summary>
+	/// The evidence behind UI-909's text buttons: ui.wad ships the b_allthinginfo and b_goto models without
+	/// their textures (so the overview windows cannot use that art), while the art they do draw resolves.
+	/// </summary>
+	[TestMethod]
+	public void TheOverviewWindowsButtonArtEvidenceHolds()
+	{
+		foreach ( var name in new[] { "b_allthinginfo", "b_goto" } )
+		{
+			var model = UiModel.Load( name );
+			var textures = model.Frames.SelectMany( frame => frame.Parts ).Select( part => part.TextureName )
+				.Where( texture => texture.Length > 0 ).Distinct().ToArray();
+			Assert.IsTrue( textures.Length > 0, $"{name} ships a model that references textures" );
+			foreach ( var texture in textures )
+				Assert.IsNull( UiImages.Resolve( texture ),
+					$"{name}'s texture '{texture}' resolves now — UI-909's text buttons can switch to the shipped art" );
+		}
+		foreach ( var name in new[] { "list_all", "b_svisit", "b_gopeep", "b_erase" } )
+		{
+			var model = UiModel.Load( name );
+			var textures = model.Frames.SelectMany( frame => frame.Parts ).Select( part => part.TextureName )
+				.Where( texture => texture.Length > 0 ).Distinct().ToArray();
+			Assert.IsTrue( textures.Length > 0, $"{name} draws textured parts" );
+			foreach ( var texture in textures )
+				Assert.IsNotNull( UiImages.Resolve( texture ), $"{name} texture {texture}" );
+		}
 	}
 
 	[TestMethod]

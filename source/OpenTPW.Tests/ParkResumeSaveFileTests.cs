@@ -72,11 +72,12 @@ public class ParkResumeSaveFileTests
 		}
 	}
 
-	/// <summary>A complete valid envelope around a miniature park (see the class comment); the mutation base line.</summary>
-	internal static ParkResumeSnapshot Envelope()
+	/// <summary>A complete valid envelope around a miniature park (see the class comment); the mutation base line.
+	/// Longer runs (more ticks) put guests further into the park, for fixtures that need settled in-park state.</summary>
+	internal static ParkResumeSnapshot Envelope( int ticks = 1800 )
 	{
 		var park = new MiniaturePark();
-		for ( var tick = 0; tick < 1800; tick++ )
+		for ( var tick = 0; tick < ticks; tick++ )
 			park.Step();
 		var guests = park.Simulation.CaptureSnapshot();
 		Assert.IsTrue( guests.Guests.Length >= 4, "the fixture park holds guests to save" );

@@ -74,6 +74,13 @@ public static partial class Program
 		WriteContent();
 		var dataDirectory = GameLanguage.FindEntry( GameRoot, "data", true )
 			?? throw new DirectoryNotFoundException( "No Data folder among the chosen files." );
+		// [EXT:tpi-viewer] the browser front end needs Theme Park World data; Theme Park Inc data is refused here too,
+		// so no Theme Park World system (front end, economy, saves, sharing) can run on it (docs/THEME-PARK-INC.md).
+		var edition = GameEditions.Detect( dataDirectory );
+		GameEditions.Select( edition.Edition );
+		if ( GameEditions.IsThemeParkInc )
+			throw new ArgumentException( "The chosen files hold Theme Park Inc (Sim Coaster) data, which the browser does not run. "
+				+ "The experimental slice is a desktop start: --load-original-level arabian, science or water (docs/THEME-PARK-INC.md)." );
 		FileSystem = new BaseFileSystem( dataDirectory );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );

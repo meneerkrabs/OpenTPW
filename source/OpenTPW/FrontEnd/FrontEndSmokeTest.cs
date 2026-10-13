@@ -14,8 +14,11 @@ namespace OpenTPW;
 /// with injected mouse clicks and keys (next island, options open/cancel, enter park, game mode) into
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
 /// bought through the catalogue buy window and charged exactly once; a second researched object is
-/// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
-/// read-only visit and checks build/open/delete/save mutation boundaries, then starts jungle again in
+/// built, opened/closed and checked for overlap refusal. The All Visitors window lists seeded
+/// visitors (select, wheel, sort, Enter-locate) and the All Attractions window selects, activates and
+/// sells a placed fixture with its confirmation. The game exits to the lobby, then loads a read-only
+/// visit and checks build/open/delete/save mutation boundaries (the attractions window opens through
+/// the staff window there and its delete refuses at the handler), then starts jungle again in
 /// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
 /// </summary>
 internal sealed partial class FrontEndSmokeTest : IDisposable
@@ -42,8 +45,14 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private OriginalObject? secondObject;
 	private BuildItem? secondItem;
 	private bool queueToolAfterSecond;
+	private string[] visitBaselineFiles = Array.Empty<string>();
 	private int purchaseEvents;
 	private int smokeStaffId;
+	private Guest? locatedVisitor;
+	private OriginalObject? thirdObject;
+	private int thirdAttractionId;
+	private int visitAttractionRows;
+	private string[] visitRowNames = Array.Empty<string>();
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -552,6 +561,88 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( flow.Hud.Stack.Top!, "choice0" );
 		} );
 		Wait( "smoke employee dismissed", 3 );
+		// The All Visitors window (UI-907..910): visitors seeded through the guest simulation's own
+		// spawn, the window opened through the staff window's shipped b_svisit button, then driven with
+		// the wheel, the sort header, a row click and Enter.
+		Do( "seed smoke visitors", () =>
+		{
+			var level = flow.Level!;
+			var guests = level.Guests!;
+			var cells = Enumerable.Range( 0, guests.Grid.CountX * guests.Grid.CountY )
+				.Select( index => (X: index % guests.Grid.CountX, Y: index / guests.Grid.CountX) )
+				.Where( cell => guests.Grid.IsWalkable( cell.X, cell.Y ) ).ToArray();
+			Require( cells.Length > 0, "the park has walkable cells to seed visitors on" );
+			for ( var index = 0; index < 14; index++ )
+				guests.SpawnInPark( cells[index % cells.Length].X, cells[index % cells.Length].Y );
+			Require( flow.Hud!.VisitorItems.Count >= 14, "the seeded visitors are in the park" );
+			Log.Trace( $"Front-end smoke: seeded 14 visitors on {cells.Length} path cells for the All Visitors window." );
+		} );
+		Do( "visitors window opens", () => Click( flow.Hud!.Stack.Top!, "allVisitors" ) );
+		Wait( "visitors window renders", 3 );
+		Do( "visitors window lists the park", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.VisitorWindowOpen && hud.Stack.Top?.Name == "visitors", "the staff window's visitors button opens the All Visitors window" );
+			var rows = hud.VisitorItems;
+			Require( rows.Count >= 14, "the window lists the park's visitors" );
+			Require( rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderBy( id => id ) ),
+				"the visitor numbers are listed in ascending order" );
+			Require( hud.SelectedVisitorId == rows[0].Id, "the first row is selected" );
+			var capture = CaptureFrame( "visitors.png" );
+			VerifyText( capture, flow.Strings[UIStrings.AllVisitors], "All Visitors title" );
+			VerifyText( capture, flow.Strings[UIStrings.HappinessVisitor], "Happiness column" );
+		} );
+		Do( "visitors wheel", () =>
+		{
+			Require( flow.Hud!.VisitorFirstRow == 0 && flow.Hud.VisitorItems.Count > ParkHud.StaffVisibleRows, "the visitor list starts scrolled to the top" );
+			flow.InjectedInput = UiInput.Idle( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 650 ), UiAnchor.Center ) ) with { Wheel = -1 };
+		} );
+		Wait( "visitors scrolled", 3 );
+		Do( "visitors wheel scrolled", () =>
+		{
+			Require( flow.Hud!.VisitorFirstRow == 1, "a wheel step scrolls the visitor list one row" );
+			Click( flow.Hud.Stack.Top!, "headerNumber" );
+		} );
+		Wait( "visitors header chosen", 3 );
+		Do( "visitors header pressed again", () => Click( flow.Hud!.Stack.Top!, "headerNumber" ) );
+		Wait( "visitors sorted", 3 );
+		Do( "visitors header sorted", () =>
+		{
+			var rows = flow.Hud!.VisitorItems;
+			Require( rows.Count >= ParkHud.StaffVisibleRows && rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderByDescending( id => id ) ),
+				"a repeated header press lists the visitor numbers backwards" );
+		} );
+		Do( "click a visitor row", () =>
+		{
+			var hud = flow.Hud!;
+			var rows = hud.VisitorItems;
+			var visible = Math.Min( 3, rows.Count - hud.VisitorFirstRow - 1 );
+			locatedVisitor = rows[hud.VisitorFirstRow + visible];
+			flow.InjectedInput = UiInput.Click( Context.Canvas.Map(
+				new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center ) );
+		} );
+		Wait( "visitor row selected", 3 );
+		Do( "visitor row selected", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedVisitorId == locatedVisitor!.Id, "clicking a row selects that visitor" );
+			// Park the camera target in a far corner so the locate has to move it to the visitor.
+			var camera = (ParkCameraMode)Camera.Mode;
+			camera.SetPose( new Vector3( -9999, -9999, 0 ), camera.Height, camera.Yaw );
+			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
+		} );
+		Wait( "visitor located", 3 );
+		Do( "visitor located and window closed", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.VisitorWindowOpen && hud.Stack.Top?.Name == "staff", "Enter on the selected row locates the visitor and closes the window over the staff one" );
+			var camera = (ParkCameraMode)Camera.Mode;
+			var position = GuestRenderer.CellToEngine( flow.Level!.OriginalPark!.Heightfield, locatedVisitor!.X, locatedVisitor!.Y );
+			var extent = Math.Max( 0, ParkCameraMode.TargetExtent );
+			var expected = new Vector3( Math.Clamp( position.X, -extent, extent ), Math.Clamp( position.Y, -extent, extent ), 0 );
+			Require( ( camera.Target - expected ).Length < 2,
+				$"the camera focuses the selected visitor's simulated position (target {camera.Target}, expected {expected})" );
+		} );
 		Do( "staff window exit", () =>
 		{
 			var hud = flow.Hud!;
@@ -714,6 +805,114 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( flow.Hud.Screen, "openRide" );
 		} );
 		Wait( "second object closed", 3 );
+		// The All Attractions window (UI-905/906/910): a third fixture object is placed, the window is
+		// opened through the buy window's button, rows are clicked and activated, and the fixture is sold
+		// through the window's delete button with the original ride confirmation.
+		Do( "build the attractions fixture", () =>
+		{
+			var level = flow.Level!;
+			var item = flow.Hud!.Catalog.GetItems( BuildCategory.Rides ).First( candidate => candidate.InfoId != PrototypeRide.InfoId
+				&& candidate.InfoId != secondItem!.InfoId && flow.Hud.Status.IsAvailable( candidate ) );
+			var site = FindObjectSite( level, item.Entry! );
+			thirdObject = level.PlaceObject( item.Entry!, site.X, site.Y, level.BuildRotation );
+			thirdAttractionId = thirdObject!.Runtime.AttractionId;
+			Require( thirdObject != null, "a third catalogue object is placed for the attractions window" );
+			Log.Trace( $"Front-end smoke: placed {flow.Hud.ItemName( item )} as the attractions-window fixture." );
+		} );
+		Do( "attractions window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Stack.Top == hud.Screen, "no window is open before the attractions flow" );
+			Click( hud.Screen, "buy" );
+		} );
+		Wait( "buy window opens again", 3 );
+		Do( "open attractions", () => Click( flow.Hud!.Stack.Top!, "allAttractions" ) );
+		Wait( "attractions window renders", 3 );
+		Do( "attractions window lists the park", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen && hud.Stack.Top?.Name == "attractions", "the buy window's all-attractions button opens the window" );
+			var rows = hud.AttractionItems;
+			Require( rows.All( row => row.Category == BuildCategory.Rides ) && rows.Any( row => row.AttractionId == thirdAttractionId ),
+				"the rides tab lists the park's rides, the fixture among them" );
+			Require( ParkAttractionRoster.StatusOf( rows.Single( row => row.AttractionId == secondObject!.Runtime.AttractionId ) ) == UIStrings.Closed,
+				"the closed second ride shows the original CLOSED status (UITEXT 364)" );
+			Require( ParkAttractionRoster.StatusOf( rows.Single( row => row.AttractionId == thirdAttractionId ) ) == UIStrings.Blank,
+				"the open working fixture shows no status" );
+			Require( hud.SelectedAttractionId == rows[0].AttractionId, "the first row is selected" );
+			var capture = CaptureFrame( "attractions.png" );
+			VerifyText( capture, flow.Strings[UIStrings.AllRides], "All Rides title" );
+		} );
+		Do( "click the fixture row", () => ClickAttractionRow( flow.Hud!, thirdAttractionId ) );
+		Wait( "fixture row selected", 3 );
+		Do( "fixture row selected", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == thirdAttractionId, "clicking a row selects that attraction" );
+			ClickAttractionRow( hud, thirdAttractionId ); // a second click on the selected row activates it
+		} );
+		Wait( "row activated", 3 );
+		Do( "row activation selects the object", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.AttractionsWindowOpen && hud.SelectedObject == thirdObject && hud.InfoArmOpen,
+				"a second click on the selected row selects the object in the park and closes the window" );
+			flow.Hud.OpenBuyWindow();
+			Click( flow.Hud.Stack.Top!, "allAttractions" );
+		} );
+		Wait( "attractions reopens", 3 );
+		Do( "attractions reopened", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen, "the attractions window reopens over the buy window" );
+			var rows = hud.AttractionItems;
+			Require( rows.Any( row => row.AttractionId == thirdAttractionId ) && hud.SelectedAttractionId == rows[0].AttractionId,
+				"reopening resets the selection to the first row" );
+			ClickAttractionRow( hud, thirdAttractionId );
+		} );
+		Wait( "fixture row selected again", 3 );
+		Do( "sell through the window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == thirdAttractionId, "the fixture's row is selected" );
+			Require( hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: true }, "the delete button is enabled with a selection" );
+			Click( hud.Stack.Top!, "deleteAttraction" );
+		} );
+		Wait( "attractions delete confirmation", 3 );
+		Do( "attractions delete confirmation", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction", "the window's delete asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "fixture sold", 3 );
+		Do( "fixture sold and selection healed", () =>
+		{
+			var hud = flow.Hud!;
+			Require( thirdObject!.IsDeleted && flow.Level!.Park!.Economy.Objects.Count == objectsBeforePurchase + 1,
+				"the window's delete sells the fixture through the park economy (the second object remains)" );
+			var rows = hud.AttractionItems;
+			Require( rows.All( row => row.AttractionId != thirdAttractionId ) && rows.Count > 0
+				&& hud.SelectedAttractionId == rows[0].AttractionId, "the sold attraction leaves the list and the selection heals to the first row" );
+			Click( hud.Stack.Top!, "categorySideshows" );
+		} );
+		Wait( "empty sideshows tab", 3 );
+		Do( "empty category stays empty", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionItems.Count == 0 && hud.SelectedAttractionId == 0, "an empty category clears the selection" );
+			Require( hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: false }, "the delete button disables without a selection" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "scroll clamp", 3 );
+		Do( "attractions scroll clamps", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionFirstRow == 0, "scrolling a list that fits stays at the top" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "attractions closes", 3 );
+		Do( "buy window closes after attractions", () => Click( flow.Hud!.Stack.Top!, "exit" ) );
+		Wait( "buy closed before Escape", 3 );
 		Do( "closed state", () =>
 		{
 			Require( !secondObject!.IsOpen, "HUD door closes the selected original object" );
@@ -733,6 +932,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
+		// The park-resume lane cannot snapshot the advisor while a response is being spoken (the speech has no
+		// snapshot seam), so the save below waits for the end of any active advisor speech first.
+		steps.Enqueue( ("advisor speech ends", () => flow.Advisor?.IsSpeechActive != true) );
 		Do( "pause menu", () =>
 		{
 			Require( flow.Hud!.Paused, "Escape opens the pause menu" );
@@ -741,10 +943,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );
 			Click( flow.Hud.Stack.Top!, nameof( UIStrings.Save ) );
 		} );
-		Wait( "save refused", 3 );
-		Do( "save refused", () =>
+		Wait( "save completes", 3 );
+		Do( "save completes", () =>
 		{
-			Require( !flow.Hud!.Paused && flow.Hud.Messages.Contains( flow.Strings.Extra( OpenTpwText.OriginalParkReadOnly ) ), "original parks report that they cannot be saved" );
+			// The park-resume lane saves a front-end-started original-level park as an own-format world save
+			// (GameFlow.Resume.cs SaveCurrentPark); the old read-only refusal is gone.
+			var savedPath = Path.Combine( temporaryDirectory, $"opentpw-{flow.Level!.LevelName}-world.json" );
+			Log.Trace( $"Front-end smoke: save check paused={flow.Hud!.Paused} file={File.Exists( savedPath )} ({savedPath}) messages=[{string.Join( " | ", flow.Hud.Messages )}]" );
+			Require( !flow.Hud!.Paused && File.Exists( savedPath ) && flow.Hud.Messages.Contains( flow.Strings.Extra( OpenTpwText.ParkSaved ) ),
+				"the pause-menu Save writes the own-format world save and reports it" );
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
@@ -812,6 +1019,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
+			// The own-format world save of the earlier pause-menu Save is legitimate; the visit must add nothing.
+			visitBaselineFiles = Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).ToArray();
 			flow.StartLevel( "jungle", original: true, developerPanels: false, visit: readOnlyVisit );
 		} );
 		Wait( "read-only visit loads", 40 );
@@ -832,6 +1041,53 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			hud.SelectObject( visitedObject );
 		} );
 		Wait( "read-only info renders", 3 );
+		// The overview windows during a read-only visit: the buy window is disabled while visiting, so the
+		// attractions window opens through the staff window's entry (the original staff window navigated
+		// to it); the visited park is listed, sorted and scrolled, and the delete refuses at the handler.
+		Do( "visit staff window opens", () => flow.Hud!.OpenStaffWindow() );
+		Wait( "visit staff window", 3 );
+		Do( "open visit attractions", () => Click( flow.Hud!.Stack.Top!, "allAttractions" ) );
+		Wait( "visit attractions renders", 3 );
+		Do( "visit attractions lists the park", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen && hud.Stack.Top?.Name == "attractions", "the staff window's all-attractions button opens the window during a visit" );
+			visitAttractionRows = hud.AttractionItems.Count;
+			visitRowNames = hud.AttractionItems.Select( row => row.Name ).ToArray();
+			// The reference save carries one scripted ride besides its features and fixed items.
+			Require( visitAttractionRows >= 1, "the visited park's rides are listed" );
+			var capture = CaptureFrame( "visit-attractions.png" );
+			VerifyText( capture, flow.Strings[UIStrings.AllRides], "All Rides title in the visit" );
+			Click( hud.Stack.Top!, "headerName" );
+		} );
+		Wait( "visit attractions header chosen", 3 );
+		Do( "visit attractions header pressed again", () => Click( flow.Hud!.Stack.Top!, "headerName" ) );
+		Wait( "visit attractions sorted", 3 );
+		Do( "visit attractions sorted", () =>
+		{
+			var hud = flow.Hud!;
+			var names = hud.AttractionItems.Select( row => row.Name ).ToArray();
+			Require( visitRowNames.Distinct().Count() == visitRowNames.Length
+				? names.SequenceEqual( visitRowNames.Reverse() )
+				: string.CompareOrdinal( names[0], names[^1] ) >= 0, "a repeated header press reverses the list order" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "visit attractions scrolled", 3 );
+		Do( "visit attractions read-only refusal", () =>
+		{
+			var hud = flow.Hud!;
+			Log.Trace( $"Front-end smoke: the visit's attractions list scrolled to row {hud.AttractionFirstRow} of {visitAttractionRows} rides." );
+			Require( hud.SelectedAttractionId != 0, "the visited park's list keeps a selection" );
+			Require( hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: false }, "the delete control is disabled during a read-only visit" );
+			// Invoke the handler directly: the mutation boundary must refuse even programmatic calls.
+			( (UiButton)hud.Stack.Top.Find( "deleteAttraction" )! ).Clicked!();
+			Require( flow.Level!.Objects.Objects.Count == visitedCount && hud.Stack.Top?.Name == "attractions",
+				"the visit's delete handler refuses to sell and opens no confirmation" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "visit attractions closes", 3 );
+		Do( "visit staff closes", () => Click( flow.Hud!.Stack.Top!, "exit" ) );
+		Wait( "visit staff closed", 3 );
 		Do( "read-only object controls", () =>
 		{
 			var hud = flow.Hud!;
@@ -845,7 +1101,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			hud.OpenPauseMenu();
 			// The online game type's pause menu (STP-PPC 0x10197D90) offers no Save or Load during a visit.
 			Require( hud.Stack.Top!.Find( nameof( UIStrings.Save ) ) == null && hud.Stack.Top.Find( nameof( UIStrings.Load ) ) == null, "the visit pause menu has no save or load" );
-			Require( !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "a visit writes no save" );
+			Require( !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Except( visitBaselineFiles ).Any(), "a visit writes no save" );
 			CaptureFrame( "read-only-visit.png" );
 			Click( hud.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
@@ -898,7 +1154,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the visit's attractions listed, sorted and its delete refused." );
 		GameFlow.Quit();
 	}
 
@@ -1078,6 +1334,17 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		var visible = hud.SelectedBuyIndex - hud.BuyFirstRow;
 		Require( visible >= 0 && visible < ParkHud.BuyVisibleRows, "the requested catalogue item is among the visible rows" );
 		flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 427 + (visible + 0.5f) * ParkHud.BuyRowHeight ), UiAnchor.Center ) );
+	}
+
+	/// <summary>Clicks the attractions-window row of <paramref name="attractionId"/>; a second click on the selected row activates it.</summary>
+	private void ClickAttractionRow( ParkHud hud, int attractionId )
+	{
+		Require( hud.AttractionsWindowOpen, "the attractions window is open" );
+		var index = hud.AttractionItems.ToList().FindIndex( row => row.AttractionId == attractionId );
+		var visible = index - hud.AttractionFirstRow;
+		Require( index >= 0 && visible >= 0 && visible < ParkHud.StaffVisibleRows, "the requested attraction is among the visible rows" );
+		flow.InjectedInput = UiInput.Click( Context.Canvas.Map(
+			new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center ) );
 	}
 
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>

@@ -127,4 +127,37 @@ public partial class Level
 		LastActionMessage = "Removed the coaster track.";
 		return true;
 	}
+
+	// ---- Park-resume snapshot -----------------------------------------------------------------------
+
+	/// <summary>
+	/// The park-resume coaster part: every live coaster station's controller joined to its attraction id, or null when
+	/// the park holds none (such a save carries no coaster part). Call between simulation ticks.
+	/// </summary>
+	internal CoasterWorldSaveData? CaptureCoastersSnapshot() => CoasterSave.Capture( Objects.ScriptWorld.Coasters, Objects );
+
+	/// <summary>
+	/// Restores the saved coasters of a resume snapshot into this candidate level, after the objects were placed (each
+	/// station's controller exists, reset to its station node) and their runtimes restored: one entry per live station,
+	/// matched by attraction id, in saved (creation) order. A stopped station holds no entry — its controller was torn
+	/// down at capture and the runtime restore already replayed that. Throws <see cref="InvalidDataException"/> and
+	/// leaves the candidate unrestored on any mismatch.
+	/// </summary>
+	internal void RestoreCoastersSnapshot( CoasterWorldSaveData? saved )
+	{
+		if ( saved == null )
+			return;
+		var live = Coasters.ToHashSet();
+		foreach ( var entry in saved.Rides )
+		{
+			var station = Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Runtime.AttractionId == entry.AttractionId );
+			if ( station?.Runtime.Coaster is not { } ride )
+				throw new InvalidDataException( $"The save holds a coaster for attraction {entry.AttractionId}, which this park does not place as a coaster station." );
+			if ( !live.Contains( ride ) )
+				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s coaster controller is not live; a stopped station holds no coaster state." );
+			ride.RestoreSnapshot( entry );
+		}
+		if ( Coasters.Count != saved.Rides.Count )
+			throw new InvalidDataException( $"The save holds {saved.Rides.Count} coasters, but this park places {Coasters.Count} live coaster stations." );
+	}
 }

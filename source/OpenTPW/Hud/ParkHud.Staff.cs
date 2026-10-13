@@ -329,6 +329,17 @@ public sealed partial class ParkHud
 		// [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles.
 		Model( "staffLocateFrame", "!f_plain", Rect( 526, 1191, 893, 1439 ) );
 		Model( "visitorLocateFrame", "!f_plain", Rect( 12, 1191, 379, 1439 ) );
+		// [APPROX:UI-909] the shipped b_svisit button art (the map window's visitors layer uses the same
+		// art) opens the All Visitors window from the visitor locate corner; its original handler and
+		// rectangle in this window are not decoded.
+		screen.Add( new UiButton { Id = "allVisitors", Model = "b_svisit", Clicked = OpenVisitorWindow, Enabled = level.Guests != null,
+			Bounds = Rect( 24, 1207, 127, 1310 ), Anchor = UiAnchor.Center } );
+		// The original staff window navigates to the visitor and attractions windows (UI-MAP 0x1014b124:
+		// messages 0x32f and 0x330 open them with the last used category); this entry keeps the All
+		// Attractions window reachable where the buy window is closed (a read-only visit disables buy).
+		// [APPROX:UI-909] a text button: the shipped b_allthinginfo art has no texture in ui.wad.
+		screen.Add( new UiButton { Id = "allAttractions", Text = () => strings[UIStrings.AllRides], Font = fonts => fonts.Label,
+			Clicked = OpenAttractionsWindow, Bounds = Rect( 24, 1320, 127, 1422 ), Anchor = UiAnchor.Center } );
 		// [PROVISIONAL:LOCATE] Locate controls focus live actors; role lookup prefers the selected employee, otherwise cycles IDs.
 		var locate = new (string Model, int Help, UiRect Rect)[]
 		{

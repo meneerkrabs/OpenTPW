@@ -47,10 +47,32 @@ public sealed class BlueprintMarkers : ModelEntity
 
 	private static Texture LoadTexture( string path )
 	{
-		if ( FileSystem.FileExists( path ) )
-			return new Texture( path, TextureFlags.Repeat );
+		if ( ResolveTexturePath( path ) is { } resolved )
+			return new Texture( resolved, TextureFlags.Repeat );
 		Log.Warning( $"Blueprint markers: {path} is missing." );
 		return Texture.Missing;
+	}
+
+	/// <summary>
+	/// The marker texture file: the exact <c>.wct</c> path (Theme Park World), else the same name with any extension in
+	/// the same directory (Theme Park Inc ships <c>blue.tga</c>/<c>red.tga</c> there; name lookup as in
+	/// <see cref="OriginalTerrain.FindTexture"/>, docs/THEME-PARK-INC.md "Textures").
+	/// </summary>
+	private static string? ResolveTexturePath( string path )
+	{
+		if ( FileSystem.FileExists( path ) )
+			return path;
+		try
+		{
+			var directory = Path.GetDirectoryName( path )!.Replace( '\\', '/' );
+			var name = Path.GetFileNameWithoutExtension( path );
+			return FileSystem.GetFiles( directory ).FirstOrDefault( file =>
+				string.Equals( Path.GetFileNameWithoutExtension( file ), name, StringComparison.OrdinalIgnoreCase ) );
+		}
+		catch ( DirectoryNotFoundException )
+		{
+			return null;
+		}
 	}
 
 	/// <summary>The cells currently marked (empty while no tool shows a ghost).</summary>

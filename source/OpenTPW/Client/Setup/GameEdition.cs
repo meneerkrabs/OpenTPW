@@ -7,7 +7,7 @@ public enum GameEdition
 {
 	/// <summary>Theme Park World (Sim Theme Park): the only edition OpenTPW plays.</summary>
 	ThemeParkWorld,
-	/// <summary>Theme Park Inc (Sim Coaster): viewable through <c>--load-original-level</c> only.</summary>
+	/// <summary>Theme Park Inc (Sim Coaster): its worlds run in the experimental slice started by <c>--load-original-level</c>.</summary>
 	ThemeParkInc
 }
 
@@ -26,11 +26,84 @@ public enum GameEditionEvidence
 public sealed record GameEditionReport( GameEdition Edition, GameEditionEvidence Evidence );
 
 /// <summary>
+/// What OpenTPW runs for an edition's park, as one explicit policy instead of scattered edition checks: Theme Park
+/// World is the reference game; Theme Park Inc runs the experimental slice (docs/THEME-PARK-INC.md). Every consumer
+/// asks a capability here rather than testing <see cref="GameEditions.IsThemeParkInc"/> itself, so what the slice
+/// supports stays written down in one place.
+/// </summary>
+public sealed record EditionCapabilities
+{
+	/// <summary>The park economy (money, calendar, research, staff wages): needs the Theme Park World balance keys.</summary>
+	public required bool Economy { get; init; }
+	/// <summary>The original Theme Park World HUD (its <c>ui.wad</c> panels, buy window, advisor arm).</summary>
+	public required bool OriginalHud { get; init; }
+	/// <summary>The edition-appropriate basic HUD of the experimental slice (OpenTPW text UI, no original panel art).</summary>
+	public required bool ExperimentalHud { get; init; }
+	/// <summary>Building, rotating and removing objects, paths and queues (free while <see cref="Economy"/> is off).</summary>
+	public required bool Building { get; init; }
+	/// <summary>Guests walk, queue and ride under the ported Theme Park World guest rules.</summary>
+	public required bool Guests { get; init; }
+	/// <summary>Staff world and staffing (wages, rest, training): needs the economy.</summary>
+	public required bool Staff { get; init; }
+	/// <summary>The automatic advisor (its <c>Advisor.sam</c> differs in Theme Park Inc).</summary>
+	public required bool Advisor { get; init; }
+	/// <summary>The original-style front end (lobby and menus).</summary>
+	public required bool FrontEnd { get; init; }
+	/// <summary>Writing and resuming OpenTPW park saves of this edition's parks.</summary>
+	public required bool ParkSaves { get; init; }
+	/// <summary>Sharing: exporting, importing and visiting parks of this edition online.</summary>
+	public required bool Sharing { get; init; }
+	/// <summary>What a start of this edition is called in refusals and logs, with its limits (null: the full game).</summary>
+	public required string? ExperimentalNote { get; init; }
+
+	/// <summary>The reference capabilities: everything OpenTPW implements, for Theme Park World.</summary>
+	public static EditionCapabilities ForThemeParkWorld() => new()
+	{
+		Economy = true,
+		OriginalHud = true,
+		ExperimentalHud = false,
+		Building = true,
+		Guests = true,
+		Staff = true,
+		Advisor = true,
+		FrontEnd = true,
+		ParkSaves = true,
+		Sharing = true,
+		ExperimentalNote = null
+	};
+
+	/// <summary>
+	/// The experimental Theme Park Inc slice: worlds load and can be built in and walked by guests, but no system whose
+	/// Theme Park Inc rules or data OpenTPW has not traced runs. The economy is off because Theme Park Inc's
+	/// <c>Standard.sam</c> lacks 89 of the balance keys the Theme Park World economy reads (measured October 13, 2026);
+	/// the original HUD, front end, advisor and every save, progress and sharing format stay refused.
+	/// </summary>
+	// [APPROX:TPI-903] the slice's capability gates are OpenTPW's honest limits, not traced Theme Park Inc behaviour
+	public static EditionCapabilities ForThemeParkIncSlice() => new()
+	{
+		Economy = false,
+		OriginalHud = false,
+		ExperimentalHud = true,
+		Building = true,
+		Guests = true,
+		Staff = false,
+		Advisor = false,
+		FrontEnd = false,
+		ParkSaves = false,
+		Sharing = false,
+		ExperimentalNote = "experimental Theme Park Inc slice: no economy, staff, advisor, missions, Global Master Save, "
+			+ "COS files, park saves or sharing, and no Theme Park Inc interface; building is free; "
+			+ "none of it is checked against the original game"
+	};
+}
+
+/// <summary>
 /// Recognises Theme Park Inc data. The known retail <c>levels/Standard.sam</c> is an exact identity; structure
 /// (<c>Ver.txt</c>, the Theme Park Inc themes, none of the Theme Park World themes) also identifies edited copies.
-/// <see cref="Current"/> is the edition of the data OpenTPW started with.
+/// <see cref="Current"/> is the edition of the data OpenTPW started with, and <see cref="Capabilities"/> is its
+/// capability policy.
 /// </summary>
-// [EXT:tpi-viewer] Theme Park Inc is an experimental level viewer, not a supported game.
+// [EXT:tpi-viewer] Theme Park Inc runs an experimental slice (docs/THEME-PARK-INC.md), not the supported game
 public static class GameEditions
 {
 	private const long StandardSamLength = 45695;
@@ -42,6 +115,9 @@ public static class GameEditions
 	public static GameEdition Current { get; private set; } = GameEdition.ThemeParkWorld;
 
 	public static bool IsThemeParkInc => Current == GameEdition.ThemeParkInc;
+
+	/// <summary>The capability policy of the edition OpenTPW started with (Theme Park World's until selected otherwise).</summary>
+	public static EditionCapabilities Capabilities => IsThemeParkInc ? EditionCapabilities.ForThemeParkIncSlice() : EditionCapabilities.ForThemeParkWorld();
 
 	public static void Select( GameEdition edition ) => Current = edition;
 
@@ -74,14 +150,20 @@ public static class GameEditions
 		return new( GameEdition.ThemeParkWorld, GameEditionEvidence.None );
 	}
 
-	/// <summary>The themes the Theme Park Inc viewer may load.</summary>
+	/// <summary>The Theme Park Inc worlds the experimental slice may load.</summary>
 	public static bool IsViewableLevel( string level ) => ThemeParkInc.Contains( level, StringComparer.OrdinalIgnoreCase );
 
-	private static readonly string[] ViewerIncompatibleOptions = { "--sandbox", "--front-end", "--smoke-test", "--advisor-say", "--advisor-response", "--setup" };
+	/// <summary>Options that need a playable Theme Park World game or a save/sharing format the slice refuses.</summary>
+	private static readonly string[] ViewerIncompatibleOptions =
+	{
+		"--sandbox", "--front-end", "--smoke-test", "--advisor-say", "--advisor-response", "--setup",
+		"--park-resume-smoke", "--export-park", "--import-park", "--visit-park"
+	};
 
 	/// <summary>
-	/// Why a start on Theme Park Inc data is refused, or null when it is the viewer (<c>--load-original-level</c> with a Theme Park Inc
-	/// world and none of the options that need a playable game) or a read-only inspection.
+	/// Why a start on Theme Park Inc data is refused, or null when it is the experimental slice (<c>--load-original-level</c> with a
+	/// Theme Park Inc world and none of the options that need a playable Theme Park World game or a refused save or
+	/// sharing format) or a read-only inspection.
 	/// </summary>
 	public static string? ViewerRefusal( string[] args )
 	{
@@ -93,8 +175,14 @@ public static class GameEditions
 		var unsupported = ViewerIncompatibleOptions.FirstOrDefault( args.Contains );
 		if ( level != null && IsViewableLevel( level ) && unsupported == null )
 			return null;
-		return "The game folder holds Theme Park Inc (Sim Coaster) data, which OpenTPW does not support. "
-			+ "Only the experimental level viewer can open it: add --load-original-level arabian, science or water"
-			+ (unsupported != null ? $" and drop {unsupported}" : "") + " (docs/THEME-PARK-INC.md). For playing, choose Theme Park World files.";
+		return "The game folder holds Theme Park Inc (Sim Coaster) data, which OpenTPW does not play. "
+			+ "The experimental slice opens it: add --load-original-level arabian, science or water"
+			+ (unsupported != null ? $" and drop {unsupported} (it needs a Theme Park World park)" : "")
+			+ " (docs/THEME-PARK-INC.md). For the supported game, choose Theme Park World files.";
 	}
+
+	/// <summary>One line for the start-up log: what the slice is and that it is not checked against the original game.</summary>
+	// [APPROX:TPI-903] the slice's stated limits are OpenTPW's honest capability gates, not traced Theme Park Inc behaviour
+	public static string SliceNotice => "experimental Theme Park Inc slice: world, building and guests only; "
+		+ "no economy, staff, advisor, missions, Global Master Save, COS or Theme Park Inc interface; original behaviour is not verified.";
 }

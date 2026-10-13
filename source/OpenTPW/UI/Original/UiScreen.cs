@@ -127,7 +127,9 @@ public class UiScreen
 				Focused.Adjust( -1 );
 			if ( input.Has( UiKeys.Right ) )
 				Focused.Adjust( 1 );
-			if ( input.Has( UiKeys.Accept ) )
+			// Enter activates, as for a text field: Space belongs to the park's map key
+			// (the original key table; ParkHud.ScreenShortcuts), not to the hovered element.
+			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
 				Focused.Activate();
 		}
 		if ( IsRemoved )

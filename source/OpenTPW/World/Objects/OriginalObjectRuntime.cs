@@ -176,8 +176,8 @@ public sealed class OriginalObjectRuntime
 	/// Fresh runtime for a park-resume restore: identical to the constructor but with the saved attraction id (no
 	/// allocation; the world's frontier adopts it, holes below included). Pass the saved script seed and open flag,
 	/// restore the state with <see cref="RestoreSnapshot"/>, then rebind script ids with
-	/// <see cref="RideScriptWorld.RestoreSnapshot"/>. Coaster entries are outside the slice: their controller state
-	/// is neither captured nor restored.
+	/// <see cref="RideScriptWorld.RestoreSnapshot"/>. A coaster station's controller state is restored onto its
+	/// <see cref="Coaster"/> by the coaster part (<see cref="CoasterSave"/>), after this.
 	/// </summary>
 	public static OriginalObjectRuntime CreateForRestore( ObjectCatalogEntry entry, RideScriptWorld world, int? seed, bool open, int attractionId )
 	{
@@ -188,12 +188,11 @@ public sealed class OriginalObjectRuntime
 	/// <summary>
 	/// Explicit state of this runtime (see <see cref="OriginalObjectRuntimeSnapshot"/>). The script's instruction
 	/// state lives in the <see cref="RideScriptWorld"/> snapshot; this carries its identity so the world restore can
-	/// check the candidate against it. Fails explicitly for coaster stations.
+	/// check the candidate against it. A coaster station's controller state (track, trains, riders) is the coaster
+	/// part's, captured beside this through <see cref="CoasterSave"/>.
 	/// </summary>
 	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
 	{
-		if ( Coaster != null )
-			throw new InvalidDataException( $"{Entry.ArchivePath}: coaster controller state is not part of the park-resume slice." );
 		return new OriginalObjectRuntimeSnapshot
 		{
 			AttractionId = AttractionId,
@@ -218,8 +217,8 @@ public sealed class OriginalObjectRuntime
 	/// <summary>
 	/// Restores a snapshot into this fresh candidate (built by <see cref="CreateForRestore"/> with the snapshot's
 	/// attraction id, seed and open flag). Validates the entry and script identity first and throws
-	/// <see cref="InvalidDataException"/> — without changing the candidate — on a mismatch; a candidate world whose
-	/// coaster controllers are live is refused. A stopped snapshot replays <see cref="Stop"/>'s teardown (a fresh
+	/// <see cref="InvalidDataException"/> — without changing the candidate — on a mismatch. A stopped snapshot
+	/// replays <see cref="Stop"/>'s teardown (a fresh
 	/// candidate has no riders, chains or trains to lose). Returns the explicit gaps: live audio state (held/owned
 	/// scream chains) cannot cross a restart and is reported, never silently dropped.
 	/// </summary>

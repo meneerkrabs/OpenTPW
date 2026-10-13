@@ -61,7 +61,10 @@ public sealed class UiInputSource
 		Map( Key.Space, UiKeys.Accept | UiKeys.Space );
 		Map( Key.Tab, UiKeys.Tab );
 		Map( Key.Escape, UiKeys.Back );
-		Map( Key.P, UiKeys.Pause );
+		// The original key table reserves Ctrl+P for the e-mail postcard (InputButton.SendEmailPostcard);
+		// pause is the plain P, so a held modifier keeps the pause key out of the combination's way.
+		if ( !keys.Contains( Key.ControlLeft ) && !keys.Contains( Key.ControlRight ) )
+			Map( Key.P, UiKeys.Pause );
 		previousKeys = keys;
 		var input = new UiInput( new NVector2( mouse.Position.X * framebufferPerWindowX, mouse.Position.Y * framebufferPerWindowY ),
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,

@@ -268,6 +268,11 @@ internal static class Game
 			flow.PrepareTexturePack = ( stack, name ) => OpenTPW.UI.Original.TexturePackDownloadScreen.TryShow( stack, flow.Strings, name, ApplyPack );
 		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
+		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.
+		var sliceSmoke = args.Contains( "--tpi-smoke-test" );
+		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
+			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
 		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
@@ -291,6 +296,46 @@ internal static class Game
 				? (Count: count, Interval: interval) : sequenceText == null ? (Count: 1, Interval: 1) : throw new ArgumentException( "--capture-sequence expects count,interval, for example 120,2." );
 			Render.PostUpdate += new WorldCapture( capturePath, frames, args.Contains( "--capture-interface" ), pose, sequence.Count, sequence.Interval ).Update;
 		}
+#if DEBUG
+		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
+		// converter as soon as the park's weather exists, so captures can show rain/snow/lightning without waiting
+		// for the season's rolls. The drops, bolts and thunder still come from ParkWeather's normal machinery;
+		// Release builds never see the flag.
+		var debugWeather = GetOption( args, "--debug-weather", "a weather quality 1..100 for smoke captures" );
+		if ( debugWeather != null )
+		{
+			if ( !int.TryParse( debugWeather, out var debugQuality ) || debugQuality is < 1 or > 100 )
+				throw new ArgumentException( "--debug-weather expects a quality from 1 to 100." );
+			Render.PostUpdate += ApplyDebugWeather;
+			void ApplyDebugWeather()
+			{
+				if ( flow.Level?.Weather is not { } weather )
+					return;
+				Render.PostUpdate -= ApplyDebugWeather;
+				weather.ApplyQuality( debugQuality );
+				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
+			}
+		}
+		// [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own
+		// warning schedule as soon as the park's weather has started, so captures can show the forecast banner
+		// deterministically. The countdown, apply and the weather itself still come from ParkWeather's machinery;
+		// Release builds never see the flag.
+		var debugForecast = GetOption( args, "--debug-forecast", "a forecast quality 1..100 for smoke captures" );
+		if ( debugForecast != null )
+		{
+			if ( !int.TryParse( debugForecast, out var forecastQuality ) || forecastQuality is < 1 or > 100 )
+				throw new ArgumentException( "--debug-forecast expects a quality from 1 to 100." );
+			Render.PostUpdate += PostDebugForecast;
+			void PostDebugForecast()
+			{
+				if ( flow.Level?.Weather is not { Started: true } weather )
+					return;
+				Render.PostUpdate -= PostDebugForecast;
+				weather.DebugPostForecast( forecastQuality );
+				Log.Trace( $"--debug-forecast: quality {forecastQuality} posted as a forecast {weather.DaysOfWarning} days out (apply day {weather.ForecastApplyDay})." );
+			}
+		}
+#endif
 		if ( startsFrontEnd )
 		{
 			if ( autorun != null )
@@ -321,6 +366,16 @@ internal static class Game
 			: originalLevelIndex >= 0
 			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
+
+		if ( sliceSmoke )
+		{
+			using var sliceSmokeTest = new ThemeParkIncSmokeTest( flow );
+			Render.PostUpdate += sliceSmokeTest.Update;
+			Render.Run();
+			Render.PostUpdate -= sliceSmokeTest.Update;
+			sliceSmokeTest.VerifyCompleted();
+			return;
+		}
 
 		//
 		// Run game loop
@@ -578,17 +633,17 @@ internal static class Game
 	}
 
 	/// <summary>
-	/// Theme Park Inc is not a supported game. Its data may only be opened by the experimental level viewer:
+	/// Theme Park Inc is not a supported game. Its data may only be opened by the experimental slice:
 	/// <c>--load-original-level arabian|science|water</c> (docs/THEME-PARK-INC.md, "Theme Park Inc level viewer").
 	/// </summary>
-	// [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support.
+	// [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support.
 	private static void RequireThemeParkIncViewer( string[] args, GameEditionReport edition )
 	{
 		if ( GameEditions.ViewerRefusal( args ) is { } refusal )
 			throw new ArgumentException( refusal );
 		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
-		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental level viewer for '{level}'. "
-			+ "This is not Theme Park Inc support: no economy, advisor or HUD, and original behaviour is not verified." );
+		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice for '{level}'. "
+			+ GameEditions.SliceNotice );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

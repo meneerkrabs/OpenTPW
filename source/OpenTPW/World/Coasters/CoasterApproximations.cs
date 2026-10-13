@@ -25,7 +25,7 @@ public static class CoasterApproximations
 		("COAST-022", "COAST-STEP: hops run on the 60 Hz fixed step in train order, cars 7 units apart, the front car is the reference and braking car, no winch-floor halving, every car active"),
 		("COAST-023", "COAST-DISPATCH: seats = COAST 6 capacity; speed setting stays 60; departures at the release headway when full or after 5 s; arriving trains wait before a busy station"),
 		("COAST-024", "COAST-INCOMPLETE: guests do not join or board a coaster that is not complete and closed"),
-		("COAST-025", "COAST-SAVE: the park save holds no coaster tracks, trains or coaster generator state"),
+		("COAST-025", "COAST-SAVE: the own-format park save holds the tracks, trains, riders and generator state; the original's coaster chunks between EMAK and SAOC are neither read nor written"),
 		("COAST-026", "COAST-RENDER: tracks, pylons and cars are drawn as flat-coloured boxes, not the coaster.sam cross sections and MD2 meshes"),
 		("COAST-027", "COAST-RNG: the coaster generator starts from the world seed, not one C-library rand() draw"),
 		("COAST-028", "COAST-TOOL: the coaster tool's mouse and key controls and its ghost marker are OpenTPW's; the tool refuses no pylon for money"),

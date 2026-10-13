@@ -125,6 +125,10 @@ public sealed class CoasterRide
 	public int RidersOnBoard => trains.Sum( train => train.Riders );
 	/// <summary>Riders taken off a removed track or reopened ride, waiting for <c>COAST 3</c>.</summary>
 	public int LeavingCount => leaving.Count;
+	/// <summary>Park time of the last dispatch, or <c>-∞</c> while no train has ever been dispatched (park-resume capture).</summary>
+	internal double LastDispatch => lastDispatch;
+	/// <summary>The riders waiting for <c>COAST 3</c>, in departure order (park-resume capture).</summary>
+	internal IReadOnlyCollection<int> LeavingRiders => leaving;
 	public bool IsOperational => Track.IsRunnable && samples.Length >= 3;
 	/// <summary>Raised after a track edit that changes the samples (built, reopened, deleted).</summary>
 	public event Action<CoasterRide>? TrackChanged;
@@ -592,5 +596,63 @@ public sealed class CoasterRide
 		hash.Add( leaving.Count );
 		foreach ( var guest in leaving )
 			hash.Add( guest );
+	}
+
+	// ---- Park-resume snapshot ----------------------------------------------------------------------------
+
+	/// <summary>
+	/// Restores a saved controller into this fresh ride (its station was placed, which reset the track to the station
+	/// node): the track verbatim, then the controller scalars — before the rebuild, whose rating pass reads the speed
+	/// cap — then the rebuild itself for a runnable track (the curve, rating, winch marks, braking point and train
+	/// count are re-derived by the same deterministic pass completion ran, never copied from the save), then the
+	/// trains and riders the save holds over the placed ones. A count mismatch throws
+	/// <see cref="InvalidDataException"/> — the restore is a park-resume candidate's step, and the failed candidate is
+	/// discarded whole, so a half-restored controller never simulates.
+	/// </summary>
+	internal void RestoreSnapshot( CoasterRideSaveData saved )
+	{
+		ArgumentNullException.ThrowIfNull( saved );
+		Track.RestoreSnapshot( saved.Track );
+		Initialised = saved.Initialised;
+		Closed = saved.Closed;
+		BreakdownState = saved.BreakdownState;
+		SpeedSetting = saved.SpeedSetting;
+		SeatsPerTrain = saved.SeatsPerTrain;
+		SpeedCap = saved.SpeedCap;
+		PaidCost = saved.PaidCost;
+		TimeSeconds = saved.TimeSeconds;
+		lastDispatch = saved.LastDispatch ?? double.NegativeInfinity;
+		if ( Track.IsRunnable )
+			Rebuild();
+		else
+		{
+			// A track that never completed holds no samples and no trains; its riders (if any) wait to leave.
+			if ( trains.Count != 0 )
+				ClearTrains();
+			RaiseTrackChanged();
+		}
+		if ( saved.Trains.Count != trains.Count )
+			throw new InvalidDataException( $"Coaster '{Name}' holds {saved.Trains.Count} trains in the save, but the restored track places {trains.Count}." );
+		for ( var index = 0; index < trains.Count; index++ )
+			RestoreTrain( index, saved.Trains[index] );
+		leaving.Clear();
+		foreach ( var guest in saved.Leaving )
+			leaving.Enqueue( guest );
+	}
+
+	private void RestoreTrain( int index, CoasterTrainSaveData saved )
+	{
+		var train = trains[index];
+		if ( saved.Cars.Count != train.Cars.Count )
+			throw new InvalidDataException( $"Coaster '{Name}' train {index} holds {saved.Cars.Count} cars in the save, the definition gives {train.Cars.Count}." );
+		train.Position = saved.Position;
+		train.Speed = saved.Speed;
+		train.State = (CoasterTrainState)saved.State;
+		train.BoardingSince = saved.BoardingSince;
+		for ( var car = 0; car < train.CarLists.Length; car++ )
+		{
+			train.CarLists[car].Clear();
+			train.CarLists[car].AddRange( saved.Cars[car] );
+		}
 	}
 }

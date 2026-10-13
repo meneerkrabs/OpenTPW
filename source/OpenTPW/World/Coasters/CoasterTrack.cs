@@ -463,6 +463,32 @@ public sealed class CoasterTrack
 		Version++;
 	}
 
+	/// <summary>
+	/// Restores a saved track verbatim (the inverse of the capture; park-resume restore): the station end cells, every
+	/// node with its flags, bank and stack index exactly as saved, the circuit flags and the edit version. Nothing is
+	/// re-derived here — the stack index and the invalid/winch marks are state the build edits left, and the curve is
+	/// the controller's to refit (<see cref="CoasterRide.Rebuild"/>).
+	/// </summary>
+	internal void RestoreSnapshot( CoasterTrackSaveData saved )
+	{
+		ArgumentNullException.ThrowIfNull( saved );
+		DepartCell = saved.DepartCell;
+		ReturnCell = saved.ReturnCell;
+		nodes.Clear();
+		foreach ( var savedNode in saved.Nodes )
+		{
+			var node = new CoasterNode( savedNode.X, savedNode.Y, savedNode.Height, savedNode.T, savedNode.LoopPylon, savedNode.StackIndex, savedNode.IsStation, savedNode.IsStationEnd )
+			{
+				Flags = (CoasterNodeFlags)savedNode.Flags,
+				Bank = savedNode.Bank
+			};
+			nodes.Add( node );
+		}
+		IsClosed = saved.IsClosed;
+		IsComplete = saved.IsComplete;
+		Version = saved.Version;
+	}
+
 	// ---- Cost -------------------------------------------------------------------------------------------
 
 	/// <summary>

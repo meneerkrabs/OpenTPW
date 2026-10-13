@@ -139,7 +139,13 @@ The train count is `min(uiMaxTrains, max(1, trunc(lap / (uiTrainReleaseRate/1000
 
 Coasters are in the canonical state hash (schema 6, docs/DETERMINISM.md): the
 coaster generator, then every coaster's track, controller state, samples,
-rating, trains and riders. The park save does not hold coasters yet (COAST-025).
+rating, trains and riders. The park save holds them all
+([PARK-SAVES.md](PARK-SAVES.md)): the track verbatim, the controller scalars
+and trains with their riders, and the shared generator through the script
+world; the curve samples, rating, winch marks and braking point are re-derived
+on load by the same rebuild completion ran, so a loaded coaster continues
+bit-for-bit. The original's own coaster chunks between EMAK and SAOC are
+neither read nor written (COAST-025).
 
 ## Tests
 
@@ -154,6 +160,15 @@ rating, trains and riders. The park save does not hold coasters yet (COAST-025).
   values; every PC coaster builds, rates and runs; and on a fresh Jungle park
   guests board Temple Of Gloom through its original script, ride a lap and leave.
   Closing lets the trains finish, and deleting removes every pylon.
+- `CoasterSaveTests` (no game data) and `CoasterSaveAssetTests`
+  (`OPENTPW_GAME_PATH`): the coaster part of the park save — a running coaster
+  with riders round-trips through the codec and continues deterministically, an
+  unfinished track round-trips and keeps building, corrupted track data is
+  refused with a reason, a real station validates against the real catalog, and
+  two real stations resume into fresh runtimes and continue deterministically.
+  Real guests boarding through the original script stay save-consistent at every
+  tick boundary, including the boarding hand-over (a rider seated by `COAST 1`
+  one host step before the bridge marks it aboard).
 - The native smoke test of an original level builds a coaster through HUD clicks
   (pylons, wheel height, close, complete), sees a train leave and the track
   drawn, and removes it.

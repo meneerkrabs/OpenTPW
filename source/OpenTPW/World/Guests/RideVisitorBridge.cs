@@ -500,10 +500,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 
 	/// <summary>The queue cell behind (x, y): a neighbour of type 3 whose link points back at (x, y) (<c>0xdda18</c>).</summary>
-	// [APPROX:QUEUE-002] neighbours are tried in GuestPathGrid.Directions order; the original pairs run-time offsets with links 16, 1, 64, 4 whose order is not established — evidence needed: the neighbour offset tables at run time
+	// [BIN:TPW-EXE:0x004DE670 queue predecessor] the neighbours are tried −Y (its link 16), +Y (link 1), +X (link 64), −X (link 4), through the run-time table 0x007CDBA0 (entries 0, 1, 5, 6); the first queue cell (type 3, not 9) whose link points back is taken
+	private static readonly int[] PredecessorOrder = { 0, 2, 1, 3 };   // Directions indices: −Y, +Y, +X, −X
+
 	public static (int X, int Y)? NextQueueCell( GuestPathGrid grid, (int X, int Y) cell )
 	{
-		for ( var direction = 0; direction < 4; direction++ )
+		foreach ( var direction in PredecessorOrder )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
 			var (nx, ny) = (cell.X + dx, cell.Y + dy);

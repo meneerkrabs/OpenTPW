@@ -9,7 +9,6 @@ public static class QueueApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("QUEUE-002", "the next queue cell is searched in grid direction order"),
 		("QUEUE-003", "guests step onto the back of a queue from its first walkable neighbour (the join cell)"),
 		("QUEUE-004", "the join excitement of a ride with a thing behind ride +36 (60 % of the level plus up to 40 from three piece counts) is not modelled; the gate, the clamped difference and the live excitement (sideshow, speed and duration ratios, coaster) follow the original (ORACLE.md F16)"),
 		("QUEUE-005", "after a queue edit, a guest whose cell left the queue leaves (Confused) and the others re-walk, where the original only sends away guests beyond the room; a leaving guest plays no animation"),

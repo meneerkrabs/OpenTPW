@@ -389,7 +389,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
 			// would strand every guest whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the
 			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
-			// [APPROX:GUEST-011] what the original does with queued guests at mParkClosed is not traced — evidence needed: a closing-word read in the state-11 handler 0xed244 or the ride update 0xe0aec
+			// [APPROX:GUEST-011] OpenTPW pulls queued and boarding guests out when the park closes; in tp.exe nothing in the queue reads the closed word (game +0x1DA710, 0x0051A280): its readers are the guest state handlers for states 2, 3, 5, 6, 10 and 18 (0x004FF730, 0x004FF7F0, 0x004FFB20, 0x004FEC90, 0x004FFBC0, 0x00500A50; the state dispatcher 0x005019F0), the strike test 0x00508E70, staff code 0x00506300, the park's average happiness 0x004C7BB0 (0 while closed), 0x004C9050 and the UI 0x00498D80, so the original's queues keep running and their guests leave only after the ride — evidence needed: whether OpenTPW's rides keep admitting in a closed park (oracle F26), which decides whether the safeguard can go
 			if ( Payments?.ParkClosed == true )
 			{
 				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding && FindAttraction( guest.AttractionId ) is { } closed )

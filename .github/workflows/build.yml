@@ -60,6 +60,8 @@ jobs:
       - run: dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --configuration Release --no-build --nologo
       - name: Check patch comparison tool
         run: dotnet run --project tools/patch-analysis/PatchAnalysis.csproj --configuration Release -- --self-test
+      - name: Check the browser page helpers and the performance harness
+        run: node --test tools/test_web_textures.mjs tools/test_web_perf.mjs
   server-image:
     # Builds the self-hosting image, browser game included, and checks that it serves the page and the API.
     # It is also the only place CI compiles the browser build (OpenTPW.Web is not in the solution).

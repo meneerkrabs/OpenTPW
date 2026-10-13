@@ -797,6 +797,13 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Browser performance harness (October 13):** `tools/web-perf/run.mjs` repeats the browser
+  measurements with one command: a local server for the published page and the player's own
+  files, a fresh headless Chrome over the DevTools Protocol, and fixed scenarios (start, lobby,
+  cold Jungle, first buy-menu selections, memory). The page records frame times only with
+  `?perf=1`. The baseline on an Apple M5 (BROWSER-PERFORMANCE.md) is phase 0 of the browser
+  performance plan; its Node tests and the page's texture tests now run in CI.
+
 - **Browser:** `OpenTPW.Web` runs the shared game code on WebAssembly with a
   source-compatible WebGL2 replacement for Veldrid (docs/WEB.md). Theme folders
   load when a park first needs them, sound plays through WebAudio, and saves,

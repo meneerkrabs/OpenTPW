@@ -254,4 +254,7 @@ model and a texture parsed unchanged in about 430 ms, from a 2.4 MB download.
 ## Performance
 
 See [browser performance](BROWSER-PERFORMANCE.md) for measured CPU/frame costs,
-render binding reuse, cooperative audio decoding and remaining park-load stalls.
+render binding reuse, cooperative audio decoding and remaining park-load stalls. Its harness
+(`tools/web-perf/run.mjs`) opens the page with `?perf=1`, which records the time of every
+`Program.Frame` and exposes the measurement hooks of `Program.Perf.cs`; without it the page
+behaves as before.

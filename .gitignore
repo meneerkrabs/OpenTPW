@@ -389,3 +389,6 @@ dumps
 /out/
 # Cloudflare wrangler cache
 .wrangler/
+
+# Browser performance reports (tools/web-perf); the numbers that matter go into docs/BROWSER-PERFORMANCE.md
+/reports/web-perf/

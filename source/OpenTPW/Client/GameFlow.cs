@@ -136,6 +136,8 @@ internal sealed partial class GameFlow : IDisposable
 		{
 			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode, overFrames: true ), prepareBuyWindow: true ),
 			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry, overFrames: true ), prepareBuyWindow: true ),
+			ContinueEntry = FindContinueEntry,
+			ContinuePark = entry => QueueLevel( entry.Park.Level, () => ContinuePark( entry ), prepareBuyWindow: true ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			IslandSelected = island =>

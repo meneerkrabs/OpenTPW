@@ -422,6 +422,11 @@ public partial class ModelFile : BaseFormat
 			materials += materialCount;
 			faces += faceCount;
 			normals += cornerCount + faceCount;
+			// These totals only grow: once a header count is exceeded, later meshes cannot repair it.
+			// Refuse before repeated aliased spans reserve another mesh's decoded arrays.
+			if ( vertexBlocks > counts.VertexBlockCount || uvBlocks > counts.UvBlockCount || materials > counts.MaterialCount
+				|| faces > counts.FaceCount || normals > counts.NormalCount )
+				throw new InvalidDataException( "MD2 mesh totals disagree with the header counts." );
 
 			// Positions and texture coordinates are stored as blocks of four (X×4, Y×4, Z×4 / U×4, V×4).
 			var positions = new Vector3[vertexCount];

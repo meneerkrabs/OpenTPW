@@ -6,6 +6,25 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Native smokes on a 120 Hz arm64 Mac (October 13, 2026)
+
+- **Retail WCT textures decode again.** The WCT bounds audit (`docs/WCT-ROBUSTNESS.md`) was written
+  without original data and refused 5,055 of the 8,416 shipped textures: every BILZ chunk (its stream
+  size counts the 28-byte header too) and every LZSS chunk of odd length (the last 16-bit word is the
+  final byte plus zero bits). Both are now read as the retail data stores them; all 8,412 textures the
+  decoder handled before the audit decode to byte-identical RGBA, and a corpus-wide test
+  (`EveryOriginalTextureDecodesExceptThePinnedFailures`) walks every shipped WCT.
+- **Front-end smoke and advisor speech.** The pause-menu save waits for the Jungle welcome line
+  (response 1, 28.63 s, the right clip from the level bank). The speech plays in real time, so the frames
+  it takes follow the display: with the frame cap off, a 120 Hz screen spent the whole 3,000-frame budget
+  waiting. Those frames no longer count against the budget; the wait is bounded by the clip's remaining
+  length plus 5 s instead. Measured: the speech ended 24.16 s into a predicted 24.17 s wait; the test
+  passed at 2560×1440 px, UI scale 2, in 3,697 frames, 2,897 of them speech.
+- **Sandbox smoke ride-view click.** The guard clicked the first cell of the first removable object, which
+  at 1280×720 logical projects below the bottom edge of the park camera's view. It now clicks a removable
+  object's cell that is in view, picks back to itself and is occupied by that object. The sandbox smoke
+  passed in 2,032 frames at the same size.
+
 ## Merged PowerPC evidence lanes
 
 The reviewed clock/PEF, economy/save, VM, UI-binding, advisor/audio, guest
@@ -279,6 +298,43 @@ preview; original runtime fidelity and the complete offline scope remain open.
   to be the log line every guest prints, not a second exit. C# now also sends away a non-called guest in state 13 beyond the room; it
   keeps its Confused departure for a guest whose cell left the queue (its walk cannot route that guest back), which QUEUE-005 now names
   as the remaining difference. Found in the REA research round over the register (2026-10-13).
+- QUEUE-001 is retired: tp.exe's run-time neighbour table (`0x4d97e0`) maps the links 1, 4, 16, 64 to −Y, +X, +Y, −X, and the
+  queue's predecessor search `0x4de670` reads the link byte +13 with it, as C# assumed. QUEUE-015 is narrowed: the original's cell clear
+  `0x5367a0` removes only the one queue cell (refunded, neighbours unlinked); C# still removes every cell behind it.
+- QUEUE-008 is specified from tp.exe, without a C# change yet: every use of a toilet lowers its gauge by 0.05 × the guest's toilet
+  meter (`0x4e2440`); handymen with no litter in reach walk to the nearest dirty toilet and clean it back to 100 after a per-grade
+  time (`0x4d7880`, state 11, `0x4dfd80`). Wear alone would leave toilets dirty for good, so it waits for the handyman's toilet job.
+- Park points now apply the queue part of the original's counts-test (tp.exe `0x4dd920`, ORACLE.md 7.11, X15, ARRIVAL-003): an
+  attraction counts only with queue cells from its entrance and a queue shorter than 4 × those cells, so a ride without a queue, or with
+  a full one, adds no points and draws no arrivals. Only the coaster controller test and the kart/water word remain open.
+- ECON-052 is retired: the recent-visitors golden ticket now follows tp.exe `0x4c94d0` / `0x4d4bc0`. It takes the lifetime visitor
+  counter minus its snapshot at the month close RecentVisitorMonths back, so the open month counts and one more close is needed.
+  It also needs the park clock to be more than that many exact 30-day months old; both comparisons are strict.
+- QUEUE-002 is retired: the queue's predecessor search (tp.exe `0x4de670`) tries the neighbours −Y, +Y, +X, −X (links 16, 1, 64, 4),
+  and `RideVisitorBridge.NextQueueCell` now uses that order instead of the grid's direction order.
+- ARRIVAL-001 is narrowed: the original's arrival update (tp.exe `0x4cf3e0`) runs once per world turn (`0x516380`) and drops one guest per
+  turn while the bus stands at its stop. OpenTPW's guests therefore step off one per park turn from the turn after a group starts,
+  instead of every 0.4 s. Only the bus's drive to the stop (its animation) is missing. Three behaviour pins moved: the fixed-run hash,
+  the cross-grid run (62 → 60 admissions) and the Jungle run (23 → 22).
+- QUEUE-006 is narrowed: queue places follow tp.exe `0x4de840`. The lateral byte is no longer mirrored for queues whose front lies
+  towards +Y or −X, and the fourth place in a cell takes the axis of the cell behind it (`depth − 128` for links towards +X). Only the back
+  cell's fourth place still depends on OpenTPW's join cell.
+- Guests now test prices as the original does (tp.exe `0x4fde50`, ORACLE.md 7.12, X16, GUEST-003). They no longer skip an attraction
+  they cannot afford when choosing. When called forward at a shop or sideshow, a guest compares the price with a willingness to pay
+  (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
+  prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
+  now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- ECON-015 is retired: tp.exe's researcher update `0x502960` skips display states 3, 4 and 5 of `0x5064f0`, which maps the internal
+  staff state to the STAFFSTATES names (Idle, Patrolling, Working, Resting, On strike, Picked up); C#'s StaffState is that index, and its
+  exclusion of Resting, OnStrike and PickedUp is the original's. GUEST-007 is narrowed with the prank rule of the state-6 handler.
+- The Escape pause menu now stops the park simulation, as the original's does: on the Mac, Escape in the park (`0x157968`, key 27)
+  calls `0x198514(0)`, which builds the pause menu `0x197d90` and then calls the game pause `0x110518` (`0x198580`) while the
+  game-state pause gate `+0x3c` is set; the menu's close routine `0x1985c0` re-arms the gate and calls the resume `0x110598`. The
+  pause freezes the scaled clock (`0x10e888` → `0x117c54`) that drives the scheduler's substeps and park turns, together with the
+  advisor's clock. Before, OpenTPW froze only the advisor and a front-end smoke run saw the park date move three days while the
+  menu was open. `ParkHud.TimeScaleFor` returns 0 while the pause menu (or a screen opened from it) is on the stack, and the speed
+  setting is left alone, so the park resumes at the same speed (`ParkPauseTests`, front-end smoke check). UI-096 names the
+  original's other pausing screens (full-screen map, message dialog, Load dialog, `0x15f67c`) that do not stop the park here yet.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the
@@ -807,6 +863,30 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
+  write's bytes can no longer end up under another's hash; writes to different files stay independent.
+- **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),
+  the manifest first marks it as not stored and only marks it kept, with the new hash, once the new bytes are written; a clear or
+  folder change in between drops the write. A failed rewrite therefore makes the file count as missing instead of offering stale
+  bytes under the new hash (BROWSER-ORIGINAL-CACHE-RECOVERY.md).
+- **WAD ranges checked before allocating (October 13):** a WAD's header, directory and member ranges are checked
+  against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
+  instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive
+  still reads byte for byte as before; an archive with a member past its end is now refused as a whole (WAD-ROBUSTNESS.md).
+- **Script civil time (October 13):** TPW scripts' `YEAR`/`MONTH`/`DAY`/`HOUR` read the host's local civil time instead
+  of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
+  flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's
+  Haunted Tower reads `HOUR` and its hour reaches the world hash; the game keeps the host clock.
+- **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting
+  visitors directly instead of building their cell groups a second time (1,500 visitors: 165,168 to 680
+  bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the
+  header before decoding another mesh (every shipped model still parses); new save/weather roundtrip
+  tests cover real files, paused and fast speeds, live weather, pending thunder and malformed JSON.
+- **Parks built over frames (October 13):** a park chosen in the front end, loaded or visited is built
+  over several frames beside the running lobby, with a progress line, instead of in one frame; the
+  construction runs the same steps in the same order, and the smoke test finds the same world hash,
+  entities and objects. On the AOT build the largest frame of a cold Jungle start fell from 509 to
+  107 ms; the park is ready 16 % later (832 against 717 ms), the digest is unchanged. Phase 5 of the browser plan (time-slicing).
 - **Files read on demand (October 13):** WAD archives opened from a path and SDT sound banks now read
   a member or entry from the file when it is needed instead of holding the whole file (byte-identical
   on every original archive member and bank entry); `Texture.Missing` is one shared texture, and the

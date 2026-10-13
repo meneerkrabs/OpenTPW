@@ -36,7 +36,7 @@ public static class GuestStart
 	/// </summary>
 	// [BIN:STP-PPC:0x100E7644 guest constructor] executed by the PowerPC oracle (guest-constructor, 517 inputs; C# agrees on the compared values)
 	// [APPROX:DET-014] the draws come from OpenTPW's guest stream, not the original's world generator reseeded per guest — evidence needed: DET-I2 port of WorldRng
-	// [APPROX:GUEST-007] the eighth draw's prankery flag (guest byte +448: 100 + id modulo 3 with PrankeryLikelihood percent) is not modelled — evidence needed: what reads +448 (the random events of the state-6 handler)
+	// [APPROX:GUEST-007] the eighth draw's prankery flag (guest byte +448: 100 + id modulo 3 with PrankeryLikelihood percent) is not modelled. Its reader is the state-6 handler (tp.exe 0x004FEC90): a guest whose happiness byte is below 15 and whose flag beats rand % 101 pranks. Flag 100 drops litter of type 8 with a sound when rand % 100 is below a settings word (0x007850E0), 101 drops litter of a random type 1..5 (0x004D93B0, "Littering cell"), and 102 picks on another guest on its cell that carries a +0x210 object (0x004FE950). A prank records event 15 and raises happiness by 1. OpenTPW has no separate state 6 (GUEST-010) and keeps litter park-wide (ECON-020) — evidence needed: the settings key behind 0x007850E0 and what 0x004FE950 does to the other guest
 	public static GuestStartValues FromDraws( IReadOnlyList<GuestType> types, int exitLevel, int exitLevelVariation, int startingCashVariationPercent, Func<uint> draw )
 	{
 		var exitDraw = draw();

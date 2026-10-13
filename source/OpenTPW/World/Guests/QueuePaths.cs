@@ -91,7 +91,7 @@ public static class QueuePaths
 	}
 
 	/// <summary>Removes queue cell (x, y) of <paramref name="ride"/> and every cell behind it; returns the number removed.</summary>
-	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the player's bulldozer route into ClearCell 0x859b4 is not traced — evidence needed: the remove tool's call into 0x100859B4
+	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the original's cell clear (tp.exe 0x005367A0, the Mac 0x859b4, queue branch) refunds and clears only that cell and unlinks its neighbours, leaving the cells behind on the map as queue cells no ride reaches, and whether the player's remove tool goes on to clear them is not traced — evidence needed: the remove tool's route into 0x005367A0 (callers 0x00452CA0 / 0x00452D30)
 	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y )
 	{
 		ride.RecomputeQueue( grid );

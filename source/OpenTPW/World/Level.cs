@@ -88,13 +88,21 @@ public partial class Level : IDisposable
 	}
 
 	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
-		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null ) { }
+		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null, overFrames: false ) { }
 
 	internal Level( ParkResumeSnapshot snapshot, ParkEconomy economy, OnlineFolders? onlineFolders = null )
-		: this( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy ) { }
+		: this( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy, overFrames: false ) { }
+
+	/// <summary>
+	/// A level whose construction runs step by step through <see cref="Step"/>, so a game frame can build part of it and draw
+	/// (docs/BROWSER-PERFORMANCE.md, "Building a park over frames"). The steps and their order are those of the constructor:
+	/// the finished level is the same. Each step expects the level's scene to be the current one (<see cref="EntityConstructionScope"/>).
+	/// </summary>
+	internal static Level BeginOverFrames( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders, ParkStartKind start ) =>
+		new( levelName, loadOriginalLevel, visit, onlineFolders, start, null, null, null, overFrames: true );
 
 	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
-		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, ThemeParkIncLayoutCheckpoint? checkpoint = null )
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null )
 	{
 		if (checkpoint != null && !GameEditions.IsThemeParkInc)
 			throw new NotSupportedException("TPI layout checkpoints require Theme Park Inc data.");
@@ -113,22 +121,67 @@ public partial class Level : IDisposable
 		visitLayout = visit != null && visit.Payload.HasBuiltLayout && !visit.IsSandbox ? visit.Payload : null;
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
-		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
+		construction = Construct( visit != null ? !visit.IsSandbox : loadOriginalLevel, start, onlineFolders, resume, resumedEconomy ).GetEnumerator();
+		if ( !overFrames )
+			while ( Step() ) { }
+	}
+
+	private IEnumerator<float>? construction;
+
+	/// <summary>How far the construction has come, from 0 to 1 (a rough share of the work, for a progress bar).</summary>
+	internal float ConstructionProgress { get; private set; }
+
+	/// <summary>Runs the next construction step; false once the level is complete. A failed step leaves the level to be disposed.</summary>
+	internal bool Step()
+	{
+		if ( construction == null )
+			return false;
+		if ( construction.MoveNext() )
+		{
+			ConstructionProgress = construction.Current;
+			return true;
+		}
+		construction.Dispose();
+		construction = null;
+		ConstructionProgress = 1;
+		return false;
+	}
+
+	/// <summary>The constructor's work; each value is a point where a frame may end, with the share of the work done.</summary>
+	private IEnumerable<float> Construct( bool original, ParkStartKind start, OnlineFolders? onlineFolders, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy )
+	{
+		if ( original )
 		{
 			using ( LoadProfile.Measure( "original-park" ) )
-				OriginalPark = OriginalPark.Load( levelName, readShippedSave: checkpoint == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
+			{
+				var parts = 0;
+				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) ) )
+				{
+					if ( loaded == null )
+						yield return Math.Min( 0.14f, 0.004f * ++parts );
+					else
+						OriginalPark = loaded;
+				}
+			}
 			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
+			yield return 0.15f;
 			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the
 			// balance keys it reads, so its worlds run without one and building stays free (docs/THEME-PARK-INC.md).
-			using var economyProfile = LoadProfile.Measure( "economy" );
-			if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
-				Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
-					: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
+			using ( LoadProfile.Measure( "economy" ) )
+			{
+				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
+					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
+						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
+			}
+			yield return 0.2f;
 		}
 
 		using ( LoadProfile.Measure( "entities" ) )
-			SetupEntities();
+		{
+			foreach ( var progress in SetupEntities() )
+				yield return progress;
+		}
 		if ( resume != null ) RestoreResumeSimulation( resume );
 		using ( LoadProfile.Measure( "level-hud" ) )
 			SetupHud( onlineFolders );
@@ -137,7 +190,7 @@ public partial class Level : IDisposable
 		incLayoutCells = null;
 		if ( visitLayout != null )
 			ApplyVisitedLayout();
-		if ( visit?.Payload.PrototypeRide is { } ride )
+		if ( Visit?.Payload.PrototypeRide is { } ride )
 			RestoreVisitedRide( ride );
 	}
 
@@ -198,7 +251,7 @@ public partial class Level : IDisposable
 			PlacedRide.Start();
 	}
 
-	private void SetupEntities()
+	private IEnumerable<float> SetupEntities()
 	{
 		SunLight = new Sun() { Position = new( 0, 100, 100 ) };
 
@@ -211,7 +264,16 @@ public partial class Level : IDisposable
 		else
 		{
 			using ( LoadProfile.Measure( "terrain" ) )
-				OriginalTerrain = new OriginalTerrain( OriginalPark );
+			{
+				foreach ( var built in OriginalTerrain.BuildSteps( OriginalPark ) )
+				{
+					if ( built == null )
+						yield return 0.3f;
+					else
+						OriginalTerrain = built;
+				}
+			}
+			yield return 0.35f;
 			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global ); }
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
@@ -237,15 +299,21 @@ public partial class Level : IDisposable
 				+ (save == null ? "; no original save." : $"; Easymode import: {save.PathCells.Count} path cells, {save.PlacedObjects.Count} placed objects, {save.FixedItems.Count} fixed items.")
 				+ (visitLayout != null ? $"; shared layout: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters." : "") );
 		}
+		yield return 0.4f;
 		using ( LoadProfile.Measure( "objects" ) )
-			SetupObjects();
+		{
+			foreach ( var share in SetupObjects() )
+				yield return 0.4f + 0.35f * share;
+		}
 		using ( LoadProfile.Measure( "coasters" ) )
 			SetupCoasters();
 		Camera.SetCameraMode<ParkCameraMode>();
+		yield return 0.8f;
 		if ( OriginalPark != null )
 		{
 			using ( LoadProfile.Measure( "guests" ) )
 				SetupGuests( OriginalPark );
+			yield return 0.9f;
 			using ( LoadProfile.Measure( "paths" ) )
 				SetupPaths();
 			if ( OriginalTerrain != null && Guests != null )

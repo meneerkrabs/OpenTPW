@@ -6,7 +6,7 @@ public partial class Level
 	private ParkCellMap? incLayoutCells;
 
 	internal Level(ThemeParkIncLayoutCheckpoint checkpoint, OnlineFolders? onlineFolders = null)
-		: this(checkpoint.Theme, true, null, onlineFolders, ParkStartKind.FullSimulation, new WorldSeed(checkpoint.Seed), null, null, checkpoint) { }
+		: this(checkpoint.Theme, true, null, onlineFolders, ParkStartKind.FullSimulation, new WorldSeed(checkpoint.Seed), null, null, overFrames: false, checkpoint: checkpoint) { }
 
 	internal ThemeParkIncLayoutCheckpoint CaptureThemeParkIncLayout(DateTimeOffset savedUtc)
 	{

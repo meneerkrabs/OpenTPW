@@ -212,10 +212,13 @@ function askForFolder(reason, relative, size) {
 		return true;
 	});
 }
-// A folder asked for again joins the kept files only when up to three of them (the smallest kept ones) have the same bytes in it.
+// A folder asked for again joins the kept files only when every kept file has the same size in it and up to eight of them (the
+// smallest kept ones) have the same bytes.
 async function sameInstallation(folder) {
-	const kept = Object.entries(store?.manifest?.files ?? {}).filter(([, entry]) => entry.stored && entry.sha256)
-		.sort(([, a], [, b]) => a.size - b.size).slice(0, 3);
+	const stored = Object.entries(store?.manifest?.files ?? {}).filter(([, entry]) => entry.stored && entry.sha256);
+	if (stored.some(([relative, entry]) => findIn(folder, relative)?.size !== entry.size))
+		return false;
+	const kept = stored.sort(([, a], [, b]) => a.size - b.size).slice(0, 8);
 	for (const [relative] of kept) {
 		const file = findIn(folder, relative);
 		if (!file || !await store.matches(relative, await file.arrayBuffer()))
@@ -371,7 +374,8 @@ async function copyAndStart(files, fromFolder) {
 	// 'all': the rest of the folder is kept now, before the game starts (the theme folders and every language's speech).
 	if (keepMode === 'all' && store?.manifest && !keepFailed) {
 		openKeeping();
-		const missing = kept.all.filter(([relative]) => !store.has(relative) && keepQueued.get(relative) !== keepGeneration);
+		// From a chosen folder every file is read, the kept ones too, so each is compared with its kept copy (keeping()).
+		const missing = kept.all.filter(([relative]) => (fromFolder || !store.has(relative)) && keepQueued.get(relative) !== keepGeneration);
 		let bytes = 0;
 		for (const [index, [, read]] of missing.entries()) {
 			bytes += (await read()).byteLength;

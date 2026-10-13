@@ -173,13 +173,16 @@ setup screen chooses how much is kept, and remembers the choice:
 
 A manifest lists every file the page uses with its size and SHA-256, kept or not, so a later visit
 rebuilds the file list; a park whose theme was not kept yet asks for the folder once more and keeps
-it then. That folder is accepted only when it has the file and up to three kept files have the same
-bytes in it (SHA-256); otherwise it is refused with a message and can be chosen again. A folder
+it then. That folder is accepted only when it has the file, every kept file has the same size in it
+and up to eight kept files have the same bytes (SHA-256); otherwise it is refused with a message and
+can be chosen again. A folder
 chosen on the setup screen is read directly and every kept file it meets is compared by its SHA-256;
 any difference, whenever it shows, means another installation: everything kept is removed at once
 (so files of two installations never mix, even if the start then fails) and the folder's start files
-are kept again. Each start attempt drops writes still queued by an earlier one. Files the visit never
-reads are not compared; up to three hashes check a folder asked for again, not every file. Writing waits until the game has started (the start's files wait in memory until then)
+are kept again; in the "all at once" mode a chosen folder is read completely, so every kept file is
+compared. Each start attempt drops reads and writes of earlier ones. Limits: in the lazy mode files
+the visit never reads are not compared, a folder asked for again is checked by sizes and eight hashes
+rather than every byte, and a read that overlaps a replacement may simply not be kept. Writing waits until the game has started (the start's files wait in memory until then)
 and runs in the background with at most 64 MB waiting afterwards (one larger file can exceed it);
 the manifest is written every 25 files and whenever the queue empties. A page closed before that
 keeps less, and the next visit asks for the folder for what is missing. Only one tab keeps files (a Web

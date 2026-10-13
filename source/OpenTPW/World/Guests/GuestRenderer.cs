@@ -159,6 +159,33 @@ public sealed class GuestRenderer : Entity
 		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror);
 	}
 
+	/// <summary>Picks the current visible in-park sprite without touching render resources or simulation state.</summary>
+	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection)
+	{
+		if (!Visible || deleted || material == null || atlases.Count == 0)
+			return null;
+		var right = new SVector3(view.M11, view.M21, view.M31);
+		var forward = -new SVector3(view.M13, view.M23, view.M33);
+		Guest? picked = null;
+		var best = float.PositiveInfinity;
+		foreach (var guest in simulation.Guests)
+		{
+			if (!guest.IsVisible || !simulation.IsInPark(guest) || !float.IsFinite(guest.DrawX) || !float.IsFinite(guest.DrawY) ||
+				!float.IsFinite(guest.HeadingX) || !float.IsFinite(guest.HeadingY) || !float.IsFinite(guest.DrawDistanceWalked) || guest.Type < 0)
+				continue;
+			var (atlasIndex, frameIndex, mirror) = SelectSprite(guest, right, forward);
+			var feet = CellToEngine(field, guest.DrawX, guest.DrawY);
+			if (!Hud.GuestWorldPicker.TryHit(feet, atlases[atlasIndex].Frames[frameIndex], mirror, view, projection, viewport, mouse, out var depth))
+				continue;
+			if (depth < best || (depth == best && (picked == null || guest.Id < picked.Id)))
+			{
+				best = depth;
+				picked = guest;
+			}
+		}
+		return picked;
+	}
+
 	protected override void OnRender()
 	{
 		DrawnGuests = 0;

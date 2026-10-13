@@ -29,12 +29,13 @@ public partial class Level
 	/// first-person walk when the ride was entered from it, else to the orbit (ride-view exits: Escape, the
 	/// eject button, and a right click with RMB cancel on).
 	/// </summary>
-	// [APPROX:UI-095] the orbit camera is restored, not the walking first-person view: the first-person walk is not implemented, so the park camera is the only other view
+	// [APPROX:UI-095] the prior camera instance is restored, including the host terrain walk; native exit state remains unverified.
 	public void ExitRideView()
 	{
 		if ( RideView == null )
 			return;
-		Camera.Mode = parkCameraBeforeRide ?? new ParkCameraMode();
+		if ( ReferenceEquals( Camera.Mode, RideView ) )
+			Camera.Mode = parkCameraBeforeRide ?? new ParkCameraMode();
 		RideView = null;
 		parkCameraBeforeRide = null;
 	}

@@ -1,6 +1,6 @@
 # LIPS: advisor lip-sync marks
 
-October 9, 2026. Status: strict `.LIP` reader and selected MPEG Layer I/II decoder.
+October 9, 2026. Status: strict raw `.LIP` reader/writer and selected MPEG Layer I/II decoder.
 Mac static evidence establishes signed mark conversion, a pause-aware unscaled
 millisecond clock, loaded-LIP talking state, strict deadlines, one toggle per
 update and random mouth selection. The bounded original-clock helper is tested;
@@ -370,6 +370,27 @@ Native check (macOS arm64 Metal, October 10, 2026): `--smoke-test
 (sample 1, /levels/jungle/Speech/speechHD.SDT): 28,63 s, 35 LIP marks, clock:
 game mixer (SDL audio queue)`. Audibility and on-screen appearance were not
 inspected.
+
+## Raw LIP authoring
+
+`LipSyncFile.Encode(IReadOnlyList<uint>)` emits the documented raw little-endian
+marks and final terminator. `LipSyncFile.Write(Stream, IReadOnlyList<uint>)`
+encodes and validates everything before writing at the caller's current stream
+position. Both enforce the reader's odd, nonzero mark count, strict increase,
+reserved terminator and 64 KiB bound. A leading zero and values through
+`uint.MaxValue - 1` remain raw values, without signed conversion or clamping.
+Pass a decoded file's `Marks` to encode it again or supply your own list.
+
+The writer leaves the stream open and does not seek, truncate or flush it;
+nonseekable output is supported. Invalid marks leave its bytes and position
+unchanged. I/O failures propagate and may leave partial output: the caller owns
+file replacement, rollback and durability. The input list must remain stable
+during encoding. No compressed representation, phoneme/pixel data, mouth-shape
+generation, timing conversion or native authoring compatibility is claimed.
+`LipSyncWriterTests` pins canonical bytes, raw read-back and current timeline
+interval/event equivalence, leading zero, the reader's maximum size, malformed
+counts/values, nonseekable ownership and failure behavior using synthetic data.
+Original-data, native advisor/audio and GPU qualification remain separate gates.
 
 ## Reader and tests
 

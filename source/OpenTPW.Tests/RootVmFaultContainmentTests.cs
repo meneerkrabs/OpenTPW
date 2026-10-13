@@ -259,7 +259,8 @@ public class RootVmFaultContainmentTests
 			events.SetValue( null, system ); kids.SetValue( null, category );
 			AudioVoice EventLoop( OriginalObjectRuntime owner )
 			{
-				owner.SetEventOrigin( () => System.Numerics.Vector3.Zero );
+				var listenerPosition = AudioListener.Position;
+				owner.SetEventOrigin( () => listenerPosition );
 				using var stream = new MemoryStream( new Asm().I( Opcode.EVENT, 3, -1, 44 ).I( Opcode.ENDSLICE ).Build( Array.Empty<string>() ) );
 				var vm = new RideVM( stream, new RideVMOptions { Effects = owner.Script!.Effects } );
 				vm.Advance( Tick ); Assert.AreNotEqual( RideVMState.Faulted, vm.State ); vm.Stop();

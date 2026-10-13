@@ -4,7 +4,8 @@ public static partial class OpcodeHandlers
 {
 	/// <summary>
 	/// Arithmetic. The corpus shows the destination first for SUB/DIV/MOD (`SUB VAR_TEMP VAR_TEMP 3000; WAIT VAR_TEMP`),
-	/// unlike the upstream signature, and a literal destination (usually 0) when only flags are wanted.
+	/// unlike the upstream signature, and a literal destination (usually 0) when only flags are wanted. MULT (Theme
+	/// Park Inc only) follows the same three-operand shape.
 	/// </summary>
 	public static class Math
 	{
@@ -51,6 +52,15 @@ public static partial class OpcodeHandlers
 		{
 			var divisor = valueB.Value;
 			var result = divisor is 0 or -1 ? 0 : valueA.Value % divisor;
+			dest.Value = result;
+			vm.SetFlags( result );
+		}
+
+		// [APPROX:VM-900] MULT's native dispatch (interpreter case 48) is traced on no original build (the Mac jump table is data:0x3f2a4, unvisited for this case), so the destination order and the wrap/flags policy are family inference, not static evidence. Evidence needed: the case-48 handler in any original executable; the Theme Park Inc corpus only proves `MULT dest a b` shape and a SETTIMER consumer.
+		[OpcodeHandler( Opcode.MULT, RideOpcodeStatus.Implemented, "upstream signature (3 operands); Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` dest-first like SUB/DIV/MOD, then SETTIMER consumes it; product wraps like ADD/SUB and sets flags (VM-900)" )]
+		public static void Multiply( RideVM vm, Operand dest, Operand valueA, Operand valueB )
+		{
+			var result = unchecked(valueA.Value * valueB.Value);
 			dest.Value = result;
 			vm.SetFlags( result );
 		}

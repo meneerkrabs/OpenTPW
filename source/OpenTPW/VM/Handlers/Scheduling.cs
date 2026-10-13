@@ -20,6 +20,10 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.WAIT, RideOpcodeStatus.Implemented, "docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`)" )]
 		public static void Wait( RideVM vm, Operand time ) => vm.WaitFor( time.Value );
 
+		// [APPROX:VM-901] The traced facts are STP-PPC 0xb0710–0xb0798: WAITABS stores now + operand as a 32-bit deadline word in the field WAIT uses (no script-speed division), its first encounter always yields, and later encounters wait while unsigned now < deadline. The port models that deadline in its non-wrapping double script clock, so the original's unsigned comparison, its 2^32 wrap and its zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled; a session that never nears 2^31 ms of scheduler clock cannot observe the difference.
+		[OpcodeHandler( Opcode.WAITABS, RideOpcodeStatus.Implemented, "STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901)" )]
+		public static void WaitAbsolute( RideVM vm, Operand time ) => vm.WaitForUnscaled( time.Value );
+
 		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted)" )]
 		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = unchecked((int)vm.ClockMilliseconds32);
 

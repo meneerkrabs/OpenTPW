@@ -1,7 +1,10 @@
 # RSE VM: executing original ride scripts
 
-October 9, 2026. Status: **every opcode used by the 308 original scripts has a
-VM handler**, and all scripts that can be started run in the VM without faults.
+October 9, 2026; updated October 13, 2026 (WAITABS/MULT). Status: **every opcode
+used by the 308 original scripts has a VM handler**, and all scripts that can be
+started run in the VM without faults. The two opcodes only Theme Park Inc
+scripts contain — `WAITABS` (45) and `MULT` (48) — also have handlers now
+([below](#theme-park-inc-gap-opcodes)).
 This is VM-level execution, not original ride behaviour: the game systems the
 scripts talk to (visitors, animation playback, sounds, objects, ride-type
 controllers, park clock) are not implemented, so their effects go through a
@@ -22,10 +25,12 @@ Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 | Unknown (no handler) | 0 | 0 |
 | **Corpus total** | **84** | **11,915** |
 
-Of the 22 named opcodes the corpus never uses, 4 have handlers from the
-upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`); the other 18
-stay unknown and fault the script if executed. Operand counts of every handler
-equal the upstream signature counts and the corpus counts (`CRIT_UNLOCK`: 0).
+Of the 22 named opcodes the TPW corpus never uses, 6 have handlers: 4 from the
+upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`) and
+`WAITABS`/`MULT` for the Theme Park Inc corpus
+([below](#theme-park-inc-gap-opcodes)); the other 16 stay unknown and fault the
+script if executed. Operand counts of every handler equal the upstream signature
+counts and the corpus counts (`CRIT_UNLOCK`: 0).
 
 "Implemented" means the VM handles the operation; much of its behavior still
 comes from upstream notes and corpus control flow. COPY, zero-divisor DIV/MOD,
@@ -117,6 +122,42 @@ implementation against those inputs, not equivalence to an executed PC game.
 | UNLIMBO, FORCEUNLIMBO | visitor input | output + flags: `UNLIMBO VAR_LETMEOFF; BRANCH_Z none; ADD VAR_ONRIDE 0xFFFF` |
 | TRIGANIM | unknown operands | `animation variant duration-out`: `TRIGANIM 5 0 VAR_TEMP; SUB VAR_TEMP VAR_TEMP 3000; WAIT VAR_TEMP; …; WAIT4ANIM` |
 | SETTIMER / GETTIMER | unknown | countdown in ms; `GETTIMER dest` = remaining time, sets flags |
+
+## Theme Park Inc gap opcodes
+
+No Theme Park World script contains `WAITABS` (45) or `MULT` (48); the Theme
+Park Inc corpus uses WAITABS 34 times in 19 scripts (obstacles, litbins and
+`vegetation.RSE`) and MULT once, inside `vegetation.RSE`'s opening critical
+section. Until October 13, 2026 executing either faulted the script; both now
+have handlers. The Theme Park Inc slice's native smoke
+([RUNNING.md](RUNNING.md)) never reached them on the science level (0 of 18
+object scripts faulted even before), so this is static corpus use plus VM-level
+execution — not a claim that observed retail play exercises them.
+
+**WAITABS** keeps the traced Mac shape ([reverse/PPC-clock.md](reverse/PPC-clock.md),
+dispatch `0xb0710`): despite the name, the first encounter stores
+`now + operand` — a relative deadline, **without** WAIT's script-speed
+division — in the same script field WAIT uses (`+160`), always yields, and
+later encounters resume once the clock passes the deadline (unsigned compare).
+All 34 corpus uses are positive literals (1..10000): 1 ms frame spacing between
+fire-effect ADDOBJs, 300/500 ms stage delays, a 1000 ms litbin fire-risk check
+and a 10000 ms obstacle startup delay. In this VM the deadline lives in the
+script clock's non-wrapping double domain, so the original's 2^32 word wrap and
+its zero-deadline re-arm sentinel are not modelled — a session far below 2^31 ms
+of scheduler clock cannot observe the difference ([APPROX:VM-901]). A
+non-positive deadline yields once and resumes at the next servicing tick,
+matching the first-encounter-yield plus `now ≥ deadline` resume.
+
+**MULT** follows the SUB/DIV/MOD family: `MULT dest a b` →
+`dest = a × b`, destination first, 32-bit wrap, flags set — the sole corpus use
+`MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` (immediately consumed by `SETTIMER`)
+matches that shape, and the upstream docs give the same three-operand signature.
+No original dispatch of interpreter case 48 is traced on any build, so the
+order, wrap and flags are family inference, not static evidence
+([APPROX:VM-900]). Tests: `RideVMTests` (signed/literal/variable operands,
+wrap, flags-only literal destination, WAITABS timing/yield/variable
+operand/shared wake field/snapshot restore) and `RideVMTpiCorpusTests`
+(original-corpus execution of both, gated on `OPENTPW_TPI_PATH`).
 
 ## Effects hook
 
@@ -379,10 +420,10 @@ handler attributes diverge.
 | 42 | `HUSH` | 39 | hooked | unknown upstream; corpus input (`HUSH VAR_LETMEON` before boarding) |
 | 43 | `HOP` | 39 | hooked | unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
 | 44 | `WAIT` | 458 | implemented | docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`) |
-| 45 | `WAITABS` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 45 | `WAITABS` | 0 | implemented | STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901) |
 | 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |
-| 48 | `MULT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 48 | `MULT` | 0 | implemented | upstream signature (3 operands); Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` dest-first like SUB/DIV/MOD, then SETTIMER consumes it; product wraps like ADD/SUB and sets flags (VM-900) |
 | 49 | `DIV` | 4 | implemented | corpus: `DIV dest a b`; Mac-static: signed truncation, zero divisor returns 0; signed overflow retains VM wrap policy |
 | 50 | `MOD` | 5 | implemented | corpus: `MOD dest a b`; Mac-static: signed remainder, zero divisor returns 0; signed overflow retains VM zero policy |
 | 51 | `TURBO` | 20 | hooked | docs (`value` 0..1, meaning unknown) |

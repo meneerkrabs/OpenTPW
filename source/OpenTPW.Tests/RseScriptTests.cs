@@ -116,12 +116,13 @@ public class RseScriptTests
 	[TestMethod]
 	public void CurrentVmHandlerSetIsPinned()
 	{
-		// Every opcode the corpus uses, plus SETVARINPARENT/YEAR/MONTH/DAY (documented, unused) and the four animation
-		// opcodes whose handlers were read in the Mac build (GETANIM, FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH); none of the 14 other unused names.
+		// Every opcode the corpus uses, plus SETVARINPARENT/YEAR/MONTH/DAY (documented, unused), the four animation
+		// opcodes whose handlers were read in the Mac build (GETANIM, FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH) and
+		// WAITABS/MULT (Theme Park Inc only); none of the 12 other unused names.
 		var unhandled = new[] { "SETLV", "ADDOBJ_EXT", "EVENT_EXT", "DBGMSG",
-			"PUSH", "POP", "WAITABS", "MULT", "END", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
+			"PUSH", "POP", "END", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
 		CollectionAssert.AreEquivalent( unhandled, Enum.GetValues<Opcode>().Where( x => !RideScriptAnalysis.HandledOpcodes.Contains( x ) ).Select( x => x.ToString() ).ToArray() );
-		Assert.AreEqual( 92, RideScriptAnalysis.HandledOpcodes.Count );
+		Assert.AreEqual( 94, RideScriptAnalysis.HandledOpcodes.Count );
 		foreach ( var (opcode, definition) in RideOpcodes.Definitions )
 			if ( RideScriptAnalysis.DocumentedOperandCounts.TryGetValue( opcode, out var documented ) )
 				Assert.AreEqual( documented, definition.OperandCount, opcode.ToString() );
@@ -296,7 +297,8 @@ public class RseScriptTests
 		Assert.AreEqual( 28, inventory.StringReferences[(ushort)Opcode.SPAWNSOUND]["EventMap.rse"] );
 		Assert.AreEqual( 163, inventory.EventOperands.Count );
 		Assert.AreEqual( 0, inventory.UsedWithoutHandler.Count() );
-		CollectionAssert.AreEquivalent( new[] { Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY, Opcode.GETANIM, Opcode.FLUSHANIM_CH, Opcode.WAITANIM_CH, Opcode.TRIGWAITANIM_CH }, inventory.HandlerWithoutCorpusUse.ToArray() );
+		// WAITABS and MULT gained handlers for the Theme Park Inc corpus; no Theme Park World script contains them.
+		CollectionAssert.AreEquivalent( new[] { Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY, Opcode.GETANIM, Opcode.FLUSHANIM_CH, Opcode.WAITANIM_CH, Opcode.TRIGWAITANIM_CH, Opcode.WAITABS, Opcode.MULT }, inventory.HandlerWithoutCorpusUse.ToArray() );
 		var dump = Environment.GetEnvironmentVariable( "OPENTPW_RSE_INVENTORY_OUT" );
 		if ( !string.IsNullOrEmpty( dump ) )
 			File.WriteAllText( dump, inventory.Format() );

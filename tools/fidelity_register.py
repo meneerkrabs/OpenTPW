@@ -27,6 +27,7 @@ REGISTERS = {
     "ARRIVAL": "source/OpenTPW/World/Guests/ArrivalApproximations.cs",
     "GUEST": "source/OpenTPW/World/Guests/GuestApproximations.cs",
     "TPI": "source/OpenTPW/Client/ThemeParkIncApproximations.cs",
+    "VM": "source/OpenTPW/VM/VmApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}
 EXTENSION_SCOPE = "OpenTPW online extension"

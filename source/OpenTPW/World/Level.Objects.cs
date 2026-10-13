@@ -12,21 +12,32 @@ public partial class Level
 	/// <summary>Clicking removes the object under the cursor.</summary>
 	public bool IsRemovingObjects { get; set; }
 
-	private void SetupObjects()
+	/// <summary>Creates the park's objects; each value is a point where a frame may end, with the share of the objects placed.</summary>
+	private IEnumerable<float> SetupObjects()
 	{
 		var theme = OriginalPark?.LevelName ?? "jungle";
 		IParkGrid grid = OriginalPark == null ? new SandboxParkGrid() : new OriginalParkGrid( OriginalPark );
 		var easy = Park?.Economy.Settings.IsEasy ?? false;
+		ObjectCatalog? catalog = null;
+		var archives = 0;
+		foreach ( var loaded in ObjectCatalog.LoadSteps( theme, easy ) )
+		{
+			if ( loaded == null )
+				yield return Math.Min( 0.25f, 0.004f * ++archives );
+			else
+				catalog = loaded;
+		}
 		// Objects keep off built path and queue cells; imported path cells are refused by the terrain rule as before.
-		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
+		Objects = new ParkObjects( catalog!, grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
 		Objects.ObjectRemoved += item =>
 		{
 			if ( ReferenceEquals( RideView?.Ride, item ) )
 				ExitRideView();
 		};
 		if ( OriginalPark == null )
-			return;
-		int count;
+			yield break;
+		yield return 0.3f;
+		int count = 0;
 		string? skipped = null;
 		if ( resumeState != null )
 			count = ParkLayoutSnapshot.RestoreObjects( resumeState.Layout, Objects ).Count;
@@ -40,7 +51,13 @@ public partial class Level
 				skipped = string.Join( ", ", missing );
 		}
 		else
-			count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();
+		{
+			foreach ( var (placed, share) in OriginalPark.Save != null ? Objects.ImportOriginalSteps( OriginalPark.Save ) : Objects.AddDefaultFixedItemSteps() )
+			{
+				count = placed;
+				yield return 0.3f + 0.7f * share;
+			}
+		}
 		Log.Trace( $"Original {theme} objects: {count} placed with their original models and scripts ({Objects.Catalog.Entries.Count} catalog entries)"
 			+ (skipped == null ? "" : $"; skipped (not in the local catalog): {skipped}") + "." );
 	}

@@ -267,45 +267,69 @@ public sealed class ObjectCatalog
 	/// <param name="easy">Instant Action: each object's <c>Easy_&lt;object file&gt;.sam</c> is layered last when present.</param>
 	public static ObjectCatalog Load( string theme, bool easy = false )
 	{
+		lock ( cache )
+			return LoadSteps( theme, easy ).Last()!;
+	}
+
+	/// <summary>
+	/// <see cref="Load"/> in steps, for a park built over frames on the game thread (docs/BROWSER-PERFORMANCE.md): null after each
+	/// object archive, then the catalog. Only the cache is locked, not the steps between; a catalog another load stored meanwhile wins.
+	/// </summary>
+	internal static IEnumerable<ObjectCatalog?> LoadSteps( string theme, bool easy = false )
+	{
 		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
 		var fileSystem = FileSystem;
 		// The names come from the language's OBJECT_NAMES: a catalog loaded in another language is not reused.
 		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}";
+		ObjectCatalog? cached;
+		lock ( cache )
+			cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) ).TryGetValue( key, out cached );
+		if ( cached != null )
+		{
+			yield return cached;
+			yield break;
+		}
+		var entries = new List<ObjectCatalogEntry>();
+		foreach ( var _ in LoadEntries( theme, fileSystem, null, easy, entries ) )
+			yield return null;
+		var bonus = OpenBonusFileSystem();
+		if ( bonus != null )
+		{
+			var bonusEntries = new List<ObjectCatalogEntry>();
+			foreach ( var _ in LoadEntries( theme, bonus, fileSystem, easy, bonusEntries ) )
+				yield return null;
+			foreach ( var entry in bonusEntries )
+			{
+				// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
+				if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
+					Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
+				else
+					entries.Add( entry );
+			}
+		}
+		ObjectCatalog catalog;
 		lock ( cache )
 		{
 			var catalogs = cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) );
-			if ( catalogs.TryGetValue( key, out var cached ) )
-				return cached;
-			var entries = LoadEntries( theme, fileSystem, null, easy );
-			var bonus = OpenBonusFileSystem();
-			if ( bonus != null )
+			if ( !catalogs.TryGetValue( key, out catalog! ) )
 			{
-				foreach ( var entry in LoadEntries( theme, bonus, fileSystem, easy ) )
-				{
-					// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
-					if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
-						Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
-					else
-						entries.Add( entry );
-				}
+				catalog = new ObjectCatalog( theme, entries );
+				RidesApproximations.LogOnce();
+				ObjectNames.Apply( catalog );
+				catalogs[key] = catalog;
 			}
-			var catalog = new ObjectCatalog( theme, entries );
-			RidesApproximations.LogOnce();
-			ObjectNames.Apply( catalog );
-			catalogs[key] = catalog;
-			return catalog;
 		}
+		yield return catalog;
 	}
 
 	/// <summary>
-	/// Reads the archives of <paramref name="fileSystem"/>. Category defaults (Rides.sam, ...) always come from
-	/// <paramref name="defaultsFileSystem"/> (the game data) when given: bonus archives are made to be dropped
-	/// next to them. Directory names are matched case-insensitively.
+	/// Reads the archives of <paramref name="fileSystem"/> into <paramref name="entries"/>, one archive per step. Category defaults
+	/// (Rides.sam, ...) always come from <paramref name="defaultsFileSystem"/> (the game data) when given: bonus archives are made
+	/// to be dropped next to them. Directory names are matched case-insensitively.
 	/// </summary>
-	private static List<ObjectCatalogEntry> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem, bool easy )
+	private static IEnumerable<bool> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem, bool easy, List<ObjectCatalogEntry> entries )
 	{
-		var entries = new List<ObjectCatalogEntry>();
 		var defaultsSource = defaultsFileSystem ?? fileSystem;
 		foreach ( var (directory, category, defaultsName) in CategoryDirectories )
 		{
@@ -320,7 +344,7 @@ public sealed class ObjectCatalog
 			var defaultLayer = defaults == null ? null : ObjectSettingsFile.Load( defaultsSource, defaults );
 			foreach ( var archive in fileSystem.GetDirectories( categoryPath ).Select( file => Relative( fileSystem, file ) ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
 			{
-				ObjectCatalogEntry? entry;
+				ObjectCatalogEntry? entry = null;
 				try
 				{
 					entry = LoadEntry( theme, category, archive, defaultLayer, fileSystem, easy );
@@ -329,16 +353,15 @@ public sealed class ObjectCatalog
 				{
 					// A broken bonus archive must not take the game's own catalog down.
 					Log?.Warning( $"Bonus object archive {archive} is skipped: {exception.Message}" );
-					continue;
 				}
 				if ( entry != null )
 					entries.Add( entry );
+				yield return true;
 			}
 		}
 		var duplicate = entries.GroupBy( entry => entry.InfoId ).FirstOrDefault( group => group.Count() > 1 );
 		if ( duplicate != null )
 			throw new InvalidDataException( $"Info.Id {duplicate.Key} is declared by several {theme} archives." );
-		return entries;
 	}
 
 	private static string? FindDirectory( BaseFileSystem fileSystem, string parent, string name )

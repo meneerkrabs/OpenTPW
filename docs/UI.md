@@ -243,6 +243,11 @@ non-blocking line at the top centre ("Updating textures in the background... n /
 `OptionsScreen.DrawTextureSwitchProgress`) shows the progress and disappears when the switch is done. No
 restart notice appears for a texture pack.
 
+A park chosen in the front end, loaded or visited is built over several frames while the lobby (or
+the park being left) keeps drawing and playing, and input waits (`[EXT:park-build-over-frames]`,
+BROWSER-PERFORMANCE.md). The same kind of line shows "Building the park..." (in all six languages)
+with the construction's progress.
+
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
 `ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's
 countdown - Yes -> `Confirm`, No -> `Revert`, and on No or the timeout the original 401

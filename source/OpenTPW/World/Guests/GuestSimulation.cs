@@ -1070,7 +1070,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// depth byte trunc(255 × 0.25 × remaining) (0, 63, 127, 191) along the cell from its front edge and the
 	/// sideways byte <paramref name="lateral"/> (114..141) across it, each byte / 256 of a cell (<c>0xe68cc</c>).
 	/// </summary>
-	// [APPROX:QUEUE-006] depth runs from the cell's edge toward its predecessor and the lateral byte across it, and the fourth position (depth 191 > 128) stays in its cell; the original sub-cell axis per link and the 0xdde74 branch are not traced — evidence needed: 0x100DDE74 and the axis selection after it
+	// [BIN:TPW-EXE:0x004DE840 queue slot] depth = trunc(255 × 0.25 × the place within the cell); lateral = 0x72 + rand % 28. Up to depth 128 the cell's own link to the front picks the axis: link 1 (−Y) gives (lateral, depth), 4 (+X) (255 − depth, lateral), 16 (+Y) (lateral, 255 − depth), 64 (−X) (depth, lateral). Beyond 128 (the fourth place) the axis is the link of the queue cell behind (0x004DE670), for the back cell the direction from its attached path cell (the first of its connections 1, 4, 16, 64 that leads to a path cell, reversed), and link 4 then gives depth − 128 instead of 255 − depth
+	// [APPROX:QUEUE-006] the back cell's fourth place takes its axis from OpenTPW's join cell (QUEUE-003) where the original takes the first connected path neighbour in the order 1, 4, 16, 64 — evidence needed: none for the rule (static); QUEUE-003's join cell decides the difference
 	public (int CellIndex, float X, float Y) QueuePositionPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
 		var (index, x, y) = QueueSlotPoint( attraction, position, lateral );
@@ -1081,14 +1082,26 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public static (int CellIndex, int X, int Y) QueueSlotPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
 		var (index, depth) = QueueSlot( position, attraction.QueueSizeInCells );
-		var cell = attraction.QueueCells[Math.Min( index, attraction.QueueCells.Count - 1 )];
-		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( index )];
-		// The byte along the axis towards the front counts from the front edge; the lateral byte runs along (−dy, dx).
-		int bx, by;
-		if ( dx != 0 )
-			(bx, by) = (dx > 0 ? 255 - depth : depth, dx > 0 ? lateral : 255 - lateral);
+		var cells = attraction.QueueCells;
+		var cellIndex = Math.Min( index, cells.Count - 1 );
+		var cell = cells[cellIndex];
+		var far = depth > 128;
+		int direction;
+		if ( !far )
+			direction = attraction.DirectionTowardsFront( cellIndex );
+		else if ( cellIndex + 1 < cells.Count )
+			direction = attraction.DirectionTowardsFront( cellIndex + 1 );
+		else if ( attraction.JoinCell is { } join && Math.Abs( join.X - cell.X ) + Math.Abs( join.Y - cell.Y ) == 1 )
+			direction = GuestPathGrid.DirectionBetween( join.X, join.Y, cell.X, cell.Y );
 		else
-			(bx, by) = (dy < 0 ? lateral : 255 - lateral, dy > 0 ? 255 - depth : depth);
+			direction = attraction.DirectionTowardsFront( cellIndex );
+		var (bx, by) = direction switch
+		{
+			0 => (lateral, depth),                                // link 1, front towards −Y
+			1 => (far ? depth - 128 : 255 - depth, (int)lateral), // link 4, front towards +X
+			2 => (lateral, 255 - depth),                          // link 16, front towards +Y
+			_ => (depth, (int)lateral)                            // link 64, front towards −X
+		};
 		var (x, y) = GuestNavigation.BytePoint( cell, bx, by );
 		return (index, x, y);
 	}

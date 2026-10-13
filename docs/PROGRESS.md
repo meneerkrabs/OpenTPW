@@ -297,6 +297,9 @@ preview; original runtime fidelity and the complete offline scope remain open.
   turn while the bus stands at its stop. OpenTPW's guests therefore step off one per park turn from the turn after a group starts,
   instead of every 0.4 s. Only the bus's drive to the stop (its animation) is missing. Three behaviour pins moved: the fixed-run hash,
   the cross-grid run (62 → 60 admissions) and the Jungle run (23 → 22).
+- QUEUE-006 is narrowed: queue places follow tp.exe `0x4de840`. The lateral byte is no longer mirrored for queues whose front lies
+  towards +Y or −X, and the fourth place in a cell takes the axis of the cell behind it (`depth − 128` for links towards +X). Only the back
+  cell's fourth place still depends on OpenTPW's join cell.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

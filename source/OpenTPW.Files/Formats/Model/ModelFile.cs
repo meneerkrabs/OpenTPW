@@ -52,11 +52,13 @@ public partial class ModelFile : BaseFormat
 
 	public ModelFile( Stream stream )
 	{
+		using var profile = LoadProfile.Measure( "model-parse" );
 		ReadFromStream( stream );
 	}
 
 	public ModelFile( string path )
 	{
+		using var profile = LoadProfile.Measure( "model-parse" );
 		ReadFromFile( path );
 	}
 

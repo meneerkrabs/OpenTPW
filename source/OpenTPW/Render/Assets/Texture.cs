@@ -88,6 +88,7 @@ public partial class Texture : Asset
 	// [EXT:tpi-viewer] `.fsh` textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014.
 	internal static (byte[] Data, int Width, int Height) DecodeImage( string path )
 	{
+		using var profile = LoadProfile.Measure( "image-decode" );
 		if ( path.HasExtension( ".fsh" ) )
 		{
 			var fsh = new FshFile( path ).Images[0];
@@ -123,6 +124,7 @@ public partial class Texture : Asset
 	// [EXT:texture-pack] pack lookup; a missing file falls back to the original.
 	internal static (byte[] Data, int Width, int Height) DecodeWct( string path )
 	{
+		using var profile = LoadProfile.Measure( "texture-decode" );
 		if ( TexturePack.Find( path ) is { } replacement )
 		{
 			// The browser's shipped art arrives predecoded (docs/WEB.md); it is stored unkeyed, like the original this returns.
@@ -253,6 +255,7 @@ public partial class Texture : Asset
 
 	private void CreateTexture( string debugName, byte[] data, uint width, uint height, TextureFlags flags )
 	{
+		using var profile = LoadProfile.Measure( "texture-create" );
 		if ( TryGetCachedTexture( debugName, out var cachedTexture ) )
 		{
 			NativeTexture = cachedTexture!.NativeTexture;

@@ -274,11 +274,16 @@ internal sealed partial class GameFlow : IDisposable
 	/// </summary>
 	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
 	{
-		TearDown();
-		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
+		using var profile = LoadProfile.Measure( "start-level" );
+		using ( LoadProfile.Measure( "tear-down" ) )
+			TearDown();
+		Level level;
+		using ( LoadProfile.Measure( "level" ) )
+			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
 		if ( original )
-			GameAudio.EnterPark( levelName, level.Seed.SoundStream );
+			using ( LoadProfile.Measure( "enter-park-audio" ) )
+				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
 		// build and guest systems under the experimental HUD, without the reference game's economy, HUD or advisor.
@@ -300,12 +305,14 @@ internal sealed partial class GameFlow : IDisposable
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
-		Hud = CreateParkHud( level, status );
+		using ( LoadProfile.Measure( "park-hud" ) )
+			Hud = CreateParkHud( level, status );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
 		// [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events
 		if ( AutomaticAdvisorEnabled && original && visit == null && !advisorUnavailable )
 		{
-			Advisor ??= AutomaticAdvisor.TryCreate();
+			using ( LoadProfile.Measure( "advisor" ) )
+				Advisor ??= AutomaticAdvisor.TryCreate();
 			advisorUnavailable = Advisor == null;
 			Advisor?.AttachLevel( level );
 		}

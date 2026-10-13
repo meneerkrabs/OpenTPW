@@ -158,16 +158,17 @@ class Page {
 	 * Runs act(), waits until done(state) and a frame has been drawn after it, then settles; returns the frames from the action on
 	 * (the first-use cost). readyMs is page time from the action to that drawn frame.
 	 */
-	async action(what, act, done, { timeoutMs = 10000, settleMs = 1500 } = {}) {
+	async action(what, act, done, { timeoutMs = 10000, settleMs = 1500, onReady } = {}) {
 		const start = await this.mark();
 		await act();
 		await this.waitFor(what, done, timeoutMs);
 		await this.nextFrame();
 		const readyMs = Math.round(await this.eval('performance.now()') - start.now);
+		const atReady = await onReady?.();
 		await sleep(settleMs);
 		const end = await this.mark();
 		const summary = summarizeFrames(end.frames, end.now - start.now);
-		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, frames: summary.frames, p95Ms: summary.p95Ms };
+		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, frames: summary.frames, p95Ms: summary.p95Ms, ...(atReady ? { atReady } : {}) };
 	}
 }
 
@@ -192,8 +193,16 @@ const scenarios = {
 			throw new Error(`The lobby shows ${state.island}, not the jungle island`);
 		await page.call('PerfClick', 'enterPark');
 		await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+		// The load profile covers the click, the construction and the first seconds after (textures that load lazily).
+		await page.eval('opentpwPerf.program.PerfProfile(true)');
 		const cold = await page.action('the Jungle park', () => page.call('PerfClick', 'fullSimulation'),
-			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000 });
+			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000,
+				onReady: async () => JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()')) });
+		// The profile when the park was ready (the start itself), and after the settle time (with what loaded lazily).
+		cold.startProfile = cold.atReady;
+		delete cold.atReady;
+		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
+		await page.eval('opentpwPerf.program.PerfProfile(false)');
 		const steady = await page.steady(options.window * 1000);
 		return { cold, steady };
 	},
@@ -312,6 +321,11 @@ function markdown(report) {
 			lines.push(`- ${name} steady: main thread busy ${steady.mainThreadBusyPercent}%, ${steady.fps} fps, frame p95 ${steady.p95Ms} ms, largest gap ${steady.largestGapMs} ms, long tasks ${steady.longTasks}`);
 	if (results.jungle?.cold)
 		lines.push(`- Jungle cold: ready in ${results.jungle.cold.readyMs} ms, largest frame ${results.jungle.cold.maxFrameMs} ms`);
+	const describe = profile => Object.entries(profile).map(([name, entry]) => `${name} ${entry.ms} (${entry.count})`).join(', ');
+	if (results.jungle?.cold?.startProfile)
+		lines.push(`- Jungle load profile until ready (ms, count; nested sections overlap): ${describe(results.jungle.cold.startProfile)}`);
+	if (results.jungle?.cold?.profile)
+		lines.push(`- Jungle load profile including 5 s after: ${describe(results.jungle.cold.profile)}`);
 	if (results.buy && !results.buy.error) {
 		lines.push('', '| First action | Largest frame (ms) | Frames ≥ 50 ms |', '| --- | ---: | ---: |');
 		for (const [name, entry] of Object.entries(results.buy))

@@ -46,6 +46,7 @@ refused this way before anything is replaced.
 | Layout | every path, queue and placed object with its cell, rotation, attraction id and creation seed, plus the id allocators — a demolished object leaves its id hole, ids are never renumbered |
 | Guests | every guest: needs, money, route and navigation buffers, arrival lane, queue/boarding/riding/walk-off/limbo/bounce state, and each attraction's queue cells and membership |
 | Ride scripts | the whole script world: every script's identity and graph position, program state, stacks, variables, timers and waits, RNG state, animation channels and rider head slots |
+| Prototype ride | the developer Totem (the sandbox ride you place in a park): its position, open state, script seed and full runtime state — animator, head slots, cycle counters — with its economy association re-linked to the saved instance, never bought again; the entrance cell guests queue at is re-derived from the restored paths on load |
 | Coasters | every live coaster station's track (station ends, pylons with height, pylon kind and stack, node flags), controller state (open, breakdown, speed, seats, money, clocks) and trains with every rider on board or leaving — joined by attraction id, a rider mid-hand-over (the script has seated it, the bridge has not marked it aboard yet) included; the curve, rating and braking are re-derived on load, so a loaded coaster continues exactly where it was |
 | Economy | the full economy record (bank, loans, ledger, objects with price/level/repair/statistics, staff, research, challenges, golden tickets, RNG streams) and the exact attraction-to-economy-instance links, so two identical rides never swap their money |
 | World | the fixed-step clock, the sound-event seed, weather with its pending thunder, the park gate, staff positions, and the advisor's pending advice and history when the park had them |
@@ -53,9 +54,10 @@ refused this way before anything is replaced.
 
 ## Limits
 
-- **Prototype rides are not saved yet.** A park that has one cannot be saved;
-  the save is refused with that reason instead of writing a park that would come back wrong.
-  Player-built coasters are saved (see above). The
+- **The prototype ride is saved as what it is.** The developer Totem (the sandbox ride) saves and
+  resumes like any attraction — its script mid-instruction, guests queuing, aboard or mid-boarding —
+  but the part describes exactly the Inca Totem; any other entry in that slot is refused rather
+  than accepted as opaque state. Player-built coasters are saved too (see above). The
   original `TPWS` import stays partial and read-only ([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)).
 - **Transient sounds are not saved.** A park cannot be saved while a ride scream is playing or the
   advisor is speaking — save again a moment later. No voice, music or audio state persists through a
@@ -77,13 +79,17 @@ embedded by value, so both formats' validators run on every load.
 
 ## Developer notes
 
-- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing prototype rides,
+- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing
   an attraction's active scream and active advisor speech); `ParkResumeSaveFile.Save`/`Load` do the
   atomic, size-capped, suffix-checked file I/O; `GameFlow.SaveCurrentPark` (the pause menu's Save)
-  and `GameFlow.ResumePark` (Load) wire it into the UI.
+  and `GameFlow.ResumePark` (Load) wire it into the UI. The developer Totem rides along as the
+  envelope's optional prototype part (`PrototypeRideSave`), joined by attraction id exactly like a
+  placed object — the version stays 1, so saves from before the part (parks without the Totem) load
+  unchanged.
 - **Loading is a transaction.** `ParkResumeSaveFile.ValidateSnapshot` validates purely against the
   freshly loaded catalog, balance settings and asset manifest; the park is then rebuilt into an
-  isolated candidate (runtimes, script world, queue geometry, guests, clock, the coasters, then the
+  isolated candidate (runtimes, the prototype Totem, script world, queue geometry, guests, clock,
+  the coasters, then the
   optional weather/gate/staff/advisor parts, with reference graphs restored in two passes), and only
   a complete candidate replaces the live park. Every failure path keeps the current park running. Ids,
   iteration order and next-id allocators are restored exactly as saved: nothing is renumbered or

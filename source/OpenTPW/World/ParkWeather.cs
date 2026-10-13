@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// rain's target, lightning strikes count down and thunder follows a strike a few turns later. The sound side is
 /// reproduced, and the drops, snow and bolts are drawn by the visual approximation (<see cref="WeatherRenderer"/>).
 /// </summary>
-// [APPROX:AUDIO-031] the forecast's warning is not shown, and the drawn drops, snow and bolts are unverified procedural approximations (AUDIO-900..904) — evidence needed: the weather renderer (FUN_0057d300 family) and the forecast's message handler
+// [APPROX:AUDIO-031] the forecast's warning is presented by an unverified OpenTPW approximation (AUDIO-905..907), and the drawn drops, snow and bolts remain unverified procedural approximations (AUDIO-900..904) — evidence needed: the weather renderer (FUN_0057d300 family) and the forecast's message handler
 /// <remarks>
 /// The sim advances once per park turn (248 ms, <see cref="ParkCalendar.Turn"/>), and the day is the calendar's
 /// (<see cref="ParkCalendar.DayIndex"/>). The Mac binary's weather-tick gate is not located; the turn is the cadence
@@ -88,6 +88,7 @@ public sealed class ParkWeather
 			lastTurn = turn;
 			var day = ParkCalendar.DayIndex( tick );
 			lastChanged = day;
+			CurrentDay = day;
 			ApplyQuality( Roll( tick ) );
 			nextRollDay = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning );
 			return;
@@ -101,6 +102,40 @@ public sealed class ParkWeather
 
 	/// <summary>The quality the forecast says is coming (rolled, applied when its day comes), or null.</summary>
 	public int? Forecast => pendingQuality;
+
+	/// <summary>The day the pending forecast applies on; valid while <see cref="Forecast"/> holds one.</summary>
+	internal long ForecastApplyDay => applyDay;
+
+	/// <summary>The day index the weather's schedule last stepped to (the forecast countdown's "now").</summary>
+	internal long CurrentDay { get; private set; }
+
+	/// <summary>The forecast's warning distance in days (<c>Weather.DaysOfWarning</c>).</summary>
+	internal int DaysOfWarning => settings.DaysOfWarning;
+
+	/// <summary>Whether the weather has taken its first step, so its schedule is valid.</summary>
+	internal bool Started => started;
+
+	/// <summary>
+	/// The bands a quality falls in, as the converter (<see cref="ApplyQuality"/>) reads them. Both precipitation
+	/// bands can hold — the forecast presentation reads this before the apply-time tie-break is drawn.
+	/// </summary>
+	internal WeatherQualityBands BandsOf( int quality ) => new(
+		quality >= settings.SnowLow && quality <= settings.SnowHigh,
+		quality >= settings.RainLow && quality <= settings.RainHigh,
+		quality >= settings.LightningLow && quality <= settings.LightningHigh );
+
+	/// <summary>
+	/// Smoke-only (<c>[EXT:debug-forecast]</c>): posts a forecast of <paramref name="quality"/> the warning
+	/// distance ahead, exactly as the natural roll would, so captures can show the forecast presentation. The
+	/// countdown, apply and the weather itself still come from the normal machinery.
+	/// </summary>
+	internal void DebugPostForecast( int quality )
+	{
+		if ( !started )
+			throw new InvalidOperationException( "The weather has not taken its first step, so a debug forecast has no day to apply on." );
+		pendingQuality = Math.Clamp( quality, 1, 100 );
+		applyDay = CurrentDay + settings.DaysOfWarning;
+	}
 
 	/// <summary>Takes the bolt tops whose thunder has come due since the last call (the frame plays them).</summary>
 	public IReadOnlyList<Vector3> TakeThunder()
@@ -260,6 +295,7 @@ public sealed class ParkWeather
 	internal void Step( long tick )
 	{
 		var day = ParkCalendar.DayIndex( tick );
+		CurrentDay = day;
 		if ( pendingQuality is int next && day >= applyDay )
 		{
 			pendingQuality = null;

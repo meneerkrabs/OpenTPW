@@ -157,6 +157,54 @@ decoded textures could save at most about 60 ms of a Jungle start, less the time
 the browser plan's phase 3 therefore waits. The larger shares are the object catalogue, the kid sprite sets, starting the park
 audio and the object placement: those, or spreading the start over frames, are the next targets.
 
+## Building a park over frames (13 October)
+
+Until now a park was built in one frame: `GameFlow.StartLevel` tore the lobby down and constructed
+the level in a single call. That took about 550 ms on the AOT build (the largest frame of the cold
+Jungle start), and the page stood still for all of it. The audio mixer keeps only about 93 ms queued,
+so the lobby music stopped too. Phase 5 of the browser plan spreads that work over frames:
+
+- **The construction is a sequence of steps.** `Level`'s constructor body is an iterator: the original
+  park's files, the economy, the terrain, the gate sign, the object catalogue one archive at a time,
+  the objects one at a time, the coasters, the guests, then the paths and the rest. The steps and
+  their order are the same either way. The constructor runs them all at once, so tests, smoke tests,
+  saved-park resumes and the determinism run are unchanged.
+- **The lobby keeps running.** A park chosen in the front end, loaded from the load screen or visited
+  online is staged beside the live scene with `EntityConstructionScope`, which can now pause between
+  frames. Each frame builds for up to 12 ms, then the lobby (or the park being left, with its
+  simulation paused) runs its own frame. Input waits, and a progress line ("Building the park...",
+  in all six languages) shows at the top. When the construction is complete, the live scene is
+  retired and the park entered in the frame after (`[EXT:park-build-over-frames]`).
+- **The result is the same park.** The native front-end smoke test builds the shipped Jungle save
+  both ways. The world state hash, the entities and the objects are equal (hash `D810E5600FC911BA`,
+  103 entities, 14 objects). A transition queued during a build replaces it; the smoke test checks
+  that the lobby's entities and materials are then untouched.
+- **The harness** reports the frames over 50 ms of the cold start and the construction time of each
+  build frame (`PerfParkBuild`). `LoadProfile` leaves the time between build frames out of its
+  sections, so the load profile still counts only the work.
+
+Three alternating runs against main (AOT, M5 setup, medians):
+
+| Measure | main | over frames | Change |
+| --- | ---: | ---: | ---: |
+| Jungle cold: largest frame | 509 ms | 107 ms | −79 % |
+| Jungle cold: frames of 50 ms or more | 1 | 1–2 | |
+| Jungle cold: ready | 717 ms | 832 ms | +16 % |
+| Construction frames | 1 | 22–23 (12 ms each, a few steps 25–54 ms) | |
+
+The digest hashes are identical in every run. The steady lobby and park windows are unchanged:
+in the runs without other load on the machine their frame p95 was 0.6–0.7 against 0.6 ms (lobby)
+and 0.8–0.9 against 0.9 ms (Jungle). A review running alongside the later runs raised both builds
+alike, so their medians are left out. With a 10 ms budget an earlier set gave 584 → 140 ms and a
+ready time 29 % later. The park is ready later because the work now waits for frames; the lobby
+goes on drawing and playing meanwhile. Two costs remain:
+
+- **The first park frame**, about 100 ms. It is no longer construction: the automatic advisor
+  starting its welcome (about 45 ms, loading the speech and its lip sync), the first simulation step
+  and the first draw.
+- **A few steps of 25–54 ms:** the first fixed item's model and scripts, the gate sign's text, the
+  terrain, and the last step that connects guests, staff and the economy.
+
 ## Files read on demand, and the textures that stayed (13 October)
 
 The second part of the memory phase closed the three items left open below:

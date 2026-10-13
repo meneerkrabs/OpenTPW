@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -56,8 +58,9 @@ public class TextureDecoderIndexingCorpusTests
 	private static readonly FailurePin[] PinnedFailures =
 	{
 		new( "global/advisor.wad", "stexture/Bowler_Btie.wct", "Exception", "Offset > stream length" ),
-		new( "levels/fantasy/advisor.wad", "stexture/Fan_stalk.wct", "IndexOutOfRangeException", null ),
-		new( "levels/hallow/rides/bumper.wad", "stexture/b_NEWwin.wct", "NullReferenceException", null ),
+		// The bounds audit (docs/WCT-ROBUSTNESS.md) turned these two crashes into explicit malformed-data refusals.
+		new( "levels/fantasy/advisor.wad", "stexture/Fan_stalk.wct", "InvalidDataException", "Truncated WCT channel coefficients." ),
+		new( "levels/hallow/rides/bumper.wad", "stexture/b_NEWwin.wct", "InvalidDataException", "Invalid WCT alpha chunk length." ),
 		new( "levels/space/rides/gokarts.wad", "stexture/s_disc.wct", "Exception", "Offset > stream length" ),
 	};
 
@@ -91,6 +94,56 @@ public class TextureDecoderIndexingCorpusTests
 			Assert.AreEqual( pin.Height, texture.Height, $"{pin.Path} height" );
 			Assert.AreEqual( pin.Sha, Convert.ToHexString( SHA256.HashData( texture.Data ) ), $"{pin.Path} RGBA bytes changed against the pre-rewrite decoder" );
 		}
+	}
+
+	/// <summary>
+	/// Every WCT the original data ships, in every archive and loose, decodes except the four pinned malformed
+	/// ones. Synthetic bounds tests alone let a hardening refuse most of the retail corpus (odd-length LZSS chunks,
+	/// BILZ stream sizes that count their header); this walk catches that class of regression.
+	/// </summary>
+	[TestMethod]
+	public void EveryOriginalTextureDecodesExceptThePinnedFailures()
+	{
+		var dataPath = OriginalParkImportTests.OriginalDataPath();
+		var expected = PinnedFailures.Select( pin => $"{pin.Wad}!{pin.Entry}" ).ToHashSet( StringComparer.OrdinalIgnoreCase );
+		var failures = new List<string>();
+		var decoded = 0;
+		void Decode( string name, byte[] bytes )
+		{
+			try
+			{
+				_ = new TextureFile( new MemoryStream( bytes ) ).Data;
+				decoded++;
+			}
+			catch ( Exception exception ) when ( !expected.Contains( name ) )
+			{
+				failures.Add( $"{name}: {exception.GetType().Name} {exception.Message}" );
+			}
+			catch ( Exception )
+			{
+			}
+		}
+		foreach ( var wadPath in Directory.EnumerateFiles( dataPath, "*.wad", SearchOption.AllDirectories ) )
+		{
+			var wad = Path.GetRelativePath( dataPath, wadPath ).Replace( '\\', '/' );
+			using var archive = new WadArchive( wadPath );
+			void Walk( string directory )
+			{
+				foreach ( var file in archive.GetFiles( directory ).Where( file => file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ) )
+				{
+					var entry = directory.Length == 0 ? file : $"{directory}/{file}";
+					Decode( $"{wad}!{entry}", archive.GetFile( entry ).GetData() );
+				}
+				foreach ( var child in archive.GetDirectories( directory ) )
+					Walk( directory.Length == 0 ? child : $"{directory}/{child}" );
+			}
+			Walk( "" );
+		}
+		foreach ( var loose in Directory.EnumerateFiles( dataPath, "*.wct", SearchOption.AllDirectories ) )
+			Decode( Path.GetRelativePath( dataPath, loose ).Replace( '\\', '/' ), File.ReadAllBytes( loose ) );
+		if ( decoded == 0 )
+			Assert.Inconclusive( "Original game data has no WCT textures." );
+		Assert.AreEqual( 0, failures.Count, $"{failures.Count} original textures no longer decode ({decoded} did):\n{string.Join( "\n", failures.Take( 20 ) )}" );
 	}
 
 	[TestMethod]

@@ -1018,7 +1018,10 @@ internal sealed class M3GateRun
 			foreach ( var (item, instance) in economyLinks )
 			{
 				if ( economy.TryGetObject( instance, out var state ) )
+				{
 					state.IsOpen = item.IsOpen;
+					state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, grid );
+				}
 			}
 			guests.Tick( Tick );
 			foreach ( var item in fixedItems )

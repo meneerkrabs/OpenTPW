@@ -1214,7 +1214,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
-		// [APPROX:QUEUE-008] OpenTPW wears only rides (ECON-023), so a toilet's state of repair stays 100 and the exit never fires; the predicate itself follows the original — evidence needed: the wear step of relief objects (0xdec2c callers) and what the original's toilet ride state does at gauge 0
+		// [APPROX:QUEUE-008] relief objects do not wear in OpenTPW, so a toilet's state of repair stays 100 and this exit never fires. In tp.exe each use lowers the gauge +0x44 by 0.05 × the guest's toilet meter taken as a byte (0x004E2440, called from the use routine 0x004FE1E0, clamped to 0..100), a toilet falling below 25 posts the dirty-toilet events, and a handyman with no litter in reach walks to the nearest toilet flagged at +0x64, or one below 25 within his grade's range (0x004D7880), cleans it for a per-grade time (state 11) and sets it back to 100 (0x004DFD80). Wear without that job would leave toilets dirty for good, so it waits for the handyman's toilet job (ECON-014, ECON-022) — evidence needed: the per-grade cleaning time and range rows (data 0x007853EC / 0x007853F0, filled at load) and the writer of +0x64
 		if ( attraction.ReliefWornOut )
 		{
 			LeaveQueue( guest, attraction, GuestThought.FeelingSick );

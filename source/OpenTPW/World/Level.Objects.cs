@@ -12,21 +12,32 @@ public partial class Level
 	/// <summary>Clicking removes the object under the cursor.</summary>
 	public bool IsRemovingObjects { get; set; }
 
-	private void SetupObjects()
+	/// <summary>Creates the park's objects; each value is a point where a frame may end, with the share of the objects placed.</summary>
+	private IEnumerable<float> SetupObjects()
 	{
 		var theme = OriginalPark?.LevelName ?? "jungle";
 		IParkGrid grid = OriginalPark == null ? new SandboxParkGrid() : new OriginalParkGrid( OriginalPark );
 		var easy = Park?.Economy.Settings.IsEasy ?? false;
+		ObjectCatalog? catalog = null;
+		var archives = 0;
+		foreach ( var loaded in ObjectCatalog.LoadSteps( theme, easy ) )
+		{
+			if ( loaded == null )
+				yield return Math.Min( 0.25f, 0.004f * ++archives );
+			else
+				catalog = loaded;
+		}
 		// Objects keep off built path and queue cells; imported path cells are refused by the terrain rule as before.
-		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
+		Objects = new ParkObjects( catalog!, grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
 		Objects.ObjectRemoved += item =>
 		{
 			if ( ReferenceEquals( RideView?.Ride, item ) )
 				ExitRideView();
 		};
 		if ( OriginalPark == null )
-			return;
-		int count;
+			yield break;
+		yield return 0.3f;
+		int count = 0;
 		string? skipped = null;
 		if ( resumeState != null )
 			count = ParkLayoutSnapshot.RestoreObjects( resumeState.Layout, Objects ).Count;
@@ -40,7 +51,13 @@ public partial class Level
 				skipped = string.Join( ", ", missing );
 		}
 		else
-			count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();
+		{
+			foreach ( var (placed, share) in OriginalPark.Save != null ? Objects.ImportOriginalSteps( OriginalPark.Save ) : Objects.AddDefaultFixedItemSteps() )
+			{
+				count = placed;
+				yield return 0.3f + 0.7f * share;
+			}
+		}
 		Log.Trace( $"Original {theme} objects: {count} placed with their original models and scripts ({Objects.Catalog.Entries.Count} catalog entries)"
 			+ (skipped == null ? "" : $"; skipped (not in the local catalog): {skipped}") + "." );
 	}
@@ -546,6 +563,9 @@ public partial class Level
 			state.IsOpen = item.IsOpen;
 			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
+			// the park points counts-test needs real queue cells from the entrance and room in them (0x004DE130, 0x004DDF50)
+			if ( Guests is { } guests )
+				state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, guests.Grid );
 			// The join gate reads the live sideshow words (0xdff70) and the wear gauge ride +64 (0xdfe34); both live in the economy.
 			item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
 			item.Visitors.WearGauge = state.Repair;

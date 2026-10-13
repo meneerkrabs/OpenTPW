@@ -41,6 +41,7 @@ internal sealed partial class GameFlow
 					?? throw new InvalidDataException( "The saved park's advisor settings are unavailable." );
 				candidateAdvisor.ValidateSnapshot( snapshot.Advisor );
 			}
+			AbandonParkBuild();
 			using var scene = new EntityConstructionScope();
 			var candidate = new Level( snapshot, economy, OnlineFolders ) { ShowDeveloperPanels = false };
 			var candidateHud = CreateParkHud( candidate, EconomyParkStatus.ForLevel( candidate ) );

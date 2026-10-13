@@ -32,6 +32,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly OnlineFolders? originalOnlineFolders;
 	private ParkVisitInfo? readOnlyVisit;
+	private (ulong Hash, int Entities, int Objects) builtInOneGo, builtOverFrames;
+	private int framesBuilding;
+	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
+
+	private void RecordBuiltOverFrames()
+	{
+		if ( flow.Level is { } level )
+			builtOverFrames = (level.ComputeStateHash(), Entity.All.Count, level.Objects.Objects.Count);
+	}
 	private OriginalObject? visitedObject;
 	private bool visitedOpen;
 	private int visitedCount;
@@ -1107,17 +1116,27 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
-		Do( "window keys while paused", () => Input.InjectKeyDown( Key.V, Key.B ) );
+		long? pausedTick = null;
+		GameSpeed? pausedSpeed = null;
+		Do( "window keys while paused", () =>
+		{
+			pausedTick = flow.Level!.Park?.Economy.Tick;
+			pausedSpeed = flow.Hud!.Status.Speed;
+			Input.InjectKeyDown( Key.V, Key.B );
+		} );
 		Wait( "pause owns keyboard", 2 );
 		Do( "pause blocks window keys", () =>
 			Require( flow.Hud!.Paused && flow.Hud.Stack.Top?.Name == "pause"
 				&& !flow.Hud.VisitorWindowOpen && !flow.Hud.BuyWindowOpen, "injected window keys leave the pause menu in control" ) );
 		// The park-resume lane cannot snapshot the advisor while a response is being spoken (the speech has no
 		// snapshot seam), so the save below waits for the end of any active advisor speech first.
-		steps.Enqueue( ("advisor speech ends", () => flow.Advisor?.IsSpeechActive != true) );
+		WaitForAdvisorSpeech();
 		Do( "pause menu", () =>
 		{
 			Require( flow.Hud!.Paused, "Escape opens the pause menu" );
+			// The original's pause menu pauses the game (Mac 0x10198514 → 0x10110518): the park clock stands still, the speed setting is kept.
+			Require( flow.Level!.SimulationTimeScale == 0 && flow.Level.Park?.Economy.Tick == pausedTick && flow.Hud.Status.Speed == pausedSpeed,
+				"the pause menu stops the park simulation and keeps the speed setting" );
 			var capture = CaptureFrame( "pause.png" );
 			VerifyText( capture, flow.Strings[UIStrings.Paused], "PAUSED title" );
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );
@@ -1186,7 +1205,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( secondParkGuestAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned guest asset" );
 		} );
 		Wait( "instant action returns to lobby", 3 );
-		Do( "load original park after Instant Action", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
+		Do( "load original park after Instant Action", () =>
+		{
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
+			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);
+		} );
 		Wait( "original park loads", 3 );
 		Do( "loaded park is the reference start", () =>
 		{
@@ -1196,6 +1219,51 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.StartKind == ParkStartKind.OriginalSaveReference && flow.Level!.Park!.Economy.Mode == ParkGameMode.FullSimulation
 				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.OriginalPark!.Save != null,
 				"Load Park opens the shipped save as the reference start whatever mode was chosen before (UI-041)" );
+			flow.ShowFrontEnd( "jungle" );
+		} );
+		Wait( "lobby before the park built over frames", 3 );
+		Do( "start a park over frames that a later transition replaces", () =>
+		{
+			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
+		} );
+		Wait( "the replaced park is being built", 3 );
+		Do( "a transition queued during the build replaces it", () =>
+		{
+			Require( flow.BuildingPark, "the park is still being built after three frames" );
+			flow.Queue( () => flow.ShowFrontEnd( "jungle" ) );
+			Require( !flow.BuildingPark && flow.Level == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
+				&& Entity.All.Count == lobbyBeforeAbandon.Count,
+				"dropping the build leaves the lobby's own entities current and untouched" );
+			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
+				"the dropped park's materials and shaders are released" );
+		} );
+		Wait( "the queued transition runs", 3 );
+		Do( "load the original park over frames", () =>
+		{
+			flow.Transitioned += RecordBuiltOverFrames;
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
+			Require( flow.BuildingPark && flow.Level == null && flow.Lobby != null, "a park built over frames leaves the lobby running" );
+		} );
+		steps.Enqueue( ("the park built over frames is entered", () =>
+		{
+			if ( flow.BuildingPark )
+			{
+				framesBuilding++;
+				Require( flow.Level == null && flow.Lobby != null && Entity.All.Count > 0, "the lobby stays current while the park is built" );
+				return false;
+			}
+			return true;
+		}) );
+		Do( "the park built over frames is the park built in one go", () =>
+		{
+			flow.Transitioned -= RecordBuiltOverFrames;
+			Require( framesBuilding >= 2, $"the park is built over several frames ({framesBuilding})" );
+			Require( builtOverFrames == builtInOneGo,
+				$"built over frames: hash, entities and objects {builtOverFrames} equal the park built in one go {builtInOneGo}" );
+			Require( flow.Level != null && flow.Hud != null && flow.Lobby == null && flow.StartKind == ParkStartKind.OriginalSaveReference,
+				"the park built over frames is entered with its HUD, and the lobby is gone" );
+			Log.Trace( $"Park built over {framesBuilding} frames: hash {builtOverFrames.Hash:X16}, {builtOverFrames.Entities} entities, {builtOverFrames.Objects} objects, as built in one go." );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
@@ -1336,7 +1404,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
 		GameFlow.Quit();
 	}
 
@@ -1354,6 +1422,40 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	}
 
 	private int stepState;
+	// Frames spent waiting for real-time advisor speech; they do not count against MaximumFrames.
+	private int speechFrames;
+	private System.Diagnostics.Stopwatch? speechWait;
+	private TimeSpan speechAllowance;
+	// Room beyond the clip's remaining length for the audio queue to drain and the frame that notices it.
+	private static readonly TimeSpan SpeechSlack = TimeSpan.FromSeconds( 5 );
+
+	/// <summary>
+	/// Waits until no advisor response is being spoken. The speech plays in real time on the audio clock, so the
+	/// frames it takes depend on the display's refresh rate (with the frame cap off, a 120 Hz screen draws twice the
+	/// frames of a 60 Hz one during the 28.6 s English Jungle welcome line). Those frames are left out of the frame
+	/// budget, which bounds the test's own progress; the wait is bounded in time by the remaining clip instead.
+	/// </summary>
+	private void WaitForAdvisorSpeech() => steps.Enqueue( ("advisor speech ends", () =>
+	{
+		if ( flow.Advisor?.IsSpeechActive != true )
+		{
+			if ( speechWait != null )
+				Log.Trace( $"Front-end smoke: advisor speech ended after {speechWait.Elapsed.TotalSeconds:F2} s of waiting ({speechFrames} frames outside the frame budget)." );
+			speechWait = null;
+			return true;
+		}
+		if ( speechWait == null )
+		{
+			var presentation = flow.Advisor.Presentation;
+			var remaining = presentation == null ? TimeSpan.Zero : presentation.Duration - presentation.Position;
+			speechAllowance = (remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero) + SpeechSlack;
+			speechWait = System.Diagnostics.Stopwatch.StartNew();
+			Log.Trace( $"Front-end smoke: waiting {remaining.TotalSeconds:F2} s for the advisor speech ({presentation?.ClockSource ?? "no presentation"})." );
+		}
+		Require( speechWait.Elapsed < speechAllowance, $"the advisor speech ends within its remaining length plus {SpeechSlack.TotalSeconds:F0} s ({speechAllowance.TotalSeconds:F2} s)" );
+		speechFrames++;
+		return false;
+	}) );
 
 	private void Wait( string name, int frames ) => steps.Enqueue( (name, () =>
 	{
@@ -1370,7 +1472,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
-		Require( frame < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
+		Require( frame - speechFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
 		while ( steps.Count > 0 && steps.Peek().Step() )
 		{
 			steps.Dequeue();

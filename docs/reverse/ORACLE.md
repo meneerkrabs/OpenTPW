@@ -1596,6 +1596,7 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-coast-rating-final` | tp.exe `0x43df90`..`0x43e0a7` (cdecl; the Mac `0x41900`) | none | 506 | **X12**: 23 differ from the Mac routine (F8, what C# follows), all in the last bit of the excitement; 315 from COAST-plan 6.4 (section count). **Agree** 506/506 at the single-precision word `0x7F` | **agree** 506/506 |
 | `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
 | `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
+| `tpw-exe-counts-test` | tp.exe `0x4dd920`..`0x4dda1f` (thiscall, `ecx` = thing; the Mac `0xdc834`) | `0x4de130` back of queue (chosen, checked for the thing), `0x4ddf50` list length (checked to be asked for guest 0), `0x412e90` type record (track type chosen), `0x441970` coaster controller test (cdecl, chosen); stack balance checked | 515 (15 edges, one per condition, 500 random) | **X15**: **agree** 515/515 with the routine reading | the C# rule transcribed (`CountsForParkPoints` with `QueueCountsForParkPoints`): 29 differ, all coasters, karts and water rides (ARRIVAL-003); for every other track type **agree**. The back cell and list length are stubbed, so this checks the routine's logic, not OpenTPW's queue geometry |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
@@ -2123,3 +2124,27 @@ effects differ: C# sets the QueueTooLong thought and plays no animation.
 
 Also seen: after re-evaluating, `0x4de1f0` reopens a ride that is closed but openable (not broken or condemned, back of queue connected,
 and for coasters, karts and water rides their extra conditions); this is not compared here.
+
+### 7.11 Finding X15: the park points counts-test, queue included
+
+Question (ARRIVAL-003): which attractions count for park points (and so for arrivals)? C# applied only three of the counts-test's
+conditions: IsChoosable, not broken down, and open. The Mac trace named the rest but OpenTPW had no state for them.
+
+**Executed.** tp.exe `0x4dd920` (the Mac `0xdc834`, same tests at the PC offsets) returns 1 only when all of these hold:
+1. flag word `+0x32` bit 4 (IsChoosable);
+2. state `+0x19c` is not 1 (broken down) and not 4 (condemned);
+3. the open word `+0x68` is nonzero;
+4. the back of the queue `0x4de130` gives a cell. That routine walks the queue from the front cell at the entrance and counts its cells
+   into `+0x40`, so an attraction without queue cells has no back cell;
+5. `0x4ddf50`, asked for guest 0, walks the whole queue list and returns its length, which must be below 4 × the cells (unsigned);
+6. by track type: a coaster (3) also needs the controller test `0x441970`, and a kart (1) or water ride (2) needs the word `+0x2c`.
+
+It agrees with that reading on 515 inputs.
+
+**Fixed in C#.** `QueueJoinRules.QueueCountsForParkPoints` counts the real queue cells among the attraction's queue cells. OpenTPW's
+one-cell fallback on a path cell (RIDES-028) does not count, just as the original's back-of-queue walk finds no cell there. The rule then
+requires the queue list to be shorter than 4 × those cells. The level, the M3 and M4 gate loops and the prototype ride sync the result
+into `ParkObjectState.QueueHasRoom` each tick, and `CountsForParkPoints` requires it. A ride without a queue, or with a full one, no
+longer counts. Transcribed into the routine's terms, the C# rule agrees for every attraction that is not a coaster, kart or water ride.
+ARRIVAL-003 keeps the controller test and the track word (29 inputs differ, all of those types). The flag is not saved; it is true until
+the first sync after a load or a purchase.

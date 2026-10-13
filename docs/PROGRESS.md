@@ -863,6 +863,10 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),
+  the manifest first marks it as not stored and only marks it kept, with the new hash, once the new bytes are written; a clear or
+  folder change in between drops the write. A failed rewrite therefore makes the file count as missing instead of offering stale
+  bytes under the new hash (BROWSER-ORIGINAL-CACHE-RECOVERY.md).
 - **WAD ranges checked before allocating (October 13):** a WAD's header, directory and member ranges are checked
   against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
   instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive

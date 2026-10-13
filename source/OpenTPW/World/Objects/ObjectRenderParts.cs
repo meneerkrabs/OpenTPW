@@ -7,8 +7,11 @@ namespace OpenTPW;
 /// slots, and the node whose animated matrix moves it (-1: static, already baked into the vertices).
 /// Unbaked parts name their mesh; their vertex <c>i</c> is corner <c>i</c> of that mesh (also for parts
 /// split by material), so <see cref="ObjectRenderParts.WritePositions"/> can move them.
+/// <see cref="TextureSlots"/> parallels <see cref="Textures"/> with the MD2 texture-slot index each name
+/// came from (-1 when it did not come from a material), so a texture-frame track of that slot can swap
+/// the rendered frame (ObjectAnimator.GetTextureFrame).
 /// </summary>
-public sealed record ObjectRenderPart( int NodeIndex, Vertex[] Vertices, uint[] Indices, string[] Textures, string Name, int MeshIndex = -1 );
+public sealed record ObjectRenderPart( int NodeIndex, Vertex[] Vertices, uint[] Indices, string[] Textures, string Name, int MeshIndex = -1, int[]? TextureSlots = null );
 
 /// <summary>
 /// Splits an object model into render parts. Meshes on nodes that no animation of the object moves (nor any
@@ -122,13 +125,16 @@ public static class ObjectRenderParts
 		var batchVertices = new List<Vertex>();
 		var batchIndices = new List<uint>();
 		var batchTextures = new List<string>();
+		// The MD2 texture-slot index of every batched name (-1 when it did not come from a material).
+		var batchSlots = new List<int>();
 		void Flush()
 		{
 			if ( batchVertices.Count > 0 )
-				parts.Add( new ObjectRenderPart( -1, batchVertices.ToArray(), batchIndices.ToArray(), batchTextures.ToArray(), $"{entry.ArchiveName} static {parts.Count}" ) );
+				parts.Add( new ObjectRenderPart( -1, batchVertices.ToArray(), batchIndices.ToArray(), batchTextures.ToArray(), $"{entry.ArchiveName} static {parts.Count}", -1, batchSlots.ToArray() ) );
 			batchVertices.Clear();
 			batchIndices.Clear();
 			batchTextures.Clear();
+			batchSlots.Clear();
 		}
 		for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
 		{
@@ -138,21 +144,30 @@ public static class ObjectRenderParts
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < model.Nodes.Count ? mesh.NodeIndex : model.RootNodeIndex;
 			if ( node >= 0 && animated[node] )
 			{
-				foreach ( var (vertices, indices, textures) in ObjectAssets.ConvertMeshParts( mesh ) )
-					parts.Add( new ObjectRenderPart( node, vertices, indices, textures, mesh.Name, meshIndex ) );
+				foreach ( var (vertices, indices, textures, slots) in ObjectAssets.ConvertMeshParts( mesh ) )
+					parts.Add( new ObjectRenderPart( node, vertices, indices, textures, mesh.Name, meshIndex, slots ) );
 				continue;
 			}
 			var bake = node >= 0 ? rest[node] : Matrix4x4.Identity;
-			foreach ( var (vertices, indices, textures) in ObjectAssets.ConvertMeshParts( mesh, bake ) )
+			foreach ( var (vertices, indices, textures, slots) in ObjectAssets.ConvertMeshParts( mesh, bake ) )
 			{
-				if ( batchTextures.Union( textures, StringComparer.OrdinalIgnoreCase ).Count() > 16 )
+				if ( batchTextures.Select( ( name, index ) => (batchSlots[index], name.ToUpperInvariant()) )
+					.Concat( textures.Select( ( name, index ) => (slots[index], name.ToUpperInvariant()) ) ).Distinct().Count() > 16 )
 					Flush();
-				var slots = textures.Select( name =>
+				var remapped = textures.Select( ( name, material) =>
 				{
-					var slot = batchTextures.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
+					var slot = -1;
+					for ( var index = 0; index < batchTextures.Count; index++ )
+						if ( batchSlots[index] == slots[material] && string.Equals( batchTextures[index], name, StringComparison.OrdinalIgnoreCase ) )
+						{
+							slot = index;
+							break;
+						}
 					if ( slot < 0 )
 					{
 						batchTextures.Add( name );
+						// Slots with identical first-frame art can animate independently.
+						batchSlots.Add( slots[material] );
 						slot = batchTextures.Count - 1;
 					}
 					return slot;
@@ -161,7 +176,7 @@ public static class ObjectRenderParts
 				foreach ( var vertex in vertices )
 				{
 					var copy = vertex;
-					copy.TexIndex = slots[vertex.TexIndex];
+					copy.TexIndex = remapped[vertex.TexIndex];
 					batchVertices.Add( copy );
 				}
 				foreach ( var index in indices )

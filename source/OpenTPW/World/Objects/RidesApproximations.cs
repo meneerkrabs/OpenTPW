@@ -2,7 +2,8 @@ namespace OpenTPW;
 
 /// <summary>
 /// The rides slice's approximation register (docs/OBJECTS.md, "Approximation register"). Each entry is
-/// tagged <c>[APPROX:RIDES-NNN]</c> at its code site; <see cref="LogOnce"/> lists them at the first catalog load.
+/// tagged <c>[APPROX:RIDES-NNN]</c> (texture-frame application: <c>MD2-9NN</c>) at its code site;
+/// <see cref="LogOnce"/> lists them at the first catalog load.
 /// </summary>
 public static class RidesApproximations
 {
@@ -34,7 +35,7 @@ public static class RidesApproximations
 		("RIDES-032", "every placed instance takes the callback update route; the object-list route (no posing, no-reset replay) is not modelled"),
 		("RIDES-033", "script speed fixed at 1.0 (initial bias 50); native writers of the bias not modelled"),
 		("RIDES-034", "no idle restart of AnimID 5 on objects with +4 & 0x8004 clear"),
-		("RIDES-035", "MD2 texture-frame tracks not applied"),
+		("RIDES-035", "MD2 texture-frame tracks apply to rendering; the original's draw-path reader of a slot's current frame is not traced, so the binding follows this port's material-slot mapping (see MD2-900..902)"),
 		("RIDES-036", "UV pass always runs: global option bit 0x10 and node bit 0x4000 taken as clear (setters untraced)"),
 		("RIDES-037", "TRIGWAITANIM without an object treats a literal out operand like a variable (never resumes)"),
 		("RIDES-038", "TRIGANIMSPEED speed below 0 faults; negative channel playback untraced"),
@@ -42,7 +43,10 @@ public static class RidesApproximations
 		("RIDES-041", "12-byte vertex block (record flag 0x4000) shown as the stored mesh; no reader of its floats traced"),
 		("RIDES-042", "node-state bit 0x10 (clip node lists, toggles) hides the node's mesh"),
 		("RIDES-043", "relative-animation models play vertex and UV tracks in set mode; add mode behind ride-loader argument 0x20000 not modelled"),
-		("RIDES-044", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 with the park's script world; original start value untraced")
+		("RIDES-044", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 with the park's script world; original start value untraced"),
+		("MD2-900", "texture-frame slots mix like node components: ascending channels and tracks (hyenasm1 holds two tracks on slot 15; its constant 0 loses to the face cycle), the last non-null frame wins, null before the first key keeps the previous frame (initially 0), and a slot no bound clip addresses returns to frame 0; the fixed-item pose hold is not extended to frames"),
+		("MD2-901", "texture-frame keys naming a frame outside the slot's frame-name list, or a slot the model does not have, are ignored (the one corpus case, Pmegacostm slot 12, addresses a slot its base model lacks)"),
+		("MD2-902", "a texture frame whose art no searched directory has (including Theme Park Inc tvsim slot 39 frame 3 lt1.tga) retains the effective selected frame; decoded-art availability is registered with the animator so the visible frame survives save/restore")
 	};
 
 	private static bool logged;

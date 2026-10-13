@@ -173,10 +173,16 @@ TRIGWAITANIM continues once channel 0 shows the triggered AnimID;
 TRIGANIMSPEED plays at `operand / 1000` times the script speed.
 
 Quantised vertex tracks (0x1000) and per-corner texture-coordinate tracks
-(0x10000, e.g. `fountainm`, `Coconutm`) play per instance. Node-state bit 0x10
+(0x10000, e.g. `fountainm`, `Coconutm`) play per instance. Texture-frame tracks
+(trailer word 12 behind bit 0x2) select the frame of a model texture slot while
+the clip plays — the Belly Bounce's alien eyes, the arcade and Bug TV screens,
+the fixed gate's worm face, the queue-bin fires (RIDES-035; the mixing and
+fallback rules are MD2-900..902) — and the renderer swaps the bound texture of
+the material slots that show the slot, with no reallocation while the frame
+holds. Node-state bit 0x10
 (clip node lists, toggle tracks) hides the node's mesh (RIDES-042). Still shown
-as stored: the 12-byte block (0x4000, RIDES-041); not applied: texture-frame
-tracks (RIDES-035) and path parameters (0x200/0x400).
+as stored: the 12-byte block (0x4000, RIDES-041); not applied: path parameters
+(0x200/0x400).
 
 ## Scripts in the world
 
@@ -322,7 +328,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route (0xa7960, r4 = 1); the object-list route (no posing, no-reset replay) is not modelled | The engine's call condition for the render-record callback (0x5a3bc) and the setter of object flag 0x00400000 |
 | RIDES-033 | VM/RideVM.cs | Script speed 1.0 (creation bias 50) | What the native bias writers 0xb2a34/0xb5b18 store |
 | RIDES-034 | World/Objects/ObjectAnimator.cs | No idle restart of AnimID 5/0 (0xa798c) | Which placed objects keep +4 & 0x8004 clear |
-| RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks decoded, not applied | The reader of a texture slot's current frame |
+| RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks apply to rendering (MD2-900..902); the original's draw-path reader of a slot's current frame is not traced, so the binding follows this port's material-slot mapping | The reader of a texture slot's current frame |
 | RIDES-036 | World/Objects/ObjectAnimator.cs | The UV pass always runs: global option +16396 bit 0x10 and node bit 0x4000 (gate 0xa5698–0xa56b8) taken as clear | The writers of option bit 0x10 and node bit 0x4000 |
 | RIDES-037 | VM/Handlers/Animation.cs | TRIGWAITANIM(_CH) without an object never resumes; for a literal out operand this assumes its in-memory code word, like a variable's (tag 0xC0), never equals the token | The RSE loader's in-memory literal operand encoding |
 | RIDES-038 | VM/Handlers/Animation.cs | TRIGANIMSPEED with a speed operand below 0 faults (0 is undefined `divw`) | The channel update with a negative speed (0xa6484, 0xa7190) |
@@ -331,6 +337,9 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-042 | World/Objects/ObjectAnimator.cs | Node-state bit 0x10 (node lists at clip start, toggles ≤ 0) hides the node's mesh | The draw-path reader of node bit 0x10, or captures |
 | RIDES-043 | World/Objects/ObjectAnimator.cs | Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load strips the flag (with it, both add: 0xa4a58/0xa4f68, UV 0xa56d4/0xa8420) | The ride-data source of the 0x594c8 flag word allowing 0x20000 |
 | RIDES-044 | VM/RideVM.cs | The shared scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read starts at 0 when the park's script world is created and advances with the script ticks | The original scheduler clock's (0x10e844 on the global r30) value when a placed object's script starts, and whether a save stores it |
+| MD2-900 | World/Objects/ObjectAnimator.cs | A texture-frame slot mixes like the node components: ascending channels and tracks, the last non-null frame wins (hyenasm1 carries two tracks on one slot; the constant 0 loses to the face cycle), null before the first key keeps the previous frame (initially 0), and a slot no clip addresses shows frame 0 again; the fixed-item pose hold is not extended to frames | The original draw-path reader of a slot's current frame (the clip update 0xa56f8 only writes it) |
+| MD2-901 | World/Objects/ObjectAnimator.cs | Texture-frame keys naming a frame outside the slot's frame names, or a slot the model does not have (Pmegacostm slot 12), are ignored | The original's behaviour on an out-of-range frame or slot |
+| MD2-902 | World/Objects/OriginalObject.cs | A frame whose art no searched texture directory has (including Theme Park Inc `tvsim` slot 39 frame 3, `lt1.tga`) keeps the effective selected frame; the renderer registers decoded-art availability with the animator so save history retains that visible frame | The original's fallback for a missing frame file |
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

@@ -52,10 +52,29 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 /// </summary>
 public class OriginalObject : Entity
 {
+	/// <summary>The material's texture-array binding the object renderer uses (BuildModels).</summary>
+	private const string TextureArrayName = "Color";
+
+	/// <summary>
+	/// One MD2 texture slot that a clip of this object animates with a texture-frame track: every frame's
+	/// texture decoded once (null when no searched directory has the frame's art), where the slot's current
+	/// frame is bound (each entry of the material's texture array that shows the slot) and the frame it shows.
+	/// </summary>
+	private sealed class FrameTextures
+	{
+		public required int Slot { get; init; }
+		public required Texture?[] Frames { get; init; }
+		public required List<(Material Material, int Slot)> Bindings { get; init; }
+		public int Shown { get; set; }
+	}
+
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
 	private readonly List<Model> models = new();
 	/// <summary>Parts of vertex- or UV-animated meshes: their model, own vertex array and the pose version it shows.</summary>
 	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
+	/// <summary>Texture slots a clip of this object animates with texture-frame tracks, with their render bindings.</summary>
+	private readonly List<FrameTextures> frameTextures = new();
+	private int textureFrameVersion = -1;
 	private bool deleted;
 	private int hiddenVersion = -1;
 
@@ -142,6 +161,11 @@ public class OriginalObject : Entity
 	private void BuildModels()
 	{
 		var vertexAnimated = ObjectRenderParts.FindVertexAnimatedMeshes( Entry, Runtime.Model );
+		// The model's multi-frame texture slots that one of the object's clips addresses with a texture-frame
+		// track (RIDES-035): each frame decodes once, and the part bindings record which material slots show them.
+		var frameSlots = FindFrameAnimatedSlots( Entry, Runtime.Model );
+		foreach ( var frames in frameSlots.Values )
+			Runtime.Animator.SetTextureFrameAvailability( frames.Slot, frames.Frames.Select( texture => texture != null ).ToArray() );
 		foreach ( var part in ObjectRenderParts.Build( Entry, Runtime.Model ) )
 		{
 			var slots = new Texture[16];
@@ -172,7 +196,17 @@ public class OriginalObject : Entity
 						part.Vertices[vertexIndex] = vertex;
 					}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
-			material.Set( "Color", slots );
+			material.Set( TextureArrayName, slots );
+			// A texture-frame track swaps the frames of the model slots the part shows, unless a runtime sign
+			// face owns that slot's texture.
+			if ( part.TextureSlots != null )
+				for ( var index = 0; index < part.Textures.Length && index < part.TextureSlots.Length; index++ )
+				{
+					if ( sign?.TextureFor( part.Textures[index] ) != null || (fallbackBaseSign != null && ObjectSigns.IsSignSlot( part.Textures[index] )) )
+						continue;
+					if ( frameSlots.TryGetValue( part.TextureSlots[index], out var frames ) )
+						frames.Bindings.Add( (material, index) );
+				}
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
 			var model = new Model( part.Vertices, part.Indices, material, dynamic );
 			models.Add( model );
@@ -182,16 +216,56 @@ public class OriginalObject : Entity
 				vertexParts.Add( (model, part.MeshIndex, part.Vertices, -1) );
 			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}" }, part.NodeIndex) );
 		}
+		frameTextures.AddRange( frameSlots.Values.Where( frames => frames.Bindings.Count > 0 ) );
+	}
+
+	/// <summary>
+	/// The model's texture slots with more than one frame name that an enabled texture-frame track of the object's
+	/// animation members addresses, each with every frame decoded once (null when no searched directory has it).
+	/// </summary>
+	// [APPROX:MD2-902] A frame whose art no searched texture directory has (including Theme Park Inc tvsim slot 39 frame 3, lt1.tga) keeps the effective selected frame the slot currently shows (renderer registers decoded-art availability with the animator, so save history retains the visible frame) — evidence needed: the original's fallback for a missing frame file
+	private static Dictionary<int, FrameTextures> FindFrameAnimatedSlots( ObjectCatalogEntry entry, ModelFile model )
+	{
+		var slots = new Dictionary<int, FrameTextures>();
+		foreach ( var animation in entry.Animations )
+		{
+			ModelAnimation? clip;
+			try
+			{
+				clip = ObjectAssets.LoadModel( entry.FileSystem, animation.Path ).Clip;
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+			{
+				continue;
+			}
+			if ( clip?.TextureFramesEnabled != true )
+				continue;
+			foreach ( var track in clip.TextureFrameTracks )
+			{
+				if ( track.Slot >= model.Textures.Count || model.Textures[track.Slot].FrameNames.Count < 2 || slots.ContainsKey( track.Slot ) )
+					continue;
+				slots[track.Slot] = new FrameTextures
+				{
+					Slot = track.Slot,
+					Frames = model.Textures[track.Slot].FrameNames.Select( name => TryLoadTexture( entry, name ) ).ToArray(),
+					Bindings = new List<(Material, int)>()
+				};
+			}
+		}
+		return slots;
 	}
 
 	private static readonly Dictionary<string, Texture> bonusTextures = new( StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>Game-data textures go through the shared texture cache; bonus-content textures are decoded from their own root.</summary>
-	private static Texture LoadTexture( ObjectCatalogEntry entry, string name )
+	private static Texture LoadTexture( ObjectCatalogEntry entry, string name ) => TryLoadTexture( entry, name ) ?? Texture.Missing;
+
+	/// <summary>The texture of a material or frame name, or null when no searched directory has it.</summary>
+	private static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name )
 	{
 		var resolved = ObjectAssets.ResolveTexture( entry, name );
 		if ( resolved == null )
-			return Texture.Missing;
+			return null;
 		var (fileSystem, path) = resolved.Value;
 		if ( fileSystem == FileSystem )
 			return new Texture( path, TextureFlags.Repeat );
@@ -209,6 +283,7 @@ public class OriginalObject : Entity
 	private void UpdateTransforms()
 	{
 		UpdateVertices();
+		UpdateTextures();
 		var placement = Placement.ModelToEngine;
 		var animator = Runtime.Animator;
 		var nodes = animator.NodeTransforms;
@@ -221,6 +296,34 @@ public class OriginalObject : Entity
 			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	/// <summary>
+	/// Swaps the bound texture of every material slot whose frame-animated model slot changed: the animator's
+	/// winning texture-frame track picks the frame, the material rebinds the element at its next draw and
+	/// nothing is reallocated while the frame stays the same. A frame without decoded art keeps the texture
+	/// the slot currently shows.
+	/// </summary>
+	private void UpdateTextures()
+	{
+		if ( frameTextures.Count == 0 )
+			return;
+		var animator = Runtime.Animator;
+		var version = animator.TextureFrameVersion;
+		if ( version == textureFrameVersion )
+			return;
+		textureFrameVersion = version;
+		foreach ( var frames in frameTextures )
+		{
+			var frame = animator.GetTextureFrame( frames.Slot );
+			if ( frame == frames.Shown )
+				continue;
+			frames.Shown = frame;
+			if ( frame >= frames.Frames.Length || frames.Frames[frame] is not { } texture )
+				continue;
+			foreach ( var (material, slot) in frames.Bindings )
+				material.SetTextureArrayElement( TextureArrayName, slot, texture );
 		}
 	}
 
@@ -250,8 +353,10 @@ public class OriginalObject : Entity
 		foreach ( var model in models )
 		{
 			model.ReleaseBuffers();
+			model.Material.ReleaseOwnedResources();
 		}
 		models.Clear();
 		vertexParts.Clear();
+		frameTextures.Clear();
 	}
 }

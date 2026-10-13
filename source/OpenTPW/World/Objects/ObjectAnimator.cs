@@ -25,7 +25,7 @@ namespace OpenTPW;
 /// </summary>
 // [APPROX:RIDES-032] Every instance takes the placement callback route (0xa7960 with r4 = 1) on every update; the object-list route (0x4d354, r4 = 0: clocks advance without posing unless object flag 0x00400000, loops replay without a bind and keep their vertex cursors) is not modelled — evidence needed: the engine's condition for calling the render-record callback installed at 0x5a3bc, and the setter of object flag 0x00400000
 // [APPROX:RIDES-034] No idle restart: the original object update re-triggers AnimID 5, sub 0 on channel 0 while channel 0 has ended for objects whose +4 & 0x8004 is clear (0xa798c–0xa79c8) — evidence needed: which placed objects keep +4 & 0x8004 clear (placement-flag sources)
-// [APPROX:RIDES-035] MD2 texture-frame tracks (trailer word 12) are decoded but not applied; the clip update 0xa56f8 applies them when trailer bit 0x2 is set and global option bit 0x8 is clear (its only store writes 0), but the consumer of the selected frame slot is not traced — evidence needed: the reader of the texture slot's current frame in the draw path
+// [APPROX:RIDES-035] MD2 texture-frame tracks (trailer word 12) now apply: the clip update 0xa56f8 runs them when trailer bit 0x2 is set and global option bit 0x8 is clear (its only store writes 0), and <see cref="GetTextureFrame"/> exposes the winning frame per slot; the original's reader of the slot's current frame in the draw path is still not traced, so the binding to rendered textures follows this port's material-slot mapping — evidence needed: the draw-path reader of a texture slot's current frame
 public sealed class ObjectAnimator
 {
 	/// <summary>Default rate shared with the Totem; 30 is proved for the Feral Mac channel formula, while Windows and runtime clock selection remain unverified.</summary>
@@ -62,6 +62,8 @@ public sealed class ObjectAnimator
 		public required ModelVertexAnimation?[] Vertices { get; set; }
 		/// <summary>Per node: the clip's texture-coordinate track when it fits the node's mesh, else null.</summary>
 		public required ModelUvAnimation?[] Uvs { get; set; }
+		/// <summary>The clip's texture-frame tracks that address a slot of this model (empty when the trailer does not enable them).</summary>
+		public required ModelTextureFrameTrack[] FrameTracks { get; set; }
 		/// <summary>Bumped at every start and replay; tells the vertex caches that the clip was rebound.</summary>
 		public long Serial { get; set; }
 		/// <summary>StartAnimTime (channel +16): animator clock in whole milliseconds.</summary>
@@ -85,6 +87,12 @@ public sealed class ObjectAnimator
 	private readonly (long Serial, float Tick)[] vertexSources;
 	private readonly (long Serial, float Tick)[] uvSources;
 	private readonly bool[] nodeStateBit;
+	private readonly int[] frameBySlot;
+	private readonly int[] sampledFrameBySlot;
+	private readonly bool[]?[] availableFramesBySlot;
+	private readonly bool[] slotAnimated;
+	private readonly bool[] slotAddressed;
+	private int textureFrameVersion;
 	private readonly SortedSet<string> vertexLimitations = new( StringComparer.Ordinal );
 	private readonly bool keepsPoseOnClipChange;
 	private long serial;
@@ -157,6 +165,12 @@ public sealed class ObjectAnimator
 		vertexVersions = new int[model.Meshes.Count];
 		vertexSources = new (long, float)[model.Meshes.Count];
 		uvSources = new (long, float)[model.Meshes.Count];
+		// Texture frames are per model slot (frame 0 is the stored frame name every material shows).
+		frameBySlot = new int[model.Textures.Count];
+		sampledFrameBySlot = new int[model.Textures.Count];
+		availableFramesBySlot = new bool[]?[model.Textures.Count];
+		slotAnimated = new bool[model.Textures.Count];
+		slotAddressed = new bool[model.Textures.Count];
 		// Node-state bit 0x10 starts as stored (clear in every corpus mesh record).
 		nodeStateBit = model.Nodes.Select( node => (node.Type & ModelAnimationTrack.ToggledNodeStateBit) != 0 ).ToArray();
 	}
@@ -204,6 +218,44 @@ public sealed class ObjectAnimator
 
 	/// <summary>Changes whenever <see cref="IsNodeHidden"/> of some node changes.</summary>
 	public int HiddenVersion => hiddenVersion;
+
+	/// <summary>
+	/// True while some bound clip addresses a texture slot of this model with a texture-frame track
+	/// (trailer word 12 behind bit 0x2, clip update 0xa56f8), so <see cref="GetTextureFrame"/> can change.
+	/// </summary>
+	public bool HasTextureFrames => channels.Values.Any( channel => channel.FrameTracks.Length > 0 );
+
+	/// <summary>
+	/// The frame a texture slot of the model currently shows: 0 (the stored frame name) until a bound clip's
+	/// texture-frame track selects another, the highest channel writing the slot winning as for every node
+	/// component (a null sample before a track's first key leaves the slot unchanged). A frame index outside
+	/// the slot's frame names is never returned; a slot every clip stops addressing shows frame 0 again.
+	/// </summary>
+	// [APPROX:MD2-900] The slot's current frame mixes like the node components (ascending channels, the highest non-null sample wins; null before the first key keeps the previous frame, initially 0) and a slot no bound clip addresses any more returns to frame 0 like a mesh that loses its track returns to its stored positions — evidence needed: the original draw-path reader of a slot's current frame (the clip update 0xa56f8 only writes it)
+	// [APPROX:MD2-901] Frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — evidence needed: the original's behaviour on an out-of-range frame
+	public int GetTextureFrame( int slot )
+	{
+		if ( (uint)slot >= (uint)frameBySlot.Length )
+			throw new ArgumentOutOfRangeException( nameof( slot ) );
+		return frameBySlot[slot];
+	}
+
+	/// <summary>Renderer-provided decoded-art availability; missing art holds the effective selected frame.</summary>
+	internal void SetTextureFrameAvailability( int slot, bool[] available )
+	{
+		if ( (uint)slot >= (uint)frameBySlot.Length || available.Length != model.Textures[slot].FrameNames.Count )
+			throw new ArgumentException( "Texture-frame availability must match a model slot's frame names." );
+		availableFramesBySlot[slot] = (bool[])available.Clone();
+		if ( frameBySlot[slot] != 0 && !available[frameBySlot[slot]] )
+		{
+			frameBySlot[slot] = 0;
+			textureFrameVersion++;
+		}
+		UpdateTextureFrames();
+	}
+
+	/// <summary>Changes whenever <see cref="GetTextureFrame"/> of some slot changes.</summary>
+	public int TextureFrameVersion => textureFrameVersion;
 
 	/// <summary>True while the channel's clip has not ended.</summary>
 	public bool IsChannelPlaying( int channel ) => channels.TryGetValue( channel, out var state ) && !state.Ended;
@@ -364,6 +416,12 @@ public sealed class ObjectAnimator
 		var tracks = new ModelAnimationTrack?[model.Nodes.Count];
 		var vertices = new ModelVertexAnimation?[model.Nodes.Count];
 		var uvs = new ModelUvAnimation?[model.Nodes.Count];
+		// The clip update 0xa56f8 samples the texture-frame tracks only when trailer bit 0x2 is set (global
+		// option bit 0x8 is only ever stored clear). A track naming a slot the model does not have is dropped;
+		// the one corpus case (Pmegacostm slot 12) pairs a header that repeats a smaller model's counts.
+		var frameTracks = clip.Animation.TextureFramesEnabled
+			? clip.Animation.TextureFrameTracks.Where( track => track.Slot < model.Textures.Count ).ToArray()
+			: Array.Empty<ModelTextureFrameTrack>();
 		foreach ( var track in clip.Animation.Tracks )
 		{
 			tracks[track.NodeIndex] = track;
@@ -384,7 +442,7 @@ public sealed class ObjectAnimator
 					uvs[track.NodeIndex] = track.UvAnimation;
 			}
 		}
-		return new Channel { Clip = clip, Player = player, Tracks = tracks, Vertices = vertices, Uvs = uvs };
+		return new Channel { Clip = clip, Player = player, Tracks = tracks, Vertices = vertices, Uvs = uvs, FrameTracks = frameTracks };
 	}
 
 	// ---- Park-resume snapshot ----
@@ -437,6 +495,12 @@ public sealed class ObjectAnimator
 			KeepsPoseOnClipChange = keepsPoseOnClipChange,
 			Channels = capturedChannels,
 			NodeStateBits = (bool[])nodeStateBit.Clone(),
+			TextureFrames = new AnimatorTextureFrameSnapshot
+			{
+				Frames = (int[])frameBySlot.Clone(),
+				AnimatedSlots = (bool[])slotAnimated.Clone(),
+				Version = textureFrameVersion
+			},
 			Meshes = capturedMeshes,
 			VertexLimitations = vertexLimitations.ToArray()
 		};
@@ -462,6 +526,14 @@ public sealed class ObjectAnimator
 			throw new InvalidDataException( $"animator has {nodeStateBit.Length} nodes, the snapshot stores {snapshot.NodeStateBits.Length} node-state bits." );
 		if ( snapshot.Meshes.Count != vertexVersions.Length || snapshot.Meshes.Where( ( cached, index ) => cached.Mesh != index ).Any() )
 			throw new InvalidDataException( $"animator has {vertexVersions.Length} meshes, the snapshot does not describe exactly those, in order." );
+		if ( snapshot.TextureFrames is { } frameHistory )
+		{
+			if ( frameHistory.Frames.Length != model.Textures.Count )
+				throw new InvalidDataException( $"animator has {model.Textures.Count} texture slots, the snapshot stores {frameHistory.Frames.Length}." );
+			for ( var slot = 0; slot < frameHistory.Frames.Length; slot++ )
+				if ( frameHistory.Frames[slot] >= Math.Max( 1, model.Textures[slot].FrameNames.Count ) )
+					throw new InvalidDataException( $"texture slot {slot} names frame {frameHistory.Frames[slot]} outside its frame names." );
+		}
 		foreach ( var cached in snapshot.Meshes )
 		{
 			if ( cached.Positions != null && cached.Positions.Length != model.Meshes[cached.Mesh].Positions.Length * 3 )
@@ -491,6 +563,15 @@ public sealed class ObjectAnimator
 		foreach ( var (index, state) in restored )
 			channels[index] = state;
 		Array.Copy( snapshot.NodeStateBits, nodeStateBit, nodeStateBit.Length );
+		Array.Clear( frameBySlot );
+		Array.Clear( slotAnimated );
+		textureFrameVersion = 0;
+		if ( snapshot.TextureFrames is { } restoredFrames )
+		{
+			Array.Copy( restoredFrames.Frames, frameBySlot, frameBySlot.Length );
+			Array.Copy( restoredFrames.AnimatedSlots, slotAnimated, slotAnimated.Length );
+			textureFrameVersion = restoredFrames.Version;
+		}
 		foreach ( var cached in snapshot.Meshes )
 		{
 			vertexVersions[cached.Mesh] = cached.VertexVersion;
@@ -647,6 +728,46 @@ public sealed class ObjectAnimator
 			world[node] = parent < 0 ? local : local * world[parent];
 			if ( meshByNode[node] >= 0 )
 				UpdateMesh( meshByNode[node], node, vertexWinner, uvWinner );
+		}
+		UpdateTextureFrames();
+	}
+
+	/// <summary>
+	/// Resamples every slot a bound clip addresses (the sampler tail of the clip update 0xa56f8): channels mix in
+	/// ascending order, a non-null <see cref="ModelTextureFrameTrack.FrameAt"/> of a higher channel overwriting a
+	/// lower one, a null sample (before the first key) leaving the slot unchanged. A slot that no bound clip
+	/// addresses any more shows frame 0 again, like a mesh that loses its track shows its stored positions.
+	/// </summary>
+	private void UpdateTextureFrames()
+	{
+		if ( model.Textures.Count == 0 )
+			return;
+		Array.Clear( slotAddressed, 0, slotAddressed.Length );
+		Array.Copy( frameBySlot, sampledFrameBySlot, frameBySlot.Length );
+		foreach ( var channel in channels.Values )
+		{
+			foreach ( var track in channel.FrameTracks )
+			{
+				slotAddressed[track.Slot] = true;
+				slotAnimated[track.Slot] = true;
+				// A frame outside the slot's names is ignored (kept at the previous frame).
+				if ( track.FrameAt( channel.Player.Tick ) is { } frame && frame < model.Textures[track.Slot].FrameNames.Count
+					&& (availableFramesBySlot[track.Slot] == null || availableFramesBySlot[track.Slot]![frame]) )
+					sampledFrameBySlot[track.Slot] = frame;
+			}
+		}
+		for ( var slot = 0; slot < slotAddressed.Length; slot++ )
+		{
+			if ( slotAnimated[slot] && !slotAddressed[slot] )
+			{
+				slotAnimated[slot] = false;
+				sampledFrameBySlot[slot] = 0;
+			}
+			if ( frameBySlot[slot] != sampledFrameBySlot[slot] )
+			{
+				frameBySlot[slot] = sampledFrameBySlot[slot];
+				textureFrameVersion++;
+			}
 		}
 	}
 

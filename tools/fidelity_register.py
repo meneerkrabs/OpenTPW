@@ -11,6 +11,7 @@ REGISTERS = {
     "ECON": "source/OpenTPW/Economy/EconomyApproximations.cs",
     "UI": "source/OpenTPW/UI/Original/UiApproximations.cs",
     "RIDES": "source/OpenTPW/World/Objects/RidesApproximations.cs",
+    "MD2": "source/OpenTPW/World/Objects/RidesApproximations.cs",
     "COMPAT": "source/OpenTPW.Files/Public/ApproximationRegister.cs",
     "ADVISOR": "source/OpenTPW/World/Advisor.cs",
     "AUDIO": "source/OpenTPW/Audio/AudioApproximations.cs",

@@ -168,6 +168,23 @@ public partial class Material : Asset
 		Bind( "s_" + name, Samplers[(int)texture.SamplerType] );
 	}
 
+	/// <summary>
+	/// Replaces one element of a texture array bound with <see cref="Set(string,Texture[],SamplerType)"/>
+	/// (an MD2 texture-frame animation swapping the frame a material slot shows). The next draw rebinds the
+	/// changed element; nothing is reallocated while the frame stays the same.
+	/// </summary>
+	public void SetTextureArrayElement( string name, int index, Texture texture )
+	{
+		if ( !_boundTextureArrays.TryGetValue( name, out var bound ) )
+			throw new ArgumentException( $"No texture array '{name}' was bound.", nameof( name ) );
+		if ( (uint)index >= (uint)bound.Textures.Length )
+			throw new ArgumentOutOfRangeException( nameof( index ) );
+		if ( ReferenceEquals( bound.Textures[index], texture ) )
+			return;
+		bound.Textures[index] = texture;
+		Bind( bound.Names[index], texture.NativeTexture );
+	}
+
 	private void Bind( string name, BindableResource resource )
 	{
 		if ( _boundResources.TryGetValue( name, out var previous ) && ReferenceEquals( previous, resource ) )

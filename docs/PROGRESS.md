@@ -282,6 +282,9 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - QUEUE-001 is retired: tp.exe's run-time neighbour table (`0x4d97e0`) maps the links 1, 4, 16, 64 to −Y, +X, +Y, −X, and the
   queue's predecessor search `0x4de670` reads the link byte +13 with it, as C# assumed. QUEUE-015 is narrowed: the original's cell clear
   `0x5367a0` removes only the one queue cell (refunded, neighbours unlinked); C# still removes every cell behind it.
+- QUEUE-008 is specified from tp.exe, without a C# change yet: every use of a toilet lowers its gauge by 0.05 × the guest's toilet
+  meter (`0x4e2440`); handymen with no litter in reach walk to the nearest dirty toilet and clean it back to 100 after a per-grade
+  time (`0x4d7880`, state 11, `0x4dfd80`). Wear alone would leave toilets dirty for good, so it waits for the handyman's toilet job.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

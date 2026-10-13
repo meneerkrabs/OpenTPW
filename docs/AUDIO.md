@@ -151,7 +151,9 @@ Traced in the binary but not triggered yet:
   is inferred; no undo sound was found on the Mac (AUDIO-023). The count-classed removal sounds
   `cat_ui` 141–144 and 150–153 (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
 * The weather's own visuals are drawn now, as unverified procedural approximations (AUDIO-900..904,
-  "Weather visuals" below); the forecast's warning is still not shown (AUDIO-031).
+  "Weather visuals" below); the forecast's warning is shown as an OpenTPW presentation whose wording
+  and cadence are approximations (AUDIO-905..907), because the original's forecast message handler is
+  not traced (AUDIO-031).
 * The placed records of type 3 (a sound that follows the listener in a rectangle) are counted, not
   played; a sentence-type placed effect plays its first sound once (AUDIO-020).
 * The visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and visitor
@@ -190,9 +192,37 @@ Behaviour worth knowing:
   over `WeatherVisualState.BoltFlashSeconds`.
 * The renderer is created with the weather itself (`ParkWeather.Created`), inside the staged-candidate
   scope when a save is resumed, and deleted with the level's other entities. GPU allocations are
-  made once, sized for the caps: one vertex buffer, no per-frame growth (browser-safe).
-* The forecast's warning stays undrawn (AUDIO-031); the pending-quality state the original's
-  message handler would read is `ParkWeather.Forecast`.
+  made once, sized for the caps: one vertex buffer, no per-frame growth (browser-safe). The shader
+  material is prepared when the entity is created (a resumed park: inside its load scope; a fresh
+  park: its first simulation step), so no gameplay frame pays the shader compile mid-rain.
+* The forecast is presented by `WeatherForecastPresenter` — see "Forecast warnings" below; the
+  pending-quality state the original's message handler would read is `ParkWeather.Forecast`.
+
+### Forecast warnings
+
+`ParkWeather`'s forecast (a quality rolled `Weather.DaysOfWarning` days ahead and applied when its
+day passes) is presented by `WeatherForecastState` (pure, unit-tested) and `WeatherForecastPresenter`
+(the entity that draws it). The presenter is created with the weather like the renderer, reads the
+simulation each frame, and draws one banner line at the top centre of the screen in the overlay pass
+(the chat overlay's channel: the original GAME8AA BF4 font, above every screen including pause
+menus — AUDIO-905). One line, one background rectangle, laid out again only when the text changes;
+no per-frame GPU growth.
+
+What it shows (all of it OpenTPW approximation, AUDIO-906..907 — the original's forecast handler
+and its text are not traced, and no weather text exists in the shipped `Language` string tables,
+which were searched):
+
+* A park entered or loaded with weather on screen says so once: "The weather: rain." for six
+  seconds of simulation time (a dry, quiet park stays silent). A paused park freezes the line
+  mid-display; leaving the park or loading another ends it with the entity.
+* A pending forecast shows the countdown "Forecast: thunderstorms in 4 days." (tomorrow/today on the
+  last days) from the apply day and the current simulation day, and posts the same line as a message
+  to the log. One message when the forecast appears, one when it applies — never per step, so no
+  spam; a park resumed mid-warning announces the pending forecast once.
+* The forecast's kind classifies the pending quality by the converter's bands: the snow/rain tie is
+  still undecided ("snow or rain") because the apply-time draw has not happened, and the lightning
+  band composes "thunderstorms". The apply message names the resolved weather ("The weather has
+  changed: snow.").
 
 Seeing it: enter any park whose economy runs (an original level; the sandbox has no weather). The
 weather follows the season's roll, so rain needs the roll to land in the rain or snow band — resume
@@ -201,9 +231,14 @@ default). Debug builds also take `--debug-weather <quality 1..100>` (`[EXT:debug
 `Client/Game.cs`): it applies one quality through `ParkWeather`'s own converter as soon as the park's
 weather exists, so captures can show rain, snow and bolts deterministically — e.g.
 `--load-original-level jungle --debug-weather 8 --capture-world rain.png --capture-frames 30`
-(quality 8: rain and lightning on jungle, snow and lightning on hallow). The unit tests
-(`WeatherVisualTests`) cover the state math without a window: counts, the wrapping volume, pause
-freeze, snow sway, bolt lifetime/jitter and the strike reporting.
+(quality 8: rain and lightning on jungle, snow and lightning on hallow). The forecast banner is
+forced the same way with `--debug-forecast <quality 1..100>` (`[EXT:debug-forecast]`), which posts
+one forecast through the simulation's own warning schedule; the banner draws in the overlay pass, so
+captures need `--capture-interface` to include it — e.g.
+`--load-original-level jungle --debug-forecast 8 --capture-interface forecast.png --capture-frames 30`.
+The unit tests (`WeatherVisualTests`, `WeatherForecastTests`) cover the state math without a window:
+counts, the wrapping volume, pause freeze, snow sway, bolt lifetime/jitter, the strike reporting,
+and the forecast's announcements, countdown, changed lines and seams.
 
 ## Advisor response table
 
@@ -253,12 +288,15 @@ implemented yet.
 | AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |
 | AUDIO-029 | Thunder with a countdown of 0 plays at the strike | The countdown test beside `0x10103438` |
 | AUDIO-030 | The weather's draws come from the park's weather stream, not the world LCG | The Mac's seed source |
-| AUDIO-031 | The forecast's warning is not shown; the drawn drops, snow and bolt are unverified procedural approximations (AUDIO-900..904) | The weather renderer and the forecast's handler |
+| AUDIO-031 | The forecast's warning is an OpenTPW presentation (AUDIO-905..907), not the original's; the drawn drops, snow and bolt are unverified procedural approximations (AUDIO-900..904) | The weather renderer and the forecast's handler |
 | AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops | The original's drop volume, speed and streak shape (FUN_0057d300) |
 | AUDIO-901 | Snow reuses the rain's drop count but falls slower with a sinusoidal sway | The original's snow motion |
 | AUDIO-902 | The bolt is a jittered polyline from the strike's top (height 300) to the heightfield, shown for a fixed flash time at the strike | The original's bolt shape, segmenting and flash timing |
 | AUDIO-903 | The weather's visuals advance with the frame delta scaled by the simulation speed; a paused park freezes them mid-flight | The original's pause behaviour for the weather renderer |
 | AUDIO-904 | The visual field, its vertex buffer and the pending bolt queue are capped (600 drops, 4 flashes, 64 pending tops); a level with a higher MaxRaindrops draws fewer drops than it simulates | The original's per-level drop budget beyond the shipped 600 |
+| AUDIO-905 | The forecast shows as one banner line at the top centre, drawn in the overlay pass with the original GAME8AA font above every screen (pause menus included) | Which surface the original warned on (the forecast's message handler) |
+| AUDIO-906 | The forecast's kind classifies the pending quality by the converter's bands; the undecided snow/rain tie reads "snow or rain" and the lightning band composes "thunderstorms"; the wording is OpenTPW's (no weather text exists in the shipped Language tables) | The original's forecast message handler and its text |
+| AUDIO-907 | One message when a forecast appears and one when it applies, plus one transient current-weather line on attach shown for six seconds of simulation time; a park resumed mid-warning announces the pending forecast once | The original's forecast message cadence |
 | AUDIO-032 | A ride's scream plays flat; the original places it at the ride's box middle | The box-middle mapping onto OpenTPW's ride objects |
 | AUDIO-033 | Distance gain uses the fork's QMixer lead: minimum 2 and exponent 0.8 | Independent original mixer verification; the local PC executable is packed |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The Mac held-voice tick, variation and stop routines |

@@ -35,7 +35,7 @@ public static class AudioApproximations
 		("AUDIO-029", "thunder whose countdown computes to 0 plays at the strike; the Mac's countdown test beside 0x10103438 is not fully traced"),
 		("AUDIO-030", "the weather's random draws come from the park's weather stream, not the Mac's world LCG; the seed source is not traced"),
 		("AUDIO-032", "a ride's scream plays flat: the original places it at the ride's box middle, which OpenTPW's ride objects do not map to yet"),
-		("AUDIO-031","the forecast's warning is not shown, and the drawn rain drops, snow and lightning bolt are unverified procedural approximations (AUDIO-900..904); the original's weather renderer is not traced"),
+		("AUDIO-031","the forecast's warning is presented by an unverified OpenTPW approximation (AUDIO-905..907), and the drawn rain drops, snow and lightning bolt are unverified procedural approximations (AUDIO-900..904); the original's weather renderer and forecast message handler are not traced"),
 		("AUDIO-033", "the distance mapping uses minimum 2 and exponent 0.8 from the fork's QMixer lead; the packed local PC executable does not independently verify this law"),
 		("AUDIO-034", "held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads, not independently traced Mac routines"),
 		("AUDIO-035", "crowd sample choices use an independent advancing host SplitMix64 stream seeded from the sound seed XOR CROW; the original source of crowd variation is unverified and this presentation stream is not persisted on save/load"),
@@ -45,6 +45,9 @@ public static class AudioApproximations
 		("AUDIO-902", "the bolt is a jittered polyline from the strike's top (height 300) to the heightfield, shown for a fixed flash time at the strike; the original's bolt shape and flash timing are not traced"),
 		("AUDIO-903", "the weather's visuals advance with the frame delta scaled by the simulation speed, so a paused park freezes drops and bolts mid-flight; the original's pause behaviour for the weather renderer is not traced"),
 		("AUDIO-904", "the visual field, its vertex buffer and the pending bolt queue are capped (600 drops, 4 flashes, 64 pending tops), so a level with a higher MaxRaindrops draws fewer drops than it simulates"),
+		("AUDIO-905", "the forecast shows as one banner line at the top centre, drawn in the overlay pass with the original GAME8AA font above every screen (pause menus included); which surface the original warned on is unknown"),
+		("AUDIO-906", "the forecast's kind classifies the pending quality by the converter's bands, the undecided snow/rain tie reads 'snow or rain' and the lightning band composes 'thunderstorms'; the wording is OpenTPW's, with no weather text in the shipped Language tables"),
+		("AUDIO-907", "one message when a forecast appears and one when it applies, plus one transient current-weather line on attach shown for six seconds of simulation time; a park resumed mid-warning announces the pending forecast once; the original's cadence is not traced"),
 	};
 
 	private static bool logged;

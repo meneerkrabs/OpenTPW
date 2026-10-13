@@ -58,6 +58,9 @@ public sealed class WeatherRenderer : Entity
 	{
 		this.weather = weather;
 		Name = "Weather";
+		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
+		// first simulation step — so no gameplay frame pays the shader compile and pipeline build mid-rain.
+		material = new Material<ObjectUniformBuffer>( "content/shaders/weather.shader", MaterialFlags.DisableDepthWrite );
 	}
 
 	protected override void OnUpdate()
@@ -92,10 +95,8 @@ public sealed class WeatherRenderer : Entity
 	{
 		DrawnDrops = 0;
 		DrawnBolts = 0;
-		if ( deleted || (visual.DropCount == 0 && visual.Flashes.Count == 0) )
+		if ( deleted || material == null || (visual.DropCount == 0 && visual.Flashes.Count == 0) )
 			return;
-		material ??= new Material<ObjectUniformBuffer>( "content/shaders/weather.shader", MaterialFlags.DisableDepthWrite );
-
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );

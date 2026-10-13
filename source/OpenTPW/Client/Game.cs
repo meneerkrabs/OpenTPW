@@ -316,6 +316,25 @@ internal static class Game
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
 			}
 		}
+		// [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own
+		// warning schedule as soon as the park's weather has started, so captures can show the forecast banner
+		// deterministically. The countdown, apply and the weather itself still come from ParkWeather's machinery;
+		// Release builds never see the flag.
+		var debugForecast = GetOption( args, "--debug-forecast", "a forecast quality 1..100 for smoke captures" );
+		if ( debugForecast != null )
+		{
+			if ( !int.TryParse( debugForecast, out var forecastQuality ) || forecastQuality is < 1 or > 100 )
+				throw new ArgumentException( "--debug-forecast expects a quality from 1 to 100." );
+			Render.PostUpdate += PostDebugForecast;
+			void PostDebugForecast()
+			{
+				if ( flow.Level?.Weather is not { Started: true } weather )
+					return;
+				Render.PostUpdate -= PostDebugForecast;
+				weather.DebugPostForecast( forecastQuality );
+				Log.Trace( $"--debug-forecast: quality {forecastQuality} posted as a forecast {weather.DaysOfWarning} days out (apply day {weather.ForecastApplyDay})." );
+			}
+		}
 #endif
 		if ( startsFrontEnd )
 		{

@@ -25,7 +25,9 @@ retain the qualifications in the approximation register.
 
 Placed objects now route sound EVENT types 3–9 through the existing positional audio
 API. The origin is the same placement/render transform applied to model-space zero,
-sampled when the instruction executes. It does not follow an animated dummy key.
+sampled when the instruction executes, undoing imported heightfield centering and
+converting engine axes/scale through `GameAudio.SoundPosition` to the same original
+sound space used by `UpdateListener`. It does not follow an animated dummy key.
 Headless runtimes, an absent origin or a nonfinite result keep the existing flat
 fallback. Types 0, 1, 2 and 10 never sample an audio origin or produce sound through
 this route. AUDIO-908 qualifies the unverified relation to the native emitter anchor

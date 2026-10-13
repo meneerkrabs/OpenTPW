@@ -58,8 +58,8 @@ public class PlacedEventAudioOriginTests
 	{
 		var placed = new OriginalObject(entry, new ObjectPlacement(7, 9, 90, new System.Numerics.Vector2(1, -2), 3));
 		Event(placed.Runtime, type);
-		var voice = mixer.Voices.Single(); Assert.IsNotNull(voice.Position); Assert.AreEqual(new Vector3(15, 18, 3), voice.Position.Value);
-		Assert.AreEqual(100f, voice.Range); Assert.IsFalse(voice.Loops); Assert.IsTrue(mixer.Mix(1).Any(value => value != 0));
+		var voice = mixer.Voices.Single(); Assert.IsNotNull(voice.Position); Assert.AreEqual(new Vector3(75, 15, 90), voice.Position.Value);
+		Assert.AreEqual(100f, voice.Range); Assert.IsFalse(voice.Loops); AudioListener.Update(voice.Position.Value, new Vector3(0, 0, 1)); Assert.IsTrue(mixer.Mix(1).Any(value => value != 0));
 	}
 	[TestMethod]
 	public void HeadlessAndInvalidProvidersRemainFlatAndUnsupportedTypesNeverSampleOrigin()
@@ -117,7 +117,7 @@ public class PlacedEventAudioOriginTests
 	public void PlacementQuarterTurnsUseExistingRenderOriginOffsets(int rotation, int x, int y)
 	{
 		var placed = new OriginalObject(entry, new ObjectPlacement(7, 9, rotation, new System.Numerics.Vector2(1, -2), 3));
-		Event(placed.Runtime, 3); Assert.AreEqual(new Vector3(x, y, 3), mixer.Voices.Single().Position);
+		Event(placed.Runtime, 3); Assert.AreEqual(new Vector3(x * 5, 15, y * 5), mixer.Voices.Single().Position);
 	}
 	[TestMethod]
 	public void ObjectRemovalPreservesExistingOneShotLifetime()
@@ -130,7 +130,38 @@ public class PlacedEventAudioOriginTests
 	{
 		var placed = new OriginalObject(entry, new ObjectPlacement(1, 2, 0, System.Numerics.Vector2.Zero, 0));
 		placed.Script!.SpawnChild("child.RSE", sound: false); placed.Runtime.Simulate(FixedStepClock.TickDuration);
-		Assert.AreSame(placed.Script.Effects, placed.Script.Child!.Effects); var voice = mixer.Voices.Single(); Assert.AreEqual(new Vector3(2, 4, 0), voice.Position); Assert.IsTrue(voice.Loops);
+		Assert.AreSame(placed.Script.Effects, placed.Script.Child!.Effects); var voice = mixer.Voices.Single(); Assert.AreEqual(new Vector3(10, 0, 20), voice.Position); Assert.IsTrue(voice.Loops);
 		placed.Delete(); Assert.IsTrue(voice.IsFinished); Assert.AreEqual(RideVMState.Halted, placed.Script.State);
 	}
+	[DataTestMethod]
+	[DataRow(false)]
+	[DataRow(true)]
+	public void PlacedEventAndListenerAtTheSameEnginePointShareSoundSpace(bool imported)
+	{
+		var previousLevel = Level.Current;
+		try
+		{
+			var level = Empty<Level>();
+			ModelHeightfield? field = null;
+			if (imported)
+			{
+				field = new ModelHeightfield(4, 4, 10, 10, 0, 0, Array.Empty<uint>(), new float[25], new uint[16]);
+				var park = Empty<OriginalPark>(); Set(park, "Heightfield", field); Set(level, "OriginalPark", park);
+			}
+			Level.Current = level;
+			var origin = imported ? -OriginalParkPlacement.GetOrigin(field!) : new System.Numerics.Vector2(1, -2);
+			var placed = new OriginalObject(entry, new ObjectPlacement(7, 9, 90, origin, 3));
+			GameAudio.UpdateListener(placed.Position.GetSystemVector3(), new System.Numerics.Vector3(0, 1, 0), field);
+			Event(placed.Runtime, 3);
+			Assert.AreEqual(AudioListener.Position, mixer.Voices.Single().Position,
+				"The actual placed emitter must use the listener's sound axes, scale and imported-terrain centering.");
+			var sourceSound = AudioListener.Position;
+			GameAudio.UpdateListener(placed.Position.GetSystemVector3() + new System.Numerics.Vector3(6, 0, 0), new System.Numerics.Vector3(0, 1, 0), field);
+			using var reference = new AudioMixer(null);
+			reference.Play(new Mp2Audio(AudioMixer.OutputRate, 1, new short[] { 1000, 1000, 1000, 1000 }, 1, 0), AudioChannel.Effects, gain: 1, position: sourceSound, range: 100);
+			CollectionAssert.AreEqual(reference.Mix(1), mixer.Mix(1), "Moving six engine units must attenuate and pan identically to thirty original sound units.");
+		}
+		finally { Level.Current = previousLevel; }
+	}
+
 }

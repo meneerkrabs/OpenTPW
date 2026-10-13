@@ -103,7 +103,14 @@ public class OriginalObject : Entity
 				: new OriginalObjectRuntime( entry, world, seed, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
-			Runtime.SetEventOrigin(() => System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, Placement.ModelToEngine));
+			Runtime.SetEventOrigin(() =>
+			{
+				var engine = System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, Placement.ModelToEngine);
+				// Match UpdateListener: imported terrain is centred for rendering, but sound uses its original coordinates.
+				if (Level?.OriginalPark?.Heightfield is { } field)
+					engine += new System.Numerics.Vector3(OriginalParkPlacement.GetOrigin(field), 0);
+				return GameAudio.SoundPosition(engine);
+			});
 			BuildModels();
 			UpdateTransforms();
 		}

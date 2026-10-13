@@ -14,6 +14,22 @@ public readonly record struct SideshowTerms( int CostOfGoods, int PricePerUse, i
 /// </summary>
 public static class QueueJoinRules
 {
+	/// <summary>
+	/// The queue part of the park points counts-test (tp.exe <c>0x004DD920</c>, ORACLE.md X15): the attraction has real queue cells
+	/// (<c>0x004DE130</c> walks them from the front cell at the entrance; OpenTPW's one-cell fallback on a path cell does not count)
+	/// and its queue list is shorter than 4 × those cells (<c>0x004DDF50</c> with guest 0 returns the list's length).
+	/// </summary>
+	public static bool QueueCountsForParkPoints( IRideVisitorBridge attraction, GuestPathGrid grid )
+	{
+		var cells = 0;
+		foreach ( var (x, y) in attraction.QueueCells )
+		{
+			if ( grid.IsQueue( x, y ) )
+				cells++;
+		}
+		return cells > 0 && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * cells;
+	}
+
 	/// <summary>A refusal needs |difference| at least this.</summary>
 	// [BIN:STP-PPC:0x100ECDA8 join gate] cmpwi 45 on the signed difference, taken by "bc 4,0" (the unclamped limit of ±50 leaves 45 reachable)
 	public const int Gate = 45;

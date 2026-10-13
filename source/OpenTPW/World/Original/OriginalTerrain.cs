@@ -22,17 +22,54 @@ public sealed class OriginalTerrain : Entity
 		Park = park;
 		try
 		{
-			var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
-			BuildHeightfield( textures );
-			BuildTerrainMeshes( textures );
-			if ( missingTextures.Count > 0 )
-				Log.Warning( $"Terrain textures of {park.LevelName} that the game data lacks, drawn plain white: {string.Join( ", ", missingTextures )}." );
+			foreach ( var _ in Build() ) { }
 		}
 		catch
 		{
 			Delete();
 			throw;
 		}
+	}
+
+	private OriginalTerrain( OriginalPark park, bool _ ) => Park = park;
+
+	/// <summary>
+	/// The terrain built in steps, for a park built over frames (docs/BROWSER-PERFORMANCE.md): null after each part, then the terrain.
+	/// As in the constructor, a failure deletes what was built.
+	/// </summary>
+	internal static IEnumerable<OriginalTerrain?> BuildSteps( OriginalPark park )
+	{
+		var terrain = new OriginalTerrain( park, false );
+		using var steps = terrain.Build().GetEnumerator();
+		while ( true )
+		{
+			bool more;
+			try
+			{
+				more = steps.MoveNext();
+			}
+			catch
+			{
+				terrain.Delete();
+				throw;
+			}
+			if ( !more )
+				break;
+			yield return null;
+		}
+		yield return terrain;
+	}
+
+	/// <summary>The heightfield, then each terrain model.</summary>
+	private IEnumerable<bool> Build()
+	{
+		var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
+		BuildHeightfield( textures );
+		yield return true;
+		foreach ( var _ in BuildTerrainMeshes( textures ) )
+			yield return true;
+		if ( missingTextures.Count > 0 )
+			Log.Warning( $"Terrain textures of {Park.LevelName} that the game data lacks, drawn plain white: {string.Join( ", ", missingTextures )}." );
 	}
 
 	public OriginalPark Park { get; }
@@ -211,13 +248,16 @@ public sealed class OriginalTerrain : Entity
 	/// Converts every base.MD2 mesh to engine space and batches meshes so each draw call needs at
 	/// most 16 textures, keeping the number of compiled materials small.
 	/// </summary>
-	private void BuildTerrainMeshes( Dictionary<string, Texture> textures )
+	private IEnumerable<bool> BuildTerrainMeshes( Dictionary<string, Texture> textures )
 	{
 		var batchTextures = new List<string>();
 		var batchVertices = new List<Vertex>();
 		var batchIndices = new List<uint>();
 		foreach ( var model in new[] { Park.TerrainModel, Park.LakeModel }.OfType<ModelFile>() )
+		{
 			BuildTerrainMeshes( textures, model, batchTextures, batchVertices, batchIndices );
+			yield return true;
+		}
 		FlushBatch( textures, batchTextures, batchVertices, batchIndices );
 	}
 

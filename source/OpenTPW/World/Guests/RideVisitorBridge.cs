@@ -73,7 +73,20 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Replaces the .sam excitement with a live value (a coaster's rating, <c>0xdff70</c>), or null.</summary>
 	public Func<int>? ExcitementSource { get; set; }
 	/// <summary>The sideshow's goods, price and win chance, read by <see cref="LiveExcitement"/>; the level mirrors them from the economy each tick.</summary>
-	public SideshowTerms Sideshow { get; set; }
+	public SideshowTerms Sideshow
+	{
+		get => sideshow;
+		set
+		{
+			sideshow = value;
+			HasSideshowTerms = true;
+		}
+	}
+
+	private SideshowTerms sideshow;
+
+	/// <summary>True once <see cref="Sideshow"/> was set: all-zero terms (a free visit) are then live terms, not missing ones.</summary>
+	public bool HasSideshowTerms { get; private set; }
 	/// <summary>The wear gauge (ride <c>+64</c>, the state of repair 0–100) the relief predicate reads; the level mirrors it from the economy.</summary>
 	public double WearGauge { get; set; } = 100;
 	/// <summary>The ride's head table for ADDHEAD/DELHEAD, null when its model has no head records (see <see cref="RideHeadSpace"/>).</summary>

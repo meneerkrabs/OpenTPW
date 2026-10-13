@@ -123,6 +123,8 @@ public interface IRideVisitorBridge
 	int InitCostOfGoods => 0;
 	/// <summary>The live goods words: cost of goods <c>+388</c>, price <c>+400</c> and the losing chance behind the win byte <c>+396</c> (shops and sideshows).</summary>
 	SideshowTerms Sideshow => default;
+	/// <summary>True when <see cref="Sideshow"/> holds live terms; without them the price test falls back to the bridge's own price.</summary>
+	bool HasSideshowTerms => false;
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>): how much happiness a visit adds.</summary>
 	int HappinessEffect => 0;
 	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>): above 0 raises the score by <c>1 + (cost + 1) / 10</c>.</summary>

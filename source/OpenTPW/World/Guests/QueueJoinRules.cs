@@ -6,16 +6,16 @@ namespace OpenTPW;
 /// <param name="ChanceOfLosingPercent"><c>UsageInfo.InitChanceOfLoosing</c>; the original keeps the win chance 100 − this as a byte.</param>
 public readonly record struct SideshowTerms( int CostOfGoods, int PricePerUse, int ChanceOfLosingPercent );
 
+/// <summary>The words the price test reads: the live price, cost of goods and win byte, the type record's InitCostOfGoods and effects, and the park's per-type word.</summary>
+public readonly record struct PriceTerms( int Price, int CostOfGoods, int WinByte, bool IsSideshow, int InitCostOfGoods, int ThirstEffect, int HungerEffect,
+	int VomitEffect, int HappinessEffect, int TypeWord );
+
 /// <summary>
 /// The original's join excitement rules as pure functions (docs/reverse/ORACLE.md F15 and F16, QUEUE-plan 4): the
 /// relief predicate <c>0xdfe34</c>, the live excitement <c>0xe02ec(ride, 0)</c> with its formulas <c>0xdff70</c>, the
 /// difference <c>0xe9a84</c> and the gate of the state-10 handler <c>0xeccb0</c>. <see cref="RideVisitorBridge"/>
 /// feeds them from the object's data and live state; the oracle bridge calls them through a real bridge.
 /// </summary>
-/// <summary>The words the price test reads: the live price, cost of goods and win byte, the type record's InitCostOfGoods and effects, and the park's per-type word.</summary>
-public readonly record struct PriceTerms( int Price, int CostOfGoods, int WinByte, bool IsSideshow, int InitCostOfGoods, int ThirstEffect, int HungerEffect,
-	int VomitEffect, int HappinessEffect, int TypeWord );
-
 public static class QueueJoinRules
 {
 	/// <summary>

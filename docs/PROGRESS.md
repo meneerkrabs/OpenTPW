@@ -863,6 +863,9 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
+  of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
+  a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.
 - **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
   write's bytes can no longer end up under another's hash; writes to different files stay independent.
 - **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),

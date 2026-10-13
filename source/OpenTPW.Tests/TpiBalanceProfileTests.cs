@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Linq;
 using System.IO;
+using System.Globalization;
 
 
 namespace OpenTPW.Tests;
@@ -65,5 +66,59 @@ public class TpiBalanceProfileTests
 	{
 		Assert.ThrowsException<InvalidDataException>( () => TpiBalanceProfile.FromLayers( new[] { SamDocument.Parse( "Costs.PathCell 1.5\n", "bad" ) } ) );
 		Assert.ThrowsException<OverflowException>( () => TpiBalanceProfile.FromLayers( new[] { SamDocument.Parse( "Costs.PathCell 2147483648\n", "bad" ) } ) );
+	}
+
+	[TestMethod]
+	public void IntegerReadingIsInvariantAndDoesNotRoundOrClamp()
+	{
+		var before = CultureInfo.CurrentCulture;
+		try
+		{
+			CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo( "nl-NL" );
+			var profile = TpiBalanceProfile.FromLayers( new[] { SamDocument.Parse(
+				"BankAccountInfo.InitialCash 9223372036854775807\nCosts.PathCell -2147483648\nCosts.QueueCell +2147483647\n", "limits" ) } );
+			Assert.AreEqual( long.MaxValue, profile.InitialCash!.Value );
+			Assert.AreEqual( int.MinValue, profile.PathCell!.Value );
+			Assert.AreEqual( int.MaxValue, profile.QueueCell!.Value );
+			foreach ( var token in new[] { "1.0", "1e3", "NaN", "Infinity", "\"1,000\"", "9223372036854775808" } )
+				Assert.ThrowsException<InvalidDataException>( () => TpiBalanceProfile.FromLayers( new[] { SamDocument.Parse( $"BankAccountInfo.InitialCash {token}\n", "invalid" ) } ) );
+			Assert.ThrowsException<OverflowException>( () => TpiBalanceProfile.FromLayers( new[] { SamDocument.Parse( "Costs.PathCell -2147483649\n", "underflow" ) } ) );
+		}
+		finally
+		{
+			CultureInfo.CurrentCulture = before;
+		}
+	}
+
+	[TestMethod]
+	public void DuplicateExactKeysRetainLastWinningEntryAndIgnoreAliases()
+	{
+		var global = SamDocument.Parse( Supported + "Costs.PathCell 7\n", "global" );
+		var local = SamDocument.Parse( "costs.pathcell 8\nCosts.PathCell 0 trailing comment\nCosts.PathCellAlias 99\nRenamed.InitialCash 123\n", "local" );
+		var settings = new SamSettings( new[] { global, local } );
+		var profile = new TpiBalanceProfile( settings );
+		Assert.AreEqual( 0, profile.PathCell!.Value );
+		Assert.AreSame( local.Entries[1], profile.PathCell.Provenance );
+		Assert.AreEqual( ("local", 2, "0"), (profile.PathCell.Provenance.Source, profile.PathCell.Provenance.Line, profile.PathCell.Provenance.Values.Single()) );
+		Assert.AreEqual( 60000L, profile.InitialCash!.Value );
+		foreach ( var field in new[] { profile.InitialAdmissionFee!, profile.QueueCell!, profile.PathCell!, profile.KartTrackCell!, profile.WaterTrackCell!, profile.MapCell! } )
+			Assert.AreSame( settings.Get( field.Provenance.Key ), field.Provenance );
+		Assert.AreSame( settings.Get( "BankAccountInfo.InitialCash" ), profile.InitialCash.Provenance );
+	}
+
+	[TestMethod]
+	public void ParserOmittedUnrecognizedValuesRemainMissingAndCannotEnableCapabilities()
+	{
+		var profile = TpiBalanceProfile.FromLayers( new[] { SamDocument.Parse( "Costs.PathCell invalid\nCosts.QueueCell 0\n", "invalid-token" ) } );
+		Assert.IsNull( profile.PathCell );
+		CollectionAssert.Contains( profile.Readiness.MissingSupportedKeys.ToArray(), "Costs.PathCell" );
+		Assert.AreEqual( 0, profile.QueueCell!.Value );
+		Assert.IsFalse( profile.Readiness.SupportedSettingsReady );
+		Assert.IsFalse( profile.Readiness.EconomyReady );
+		var capabilities = EditionCapabilities.ForThemeParkIncSlice();
+		Assert.IsFalse( capabilities.Economy );
+		Assert.IsFalse( capabilities.Staff );
+		Assert.IsFalse( capabilities.FrontEnd );
+		Assert.IsFalse( capabilities.ParkSaves );
 	}
 }

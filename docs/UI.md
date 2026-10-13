@@ -149,8 +149,16 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   whatever mode was chosen before (UI-041).
   The original fixes the mode per player and resumes each theme's autosave; every
   OpenTPW entry starts a new park (UI-015).
-- Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
-  save. Quit asks with the original confirmation (9).
+- Load Park (202): own saved parks, original Easymode parks (read-only) and the
+  OpenTPW sandbox save. The shared lobby/pause chooser shows eight rows at once
+  in the existing scroll-list widget, retaining every supplied entry. The wheel
+  scrolls; Left/Right selects and keeps that row visible. A first click selects,
+  Enter, a second click or the localized Load Park button activates that exact
+  entry; Back closes without loading. Reopening starts with fresh entries and
+  selection. This navigation is OpenTPW's UI (UI-934), not an original-game pagination claim.
+  `LoadChooserScrollTests` cover actual chooser and HUD pause input, beyond-eight
+  selection, 0/1/8/9/17 boundaries, entry metadata, cancellation and fresh state.
+  Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
   golden tickets/keys, credits. (The start-up movies now play before the lobby: docs/TGQ-MOVIES.md.)
 
@@ -770,6 +778,14 @@ Entering a TPW theme with a readable matching application-owned world save now o
 The menu reads the existing own codec's structural metadata; it does not load or hash game assets. Activation re-reads the trusted generated slot and rejects missing/corrupt files or changed theme/start/mode/easy metadata. The existing `ResumePark` performs complete trusted-asset validation and builds the staged candidate before old-world retirement. Failure shows the existing-style error dialog and preserves the live world and manual slot; it never silently starts an empty park. The ordinary Load picker and native original-reference import remain separate. TPI's layout checkpoint continues to start a new experimental session and is never offered as TPW continuation.
 
 Synthetic tests drive actual Enter/Continue/New/Back dispatch with a tiny own-world file, pass its restored economy and saved clock/guest metadata through the real continuation handler, and exercise the real resume path refusing missing synthetic assets before replacement. Other-theme, deleted/corrupt, changed-mode/easy and TPI refusal controls preserve live references. Original-data/GPU/browser resume and native profile/theme-entry parity remain unqualified; retirement callback exceptions retain the existing staging limitation.
+
+The Load chooser owns its dispatch: Back/Escape or right-click cancellation wins
+over activation in the same input batch, and combined mouse release plus Enter
+loads at most once per update. Removed chooser list, Load and Back callbacks
+cannot load stale entries or remove a fresh screen. Separate valid updates and
+a retry after a refused loader remain available; selected entry references and
+metadata are unchanged. These are bounded host chooser rules under UI-934, not
+changes to generic screen input or qualified native navigation.
 
 ### Host terrain walk (C)
 

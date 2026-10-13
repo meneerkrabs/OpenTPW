@@ -40,6 +40,9 @@ def native(root: Path):
             (1, 0xae990, 0xaea34, 0x9fd70, 0x9fdb0, 0x9fe8c, 0x9fe78),
             (2, 0xaea6c, 0xaeb40, 0x9f968, 0x9f9b4, 0x9fa90, 0x9fa7c)):
         common.require(common.call_target(app, key_call), 0xac7f0, 'model key resolver')
+        common.require(common.d_fields(app, key_call - 4, 14), (7, 0, 0x100), 'model key selector')
+        for call, destination in ((key_call + 80, 0x118018), (key_call + 88, 0x119ef4)):
+            common.require(common.call_target(app, call), destination, 'object-scoped effect lookup')
         common.require(common.call_target(app, constructor_call), constructor, 'particle constructor')
         effect_register = 23 if event_type == 1 else 20
         common.require(common.d_fields(app, bound, 11), (0, effect_register, 105), 'template bound')

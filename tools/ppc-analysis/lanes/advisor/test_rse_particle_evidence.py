@@ -1,12 +1,20 @@
 """Supplied original-binary classification check; no original bytes in Git."""
 import os
 from pathlib import Path
+import tempfile
 import unittest
 
 import rse_particle_evidence as particles
 
 
 class ParticleEvidenceTests(unittest.TestCase):
+    def test_unidentified_binary_is_refused_before_interpretation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'SimThemePark.data').write_bytes(b'not the identified application')
+            with self.assertRaisesRegex(particles.common.pef.PEFError, 'identity SimThemePark.data'):
+                particles.native(root)
+
     @unittest.skipUnless(os.environ.get('OPENTPW_PPC_BIN_ROOT'), 'supplied Mac binary not selected')
     def test_event_particle_routes_are_identity_and_operand_pinned(self):
         report = particles.native(Path(os.environ['OPENTPW_PPC_BIN_ROOT']))

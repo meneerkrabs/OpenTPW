@@ -46,7 +46,7 @@ The dispatcher multiplies position floats by 1024 and truncates to integers;
 the constructors arithmetic-shift those coordinates right by four. Type 2's
 second vector is normalized/scaled by the key resolver and initializes velocity
 using the template's +0xB0 value. Effect bit `0x8000` selects an object-scoped
-lookup (`0x100118018` / `0x100119EF4`) with the low 15 bits, rather than a direct
+lookup (`0x10118018` / `0x10119EF4`) with the low 15 bits, rather than a direct
 particle template ID. `EVENT` supplies control 1000; `EVENT_EXT` supplies its
 fourth operand and non-1000 values reach `0x1009F5E8`. That control's meaning,
 the scoped lookup semantics, complete key transforms, particle lifetimes and

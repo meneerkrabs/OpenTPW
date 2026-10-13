@@ -312,8 +312,9 @@ member mapping, channels and the corpus run of all 262 object scripts are in
 - Animation playback only through the objects' effects (OBJECTS.md; rigid node
   tracks, vertex animation not decoded); EVENT types 3-9 and REPAIREFFECT play
   their original sounds (the category routes are traced, AUDIO.md) while types
-  0-2 (positioned loops) do not; no objects/particles, no ride-type controllers
-  (TOUR/BUMP/COAST), no park clock (HOUR/MIN/SEC return 0), no light opcodes.
+  1/2 create particles in the original and remain unimplemented here; type 0
+  is unsupported, not a positioned sound loop. No objects/particles, no ride-type
+  controllers (TOUR/BUMP/COAST), no park clock (HOUR/MIN/SEC return 0), no light opcodes.
 - What the engine does with `EventMap.rse` variables, how the host is meant to
   feed `VAR_LETMEON`/`VAR_LETMEOFF`, and the `0xFFFF` second operand of EVENT
   are unknown.

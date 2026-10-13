@@ -49,6 +49,7 @@ export async function openOriginalStore(root, { digest = sha256 } = {}) {
 	let revision = 0;
 	let flushed = 0;
 	let flushing = Promise.resolve();
+	const fileWrites = new Map();
 	const changed = () => revision++;
 	const dirty = () => revision !== flushed;
 
@@ -98,21 +99,33 @@ export async function openOriginalStore(root, { digest = sha256 } = {}) {
 			// A cleared/replaced folder no longer owns this write's entry.
 			if (manifest?.files[relative] !== entry)
 				return;
-			// Before replacing a previously kept file, persist that it is missing. If close or the later manifest flush fails,
-			// another visit must not read new bytes under the old hash. Retaining that hash makes a failed invalidation retryable.
-			if (entry.stored || entry.sha256 != null) {
-				entry.stored = false;
-				changed();
-				await store.flush();
+			// Mutations share a queue for each listed path; a pending digest does not block clearing or unrelated files.
+			const mutation = (fileWrites.get(relative) ?? Promise.resolve()).catch(() => {}).then(async () => {
 				if (manifest?.files[relative] !== entry)
 					return;
+				// Before replacing a previously kept file, persist that it is missing. If close or the later manifest flush fails,
+				// another visit must not read new bytes under the old hash. Retaining that hash makes a failed invalidation retryable.
+				if (entry.stored || entry.sha256 != null) {
+					entry.stored = false;
+					changed();
+					await store.flush();
+					if (manifest?.files[relative] !== entry)
+						return;
+				}
+				const [folder, name] = await locate(directory, relative, true);
+				const writable = await (await folder.getFileHandle(name, { create: true })).createWritable();
+				await writable.write(bytes);
+				await writable.close();
+				Object.assign(entry, { size: bytes.byteLength, stored: true, sha256 });
+				changed();
+			});
+			fileWrites.set(relative, mutation);
+			try {
+				await mutation;
+			} finally {
+				if (fileWrites.get(relative) === mutation)
+					fileWrites.delete(relative);
 			}
-			const [folder, name] = await locate(directory, relative, true);
-			const writable = await (await folder.getFileHandle(name, { create: true })).createWritable();
-			await writable.write(bytes);
-			await writable.close();
-			Object.assign(entry, { size: bytes.byteLength, stored: true, sha256 });
-			changed();
 		},
 
 		/** True when `bytes` are what is kept for `relative` (its SHA-256 matches); false for a different file or one not kept. */

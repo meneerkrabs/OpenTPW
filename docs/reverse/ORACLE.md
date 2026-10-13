@@ -1596,6 +1596,7 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-coast-rating-final` | tp.exe `0x43df90`..`0x43e0a7` (cdecl; the Mac `0x41900`) | none | 506 | **X12**: 23 differ from the Mac routine (F8, what C# follows), all in the last bit of the excitement; 315 from COAST-plan 6.4 (section count). **Agree** 506/506 at the single-precision word `0x7F` | **agree** 506/506 |
 | `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
 | `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
+| `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
 The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
@@ -2090,3 +2091,35 @@ for register-plus-`0x1a0` stores (`mov`, `inc`, `add 1`, `mov 0`) and a read of 
 
 ECON-025 is retired; C# was already the rule. Not examined: the TPI `Game.exe` counterpart, and the save field that fills the counter on load
 (SAVE-006).
+
+### 7.10 Finding X14: the queue re-evaluation has one exit
+
+Question (QUEUE-005): when a queue is edited, which guests leave? C# followed the Mac plan. The plan read two exits from the strings of
+`0xee8f8`: "queue was shortened" and "queue edited underneath me" (a guest whose standing cell left the queue).
+
+**Identification (high confidence).** In tp.exe the queue edit `0x4de1f0` logs "Object's queue is now %d cells long" and "Telling people
+in queue to reevaluate". It then walks the ride's queue list (`+0x3c`, next guest `+0x228`) and calls `0x501390` for every guest but the
+called one (ride `+0x6c`). `0x501390` carries both strings.
+
+**Executed: one exit.** `0x501390` first logs "Person %d: Queue edited underneath me while Standing In Queue (I'm in state %d)" for every
+guest it is called for, and nothing depends on it. It then asks the ride for the guest's position (`0x4ddf50`, the list walk) and
+compares it, unsigned, with 4 × the ride's queue cells (`+0x40`). Only when the position is at or beyond that room and the guest is not in
+state 14 (waiting to be taken) does it leave, in this order:
+1. the log "The queue was shortened and there's no room for me any more";
+2. animation 13 for a guest whose id is a multiple of 3;
+3. the unlink `0x4ddd20`;
+4. the dismissal `0x5012f0` (which logs "dismissed from queue", records event 6 for the ride, plays a sound for one guest in eight and
+   clears the queue words);
+5. ride word `+0x1dc` = 0 and state 6.
+
+Every other guest is left as it is; there is no exit for a guest whose cell left the queue. Across 548 inputs (states 11 to 14, positions
+around 4 × cells) the routine agrees with that reading; without the state-14 exemption 70 differ.
+
+**C#.** `GuestSimulation.ReevaluateQueue` sends away a non-called guest in state 13 beyond the room too, as the original does; state 14
+is still never visited, and the leave-for-room rule agrees on all inputs. Two differences remain, now named by QUEUE-005. First, the
+original changes nothing for a guest that stays. C# keeps its own recovery: a guest whose cell left the queue leaves (Confused), because
+OpenTPW's queue walk cannot route it back from a removed cell, and the guests that stay are given their walk again. Second, the departure's
+effects differ: C# sets the QueueTooLong thought and plays no animation.
+
+Also seen: after re-evaluating, `0x4de1f0` reopens a ride that is closed but openable (not broken or condemned, back of queue connected,
+and for coasters, karts and water rides their extra conditions); this is not compared here.

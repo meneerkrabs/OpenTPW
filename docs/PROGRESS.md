@@ -274,6 +274,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   base price × the current level's age percentage / 100, 100 % in the first 30 days of an object nobody used. The use counter is thing
   `+0x1a0`, cleared by the constructor and raised when a guest leaves (`0x4e1690` from `0x4fd970`, the one increment a byte scan finds), as on the Mac. ECON-025 is retired;
   no C# behaviour change. The routines were located with REA (a Ghidra MCP front end, local only) from the 365- and 30-day constants.
+- The x86 oracle now executes the queue re-evaluation tp.exe `0x501390` (ORACLE.md 7.10, finding X14, QUEUE-005): a queue edit sends
+  away only guests whose place is at or beyond 4 × the queue cells, and never one in state 14. "Queue edited underneath me" turned out
+  to be the log line every guest prints, not a second exit. C# now also sends away a non-called guest in state 13 beyond the room; it
+  keeps its Confused departure for a guest whose cell left the queue (its walk cannot route that guest back), which QUEUE-005 now names
+  as the remaining difference. Found in the REA research round over the register (2026-10-13).
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

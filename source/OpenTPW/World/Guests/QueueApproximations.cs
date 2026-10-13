@@ -13,7 +13,7 @@ public static class QueueApproximations
 		("QUEUE-002", "the next queue cell is searched in grid direction order"),
 		("QUEUE-003", "guests step onto the back of a queue from its first walkable neighbour (the join cell)"),
 		("QUEUE-004", "the join excitement of a ride with a thing behind ride +36 (60 % of the level plus up to 40 from three piece counts) is not modelled; the gate, the clamped difference and the live excitement (sideshow, speed and duration ratios, coaster) follow the original (ORACLE.md F16)"),
-		("QUEUE-005", "queue edits re-evaluate guests: beyond 4 × cells or off the queue leave, others walk to their position"),
+		("QUEUE-005", "after a queue edit, a guest whose cell left the queue leaves (Confused) and the others re-walk, where the original only sends away guests beyond the room; a leaving guest plays no animation"),
 		("QUEUE-006", "queue positions: depth from the cell's front edge, lateral across it; the fourth position stays in its cell"),
 		("QUEUE-008", "the ride-failure exit follows 0xdfe34 (a relief object whose wear gauge is below 25), but OpenTPW wears only rides, so a toilet's gauge never falls and the exit never fires"),
 		("QUEUE-009", "the queue facing change's sign comes from the 1-in-10 draw"),

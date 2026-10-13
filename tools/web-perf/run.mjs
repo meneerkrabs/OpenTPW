@@ -7,6 +7,7 @@
 //   jungle  the cold start of Full Simulation Jungle (the construction frame), then a steady window in the park
 //   buy     the first buy-menu open and four first selections (the 12 October table)
 //   memory  memory samples over a longer park session
+//   digest  deterministic work that must give the same result in every build (texture decoding, a fixed park run), timed
 //
 // The game files stay on this machine: they are read from --game and served to the local page only; nothing is uploaded
 // and no game data belongs in the report. Example:
@@ -31,7 +32,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -64,7 +65,7 @@ function usage() {
 	return `Usage: node tools/web-perf/run.mjs --web <published wwwroot> --game <Theme Park World folder> [options]
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,memory (default start,lobby,jungle,buy)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,memory,digest (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
@@ -211,6 +212,14 @@ const scenarios = {
 		return result;
 	},
 
+	async digest(page) {
+		const state = await page.state();
+		if (!state.level)
+			throw new Error('The digest needs the park\'s files: run it after jungle');
+		// One synchronous call: the page draws nothing meanwhile, so it gets a long deadline.
+		return JSON.parse(await page.eval(`opentpwPerf.program.PerfDigest(${JSON.stringify(state.level)})`, 900000));
+	},
+
 	async memory(page, options) {
 		const state = await page.state();
 		if (!state.hud)
@@ -259,6 +268,8 @@ function markdown(report) {
 		for (const [name, entry] of Object.entries(results.buy))
 			lines.push(entry.missing ? `| ${name} | not listed | |` : `| ${name === 'openMenu' ? `Open buy menu / ${entry.selected ?? ''}` : name} | ${entry.maxFrameMs} | ${entry.over50Ms} |`);
 	}
+	if (results.digest?.simulationHash)
+		lines.push('', `- Digest: ${results.digest.textures} textures in ${results.digest.textureMs} ms (hash ${results.digest.textureHash}); fixed park run in ${results.digest.simulationMs} ms (hash ${results.digest.simulationHash})`);
 	if (results.memory && !results.memory.error)
 		lines.push('', `- Memory over ${results.memory.minutes} min: wasm +${(results.memory.wasmGrowthBytes / 1048576).toFixed(1)} MB (peak ${(results.memory.peakWasmBytes / 1048576).toFixed(0)} MB), managed +${(results.memory.managedGrowthBytes / 1048576).toFixed(1)} MB`);
 	for (const [name, entry] of Object.entries(results))
@@ -343,6 +354,11 @@ async function main() {
 		results: options.runs > 1 ? medianResults(sessions.map(session => session.results)) : sessions[0].results,
 		...(options.runs > 1 ? { runs: sessions } : { pageErrors: sessions[0].pageErrors }),
 	};
+	// The digest's hashes must agree between runs of one build; a difference means nondeterminism, not a slower build.
+	const digests = new Set(sessions.map(session => session.results.digest).filter(entry => entry && !entry.error)
+		.map(entry => `${entry.textureHash}/${entry.simulationHash}`));
+	if (digests.size > 1)
+		report.results.digest = { ...report.results.digest, error: `runs disagree: ${[...digests].join(', ')}` };
 	for (const session of sessions)
 		for (const [name, entry] of Object.entries(session.results))
 			if (entry?.error)

@@ -244,3 +244,22 @@ export function medianResults(runs) {
 	}
 	return present[0];
 }
+
+/** The measures two builds are compared on, as [name, value, unit] from one report's results (missing ones are left out). */
+export function keyMetrics(results) {
+	const rows = [];
+	const add = (name, value, unit) => { if (Number.isFinite(value)) rows.push([name, value, unit]); };
+	add('Start: first frame', results.start?.firstFrameMs, 'ms');
+	add('Lobby: main thread busy', results.lobby?.mainThreadBusyPercent, '%');
+	add('Lobby: frame p95', results.lobby?.p95Ms, 'ms');
+	add('Jungle cold: largest frame', results.jungle?.cold?.maxFrameMs, 'ms');
+	add('Jungle cold: ready', results.jungle?.cold?.readyMs, 'ms');
+	add('Jungle: main thread busy', results.jungle?.steady?.mainThreadBusyPercent, '%');
+	add('Jungle: frame p95', results.jungle?.steady?.p95Ms, 'ms');
+	for (const [name, entry] of Object.entries(results.buy ?? {}))
+		add(`${name === 'openMenu' ? 'Open buy menu' : name}: largest frame`, entry?.maxFrameMs, 'ms');
+	add('Digest: texture decoding', results.digest?.textureMs, 'ms');
+	add('Digest: fixed park run', results.digest?.simulationMs, 'ms');
+	add('Wasm memory', results.jungle?.steady?.memory?.wasmBytes / 1048576, 'MB');
+	return rows;
+}

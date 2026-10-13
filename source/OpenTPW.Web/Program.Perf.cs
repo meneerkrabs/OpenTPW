@@ -87,6 +87,90 @@ public static partial class Program
 		return true;
 	}
 
+	/// <summary>
+	/// Deterministic work whose result must not depend on how the runtime executes it (interpreter or AOT, docs/BROWSER-PERFORMANCE.md):
+	/// every texture of a theme decoded and hashed, and the fixed run of the original-data determinism test (the theme's park with its
+	/// guests from seed 2026, 3000 ticks at the fastest speed) reduced to its world state hash. Both durations come back too; they are
+	/// pure computation, without drawing. Needs the theme's files, so the harness calls it after the park has loaded, as its last step:
+	/// the call blocks the page for its duration (the running park drops that time, FixedStepClock) and fills the archive cache. The
+	/// fixed run covers the economy and the guests, not rides, object scripts, weather or staff.
+	/// </summary>
+	[JSExport]
+	public static string PerfDigest( string theme )
+	{
+		var result = new JsonObject();
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+		var textures = new List<string>();
+		CollectTextures( $"levels/{theme}", textures );
+		// The listing mixes absolute disk paths and root-relative archive paths; both open as they are, and the key is the same for both.
+		var root = Path.TrimEndingDirectorySeparator( FileSystem.GetAbsolutePath( "/" ) ).Replace( '\\', '/' );
+		string Key( string path )
+		{
+			var normalized = path.Replace( '\\', '/' );
+			return (normalized.StartsWith( root + "/", StringComparison.Ordinal ) ? normalized[root.Length..] : normalized).TrimStart( '/' );
+		}
+		textures.Sort( ( left, right ) => string.CompareOrdinal( Key( left ), Key( right ) ) );
+		var hash = Fnv1a.Start;
+		foreach ( var path in textures )
+		{
+			hash = Fnv1a.Add( hash, System.Text.Encoding.UTF8.GetBytes( Key( path ) ) );
+			try
+			{
+				using var stream = FileSystem.OpenRead( path );
+				var data = new TextureFile( stream ).Data;
+				hash = Fnv1a.Add( Fnv1a.Add( Fnv1a.Add( hash, BitConverter.GetBytes( data.Width ) ), BitConverter.GetBytes( data.Height ) ), data.Data );
+			}
+			catch ( Exception exception )
+			{
+				// A malformed file must fail the same way in both builds.
+				hash = Fnv1a.Add( hash, System.Text.Encoding.UTF8.GetBytes( exception.GetType().Name ) );
+			}
+		}
+		result["textures"] = textures.Count;
+		result["textureHash"] = hash.ToString( "X16" );
+		result["textureMs"] = watch.ElapsedMilliseconds;
+
+		watch.Restart();
+		var seed = new WorldSeed( 2026 );
+		var original = OriginalPark.Load( theme );
+		var park = ParkEconomyRuntime.ForOriginalLevel( original, ParkStartKind.OriginalSaveReference, seed );
+		var guests = new GuestSimulation( GuestPathGrid.FromOriginal( original.Map, original.Save ), GuestSettings.Load( theme ), seed.GuestStream );
+		park.AttachGuests( guests );
+		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) );
+		park.Economy.Speed = GameSpeed.Fastest;
+		for ( var tick = 0; tick < 3000; tick++ )
+		{
+			guests.Tick( 1f / FixedStepClock.TicksPerSecond );
+			park.Economy.Advance( (int)park.Economy.Speed );
+		}
+		result["simulationHash"] = streams.ComputeStateHash().ToString( "X16" );
+		result["simulationMs"] = watch.ElapsedMilliseconds;
+		return result.ToJsonString();
+	}
+
+	/// <summary>Every .wct below <paramref name="directory"/>, archives included, as the file system lists them.</summary>
+	private static void CollectTextures( string directory, List<string> found )
+	{
+		foreach ( var file in FileSystem.GetFiles( directory ) )
+			if ( file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
+				found.Add( file );
+		foreach ( var child in FileSystem.GetDirectories( directory ) )
+			CollectTextures( child, found );
+	}
+
+	/// <summary>64-bit FNV-1a: enough to tell two builds' outputs apart, and available on every runtime.</summary>
+	private static class Fnv1a
+	{
+		public const ulong Start = 14695981039346656037;
+
+		public static ulong Add( ulong hash, ReadOnlySpan<byte> bytes )
+		{
+			foreach ( var value in bytes )
+				hash = unchecked( (hash ^ value) * 1099511628211 );
+			return hash;
+		}
+	}
+
 	/// <summary>Managed memory as JSON: live bytes, the GC heap, bytes allocated since start and the collection counts.</summary>
 	[JSExport]
 	public static string PerfCounters()

@@ -83,6 +83,9 @@ EXPECTED = {
     ('tpw-exe-counts-test', 'csharp-rule-untracked'): AGREE,
     # X16 (price test 0x4fde50, GUEST-003): the willingness and the statistic agree with the reading; without the money test 56 differ.
     ('tpw-exe-price-test', 'plan'): AGREE,
+    # X17 (toilet wear 0x4e2440, QUEUE-008): the single step and the dirty crossing agree; a double -0.05 differs in the last bit once.
+    ('tpw-exe-toilet-wear', 'plan'): AGREE,
+    ('tpw-exe-toilet-wear', 'double-constant'): (1, {'gauge': 3.3, 'toilet': 49, 'relief': True, 'cx': 122, 'cy': 2}),
     ('tpw-exe-price-test', 'no-money-test'): (56, {'happiness': 60.0, 'thirst': 80.0, 'hunger': 10.0, 'illness': 0.0, 'money': 0, 'price': 1,
                                                    'goods': 0, 'win': 0, 'kind': 1, 'base': 20, 'e_thirst': 40, 'e_hunger': 0, 'e_vomit': 0,
                                                    'e_happy': 10, 'product': 2, 'extra': 0, 'type_word': 0}),
@@ -769,6 +772,11 @@ class Oracle(CoastTests, unittest.TestCase):
     def test_price_test_matches_the_reading(self):
         for side in ('plan', 'no-money-test'):
             self.check(('tpw-exe-price-test', side))
+
+    # ------------------------------------------------------------------ X17: toilet wear
+    def test_toilet_wear_matches_the_reading(self):
+        for side in ('plan', 'double-constant'):
+            self.check(('tpw-exe-toilet-wear', side))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

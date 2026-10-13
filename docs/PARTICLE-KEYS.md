@@ -27,7 +27,7 @@ status values with no pose. In particular, a negative key follows native object
 box midpoint and height logic that is not qualified here: model bounds must not
 be substituted for that object box.
 
-The future placed-object hook can retain one resolver for `Runtime.Model` and
+The owner-bound preparation hook now retains one resolver for `Runtime.Model` and
 call:
 
 ```csharp
@@ -37,8 +37,40 @@ resolver.Resolve(key, ParticleKeyResolver.EventSelector,
 
 The caller must select the intended pose at the event boundary. `PTCL-900`
 records that the native lookup-table refresh gates and callback timing are still
-unqualified. No runtime hook is installed by this change. EVENT classification
-and dispatch should be reviewed independently before connecting a constructor.
+unqualified. The resolver itself supplies no particle constructor. The preparation
+hook below preserves the independently reviewed EVENT classification.
+
+## Latest owner-local EVENT preparation
+
+`OriginalObjectRuntime.LastParticleEventAttempt` exposes a bounded immutable
+diagnostic from actual EVENT types 1/2. The placed-object constructor binds a
+copy of its placement; each instruction resolves against the runtime's current
+animator matrices. A prepared request records owner attraction ID, calling
+script ID, resolved key/effect operands, implicit EVENT control 1000, and frozen
+engine position (plus unit direction only for type 2). Direct IDs 0–104 are the
+qualified range, not proof that a template exists or a particle was allocated.
+
+There is only one latest attempt: later type-1/2 instructions replace it,
+including refusals. Other EVENT types leave it alone. There are no callbacks,
+queues, delivery acknowledgements, generation handles or renderer/physics
+resources. IDs are local metadata in the context of that runtime/world, not
+globally unique handles. Copied values are historical snapshots; they do not
+follow subsequent animation or confer an active particle identity.
+
+Headless runtimes, unresolved/negative keys, invalid transforms, scoped effect
+bit `0x8000` and unsupported direct IDs produce no request/pose. Stop/removal
+clears the placement, cached resolver and latest attempt, and a stopped owner
+does not create new diagnostics. Children share their owning runtime's effects.
+The diagnostic is neither save state nor canonical simulation state.
+
+Every EVENT keeps its existing unimplemented return/count/log behavior, even
+when preparation succeeds. This is a polling preparation foundation (PTCL-901),
+not particle execution, reliable event delivery, runtime coverage completion or
+original parity. Native fixed-point position/velocity, template contents,
+scoped lookup, lifetimes, renderer and refresh timing remain unqualified.
+Synthetic tests exercise actual VM/object effects, animated poses, independent
+owners/children, explicit refusals and teardown, with real sound controls and
+zero particle PCM; they create no GPU resources or original assets.
 
 Verification:
 

@@ -210,3 +210,7 @@ rejected with the running park's state unchanged. The browser also re-saved and 
 park with eight placed objects, fourteen visitors, two staff and two same-type shops priced at
 $60/$120. The save bytes, object/guest/staff ids, prices and closed-park state survived the page and
 WebAssembly restart. The 600-tick equality check above was performed in the native processes.
+
+## Continuing a theme from the lobby
+
+The explicit Continue choice described in [UI.md](UI.md#explicit-theme-continuation) reuses the existing manual own-world slot and staged resume. It does not create an automatic save, rewrite a manual checkpoint, change saved game mode or resume a TPI layout checkpoint. New Park remains a distinct action. A readable matching save makes Continue available; trusted game-asset and full candidate validation still happen on activation, and failures preserve the existing world instead of falling back to New.

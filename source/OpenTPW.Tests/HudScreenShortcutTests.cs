@@ -41,7 +41,7 @@ public class HudScreenShortcutTests
 		Assert.AreEqual( HudScreenShortcut.LocateNextStaff, ParkHud.ShortcutFor( InputButton.StaffLocator ), "Ctrl+S" );
 		Assert.AreEqual( HudScreenShortcut.LocateNextVisitor, ParkHud.ShortcutFor( InputButton.VisitorLocator ), "Ctrl+V" );
 		Assert.AreEqual( HudScreenShortcut.ToggleHelpBar, ParkHud.ShortcutFor( InputButton.ToggleHelpBar ), "Ctrl+H toggles contextual help" );
-		// Keys whose screens do not exist stay unhandled rather than guessing a window.
+		// Dedicated park actions and keys without implemented screens stay outside window-shortcut dispatch.
 		foreach ( var button in new[] { InputButton.CamcorderMode,
 			InputButton.SendEmailPostcard, InputButton.Help, InputButton.Menu, InputButton.RideView } )
 			Assert.AreEqual( HudScreenShortcut.None, ParkHud.ShortcutFor( button ), button.ToString() );

@@ -136,6 +136,8 @@ internal sealed partial class GameFlow : IDisposable
 		{
 			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode, overFrames: true ), prepareBuyWindow: true ),
 			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry, overFrames: true ), prepareBuyWindow: true ),
+			ContinueEntry = FindContinueEntry,
+			ContinuePark = entry => QueueLevel( entry.Park.Level, () => ContinuePark( entry ), prepareBuyWindow: true ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			IslandSelected = island =>
@@ -338,6 +340,7 @@ internal sealed partial class GameFlow : IDisposable
 			ExitToLobby = () => Queue( () => ShowFrontEnd( level.LevelName ) ),
 			Quit = Quit,
 			SavePark = SaveCurrentPark,
+			OpenPostcard = ShowPostcard,
 			CreateOptions = CreateOptions,
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry, overFrames: true ), prepareBuyWindow: true ) ),
 			GoOnline = ShowOnline,
@@ -790,13 +793,23 @@ internal sealed partial class GameFlow : IDisposable
 	}
 
 	/// <summary>Go Online: the original-style online screens on <paramref name="stack"/> (docs/ONLINE.md).</summary>
-	public void ShowOnline( UiScreenStack stack ) => new UI.OnlineScreens( stack, Strings, Context.Models, new UI.OnlineHost
+	public void ShowOnline( UiScreenStack stack ) => CreateOnlineScreens( stack ).ShowWorld();
+
+	/// <summary>Opens the existing composer only; sending remains an explicit outbox action.</summary>
+	internal void ShowPostcard( UiScreenStack stack )
+	{
+		if ( !GameEditions.Capabilities.Sharing )
+			throw new NotSupportedException( "Postcards are unavailable for this edition's experimental slice." );
+		CreateOnlineScreens( stack ).ShowSendPostcard();
+	}
+
+	private UI.OnlineScreens CreateOnlineScreens( UiScreenStack stack ) => new( stack, Strings, Context.Models, new UI.OnlineHost
 	{
 		Session = Online,
 		Level = () => Level,
 		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
 		Globe = () => Globe,
-	} ).ShowWorld();
+	} );
 
 	public void Dispose()
 	{

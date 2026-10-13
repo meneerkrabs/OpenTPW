@@ -159,7 +159,7 @@ public class VisitorWorldSelectionTests
 		finally { Camera.Mode = previousMode; Camera.ViewMatrix = previousView; Camera.ProjMatrix = previousProjection; Input.TextEntryActive = previousText; Input.KeysDown = previousDown; Input.LastKeysDown = previousLast; }
 	}
 
-	private static ParkHud Fixture(out GuestSimulation simulation, out GuestRenderer renderer)
+	internal static ParkHud Fixture(out GuestSimulation simulation, out GuestRenderer renderer)
 	{
 		simulation = new GuestSimulation(new GuestPathGrid(32, 32), GuestTests.CreateSettings(), 1) { ArrivalsEnabled = false };
 		renderer = Empty<GuestRenderer>();

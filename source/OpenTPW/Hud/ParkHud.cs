@@ -17,6 +17,8 @@ public sealed class HudHost
 	public Func<UiScreenStack, UiScreen>? CreateLoad { get; init; }
 	/// <summary>Opens the online screens (Go Online, UITEXT 1); null hides the entry.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>Opens the existing postcard composer; it does not send a card.</summary>
+	public Action<UiScreenStack>? OpenPostcard { get; init; }
 }
 
 /// <summary>
@@ -584,6 +586,11 @@ public sealed partial class ParkHud
 		// The original window keys (the key table the InputButton defaults document; the research and map buttons'
 		// own help rows name "(R)" and "(Space)"), the time keys and the blueprint-turn keys.
 		HandleScreenShortcuts( shortcutsAllowed );
+		if ( TryOpenPostcard( shortcutsAllowed && !overUi && !consumed && !mouseCaptured.Value && input.Text.Length == 0 && !ridingAtStart ) )
+		{
+			overUi = consumed = true;
+			if ( input.LeftDown || input.LeftPressed ) toolPress = true;
+		}
 
 		if ( level.LastActionMessage != lastLevelMessage )
 		{

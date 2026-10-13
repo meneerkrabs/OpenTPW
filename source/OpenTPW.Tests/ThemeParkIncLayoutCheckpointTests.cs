@@ -167,7 +167,11 @@ public class ThemeParkIncLayoutCheckpointTests
 		CollectionAssert.AreEqual(original, File.ReadAllBytes(path));
 		var directory = Path.Combine(root, "blocked.tpilayout"); Directory.CreateDirectory(directory);
 		var foreign = directory + ".foreign.tmp"; File.WriteAllText(foreign, "foreign");
-		Assert.ThrowsException<IOException>(() => ThemeParkIncLayoutCheckpoint.Save(directory, checkpoint));
+		// The replacing move onto a directory fails as IOException on Unix and UnauthorizedAccessException on Windows; the HUD reports both.
+		Exception? failure = null;
+		try { ThemeParkIncLayoutCheckpoint.Save(directory, checkpoint); }
+		catch (Exception error) { failure = error; }
+		Assert.IsTrue(failure is IOException or UnauthorizedAccessException, $"the move onto a directory fails ({failure?.GetType().Name ?? "no exception"})");
 		Assert.AreEqual("foreign", File.ReadAllText(foreign));
 		CollectionAssert.AreEqual(new[] { foreign }, Directory.GetFiles(root, "*.tmp"));
 	}

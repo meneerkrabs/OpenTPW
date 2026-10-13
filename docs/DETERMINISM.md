@@ -2,11 +2,36 @@
 
 A park run in OpenTPW is reproducible: the same world seed and the same inputs
 give the same state. This holds for two runs in one process and for runs in
-separate processes. This page covers the DET-I1 slice of the contract in
+separate processes only when external host-civil-time query samples are also
+the same. A seed and player inputs alone do not pin those samples. This page
+covers the DET-I1 slice of the contract in
 [reverse/DET-plan.md](reverse/DET-plan.md) §4. The simulation still runs on the
 60 Hz `FixedStepClock` (ECON-001) and keeps its own generators. Moving to the
 original's 31 ms substep and its world LCG is DET-I2, a later fidelity step.
 That step changes every balance outcome.
+
+### External host civil time
+
+TPW `YEAR`/`MONTH`/`DAY`/`HOUR` read host-local civil time, not the park calendar
+or scheduler clock (the Feral witness is in reverse/PPC-clock.md, "RSE civil
+time is an independent clock domain"). A `RideScriptWorld` accepts an injected
+provider; its default samples the current host clock per executed instruction.
+TPI and unsupported-edition worlds cannot enable it. VM-902 records the managed
+timezone/conversion and native destination/flag qualification limits.
+
+The provider and its current host input are external: neither is serialized in
+`RideScriptWorldSnapshot` or fed to the canonical hash. Scheduler timestamps,
+returned VM variables, flags and branch state keep their existing save/hash
+rules. Restoring a saved script preserves prior results, but future clock
+queries may diverge unless the caller supplies the same external samples.
+The existing synthetic deterministic-run fixtures do not query host civil time;
+their pinned digests are unchanged. Real objects do: Halloween's Haunted Tower
+(Info.Id 2418) runs `Clock.RSE`, which reads `HOUR`, and the hour reaches the
+world state (`AParkWithACivilClockObjectHashesTheSameUnderAFixedClock`). Headless
+runs that pin or compare a hash therefore pass `RideScriptWorld.FixedClock` (noon on
+1 January 2000): the M4 gate and the browser digest do, and `ParkObjects` takes an
+optional clock for any other. The game itself keeps the host clock. No digest exclusion or schema change hides
+the results of a clock query.
 
 ## World seed
 
@@ -68,6 +93,12 @@ and `RideScriptWorld` counters are per instance.
   process, and a regular expression cannot tell a string receiver from another,
   so simulation code may not call them at all (`override GetHashCode`
   declarations are fine).
+
+The only clock exception is one exact TPW-gated provider expression in
+`VM/RideScriptWorld.cs`, with its unique occurrence checked. The rest of that
+file is scanned normally. `CivilTimeBoundaryDoesNotExemptOtherClockExpressionsOrFiles`
+checks that different files, other clock expressions, appended expressions and
+a weakened edition gate remain forbidden.
 
 `SourceGuardCatchesEachForbiddenForm` checks each form against sample lines,
 and each was also checked by inserting it into a scanned source file. Not

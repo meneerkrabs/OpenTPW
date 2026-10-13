@@ -418,7 +418,8 @@ public sealed class OriginalObjectRuntime
 /// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
 /// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
 /// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds (their other
-/// effects stay unimplemented). Everything else (objects/particles, the ride-type controllers TOUR/BUMP, park clock,
+/// effects stay unimplemented). TPW YEAR/MONTH/DAY/HOUR sample host civil time; MIN/SEC remain unimplemented.
+/// Everything else (objects/particles, the ride-type controllers TOUR/BUMP,
 /// screams, reverb) stays an unimplemented effect.
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects
@@ -453,6 +454,20 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	{
 		switch ( call.Opcode )
 		{
+			case Opcode.YEAR:
+			case Opcode.MONTH:
+			case Opcode.DAY:
+			case Opcode.HOUR:
+				// [BIN:STP-PPC:0x100B2144 RSE civil time] YEAR/MONTH/DAY/HOUR use host time/localtime, not the park calendar (PPC-clock.md).
+				if ( !call.VM.World.TryReadCivilTime( out var civil ) )
+					break;
+				return call.Opcode switch
+				{
+					Opcode.YEAR => civil.Year - 1900,
+					Opcode.MONTH => civil.Month,
+					Opcode.DAY => civil.Day,
+					_ => civil.Hour
+				};
 			case Opcode.TRIGANIM:
 			case Opcode.WAITANIM:
 			case Opcode.TRIGWAITANIM:

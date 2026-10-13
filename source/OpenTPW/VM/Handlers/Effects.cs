@@ -55,7 +55,7 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.TURBO, RideOpcodeStatus.Hooked, "docs (`value` 0..1, meaning unknown)" )]
 		public static void Turbo( RideVM vm, Operand value ) => vm.Effect( Opcode.TURBO, new[] { value } );
 
-		[OpcodeHandler( Opcode.HOUR, RideOpcodeStatus.Hooked, "docs (in-game hour → dest); corpus Clock.RSE `HOUR VAR_TEMP; MOD VAR_TEMP VAR_TEMP 12`; sets flags; park clock not implemented" )]
+		[OpcodeHandler( Opcode.HOUR, RideOpcodeStatus.Hooked, "Feral host civil hour (PPC-clock.md); TPW runtime samples host time; existing destination/flags contract remains unqualified by the clock witness (VM-902)" )]
 		public static void Hour( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.HOUR, dest, dest );
 
 		[OpcodeHandler( Opcode.MIN, RideOpcodeStatus.Hooked, "docs (in-game minute → dest); corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only" )]
@@ -64,13 +64,13 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.SEC, RideOpcodeStatus.Hooked, "docs (in-game second → dest); corpus `SEC 0; BRANCH_NZ`" )]
 		public static void Second( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.SEC, dest, dest );
 
-		[OpcodeHandler( Opcode.YEAR, RideOpcodeStatus.Hooked, "docs only (no corpus use); as HOUR" )]
+		[OpcodeHandler( Opcode.YEAR, RideOpcodeStatus.Hooked, "Feral host civil year minus 1900 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902" )]
 		public static void Year( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.YEAR, dest, dest );
 
-		[OpcodeHandler( Opcode.MONTH, RideOpcodeStatus.Hooked, "docs only (no corpus use); as HOUR" )]
+		[OpcodeHandler( Opcode.MONTH, RideOpcodeStatus.Hooked, "Feral host civil month 1..12 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902" )]
 		public static void Month( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.MONTH, dest, dest );
 
-		[OpcodeHandler( Opcode.DAY, RideOpcodeStatus.Hooked, "docs only (no corpus use); as HOUR" )]
+		[OpcodeHandler( Opcode.DAY, RideOpcodeStatus.Hooked, "Feral host civil day 1..31 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902" )]
 		public static void Day( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.DAY, dest, dest );
 	}
 }

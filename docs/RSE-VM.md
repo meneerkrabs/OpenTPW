@@ -161,6 +161,33 @@ operand/shared wake field/snapshot restore) and `RideVMTpiCorpusTests`
 
 ## Effects hook
 
+### Host civil-time queries
+
+TPW object scripts now route `YEAR`, `MONTH`, `DAY` and `HOUR` through their
+shared script world's injected host-local clock (the system clock by default).
+Each executed instruction samples independently. The existing Feral evidence
+in [PPC-clock.md](reverse/PPC-clock.md#rse-civil-time-is-an-independent-clock-domain)
+proves C `time`/`localtime` and the fields: year minus 1900, month 1–12, day
+1–31 and hour 0–23. These are not `ParkCalendar` fields or scheduler elapsed
+time. Pausing prevents script execution; the next eligible query samples
+current host time, regardless of simulation speed, turn count or saved date.
+
+The provider is unavailable for worlds created under TPI or an unsupported
+edition, even if explicitly supplied. `MIN` and `SEC` retain the existing
+unimplemented fallback. No TPI clock semantics are enabled.
+
+[APPROX:VM-902] qualifies the managed local timezone/civil conversion, clock
+changes, invalid/rollover dates and Windows/TPI parity. The existing handler's
+destination writes, literal-destination discard and flags are retained; the
+clock-domain witness does not establish their native ordering or flags.
+Provider/current host input is neither snapshotted nor hashed. Previously
+returned variables and flags remain saved and hashed; future queries after
+restore may diverge unless the same external inputs are supplied. No save or
+hash schema changes. `RideCivilTimeRuntimeTests` exercises actual synthetic
+object runtimes and VM instructions without original assets or a GPU.
+
+### Effect dispatch
+
 Valid hooked operations call `IRideScriptEffects.Perform(RideEffectCall)` with the
 resolved operand values. The VM writes the returned value to the opcode's
 destination where the corpus shows one (HOP, WALKGET, UNLIMBO, LIMBOSPACE,
@@ -314,7 +341,8 @@ member mapping, channels and the corpus run of all 262 object scripts are in
   their original sounds (the category routes are traced, AUDIO.md) while types
   1/2 create particles in the original and remain unimplemented here; type 0
   is unsupported, not a positioned sound loop. No objects/particles, no ride-type
-  controllers (TOUR/BUMP/COAST), no park clock (HOUR/MIN/SEC return 0), no light opcodes.
+  controllers (TOUR/BUMP/COAST), MIN/SEC unimplemented, no light opcodes. TPW YEAR/MONTH/DAY/HOUR
+  sample host civil time with VM-902's qualifications; they do not read the park calendar.
 - What the engine does with `EventMap.rse` variables, how the host is meant to
   feed `VAR_LETMEON`/`VAR_LETMEOFF`, and the `0xFFFF` second operand of EVENT
   are unknown.
@@ -473,10 +501,10 @@ handler attributes diverge.
 | 94 | `GETCUSTPTCLCODE` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 95 | `SETTIMER` | 40 | implemented | corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms |
 | 96 | `GETTIMER` | 21 | implemented | corpus: `GETTIMER 0; BRANCH_NZ skip` staggers unloading; dest = remaining ms (≥ 0), sets flags |
-| 97 | `YEAR` | 0 | hooked | docs only (no corpus use); as HOUR |
-| 98 | `MONTH` | 0 | hooked | docs only (no corpus use); as HOUR |
-| 99 | `DAY` | 0 | hooked | docs only (no corpus use); as HOUR |
-| 100 | `HOUR` | 1 | hooked | docs (in-game hour → dest); corpus Clock.RSE `HOUR VAR_TEMP; MOD VAR_TEMP VAR_TEMP 12`; sets flags; park clock not implemented |
+| 97 | `YEAR` | 0 | hooked | Feral host civil year minus 1900 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902 |
+| 98 | `MONTH` | 0 | hooked | Feral host civil month 1..12 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902 |
+| 99 | `DAY` | 0 | hooked | Feral host civil day 1..31 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902 |
+| 100 | `HOUR` | 1 | hooked | Feral host civil hour (PPC-clock.md); TPW runtime samples host time; existing destination/flags contract remains unqualified by the clock witness (VM-902) |
 | 101 | `MIN` | 1 | hooked | docs (in-game minute → dest); corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
 | 102 | `SEC` | 1 | hooked | docs (in-game second → dest); corpus `SEC 0; BRANCH_NZ` |
 | 103 | `SETREVERB` | 21 | hooked | docs (0–10) |

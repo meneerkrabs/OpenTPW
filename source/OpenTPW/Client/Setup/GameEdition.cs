@@ -91,8 +91,9 @@ public sealed record EditionCapabilities
 		FrontEnd = false,
 		ParkSaves = false,
 		Sharing = false,
-		ExperimentalNote = "experimental Theme Park Inc slice: no economy, staff, advisor, campaign (missions/GMS), "
-			+ "park saves, sharing or Theme Park Inc UI; building is free; none of it is checked against the original game"
+		ExperimentalNote = "experimental Theme Park Inc slice: no economy, staff, advisor, missions, Global Master Save, "
+			+ "COS files, park saves or sharing, and no Theme Park Inc interface; building is free; "
+			+ "none of it is checked against the original game"
 	};
 }
 

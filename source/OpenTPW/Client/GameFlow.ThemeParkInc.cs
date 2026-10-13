@@ -25,6 +25,7 @@ internal sealed partial class GameFlow
 	/// modal menu is open) and the crowd audio follows the park's guests. Nothing else of the reference game's frame
 	/// (advisor, staff voices, weather sounds) runs: those systems need the economy the slice refuses.
 	/// </summary>
+	// [APPROX:TPI-902] the guests and scripts that run here are the ported Theme Park World rules over Theme Park Inc data
 	private void UpdateThemeParkIncSlice( Level level, ThemeParkIncHud hud, UiInput input )
 	{
 		level.UiCapturesMouse = hud.Update( Context, input );

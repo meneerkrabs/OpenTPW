@@ -364,6 +364,7 @@ public sealed class ThemeParkIncHud
 	/// empty owned cell starts the path tool there, Backspace undoes a segment, right click cancels, and clicks inside
 	/// the tool commit lines. The commit reports the pointer as captured, so <see cref="Level"/>'s own park click skips it.
 	/// </summary>
+	// [APPROX:TPI-904] the tools follow the traced Theme Park World flow; Theme Park Inc's own build tools are untraced
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark )
 	{
 		var tool = level.CellTool;

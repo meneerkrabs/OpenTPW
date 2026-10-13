@@ -436,12 +436,27 @@ public partial class Renderer : IDisplaySettings
 		displayDirty = true;
 	}
 
-	/// <summary>Updates and draws one frame; false once the window has closed.</summary>
+	private readonly FrameLimiter frameLimiter = new();
+
+	/// <summary>Frames updated and drawn since start; frames the cap skipped do not count.</summary>
+	public long FramesDrawn { get; private set; }
+
+	/// <summary>
+	/// Updates and draws one frame; false once the window has closed. Under a frame cap (<see cref="DisplaySettings.FrameCap"/>) a frame that
+	/// comes too early is skipped in the browser, which calls again at its next animation frame, and waited for on the desktop.
+	/// </summary>
 	public bool Frame()
 	{
 		if ( !Window.SdlWindow.Exists )
 			return false;
-		Update();
+		var cap = DisplaySettings.FrameCap;
+		// The browser paces frames itself and cannot block its only thread.
+		if ( !OperatingSystem.IsBrowser() && frameLimiter.WaitSeconds( clock.Elapsed.TotalSeconds, cap ) is > 0 and var wait )
+			Thread.Sleep( TimeSpan.FromSeconds( wait ) );
+		if ( !frameLimiter.Due( clock.Elapsed.TotalSeconds, cap ) )
+			return true;
+		if ( Update() )
+			FramesDrawn++;
 		return Window.SdlWindow.Exists;
 	}
 
@@ -537,7 +552,8 @@ public partial class Renderer : IDisplaySettings
 		CommandList.PopDebugGroup();
 	}
 
-	private void Update()
+	/// <summary>One update and draw; false when the window closed or drawing is paused, so nothing was drawn.</summary>
+	private bool Update()
 	{
 		var currentFrame = Stopwatch.GetTimestamp();
 		float deltaTime = (float)Stopwatch.GetElapsedTime( _lastFrame, currentFrame ).TotalSeconds;
@@ -545,7 +561,7 @@ public partial class Renderer : IDisplaySettings
 
 		InputSnapshot inputSnapshot = Window.SdlWindow.PumpEvents();
 		if ( !Window.SdlWindow.Exists )
-			return;
+			return false;
 
 		Time.Update( deltaTime );
 		Input.UpdateFrom( inputSnapshot );
@@ -562,7 +578,7 @@ public partial class Renderer : IDisplaySettings
 			// The browser paces frames itself and cannot block its only thread.
 			if ( !OperatingSystem.IsBrowser() )
 				Thread.Sleep( 16 );
-			return;
+			return false;
 		}
 
 		if ( Input.Pressed( InputButton.EditorToggle ) )
@@ -587,6 +603,7 @@ public partial class Renderer : IDisplaySettings
 		PostUpdate?.Invoke();
 
 		ProcessDeletionQueue();
+		return true;
 	}
 
 	private static bool IsFullscreenTogglePressed( InputSnapshot snapshot )

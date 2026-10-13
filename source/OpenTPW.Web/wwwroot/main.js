@@ -18,20 +18,22 @@ await runMain();
 status.textContent = 'Ready.';
 
 // The performance harness (tools/web-perf, docs/BROWSER-PERFORMANCE.md): with ?perf=1 the page records the wall time of every
-// Program.Frame and exposes the game's harness hooks; ?perfSeed=<base64 JSON {path: text}> writes the options file before the
-// game starts (music muted, say). Only on a loopback address, where the harness serves the page: a link to the public page
+// Program.Frame and exposes the game's harness hooks; ?perfSeed=<base64 JSON {path: text}> writes the options or display file
+// before the game starts (music muted, a frame cap). Only on a loopback address, where the harness serves the page: a link to the public page
 // cannot use them to write into a player's saved files. Without ?perf nothing here runs.
 const perfQuery = new URLSearchParams(location.search);
-const perfSeedPaths = new Set(['/save/opentpw-options.json']);
+const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.json']);
 const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 const perf = loopback && perfQuery.get('perf') === '1' ? {
 	program,
 	frames: [],
+	skipped: 0,
 	started: false,
 	wasmBytes: () => runtime.localHeapViewU8().buffer.byteLength,
 	state: () => JSON.parse(program.PerfState()),
 	counters: () => ({ ...JSON.parse(program.PerfCounters()), wasmBytes: runtime.localHeapViewU8().buffer.byteLength }),
 	take() { const frames = this.frames; this.frames = []; return frames; },
+	takeSkipped() { const skipped = this.skipped; this.skipped = 0; return skipped; },
 } : null;
 if (perf)
 	globalThis.opentpwPerf = perf;
@@ -241,9 +243,15 @@ async function start() {
 			let running;
 			try {
 				if (perf) {
+					// Only drawn frames are recorded; a call the frame cap skips is counted apart.
+					const drawn = program.PerfFramesDrawn();
 					const begin = performance.now();
 					running = program.Frame();
-					perf.frames.push([begin, performance.now() - begin]);
+					const end = performance.now();
+					if (program.PerfFramesDrawn() > drawn)
+						perf.frames.push([begin, end - begin]);
+					else
+						perf.skipped++;
 					// Bounded when nobody drains it (about half an hour at 60 fps).
 					if (perf.frames.length > 100000)
 						perf.frames.splice(0, 50000);

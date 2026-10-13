@@ -48,6 +48,14 @@ public sealed record DisplaySettings
 	public int RenderScale { get; init; } = 100;
 	/// <summary>Integer BF4 UI scale; 0 selects it from the output size (<see cref="UiScaling.Automatic"/>).</summary>
 	public int UiScale { get; init; }
+	/// <summary>
+	/// Frames per second the game draws at most (<see cref="FrameLimiter"/>), one of <see cref="FrameCaps"/>; 0 (the default) draws every
+	/// frame the display or the browser offers. The simulation keeps its fixed clock either way (FixedStepClock).
+	/// </summary>
+	public int FrameCap { get; init; }
+
+	/// <summary>The frame caps a player can choose: off, 30 and 60 frames per second.</summary>
+	public static IReadOnlyList<int> FrameCaps { get; } = new[] { 0, 30, 60 };
 
 	public static DisplaySettings Default { get; } = new();
 
@@ -81,6 +89,11 @@ public sealed record DisplaySettings
 		{
 			diagnostics.Add( $"UI scale {UiScale} is outside 0 (automatic)..{MaximumUiScale}; using automatic." );
 			result = result with { UiScale = 0 };
+		}
+		if ( !FrameCaps.Contains( FrameCap ) )
+		{
+			diagnostics.Add( $"Frame cap {FrameCap} is not one of {string.Join( ", ", FrameCaps )}; drawing every frame." );
+			result = result with { FrameCap = 0 };
 		}
 		return result;
 	}
@@ -222,5 +235,5 @@ public sealed record DisplaySettings
 	}
 
 	public string Describe() =>
-		$"{Mode} {Width}x{Height}, upscale {Upscale} {RenderScale}%, UI scale {(UiScale == 0 ? "auto" : UiScale.ToString( CultureInfo.InvariantCulture ))}";
+		$"{Mode} {Width}x{Height}, upscale {Upscale} {RenderScale}%, UI scale {(UiScale == 0 ? "auto" : UiScale.ToString( CultureInfo.InvariantCulture ))}, frame cap {(FrameCap == 0 ? "off" : FrameCap.ToString( CultureInfo.InvariantCulture ))}";
 }

@@ -159,6 +159,10 @@ key press on the page.
 
 ### Saves and settings
 
+The display choices the browser honours (render scale, interface scale and the frame rate limit)
+are kept in `/config/display.json` like the desktop's; the canvas decides the size, so a stored
+window size or mode has no effect.
+
 The game writes saves and options to `/save`, online files to `/online` and display and graphics
 settings to `/config` (`OPENTPW_CONFIG_DIR`). `opentpw-storage.js` mirrors those folders into
 IndexedDB every five seconds and when the page is hidden or closed, and puts them back before the

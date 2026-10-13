@@ -70,6 +70,8 @@ public static class OptionsScreen
 	public static string UiScaleLabel( UiStringTable strings, int scale ) =>
 		scale <= 0 ? strings.Extra( OpenTpwText.Automatic ) : $" {scale}x";
 
+	public static string FrameCapLabel( UiStringTable strings, int cap ) => cap <= 0 ? strings[UIStrings.Off] : $" {cap} fps";
+
 	public static string WindowModeLabel( UiStringTable strings, WindowMode mode ) => strings.Extra( mode switch
 	{
 		WindowMode.Exclusive => OpenTpwText.Fullscreen,
@@ -451,9 +453,10 @@ public static class OptionsScreen
 		var rowIndex = 0;
 		void Row( string id, Func<string> text, Func<IEnumerable<string>> variants, Action<int> change, string? help = null )
 		{
-			var column = rowIndex < 3 ? 0 : 1;
+			// Four display rows on the left (the last ends above the effective-size text), the rest on the right.
+			var column = rowIndex < 4 ? 0 : 1;
 			var left = column == 0 ? 57f : 1331f;
-			var top = 167f + (column == 0 ? rowIndex : rowIndex - 3) * 156f;
+			var top = 167f + (column == 0 ? rowIndex : rowIndex - 4) * 156f;
 			rowIndex++;
 			page.Panel( id, "f_optpanel", Rect( left, top, left + 633, top + 149 ) );
 			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants );
@@ -492,6 +495,10 @@ public static class OptionsScreen
 				var percent = CycleWrap( renderSteps, renderSteps.Contains( state.Display.RenderScale ) ? state.Display.RenderScale : 100, -direction );
 				state.Display = state.Display with { RenderScale = percent, Upscale = percent >= 100 ? UpscaleMode.Native : state.Display.Upscale == UpscaleMode.Native ? UpscaleMode.Linear : state.Display.Upscale };
 			} );
+		// [EXT:frame-cap] draws at most this many frames a second (FrameLimiter); the simulation clock is not capped
+		Row( "frameCap", () => Prefix( OpenTpwText.FrameCap ) + FrameCapLabel( strings, state.Display.FrameCap ),
+			() => DisplaySettings.FrameCaps.Select( cap => Prefix( OpenTpwText.FrameCap ) + FrameCapLabel( strings, cap ) ),
+			direction => state.Display = state.Display with { FrameCap = CycleWrap( DisplaySettings.FrameCaps, state.Display.FrameCap, direction ) } );
 		Row( "uiScale", () => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, state.Display.UiScale ),
 			() => Enumerable.Range( 0, display.MaximumUiScale + 1 ).Select( scale => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, scale ) ),
 			direction => state.Display = state.Display with { UiScale = ((state.Display.UiScale + direction) % (display.MaximumUiScale + 1) + display.MaximumUiScale + 1) % (display.MaximumUiScale + 1) } );
@@ -540,7 +547,8 @@ public static class OptionsScreen
 			Color = UiColors.OptionText,
 			Shadow = false,
 			Wrap = true,
-			Bounds = Rect( 57, graphics == null ? 700 : 835, 1964, graphics == null ? 900 : 1035 ),
+			// Below the fourth row of the left column (y 635..784), with or without the graphics rows on the right.
+			Bounds = Rect( 57, 835, 1964, 1035 ),
 			Anchor = UiAnchor.Center
 		} );
 

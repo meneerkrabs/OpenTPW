@@ -32,7 +32,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -50,6 +50,7 @@ function parseArguments(argv) {
 			case '--music': options.music = true; break;
 			case '--size': [options.width, options.height] = value().split('x').map(Number); break;
 			case '--runs': options.runs = Math.max(1, Number(value()) || 1); break;
+			case '--frame-cap': options.frameCap = Number(value()); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -70,6 +71,7 @@ function usage() {
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
   --headed                show the browser window
   --chrome <path>         Chrome executable (default: the platform's Chrome, or $CHROME)`;
@@ -122,7 +124,7 @@ class Page {
 	}
 
 	/** The page's clock and the frames recorded since the last mark (which it drains): the boundaries of every interval. */
-	mark() { return this.eval('({ now: performance.now(), frames: opentpwPerf.take() })'); }
+	mark() { return this.eval('({ now: performance.now(), frames: opentpwPerf.take(), skipped: opentpwPerf.takeSkipped() })'); }
 
 	/** Waits until the page has drawn at least one more frame (two animation frames: the game's own callback runs in between). */
 	nextFrame() { return this.eval('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))'); }
@@ -141,6 +143,7 @@ class Page {
 			windowS: Math.round(elapsed) / 1000,
 			mainThreadBusyPercent: mainThreadBusy(before, after),
 			...summarizeFrames(end.frames, elapsed),
+			skippedFrames: end.skipped,
 			longTasks: tasks.length,
 			longestTaskMs: tasks.length ? Math.round(Math.max(...tasks.map(([, duration]) => duration))) : 0,
 			memory: await this.memory(),
@@ -303,6 +306,8 @@ async function runSession(options, webRoot, gameRoot) {
 			new PerformanceObserver(list => { for (const entry of list.getEntries()) globalThis.__opentpwLongTasks.push([entry.startTime, entry.duration]); })
 				.observe({ type: 'longtask', buffered: true });` });
 		const seed = options.music ? {} : { '/save/opentpw-options.json': JSON.stringify({ MusicOn: false, SpeechOn: false }) };
+		if (options.frameCap)
+			seed['/config/display.json'] = JSON.stringify({ FrameCap: options.frameCap });
 		const query = new URLSearchParams({ perf: '1', data: '/game/', perfSeed: Buffer.from(JSON.stringify(seed)).toString('base64') });
 		const context = { navigationStart: Date.now() };
 		await page.send('Page.navigate', { url: `${server.origin}/index.html?${query}` });
@@ -350,7 +355,7 @@ async function main() {
 		label: options.runs > 1 ? `${options.label} (median of ${options.runs} runs)` : options.label,
 		date: sessions[0].date, commit: gitCommit(path.dirname(new URL(import.meta.url).pathname)),
 		machine: `${os.cpus()[0]?.model ?? 'unknown'}, ${os.platform()} ${os.release()}`, size: `${options.width}x${options.height}`,
-		muted: !options.music, scenarios: options.scenarios, chrome: sessions[0].chrome, renderer: sessions[0].renderer,
+		muted: !options.music, frameCap: options.frameCap, scenarios: options.scenarios, chrome: sessions[0].chrome, renderer: sessions[0].renderer,
 		results: options.runs > 1 ? medianResults(sessions.map(session => session.results)) : sessions[0].results,
 		...(options.runs > 1 ? { runs: sessions } : { pageErrors: sessions[0].pageErrors }),
 	};

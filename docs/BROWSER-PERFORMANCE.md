@@ -41,7 +41,9 @@ Music and speech are muted through the options file and effects stay on, as on 1
 The hooks behind `?perf=1` (`Program.Perf.cs`: state, a click on an element by id, a key, a
 buy-window selection, memory counters) change nothing unless the harness calls them. The page
 honours `?perf` and `?perfSeed` only on a loopback address, and the seed may only write the
-options file, so a link to the public page cannot write into a player's saved files.
+options file and the display settings (`--frame-cap`), so a link to the public page cannot write
+into a player's saved files. In perf mode the page asks for the drawn-frame count around every
+call, a small extra cost on the main thread that both sides of a comparison share.
 
 **Baseline, 13 October** (interpreter build at `618ad830`, Chrome 155 headless, Apple M5 hardware
 Metal through ANGLE, 1280×900; median of three runs of the final harness, range in brackets). This
@@ -100,6 +102,30 @@ plan's rule (AOT when the cold construction or the first menu frame gets at leas
 judged against the size of the original game the player supplies anyway) is met, so the
 published page (the server image, `source/OpenTPW.Server/Dockerfile`) is compiled ahead of time.
 A local `dotnet publish` stays an interpreter build without a workload (docs/WEB.md).
+
+## Frame cap (13 October)
+
+The frame rate limit on the OpenTPW options page (`DisplaySettings.FrameCap`: off by default, 30
+or 60 fps) caps drawing, not the simulation: `FrameLimiter` books frames on a grid of 1/cap
+seconds with a quarter interval of slack for timing jitter, the browser skips an animation frame
+that comes too early and the desktop sleeps until the next one is due, and the simulation's fixed
+clock (FixedStepClock) takes the elapsed time in larger steps. The browser now keeps its display
+settings in `/config` like the desktop, so the choice survives a reload.
+
+Interpreter build, two runs per setting taken alternately on the M5 setup (the harness's
+`--frame-cap`; frames are counted only when the renderer drew one):
+
+| Cap | Frames drawn | Calls skipped (30 s) | Main thread busy, lobby / Jungle |
+| --- | ---: | ---: | ---: |
+| Off | 60 fps | 0 | 17.5 % / 22.6 % |
+| 30 | 30.0 fps | about 900 | 10.0 % / 12.9 % (−43 %) |
+| 60 | 59.96–59.99 fps | 0–1 | 17.1 % / 17.2 % |
+
+In these samples a 30 fps cap took 43 % off the main thread rather than half; the likely reason
+(not measured apart) is that only the drawing halves, while the simulation keeps its 60 ticks a
+second and the page still runs one animation-frame callback per display frame. A cap at the
+display rate drew practically every frame. Input is read once per drawn frame, so a 30 fps cap
+can add about one display frame of input delay; that is why it stays off by default.
 
 ## Measured workload
 

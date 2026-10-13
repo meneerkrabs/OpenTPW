@@ -797,6 +797,13 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Frame rate limit (October 13):** the OpenTPW options page has a frame rate limit (off by
+  default, 30 or 60 fps) for the desktop and the browser. It caps drawing only (`FrameLimiter`:
+  a grid of 1/cap seconds with jitter slack; the browser skips early animation frames, the
+  desktop sleeps); the simulation keeps its fixed clock. In two browser runs per setting a 30 fps
+  cap took 43 % off the main thread in the lobby and in Jungle, and a 60 fps cap on a 60 Hz display drew
+  59.96–59.99 fps. The browser now keeps its display settings in `/config`, and the harness
+  counts drawn frames apart from skipped calls (`--frame-cap`). Phase 1b of the browser plan.
 - **Browser build compiled ahead of time (October 13):** the published page (server image) now
   runs AOT-compiled WebAssembly instead of the interpreter. Measured with the harness, three
   alternating runs each on an Apple M5: the cold Jungle construction frame fell from 2,540 to

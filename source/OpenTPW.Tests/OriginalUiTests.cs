@@ -477,13 +477,15 @@ public class OriginalUiTests
 		((UiButton)page.Find( "upscaling" )!).Activate();
 		((UiButton)page.Find( "renderScale" )!).Adjust( 1 );
 		((UiButton)page.Find( "uiScale" )!).Adjust( 1 );
+		((UiButton)page.Find( "frameCap" )!).Adjust( 1 );
 		Assert.AreEqual( "Render scale:ui339 70%", ((UiLabel)page.Find( "renderScaleLabel" )!).Text() );
+		Assert.AreEqual( "Frame rate limit: 30 fps", ((UiLabel)page.Find( "frameCapLabel" )!).Text() );
 		Assert.AreEqual( 0, display.Applies, "nothing applied before OK" );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		Assert.AreSame( main, stack.Top, "Back returns to the original page" );
 		Assert.AreEqual( 0, display.Applies );
 		main.Find( "ok" )!.Activate();
-		Assert.AreEqual( (UpscaleMode.Linear, 70, 1, false), (display.Current.Upscale, display.Current.RenderScale, display.Current.UiScale, display.IsConfirmationPending) );
+		Assert.AreEqual( (UpscaleMode.Linear, 70, 1, 30, false), (display.Current.Upscale, display.Current.RenderScale, display.Current.UiScale, display.Current.FrameCap, display.IsConfirmationPending) );
 		Assert.AreEqual( 1, closed );
 
 		// A new size asks to keep it (UITEXT 400); "No" reverts and reports UITEXT 401.

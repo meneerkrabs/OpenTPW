@@ -31,6 +31,10 @@ public static partial class Program
 		return state.ToJsonString();
 	}
 
+	/// <summary>Frames the renderer has drawn; a frame the cap skips leaves it unchanged, so the page can tell drawn frames from skipped calls.</summary>
+	[JSExport]
+	public static double PerfFramesDrawn() => renderer?.FramesDrawn ?? 0;
+
 	/// <summary>Clicks the centre of the visible element <paramref name="id"/> on the topmost front-end or HUD screen; false when there is none.</summary>
 	[JSExport]
 	public static bool PerfClick( string id )

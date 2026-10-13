@@ -194,7 +194,7 @@ public class DisplayTests
 	[TestMethod]
 	public void SettingsRoundTripThroughJsonAndKeepDefaultsForMissingFields()
 	{
-		var settings = new DisplaySettings { Width = 3440, Height = 1440, Mode = WindowMode.Borderless, Upscale = UpscaleMode.Nearest, RenderScale = 59, UiScale = 2 };
+		var settings = new DisplaySettings { Width = 3440, Height = 1440, Mode = WindowMode.Borderless, Upscale = UpscaleMode.Nearest, RenderScale = 59, UiScale = 2, FrameCap = 30 };
 		var json = settings.ToJson();
 		StringAssert.Contains( json, "\"Upscale\": \"Nearest\"" );
 		Assert.IsFalse( json.Contains( '\r' ) );
@@ -224,6 +224,11 @@ public class DisplayTests
 		var size = DisplaySettings.FromJson( "{ \"Width\": 100, \"Height\": 50000, \"UiScale\": 40, \"Upscale\": 7 }", diagnostics );
 		Assert.AreEqual( (1280, 720, 0, UpscaleMode.Native), (size.Width, size.Height, size.UiScale, size.Upscale) );
 		Assert.AreEqual( 3, diagnostics.Count, string.Join( "\n", diagnostics ) );
+
+		diagnostics.Clear();
+		Assert.AreEqual( 0, DisplaySettings.FromJson( "{ \"FrameCap\": 45 }", diagnostics ).FrameCap, "only the offered caps are kept" );
+		StringAssert.Contains( diagnostics.Single(), "Frame cap 45" );
+		Assert.AreEqual( 0, DisplaySettings.Default.FrameCap, "the cap is off by default" );
 
 		diagnostics.Clear();
 		Assert.AreEqual( DisplaySettings.Default, DisplaySettings.FromJson( "{ \"Upscale\": \"FSR\" }", diagnostics ), "Unknown method names are not silently mapped to another algorithm." );

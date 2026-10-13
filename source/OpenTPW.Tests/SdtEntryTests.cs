@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 public class SdtEntryTests
 {
 	/// <summary>Writes a bank whose entries use the 40-byte layout proven over the installed corpus.</summary>
-	private static byte[] CreateBank( params (string Name, ushort SampleRate, byte SoundType, uint RawSampleField, byte[] Frames)[] entries )
+	internal static byte[] CreateBank( params (string Name, ushort SampleRate, byte SoundType, uint RawSampleField, byte[] Frames)[] entries )
 	{
 		var output = new MemoryStream();
 		var writer = new BinaryWriter( output );

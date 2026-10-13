@@ -81,6 +81,11 @@ EXPECTED = {
     ('tpw-exe-counts-test', 'csharp-rule'): (29, {'flags': 4, 'state': 0, 'open': 1, 'cells': 2, 'back': 4660, 'length': 3,
                                                    'track': 3, 'controller_ok': False, 'track_word': 1}),
     ('tpw-exe-counts-test', 'csharp-rule-untracked'): AGREE,
+    # X16 (price test 0x4fde50, GUEST-003): the willingness and the statistic agree with the reading; without the money test 56 differ.
+    ('tpw-exe-price-test', 'plan'): AGREE,
+    ('tpw-exe-price-test', 'no-money-test'): (56, {'happiness': 60.0, 'thirst': 80.0, 'hunger': 10.0, 'illness': 0.0, 'money': 0, 'price': 1,
+                                                   'goods': 0, 'win': 0, 'kind': 1, 'base': 20, 'e_thirst': 40, 'e_hunger': 0, 'e_vomit': 0,
+                                                   'e_happy': 10, 'product': 2, 'extra': 0, 'type_word': 0}),
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -759,6 +764,11 @@ class Oracle(CoastTests, unittest.TestCase):
     def test_counts_test_matches_csharp_but_for_tracked_rides(self):
         for side in ('plan', 'csharp-rule', 'csharp-rule-untracked'):
             self.check(('tpw-exe-counts-test', side))
+
+    # ------------------------------------------------------------------ X16: price test
+    def test_price_test_matches_the_reading(self):
+        for side in ('plan', 'no-money-test'):
+            self.check(('tpw-exe-price-test', side))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

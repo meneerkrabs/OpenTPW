@@ -307,6 +307,26 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - Park points now apply the queue part of the original's counts-test (tp.exe `0x4dd920`, ORACLE.md 7.11, X15, ARRIVAL-003): an
   attraction counts only with queue cells from its entrance and a queue shorter than 4 × those cells, so a ride without a queue, or with
   a full one, adds no points and draws no arrivals. Only the coaster controller test and the kart/water word remain open.
+- ECON-052 is retired: the recent-visitors golden ticket now follows tp.exe `0x4c94d0` / `0x4d4bc0`. It takes the lifetime visitor
+  counter minus its snapshot at the month close RecentVisitorMonths back, so the open month counts and one more close is needed.
+  It also needs the park clock to be more than that many exact 30-day months old; both comparisons are strict.
+- QUEUE-002 is retired: the queue's predecessor search (tp.exe `0x4de670`) tries the neighbours −Y, +Y, +X, −X (links 16, 1, 64, 4),
+  and `RideVisitorBridge.NextQueueCell` now uses that order instead of the grid's direction order.
+- ARRIVAL-001 is narrowed: the original's arrival update (tp.exe `0x4cf3e0`) runs once per world turn (`0x516380`) and drops one guest per
+  turn while the bus stands at its stop. OpenTPW's guests therefore step off one per park turn from the turn after a group starts,
+  instead of every 0.4 s. Only the bus's drive to the stop (its animation) is missing. Three behaviour pins moved: the fixed-run hash,
+  the cross-grid run (62 → 60 admissions) and the Jungle run (23 → 22).
+- QUEUE-006 is narrowed: queue places follow tp.exe `0x4de840`. The lateral byte is no longer mirrored for queues whose front lies
+  towards +Y or −X, and the fourth place in a cell takes the axis of the cell behind it (`depth − 128` for links towards +X). Only the back
+  cell's fourth place still depends on OpenTPW's join cell.
+- Guests now test prices as the original does (tp.exe `0x4fde50`, ORACLE.md 7.12, X16, GUEST-003). They no longer skip an attraction
+  they cannot afford when choosing. When called forward at a shop or sideshow, a guest compares the price with a willingness to pay
+  (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
+  prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
+  now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- ECON-015 is retired: tp.exe's researcher update `0x502960` skips display states 3, 4 and 5 of `0x5064f0`, which maps the internal
+  staff state to the STAFFSTATES names (Idle, Patrolling, Working, Resting, On strike, Picked up); C#'s StaffState is that index, and its
+  exclusion of Resting, OnStrike and PickedUp is the original's. GUEST-007 is narrowed with the prank rule of the state-6 handler.
 - The Escape pause menu now stops the park simulation, as the original's does: on the Mac, Escape in the park (`0x157968`, key 27)
   calls `0x198514(0)`, which builds the pause menu `0x197d90` and then calls the game pause `0x110518` (`0x198580`) while the
   game-state pause gate `+0x3c` is set; the menu's close routine `0x1985c0` re-arms the gate and calls the resume `0x110598`. The

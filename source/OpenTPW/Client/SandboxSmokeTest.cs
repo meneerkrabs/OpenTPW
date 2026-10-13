@@ -61,7 +61,13 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			.OrderBy( cell => guests.Grid.Distance( cell.X, cell.Y, ex, ey ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ).ToArray();
 		Require( cells.Length > 0, "find path cells near the Totem entrance" );
 		for ( var index = 0; index < 10; index++ )
-			guests.SpawnInPark( cells[index % cells.Length].X, cells[index % cells.Length].Y );
+		{
+			var guest = guests.SpawnInPark( cells[index % cells.Length].X, cells[index % cells.Length].Y );
+			// Target this fixture ride, as PlaceObjects does for the imported rides. The native probe verifies
+			// navigation, queue admission and the real script boarding handshake; attraction-choice has its own tests.
+			guest.AttractionId = ride.Visitors.AttractionId;
+			guest.State = GuestState.GoingToRide;
+		}
 	}
 
 	private const int MaximumSeconds = 180;

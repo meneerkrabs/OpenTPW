@@ -14,7 +14,7 @@ public class Md2BoundaryTests
 	private static int ReadOffset( byte[] data, int offset ) => (int)BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( offset ) );
 	private static ModelFile Read( byte[] data ) => new( new MemoryStream( data ) );
 
-	private static byte[] SharedPositionMeshes( ushort meshCount )
+	internal static byte[] SharedPositionMeshes( ushort meshCount )
 	{
 		var original = Md2ModelFileTests.CreateGeometry();
 		var originalMesh = original.AsSpan( ReadOffset( original, 0x70 ), ModelFile.MeshRecordBytes ).ToArray();
@@ -68,6 +68,7 @@ public class Md2BoundaryTests
 		var before = GC.GetAllocatedBytesForCurrentThread();
 		Assert.ThrowsException<InvalidDataException>( () => Read( data ) );
 		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Console.WriteLine( $"Aliased mesh rejection allocated {allocated} bytes." );
 		Assert.IsTrue( allocated < 8 * 1024 * 1024, $"header-total mismatch allocated repeated positions: {allocated} bytes" );
 	}
 	[TestMethod]

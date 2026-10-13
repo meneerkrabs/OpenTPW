@@ -68,6 +68,9 @@ still refuses deficient totals. `Md2BoundaryTests` also covers all truncated
 geometry prefixes, maximum declared counts and a valid maximum per-mesh vertex
 count. This audit uses synthetic fixtures; fresh retail compatibility is deferred.
 
+The [independent allocation review](MD2-ALLOCATION-REVIEW.md) records the red/green
+measurement and valid shared-span/indexed-geometry and aggregate boundary checks.
+
 Mesh data (all arrays must lie inside the header region for their kind):
 - Positions: blocks of four, X×4/Y×4/Z×4 floats; padding dropped.
 - Corners: `u16` position index each; UVs are U×4/V×4 blocks, one per corner.

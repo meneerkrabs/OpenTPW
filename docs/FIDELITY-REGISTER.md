@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **386 unresolved unique APPROX IDs**, 457 APPROX occurrences, 153 EXT occurrences, 170 DATA occurrences and 500 BIN occurrences.
+Current inventory: **386 unresolved unique APPROX IDs**, 457 APPROX occurrences, 154 EXT occurrences, 170 DATA occurrences and 500 BIN occurrences.
 
 Of these, 362 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -1036,11 +1036,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:276` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:285` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
-| debug-forecast | `source/OpenTPW/Client/Game.cs:319` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
+| debug-forecast | `source/OpenTPW/Client/Game.cs:328` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
 | debug-forecast | `source/OpenTPW/World/ParkWeather.cs:128` | Smoke-only (&lt;c&gt;[EXT:debug-forecast]&lt;/c&gt;): posts a forecast of &lt;paramref name="quality"/&gt; the warning |
-| debug-weather | `source/OpenTPW/Client/Game.cs:300` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
+| debug-weather | `source/OpenTPW/Client/Game.cs:309` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:62` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:44` | [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:471` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
@@ -1051,6 +1051,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | frame-cap | `source/OpenTPW/Client/FrameLimiter.cs:4` | The frame cap of &lt;see cref="DisplaySettings.FrameCap"/&gt; ([EXT:frame-cap], docs/BROWSER-PERFORMANCE.md): decides whether a frame is |
 | frame-cap | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:503` | [EXT:frame-cap] draws at most this many frames a second (FrameLimiter); the simulation clock is not capped |
+| fsh-export | `source/OpenTPW/Client/FshPngExport.cs:6` | [EXT:fsh-export] application-owned conversion of current decoded pixels, not original rendering parity |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:526` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | language-settings | `source/OpenTPW/Client/LanguageSettings.cs:10` | [EXT:language-settings] where the choice is stored is an OpenTPW matter; the original read its language from the install |
@@ -1089,7 +1090,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | sandbox | `source/OpenTPW/Client/GameFlow.cs:320` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:132` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
-| texture-pack | `source/OpenTPW/Client/Game.cs:256` | [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options. |
+| texture-pack | `source/OpenTPW/Client/Game.cs:265` | [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options. |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:423` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:765` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default); |
@@ -1114,10 +1115,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:57` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:101` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
 | tpi-viewer | `source/OpenTPW.Web/Program.cs:79` | [EXT:tpi-viewer] the browser front end needs Theme Park World data; Theme Park Inc data is refused here too, |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:81` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:119` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:271` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:639` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:90` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:128` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:280` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:648` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:297` | [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world, |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:106` | [EXT:tpi-viewer] Theme Park Inc runs an experimental slice (docs/THEME-PARK-INC.md), not the supported game |

@@ -168,6 +168,39 @@ five fixtures pinned by file and decoded-RGBA SHA-256 (hashes only):
 The `alphkid` and `Mutant_Eye` RGBA hashes were also
 produced by a separate throwaway Python decoder written for this check.
 
+## Exporting one decoded image
+
+The CPU-only command exports an explicitly selected image from a local FSH file:
+
+```sh
+dotnet run --project source/OpenTPW/OpenTPW.csproj -c Release -- --export-fsh-png texture.fsh 0 selected.png
+```
+
+The image index is zero-based directory order (`--inspect-fsh` lists that order).
+An index is always required: multi-image files do not silently select image zero.
+This route runs before game-folder, window and profile setup, and needs no game
+installation or graphics device. It uses `FshFile`'s existing bounded decoder and
+`PngImage` to preserve the selected image's current RGBA pixels and dimensions;
+the raw/RefPack and palette rules, including COMPAT-014/015, are unchanged.
+The existing reader still validates and decodes the complete bounded FSH file;
+the selected index controls which image is written, not which records are parsed.
+
+The input is read-only. The output must be a new `.png` file; existing files are
+never overwritten. Decode, index validation and encoding finish before output
+directories or temporary files are created. A complete sibling temporary file
+is flushed and moved without overwrite, so a file appearing at the destination
+also refuses replacement. Failure cleanup deletes only that owned temporary
+path. Directory creation can remain after a later I/O refusal. This is ordinary
+local I/O integrity, not a power-loss, disk-full or concurrent-permission-change
+guarantee. Local-file export only: no archive extraction, batch conversion,
+upscaler, texture-pack enumeration or renderer behavior is added.
+
+Synthetic tests run the actual CLI and decoder-to-PNG-to-STB path, including both
+images, raw/RefPack storage, all three supported palettes, and BGRA alpha values.
+Invalid index, malformed/truncated or oversized input and existing/blocked output
+controls preserve source/output/foreign files. These prove current decoded pixels,
+not original-game alpha, filtering, appearance, or large-image performance.
+
 ## Not verified
 
 - How TPI uses or draws these textures: filtering, mipmaps, blending, alpha test,

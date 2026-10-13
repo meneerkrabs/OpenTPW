@@ -157,8 +157,8 @@ certifies every variant or original-runtime parity.
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists parse; signed conversion, talking toggles, loaded-LIP start state and random mouth selection are traced to the Mac binary. The advisor speaks by itself for the traced game events (park start, Instant Action, bankruptcy; open/close queue but score below the minimum) with the original mouth choice; its clock is the frame clock and does not pause (ADVISOR-017), and animation/pose remain open ([lip sync](https://opentpw.io/docs/LIPS.html), [binary trace](https://opentpw.io/docs/reverse/APPROX-TRACE.html)). |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](https://opentpw.io/docs/MTR.html)). |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact (84–95 % identical samples against FFmpeg; the original PC transform and output rounding are traced, its quantiser-matrix builder and FPU precision are still open, and the Mac build holds no TQI decoder (its movies are Sorenson Video), see [movies](https://opentpw.io/docs/TGQ-MOVIES.html)). |
-| Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`) and the experimental level viewer draws them; Theme Park Inc is not playable, and opaque 24-bit palettes are an approximation ([FSH](https://opentpw.io/docs/FSH.html)). |
-| Theme Park Inc level viewer (`[EXT:tpi-viewer]`) | ⚠️ | `--load-original-level arabian\|science\|water` with Theme Park Inc data shows that world (terrain, lake, paths, gate, monorail, bus, guests, sound) with a camera only: no HUD, economy or advisor, and nothing is verified against the original game ([viewer](https://opentpw.io/docs/THEME-PARK-INC.html#theme-park-inc-level-viewer)). |
+| Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`) and the experimental native TPI slice draws them and supports building and visitors; campaign/economy/save support is absent, and opaque 24-bit palettes are an approximation ([FSH](https://opentpw.io/docs/FSH.html)). |
+| Theme Park Inc experimental native slice (`[EXT:tpi-viewer]`) | ⚠️ | `--load-original-level arabian\|science\|water` with Theme Park Inc data starts an experimental native build/guest route with its own HUD, terrain, paths, models and sound. Building is free and guest rules are shared with TPW; economy, staff, campaign, advisor, park saves and sharing remain disabled. Browser starts refuse TPI data. No original TPI gameplay/rendering parity is claimed ([slice](https://opentpw.io/docs/THEME-PARK-INC.html#theme-park-inc-playable-slice)). |
 
 File format notes are also available on the [OpenTPW formats](https://opentpw.gu3.me/formats/)
 website, a work in progress from the original project.
@@ -182,7 +182,7 @@ game files never go into this repository.
    service ([online](https://opentpw.io/docs/ONLINE.html), [what the original had](https://opentpw.io/docs/reverse/ONLINE-FEATURES.html)).
 3. **Theme Park Inc / Sim Coaster**: a separate, later goal. Both games share most file formats and
    closely related ride-script formats ([comparison](https://opentpw.io/docs/THEME-PARK-INC.html)), but Theme Park Inc
-   is not playable yet; an experimental level viewer shows its worlds.
+   has an experimental native build/guest slice; its full campaign, economy and saves remain future work.
 4. **Sandbox modes** (an OpenTPW extension, not original behaviour): free building with Theme Park
    World content, Theme Park Inc content, or both. Planned; today's `--sandbox` uses Theme Park
    World content only.

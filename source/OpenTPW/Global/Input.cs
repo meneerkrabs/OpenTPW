@@ -49,7 +49,7 @@ public static partial class Input
 	}
 
 	/// <summary>Keys queued by <see cref="InjectKeyDown"/> for the next button rebuild; drained when applied.</summary>
-	private static readonly List<Key> injectedKeys = new();
+	private static readonly List<InjectedKeyScope> injectedKeys = new();
 
 	/// <summary>
 	/// Queues a physical key press for the next frame only (the native smoke tests' keyboard steps): the key
@@ -60,20 +60,18 @@ public static partial class Input
 	/// </summary>
 	internal static IDisposable InjectKeyDown( params Key[] keys )
 	{
-		injectedKeys.AddRange( keys );
-		return new InjectedKeyScope( keys );
+		var scope = new InjectedKeyScope( keys.ToArray() );
+		injectedKeys.Add( scope );
+		return scope;
 	}
 
 	private sealed class InjectedKeyScope( Key[] keys ) : IDisposable
 	{
-		private bool disposed;
+		internal Key[] Keys { get; } = keys;
 		public void Dispose()
 		{
-			if ( disposed )
-				return;
-			disposed = true;
-			foreach ( var key in keys )
-				injectedKeys.Remove( key );
+			// A consumed scope is absent already; never cancel a newer scope for the same key.
+			injectedKeys.Remove( this );
 		}
 	}
 
@@ -170,7 +168,7 @@ public static partial class Input
 	/// </summary>
 	internal static void UpdateButtons()
 	{
-		var injected = injectedKeys.ToArray();
+		var injected = injectedKeys.SelectMany( scope => scope.Keys ).ToArray();
 		injectedKeys.Clear();
 		bool IsDown( Key k ) => Keyboard.KeysDown.Contains( k ) || injected.Contains( k );
 

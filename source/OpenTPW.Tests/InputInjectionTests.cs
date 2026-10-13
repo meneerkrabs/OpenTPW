@@ -111,4 +111,78 @@ public class InputInjectionTests
 		Input.UpdateButtons();
 		Assert.IsTrue( Input.Pressed( InputButton.BuyAttractions ), "a second tap a frame later presses again (toggle keys rely on the edge)" );
 	}
+
+	[TestMethod]
+	public void DisposingAConsumedScopeCannotCancelANewerScopeForTheSameKey()
+	{
+		Input.Keyboard = new Input.KeyboardInfo();
+		Input.UpdateButtons();
+		var consumed = Input.InjectKeyDown( Key.V );
+		Input.UpdateButtons();
+		Input.UpdateButtons();
+		using var pending = Input.InjectKeyDown( Key.V );
+		consumed.Dispose();
+		Input.UpdateButtons();
+		Assert.IsTrue( Input.Pressed( InputButton.AllVisitors ), "disposing an old scope must not cancel a newer tap" );
+	}
+
+	[TestMethod]
+	public void OverlappingScopesCancelOnlyTheirOwnKeys()
+	{
+		Input.Keyboard = new Input.KeyboardInfo();
+		Input.UpdateButtons();
+		using var visitors = Input.InjectKeyDown( Key.V );
+		var both = Input.InjectKeyDown( Key.V, Key.B );
+		both.Dispose();
+		both.Dispose();
+		Input.UpdateButtons();
+		Assert.IsTrue( Input.Pressed( InputButton.AllVisitors ) );
+		Assert.IsFalse( Input.Down( InputButton.BuyAttractions ) );
+	}
+
+	[TestMethod]
+	public void SyntheticTapCannotReleaseOrRepeatAPhysicallyHeldKey()
+	{
+		Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.V } );
+		Input.UpdateButtons();
+		using var tap = Input.InjectKeyDown( Key.V );
+		Input.UpdateButtons();
+		Assert.IsTrue( Input.Down( InputButton.AllVisitors ) );
+		Assert.IsFalse( Input.Pressed( InputButton.AllVisitors ) );
+		Input.UpdateButtons();
+		Assert.IsTrue( Input.Down( InputButton.AllVisitors ) );
+		Assert.IsFalse( Input.Released( InputButton.AllVisitors ) );
+		Input.Keyboard = new Input.KeyboardInfo();
+		Input.UpdateButtons();
+		Assert.IsTrue( Input.Released( InputButton.AllVisitors ) );
+	}
+
+	[TestMethod]
+	public void PhysicalModifiersCombineWithInjectedKeysWithoutBeingInjectedAsText()
+	{
+		Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.ControlLeft } );
+		Input.UpdateButtons();
+		using var tap = Input.InjectKeyDown( Key.V );
+		var typed = Input.Typed;
+		var keyPresses = Input.KeyPresses;
+		Input.UpdateButtons();
+		Assert.IsTrue( Input.Pressed( InputButton.VisitorLocator ) );
+		Assert.AreEqual( typed, Input.Typed );
+		Assert.AreSame( keyPresses, Input.KeyPresses );
+		Input.UpdateButtons();
+		Assert.IsTrue( Input.Released( InputButton.VisitorLocator ) );
+		Assert.IsTrue( Input.Keyboard.KeysDown.Contains( Key.ControlLeft ) );
+	}
+
+	[TestMethod]
+	public void TextEntryConsumesTheTapWithoutReplayingItAfterFocusLeaves()
+	{
+		Input.Keyboard = new Input.KeyboardInfo();
+		Input.TextEntryActive = true;
+		using var tap = Input.InjectKeyDown( Key.V );
+		Input.UpdateButtons();
+		Input.TextEntryActive = false;
+		Input.UpdateButtons();
+		Assert.IsFalse( Input.Down( InputButton.AllVisitors ) );
+	}
 }

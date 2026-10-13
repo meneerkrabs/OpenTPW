@@ -43,8 +43,25 @@ public sealed partial class ParkHud
 	/// <summary>Live rows of the selected category in list order (by name).</summary>
 	public IReadOnlyList<AttractionListRow> AttractionItems =>
 		ParkAttractionRoster.Rows( level.Objects.Objects.Where( IsListedAttraction ).Select( AttractionRow ), attractionCategory, attractionSortDescending );
-	private AttractionListRow SelectedAttractionRow => AttractionItems.FirstOrDefault( row => row.AttractionId == selectedAttractionId );
-	private int AttractionMaxFirstRow => ParkAttractionRoster.MaxFirstRow( AttractionItems.Count, StaffVisibleRows );
+
+	/// <summary>
+	/// The window's rows for one frame: the screen refreshes them when it updates and every action that
+	/// changes the category or order refreshes them again, so the labels, list and scrollbar share one
+	/// snapshot instead of re-projecting the park's objects for every draw call.
+	/// <see cref="AttractionItems"/> stays live for callers outside the frame.
+	/// </summary>
+	private IReadOnlyList<AttractionListRow> attractionRows = Array.Empty<AttractionListRow>();
+	private IReadOnlyList<AttractionListRow> RefreshAttractionRows() => attractionRows = AttractionItems;
+	private AttractionListRow SelectedAttractionRow => attractionRows.FirstOrDefault( row => row.AttractionId == selectedAttractionId );
+	private int AttractionMaxFirstRow => ParkAttractionRoster.MaxFirstRow( attractionRows.Count, StaffVisibleRows );
+	private int AttractionRowIndex( int id )
+	{
+		var rows = attractionRows;
+		for ( var index = 0; index < rows.Count; index++ )
+			if ( rows[index].AttractionId == id )
+				return index;
+		return -1;
+	}
 
 	private static bool IsListedAttraction( OriginalObject item ) => !item.IsDeleted && item.Runtime.IsAttraction;
 
@@ -62,6 +79,7 @@ public sealed partial class ParkHud
 		attractionSortWasChosen = false;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
+		RefreshAttractionRows();
 		EnsureAttractionSelection();
 		attractionScreen ??= CreateAttractionsScreen();
 		Stack.Push( attractionScreen );
@@ -81,7 +99,7 @@ public sealed partial class ParkHud
 	/// <summary>Selects the list row <paramref name="index"/> (clamped) and scrolls it into view.</summary>
 	public void SelectAttraction( int index )
 	{
-		var items = AttractionItems;
+		var items = attractionRows;
 		if ( items.Count == 0 )
 		{
 			selectedAttractionId = 0;
@@ -100,7 +118,8 @@ public sealed partial class ParkHud
 	{
 		attractionSortDescending = attractionSortWasChosen && !attractionSortDescending;
 		attractionSortWasChosen = true;
-		var index = AttractionItems.ToList().FindIndex( row => row.AttractionId == selectedAttractionId );
+		RefreshAttractionRows();
+		var index = AttractionRowIndex( selectedAttractionId );
 		EnsureAttractionSelection();
 		if ( index >= 0 )
 			SelectAttraction( index );
@@ -129,6 +148,7 @@ public sealed partial class ParkHud
 			if ( !level.IsReadOnlyVisit && !match.IsDeleted )
 				level.Objects.Remove( match ); // Removal sells and unlinks exactly once.
 			selectedAttractionId = 0;
+			RefreshAttractionRows();
 			EnsureAttractionSelection();
 		}
 		if ( GameOptions.Current.Confirmations )
@@ -150,7 +170,7 @@ public sealed partial class ParkHud
 	/// <summary>Re-derives the selection from the live park: a removed attraction hands it to the first row.</summary>
 	private void EnsureAttractionSelection()
 	{
-		selectedAttractionId = ParkAttractionRoster.HealedSelection( AttractionItems, selectedAttractionId );
+		selectedAttractionId = ParkAttractionRoster.HealedSelection( attractionRows, selectedAttractionId );
 		SetAttractionFirstRow( attractionFirstRow );
 		if ( deleteAttractionButton != null )
 			deleteAttractionButton.Enabled = !level.IsReadOnlyVisit && selectedAttractionId != 0;
@@ -233,6 +253,7 @@ public sealed partial class ParkHud
 		attractionCategory = category;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
+		RefreshAttractionRows();
 		EnsureAttractionSelection();
 	}
 
@@ -243,6 +264,7 @@ public sealed partial class ParkHud
 		public AttractionsScreen( ParkHud owner ) : base( "attractions" ) => this.owner = owner;
 		public override bool Update( UiContext context, UiInput input )
 		{
+			owner.RefreshAttractionRows();
 			owner.EnsureAttractionSelection();
 			if ( Find( "gotoAttraction" ) is UiButton gotoButton )
 				gotoButton.Enabled = owner.selectedAttractionId != 0;
@@ -261,7 +283,7 @@ public sealed partial class ParkHud
 		private readonly ParkHud owner;
 		public AttractionList( ParkHud owner ) => this.owner = owner;
 		public override bool Focusable => Visible && Enabled;
-		public int Selected => owner.AttractionItems.ToList().FindIndex( row => row.AttractionId == owner.selectedAttractionId );
+		public int Selected => owner.AttractionRowIndex( owner.selectedAttractionId );
 		public bool ArrowsSelect => true;
 		public void Select( int index ) => owner.SelectAttraction( index );
 		public void Scroll( int rows ) => owner.ScrollAttractions( rows );
@@ -274,12 +296,12 @@ public sealed partial class ParkHud
 				return -1;
 			var visible = (int)MathF.Floor( (point.Y - content.Y) / (StaffRowHeight * canvas.Scale) );
 			var index = owner.attractionFirstRow + visible;
-			return visible < 0 || visible >= StaffVisibleRows || index >= owner.AttractionItems.Count ? -1 : index;
+			return visible < 0 || visible >= StaffVisibleRows || index >= owner.attractionRows.Count ? -1 : index;
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var canvas = context.Canvas;
-			var items = owner.AttractionItems;
+			var items = owner.attractionRows;
 			for ( var visible = 0; visible < StaffVisibleRows && owner.attractionFirstRow + visible < items.Count; visible++ )
 			{
 				var index = owner.attractionFirstRow + visible;

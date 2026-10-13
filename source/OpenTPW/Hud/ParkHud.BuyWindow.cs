@@ -227,8 +227,9 @@ public sealed partial class ParkHud
 		// [APPROX:UI-909] a text button above b_allstaff opens the All Attractions window (its rides tab,
 		// UITEXT 78 'All Rides'); the shipped b_allthinginfo button art cannot be used — its model's
 		// texture 'b_allthginfo' is absent from ui.wad. The original entry point is not decoded.
+		// The rectangle ends above b_allstaff's top edge so no click band of the two buttons overlaps.
 		screen.Add( new UiButton { Id = "allAttractions", Text = () => strings[UIStrings.AllRides], Font = fonts => fonts.Label,
-			Clicked = OpenAttractionsWindow, Bounds = Rect( 1866, 458, 1968, 594 ), Anchor = UiAnchor.Center } );
+			Clicked = OpenAttractionsWindow, Bounds = Rect( 1866, 458, 1968, 577 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
 		return screen;
 	}

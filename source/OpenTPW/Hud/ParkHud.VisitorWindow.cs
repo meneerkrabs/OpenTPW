@@ -32,8 +32,25 @@ public sealed partial class ParkHud
 	/// <summary>Live in-park visitors in list order (by visitor number).</summary>
 	public IReadOnlyList<Guest> VisitorItems => ParkVisitorRoster.Rows(
 		level.Guests?.Guests ?? Array.Empty<Guest>(), guest => level.Guests?.IsInPark( guest ) ?? false, false, visitorSortDescending );
-	private Guest? SelectedVisitor => VisitorItems.FirstOrDefault( guest => guest.Id == selectedVisitorId );
-	private int VisitorMaxFirstRow => ParkAttractionRoster.MaxFirstRow( VisitorItems.Count, StaffVisibleRows );
+
+	/// <summary>
+	/// The window's rows for one frame: the screen refreshes them when it updates and every action that
+	/// changes the order refreshes them again, so the labels, list, scrollbar and locators share one
+	/// snapshot instead of re-filtering and re-sorting the roster for every draw call (a full park holds
+	/// hundreds of visitors). <see cref="VisitorItems"/> stays live for callers outside the frame.
+	/// </summary>
+	private IReadOnlyList<Guest> visitorRows = Array.Empty<Guest>();
+	private IReadOnlyList<Guest> RefreshVisitorRows() => visitorRows = VisitorItems;
+	private Guest? SelectedVisitor => visitorRows.FirstOrDefault( guest => guest.Id == selectedVisitorId );
+	private int VisitorMaxFirstRow => ParkAttractionRoster.MaxFirstRow( visitorRows.Count, StaffVisibleRows );
+	private int VisitorRowIndex( int id )
+	{
+		var rows = visitorRows;
+		for ( var index = 0; index < rows.Count; index++ )
+			if ( rows[index].Id == id )
+				return index;
+		return -1;
+	}
 
 	public void OpenVisitorWindow()
 	{
@@ -43,6 +60,7 @@ public sealed partial class ParkHud
 		visitorSortWasChosen = false;
 		visitorFirstRow = 0;
 		selectedVisitorId = 0;
+		RefreshVisitorRows();
 		EnsureVisitorSelection();
 		visitorScreen ??= CreateVisitorScreen();
 		Stack.Push( visitorScreen );
@@ -62,7 +80,7 @@ public sealed partial class ParkHud
 	/// <summary>Selects the list row <paramref name="index"/> (clamped) and scrolls it into view.</summary>
 	public void SelectVisitor( int index )
 	{
-		var items = VisitorItems;
+		var items = visitorRows;
 		if ( items.Count == 0 )
 		{
 			selectedVisitorId = 0;
@@ -81,7 +99,8 @@ public sealed partial class ParkHud
 	{
 		visitorSortDescending = visitorSortWasChosen && !visitorSortDescending;
 		visitorSortWasChosen = true;
-		var index = VisitorItems.ToList().FindIndex( guest => guest.Id == selectedVisitorId );
+		RefreshVisitorRows();
+		var index = VisitorRowIndex( selectedVisitorId );
 		EnsureVisitorSelection();
 		if ( index >= 0 )
 			SelectVisitor( index );
@@ -90,6 +109,9 @@ public sealed partial class ParkHud
 	/// <summary>Row activation (Enter or a second click): focuses the visitor's simulated position and leaves the list, like the locator buttons.</summary>
 	// [APPROX:UI-910] activation locates the visitor and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler
 	public bool LocateSelectedVisitor() => LocateVisitor( SelectedVisitor );
+
+	/// <summary>Whether locating can run at all: the park camera over an original park's terrain.</summary>
+	public bool CanLocateVisitors => Camera.Mode is ParkCameraMode && level.OriginalPark != null;
 
 	/// <summary>Focuses a specific visitor's simulated position on the terrain (the locator flow of the staff window's visitor button).</summary>
 	// [APPROX:UI-091] the locator focuses a live simulated position; the original locate flow remains unqualified
@@ -108,7 +130,7 @@ public sealed partial class ParkHud
 	/// <summary>Re-derives the selection from the live simulation: a visitor who left hands it to the first row.</summary>
 	private void EnsureVisitorSelection()
 	{
-		selectedVisitorId = ParkVisitorRoster.HealedSelection( VisitorItems, selectedVisitorId );
+		selectedVisitorId = ParkVisitorRoster.HealedSelection( visitorRows, selectedVisitorId );
 		SetVisitorFirstRow( visitorFirstRow );
 	}
 
@@ -186,9 +208,10 @@ public sealed partial class ParkHud
 		public VisitorScreen( ParkHud owner ) : base( "visitors" ) => this.owner = owner;
 		public override bool Update( UiContext context, UiInput input )
 		{
+			owner.RefreshVisitorRows();
 			owner.EnsureVisitorSelection();
 			if ( Find( "locateVisitor" ) is UiButton locate )
-				locate.Enabled = owner.SelectedVisitorId != 0 && Camera.Mode is ParkCameraMode;
+				locate.Enabled = owner.SelectedVisitorId != 0 && owner.CanLocateVisitors;
 			if ( input.Wheel != 0 )
 			{
 				owner.ScrollVisitors( input.Wheel > 0 ? -1 : 1 );
@@ -204,7 +227,7 @@ public sealed partial class ParkHud
 		private readonly ParkHud owner;
 		public VisitorList( ParkHud owner ) => this.owner = owner;
 		public override bool Focusable => Visible && Enabled;
-		public int Selected => owner.VisitorItems.ToList().FindIndex( guest => guest.Id == owner.selectedVisitorId );
+		public int Selected => owner.VisitorRowIndex( owner.selectedVisitorId );
 		public bool ArrowsSelect => true;
 		public void Select( int index ) => owner.SelectVisitor( index );
 		public void Scroll( int rows ) => owner.ScrollVisitors( rows );
@@ -217,12 +240,12 @@ public sealed partial class ParkHud
 				return -1;
 			var visible = (int)MathF.Floor( (point.Y - content.Y) / (StaffRowHeight * canvas.Scale) );
 			var index = owner.visitorFirstRow + visible;
-			return visible < 0 || visible >= StaffVisibleRows || index >= owner.VisitorItems.Count ? -1 : index;
+			return visible < 0 || visible >= StaffVisibleRows || index >= owner.visitorRows.Count ? -1 : index;
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var canvas = context.Canvas;
-			var items = owner.VisitorItems;
+			var items = owner.visitorRows;
 			for ( var visible = 0; visible < StaffVisibleRows && owner.visitorFirstRow + visible < items.Count; visible++ )
 			{
 				var index = owner.visitorFirstRow + visible;

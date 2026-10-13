@@ -85,8 +85,9 @@ volume, loop flags or SDT member IDs. TPI particle parity is not established.
 
 `GameAudio.RseEventCategory` and `FindRseEvent` intentionally return null for
 1/2, even when an audio catalog contains a numerically matching ID. The generic
-object-effects hook still records these requests as unimplemented. No particle
-renderer, fake sound, audio approximation ID or effect ownership is introduced.
+object-effects hook still records these requests as unimplemented. It now exposes
+only the bounded owner-local latest preparation described in [PARTICLE-KEYS.md](PARTICLE-KEYS.md#latest-owner-local-event-preparation).
+No particle renderer, fake sound, audio approximation ID or native pool ownership is introduced.
 A future particle slice must bind resolved keys to the owning object's animated
 model/placement and provide removal/park-teardown cleanup; a sound voice handle
 cannot represent this particle pool handle.

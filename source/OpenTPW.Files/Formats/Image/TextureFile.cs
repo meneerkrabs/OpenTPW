@@ -216,7 +216,7 @@ public partial class TextureFile : BaseFormat
 		 * We can therefore deduce that the custom ZLIB header is as follows:
 		 * - 4 bytes: "BILZ" magic number
 		 * - 4 bytes: decompressed size
-		 * - 4 bytes: stream size
+		 * - 4 bytes: stream size (the whole chunk, these 28 header bytes included; every retail BILZ chunk agrees)
 		 * - 4 bytes: Constant - MAX_WBITS (15) - from zlib
 		 * - 4 bytes: Constant - DEF_MEM_LEVEL (9) - from zlib
 		 * - 4 bytes: Unused
@@ -226,12 +226,12 @@ public partial class TextureFile : BaseFormat
 		if ( data.Length < 0x1C ) throw new InvalidDataException( "Truncated BILZ header." );
 		var declaredOutput = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 4, 4 ) );
 		var declaredInput = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 8, 4 ) );
-		if ( declaredOutput < 0 || declaredInput <= 0 || declaredInput > data.Length - 0x1C )
+		if ( declaredOutput < 0 || declaredInput <= 0x1C || declaredInput > data.Length )
 			throw new InvalidDataException( "Invalid BILZ chunk lengths." );
 		// Preserve padded streams, but retain only the prefix any coefficient encoding can consume:
 		// each coefficient is one signed byte, or an escape byte followed by an Int16 (three bytes).
 		using var outputStream = new MemoryStream();
-		using var inputStream = new MemoryStream( data, 0x1C, declaredInput, false );
+		using var inputStream = new MemoryStream( data, 0x1C, declaredInput - 0x1C, false );
 		try
 		{
 			using var compressed = new InflaterInputStream( inputStream );

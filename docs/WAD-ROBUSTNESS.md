@@ -29,6 +29,12 @@ cached byte array keeps its existing lifetime after archive disposal; an uncache
 member or direct backing read refuses a disposed archive. Existing lazy cache
 reuse and directory performance protections remain intact.
 
+Independent `WadArchiveBoundaryReviewTests` also covers a source stream starting
+after a prefix, valid aliased filename/member spans with separate member caches,
+one-byte empty names and zero-length EOF members. Synthetic changes to ignored
+version/file-list/decompressed-size fields, non-RefPack compression codes and the
+filename's final byte preserve the reader's existing interpretation.
+
 `WadArchiveBoundaryTests` uses tiny synthetic archives to reproduce the prior
 short-read failure, hidden premature EOF, wrapped stream length, negative/huge
 counts and unsafe unsigned ranges before the fix. Valid controls cover memory

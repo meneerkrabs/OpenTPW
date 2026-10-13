@@ -150,7 +150,8 @@ Traced in the binary but not triggered yet:
 * The path tool's link-end sound (`cat_ui` 139, `0x100711CC`, queue mode) and its undo: the trigger
   is inferred; no undo sound was found on the Mac (AUDIO-023). The count-classed removal sounds
   `cat_ui` 141–144 and 150–153 (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
-* The weather's visuals (rain drops, snow, the bolt, the forecast's warning) are not drawn (AUDIO-031).
+* The weather's own visuals are drawn now, as unverified procedural approximations (AUDIO-900..904,
+  "Weather visuals" below); the forecast's warning is still not shown (AUDIO-031).
 * The placed records of type 3 (a sound that follows the listener in a rectangle) are counted, not
   played; a sentence-type placed effect plays its first sound once (AUDIO-020).
 * The visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and visitor
@@ -164,6 +165,40 @@ Traced in the binary but not triggered yet:
 * `cat_ui` 0xBD: a control whose flag word (read at `0x1017F618`) has a bit set outside
   bits 24–26 plays 0xBD instead of 0x1F (`0x10138030`); no OpenTPW control maps those bits
   (AUDIO-004).
+
+## Weather visuals
+
+The simulation side of the weather (`ParkWeather`) drives the visuals the same way it drives the
+sound: the drawn drop count is the simulated `CurrentDrops` (the ramp toward the quality's target),
+snow shows when the snow band holds, and every lightning strike reports its bolt top
+(`TakeBoltTops`, at the strike itself — the thunder still follows later through `TakeThunder`).
+`WeatherVisualState` holds the presentation (drop field, bolt flashes, jittered polyline) with no
+GPU dependency, so the lifetime and motion math is unit-tested directly; `WeatherRenderer` is the
+entity that draws it (`content/shaders/weather.shader`, one untextured particle shader, depth-tested
+without depth writes). Everything about the look is an approximation (AUDIO-900..904): the original's
+weather renderer (FUN_0057d300 family) is not traced, so no original parity is claimed.
+
+Behaviour worth knowing:
+
+* The drop volume wraps around what the camera looks at (the park camera's target, else its
+  position), so panning and zooming keep drops on screen; drops fall out of the bottom and back in
+  at the top. The count follows the simulation with the visual cap of 600 drops.
+* The motion runs on simulation time — the frame delta scaled by the HUD's simulation speed — so a
+  paused park freezes the drops and bolts mid-flight and a faster park drops faster.
+* A bolt is drawn from the strike's top (the same sky point the thunder plays at, height 300 in
+  model units) down to the heightfield under it, jittered deterministically per strike, and fades
+  over `WeatherVisualState.BoltFlashSeconds`.
+* The renderer is created with the weather itself (`ParkWeather.Created`), inside the staged-candidate
+  scope when a save is resumed, and deleted with the level's other entities. GPU allocations are
+  made once, sized for the caps: one vertex buffer, no per-frame growth (browser-safe).
+* The forecast's warning stays undrawn (AUDIO-031); the pending-quality state the original's
+  message handler would read is `ParkWeather.Forecast`.
+
+Seeing it: enter any park whose economy runs (an original level; the sandbox has no weather). The
+weather follows the season's roll, so rain needs the roll to land in the rain or snow band — resume
+a save made during rain, or wait for the next change (`Weather.DaysBetweenChanges`, seven days by
+default). The unit tests (`WeatherVisualTests`) cover the state math without a window: counts, the
+wrapping volume, pause freeze, snow sway, bolt lifetime/jitter and the strike reporting.
 
 ## Advisor response table
 
@@ -213,7 +248,12 @@ implemented yet.
 | AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |
 | AUDIO-029 | Thunder with a countdown of 0 plays at the strike | The countdown test beside `0x10103438` |
 | AUDIO-030 | The weather's draws come from the park's weather stream, not the world LCG | The Mac's seed source |
-| AUDIO-031 | Weather is simulated for sound only: no drops, snow, bolt or forecast warning is drawn | The weather renderer and the forecast's handler |
+| AUDIO-031 | The forecast's warning is not shown; the drawn drops, snow and bolt are unverified procedural approximations (AUDIO-900..904) | The weather renderer and the forecast's handler |
+| AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops | The original's drop volume, speed and streak shape (FUN_0057d300) |
+| AUDIO-901 | Snow reuses the rain's drop count but falls slower with a sinusoidal sway | The original's snow motion |
+| AUDIO-902 | The bolt is a jittered polyline from the strike's top (height 300) to the heightfield, shown for a fixed flash time at the strike | The original's bolt shape, segmenting and flash timing |
+| AUDIO-903 | The weather's visuals advance with the frame delta scaled by the simulation speed; a paused park freezes them mid-flight | The original's pause behaviour for the weather renderer |
+| AUDIO-904 | The visual field, its vertex buffer and the pending bolt queue are capped (600 drops, 4 flashes, 64 pending tops); a level with a higher MaxRaindrops draws fewer drops than it simulates | The original's per-level drop budget beyond the shipped 600 |
 | AUDIO-032 | A ride's scream plays flat; the original places it at the ride's box middle | The box-middle mapping onto OpenTPW's ride objects |
 | AUDIO-033 | Distance gain uses the fork's QMixer lead: minimum 2 and exponent 0.8 | Independent original mixer verification; the local PC executable is packed |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The Mac held-voice tick, variation and stop routines |

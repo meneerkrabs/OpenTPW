@@ -162,7 +162,7 @@ The player's game files are not uploaded.
 
 ### Shaders
 
-All nine shaders in `content/shaders` cross-compile to GLSL ES 3.00 through the existing
+All ten shaders in `content/shaders` cross-compile to GLSL ES 3.00 through the existing
 SPIR-V path (`ShaderTests.NativeShadersCrossCompileToWebGl2`), and every generated pair also
 compiles and links in a real WebGL2 context. The native SPIR-V compiler does not run in the
 browser, so the shaders are stored precompiled in `content/shaders/web/<name>.json` (vertex

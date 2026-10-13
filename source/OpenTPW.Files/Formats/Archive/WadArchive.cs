@@ -25,7 +25,7 @@ public sealed class WadArchiveFile : ArchiveFile
 		if ( Compressed )
 		{
 			var refpack = new Refpack( data );
-			data = refpack.Decompress().ToArray();
+			data = refpack.Decompress();
 		}
 
 		// Save off data so we can use it again quickly if we need to
@@ -289,6 +289,7 @@ public sealed class WadArchive : IArchive
 	/// <summary>Seek and read are one step: a texture pack switch reads members on a worker thread while the game thread may read the same archive.</summary>
 	public byte[] GetData( int offset, int length )
 	{
+		using var profile = LoadProfile.Measure( "wad-read" );
 		lock ( readLock )
 		{
 			memoryStream.Seek( offset, SeekOrigin.Begin );

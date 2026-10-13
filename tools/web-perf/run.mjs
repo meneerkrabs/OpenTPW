@@ -7,6 +7,8 @@
 //   jungle  the cold start of Full Simulation Jungle (the construction frame), then a steady window in the park
 //   buy     the first buy-menu open and four first selections (the 12 October table)
 //   memory  memory samples over a longer park session
+//   revisit a second visit in the same profile without the served folder: Play starts from the files kept in the browser
+//           (needs --keep), then Jungle opens from them
 //   digest  deterministic work that must give the same result in every build (texture decoding, a fixed park run), timed
 //
 // The game files stay on this machine: they are read from --game and served to the local page only; nothing is uploaded
@@ -32,7 +34,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off',
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -51,6 +53,7 @@ function parseArguments(argv) {
 			case '--size': [options.width, options.height] = value().split('x').map(Number); break;
 			case '--runs': options.runs = Math.max(1, Number(value()) || 1); break;
 			case '--frame-cap': options.frameCap = Number(value()); break;
+			case '--keep': options.keep = value(); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -71,6 +74,7 @@ function usage() {
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
   --headed                show the browser window
@@ -154,16 +158,17 @@ class Page {
 	 * Runs act(), waits until done(state) and a frame has been drawn after it, then settles; returns the frames from the action on
 	 * (the first-use cost). readyMs is page time from the action to that drawn frame.
 	 */
-	async action(what, act, done, { timeoutMs = 10000, settleMs = 1500 } = {}) {
+	async action(what, act, done, { timeoutMs = 10000, settleMs = 1500, onReady } = {}) {
 		const start = await this.mark();
 		await act();
 		await this.waitFor(what, done, timeoutMs);
 		await this.nextFrame();
 		const readyMs = Math.round(await this.eval('performance.now()') - start.now);
+		const atReady = await onReady?.();
 		await sleep(settleMs);
 		const end = await this.mark();
 		const summary = summarizeFrames(end.frames, end.now - start.now);
-		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, frames: summary.frames, p95Ms: summary.p95Ms };
+		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, frames: summary.frames, p95Ms: summary.p95Ms, ...(atReady ? { atReady } : {}) };
 	}
 }
 
@@ -188,8 +193,16 @@ const scenarios = {
 			throw new Error(`The lobby shows ${state.island}, not the jungle island`);
 		await page.call('PerfClick', 'enterPark');
 		await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+		// The load profile covers the click, the construction and the first seconds after (textures that load lazily).
+		await page.eval('opentpwPerf.program.PerfProfile(true)');
 		const cold = await page.action('the Jungle park', () => page.call('PerfClick', 'fullSimulation'),
-			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000 });
+			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000,
+				onReady: async () => JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()')) });
+		// The profile when the park was ready (the start itself), and after the settle time (with what loaded lazily).
+		cold.startProfile = cold.atReady;
+		delete cold.atReady;
+		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
+		await page.eval('opentpwPerf.program.PerfProfile(false)');
 		const steady = await page.steady(options.window * 1000);
 		return { cold, steady };
 	},
@@ -213,6 +226,48 @@ const scenarios = {
 		}
 		await page.call('PerfKey', 'Back');
 		return result;
+	},
+
+	async revisit(page, options, context) {
+		if (options.keep === 'off')
+			throw new Error('The revisit needs files kept on the first visit: pass --keep lazy or --keep all');
+		// The same profile, without ?data: only the kept files can start the game.
+		const query = new URLSearchParams({ perf: '1', keep: options.keep, perfSeed: context.seed });
+		const begin = Date.now();
+		await page.send('Page.navigate', { url: `${context.origin}/index.html?${query}` });
+		for (;;) {
+			const shown = await page.eval("document.getElementById('kept') ? !document.getElementById('kept').hidden : false").catch(() => false);
+			if (shown)
+				break;
+			if (Date.now() - begin > 60000)
+				throw new Error(`No Play button after 60 s: ${await page.eval("document.getElementById('status')?.textContent").catch(() => '?')}`);
+			await sleep(100);
+		}
+		const keptText = await page.eval("document.getElementById('keptSize').textContent");
+		const playShownMs = Date.now() - begin;
+		const click = Date.now();
+		await page.eval("document.getElementById('play').click()");
+		await page.waitFor('the first frame', state => state.started, 120000);
+		const firstFrameMs = Date.now() - click;
+		await page.waitFor('the lobby', state => state.menu === 'lobby', 60000);
+		const lobbyMs = Date.now() - click;
+		await sleep(2000);
+		await page.call('PerfClick', 'enterPark');
+		await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+		const park = Date.now();
+		await page.call('PerfClick', 'fullSimulation');
+		for (;;) {
+			const state = await page.state().catch(() => null);
+			if (state?.hud && state.level === 'jungle')
+				break;
+			const asked = await page.eval("!document.getElementById('setup').hidden && /choose your Theme Park World folder/i.test(document.getElementById('status').textContent)").catch(() => false);
+			if (asked)
+				throw new Error('Jungle asked for the folder: its files were not kept');
+			if (Date.now() - park > 120000)
+				throw new Error('Jungle did not open from the kept files within 120 s');
+			await sleep(100);
+		}
+		return { kept: keptText, playShownMs, firstFrameMs, lobbyMs, jungleReadyMs: Date.now() - park };
 	},
 
 	async digest(page) {
@@ -266,11 +321,18 @@ function markdown(report) {
 			lines.push(`- ${name} steady: main thread busy ${steady.mainThreadBusyPercent}%, ${steady.fps} fps, frame p95 ${steady.p95Ms} ms, largest gap ${steady.largestGapMs} ms, long tasks ${steady.longTasks}`);
 	if (results.jungle?.cold)
 		lines.push(`- Jungle cold: ready in ${results.jungle.cold.readyMs} ms, largest frame ${results.jungle.cold.maxFrameMs} ms`);
+	const describe = profile => Object.entries(profile).map(([name, entry]) => `${name} ${entry.ms} (${entry.count})`).join(', ');
+	if (results.jungle?.cold?.startProfile)
+		lines.push(`- Jungle load profile until ready (ms, count; nested sections overlap): ${describe(results.jungle.cold.startProfile)}`);
+	if (results.jungle?.cold?.profile)
+		lines.push(`- Jungle load profile including 5 s after: ${describe(results.jungle.cold.profile)}`);
 	if (results.buy && !results.buy.error) {
 		lines.push('', '| First action | Largest frame (ms) | Frames ≥ 50 ms |', '| --- | ---: | ---: |');
 		for (const [name, entry] of Object.entries(results.buy))
 			lines.push(entry.missing ? `| ${name} | not listed | |` : `| ${name === 'openMenu' ? `Open buy menu / ${entry.selected ?? ''}` : name} | ${entry.maxFrameMs} | ${entry.over50Ms} |`);
 	}
+	if (results.revisit && !results.revisit.error)
+		lines.push(`- Revisit from kept files (${results.revisit.kept}): Play shown after ${results.revisit.playShownMs} ms, first frame ${results.revisit.firstFrameMs} ms and lobby ${results.revisit.lobbyMs} ms after the click, Jungle ready in ${results.revisit.jungleReadyMs} ms`);
 	if (results.digest?.simulationHash)
 		lines.push('', `- Digest: ${results.digest.textures} textures in ${results.digest.textureMs} ms (hash ${results.digest.textureHash}); fixed park run in ${results.digest.simulationMs} ms (hash ${results.digest.simulationHash})`);
 	if (results.memory && !results.memory.error)
@@ -308,8 +370,9 @@ async function runSession(options, webRoot, gameRoot) {
 		const seed = options.music ? {} : { '/save/opentpw-options.json': JSON.stringify({ MusicOn: false, SpeechOn: false }) };
 		if (options.frameCap)
 			seed['/config/display.json'] = JSON.stringify({ FrameCap: options.frameCap });
-		const query = new URLSearchParams({ perf: '1', data: '/game/', perfSeed: Buffer.from(JSON.stringify(seed)).toString('base64') });
-		const context = { navigationStart: Date.now() };
+		const encodedSeed = Buffer.from(JSON.stringify(seed)).toString('base64');
+		const query = new URLSearchParams({ perf: '1', data: '/game/', keep: options.keep, perfSeed: encodedSeed });
+		const context = { navigationStart: Date.now(), origin: server.origin, seed: encodedSeed };
 		await page.send('Page.navigate', { url: `${server.origin}/index.html?${query}` });
 		report.renderer = await page.eval(`(() => { const gl = document.createElement('canvas').getContext('webgl2'); const info = gl?.getExtension('WEBGL_debug_renderer_info');
 			return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null; })()`).catch(() => null);

@@ -19,7 +19,7 @@ public sealed class FknlArchiveFile : ArchiveFile
 			return data;
 		if ( data.Length < 2 || data[0] != 0x10 || data[1] != 0xFB )
 			throw new InvalidDataException( $"FKNL member {Name} is smaller than its size ({StoredSize} < {Size}) but has no RefPack header." );
-		var result = new Refpack( data ).Decompress().ToArray();
+		var result = new Refpack( data ).Decompress();
 		if ( result.Length != Size )
 			throw new InvalidDataException( $"FKNL member {Name} decompressed to {result.Length} bytes, expected {Size}." );
 		return result;

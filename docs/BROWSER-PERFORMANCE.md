@@ -22,9 +22,10 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | --- | --- |
 | `start` (always first) | loading until the first frame and the lobby |
 | `lobby` | a steady window (`--window`, 30 s) in the lobby |
-| `jungle` | the cold start of Full Simulation Jungle (the construction frame), then a steady window |
+| `jungle` | the cold start of Full Simulation Jungle (the construction frame) with its load profile, then a steady window |
 | `buy` | the first buy-menu open (Aztec Mayhem selected) and the first Belly Bounce, Balloon Shop, Burger Shop and Drinks Shop selections |
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
+| `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
 `tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by
@@ -126,6 +127,89 @@ In these samples a 30 fps cap took 43 % off the main thread rather than half; th
 second and the page still runs one animation-frame callback per display frame. A cap at the
 display rate drew practically every frame. Input is read once per drawn frame, so a 30 fps cap
 can add about one display frame of input delay; that is why it stays off by default.
+
+## Where the cold park start goes (13 October)
+
+`LoadProfile` (`source/OpenTPW.Common/LoadProfile.cs`) times named sections of the park start when
+the harness turns it on (`PerfProfile`): the start's steps in `GameFlow.StartLevel` and the `Level`
+constructor, and the building blocks texture decoding, texture creation, model parsing and WAD
+reads. Off, a section costs a thread-id read and a comparison. Sections nest, so a parent includes
+its children. The harness reads the profile when the park is ready and again five seconds later; for
+cold Jungle the two are identical, so all of this happens during the start. Two runs of the AOT
+build on the M5 setup (interpreter in brackets, one run):
+
+| Section | AOT, ms | Within it |
+| --- | ---: | --- |
+| Whole start (`start-level`) | 1,010–1,047 (2,338) | |
+| Objects placed | 250–256 (386) | |
+| Original park read | 186 (297) | object catalogue 121 |
+| Guests | 151 (222) | kid sprite sets 107–108 |
+| Park audio started | 131–133 | |
+| Economy | 76 (132) | |
+| Terrain | 75–78 (257) | |
+| Texture decoding, 90 textures | 61–64 (243) | spread over the sections above |
+| Model parsing, 14 models | 62–64 (102) | spread over the sections above |
+| Texture creation, 129 / WAD reads, 295 | 5 / 2–3 | |
+
+In these runs decoding was about 6 % of the AOT start (10 % in the interpreter), so a cache of
+decoded textures could save at most about 60 ms of a Jungle start, less the time to read it back;
+the browser plan's phase 3 therefore waits. The larger shares are the object catalogue, the kid sprite sets, starting the park
+audio and the object placement: those, or spreading the start over frames, are the next targets.
+
+## Three start costs removed (13 October)
+
+Splitting the profile's large sections further showed that two of them were not the work their
+names suggest:
+
+- **Opening archive members.** `Refpack.Decompress` (WAD members) found its command classes by
+  reflecting over the whole assembly on every call and built the output as a list of bytes with an
+  array per byte read: 269 ms for 426 members in the Jungle start. It is now one pass into a growing
+  array; `RefpackTests` compares it with the former decoder (kept as `LegacyRefpack`) on crafted
+  streams, 4,000 random streams and (with the game files) every compressed WAD member of the original
+  game folder, byte for byte.
+  The kid sprite sets (108 → 16 ms) and most of the object catalogue gained from this.
+- **Path lookups.** Every read listed the directories along its path twice (the case correction and
+  the archive search): 113 ms for 461 lookups. The game data's file system now remembers lookups
+  (`BaseFileSystem.CacheLookups`; an answer found before an invalidation is not kept); the browser's `AddFile` forgets them when it copies
+  a theme folder, and writes through the file system forget them too. Saves keep the plain lookups.
+- **Placed ambients.** The land's ambient sounds were decoded in the park's first frame (116 ms).
+  `SoundEventSystem.PlayAtWhenDecoded` draws the sound now and starts the voice when its sample is
+  decoded (cooperatively in the browser, on a worker on the desktop).
+
+AOT builds, three runs each taken alternately on the M5 setup (`compare.mjs`):
+
+| Measure | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Jungle cold, largest frame | 1,143 ms | 520 ms | −55 % |
+| Jungle cold, ready after the click | 1,421 ms | 804 ms | −43 % |
+| Whole start (`start-level`) | 992–1,083 ms | 431–451 ms | about −58 % |
+| Start, first frame | 1,603 ms | 1,131 ms | −29 % |
+| Open buy menu / first shop selections | 64 / 18–38 ms | 42 / 13–23 ms | −29 to −45 % |
+| Digest: texture decoding / fixed park run | 644 / 261 ms | 481 / 135 ms | −25 / −48 % |
+| Wasm memory in the park | 212 MB | 254 MB | +20 % |
+
+The digest's hashes are unchanged in every run. Live managed memory is the same (102 MB) and the
+start allocates less (555 against 736 MB in all), but with far fewer small allocations the garbage
+collector runs less often (16 against 57 gen0 collections), the heap grows further between them,
+and a page's WebAssembly memory never shrinks: its peak is 42 MB higher. The memory phase of the
+plan starts from that.
+
+## Game files kept in the browser (13 October)
+
+With the game files kept in OPFS (docs/WEB.md), interpreter build, M5 setup; the harness's
+`--keep` and its `revisit` scenario (the same profile reopened without the served folder):
+
+| Measure | Value |
+| --- | --- |
+| First visit, first frame, without keeping / keeping what the parks use | 1,974 / about 1,990 ms (medians of three alternating runs; within the noise) |
+| First visit, Jungle ready | 2,880 / 2,931 ms |
+| Revisit, Play button shown after loading the page | 160–170 ms |
+| Revisit, lobby after Play | 1,630–1,700 ms (97 MB kept: the start and Jungle) |
+| Revisit, Jungle ready from the kept files | 2,800–2,870 ms |
+| All at once: first visit, first frame / revisit lobby | 3,406–4,658 ms (307 MB kept before the start) / 1,709–1,752 ms |
+
+Writing first ran during the copy and slowed the first start by about a quarter; it now waits
+until the game has started.
 
 ## Measured workload
 

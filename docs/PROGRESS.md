@@ -797,6 +797,29 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Three start costs removed (October 13):** the RefPack decoder of the WAD archives reflected over
+  the assembly on every call and built its output byte by byte (269 ms of the Jungle start); it is
+  now one pass, byte-identical to the former decoder on every compressed member of the original
+  archives. The game data's path lookups are remembered (`CacheLookups`, forgotten when files are
+  added), and the placed ambient sounds start once their samples are decoded instead of in the
+  first frame. AOT, three alternating runs: the cold Jungle frame fell from 1,143 to 520 ms, the
+  park is ready 804 ms after the click (1,421 before), the first buy menu takes 42 ms (64);
+  digests unchanged. The page's wasm memory peak rose from 212 to 254 MB (live memory unchanged,
+  fewer collections).
+- **Where the park start goes (October 13):** `LoadProfile` times named sections of a park start
+  for the browser harness (off by default). Cold Jungle in the AOT build: about 1,040 ms, of which
+  texture decoding is 63 ms (6 %) and model parsing 64 ms; the object catalogue (121 ms), the kid
+  sprite sets (108 ms), starting the park audio (131 ms) and placing the objects (253 ms) are the
+  large shares. A decoded-texture cache (phase 3 of the browser plan) would save too little and
+  waits; those sections are the next targets.
+- **Game files kept in the browser (October 13):** the browser page can keep the player's own
+  game files in OPFS, so a later visit starts with Play instead of choosing the folder. The setup
+  screen chooses what is kept: what the parks use (default), all at once, or nothing; a manifest
+  rebuilds the file list, a theme not kept yet asks for the folder once more, and Remove kept files
+  deletes them. Writing waits until the game has started, so the first start is not slower
+  (1,974 against about 1,990 ms); a revisit shows Play after about 165 ms and the lobby 1.6-1.7 s
+  after it. `opentpw-originals.js` has Node tests against an in-memory OPFS, and the harness gained
+  `--keep` and a `revisit` scenario. Phase 2 of the browser performance plan.
 - **Frame rate limit (October 13):** the OpenTPW options page has a frame rate limit (off by
   default, 30 or 60 fps) for the desktop and the browser. It caps drawing only (`FrameLimiter`:
   a grid of 1/cap seconds with jitter slack; the browser skips early animation frames, the

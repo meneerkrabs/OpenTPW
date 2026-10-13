@@ -113,6 +113,51 @@ public class CrowdAudioTests
 	}
 
 	[TestMethod]
+	public void APlacedSoundDrawsLikePlayAtAndStartsOnceItsSampleIsDecoded()
+	{
+		var seed = typeof( SoundEventSystem ).GetField( "seed", BindingFlags.NonPublic | BindingFlags.Instance )!;
+		var reference = new SoundEventSystem( mixer, seed: 11 );
+		var decoded = (Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem )
+			.GetField( "decoded", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( system )!;
+		foreach ( var entry in decoded.ToArray() )
+			((Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem ).GetField( "decoded", BindingFlags.NonPublic | BindingFlags.Instance )!
+				.GetValue( reference )!)[entry.Key] = entry.Value;
+		var place = new System.Numerics.Vector3( 1, 2, 3 );
+		var played = reference.PlayAt( kids, GameAudio.CrowdEvent, AudioChannel.Effects, place, 40 );
+		var placed = system.PlayAtWhenDecoded( kids, GameAudio.CrowdEvent, AudioChannel.Effects, place, 40 );
+		Assert.AreEqual( seed.GetValue( reference ), seed.GetValue( system ), "the same draws as PlayAt" );
+		Assert.IsNotNull( played );
+		Assert.IsNotNull( placed?.Voice, "a decoded sample starts at once" );
+
+		// A sample not decoded yet (this bank holds no sample data) starts nothing until a pump finds the decode done, and a
+		// sound stopped before never starts.
+		decoded.Clear();
+		var waiting = system.PlayAtWhenDecoded( kids, GameAudio.CrowdEvent, AudioChannel.Effects, place, 40 )!;
+		var stopped = system.PlayAtWhenDecoded( kids, GameAudio.CrowdEvent, AudioChannel.Effects, place, 40 )!;
+		stopped.Stop();
+		for ( var attempt = 0; attempt < 200 && waiting.Voice == null; attempt++ )
+		{
+			system.Pump();
+			Thread.Sleep( 5 );
+		}
+		Assert.IsNull( waiting.Voice, "an undecodable sample starts no voice" );
+		Assert.IsNull( stopped.Voice );
+
+		// A decode that finishes later starts the voice at the next pump, with the loop flag; a failed one starts nothing.
+		var pending = new System.Threading.Tasks.TaskCompletionSource<Mp2Audio?>();
+		var later = new PlacedSound( mixer, AudioChannel.Effects, 0.5f, place, 40, loops: true, pending.Task );
+		Assert.IsFalse( later.Pump(), "still decoding" );
+		pending.SetResult( new Mp2Audio( AudioMixer.OutputRate, 1, new short[32], 1, 0 ) );
+		Assert.IsTrue( later.Pump() );
+		Assert.IsNotNull( later.Voice );
+		Assert.IsTrue( later.Voice!.Loops );
+		var failed = new PlacedSound( mixer, AudioChannel.Effects, 0.5f, place, 40, loops: false,
+			System.Threading.Tasks.Task.FromException<Mp2Audio?>( new IOException( "bank unreadable" ) ) );
+		Assert.IsTrue( failed.Pump() );
+		Assert.IsNull( failed.Voice );
+	}
+
+	[TestMethod]
 	public void CrowdVariesClipsWithoutAddingVoicesOnEachCountUpdateAndStopsAtZero()
 	{
 		GameAudio.EnterPark( "missing", seed: 11 );

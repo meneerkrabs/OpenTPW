@@ -39,7 +39,13 @@ public partial class Level
 		yield return 0.3f;
 		int count = 0;
 		string? skipped = null;
-		if ( resumeState != null )
+		if (incLayout != null)
+		{
+			incLayoutCells = incLayout.RestoreInto(Objects, ParkResumeAssetManifest.Capture(Objects.Catalog, theme, false),
+				OriginalPark.Map.CellCountX, OriginalPark.Map.CellCountY);
+			count = Objects.Objects.Count;
+		}
+		else if ( resumeState != null )
 			count = ParkLayoutSnapshot.RestoreObjects( resumeState.Layout, Objects ).Count;
 		else if ( visitLayout != null )
 		{

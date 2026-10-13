@@ -157,6 +157,38 @@ mixer, speech and movie code use it unchanged. It queues 16-bit stereo PCM to an
 the clock for the mixer and the advisor's lip sync. Browsers start audio only after a click or
 key press on the page.
 
+### Game files kept in the browser
+
+The page can keep the player's own game files in the browser's origin-private file system
+(OPFS, `opentpw-originals.js`), so a later visit starts with **Play** instead of choosing the
+folder. The files stay on that device; OPFS is never uploaded and no other site can read it. The
+setup screen chooses how much is kept, and remembers the choice:
+
+- **what the parks use** (the default): the files the start copies, and each theme folder and
+  language speech once the game has read it;
+- **all at once**: when the folder is chosen, every file the page uses (Data without movies and
+  start-up pictures, plus the other languages' text, banners and speech; about 300 MB for an English
+  CD with three other languages), before the game starts;
+- **no**: nothing; every visit asks for the folder, as before.
+
+A manifest lists every file the page uses with its size and SHA-256, kept or not, so a later visit
+rebuilds the file list; a park whose theme was not kept yet asks for the folder once more and keeps
+it then. That folder is accepted only when it has the file, every kept file has the same size in it
+and up to eight kept files have the same bytes (SHA-256); otherwise it is refused with a message and
+can be chosen again. A folder
+chosen on the setup screen is read directly and every kept file it meets is compared by its SHA-256;
+any difference, whenever it shows, means another installation: everything kept is removed at once
+(so files of two installations never mix, even if the start then fails) and the folder's start files
+are kept again; in the "all at once" mode a chosen folder is read completely, so every kept file is
+compared. Each start attempt drops reads and writes of earlier ones. Limits: in the lazy mode files
+the visit never reads are not compared, a folder asked for again is checked by sizes and eight hashes
+rather than every byte, and a read that overlaps a replacement may simply not be kept. Writing waits until the game has started (the start's files wait in memory until then)
+and runs in the background with at most 64 MB waiting afterwards (one larger file can exceed it);
+the manifest is written every 25 files and whenever the queue empties. A page closed before that
+keeps less, and the next visit asks for the folder for what is missing. Only one tab keeps files (a Web
+Lock); a second tab plays without them. **Remove kept files** deletes them (saves stay). Browsers
+without writable OPFS streams, or whose storage does not open, keep nothing and show no choice.
+
 ### Saves and settings
 
 The display choices the browser honours (render scale, interface scale and the frame rate limit)
@@ -233,8 +265,6 @@ framebuffer).
 
 ## What the browser build still lacks
 
-- **Choosing the folder again:** the files are read from the chosen folder while the page is
-  open; the next visit asks for it again (a one-time copy into OPFS would remember it).
 - **Movies:** not copied or played yet; sound is in place (see Sound below).
 - **Decoding off the frame:** music segments decode on the page's only thread; decoding them in
   pieces across frames would remove the short stutter (the AOT build decodes textures about four

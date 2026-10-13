@@ -21,3 +21,11 @@ their existing behavior. Existing PNG/package and texture-pack controls pass.
 The encoder still builds the complete PNG and compressed data in memory. Valid
 large images remain subject to the runtime's memory and stream limits; no large
 image, GPU/browser performance or original-asset qualification was performed.
+
+Independent review reproduced the parent encoder's bounded wrapped-width
+failure and restored production source byte for byte. Positive `int` dimensions
+have a pixel product below `long.MaxValue`; a successful comparison to the
+span's pixel count also implies that every row byte count and offset fits `int`.
+Additional actual STB roundtrips cover nonzero-offset spans, surrounding-byte
+isolation and a one-by-65,537 image, alongside other aligned wrapped-width
+refusals. These controls add no image size policy or codec changes.

@@ -693,3 +693,30 @@ and a fully injected chord through actual button rebuilding; Ctrl+S remains
 the staff locator (plain S stays unhandled here), and Ctrl+P remains excluded
 from the pause key. Global bindings and help shortcuts are unchanged by this fix.
 These are synthetic model/input checks, not rendered or original-game parity.
+
+### Live-map legend allocation (2026-10-13)
+
+The satisfaction legend now counts the current eligible visitors directly instead
+of grouping them into cells, allocating an array, and summing it. The drawn overlay
+still uses its existing per-cell groups. Both paths share the same visibility,
+thought and coordinate predicate, and totals are recomputed on every call; no
+result cache or invalidation policy was added. Map layers, category/role controls,
+projection, clipping, zoom and pan are unchanged.
+
+`MapOverlayAllocationTests` drives the real map view and legend label through the
+CPU `UiBatch`, with 1,500 synthetic guests on a 32×32 sandbox map and visitor,
+happiness and satisfaction layers enabled. In the same Release/.NET 10 fixture,
+with tiered compilation disabled and draw buffers warmed, allocated bytes changed:
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Map draw plus legend | 492,144 bytes/frame | 327,656 bytes/frame |
+| Legend alone | 165,168 bytes/call | 680 bytes/call |
+
+The allocation regression requires less than 2 KiB per legend call, with generous
+headroom above the measured result. Live tests independently check hidden guests,
+outside cells, changed thoughts, removal/return and metric toggles. Existing map
+projection/control tests remain green. These are allocation measurements, not
+wall-clock or browser/GPU/original-player performance claims; ordinary tiered-JIT
+runs can report different allocation counts. Per-cell overlay grouping remains
+an explicitly measured source of allocations for a separate bounded pass.

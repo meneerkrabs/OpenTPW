@@ -914,9 +914,10 @@ def counts_reading(x: dict) -> int:
 
 
 def counts_csharp_rule(x: dict) -> int:
-    """ParkEconomy.CountsForParkPoints with the level's sync: IsChoosable, not broken (states 1 and 4), open, and QueueHasRoom =
-    queue cells > 0 and length < 4 x cells (the back cell exists exactly when there are queue cells). The coaster controller
-    and the kart/water word are not applied (ARRIVAL-003); for other track types this is the whole test."""
+    """ParkEconomy.CountsForParkPoints with the level's sync, in the routine's terms: IsChoosable, not broken (states 1 and 4),
+    open, and QueueHasRoom (QueueJoinRules.QueueCountsForParkPoints: real queue cells > 0, which is when the back cell exists,
+    and length < 4 x cells). This transcribes the C# rule; the C# helper itself is covered by a unit test. The coaster
+    controller and the kart/water word are not applied (ARRIVAL-003)."""
     has_room = x['back'] != 0 and x['cells'] > 0 and x['length'] < 4 * x['cells']
     return int(bool(x['flags'] & 4) and x['state'] not in (1, 4) and bool(x['open']) and has_room)
 

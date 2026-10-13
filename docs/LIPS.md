@@ -392,6 +392,12 @@ interval/event equivalence, leading zero, the reader's maximum size, malformed
 counts/values, nonseekable ownership and failure behavior using synthetic data.
 Original-data, native advisor/audio and GPU qualification remain separate gates.
 
+Independent writer controls also cover index-only lists at the minimum and
+maximum count without enumeration, current-position writes preserving prefix
+and trailing bytes, late input-access failure before the first output write,
+and an output that writes a prefix before throwing. Reader and current managed
+timeline events roundtrip unchanged; partial I/O output remains caller-owned.
+
 ## Reader and tests
 
 `LipSyncFile` returns raw `Marks` (input cap 64 KiB; rejects lengths that are not

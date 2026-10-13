@@ -141,6 +141,8 @@ fresh original-bank compatibility and playback checks are deferred while the
 asset mount is unavailable. The bank still returns a complete requested sample
 buffer, trusts a stream's reported length, and cannot detect a replacement with
 the same length. No new format size cap or eager bank loading is introduced.
+The [independent boundary review](SOUND-BANK-BOUNDARY-REVIEW.md) records the
+reproduced failures and additional valid alias and failed-read recovery controls.
 
 ## Park music
 

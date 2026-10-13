@@ -35,7 +35,8 @@ public class PathAssetTests
 	/// separation force and the toilet term's needs phase move the guests); the admissions stay 103. The traced arrival rule
 	/// re-pinned it once more: groups of 1.2 × (points + 20) / 6 guests arrive after the last group emptied, here every
 	/// 15 timer units instead of the shipped 150, so 24 guests are admitted in 120 s. The traced needs and starting values (ORACLE.md F25) re-pinned it: a guest's
-	/// exit counter now runs from the first turn and its needs start drawn, so one guest fewer (23) has been admitted by then. The traced leaving test (F26) changed the hash again (the admissions stay 23).
+	/// exit counter now runs from the first turn and its needs start drawn, so one guest fewer (23) has been admitted by then. The traced leaving test (F26) changed the hash again (the admissions stay 23). Guests stepping off once per park turn instead of every 0.4 s
+	/// (tp.exe 0x004CF3E0, ARRIVAL-001) leave 22 admitted.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -48,8 +49,8 @@ public class PathAssetTests
 		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), settings, 1 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 23, simulation.Admissions );
-		Assert.AreEqual( 0x84590936A6DA1138UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 22, simulation.Admissions );
+		Assert.AreEqual( 0x797223EA7DAB659BUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

@@ -405,8 +405,9 @@ static JsonNode? ProfitTicket( JsonObject a )
 }
 
 // ParkObjectives.CheckGoldenTickets for the six local tickets (0xd31d0, ORACLE F23): the Standard.sam keys are replaced, the guest
-// statistics come from a stub, the profit from the imported bank and the monthly admissions are `age` closed months whose last
-// RecentVisitorMonths sum to `recent`. Returns the won ticket indices (the enum order is the original's ticket order).
+// statistics come from a stub, the profit from the imported bank. The original's history value 0xc3b88 is stubbed to `recent`, so the
+// monthly admissions are RecentVisitorMonths + 1 closed months whose snapshot at the first close leaves exactly `recent` visitors
+// since then, and the park clock is `age` 30-day months old. Returns the won ticket indices (the enum order is the original's ticket order).
 static JsonNode? LocalTickets( JsonObject a )
 {
 	var text = EconomyTestData.StandardText();
@@ -418,12 +419,15 @@ static JsonNode? LocalTickets( JsonObject a )
 	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 	typeof( ParkEconomy ).GetMethod( "ImportOriginalBank", BindingFlags.NonPublic | BindingFlags.Instance )!
 		.Invoke( park, new object[] { 0L, 20, (long)(int)a["profit"]!, Array.Empty<LoanAccount>() } );
-	park.Counters.Add( ParkCounters.Admissions, (int)a["visitors"]! );
-	var months = new long[Math.Max( 0, (int)a["age"]! )];
+	var visitors = (int)a["visitors"]!;
+	park.Counters.Add( ParkCounters.Admissions, visitors );
+	var back = (int)a["months_limit"]!;
+	var months = back >= 0 && back < ParkLedger.MaximumHistoryMonths ? new long[back + 1] : Array.Empty<long>();
 	if ( months.Length > 0 )
-		months[^1] = (int)a["recent"]!;
+		months[0] = (long)visitors - (int)a["recent"]!;
 	var average = BitConverter.Int32BitsToSingle( (int)(uint)a["avg_bits"]! );
-	var won = park.Objectives.CheckGoldenTickets( park.Counters, new FixedGuestStatistics( (int)a["people"]!, average ), park.Research, park.Ledger.ProfitThisYear, months );
+	var won = park.Objectives.CheckGoldenTickets( park.Counters, new FixedGuestStatistics( (int)a["people"]!, average ), park.Research, park.Ledger.ProfitThisYear, months,
+		0, (long)(int)a["age"]! * 30 * ParkCalendar.SecondsPerDay );
 	return new JsonArray( won.Where( kind => (int)kind < 6 ).Select( kind => (JsonNode)JsonValue.Create( (int)kind )! ).ToArray() );
 }
 

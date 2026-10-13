@@ -17,7 +17,6 @@ public static class EconomyApproximations
 		("ECON-008", "100 training points per grade (from Online_Standard.sam comments \"costs 1000 to get up to grade 1\")", "capture of a training run"),
 		("ECON-010", "TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed", "capture of pool refresh timing"),
 		("ECON-014", "staff vitals and strikes follow the traced routines but not the staff state machine: walking members drain every turn, working means a job in progress, resting needs no walk, idle members are not told apart and the rest search runs every turn; the handymen's analyser statistics, the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled", "the staff state machine, the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628"),
-		("ECON-015", "researchers on strike or picked up are the original's excluded states 3, 4 and 5", "the staff state values behind 0x100F4170"),
 		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
 		("ECON-020", "a sale adds LitterEffect/100 litter items to a park-wide store; the original adds LitterEffect to the buying guest's 0..100 litter meter, which drops one litter event at 90 (ORACLE F18)", "a guest litter meter with the drop-at-90 and bin rules, and the park's litter count"),
@@ -37,10 +36,9 @@ public static class EconomyApproximations
 		("ECON-041", "features-directory objects with Research.Category != 3 are fixed (non-buyable) items", "buy-menu capture"),
 		("ECON-044", "guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8)", "balloon lifetime (+0x214) and costume state rules"),
 		("ECON-048", "a negative path or queue cell cost (modified Costs.*) is booked as other income; balance and profit match the original's Spend of a negative amount", "the ledger category of a negative Spend"),
-		("ECON-049", "the maintenance flag (the original's player request, +96) and the back-of-queue link test (0xdd744, PC FUN_004de4a0) are not modelled: OpenTPW has no maintenance button and takes the queue as connected", "the callers of 0xdd744 and the cell test it makes"),
+		("ECON-049", "the maintenance flag (the ride's mRequestedService, +0x64 on the PC) and the back-of-queue link test (tp.exe 0x4DE4A0: connection bits beyond the link) are not modelled: OpenTPW has no maintenance button and takes the queue as connected", "the writers of mRequestedService and the queue tool's connection writes"),
 		("ECON-050", "the gate census reads the imported guest grid, which preserves paths but not every original outside, approach or footprint cell type; unpreserved cells remain type 0 and can be counted as park ground", "original cell-type provenance in the guest-grid import"),
 		("ECON-051", "the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping)", "the writer of the flag and when the original clears it"),
-		("ECON-052", "the recent-visitors ticket sums the last RecentVisitorMonths closed calendar months and needs that many closed months; the original compares the visitor counter minus its history value RecentVisitorMonths back and needs the park age in 30-day months to exceed RecentVisitorMonths", "the history value behind 0x100C3B88 and the age in calendar months"),
 	};
 
 	private static bool logged;

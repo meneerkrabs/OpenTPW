@@ -318,6 +318,8 @@ public sealed class OriginalObjectRuntime
 			HungerEffect = settings.GetInt( "UsageInfo.HungerEffect" ),
 			VomitEffect = settings.GetInt( "UsageInfo.VomitEffect" ),
 			HappinessEffect = settings.GetInt( "UsageInfo.HappinessEffect" ),
+			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods] type +320, the price test's base (tp.exe 0x004FDE50; the key table order InitCostOfGoods, ThirstEffect, HungerEffect, VomitEffect, HappinessEffect)
+			InitCostOfGoods = settings.Has( "UsageInfo.InitCostOfGoods" ) ? settings.GetInt( "UsageInfo.InitCostOfGoods" ) : 0,
 			GoldenTicketCost = settings.GetInt( "UsageInfo.GoldenTicketCost" ),
 			UpgradeCost = entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 )?.GetInt( "CostOfUpgrade" ) ?? 0,
 			IsIndoors = settings.GetInt( "UsageInfo.ISIndoors" ) != 0,

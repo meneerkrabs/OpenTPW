@@ -12,8 +12,42 @@ public readonly record struct SideshowTerms( int CostOfGoods, int PricePerUse, i
 /// difference <c>0xe9a84</c> and the gate of the state-10 handler <c>0xeccb0</c>. <see cref="RideVisitorBridge"/>
 /// feeds them from the object's data and live state; the oracle bridge calls them through a real bridge.
 /// </summary>
+/// <summary>The words the price test reads: the live price, cost of goods and win byte, the type record's InitCostOfGoods and effects, and the park's per-type word.</summary>
+public readonly record struct PriceTerms( int Price, int CostOfGoods, int WinByte, bool IsSideshow, int InitCostOfGoods, int ThirstEffect, int HungerEffect,
+	int VomitEffect, int HappinessEffect, int TypeWord );
+
 public static class QueueJoinRules
 {
+	/// <summary>
+	/// The price test when a guest is called forward (tp.exe <c>0x004FDE50</c>, from the state-13 handler <c>0x005006B0</c>; ORACLE.md X16):
+	/// a price of 0 never fails; otherwise the guest refuses when the price is above its willingness to pay or above its money.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FDE50 price test] the willingness: needs as bytes h, t, u, i (happiness, thirst, hunger, illness); S = HappinessEffect·(100 − h)/100 + ThirstEffect·t/100 + HungerEffect·u/100 − VomitEffect·i/100 + 100 (signed divisions); × InitCostOfGoods·115/100, unsigned /100; plus, for a sideshow, cost of goods × win byte / 100; × (the park's per-type word + 100), unsigned /100; × (h + 100), unsigned /100. Price and money compare unsigned. Executed by the x86 oracle target tpw-exe-price-test
+	public static bool TooExpensive( in PriceTerms terms, float happiness, float thirst, float hunger, float illness, long money )
+	{
+		var price = unchecked( (uint)terms.Price );
+		if ( price == 0 )
+			return false;
+		var willingness = WillingnessToPay( terms, happiness, thirst, hunger, illness );
+		return !(price <= willingness && price <= unchecked( (uint)money ));
+	}
+
+	/// <summary>The willingness to pay of <see cref="TooExpensive"/>, an unsigned 32-bit word.</summary>
+	public static uint WillingnessToPay( in PriceTerms terms, float happiness, float thirst, float hunger, float illness )
+	{
+		unchecked
+		{
+			int Byte( float meter ) => (int)((long)meter & 0xFF);
+			var h = Byte( happiness );
+			var total = terms.HappinessEffect * (100 - h) / 100 + terms.ThirstEffect * Byte( thirst ) / 100 + terms.HungerEffect * Byte( hunger ) / 100
+				- terms.VomitEffect * Byte( illness ) / 100 + 100;
+			var value = (uint)(total * (terms.InitCostOfGoods * 115 / 100)) / 100;
+			var sideshow = terms.IsSideshow ? terms.CostOfGoods * (terms.WinByte & 0xFF) / 100 : 0;
+			value = (uint)((sideshow + (int)value) * (terms.TypeWord + 100)) / 100;
+			return (uint)((int)value * (h + 100)) / 100;
+		}
+	}
+
 	/// <summary>
 	/// The queue part of the park points counts-test (tp.exe <c>0x004DD920</c>, ORACLE.md X15): the attraction has real queue cells
 	/// (<c>0x004DE130</c> walks them from the front cell at the entrance; OpenTPW's one-cell fallback on a path cell does not count)

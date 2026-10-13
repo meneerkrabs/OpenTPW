@@ -6186,11 +6186,11 @@ def local_inputs(rng: random.Random, n: int) -> list:
     def make() -> dict:
         x = {key: rng.choice([value, rng.randrange(-50, 400)]) for key, value in limits.items()}
         x['months_limit'] = rng.choice([6, 3, 1, 12])
-        x['recent_limit'] = abs(x['recent_limit'])   # a negative limit lets a short park pass in C# (ECON-052); no shipped file has one
+        x['recent_limit'] = abs(x['recent_limit'])   # a negative limit is not in any shipped file
         x.update(visitors=near(x['visitors_limit']), people=near(x['people_limit']), profit=near(x['threshold']),
                  recent=near(x['recent_limit']), built=0,
                  avg=rng.choice([f32(rng.uniform(0, 100)), float(x['happiness_limit']), f32(x['happiness_limit'] + 0.5), 0.0]))
-        x['age'] = x['months_limit'] + rng.choice([-3, 3, 10])   # never equal to the month count: the units differ (ECON-052)
+        x['age'] = x['months_limit'] + rng.choice([-3, 3, 10])   # never equal to the month count (kept from before ECON-052 was retired)
         return x
     return edges + [make() for _ in range(n)]
 

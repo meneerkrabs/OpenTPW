@@ -317,7 +317,7 @@ statistics are stubbed). All are `cmpw` and a branch on "not greater" (signed, s
 | Happiness | single `0xc19e4(park, 0)` (average happiness, `fcmpo`) `> single([1880])` **and** `0xc3684(park) > [1884]` | the average truncated to an integer, `>=`, plus a count of guests at least that happy `>=` `AtLeastThisManyHappyPeople` | the single average `> Happiness` and the guests in the park `> AtLeastThisManyHappyPeople`; nobody is filtered by happiness (`IParkGuestStatistics.AverageHappiness` is now a float: the mean of each in-park guest's `(u8)trunc(happiness)`, 0 while the park is closed, as `0xc19e4` computes it per PPC-scenarios; the routine itself is stubbed here) |
 | All researched and built | `0xc5510(park)` low byte nonzero | same | same (no C# input in the oracle) |
 | Profit | bank `+292 > [1888]` | `>=` | `>` |
-| Recent visitors | `0xc3b88(park, [1896]) > [1892]` **and** the park age in 30-day months `> [1896]` | the last N closed months `>=` | the last N closed months `>`; the age gate is still "N closed months" (ECON-052) |
+| Recent visitors | `0xc3b88(park, [1896]) > [1892]` **and** the park age in 30-day months `> [1896]` | the last N closed months `>=` | lifetime visitors minus the snapshot at the close N back (the open month included, N + 1 closes needed) `>`, and the park clock's age in exact 30-day months `> N`, as tp.exe `0x4c94d0` / `0x4d4bc0` read (ECON-052 retired) |
 | Coaster height, go-kart excitement, water length | `0xc73bc` / `0xc6cec` / `0xc710c` `> [1900]` / `[1904]` / `[1908]` | `>=` | `>` |
 | Big park | `0xc8cc0 > [1916]` (`MinCellsCovered`) | `>=` `MinCellsOwned` | `>` `MinCellsOwned` (key mapping is ECON-038) |
 
@@ -642,7 +642,7 @@ Scripts of repeated calls, with the vehicle phase and report flag chosen per cal
 Result: ARRIVAL-004 changes no guest or timer behaviour. The C# floor at 0 produces the same guests and timer as the
 original's negative group, differing only in the stored group word and the untraced empty-group vehicle step. The
 brief's static reading, a negative group holding the state, differs on 66 scripts and is refuted. The
-`plan` side models the stop gate as the vehicle phase 2, where `UpdateArrivals` uses a fixed 0.4 s spacing (ARRIVAL-001). C# is not compared.
+`plan` side models the stop gate as the vehicle phase 2. `UpdateArrivals` steps once per park turn from the turn after a group starts, because tp.exe's twin `0x4cf3e0` runs once per world turn (at the end of `0x516380`, through `0x4d7b20`); only the bus's drive to the stop is missing (ARRIVAL-001). C# is not compared.
 
 **F12, loan instalment (ECON-006, `LoanMath.MonthlyRepayment`, `0xcb7a8`; fixed in C#).** The constructor of the bank object fills
 eight loan records. Its loop (`0xcb84c..0xcb904`, run as a fragment) reads amount P, APR A, months N and lender from the
@@ -1597,6 +1597,7 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpi-exe-coast-rating-step` | TPI `Game.exe` `0x480630`..`0x4808ff` (cdecl; reset `0x4803a0`) | none; static block `0xa191f0`..`0xa19224` | 509 | **X11**: 470 differ from the Mac routine; 217 from COAST-plan 6.3; 181 left with the Windows term (rounding, at most 3 ulps) | **agree** 509/509 (Game.exe's own rounding points) |
 | `tpi-exe-coast-rating-final` | TPI `Game.exe` `0x4809c0`..`0x480ac9` (cdecl) | none | 506 | **X12**: 30 differ from the Mac routine, all in the excitement (last bit; more ulps only where the two terms nearly cancel); 271 from COAST-plan 6.4. Identical to tp.exe's final on all 506 | **agree** 506/506 |
 | `tpw-exe-counts-test` | tp.exe `0x4dd920`..`0x4dda1f` (thiscall, `ecx` = thing; the Mac `0xdc834`) | `0x4de130` back of queue (chosen, checked for the thing), `0x4ddf50` list length (checked to be asked for guest 0), `0x412e90` type record (track type chosen), `0x441970` coaster controller test (cdecl, chosen); stack balance checked | 515 (15 edges, one per condition, 500 random) | **X15**: **agree** 515/515 with the routine reading | the C# rule transcribed (`CountsForParkPoints` with `QueueCountsForParkPoints`): 29 differ, all coasters, karts and water rides (ARRIVAL-003); for every other track type **agree**. The back cell and list length are stubbed, so this checks the routine's logic, not OpenTPW's queue geometry |
+| `tpw-exe-price-test` | tp.exe `0x4fde50`..`0x4fe181` (thiscall, `ecx` = guest, argument the ride), the price, cost-of-goods and win-byte getters and `_ftol` | `0x4dd4e0` type record (synthetic), `0x4e2740` park type record (word `+0xc` chosen), `0x519510` park, `0x4c74b0` statistic (recorded); stack balance checked; x87 control word `0x27F` | 530 (30 boundary inputs, among them meters that round to the next integer as float32; 500 random) | **X16**: **agree** 530/530 with the reading, decision and price statistics; without the money test 56 differ | `QueueJoinRules.TooExpensive` / `WillingnessToPay`: unit-tested on seven willingness values the routine produced (`PriceTestTests`) |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
@@ -2109,8 +2110,8 @@ state 14 (waiting to be taken) does it leave, in this order:
 1. the log "The queue was shortened and there's no room for me any more";
 2. animation 13 for a guest whose id is a multiple of 3;
 3. the unlink `0x4ddd20`;
-4. the dismissal `0x5012f0` (which logs "dismissed from queue", records event 6 for the ride, plays a sound for one guest in eight and
-   clears the queue words);
+4. the dismissal `0x5012f0` (which logs "dismissed from queue", records event 6 for the ride, plays a sound for one guest in eight,
+   lowers happiness by the medium step through `0x4fea70` and clears the queue words; C# applies the happiness drop since X16's review);
 5. ride word `+0x1dc` = 0 and state 6.
 
 Every other guest is left as it is; there is no exit for a guest whose cell left the queue. Across 548 inputs (states 11 to 14, positions
@@ -2148,3 +2149,48 @@ into `ParkObjectState.QueueHasRoom` each tick, and `CountsForParkPoints` require
 longer counts. Transcribed into the routine's terms, the C# rule agrees for every attraction that is not a coaster, kart or water ride.
 ARRIVAL-003 keeps the controller test and the track word (29 inputs differ, all of those types). The flag is not saved; it is true until
 the first sync after a load or a purchase.
+
+### 7.12 Finding X16: guests test the price when they are called forward
+
+Question (GUEST-003): does the original filter attractions by price? C# let a guest choose only an attraction it could afford.
+
+**Identification.** The choice loop `0x4fcb10` (called from the state-6 handler `0x4fec90`) and the scoring `0x4fcc30` have no money
+term. A candidate needs:
+- flag `+0x32` bit 4;
+- a back-of-queue cell;
+- a score above 9 that beats the best so far (ties on an odd turn);
+- the counts-test `0x4dd920` and a route.
+
+The price is tested in the state-13 handler `0x5006b0`. When the called guest reaches its stand point, `0x4fde50` runs before the
+ride takes the guest (AdmitPerson). If it fails, the guest logs "Object %d is too expensive, I'm leaving the queue" and plays
+animation 6. The ride's walk-away count (`mNumWalkAways` `+0x1a4`, through `0x4e1670`) rises, and the guest leaves the queue for
+state 6. The ride's words come from the ride serializer `0x4db7d0`: `mCostOfGoods +0x188`, `mChanceOfWinning +0x190` (a byte),
+`mPricePerUse +0x194`. The type record's words +320..+336 are the UsageInfo keys InitCostOfGoods, ThirstEffect, HungerEffect,
+VomitEffect and HappinessEffect, in the order of tp.exe's key table. +324/+328/+332 were already known from the Mac (PPC-guests).
+
+**Executed.** `0x4fde50` returns 0 for a price of 0. Otherwise, with the guest's happiness h, thirst t, hunger u and illness i taken as
+bytes of their truncated floats:
+
+    S = HappinessEffect·(100 − h)/100 + ThirstEffect·t/100 + HungerEffect·u/100 − VomitEffect·i/100 + 100      (signed divisions)
+    W = S × (InitCostOfGoods·115/100), unsigned /100
+    W = (W + [sideshow] cost of goods × win byte / 100) × (park type word +0xc + 100), unsigned /100
+    W = W × (h + 100), unsigned /100
+
+The guest refuses when the price exceeds W or its money (both unsigned). A shop (kind 1) also records min(100, (W + 5)·10 − price·10)
+in the price statistic of its product category (`+0x158`: 1..4) and of `+0x15c` (6 or 7). A sideshow (kind 2) records it in
+category 9. Across 530 inputs the routine agrees with this reading, statistics included (the meters are float32 words, so a value such as
+1.99999999 is read as 2); without the money test 56 differ.
+
+**Fixed in C#.** The choice no longer filters on price (`ChooseAttraction`). At the stand point, `QueueJoinRules.TooExpensive` runs on
+the live price, cost of goods and win byte and on the type's InitCostOfGoods and effects; a guest that refuses leaves the queue with its
+thought unchanged. `PriceTestTests` pins seven willingness values the routine produced, each at the price that is still paid and the
+one that is refused. A check against the shipped data: in all four themes, each shop's InitPricePerUse equals or is within 2 of
+the willingness of a guest whose needs are all 20. For example, a burger shop at price 30 gives W = 30, 39 and 48 at needs 20, 50 and 80.
+The rule therefore leaves the default prices just acceptable and lets needier guests pay more.
+
+A refusal lowers happiness twice by the medium step (`0x4fea70` with 1, for the refusal and again in the dismissal `0x5012f0`).
+GUEST-003 keeps four things:
+- the per-type park word (`0x4e2740`, park record `+0xc`, written by script opcodes; taken as 0);
+- animation 6;
+- the guest record of event 10;
+- the walk-away count and the price statistic.

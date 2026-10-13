@@ -117,6 +117,28 @@ public class CoasterSaveTests
 		Assert.AreEqual( CoasterPlaceResult.Ok, new CoasterBuilder( resumed, new CoasterSite( 64, 64 ) ).Place( Depart.X + CoasterTests.Circuit[3].Item1, Depart.Y + CoasterTests.Circuit[3].Item2 ) );
 	}
 
+	/// <summary>
+	/// The restore's own defensive refusals (the envelope validated the part's shape and catalog fit already; these
+	/// guard a doctored part whose counts disagree with what the deterministic rebuild re-derives): a train count off
+	/// the rating's and a car count off the definition's are refused with a reason.
+	/// </summary>
+	[TestMethod]
+	public void ARestoreWithMismatchedTrainOrCarCountsIsRefused()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		var captured = CoasterSave.CaptureRide( ride, attractionId: 1 );
+
+		var wrongTrains = Assert.ThrowsException<InvalidDataException>( () =>
+			FreshRide( ride.Definition, new CoasterWorld( 1 ) ).RestoreSnapshot( captured with { Trains = new List<CoasterTrainSaveData>() } ) );
+		StringAssert.Contains( wrongTrains.Message, "trains in the save" );
+
+		var fewerCars = captured.Trains.Select( train => train with { Cars = train.Cars.Take( train.Cars.Count - 1 ).ToList() } ).ToList();
+		var wrongCars = Assert.ThrowsException<InvalidDataException>( () =>
+			FreshRide( ride.Definition, new CoasterWorld( 1 ) ).RestoreSnapshot( captured with { Trains = fewerCars } ) );
+		StringAssert.Contains( wrongCars.Message, "cars in the save" );
+	}
+
 	// ---- Envelope shape validation -----------------------------------------------------------------------
 
 	/// <summary>A structurally valid coaster entry for the envelope fixture's placed attraction 1.</summary>
@@ -199,10 +221,56 @@ public class CoasterSaveTests
 		// Trains: states, positions and riders.
 		Rejects( CoasterEntry() with { Trains = new List<CoasterTrainSaveData> { CoasterEntry().Trains[0] with { State = 99 } } }, "not a train state" );
 		Rejects( CoasterEntry() with { Trains = new List<CoasterTrainSaveData> { CoasterEntry().Trains[0] with { Position = -1 } } }, "negative or not finite" );
+		// The part's own bounds, before any catalog speaks: trains and cars above the format's caps.
+		Rejects( CoasterEntry() with { Trains = Enumerable.Range( 0, CoasterSave.MaximumTrains + 1 ).Select( _ => CoasterEntry().Trains[0] ).ToList() }, $"trains, above {CoasterSave.MaximumTrains}" );
+		Rejects( CoasterEntry() with { Trains = new List<CoasterTrainSaveData> { CoasterEntry().Trains[0] with { Cars = Enumerable.Range( 0, CoasterSave.MaximumCarsPerTrain + 1 ).Select( _ => new List<int>() ).ToList() } } }, $"cars, above {CoasterSave.MaximumCarsPerTrain}" );
 		Rejects( CoasterEntry() with { Track = Track( CoasterEntry() ) with { IsComplete = false, IsClosed = false, Nodes = new List<CoasterNodeSaveData> { Node( 0 ), Node( 1 ), Node( 2 ) } } }, "never completed" );
 		var rider = CoasterEntry() with { Trains = new List<CoasterTrainSaveData> { CoasterEntry().Trains[0] with { Cars = new List<List<int>> { new() { 999999 }, new(), new(), new() } } } };
 		Rejects( rider, "the guest snapshot does not hold" );
 		Rejects( CoasterEntry() with { Leaving = new List<int> { 999999 } }, "the guest snapshot does not hold" );
+	}
+
+	/// <summary>
+	/// The boarding hand-over: a rider the script has already handed to a car with <c>COAST 1</c> while the bridge has
+	/// not marked it aboard yet (it does one host step later, when the script consumes VAR_LETMEON). The save holds
+	/// that guest still waiting at the stand point — WaitingToBoard at this coaster, called, VAR_LETMEON written — and
+	/// the shape check accepts it; anything looser (a merely queued guest, a called guest whose VAR_LETMEON the save
+	/// does not show written) is refused.
+	/// </summary>
+	[TestMethod]
+	public void ABoardingHandOverRiderIsValidAndAnythingLooserIsRefused()
+	{
+		// A longer fixture run settles guests inside the park, where the mutation below is coherent.
+		var snapshot = ParkResumeSaveFileTests.Envelope( 5400 );
+		var guests = snapshot.Guests!;
+		var bridgeIndex = Array.IndexOf( guests.Attractions!, guests.Attractions!.Single( attraction => attraction.AttractionId == 1 ) );
+		var bridge = guests.Attractions![bridgeIndex]!;
+		// The hand-over guest: queued at attraction 1 (already, or placed there), WaitingToBoard, called.
+		var guestIndex = Array.IndexOf( guests.Guests!, guests.Guests!.FirstOrDefault( guest => guest!.State == GuestState.Queueing && guest.AttractionId == 1 )
+			?? guests.Guests!.First( guest => guest!.State is GuestState.WalkingAround or GuestState.DoingNothing ) );
+		var rider = guests.Guests[guestIndex]!.Id;
+		ParkResumeSnapshot WithGuest( GuestState state, bool letMeOnWritten )
+		{
+			guests.Guests![guestIndex] = guests.Guests[guestIndex]! with { State = state, AttractionId = 1 };
+			var withQueue = bridge.Queue.Contains( rider ) ? bridge : bridge with { Queue = bridge.Queue.Append( rider ).ToArray() };
+			guests.Attractions![bridgeIndex] = withQueue with { CalledGuest = rider, LetMeOnWritten = letMeOnWritten };
+			return snapshot with { Coasters = CoasterPart( inLeavingQueue: false ) };
+		}
+		CoasterWorldSaveData CoasterPart( bool inLeavingQueue ) => new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { CoasterEntry() with
+		{
+			Trains = new List<CoasterTrainSaveData> { CoasterEntry().Trains[0] with { Cars = new List<List<int>> { inLeavingQueue ? new() : new() { rider }, new(), new(), new() } } },
+			Leaving = inLeavingQueue ? new List<int> { rider } : new List<int>()
+		} } };
+
+		ParkResumeSaveFile.ValidateShape( WithGuest( GuestState.WaitingToBoard, letMeOnWritten: true ) );
+		// The leaving queue follows the same rule (a guest COAST 1 could not seat waits to leave).
+		ParkResumeSaveFile.ValidateShape( WithGuest( GuestState.WaitingToBoard, letMeOnWritten: true ) with { Coasters = CoasterPart( inLeavingQueue: true ) } );
+		void Rejects( ParkResumeSnapshot corrupted, string message ) =>
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( corrupted ) ).Message, message );
+		// A merely queued guest (not the called hand-over) is not a rider.
+		Rejects( WithGuest( GuestState.Queueing, letMeOnWritten: true ), $"walks the park in state {GuestState.Queueing}" );
+		// A called guest whose VAR_LETMEON the save does not show written is not in the hand-over.
+		Rejects( WithGuest( GuestState.WaitingToBoard, letMeOnWritten: false ), $"walks the park in state {GuestState.WaitingToBoard}" );
 	}
 
 	private static List<CoasterNodeSaveData> NewNodes( CoasterNodeSaveData changed )

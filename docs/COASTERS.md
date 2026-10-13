@@ -166,6 +166,9 @@ neither read nor written (COAST-025).
   unfinished track round-trips and keeps building, corrupted track data is
   refused with a reason, a real station validates against the real catalog, and
   two real stations resume into fresh runtimes and continue deterministically.
+  Real guests boarding through the original script stay save-consistent at every
+  tick boundary, including the boarding hand-over (a rider seated by `COAST 1`
+  one host step before the bridge marks it aboard).
 - The native smoke test of an original level builds a coaster through HUD clicks
   (pylons, wheel height, close, complete), sees a train leave and the track
   drawn, and removes it.

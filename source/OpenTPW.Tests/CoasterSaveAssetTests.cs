@@ -254,5 +254,90 @@ public class CoasterSaveAssetTests
 		Assert.AreEqual( HashOf( world ), HashOf( candidateWorld ), "the continuation is deterministic" );
 	}
 
+	/// <summary>
+	/// Real guests boarding a completed coaster through the real station script stay save-consistent at every tick
+	/// boundary — wherever a capture lands (it runs between ticks), every rider the coaster part would hold, seated in
+	/// a car or waiting in the leaving queue, must be a guest the validation accepts: state <see cref="GuestState.Using"/>
+	/// and aboard, or still in the boarding hand-over (WaitingToBoard, called with VAR_LETMEON written while the script
+	/// has already handed the guest to a car with <c>COAST 1</c>). The hand-over window is real — the bridge marks a
+	/// guest aboard only one host step after the script takes it — so this pins both the window's existence and the
+	/// save's acceptance of it.
+	/// </summary>
+	[TestMethod]
+	public void GuestsBoardingARealCoasterStaySaveConsistentAtEveryTickBoundary()
+	{
+		var park = OriginalPark.Load( "jungle" );
+		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), GuestSettings.Load( "jungle" ), 99 ) { ArrivalsEnabled = false };
+		var entry = ObjectCatalog.Load( "jungle" ).Entries.First( candidate => CoasterDefinition.IsCoaster( candidate.Settings ) );
+		var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld(), seed: 1, open: true );
+		var ride = runtime.Coaster!;
+		BuildCircuit( new CoasterBuilder( ride, new CoasterSite( 128, 128 ) ), (20, 20) );
+		runtime.Visitors.EntranceCell = runtime.Visitors.ExitCell = (39, 21);
+		runtime.Visitors.HasCells = true;
+		simulation.Register( runtime.Visitors );
+		foreach ( var (x, y) in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
+			simulation.SpawnInPark( x, y );
+
+		// The rider rule of ParkResumeSaveFile.ValidateCoasters, live: Using and aboard, or the boarding hand-over.
+		bool Accepted( int rider )
+		{
+			var guest = simulation.Find( rider );
+			return guest != null && guest.AttractionId == runtime.AttractionId
+				&& (guest.State == GuestState.Using && runtime.Visitors.Riders.Contains( rider )
+					|| guest.State == GuestState.WaitingToBoard && runtime.Visitors.CalledGuest == rider);
+		}
+
+		var maximumAboard = 0;
+		var handOverRiderTicks = 0;
+		var handOverClosed = false;
+		GuestSimulationSnapshot? boundarySnapshot = null;
+		CoasterRideSaveData? boundaryCoaster = null;
+		for ( var tick = 0; tick < 90 * 60; tick++ )
+		{
+			// Level.AdvanceSimulation's order: the guests first, then the objects (HostStep, script, coaster).
+			simulation.Tick( Tick );
+			runtime.Simulate( Tick );
+			maximumAboard = Math.Max( maximumAboard, runtime.Visitors.Riders.Count );
+			var inHandOver = false;
+			foreach ( var rider in ride.Trains.SelectMany( train => train.Cars ).SelectMany( car => car ).Concat( ride.LeavingRiders ) )
+			{
+				if ( Accepted( rider ) )
+				{
+					var guest = simulation.Find( rider )!;
+					inHandOver |= guest.State == GuestState.WaitingToBoard;
+					continue;
+				}
+				Assert.Fail( $"tick {tick}: rider {rider} would be refused by the save's validation "
+					+ $"(guest {simulation.Find( rider )?.State}, attraction {simulation.Find( rider )?.AttractionId})" );
+			}
+			if ( inHandOver )
+			{
+				handOverRiderTicks++;
+				// Once inside the window, prove the real snapshot pair carries exactly the fields the rule reads.
+				boundarySnapshot ??= simulation.CaptureSnapshot();
+				boundaryCoaster ??= CoasterSave.CaptureRide( ride, runtime.AttractionId );
+			}
+			else
+				handOverClosed |= handOverRiderTicks > 0;
+		}
+		Assert.AreNotEqual( RideVMState.Faulted, runtime.Script!.State, runtime.Script.FaultMessage );
+		Assert.IsTrue( ride.Initialised, "the station script initialised its controller (COAST 8)" );
+		Assert.IsTrue( maximumAboard > 0, "guests boarded the running coaster through the real script" );
+		Assert.IsTrue( handOverRiderTicks > 0, "the boarding hand-over window is real (a rider in a car before the bridge marks it aboard)" );
+		Assert.IsTrue( handOverClosed, "the hand-over closes: the script consumes VAR_LETMEON and the rider is marked aboard" );
+		// The snapshotted pair agrees with the live rule: the hand-over rider is the called guest, WaitingToBoard,
+		// aboard nobody, while the coaster part holds it in a car.
+		Assert.IsNotNull( boundarySnapshot );
+		var bridge = boundarySnapshot!.Attractions.Single( attraction => attraction.AttractionId == runtime.AttractionId );
+		var handOverRider = bridge.CalledGuest;
+		Assert.IsTrue( handOverRider != 0 && bridge.LetMeOnWritten, "VAR_LETMEON is written for the called guest" );
+		var savedGuest = boundarySnapshot.Guests.Single( guest => guest.Id == handOverRider );
+		Assert.AreEqual( GuestState.WaitingToBoard, savedGuest.State );
+		Assert.AreEqual( runtime.AttractionId, savedGuest.AttractionId );
+		CollectionAssert.Contains( bridge.Queue.ToArray(), handOverRider );
+		Assert.IsTrue( boundaryCoaster!.Trains
+			.Any( train => train.Cars.Any( car => car.Contains( handOverRider ) ) ), "the coaster part holds the hand-over rider in a car" );
+	}
+
 	private static int SeedOf( OriginalObjectRuntime runtime ) => runtime.Script!.Seed;
 }

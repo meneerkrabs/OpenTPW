@@ -59,8 +59,10 @@ public static class PngImage
 	/// <summary>Encodes 8-bit RGBA pixels (row-major, 4 bytes per pixel).</summary>
 	public static byte[] EncodeRgba( int width, int height, ReadOnlySpan<byte> rgba )
 	{
-		if ( width < 1 || height < 1 || rgba.Length != width * height * 4 )
+		// Compare pixel counts: multiplying both maximal dimensions by four can overflow even a long.
+		if ( width < 1 || height < 1 || rgba.Length % 4 != 0 || (long)width * height != rgba.Length / 4 )
 			throw new ArgumentException( "Pixel buffer does not match the image size." );
+		var rowBytes = checked(width * 4);
 		using var output = new MemoryStream();
 		output.Write( Signature );
 		var header = new byte[13];
@@ -75,7 +77,7 @@ public static class PngImage
 			for ( var y = 0; y < height; y++ )
 			{
 				zlib.WriteByte( 0 ); // filter: none
-				zlib.Write( rgba.Slice( y * width * 4, width * 4 ) );
+				zlib.Write( rgba.Slice( checked(y * rowBytes), rowBytes ) );
 			}
 		}
 		WriteChunk( output, "IDAT"u8, compressed.ToArray() );

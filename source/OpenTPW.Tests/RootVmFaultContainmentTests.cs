@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using static OpenTPW.Tests.RideVMTests;
 
@@ -167,16 +170,98 @@ public class RootVmFaultContainmentTests
 		finally { runtime.Stop(); }
 	}
 
+	[TestMethod]
+	public void RootFaultRetiresItsActualCoasterAndVisitorRidersButKeepsOtherOwners()
+	{
+		var settings = "Bumper.WhichTrackType 3\n" + string.Join( "\n", CoasterTests.PcSettings().Select( pair => pair.Key + " " + pair.Value ) );
+		using var fixture = new Fixture( FaultScript(), settings );
+		var world = new RideScriptWorld();
+		var runtime = new OriginalObjectRuntime( fixture.Entry, world );
+		var other = new OriginalObjectRuntime( fixture.Entry, world );
+		try
+		{
+			var coaster = runtime.Coaster!;
+			var builder = new CoasterBuilder( coaster, new CoasterSite( 64, 64 ) );
+			builder.SetStation( (20, 20), (17, 20) ); builder.Height = 40;
+			foreach ( var (x, y) in CoasterTests.Circuit ) Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + x, 20 + y ) );
+			Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+			coaster.Command( 8, 0 ); coaster.Command( 5, 0 ); coaster.Command( 6, 6 ); coaster.Board( 101 );
+			runtime.Script!.Effect( Opcode.HUSH, new[] { new Operand( runtime.Script, new RideScriptOperand( RideScriptOperandKind.Literal, 101 ), -1 ) } );
+			Assert.AreEqual( 1, coaster.RidersOnBoard ); Assert.AreEqual( 1, runtime.Visitors.Riders.Count );
+			Assert.IsTrue( world.Coasters.Rides.Contains( coaster ) );
+			runtime.Simulate( Tick );
+			Assert.AreEqual( RideVMState.Faulted, runtime.Script.State );
+			Assert.AreEqual( 0, runtime.Visitors.Riders.Count ); Assert.AreEqual( 1, runtime.Visitors.ReleasedTotal );
+			Assert.AreEqual( 0, coaster.Trains.Count ); Assert.IsFalse( world.Coasters.Rides.Contains( coaster ) );
+			Assert.IsTrue( world.Coasters.Rides.Contains( other.Coaster! ) ); Assert.IsTrue( world.Scripts.Contains( other.Script! ) );
+			runtime.Simulate( Tick ); runtime.Stop(); Assert.AreEqual( 1, runtime.Visitors.ReleasedTotal, "Teardown is idempotent." );
+		}
+		finally { runtime.Stop(); other.Stop(); }
+	}
+
+	[TestMethod]
+	public void FaultStopsItsRealScreamChainAndRetainsOtherOwnerAndCapturePolicy()
+	{
+		using var fixture = new Fixture( FaultScript() );
+		using var mixer = new AudioMixer( null );
+		var system = new SoundEventSystem( mixer, 7 );
+		var category = (SoundCategory)RuntimeHelpers.GetUninitializedObject( typeof( SoundCategory ) );
+		var catalog = (SoundCatalog)RuntimeHelpers.GetUninitializedObject( typeof( SoundCatalog ) );
+		var sample = new SoundSample( 1, 65535, 0, 1, 0 );
+		var sound = new SoundEntry( 100, 100, 0, 0, 0, 0, 1, 100, new[] { sample }, Array.Empty<SoundLink>(), Array.Empty<byte>() );
+		typeof( SoundCatalog ).GetField( "<Events>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( catalog, new[] { new SoundEvent( 72, 0, 0, 0, new[] { sound } ) } );
+		typeof( SoundCategory ).GetField( "<Catalog>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( category, catalog );
+		((System.Collections.Generic.Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem ).GetField( "decoded", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( system )!)[(category, 1, 1)] = new Mp2Audio( AudioMixer.OutputRate, 1, Enumerable.Repeat( (short)1000, 256 ).ToArray(), 1, 0 );
+		var events = typeof( GameAudio ).GetField( "events", BindingFlags.Static | BindingFlags.NonPublic )!;
+		var kids = typeof( GameAudio ).GetField( "<Kids>k__BackingField", BindingFlags.Static | BindingFlags.NonPublic )!;
+		var previousEvents = events.GetValue( null ); var previousKids = kids.GetValue( null );
+		var runtime = new OriginalObjectRuntime( fixture.Entry ); var other = new OriginalObjectRuntime( fixture.Entry );
+		try
+		{
+			events.SetValue( null, system ); kids.SetValue( null, category );
+			SoundChain Scream( OriginalObjectRuntime owner )
+			{
+				owner.Script!.Effect( Opcode.STARTSCREAM, new[] { new Operand( owner.Script, new RideScriptOperand( RideScriptOperandKind.Literal, 2 ), -1 ), new Operand( owner.Script, new RideScriptOperand( RideScriptOperandKind.Literal, 50 ), -1 ) } );
+				return (SoundChain)typeof( OriginalObjectEffects ).GetField( "screamChain", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( owner.Script.Effects )!;
+			}
+			var held = Scream( runtime ); var otherHeld = Scream( other );
+			Assert.IsNotNull( held ); Assert.IsNotNull( otherHeld ); Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ) );
+			Assert.ThrowsException<NotSupportedException>( () => Level.RequireResumableAudio( runtime.CaptureSnapshot() ), "Existing live-sound refusal is unchanged." );
+			runtime.Script!.Abort( "review fault" ); runtime.Simulate( Tick );
+			Assert.IsTrue( held.IsStopped ); Assert.IsFalse( otherHeld.IsStopped );
+			var stopped = runtime.CaptureSnapshot(); Assert.IsFalse( stopped.HeldScream ); Assert.AreEqual( 0, stopped.OwnedScreamCount );
+			Level.RequireResumableAudio( stopped ); Assert.AreEqual( "review fault", stopped.StoppedScriptFault );
+			Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ), "The healthy owner remains audible." );
+			runtime.Stop(); Assert.IsFalse( otherHeld.IsStopped );
+		}
+		finally { runtime.Stop(); other.Stop(); events.SetValue( null, previousEvents ); kids.SetValue( null, previousKids ); }
+	}
+
+	[TestMethod]
+	public void UnservicedRootFaultKeepsExistingLiveSnapshotUntilContainmentTick()
+	{
+		using var fixture = new Fixture( FaultScript() ); var runtime = new OriginalObjectRuntime( fixture.Entry );
+		try
+		{
+			runtime.Script!.Abort( "pending diagnostic" );
+			var live = runtime.CaptureSnapshot(); Assert.IsFalse( live.Stopped ); Assert.IsNull( live.StoppedScriptFault );
+			Assert.AreEqual( "pending diagnostic", runtime.Script.CaptureSnapshot().FaultMessage );
+			live.ValidateSnapshot(); Level.RequireResumableAudio( live );
+			runtime.Simulate( Tick ); Assert.AreEqual( "pending diagnostic", runtime.CaptureSnapshot().StoppedScriptFault );
+		}
+		finally { runtime.Stop(); }
+	}
+
 	private sealed class Fixture : IDisposable
 	{
 		private readonly string directory = Path.Combine( Path.GetTempPath(), "opentpw-root-fault-" + Guid.NewGuid().ToString( "N" ) );
 		public ObjectCatalogEntry Entry { get; }
-		public Fixture( Asm? script )
+		public Fixture( Asm? script, string extraSettings = "" )
 		{
 			Directory.CreateDirectory( directory );
 			File.WriteAllBytes( Path.Combine( directory, "model.md2" ), Md2ModelFileTests.CreateGeometry() );
 			if ( script != null ) File.WriteAllBytes( Path.Combine( directory, "root.rse" ), script.Build( Variables ) );
-			var settings = new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 1000\nInfo.Name Synthetic\nInfo.FixedItem 1" ) } );
+			var settings = new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 1000\nInfo.Name Synthetic\nInfo.FixedItem 1\n" + extraSettings ) } );
 			Entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Feature, "/synthetic.wad", settings, new ObjectShape( new[] { "*" } ),
 				"/model.md2", null, script == null ? null : "/root.rse", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(),
 				Array.Empty<string>(), new[] { "/model.md2" }, new BaseFileSystem( directory ), null );

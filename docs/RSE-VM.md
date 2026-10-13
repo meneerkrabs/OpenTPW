@@ -536,3 +536,7 @@ Sources: OpenTPW docs (`src/formats/rsse.md`, `rsse-vm.md`,
 `rsse-vm-instructions.md`), the repository's `ScriptDefs`/`RideVariables`
 enums, and static analysis of the local original scripts. No original binary
 was executed.
+
+### Independent root-fault lifecycle controls
+
+The independent review adds real synthetic coaster/visitor and sound ownership controls: a fault removes that runtime's boarded riders, trains and controller while retaining another runtime's registrations, and stops its actual scream chain while another owner remains audible. Repeated containment/Stop does not release a rider twice. A fault set before the runtime services a tick keeps the existing live VM diagnostic/capture behavior; after containment the existing stopped-fault message is retained and live-sound refusal no longer applies to the cleaned owner. These tests add no persistence schema or native audio/fault claim.

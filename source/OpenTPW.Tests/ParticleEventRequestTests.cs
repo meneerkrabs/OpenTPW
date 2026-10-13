@@ -100,4 +100,41 @@ public class ParticleEventRequestTests
 		first.Delete(); Assert.IsNull(first.Runtime.LastParticleEventAttempt); Assert.IsNotNull(second.Runtime.LastParticleEventAttempt); Emit(first.Runtime, 1); Assert.IsNull(first.Runtime.LastParticleEventAttempt);
 		foreach (var entity in Entity.All.ToArray()) entity.Delete(); Assert.IsNull(second.Runtime.LastParticleEventAttempt);
 	}
+	[TestMethod]
+	public void VariableOperandsAreCopiedAndDiagnosticsDoNotEnterSavedOrCanonicalEffects()
+	{
+		var placed = Placed(); var before = System.Text.Json.JsonSerializer.Serialize(placed.Runtime.CaptureSnapshot());
+		var initialHash = new StateHasher(); ((IRideCanonicalEffects)placed.Script!.Effects).AddCanonicalState(initialHash);
+		using var stream = new MemoryStream(new RideVMTests.Asm()
+			.I(Opcode.COPY, RideVMTests.V(0), 2).I(Opcode.COPY, RideVMTests.V(1), 7).I(Opcode.COPY, RideVMTests.V(2), 104)
+			.I(Opcode.EVENT, RideVMTests.V(0), RideVMTests.V(1), RideVMTests.V(2)).I(Opcode.ENDSLICE)
+			.I(Opcode.COPY, RideVMTests.V(0), 0).I(Opcode.COPY, RideVMTests.V(1), -1).I(Opcode.COPY, RideVMTests.V(2), 0)
+			.I(Opcode.ENDSLICE).Build(new[] { "V0", "V1", "V2" }));
+		var vm = new RideVM(stream, new RideVMOptions { Effects = placed.Script.Effects, World = placed.Script.World });
+		try
+		{
+			vm.Advance(FixedStepClock.TickDuration); var retained = placed.Runtime.LastParticleEventAttempt!.Value;
+			Assert.AreEqual((vm.ScriptId, 2, 7, 104), (retained.ScriptId, retained.Type, retained.Key, retained.EffectId));
+			vm.Advance(FixedStepClock.TickDuration); Assert.AreEqual(retained, placed.Runtime.LastParticleEventAttempt);
+			Assert.AreEqual(before, System.Text.Json.JsonSerializer.Serialize(placed.Runtime.CaptureSnapshot()));
+			var finalHash = new StateHasher(); ((IRideCanonicalEffects)placed.Script.Effects).AddCanonicalState(finalHash); Assert.AreEqual(initialHash.Value, finalHash.Value);
+		}
+		finally { vm.Stop(); }
+	}
+
+	[TestMethod]
+	public void SoundChildUsesOwnerAndStopReleasesPlacementResolverAndLatestSlot()
+	{
+		var world = new RideScriptWorld(); var placed = Placed(world: world); var other = Placed(90, world);
+		placed.Script!.SpawnChild("child.RSE", true); placed.Runtime.Simulate(FixedStepClock.TickDuration);
+		var retained = placed.Runtime.LastParticleEventAttempt!.Value;
+		Assert.AreEqual(placed.Script.SoundChild!.ScriptId, retained.ScriptId); Assert.AreEqual(placed.Visitors.AttractionId, retained.OwnerAttractionId);
+		Emit(other.Runtime, 1); var otherAttempt = other.Runtime.LastParticleEventAttempt;
+		placed.Runtime.Stop(); placed.Runtime.Stop(); Assert.IsNull(placed.Runtime.LastParticleEventAttempt);
+		foreach (var name in new[] { "particlePlacement", "particleKeys" }) Assert.IsNull(typeof(OriginalObjectRuntime).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(placed.Runtime), name);
+		Emit(placed.Runtime, 2); Assert.IsNull(placed.Runtime.LastParticleEventAttempt); Assert.AreEqual(otherAttempt, other.Runtime.LastParticleEventAttempt);
+		Assert.AreEqual(ParticleEventPreparationStatus.Prepared, retained.Status); Assert.IsNotNull(retained.Request);
+		foreach (var effect in new[] { -1, -32768, 105, 32767 }) { Emit(other.Runtime, 2, 7, effect); Assert.IsNull(other.Runtime.LastParticleEventAttempt!.Value.Request); }
+	}
+
 }

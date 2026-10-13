@@ -27,8 +27,8 @@ status values with no pose. In particular, a negative key follows native object
 box midpoint and height logic that is not qualified here: model bounds must not
 be substituted for that object box.
 
-The owner-bound preparation hook now retains one resolver for `Runtime.Model` and
-call:
+The owner-bound preparation hook retains one resolver for `Runtime.Model` and
+calls:
 
 ```csharp
 resolver.Resolve(key, ParticleKeyResolver.EventSelector,
@@ -71,6 +71,10 @@ scoped lookup, lifetimes, renderer and refresh timing remain unqualified.
 Synthetic tests exercise actual VM/object effects, animated poses, independent
 owners/children, explicit refusals and teardown, with real sound controls and
 zero particle PCM; they create no GPU resources or original assets.
+Independent review also exercises variable-operand copies, sound-child ownership,
+explicit Stop clearing, other-owner isolation, and exclusion from runtime
+snapshots and canonical effect state. These are managed diagnostic controls;
+they add no native execution or event-delivery qualification.
 
 Verification:
 

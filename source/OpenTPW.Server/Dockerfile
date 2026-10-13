@@ -17,6 +17,7 @@ RUN dotnet publish source/OpenTPW.Server/OpenTPW.Server.csproj -c Release -o /ap
 # AOT halves the cold park construction and the first buy-menu frames against the interpreter, with
 # identical texture and simulation digests, for about 5 MB more download (docs/BROWSER-PERFORMANCE.md).
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS web
+ARG BUILD_REVISION
 WORKDIR /src
 # Emscripten, which the workload drives, runs on Python; the SDK image has none.
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/* \
@@ -27,7 +28,7 @@ COPY content/hero-art/ content/hero-art/
 COPY content/texture-packs/clarity-enhanced/ content/texture-packs/clarity-enhanced/
 COPY source/ source/
 COPY tools/hero-art/ tools/hero-art/
-RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=true -o /web --nologo
+RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=true -o /web --nologo -p:SourceRevisionId="$BUILD_REVISION"
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-false
 # Links the published image to the repository, whose visibility it then shares.

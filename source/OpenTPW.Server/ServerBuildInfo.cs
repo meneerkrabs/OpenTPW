@@ -15,7 +15,7 @@ public sealed record ServerBuildInfo( string? Version, string? SourceRevision, b
 		if ( informationalVersion == null || informationalVersion.Length > 200 )
 			return new( null, null, false );
 		var match = Regex.Match( informationalVersion,
-			@"\A(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?)(?:\+(?<metadata>[0-9A-Za-z.-]+))?\z",
+			@"\A(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?)(?:\+(?<metadata>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\z",
 			RegexOptions.CultureInvariant );
 		if ( !match.Success )
 			return new( null, null, false );

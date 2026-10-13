@@ -42,8 +42,9 @@ the container, pass WebSocket upgrades through, and keep the `Host` header.
 ```
 
 The revision is the full 40-digit Git SHA from `AssemblyInformationalVersion`,
-normalized to lowercase. Other build metadata is omitted. A build without that
-revision returns `sourceRevision: null` and `revisionKnown: false`; missing or
+normalized to lowercase. Build metadata uses nonempty dot-separated identifiers;
+malformed metadata yields an unknown build. Other build metadata is omitted. A build
+without that revision returns `sourceRevision: null` and `revisionKnown: false`; missing or
 unrecognized version metadata also returns `version: null`. The endpoint is public,
 read-only, rate-limited and served with `Cache-Control: no-store`. It exposes no
 configuration, credentials or filesystem paths. The existing `/api/v1/server`
@@ -55,8 +56,11 @@ Container builds exclude `.git`, so supply the public source revision explicitly
 docker build --build-arg BUILD_REVISION="$(git rev-parse HEAD)" -f source/OpenTPW.Server/Dockerfile -t opentpw-server .
 ```
 
-CI should pass its checked-out commit as `BUILD_REVISION`; omitting it produces an
-explicitly unknown revision. A source SHA identifies the claimed server source,
+Both Server and Web publish stages receive `BUILD_REVISION`; the endpoint describes
+only the server assembly. CI passes `github.sha`, matching the default checkout:
+the tested merge commit for pull requests, or the branch/tag commit for pushes
+and dispatches ([GitHub event SHA definitions](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)).
+Omitting the argument produces an explicitly unknown revision. A source SHA identifies the claimed server source,
 not an OCI image digest or proof of a clean source tree. Compare served browser
 resources separately when checking web identity. This endpoint becomes available
 only after deploying a build that includes it; it does not attest older releases.

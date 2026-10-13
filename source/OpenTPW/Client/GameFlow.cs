@@ -73,6 +73,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Queue( Action transition )
 	{
+		AbandonParkBuild();
 		prepareBuyWindowArt = false;
 		buyWindowPreparation = null;
 		pending = transition;
@@ -82,6 +83,7 @@ internal sealed partial class GameFlow : IDisposable
 	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
 	public void QueueLevel( string level, Action transition, bool prepareBuyWindow = false )
 	{
+		AbandonParkBuild();
 		prepareBuyWindowArt = prepareBuyWindow;
 		buyWindowPreparation = null;
 		pending = transition;
@@ -132,8 +134,8 @@ internal sealed partial class GameFlow : IDisposable
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
 		Menu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
-			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode ), prepareBuyWindow: true ),
-			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry ), prepareBuyWindow: true ),
+			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode, overFrames: true ), prepareBuyWindow: true ),
+			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry, overFrames: true ), prepareBuyWindow: true ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			IslandSelected = island =>
@@ -236,14 +238,16 @@ internal sealed partial class GameFlow : IDisposable
 	/// New park from the lobby in the chosen mode: Instant Action adds the <c>Easy_</c> balance layer and
 	/// the shipped Easymode seed where the level has them; Full Simulation starts from terrain and MAP rules.
 	/// </summary>
-	public void StartPark( string levelName, GameMode mode )
+	/// <param name="overFrames">Build the park over several frames while the current scene keeps running (the front end's own transitions).</param>
+	public void StartPark( string levelName, GameMode mode, bool overFrames = false )
 	{
 		var start = ParkStart.FromFrontEnd( mode );
-		StartLevel( levelName, original: true, developerPanels: false, start: start );
-		Log.Trace( $"Started {levelName} as a new {start} park from the front end." );
+		StartLevel( levelName, original: true, developerPanels: false, start: start, overFrames: overFrames,
+			ready: _ => Log.Trace( $"Started {levelName} as a new {start} park from the front end." ) );
 	}
 
-	public void LoadPark( ParkLoadEntry entry )
+	/// <param name="overFrames">As for <see cref="StartPark"/>; a park save of the player's own is still resumed at once.</param>
+	public void LoadPark( ParkLoadEntry entry, bool overFrames = false )
 	{
 		if ( entry.OwnSavePath != null )
 		{
@@ -259,13 +263,10 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		}
 		if ( entry.Sandbox )
-		{
-			StartLevel( "jungle", original: false, developerPanels: false );
-			Level!.LoadSandbox();
-		}
+			StartLevel( "jungle", original: false, developerPanels: false, overFrames: overFrames, ready: level => level.LoadSandbox() );
 		else
 			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc
-			StartLevel( entry.Level, original: true, developerPanels: false );
+			StartLevel( entry.Level, original: true, developerPanels: false, overFrames: overFrames );
 	}
 
 	/// <summary>
@@ -280,6 +281,12 @@ internal sealed partial class GameFlow : IDisposable
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
 			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
+		return EnterLevel( level, levelName, original, visit );
+	}
+
+	/// <summary>The rest of <see cref="StartLevel"/> once its level is built and current: park audio, HUD and advisor.</summary>
+	private Level EnterLevel( Level level, string levelName, bool original, ParkVisitInfo? visit )
+	{
 		Level = level;
 		if ( original )
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
@@ -332,7 +339,7 @@ internal sealed partial class GameFlow : IDisposable
 			Quit = Quit,
 			SavePark = SaveCurrentPark,
 			CreateOptions = CreateOptions,
-			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry ), prepareBuyWindow: true ) ),
+			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry, overFrames: true ), prepareBuyWindow: true ) ),
 			GoOnline = ShowOnline,
 		} );
 
@@ -362,6 +369,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	private void TearDown( bool applyPendingLanguage = true )
 	{
+		AbandonParkBuild();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
 		Advisor?.DetachLevel();
@@ -411,9 +419,12 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
 		TexturePackSwitch.PumpCurrent();
+		// A park being built over frames (a transition queued meanwhile replaces it).
+		if ( parkBuild != null )
+			PumpParkBuild();
 		// A park waits for a language chosen just before it (its speech files may still be coming) and is then entered in it:
 		// the transition's tear-down applies the choice before the park is built.
-		if ( pending != null )
+		else if ( pending != null )
 		{
 			var ready = pendingLevel == null || (SettlePendingLanguage() && LevelDataReady?.Invoke( pendingLevel ) != false);
 			if ( ready )
@@ -424,7 +435,9 @@ internal sealed partial class GameFlow : IDisposable
 				prepareBuyWindowArt = false;
 				buyWindowPreparation = null;
 				transition();
-				Transitioned?.Invoke();
+				// A park built over frames raises it once it is entered.
+				if ( parkBuild == null )
+					Transitioned?.Invoke();
 			}
 			else if ( prepareBuyWindowArt && TexturePackSwitch.Current == null )
 			{
@@ -444,6 +457,9 @@ internal sealed partial class GameFlow : IDisposable
 		var logical = Screen.Size;
 		var input = InjectedInput ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, logical.X ), Context.Canvas.Height / (float)Math.Max( 1, logical.Y ) );
 		InjectedInput = null;
+		// [EXT:park-build-over-frames] while a park is built the live scene runs on without input
+		if ( parkBuild != null )
+			input = UiInput.Idle( input.Mouse );
 		Input.TextEntryActive = false;
 		onlineSession?.Pump();
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
@@ -452,10 +468,14 @@ internal sealed partial class GameFlow : IDisposable
 
 		if ( Level != null && Hud != null )
 		{
-			Level.UiCapturesMouse = Hud.Update( Context, input );
+			Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
+			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
+			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )
+				parkCamera.ModalOpen = true;
 			UpdateParkGlobe( Hud );
 			// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
-			Level.SimulationTimeScale = Hud.Stack.Screens.Any( screen => screen.Name == "texturePackDownload" ) ? 0 : Hud.Status.TimeScale;
+			// The park being left waits too while the next one is built.
+			Level.SimulationTimeScale = parkBuild != null || Hud.Stack.Screens.Any( screen => screen.Name == "texturePackDownload" ) ? 0 : Hud.Status.TimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
@@ -742,6 +762,7 @@ internal sealed partial class GameFlow : IDisposable
 		// [EXT:texture-pack] a running texture switch shows its progress without blocking the game
 		if ( TexturePackSwitch.Current is { } textureSwitch )
 			OptionsScreen.DrawTextureSwitchProgress( Context, Strings, textureSwitch );
+		DrawParkBuildProgress();
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>
@@ -773,12 +794,13 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		Session = Online,
 		Level = () => Level,
-		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
+		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
 		Globe = () => Globe,
 	} ).ShowWorld();
 
 	public void Dispose()
 	{
+		AbandonParkBuild();
 		Advisor?.Dispose();
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();

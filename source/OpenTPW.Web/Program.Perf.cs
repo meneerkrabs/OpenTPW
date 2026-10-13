@@ -71,6 +71,10 @@ public static partial class Program
 		return false;
 	}
 
+	/// <summary>The construction time of each frame of the last park built over frames (GameFlow.LastParkBuildFrames), as a JSON array of milliseconds.</summary>
+	[JSExport]
+	public static string PerfParkBuild() => new JsonArray( (flow?.LastParkBuildFrames ?? Array.Empty<double>() ).Select( value => (JsonNode?)Math.Round( value, 2 ) ).ToArray() ).ToJsonString();
+
 	/// <summary>Presses a UI key by its <see cref="UiKeys"/> name (Accept, Back, Left, ...); false for an unknown name.</summary>
 	[JSExport]
 	public static bool PerfKey( string key )

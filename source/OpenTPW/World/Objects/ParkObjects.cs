@@ -238,20 +238,26 @@ public sealed class ParkObjects
 	/// Imported objects are opened: the save's ride state is not decoded.
 	/// </summary>
 	// [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour
-	public int ImportOriginal( OriginalParkImport save )
+	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
+
+	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>
+	internal IEnumerable<(int Placed, float Share)> ImportOriginalSteps( OriginalParkImport save )
 	{
 		save.RequireSupportedCoasterRuntime();
+		var records = save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ).ToList();
 		var count = 0;
-		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
+		for ( var index = 0; index < records.Count; index++ )
 		{
+			var record = records[index];
 			var entry = Catalog.Find( record.InfoId );
 			if ( entry == null || entry.IsTool )
 				continue;
 			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; their remaining transform fields are not decoded.
 			Add( entry, record.X, record.Y, record.Rotation );
 			count++;
+			yield return (count, (index + 1) / (float)records.Count);
 		}
-		return count;
+		yield return (count, 1);
 	}
 
 	/// <summary>
@@ -259,14 +265,19 @@ public sealed class ParkObjects
 	/// Bus), in park space. Which fixed items the original spawns, and when (seaplane, ferry, end), is not known.
 	/// </summary>
 	// [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level
-	public int AddDefaultFixedItems()
+	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
+
+	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>
+	internal IEnumerable<(int Placed, float Share)> AddDefaultFixedItemSteps()
 	{
+		var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ).ToList();
 		var count = 0;
-		foreach ( var entry in Catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
+		foreach ( var entry in entries )
 		{
 			Add( entry, 0, 0, 0 );
 			count++;
+			yield return (count, count / (float)entries.Count);
 		}
-		return count;
+		yield return (count, 1);
 	}
 }

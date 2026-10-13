@@ -32,6 +32,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly OnlineFolders? originalOnlineFolders;
 	private ParkVisitInfo? readOnlyVisit;
+	private (ulong Hash, int Entities, int Objects) builtInOneGo, builtOverFrames;
+	private int framesBuilding;
+	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
+
+	private void RecordBuiltOverFrames()
+	{
+		if ( flow.Level is { } level )
+			builtOverFrames = (level.ComputeStateHash(), Entity.All.Count, level.Objects.Objects.Count);
+	}
 	private OriginalObject? visitedObject;
 	private bool visitedOpen;
 	private int visitedCount;
@@ -1186,7 +1195,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( secondParkGuestAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned guest asset" );
 		} );
 		Wait( "instant action returns to lobby", 3 );
-		Do( "load original park after Instant Action", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
+		Do( "load original park after Instant Action", () =>
+		{
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
+			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);
+		} );
 		Wait( "original park loads", 3 );
 		Do( "loaded park is the reference start", () =>
 		{
@@ -1196,6 +1209,51 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.StartKind == ParkStartKind.OriginalSaveReference && flow.Level!.Park!.Economy.Mode == ParkGameMode.FullSimulation
 				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.OriginalPark!.Save != null,
 				"Load Park opens the shipped save as the reference start whatever mode was chosen before (UI-041)" );
+			flow.ShowFrontEnd( "jungle" );
+		} );
+		Wait( "lobby before the park built over frames", 3 );
+		Do( "start a park over frames that a later transition replaces", () =>
+		{
+			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
+		} );
+		Wait( "the replaced park is being built", 3 );
+		Do( "a transition queued during the build replaces it", () =>
+		{
+			Require( flow.BuildingPark, "the park is still being built after three frames" );
+			flow.Queue( () => flow.ShowFrontEnd( "jungle" ) );
+			Require( !flow.BuildingPark && flow.Level == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
+				&& Entity.All.Count == lobbyBeforeAbandon.Count,
+				"dropping the build leaves the lobby's own entities current and untouched" );
+			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
+				"the dropped park's materials and shaders are released" );
+		} );
+		Wait( "the queued transition runs", 3 );
+		Do( "load the original park over frames", () =>
+		{
+			flow.Transitioned += RecordBuiltOverFrames;
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
+			Require( flow.BuildingPark && flow.Level == null && flow.Lobby != null, "a park built over frames leaves the lobby running" );
+		} );
+		steps.Enqueue( ("the park built over frames is entered", () =>
+		{
+			if ( flow.BuildingPark )
+			{
+				framesBuilding++;
+				Require( flow.Level == null && flow.Lobby != null && Entity.All.Count > 0, "the lobby stays current while the park is built" );
+				return false;
+			}
+			return true;
+		}) );
+		Do( "the park built over frames is the park built in one go", () =>
+		{
+			flow.Transitioned -= RecordBuiltOverFrames;
+			Require( framesBuilding >= 2, $"the park is built over several frames ({framesBuilding})" );
+			Require( builtOverFrames == builtInOneGo,
+				$"built over frames: hash, entities and objects {builtOverFrames} equal the park built in one go {builtInOneGo}" );
+			Require( flow.Level != null && flow.Hud != null && flow.Lobby == null && flow.StartKind == ParkStartKind.OriginalSaveReference,
+				"the park built over frames is entered with its HUD, and the lobby is gone" );
+			Log.Trace( $"Park built over {framesBuilding} frames: hash {builtOverFrames.Hash:X16}, {builtOverFrames.Entities} entities, {builtOverFrames.Objects} objects, as built in one go." );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -18,6 +19,9 @@ public class ThemeParkIncGlobalSaveTests
 		public int MapFlags { get; init; } = 17;
 		public int AmbientTags { get; init; } = 2;
 		public string? BrokenMarker { get; init; }
+		public string SignLine1 { get; init; } = "Belly";
+		public string SignLine2 { get; init; } = "Bounce";
+		public string CompanyName { get; init; } = "Theme Park AG";
 	}
 
 	/// <summary>A file in the order of the original loader (0x0074D840 and its sub-serializers).</summary>
@@ -53,8 +57,8 @@ public class ThemeParkIncGlobalSaveTests
 			writer.Write( new byte[6 + 4 * 5 + 8 * 5] );
 			for ( var character = 0; character < 33; character++ )
 			{
-				writer.Write( (ushort)(index == 0 && character < 5 ? "Belly"[character] : 0) );
-				writer.Write( (ushort)(index == 0 && character < 6 ? "Bounce"[character] : 0) );
+				writer.Write( (ushort)(index == 0 && character < layout.SignLine1.Length ? layout.SignLine1[character] : 0) );
+				writer.Write( (ushort)(index == 0 && character < layout.SignLine2.Length ? layout.SignLine2[character] : 0) );
 			}
 			writer.Write( (byte)1 );
 			writer.Write( (byte)0 );
@@ -91,7 +95,7 @@ public class ThemeParkIncGlobalSaveTests
 		writer.Write( 5500 );
 		writer.Write( 18 );
 		for ( var character = 0; character < 31; character++ )
-			writer.Write( (ushort)(character < 13 ? "Theme Park AG"[character] : 0) );
+			writer.Write( (ushort)(character < layout.CompanyName.Length ? layout.CompanyName[character] : 0) );
 		writer.Write( 126 );
 		Marker( "RAHS" );
 		writer.Write( layout.MapFlags );
@@ -137,6 +141,81 @@ public class ThemeParkIncGlobalSaveTests
 		var valid = Create( new Layout() );
 		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( valid.AsSpan( 0, valid.Length - 1 ) ), "truncated" );
 		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( valid.Concat( new byte[1] ).ToArray() ), "trailing byte" );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 1 )]
+	[DataRow( 2 )]
+	public void RejectsMalformedUtf16InEachDecodedTextField( int field )
+	{
+		foreach ( var text in new[] { "\uD800", "\uDC00", "\uDC00\uD800", "\uD800A", new string( 'A', 32 ) + "\uD800" } )
+		{
+			var layout = field switch
+			{
+				0 => new Layout { SignLine1 = text },
+				1 => new Layout { SignLine2 = text },
+				_ => new Layout { CompanyName = text.Length > 31 ? new string( 'A', 30 ) + "\uD800" : text }
+			};
+			Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( Create( layout ) ), $"UTF-16 field {field}" );
+		}
+	}
+
+	[TestMethod]
+	public void ValidUtf16PairsAndUnusedTextAfterTheTerminatorRemainReadable()
+	{
+		const string text = "A\uD83C\uDFA2";
+		var save = ThemeParkIncGlobalSave.Read( Create( new Layout { SignLine1 = text, SignLine2 = text, CompanyName = text } ) );
+		Assert.AreEqual( text, save.Parks[0].SignLine1 );
+		Assert.AreEqual( text, save.Parks[0].SignLine2 );
+		Assert.AreEqual( text, save.Shares.CompanyName );
+		var fullSign = new string( 'A', 31 ) + "\uD83C\uDFA2";
+		var fullCompany = new string( 'A', 29 ) + "\uD83C\uDFA2";
+		var full = ThemeParkIncGlobalSave.Read( Create( new Layout { SignLine1 = fullSign, SignLine2 = fullSign, CompanyName = fullCompany } ) );
+		Assert.AreEqual( fullSign, full.Parks[0].SignLine1 );
+		Assert.AreEqual( fullSign, full.Parks[0].SignLine2 );
+		Assert.AreEqual( fullCompany, full.Shares.CompanyName );
+		var terminated = ThemeParkIncGlobalSave.Read( Create( new Layout { SignLine1 = "A\0\uD800", SignLine2 = "B\0\uDC00", CompanyName = "C\0\uD800" } ) );
+		Assert.AreEqual( "A", terminated.Parks[0].SignLine1 );
+		Assert.AreEqual( "B", terminated.Parks[0].SignLine2 );
+		Assert.AreEqual( "C", terminated.Shares.CompanyName );
+	}
+
+	[TestMethod]
+	public void EveryTruncatedPrefixIsRefusedAndMaximumSizedTablesStillRead()
+	{
+		var valid = Create( new Layout() );
+		for ( var length = 0; length < valid.Length; length++ )
+		{
+			var prefixLength = length;
+			Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( valid.AsSpan( 0, prefixLength ) ), $"prefix {length}" );
+		}
+		var maximum = ThemeParkIncGlobalSave.Read( Create( new Layout
+		{
+			Parks = Enumerable.Repeat( new string( 'A', ThemeParkIncGlobalSave.MaximumNameBytes - 1 ), ThemeParkIncGlobalSave.MaximumParks ).ToArray(),
+			MapFlags = ThemeParkIncGlobalSave.MaximumMapFlags,
+			AmbientTags = ThemeParkIncGlobalSave.MaximumAmbientTags
+		} ) );
+		Assert.AreEqual( ThemeParkIncGlobalSave.MaximumParks, maximum.Parks.Count );
+		Assert.AreEqual( ThemeParkIncGlobalSave.MaximumNameBytes - 1, maximum.Parks[0].Name.Length );
+		Assert.AreEqual( ThemeParkIncGlobalSave.MaximumAmbientTags, maximum.AmbientTagCount );
+	}
+
+	[TestMethod]
+	public void ExtremeCountsAndNameLengthsAreRefusedBeforeSectionReads()
+	{
+		var valid = Create( new Layout() );
+		var parkCount = valid.AsSpan().IndexOf( "AMTA"u8 ) + 4;
+		var mapCount = valid.AsSpan().IndexOf( "RAHS"u8 ) + 4;
+		var ambientCount = valid.AsSpan().IndexOf( "MAPS"u8 ) + 4;
+		foreach ( var offset in new[] { parkCount, parkCount + 4, mapCount, ambientCount } )
+			foreach ( var count in new[] { int.MinValue, -1, int.MaxValue } )
+			{
+				var malformed = (byte[])valid.Clone();
+				BinaryPrimitives.WriteInt32LittleEndian( malformed.AsSpan( offset, 4 ), count );
+				Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( malformed ), $"count at {offset}: {count}" );
+			}
+		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncGlobalSave.Read( Create( new Layout { Parks = new[] { new string( 'A', ThemeParkIncGlobalSave.MaximumNameBytes ) } } ) ) );
 	}
 
 	/// <summary>

@@ -539,6 +539,37 @@ public partial class Level : IDisposable
 		IsPlacing = false;
 	}
 
+	/// <summary>
+	/// The park's live attractions for the All Attractions window: every placed attraction plus the developer
+	/// prototype ride, which lives beside <see cref="Objects"/> rather than inside it. The two sources share the
+	/// script world's attraction ids, so this is where they merge into one row each without duplicates.
+	/// </summary>
+	// [EXT:developer-prototype] the original window had no developer prototype to list; the Totem joins the placed rides as one more row
+	public IReadOnlyList<OriginalObject> ListAttractions() =>
+		Objects.Objects.Where( item => !item.IsDeleted && item.Runtime.IsAttraction )
+			.Append( PlacedRide )
+			.Where( item => item is { IsDeleted: false, Runtime.IsAttraction: true } )
+			.DistinctBy( item => item.Runtime.AttractionId )
+			.ToArray();
+
+	/// <summary>
+	/// Removes one listed attraction the way it was placed: a catalogue object through the object world (which
+	/// sells its economy record and unlinks guest payments), the prototype ride through <see cref="RemoveRide"/>
+	/// (ride view, guests, script and economy stay consistent — <see cref="ParkObjects.Remove"/> does not own it).
+	/// Read-only visits refuse here and change nothing. Returns true when the park no longer holds the item.
+	/// </summary>
+	public bool RemoveAttraction( OriginalObject item )
+	{
+		if ( IsReadOnlyVisit )
+			return false;
+		if ( PlacedRide != null && ReferenceEquals( item, PlacedRide ) )
+		{
+			RemoveRide();
+			return true;
+		}
+		return !item.IsDeleted && Objects.Remove( item );
+	}
+
 	public void SaveSandbox()
 	{
 		RequireSandbox();

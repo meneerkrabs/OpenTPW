@@ -364,8 +364,8 @@ public sealed partial class ParkHud
 			return;
 		void Remove()
 		{
-			if ( !level.IsReadOnlyVisit && !item.IsDeleted )
-				level.Objects.Remove( item ); // Removal sells and unlinks exactly once.
+			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam.
+			level.RemoveAttraction( item );
 			selectedObject = null;
 			SetInfoArm( false );
 		}

@@ -877,6 +877,10 @@ research batch was included in this merge.
   the manifest first marks it as not stored and only marks it kept, with the new hash, once the new bytes are written; a clear or
   folder change in between drops the write. A failed rewrite therefore makes the file count as missing instead of offering stale
   bytes under the new hash (BROWSER-ORIGINAL-CACHE-RECOVERY.md).
+- **Experimental TPI layout checkpoints (October 13):** the Theme Park Inc slice's pause menu can save its world's layout (cells
+  and objects, with asset hashes) to `opentpw-<theme>.tpilayout` and load it as a new experimental session: a versioned, strictly
+  validated file written atomically, staged beside the live world before it is retired. Guests, script progress and the clock
+  restart; it is not an original TPI save (SAVE-930). Theme Park World paths are unaffected.
 - **WAD ranges checked before allocating (October 13):** a WAD's header, directory and member ranges are checked
   against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
   instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive

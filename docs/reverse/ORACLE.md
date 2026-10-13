@@ -317,7 +317,7 @@ statistics are stubbed). All are `cmpw` and a branch on "not greater" (signed, s
 | Happiness | single `0xc19e4(park, 0)` (average happiness, `fcmpo`) `> single([1880])` **and** `0xc3684(park) > [1884]` | the average truncated to an integer, `>=`, plus a count of guests at least that happy `>=` `AtLeastThisManyHappyPeople` | the single average `> Happiness` and the guests in the park `> AtLeastThisManyHappyPeople`; nobody is filtered by happiness (`IParkGuestStatistics.AverageHappiness` is now a float: the mean of each in-park guest's `(u8)trunc(happiness)`, 0 while the park is closed, as `0xc19e4` computes it per PPC-scenarios; the routine itself is stubbed here) |
 | All researched and built | `0xc5510(park)` low byte nonzero | same | same (no C# input in the oracle) |
 | Profit | bank `+292 > [1888]` | `>=` | `>` |
-| Recent visitors | `0xc3b88(park, [1896]) > [1892]` **and** the park age in 30-day months `> [1896]` | the last N closed months `>=` | the last N closed months `>`; the age gate is still "N closed months" (ECON-052) |
+| Recent visitors | `0xc3b88(park, [1896]) > [1892]` **and** the park age in 30-day months `> [1896]` | the last N closed months `>=` | lifetime visitors minus the snapshot at the close N back (the open month included, N + 1 closes needed) `>`, and the park clock's age in exact 30-day months `> N`, as tp.exe `0x4c94d0` / `0x4d4bc0` read (ECON-052 retired) |
 | Coaster height, go-kart excitement, water length | `0xc73bc` / `0xc6cec` / `0xc710c` `> [1900]` / `[1904]` / `[1908]` | `>=` | `>` |
 | Big park | `0xc8cc0 > [1916]` (`MinCellsCovered`) | `>=` `MinCellsOwned` | `>` `MinCellsOwned` (key mapping is ECON-038) |
 

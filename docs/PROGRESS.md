@@ -288,6 +288,9 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - Park points now apply the queue part of the original's counts-test (tp.exe `0x4dd920`, ORACLE.md 7.11, X15, ARRIVAL-003): an
   attraction counts only with queue cells from its entrance and a queue shorter than 4 × those cells, so a ride without a queue, or with
   a full one, adds no points and draws no arrivals. Only the coaster controller test and the kart/water word remain open.
+- ECON-052 is retired: the recent-visitors golden ticket now follows tp.exe `0x4c94d0` / `0x4d4bc0`. It takes the lifetime visitor
+  counter minus its snapshot at the month close RecentVisitorMonths back, so the open month counts and one more close is needed.
+  It also needs the park clock to be more than that many exact 30-day months old; both comparisons are strict.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

@@ -40,7 +40,6 @@ public static class EconomyApproximations
 		("ECON-049", "the maintenance flag (the original's player request, +96) and the back-of-queue link test (0xdd744, PC FUN_004de4a0) are not modelled: OpenTPW has no maintenance button and takes the queue as connected", "the callers of 0xdd744 and the cell test it makes"),
 		("ECON-050", "the gate census reads the imported guest grid, which preserves paths but not every original outside, approach or footprint cell type; unpreserved cells remain type 0 and can be counted as park ground", "original cell-type provenance in the guest-grid import"),
 		("ECON-051", "the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping)", "the writer of the flag and when the original clears it"),
-		("ECON-052", "the recent-visitors ticket sums the last RecentVisitorMonths closed calendar months and needs that many closed months; the original compares the visitor counter minus its history value RecentVisitorMonths back and needs the park age in 30-day months to exceed RecentVisitorMonths", "the history value behind 0x100C3B88 and the age in calendar months"),
 	};
 
 	private static bool logged;

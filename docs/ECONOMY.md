@@ -374,7 +374,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-049 | `World/ParkGate.cs:218` | the maintenance flag (the original's player request, +96) and the back-of-queue link test (0xdd744, PC FUN_004de4a0) are not modelled: OpenTPW has no maintenance button and takes the queue as connected | the callers of 0xdd744 and the cell test it makes |
 | ECON-050 | `World/ParkGate.cs` | the gate census reads the reduced imported guest grid; unpreserved outside, approach and footprint cells can remain counted type 0 | original cell-type provenance in the guest-grid import |
 | ECON-051 | `Economy/ParkEconomy.cs:500` | the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) | the writer of the flag and when the original clears it |
-| ECON-052 | `Economy/ParkObjectives.cs:285` | the recent-visitors ticket sums the last RecentVisitorMonths closed calendar months and needs that many closed months; the original compares the visitor counter minus its history value RecentVisitorMonths back and needs the park age in 30-day months to exceed RecentVisitorMonths | the history value behind 0x100C3B88 and the age in calendar months |
 
 ## Open questions
 

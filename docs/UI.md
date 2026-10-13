@@ -523,9 +523,9 @@ the real assets. Approximation tags refer to the register below.
 | Window | Controls | Status | Test |
 | --- | --- | --- | --- |
 | Buy (`ParkHud.BuyWindow.cs`) | list select/sort/scroll, category buttons, purchase via row activation, staff button, all-attractions button, exit/Back | wired | `BuyWindowTests`, `FrontEndSmokeTest` |
-| Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on activation, view toggle (UI-090), dismiss with confirmation (UI-092), scroll, locators, all-visitors button, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
-| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905/906), row activation selects the object, delete with the original category confirmations, exit/Back | wired | `OverviewWindowTests` |
-| Visitors (`ParkHud.VisitorWindow.cs`) | list select/number-sort/scroll, live visitor detail rows (UI-907/908), row activation locates the visitor, exit/Back, V key | wired | `OverviewWindowTests`, `HudScreenShortcutTests` |
+| Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on activation, view toggle (UI-090), dismiss with confirmation (UI-092), scroll, locators, all-visitors and all-attractions buttons, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
+| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905/906), row activation selects the object, delete with the original category confirmations, exit/Back | wired | `OverviewWindowTests`, `FrontEndSmokeTest` (list/activation/sell, visit open + read-only refusal) |
+| Visitors (`ParkHud.VisitorWindow.cs`) | list select/number-sort/scroll, live visitor detail rows (UI-907/908), row activation locates the visitor, exit/Back, V key | wired | `OverviewWindowTests`, `HudScreenShortcutTests`, `FrontEndSmokeTest` (list/scroll/sort/Enter-locate) |
 | Map (`ParkHud.Map.cs`) | pan, zoom, four category filters, track/visitor/staff/metric layer toggles, close | wired | `MapViewStateTests`, `MapStaffControlTests` |
 | Finance (`ParkHud.FinanceWindow.cs`) | 1/3/12-year periods, eight series toggles (bank balance/park value exclusive), loans/staff-cost/entry detail buttons, exit | wired | `FinanceWindowTests` |
 | Loans (`ParkHud.LoansWindow.cs`) | Available/Outstanding tabs, six sortable columns, list select/scroll, take/repay with confirmations and balance checks, summary rows, navigation buttons | wired | `FrontEndSmokeTest` (loan flow), model in economy suite |
@@ -547,8 +547,10 @@ the real assets. Approximation tags refer to the register below.
 Not implemented (no screen exists; their keys stay unhandled): camcorder mode
 (C), e-mail postcard (Ctrl+P), help bar (Ctrl+H), F1 advisor help speech,
 player profiles, online world, golden keys. The All Attractions (A) and All
-Staff (S) keys stay with the camera's WASD pan by policy; both windows open
-through their buttons instead.
+Staff (S) keys stay with the camera's WASD pan by policy; the attractions
+window opens from both the buy window and the staff window's visitor corner
+(so it stays reachable in a read-only visit, where the buy window is
+disabled), the visitors window from the staff window and the V key.
 
 Project rule: every UI value or rule that is not original data or hard evidence is
 tagged at its site with `// [APPROX:UI-NNN] … — evidence needed: …` and logged once

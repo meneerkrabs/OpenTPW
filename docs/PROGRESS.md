@@ -835,6 +835,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Parks built over frames (October 13):** a park chosen in the front end, loaded or visited is built
+  over several frames beside the running lobby, with a progress line, instead of in one frame; the
+  construction runs the same steps in the same order, and the smoke test finds the same world hash,
+  entities and objects. On the AOT build the largest frame of a cold Jungle start fell from 509 to
+  107 ms; the park is ready 16 % later (832 against 717 ms), the digest is unchanged. Phase 5 of the browser plan (time-slicing).
 - **Files read on demand (October 13):** WAD archives opened from a path and SDT sound banks now read
   a member or entry from the file when it is needed instead of holding the whole file (byte-identical
   on every original archive member and bank entry); `Texture.Missing` is one shared texture, and the

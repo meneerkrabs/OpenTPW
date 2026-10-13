@@ -133,8 +133,10 @@ class Source(unittest.TestCase):
     def test_merge_keeps_both_parents_statements(self):
         level = read(REPO / 'source' / 'OpenTPW' / 'World' / 'Level.Objects.cs')
         # Both parents' parts of the ParkObjects construction survive: main's world seed and c213e81's queue-cell
-        # reservation (later nodes may add further reservations, e.g. PATH-I's built path cells).
-        construct = level[level.index('new ParkObjects( ObjectCatalog.Load( theme, easy ), grid'):]
+        # reservation (later nodes may add further reservations, e.g. PATH-I's built path cells). The catalog is loaded in steps
+        # just before (parks built over frames), so the construction takes it from a local.
+        self.assertIn('ObjectCatalog.LoadSteps( theme, easy )', level)
+        construct = level[level.index('new ParkObjects( catalog!, grid'):]
         construct = construct[:construct.index('};')]
         self.assertIn('grid, Seed )', construct)
         self.assertIn('IsReservedByPrototype( x, y )', construct)

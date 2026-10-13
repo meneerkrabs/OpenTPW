@@ -37,12 +37,19 @@ public sealed class OriginalParkImport
 		var objectsByCell = placedObjects.Select( item => item.Record ).Concat( unresolvedObjects ).Concat( fixedItems )
 			.ToLookup( record => (record.X, record.Y) );
 		var attractionsByCell = attractions.ToLookup( attraction => (attraction.CellX, attraction.CellY) );
-		CoasterSections = coasters.Coasters.SelectMany( coaster => coaster.Sections ).Select( section =>
+		var sections = coasters.Coasters.SelectMany( coaster => coaster.Sections ).ToArray();
+		// Stacked sections may repeat a cell. Share its matches instead of copying the scene for every section.
+		var matchesByCell = sections.Select( section => (section.CellX, section.CellY) ).Distinct().ToDictionary( cell => cell, cell =>
 		{
-			var objects = objectsByCell[(section.CellX, section.CellY)].ToArray();
+			var objects = objectsByCell[cell].ToArray();
 			var ids = objects.Select( record => record.InfoId ).ToHashSet();
-			var matching = attractionsByCell[(section.CellX, section.CellY)].Where( attraction => ids.Contains( attraction.InfoId ) ).ToArray();
-			return new ImportedCoasterSection( section, objects, matching );
+			var matching = attractionsByCell[cell].Where( attraction => ids.Contains( attraction.InfoId ) ).ToArray();
+			return (Objects: objects, Attractions: matching);
+		} );
+		CoasterSections = sections.Select( section =>
+		{
+			var matches = matchesByCell[(section.CellX, section.CellY)];
+			return new ImportedCoasterSection( section, matches.Objects, matches.Attractions );
 		} ).ToArray();
 	}
 

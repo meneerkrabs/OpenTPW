@@ -213,7 +213,7 @@ public class OriginalCoasterSaveTests
 	}
 
 	/// <summary>A 3×3 synthetic park (Belly Bounce 1100 at (1, 1), the gates 1601 at (0, 0)) with the given coaster body.</summary>
-	private static OriginalParkImport Park( byte[]? coasters = null, bool matchingAttractionId = true )
+	private static OriginalParkImport Park( byte[]? coasters = null, bool matchingAttractionId = true, bool duplicateMatches = false )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -229,8 +229,15 @@ public class OriginalCoasterSaveTests
 				PositionX = 384, PositionY = 384, InfoId = 1101, Repair = 100, LifeGauge = 100
 			} ));
 		}
+		if ( duplicateMatches )
+			things.Add( (13, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields
+			{
+				PositionX = 384, PositionY = 384, InfoId = 1100, Repair = 100, LifeGauge = 100
+			} )) );
 		var grid = SaveTestPayloads.Grid( map, ( x, y ) => OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
 		var rideSystem = RideSystemRecord( 1601, 0, 0, SaveObject.FixedItemKind, 1 ).Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 2 ) ).ToArray();
+		if ( duplicateMatches )
+			rideSystem = rideSystem.Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 3 ) ).ToArray();
 		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), grid, SaveTestPayloads.Things( things ) ), rideSystem,
 			coasters == null ? null : new Dictionary<SaveBlock, byte[]> { [SaveBlock.Coasters] = coasters } );
 		return OriginalParkImport.Import( payload, map );
@@ -271,6 +278,29 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( 1100, park.CoasterSections.Single().Objects.Single().InfoId );
 		Assert.AreEqual( 1101, park.AttractionsAt( 1, 1 ).Single().InfoId );
 		Assert.AreEqual( 0, park.CoasterSections.Single().Attractions.Count );
+	}
+
+	[TestMethod]
+	public void StackedSectionsShareBoundedCellJoinsWithoutDiscardingAmbiguousObjects()
+	{
+		const ushort sectionCount = 4096;
+		var body = Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), sections: sectionCount ).U32( 0 );
+		for ( var index = 0; index < sectionCount; index++ )
+			Section( body, cellX: 1, cellY: 1, height: index / (float)sectionCount );
+		var park = Park( body.ToArray(), duplicateMatches: true );
+		Assert.AreEqual( sectionCount, park.CoasterSections.Count );
+		var first = park.CoasterSections[0];
+		CollectionAssert.AreEqual( new[] { 2, 3 }, first.Objects.Select( record => record.Index ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 12, 13 }, first.Attractions.Select( record => record.Id ).ToArray() );
+		foreach ( var section in park.CoasterSections )
+		{
+			// A section-count × scene-count copy would amplify a bounded input into billions of references.
+			Assert.AreSame( first.Objects, section.Objects, "one shared scene match collection per cell" );
+			Assert.AreSame( first.Attractions, section.Attractions, "one shared attraction match collection per cell" );
+		}
+		Assert.AreNotEqual( first.Section.HeightParameter, park.CoasterSections[^1].Section.HeightParameter,
+			"sharing cell joins must preserve each section's independent raw geometry" );
+		Assert.ThrowsException<InvalidDataException>( park.RequireSupportedCoasterRuntime );
 	}
 
 	[TestMethod]

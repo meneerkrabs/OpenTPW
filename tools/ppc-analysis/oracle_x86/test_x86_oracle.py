@@ -75,6 +75,12 @@ EXPECTED = {
     ('tpw-exe-scrap-value', 'plan'): AGREE,
     # X14 (queue re-evaluation 0x501390 vs QUEUE-005): one exit, position >= 4 x cells unless in state 14; C#'s rule agrees.
     ('tpw-exe-queue-reevaluate', 'plan'): AGREE,
+    # X15 (park points counts-test 0x4dd920 vs ARRIVAL-003): the Mac test at PC offsets; C# applies all of it but the coaster
+    # controller test and the kart/water word, so it differs only for track types 1 to 3.
+    ('tpw-exe-counts-test', 'plan'): AGREE,
+    ('tpw-exe-counts-test', 'csharp-rule'): (29, {'flags': 4, 'state': 0, 'open': 1, 'cells': 2, 'back': 4660, 'length': 3,
+                                                   'track': 3, 'controller_ok': False, 'track_word': 1}),
+    ('tpw-exe-counts-test', 'csharp-rule-untracked'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -748,6 +754,11 @@ class Oracle(CoastTests, unittest.TestCase):
     def test_queue_reevaluation_has_one_exit(self):
         for side in ('plan', 'csharp-rule', 'no-state-14-exemption'):
             self.check(('tpw-exe-queue-reevaluate', side))
+
+    # ------------------------------------------------------------------ X15: park points counts-test
+    def test_counts_test_matches_csharp_but_for_tracked_rides(self):
+        for side in ('plan', 'csharp-rule', 'csharp-rule-untracked'):
+            self.check(('tpw-exe-counts-test', side))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

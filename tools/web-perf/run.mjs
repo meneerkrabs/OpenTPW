@@ -169,7 +169,7 @@ class Page {
 		await sleep(settleMs);
 		const end = await this.mark();
 		const summary = summarizeFrames(end.frames, end.now - start.now);
-		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, frames: summary.frames, p95Ms: summary.p95Ms, ...(atReady ? { atReady } : {}) };
+		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, longFramesMs: summary.longFramesMs, frames: summary.frames, p95Ms: summary.p95Ms, ...(atReady ? { atReady } : {}) };
 	}
 }
 
@@ -198,9 +198,15 @@ const scenarios = {
 		await page.eval('opentpwPerf.program.PerfProfile(true)');
 		const cold = await page.action('the Jungle park', () => page.call('PerfClick', 'fullSimulation'),
 			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000,
-				onReady: async () => JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()')) });
+				onReady: async () => ({
+					profile: JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()')),
+					// Builds from before parks were built over frames have no such hook.
+					build: JSON.parse(await page.eval("opentpwPerf.program.PerfParkBuild?.() ?? '[]'")),
+				}) });
 		// The profile when the park was ready (the start itself), and after the settle time (with what loaded lazily).
-		cold.startProfile = cold.atReady;
+		cold.startProfile = cold.atReady.profile;
+		// The construction time of each frame the park was built over; the last includes entering it.
+		cold.buildFramesMs = cold.atReady.build;
 		delete cold.atReady;
 		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
 		await page.eval('opentpwPerf.program.PerfProfile(false)');
@@ -366,7 +372,10 @@ function markdown(report) {
 		if (steady && !steady.error)
 			lines.push(`- ${name} steady: main thread busy ${steady.mainThreadBusyPercent}%, ${steady.fps} fps, frame p95 ${steady.p95Ms} ms, largest gap ${steady.largestGapMs} ms, long tasks ${steady.longTasks}`);
 	if (results.jungle?.cold)
-		lines.push(`- Jungle cold: ready in ${results.jungle.cold.readyMs} ms, largest frame ${results.jungle.cold.maxFrameMs} ms`);
+		lines.push(`- Jungle cold: ready in ${results.jungle.cold.readyMs} ms, largest frame ${results.jungle.cold.maxFrameMs} ms`
+			+ (results.jungle.cold.longFramesMs?.length ? `; frames over 50 ms: ${results.jungle.cold.longFramesMs.join(', ')}` : ''));
+		if (results.jungle.cold.buildFramesMs?.length)
+			lines.push(`- Jungle built over ${results.jungle.cold.buildFramesMs.length} frames, construction ms per frame (the last enters the park): ${results.jungle.cold.buildFramesMs.join(', ')}`);
 	const describe = profile => Object.entries(profile).map(([name, entry]) => `${name} ${entry.ms} (${entry.count})`).join(', ');
 	if (results.jungle?.cold?.startProfile)
 		lines.push(`- Jungle load profile until ready (ms, count; nested sections overlap): ${describe(results.jungle.cold.startProfile)}`);

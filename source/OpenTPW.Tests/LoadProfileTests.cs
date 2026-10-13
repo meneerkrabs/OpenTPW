@@ -35,6 +35,22 @@ public class LoadProfileTests
 	}
 
 	[TestMethod]
+	public void TimeWhileThePausedLoadWaitsIsLeftOut()
+	{
+		LoadProfile.Enable( true );
+		using ( LoadProfile.Measure( "built over frames" ) )
+		{
+			Thread.Sleep( 5 );
+			LoadProfile.Pause();
+			Thread.Sleep( 200 );
+			LoadProfile.Resume();
+			Thread.Sleep( 5 );
+		}
+		var milliseconds = LoadProfile.Snapshot()["built over frames"].Milliseconds;
+		Assert.IsTrue( milliseconds >= 9 && milliseconds < 150, $"{milliseconds} ms: only the work, not the wait between frames" );
+	}
+
+	[TestMethod]
 	public void OtherThreadsAreNotCounted()
 	{
 		LoadProfile.Enable( true );

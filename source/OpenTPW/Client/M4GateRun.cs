@@ -226,7 +226,10 @@ internal sealed class M4GateRun
 			foreach ( var (item, instance) in EconomyLinks )
 			{
 				if ( Economy.TryGetObject( instance, out var state ) )
+				{
 					state.IsOpen = item.IsOpen;
+					state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, Grid );
+				}
 			}
 			Guests.Tick( Tick );
 			foreach ( var item in FixedItems )

@@ -313,9 +313,15 @@ callers, whose supported-variant checks still apply. The sample count stays a
 
 `TgqAudioReader` advances its block ordinal only after a successful decode. A
 malformed block with a valid encoded length therefore remains the failing block
-on retry rather than being silently skipped. Reads that throw do not return a
-frame count; their caller buffer may already contain data copied from an earlier
-block in that call and should be discarded.
+on retry rather than being silently skipped. Reads that throw restore the complete
+entry cursor (block ordinal, cached frame count, cached position and buffer), so
+`Position` still names the samples returned by earlier successful reads. A caller
+buffer may already contain a copied prefix and must be discarded; retrying copies
+that same prefix again before reaching the malformed block. If a failed decode
+overwrote the cached PCM, the reader reconstructs its already validated block from
+the immutable movie data. EA-XA current/previous predictor arrays are local to each
+block decode and seeded from that block's header; no filter state persists between
+calls and no codec transform changes are required.
 
 Synthetic regressions failed on the unsigned-tag wraparound and failed-decode
 retry paths before the fixes. Tests preserve the largest representable metadata,
@@ -325,8 +331,23 @@ file offsets are bounded before slicing, PT extended lengths are bounded before
 copying, audio sums use `long`, and frame dimensions bound plane allocation.
 Existing file/chunk/count/dimension limits remain unchanged.
 
-Fresh verification: 55 synthetic container/decoder/playback cases pass; four
-original movie cases skip without the private corpus. Original corpus compatibility
+Independent review target `9e56fba340a54896a26caad70f6dcab0c7d09956` against
+`72a1febf`: **ACCEPT after retry rollback correction**. A new red regression showed
+that the original block-index fix alone lost the valid prefix of a failed read
+while leaving public `Position` unchanged. Added cases exercise retry from both an
+empty cache and a partially consumed cache, including a later-frame predictor
+failure that overwrites the reused PCM buffer before throwing. Independent parser
+checks cover 1–4-byte big-endian numeric values, big-endian extended lengths,
+little-endian platform values, opaque unknown tags (including embedded terminator
+bytes), no-data tags, duplicates, malformed lengths, and nonzero post-terminator
+padding. Typed representability checks preserve `int.MaxValue` and refuse unsigned
+values from `0x80000000`; no new arbitrary format cap is imposed.
+
+Fresh independent verification: 71 synthetic container/decoder/playback/intro cases
+pass, including fourteen container robustness cases; nineteen original-data rows
+skip with the corpus environment unset. Build/typecheck, changed-file style and
+whitespace checks, CRLF-aware diff check, fidelity register check and its eleven
+Python tests pass. No original asset reads were attempted. Original corpus compatibility
 and original-player malformed-input behavior were not requalified because USBSSD
 reads are blocked. Existing codec-fidelity gates above remain open.
 

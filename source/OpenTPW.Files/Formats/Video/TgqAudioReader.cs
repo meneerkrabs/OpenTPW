@@ -29,30 +29,52 @@ public sealed class TgqAudioReader
 	public long Position { get; private set; }
 	public bool EndOfStream => Position >= TotalFrames;
 
-	/// <summary>Fills <paramref name="interleaved"/> with whole stereo frames; returns the frames written (0 at the end).</summary>
+	/// <summary>Fills whole stereo frames (0 at the end). A failed read restores the entry cursor;
+	/// the caller must discard its potentially partially written buffer before retrying.</summary>
 	public int Read( Span<short> interleaved )
 	{
 		var written = 0;
 		var capacity = interleaved.Length / Channels;
-		while ( written < capacity )
+		var startBlock = block;
+		var startIndex = blockIndex;
+		var startFrames = blockFrames;
+		var startPosition = blockPosition;
+		try
 		{
-			if ( blockPosition == blockFrames )
+			while ( written < capacity )
 			{
-				if ( blockIndex >= movie.AudioBlockCount )
-					break;
-				var frames = movie.GetAudioBlockSampleCount( blockIndex );
-				if ( block.Length < frames * Channels )
-					block = new short[frames * Channels];
-				blockFrames = movie.DecodeAudioBlock( blockIndex, block );
-				blockIndex++;
-				blockPosition = 0;
-				continue;
+				if ( blockPosition == blockFrames )
+				{
+					if ( blockIndex >= movie.AudioBlockCount )
+						break;
+					var frames = movie.GetAudioBlockSampleCount( blockIndex );
+					if ( block.Length < frames * Channels )
+						block = new short[frames * Channels];
+					blockFrames = movie.DecodeAudioBlock( blockIndex, block );
+					blockIndex++;
+					blockPosition = 0;
+					continue;
+				}
+				var count = Math.Min( capacity - written, blockFrames - blockPosition );
+				block.AsSpan( blockPosition * Channels, count * Channels ).CopyTo( interleaved[(written * Channels)..] );
+				blockPosition += count;
+				written += count;
 			}
-			var count = Math.Min( capacity - written, blockFrames - blockPosition );
-			block.AsSpan( blockPosition * Channels, count * Channels ).CopyTo( interleaved[(written * Channels)..] );
-			blockPosition += count;
-			written += count;
 		}
+		catch
+		{
+			block = startBlock;
+			blockIndex = startIndex;
+			blockFrames = startFrames;
+			blockPosition = startPosition;
+			// A later decode can overwrite the cache before failing. EA-XA starts from its
+			// own block header on every decode, so reconstruct the already valid cached block
+			// only when the restored cursor still needs samples from it. No filter state persists.
+			if ( startPosition < startFrames )
+				movie.DecodeAudioBlock( startIndex - 1, block );
+			throw;
+		}
+
 		Position += written;
 		return written;
 	}

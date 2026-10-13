@@ -899,6 +899,11 @@ research batch was included in this merge.
 - **Pick visitors in the park (October 13):** a mouse press on a visible visitor in the park view selects it in the visitors'
   roster, using the same sprite rectangle the renderer draws; HUD controls, tools, overlays and the ride view keep the press, and
   the pick only reads the simulation (UI-930: rectangle picking without occlusion or transparent pixels).
+- **Localized detail labels (October 14):** the attractions and visitors windows' detail rows show their labels from the
+  original UITEXT table (users last month, wait, cost and the rest) instead of the enum names they had shown since the
+  overview windows came in; the extra rows keep their six-language supplementary strings.
+- **Walk camera (October 13, #106):** C arms a terrain-following walk camera in the park and a click starts walking; it is an
+  OpenTPW extension (UI-932) that restores the park camera exactly on leaving and stays frozen while a park is being built.
 - **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting
   visitors directly instead of building their cell groups a second time (1,500 visitors: 165,168 to 680
   bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the

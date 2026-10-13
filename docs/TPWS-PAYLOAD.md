@@ -119,7 +119,8 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
 - reports the 19 blocks (offset, length, delimiter offset); UI is everything
   after the AdvisorScoring delimiter. No partial result on error.
 
-Blocks other than World and RideSystem stay raw, size-checked byte spans.
+Blocks other than World and RideSystem stay raw, size-checked byte spans — except the Coasters
+block, which has a bounded structural reader (next section).
 
 ## World block (`SaveWorld`)
 
@@ -278,6 +279,84 @@ Small Toilet ×3, Staff Room, Security Camera ×2, Litter Bin, Coconut Kiosk, Ju
 Spray Sideshow, Bouncy Dino, Gates), each ending `OBJ ` plus raw heap pointers and
 script-VM-like values. They match the RideSystem list but are not decoded.
 
+## Coasters block (`SaveCoasterBlock`)
+
+The Coasters block is the body between the stored `EMAK` (the Camera delimiter `KAME` byte-reversed) and the
+stored `SAOC` (`COAS`): the original loader checks the preceding integer `0x4b414d45`, runs the coaster loader
+`0x39f98`, then checks `0x434f4153` (docs/reverse/PPC-rides.md, "Original TPW coaster save/load contract").
+The saver `0x394b8` writes the same shape. Like every delimiter this one is trailing: the block's bytes lie
+before `SAOC`. The reader is read-only; no original coaster chunk is written.
+
+```
+u32 coaster count          (linked-list count)
+u32, u32, u32              three globals, meaning unqualified
+per coaster:
+  32-byte header:
+    +0  u32  remapped controller flags
+    +4  u32  controller+8
+    +8  u16  controller+12      +10 u16 controller+16
+    +12 u16  controller+20      +14 u16 controller+28    +16 u16 controller+32
+    +18 f32  controller+44      (the power factor, 0 or 1)
+    +22 u16  section count      (nodes excluding descriptor flag 0x10)
+    +24 u16  controller+244     +26 u16 controller+240
+    +28 u32  controller+320     (riders on board)
+  auxiliary block: u32 count, then count × u16 ordinals
+    (the loader reads it before any section record, into the expected third node's
+     +180 link slots; the saver writes it where its node walk meets ordinal 2)
+  per section (the header's count times):
+    +0  u32  remapped section+8 flags      +4 u32 section+112
+    +8  u16  cell X       +10 u16 cell Y   (the descriptor's +12/+16 grid coordinates)
+    +12 u8   cell-stack insertion ordinal
+    +13 f32  section+232  (height parameter t)   +17 f32 section+216 (bank)
+    +21/+25/+29 f32       section+220/+224/+248 (meanings unqualified)
+    +33 u8   link count   (narrowed from section+176), then that many u16 ordinals,
+                          each its own 2-byte read like the original
+  train/car/passenger payload (serializer 0x38da4) — layout not qualified, kept raw
+```
+
+`SaveCoasterBlock.Parse` (payload + layout + map dimensions) bounds and validates what the traced
+contract states and refuses everything else: truncation inside the header, auxiliary block, section
+record or links (named per part); a coaster or auxiliary-link count above its bound; a non-finite
+power factor or section float; a section cell outside the map; and any block that lists more than one
+coaster, because the extent of each coaster's undecoded train payload is unknown, so the next header
+cannot be located (SAVE-920). The flag words are kept raw — the remapping is not recovered (SAVE-921)
+— as are the unnamed controller words, globals, auxiliary ordinals, `section+112` and the floats
+`+220/+224/+248` (SAVE-922). The train payload is preserved as raw bytes and never interpreted
+(SAVE-923). A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
+split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
+`CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
+and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
+header words and scene indices are never guessed as station ids. Only recognized scene kinds
+815/865 participate: kind 1018 pylons are not decoded by the existing scene parser.
+`ParkObjects.ImportOriginal` calls `RequireSupportedCoasterRuntime` before creating any objects:
+a nonempty original TPW controller is explicitly refused, even with no saved sections. Empty TPW
+parks continue through the existing importer. Structural inspection remains available; no runtime
+track, controller or train state is reconstructed. The separate TPI viewer is unchanged.
+
+### Evidence status
+
+- **Static contract (high):** the Mac PowerPC saver/loader field layout above, pinned by
+  `save_evidence.py` (132 native fields/calls; docs/reverse/PPC-rides.md).
+- **Original Theme Park World data (empty boundary only):** jungle `Easymode.TPWI` holds a 16-byte
+  block, count 0 with globals 0, 0, 1 (body SHA-256
+  `741939ccb979df0dbf391a6548f88fd9d1873aa3fb996f1df39abc6a66df7025`). No original Theme Park World
+  save with a coaster was found under the available `game-assets` tree (the Patch2 Easymode
+  copy is the same empty boundary). The private eleven-save set is described in the prior
+  [second fixture set](#second-fixture-set) report, but its location was not available and
+  `OPENTPW_TPWS_SAVES` was unset for this slice; its coaster content was not reverified. The
+  nonempty shape is therefore **not** proven on Theme Park World bytes.
+- **Theme Park Inc cross-check (sibling game, separate semantics):** the Theme Park Inc prebuilt
+  save's Coasters block (1,226 bytes between the same delimiters) parses under this contract exactly:
+  count 1, globals 1, 0, 2; header power factor 1.0, one section, zero riders; one section record
+  with no links, cell (65, 67), stack ordinal 0, height parameter ≈ 0.0556, and a 1,140-byte train
+  tail. Its park's RideSystem list places a 6×6 coaster station (Info.Id 1180) and 1×1 pylon records
+  (Info.Id 1181, kind 1018) — the saved section's cell (65, 67) carries its own such record. The raw kind-1018 pylon header is pinned separately because the existing scene parser excludes it. That is
+  a real-data cell association observation, but it is Theme Park Inc evidence: no Theme Park World proof, and no
+  Theme Park Inc coaster chunk is inferred anywhere in production code (the reader runs on it only in
+  a labelled test).
+- Which section is the station node is **not** qualified (the saver may exclude station nodes like
+  any descriptor-flag-0x10 node), so the reader makes no station claim; consumers join by cell.
+
 ## Money (bank thing, model 16)
 
 The bank thing named by `mBankAccount` holds, after its 8-byte base, seven bank
@@ -306,7 +385,10 @@ advisor controller and research lab. `OriginalPark.Load` adds
 
 A park started from the save (Instant Action, or the reference start) then runs
 `OriginalEconomyImport.Apply` (docs/ECONOMY.md, "Original save import") and the
-automatic advisor takes the saved controller (docs/LIPS.md). Imported: park turn
+automatic advisor takes the saved controller (docs/LIPS.md). `Import` also parses the
+Coasters block (`SaveCoasterBlock`; a block that breaks its traced contract refuses the save) and
+exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers; no coaster
+state is imported. Imported: park turn
 and date, bank balance, admission fee, annual profit and bought loans, each
 object's price, cost of goods, upgrade level, state of repair and life gauge
 (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, state, hire time), the park
@@ -359,15 +441,28 @@ approximation reported, save round trip), settings verification, the advisor
 controller import, and the Instant Action start on the private fixture.
 `OriginalParkPlacementTests` covers Info.Id names and the build rules. Without
 `OPENTPW_GAME_PATH` the private tests are inconclusive, not passes.
+`OriginalCoasterSaveTests` covers the Coasters block reader: synthetic bodies in the traced
+layout (every header, auxiliary, section, link and train field; offsets), truncation inside each
+part, the coaster/auxiliary/link bounds, non-finite floats, out-of-map cells, the two-coaster
+refusal and the layout's empty-block rule, plus the park import with its cell joins and
+out-of-map refusal. Its two fixture tests pin real data: the Easymode empty boundary by SHA-256
+(`OPENTPW_GAME_PATH`) and the Theme Park Inc prebuilt body under the shared contract
+(`OPENTPW_TPI_PATH`, labelled cross-check).
 `OriginalSaveCorpusTests` runs container, block split, grid, thing chain,
 RideSystem, attraction and economy readers over the second fixture set
-(inconclusive without `OPENTPW_TPWS_SAVES`; not run for SAVE-I).
+(inconclusive without `OPENTPW_TPWS_SAVES`; not run for SAVE-I); since the coaster slice
+`Import` parses every save's Coasters block there too.
 
 ## Remaining gates
 
 - An online (LAYS) save; LAYS payloads are unsupported.
 - A non-empty TPWS: the second fixture set has no placed objects, extension records or
-  extra paths, so those readers are still proven on Easymode alone.
+  extra paths, so those readers are still proven on Easymode alone. A Theme Park World
+  save with a built coaster does not exist in any available corpus: the Coasters block's
+  nonempty shape rests on the static Mac contract and the Theme Park Inc cross-check.
+- The coaster train/car/passenger payload (0x38da4), the flag remapping, the auxiliary
+  ordinals' meaning and the unnamed header/section words; bodies with more than one coaster
+  are refused until the train payload's extent is known (SAVE-920).
 - The control manager and macro AI before the calendar, the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, RideSystem record bodies/lengths, RSSE object bodies and every
   other block.

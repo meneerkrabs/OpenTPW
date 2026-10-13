@@ -807,6 +807,10 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Script civil time (October 13):** TPW scripts' `YEAR`/`MONTH`/`DAY`/`HOUR` read the host's local civil time instead
+  of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
+  flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's
+  Haunted Tower reads `HOUR` and its hour reaches the world hash; the game keeps the host clock.
 - **Files read on demand (October 13):** WAD archives opened from a path and SDT sound banks now read
   a member or entry from the file when it is needed instead of holding the whole file (byte-identical
   on every original archive member and bank entry); `Texture.Missing` is one shared texture, and the

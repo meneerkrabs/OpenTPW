@@ -15,6 +15,15 @@ public sealed class RideScriptWorld
 	private int nextAttractionId = 1;
 
 	/// <param name="seed">Start state of the seed stream for scripts without an explicit seed (<see cref="WorldSeed.ScriptStream"/>).</param>
+	/// <summary>
+	/// The civil time of headless runs whose hash must not depend on when or where they run (the M4 gate, the browser digest):
+	/// noon on 1 January 2000, the park calendar's epoch.
+	/// </summary>
+	public static readonly DateTime FixedCivilTime = new( 2000, 1, 1, 12, 0, 0 );
+
+	/// <summary>A clock that always reads <see cref="FixedCivilTime"/>.</summary>
+	public static Func<DateTime> FixedClock { get; } = () => FixedCivilTime;
+
 	public RideScriptWorld( ulong seed = 0 ) : this( seed, null )
 	{
 	}

@@ -251,7 +251,8 @@ internal sealed class M4GateRun
 			Grid = grid,
 			BuildGrid = new OriginalParkGrid( park ),
 			Guests = new GuestSimulation( grid, settings, options.Seed.GuestStream ) { ArrivalsEnabled = arrivals },
-			World = new RideScriptWorld( options.Seed.ScriptStream ),
+			// A fixed civil time: Halloween's clock tower reads HOUR, and the gate's hash must not depend on when it runs.
+			World = new RideScriptWorld( options.Seed.ScriptStream, RideScriptWorld.FixedClock ),
 			Seed = options.Seed
 		};
 		// [DATA:levels/<theme>/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes]

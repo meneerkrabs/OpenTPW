@@ -25,7 +25,12 @@ returned VM variables, flags and branch state keep their existing save/hash
 rules. Restoring a saved script preserves prior results, but future clock
 queries may diverge unless the caller supplies the same external samples.
 The existing synthetic deterministic-run fixtures do not query host civil time;
-their pinned digests are unchanged. No digest exclusion or schema change hides
+their pinned digests are unchanged. Real objects do: Halloween's Haunted Tower
+(Info.Id 2418) runs `Clock.RSE`, which reads `HOUR`, and the hour reaches the
+world state (`AParkWithACivilClockObjectHashesTheSameUnderAFixedClock`). Headless
+runs that pin or compare a hash therefore pass `RideScriptWorld.FixedClock` (noon on
+1 January 2000): the M4 gate and the browser digest do, and `ParkObjects` takes an
+optional clock for any other. The game itself keeps the host clock. No digest exclusion or schema change hides
 the results of a clock query.
 
 ## World seed

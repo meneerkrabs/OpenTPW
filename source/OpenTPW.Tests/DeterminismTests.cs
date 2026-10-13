@@ -465,6 +465,39 @@ public class DeterminismAssetTests
 	}
 
 	[TestMethod]
+	public void AParkWithACivilClockObjectHashesTheSameUnderAFixedClock()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the Halloween clock tower." );
+		try
+		{
+			// Haunted Tower (Info.Id 2418) spawns Clock.RSE, which reads HOUR.
+			var tower = ObjectCatalog.Load( "hallow" ).Find( 2418 ) ?? throw new AssertFailedException( "Haunted Tower is missing from the Halloween catalog." );
+			ulong Run( Func<DateTime> clock )
+			{
+				var world = new RideScriptWorld( 7, clock );
+				var runtime = new OriginalObjectRuntime( tower, world, seed: 1, open: true );
+				for ( var tick = 0; tick < 120 * FixedStepClock.TicksPerSecond; tick++ )
+					runtime.Simulate( FixedStepClock.TickDuration );
+				var hash = WorldStateHash.Compute( new WorldStateSources { Scripts = world } );
+				Assert.IsTrue( world.Scripts.Count > 0, "the tower's scripts are live when hashed" );
+				runtime.Stop();
+				return hash;
+			}
+			var reads = 0;
+			var fixedRun = Run( () => { reads++; return RideScriptWorld.FixedCivilTime; } );
+			Assert.IsTrue( reads > 0, "the tower's scripts read the civil clock" );
+			Assert.AreEqual( fixedRun, Run( RideScriptWorld.FixedClock ), "a fixed civil time gives the same run" );
+			Assert.AreNotEqual( Run( () => new DateTime( 2000, 1, 1, 3, 0, 0 ) ), Run( () => new DateTime( 2000, 1, 1, 16, 0, 0 ) ),
+				"the hour reaches the world state, so a headless run that pins a hash must fix the clock" );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
+
+	[TestMethod]
 	public void OriginalObjectAttractionIdsRestartInEachPark()
 	{
 		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )

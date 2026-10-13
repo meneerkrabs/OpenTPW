@@ -14,13 +14,13 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **384 unresolved unique APPROX IDs**, 455 APPROX occurrences, 151 EXT occurrences, 168 DATA occurrences and 477 BIN occurrences.
+Current inventory: **385 unresolved unique APPROX IDs**, 456 APPROX occurrences, 151 EXT occurrences, 168 DATA occurrences and 480 BIN occurrences.
 
-Of these, 360 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 361 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
-Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the 21 configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
+Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the 22 configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
 
 | Area | Unique unresolved IDs | Source occurrences |
 | --- | ---: | ---: |
@@ -39,6 +39,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | MD2 | 3 | 3 |
 | ONLINE | 24 | 26 |
 | PATH | 15 | 16 |
+| PTCL | 1 | 1 |
 | QUEUE | 21 | 21 |
 | RIDES | 35 | 35 |
 | SAVE | 15 | 15 |
@@ -265,6 +266,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-013 | Original-fidelity area (scope unadjudicated) | PATH-PAUSE: the pause menu blocks path and queue tool clicks; the economy's speed pause does not | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:24` |
 | PATH-014 | Original-fidelity area (scope unadjudicated) | PATH-VARIANT: built straights and edges pick str1/str2 and edg1/edg2 by a hash of the cell; saved cells keep the saved texture | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:25` |
 | PATH-015 | Original-fidelity area (scope unadjudicated) | QUEUE-TEXTURES: QueueTex shapes and rotations follow decoded artwork and queue links; the original texture-selection routine is untraced | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:26` |
+| PTCL-900 | Original-fidelity area (scope unadjudicated) | Current animator hierarchy matrices supply particle key frames; native lookup-table refresh gates and instance callback timing are unqualified | See source annotation/runtime register | `source/OpenTPW/World/Particles/ParticleApproximations.cs:7` |
 | QUEUE-001 | Original-fidelity area (scope unadjudicated) | queue link values 1/4/16/64 map to −Y/+X/+Y/−X like the saved connection bits | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:12` |
 | QUEUE-002 | Original-fidelity area (scope unadjudicated) | the next queue cell is searched in grid direction order | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:13` |
 | QUEUE-003 | Original-fidelity area (scope unadjudicated) | guests step onto the back of a queue from its first walkable neighbour (the join cell) | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:14` |
@@ -756,6 +758,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | PATH-013 | `source/OpenTPW/Hud/ParkHud.cs:605` | [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused |
 | PATH-014 | `source/OpenTPW/World/Original/PathTiles.cs:68` | [APPROX:PATH-014] str1/str2 and edg1/edg2 are picked by a hash of the cell, not by the original's choice (saved cells keep theirs) — evidence needed: the original routine that writes save cell byte +17 |
 | PATH-015 | `source/OpenTPW/World/Original/PathTiles.cs:134` | [APPROX:PATH-015] QueueTex square/end/straight/corner and rotation are derived from the decoded que4/que3/que1/que2 artwork and queue links; the original tile-selection routine is not traced — evidence needed: original queue terrain texture selection and rotation |
+| PTCL-900 | `source/OpenTPW/World/Particles/ParticleKeyResolver.cs:43` | [APPROX:PTCL-900] current ObjectAnimator hierarchy matrices supply key frames; native lookup-table refresh gates and instance callback timing are unqualified — evidence needed: object-header bit 1 setters and the runtime key-table walk in placed objects |
 | QUEUE-001 | `source/OpenTPW/World/Guests/GuestPathGrid.cs:124` | [APPROX:QUEUE-001] the queue link (+13) uses the compass of the connection bits (+12): Directions order (−Y, +X, +Y, −X) is 1, 4, 16, 64 as in SavePathConnections (78 Easymode path cells); for +13 itself this is assumed — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file) |
 | QUEUE-002 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:503` | [APPROX:QUEUE-002] neighbours are tried in GuestPathGrid.Directions order; the original pairs run-time offsets with links 16, 1, 64, 4 whose order is not established — evidence needed: the neighbour offset tables at run time |
 | QUEUE-003 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:516` | [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue; the original connection test 0xdd744 is not traced — evidence needed: 0xdd744 and the state-10 walk to the back cell |
@@ -1477,6 +1480,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:23` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
 | STP-PPC:0x100AC21C..0x100AC6B0 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:14` | [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows. |
 | STP-PPC:0x100AC25C..0x100AC49C | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:57` | [BIN:STP-PPC:0x100AC25C..0x100AC49C] style 2 is drawn before either relief effect; |
+| STP-PPC:0x100AC7F0 particle key resolver | `source/OpenTPW/World/Particles/ParticleKeyResolver.cs:42` | [BIN:STP-PPC:0x100AC7F0 particle key resolver] position comes from matrix +48/+52/+56; direction from +32/+36/+40, optionally negated by runtime lookup flag 0x10, normalized then multiplied by 1024 |
 | STP-PPC:0x100ACA38 scream event | `source/OpenTPW/Audio/GameAudio.cs:370` | [BIN:STP-PPC:0x100ACA38 scream event] band 0 plays nothing; 1 plays cat_kids 71; 2-3 play 72 (negative bands too); 4-7 play 73; 8 and above play 74 |
 | STP-PPC:0x100ACB7C scream parameter | `source/OpenTPW/Audio/GameAudio.cs:371` | [BIN:STP-PPC:0x100ACB7C scream parameter] parameter = (level + speed) / 2 clamped to 0..100 (signed shift); the speed is the ride VM's word at +192, default 50 (0x100B3154, 0x100B318C) |
 | STP-PPC:0x100ACC24 single scream grid | `source/OpenTPW/Audio/GameAudio.cs:405` | [BIN:STP-PPC:0x100ACC24 single scream grid] band row 1/2-3/4-7/8+ holds event 75/79/83/87 plus (level + speed) / 50 clamped to 0..3 (ids 0x4B..0x5A, one-shots, no handle kept) |
@@ -1721,8 +1725,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x1018E254 sign text builder | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:110` | [BIN:STP-PPC:0x1018E254 sign text builder] with only one text, probes the UTF-16 string at len/2, then len/2-1, len/2+1, len/2-2, ... (len probes) for U+0020; the first hit splits it into the characters before it (line 1) and those after it (line 2); no hit leaves line 1 whole and line 2 empty |
 | STP-PPC:0x1018E254 sign text builder | `source/OpenTPW/World/Objects/ObjectSigns.cs:58` | [BIN:STP-PPC:0x1018E254 sign text builder] one name string is split at its middle space (SignCanvas.SplitAtMiddleSpace); a caller may instead pass the two lines (text slot 0 and 1) explicitly |
 | STP-PPC:0x10197D90 online pause menu | `source/OpenTPW/Hud/ParkHud.cs:423` | [BIN:STP-PPC:0x10197D90 online pause menu] the online game type's pause menu offers only Resume Game, Exit To Lobby |
+| STP-PPC:0x1019AE64 lookup construction | `source/OpenTPW/World/Particles/ParticleKeyResolver.cs:41` | [BIN:STP-PPC:0x1019AE64 lookup construction] entry i selects header word +0x46 plus i; +0x44 selects mesh versus dummy records |
 | STP-PPC:0x1019B298 | `source/OpenTPW/World/Guests/RideHeadSpace.cs:17` | &lt;summary&gt;Flag bit 0x80 of a dummy attribute type: a head record ([BIN:STP-PPC:0x1019B298]).&lt;/summary&gt; |
 | STP-PPC:0x1019B298 head lookup | `source/OpenTPW/World/Guests/RideHeadSpace.cs:12` | [BIN:STP-PPC:0x1019B298 head lookup] the 20-byte lookup records of the model's lookup state: a record matches head id k when its +4 word is k and its flags have 0x80 |
+| STP-PPC:0x1019B298 model key lookup | `source/OpenTPW/World/Particles/ParticleKeyResolver.cs:40` | [BIN:STP-PPC:0x1019B298 model key lookup] matches attribute Value and selector mask; first matching entry wins |
 | STP-PPC:0x1019B394 node lookup | `source/OpenTPW/World/Advisor.cs:26` | [BIN:STP-PPC:0x1019B394 node lookup] mouth nodes 1–5 (stored in order by 0x10006264) are found by case-insensitive name "mouth - normal", "aah", "eee", "ooh", "sss" through the jump table at data 0x518B4; node 1 is shown while silent |
 | STP-PPC:0x1019B56C head hang | `source/OpenTPW/World/Guests/RideHeadSpace.cs:13` | [BIN:STP-PPC:0x1019B56C head hang] the matched record gets flag 0x2 and a sprite handle, and the lookup state counts one more attached head |
 | STP-PPC:0x101C0F40 daily start-up movie | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:6` | month modulo 8 ([BIN:STP-PPC:0x101C0F40 daily start-up movie], docs/TGQ-MOVIES.md). |

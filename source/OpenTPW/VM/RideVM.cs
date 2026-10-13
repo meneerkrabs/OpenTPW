@@ -191,6 +191,8 @@ public sealed class RideVM
 	{
 		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
+		// [EXT:vm-fault-containment] a faulted script's clock stops and its children are removed; the original has no managed
+		// fault state to compare with (docs/RSE-VM.md, "Independent root-fault lifecycle controls")
 		if ( State != RideVMState.Faulted )
 		{
 			TimeMilliseconds += deltaSeconds * 1000;

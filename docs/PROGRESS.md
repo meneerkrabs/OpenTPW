@@ -896,6 +896,9 @@ research batch was included in this merge.
   of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
   flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's
   Haunted Tower reads `HOUR` and its hour reaches the world hash; the game keeps the host clock.
+- **Faulted ride scripts stop their object (October 13):** when an object's root script faults, its clock stops, its child and
+  sound scripts are removed, and the object releases its riders, trains, coaster controller and sounds instead of running on half
+  stopped; healthy runs hash as before. It is OpenTPW's own containment, now marked `[EXT:vm-fault-containment]` (DETERMINISM.md).
 - **Pick visitors in the park (October 13):** a mouse press on a visible visitor in the park view selects it in the visitors'
   roster, using the same sprite rectangle the renderer draws; HUD controls, tools, overlays and the ride view keep the press, and
   the pick only reads the simulation (UI-930: rectangle picking without occlusion or transparent pixels).

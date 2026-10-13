@@ -215,7 +215,7 @@ public sealed class ParkGate
 	/// flag, the back of its queue connected to a path, and a coaster with a complete circuit.
 	/// </summary>
 	// [BIN:STP-PPC:0x100DE654 reopen guard] state 1, 4 and 2 (the script's VAR_BROKEN or the economy's breakdown; a purchased upgrade not yet installed), maintenance flag +96, back of the queue 0xdd744, coaster circuit 0x45eac; executed by the oracle target ride-may-open
-	// [APPROX:ECON-049] the maintenance flag (the original's player request, +96) and the back-of-queue link test (0xdd744, PC FUN_004de4a0) are not modelled: OpenTPW has no maintenance button and takes the queue as connected — evidence needed: the callers of 0xdd744 and the cell test it makes
+	// [APPROX:ECON-049] the maintenance flag and the back-of-queue link test are not modelled: OpenTPW has no maintenance button and takes the queue as connected. In tp.exe the flag is the ride's mRequestedService (+0x64, the Mac +96, saved by the ride serializer 0x004DB7D0, cleared when a handyman finishes a toilet, 0x004DFD80), and the link test 0x004DE4A0 holds when the back cell's connection bits contain more than its own link, for objects without flag +0x32 bit 8 when the path cell in front of the entrance (by the rotation +0x10) connects both ways; OpenTPW keeps no connection bits for queue cells (QUEUE-003) — evidence needed: the writers of mRequestedService and the queue tool's connection writes
 	internal bool MayOpen( OriginalObjectRuntime item )
 	{
 		var record = economyOf?.Invoke( item );

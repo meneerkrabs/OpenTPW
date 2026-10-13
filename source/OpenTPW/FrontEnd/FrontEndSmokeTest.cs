@@ -61,6 +61,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private int objectsBeforePrototype;
 	private int prototypeAttractionId;
 	private RideVisitorBridge? prototypeVisitors;
+	private PrototypeRide? reviewedPrototype;
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -948,6 +949,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var level = flow.Level!;
 			PlacePrototypeAtFirstFreeSite( level );
 			Require( level.PlacedRide != null, "the developer prototype Totem is placed beside the catalogue objects" );
+			reviewedPrototype = level.PlacedRide;
 			prototypeAttractionId = level.PlacedRide.Runtime.AttractionId;
 			prototypeVisitors = level.PlacedRide.Visitors;
 			Require( level.Park!.Economy.Objects.Count == objectsBeforePrototype + 1,
@@ -961,6 +963,20 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( rows.Count == ridesBeforePrototype + 1 && rows.Any( row => row.AttractionId == prototypeAttractionId ),
 				"the live list picks the placed prototype up as one more ride" );
 			Require( rows.GroupBy( row => row.AttractionId ).All( group => group.Count() == 1 ), "no attraction id is listed twice" );
+			var level = flow.Level!;
+			Require( ReferenceEquals( level.ListAttractions().Single( item => item.Runtime.AttractionId == prototypeAttractionId ), reviewedPrototype ),
+				"enumeration preserves the prototype object identity" );
+			// A different object can carry the same id in a different script world: removal must check ownership.
+			var foreign = new OriginalObject( reviewedPrototype!.Entry, reviewedPrototype.Placement,
+				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId );
+			try
+			{
+				var balance = level.Park!.Economy.Balance;
+				Require( !level.RemoveAttraction( foreign ) && !foreign.IsDeleted
+					&& ReferenceEquals( level.PlacedRide, reviewedPrototype ) && level.Park.Economy.Balance == balance,
+					"a foreign object sharing an attraction id cannot remove or sell the owned prototype" );
+			}
+			finally { foreign.Delete(); }
 			var prototype = rows.Single( row => row.AttractionId == prototypeAttractionId );
 			Require( ParkAttractionRoster.StatusOf( prototype ) == UIStrings.Closed, "the prototype starts closed (UITTEXT 364)" );
 			Require( prototype.Name == hud.ItemName( TotemItem ), "the prototype row shows the catalogue Totem name" );
@@ -990,6 +1006,20 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var hud = flow.Hud!;
 			Require( !hud.AttractionsWindowOpen && hud.InfoArmOpen && hud.SelectedObject == flow.Level!.PlacedRide,
 				"activating the prototype's row selects the Totem in the park and closes the window" );
+			Require( hud.Stack.Top == hud.Screen, "row activation returns to the HUD before riding" );
+		} );
+		Wait( "HUD before ride-view gate", 3 );
+		Do( "prototype ride view owns keyboard", () =>
+		{
+			Require( flow.Level!.EnterRideView( reviewedPrototype! ), "the live prototype can enter its ride view" );
+			Input.InjectKeyDown( Key.V, Key.B );
+		} );
+		Wait( "ride-view window key frame", 2 );
+		Do( "ride view blocks window keys", () =>
+		{
+			Require( flow.Level!.RideView != null && !flow.Hud!.VisitorWindowOpen && !flow.Hud.BuyWindowOpen,
+				"injected window keys cannot open a window during the ride view" );
+			flow.Level.ExitRideView();
 			flow.Hud.OpenBuyWindow();
 			Click( flow.Hud.Stack.Top!, "allAttractions" );
 		} );
@@ -1004,6 +1034,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( hud.Stack.Top!, "deleteAttraction" );
 		} );
 		Wait( "prototype delete confirmation", 3 );
+		Do( "window keys during prototype confirmation", () => Input.InjectKeyDown( Key.V, Key.B ) );
+		Wait( "confirmation owns keyboard", 2 );
+		Do( "confirmation blocks window keys", () =>
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction" && !flow.Hud.VisitorWindowOpen,
+				"injected window keys cannot replace the delete confirmation" ) );
 		Do( "prototype delete confirmation", () =>
 		{
 			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction", "deleting the prototype asks with the ride confirmation" );
@@ -1018,6 +1053,12 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( level.Park!.Economy.Objects.Count == objectsBeforePrototype,
 				"the prototype's economy record is sold or removed with it (the object world never owned it)" );
 			Require( level.Guests?.Attractions.Contains( prototypeVisitors! ) != true, "the prototype's guest queue is unregistered" );
+			Require( prototypeVisitors!.Host == null && level.Park.Guests?.TryGetInstance( prototypeAttractionId, out _ ) == false,
+				"the removed prototype releases its guest host and payment association" );
+			var balance = level.Park.Economy.Balance;
+			Require( reviewedPrototype!.IsDeleted && !level.RemoveAttraction( reviewedPrototype )
+				&& level.Park.Economy.Balance == balance && level.Park.Economy.Objects.Count == objectsBeforePrototype,
+				"repeated removal of the deleted prototype cannot sell it twice" );
 			var rows = hud.AttractionItems;
 			Require( rows.Count == ridesBeforePrototype && rows.All( row => row.AttractionId != prototypeAttractionId )
 				&& hud.SelectedAttractionId == rows[0].AttractionId, "the sold prototype leaves the list and the selection heals" );
@@ -1066,6 +1107,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
+		Do( "window keys while paused", () => Input.InjectKeyDown( Key.V, Key.B ) );
+		Wait( "pause owns keyboard", 2 );
+		Do( "pause blocks window keys", () =>
+			Require( flow.Hud!.Paused && flow.Hud.Stack.Top?.Name == "pause"
+				&& !flow.Hud.VisitorWindowOpen && !flow.Hud.BuyWindowOpen, "injected window keys leave the pause menu in control" ) );
 		// The park-resume lane cannot snapshot the advisor while a response is being spoken (the speech has no
 		// snapshot seam), so the save below waits for the end of any active advisor speech first.
 		steps.Enqueue( ("advisor speech ends", () => flow.Advisor?.IsSpeechActive != true) );
@@ -1214,6 +1260,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( hud.SelectedAttractionId != 0, "the visited park's list keeps a selection" );
 			Require( hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: false }, "the delete control is disabled during a read-only visit" );
 			// Invoke the handler directly: the mutation boundary must refuse even programmatic calls.
+			Require( !flow.Level!.RemoveAttraction( visitedObject! ) && !visitedObject!.IsDeleted
+				&& flow.Level.Objects.Objects.Count == visitedCount, "the Level removal boundary refuses a read-only visit" );
 			( (UiButton)hud.Stack.Top.Find( "deleteAttraction" )! ).Clicked!();
 			Require( flow.Level!.Objects.Objects.Count == visitedCount && hud.Stack.Top?.Name == "attractions",
 				"the visit's delete handler refuses to sell and opens no confirmation" );

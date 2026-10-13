@@ -1033,8 +1033,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | language-settings | `source/OpenTPW/Client/LanguageStartup.cs:7` | [EXT:language-settings] where the choice is stored and offered is an OpenTPW matter; the original read its language from the install |
 | live-language | `source/OpenTPW/Client/GameFlow.cs:499` | [EXT:live-language] Switches to &lt;see cref="pendingLanguage"/&gt;: the language, the string table and the fonts. Caches of |
 | live-language | `source/OpenTPW/Client/PendingLanguage.cs:9` | [EXT:live-language] where the files of a language come from is an OpenTPW matter |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1335` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1406` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1383` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1454` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
 | live-language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:351` | [EXT:live-language] the original read its language once; OpenTPW switches in the front end, and after the park |
 | maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3) | `source/OpenTPW/Hud/ParkHud.Management.cs:92` | the door routine with the switch's new state. [EXT:maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3)] |
 | maexah/OpenTPW park-engine.md | `source/OpenTPW/Hud/ParkHud.cs:543` | [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410) |
@@ -1068,7 +1068,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:457` | [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused. |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:742` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default); |
-| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:164` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
+| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:165` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
 | texture-pack | `source/OpenTPW/Render/Assets/Material.cs:25` | [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object. |
 | texture-pack | `source/OpenTPW/Render/Assets/PredecodedUiArt.cs:16` | [EXT:texture-pack] predecoded interface art is an OpenTPW build option, not original behaviour. |

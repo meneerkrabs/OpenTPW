@@ -387,6 +387,9 @@ glyph in all 14 UI fonts of each language.
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
   delete (`b_erase`). Open/close is disabled for non-attractions; fixed items
   cannot be deleted. Unknown statistics remain labelled as not simulated.
+  The developer prototype's repair gauge currently stays at 100%; the economy
+  wear synchronization updates catalogue objects only, so prototype wear is
+  a static limitation in both the info arm and the attractions overview.
   Read-only visits disable build, open/close, delete and Save; callbacks also
   reject direct mutation attempts using the existing localized online message.
 - Speed control (OpenTPW addition, bottom-right): pause, ×1, ×2, ×4 set the
@@ -422,7 +425,8 @@ glyph in all 14 UI fonts of each language.
   rebuild only (`Input.UpdateButtons`), so V and B run through
   `Input.Pressed` and every gate above exactly like a keyboard tap — the
   injection never enters the persistent keyboard state or the WASD pan axes
-  (`InputInjectionTests`).
+  (`InputInjectionTests`). Cancellation belongs to the returned scope, so
+  disposing a consumed tap cannot cancel a later tap of the same key.
 - Pause menu (Escape): PAUSED (403) with Resume (7), Save (4), Load (3), Options
   (6), Exit To Lobby (12), Quit Game (8, confirmation 9). Save writes the owning
   game flow's park save (the own-format world save for sandbox and front-end

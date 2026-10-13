@@ -119,7 +119,9 @@ refused this way before anything is replaced.
   than accepted as opaque state. Player-built coasters are saved too (see above). The
   original `TPWS` import stays partial and read-only ([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)).
 - **Transient sounds are not saved.** A park cannot be saved while a ride scream is playing or the
-  advisor is speaking — save again a moment later. No voice, music or audio state persists through a
+  advisor is speaking, or while a placed object owns a live flag-`0x8` looping EVENT voice. The latter
+  remains a live-audio persistence limitation: stop the owning object/sound before saving; one-shots,
+  finished loop voices and headless/stopped owners do not trigger it. No voice, music or audio state persists through a
   save.
 - **The camera and menu focus are not saved**; the view and interface start fresh after a load.
 - **The save is pinned to the game data it was made with.** It carries a SHA-256 manifest of the

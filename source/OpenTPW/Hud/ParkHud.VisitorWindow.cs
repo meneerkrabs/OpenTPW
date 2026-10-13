@@ -145,7 +145,7 @@ public sealed partial class ParkHud
 			return Array.Empty<(string, string)>();
 		var notSimulated = strings.Extra( OpenTpwText.NotSimulated );
 		var rows = ParkVisitorRoster.StatRows( guest, KidStates, FormatMoney )
-			.Select( stat => (stat.Label.ToString(), Value: stat.Value ?? notSimulated) )
+			.Select( stat => (strings[stat.Label], Value: stat.Value ?? notSimulated) )
 			.ToList();
 		rows.Add( (strings.Extra( OpenTpwText.VisitorThought ), ParkVisitorRoster.ThoughtOf( guest, Thoughts )) );
 		return rows.ToArray();

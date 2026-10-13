@@ -181,7 +181,7 @@ public sealed partial class ParkHud
 	{
 		var notSimulated = strings.Extra( OpenTpwText.NotSimulated );
 		var rows = ParkAttractionRoster.StatRows( row )
-			.Select( stat => (stat.Label.ToString(), Value: stat.Value ?? notSimulated) )
+			.Select( stat => (strings[stat.Label], Value: stat.Value ?? notSimulated) )
 			.ToList();
 		rows.Add( (strings.Extra( OpenTpwText.QueueLength ), row.QueueLength.ToString( System.Globalization.CultureInfo.InvariantCulture )) );
 		rows.Add( (strings.Extra( OpenTpwText.RidingNow ), row.Riders.ToString( System.Globalization.CultureInfo.InvariantCulture )) );

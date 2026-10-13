@@ -169,6 +169,13 @@ The second part of the memory phase closed the three items left open below:
   file (about 29 MB of archives and 35 MB of banks in a park), which the browser already holds.
   `OnDemandReadTests` compares every member of every original WAD and every entry of every original
   SDT bank, read both ways, byte for byte, and damaged banks behave the same.
+  Reopened WAD reads check the existing captured-length invariant before allocating the
+  requested payload buffer. Bounded 16 MiB synthetic requests after physical growth or
+  truncation verify that refusal stays small; an unchanged short source still allows the
+  large request with zero padding. Zero-length and beyond-original-end direct requests
+  keep their existing no-reopen shortcuts, and cached members remain usable after archive
+  disposal. This checks length only: same-length replacement is not identified. No new
+  archive size cap, directory policy, eager caching or original-data qualification.
 - **Textures that stayed after their park.** Tracking where textures made from bytes come from
   (`PerfTrackTextureOrigins`) found three makers: `Texture.Missing` made a new texture on every call
   (now one shared texture), and the coaster palette and the park gate's own sign were never released

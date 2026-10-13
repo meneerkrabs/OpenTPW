@@ -371,14 +371,14 @@ public sealed class WadArchive : IArchive
 				return memoryStream.ReadBytes( length );
 			}
 			// From the file, the same bytes the in-memory copy gave: a range past its end comes back padded with zeros.
-			var data = new byte[length];
 			if ( offset >= fileSize || length == 0 )
-				return data;
+				return new byte[length];
 			// Opened per read and closed again, so the file can still be replaced or deleted (a bonus import on Windows) while the
 			// archive is open; a file of another length is not the one whose directory was read.
 			using var file = new FileStream( path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1 );
 			if ( file.Length != fileSize )
 				throw new IOException( $"{path} changed on disk after its directory was read." );
+			var data = new byte[length];
 			file.Seek( offset, SeekOrigin.Begin );
 			var filled = 0;
 			while ( filled < length )

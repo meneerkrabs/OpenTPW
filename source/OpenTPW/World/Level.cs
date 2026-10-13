@@ -564,14 +564,14 @@ public partial class Level : IDisposable
 
 	internal enum WorldClickAction { None, PlacePrototype, UseTool }
 
-	/// <summary>World input stays suspended in the ride view, including tools armed through the HUD.</summary>
+	/// <summary>World input stays suspended in ride and walking views, including tools armed through the HUD.</summary>
 	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing ) =>
 		riding || !leftDown || previousLeftDown || mouseCaptured ? WorldClickAction.None
 			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
 
 	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize )
 	{
-		switch ( WorldClick( RideView != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
+		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
 		{
 			case WorldClickAction.PlacePrototype:
 				if ( TryGetPlacementPosition( mousePosition, viewportSize, out var position ) )
@@ -734,6 +734,7 @@ public partial class Level : IDisposable
 	public void Dispose()
 	{
 		ExitRideView();
+		ExitFreeWalk();
 		onlinePanel?.Dispose();
 		DetachOverlay();
 		TextOverlay?.Dispose();

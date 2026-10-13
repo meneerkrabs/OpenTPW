@@ -78,7 +78,7 @@ public static class UiApproximations
 		("UI-092", "an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire", "original staff dismissal handler and placement"),
 		("UI-093", "the ride view is entered with the E key on the selected ride, not the ride window's \"Ride it!\" button; the heading is the park camera's forward", "the ride window's Ride it button art and layout, and the Ride it handler FUN_004e15b0"),
 		("UI-094", "the ride view is a first-person eye on the first train's front car (coaster) or the carriage's height (prototype), looking along the track or the entry heading; the walk, sway and field of view are not reproduced", "CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies"),
-		("UI-095", "leaving the ride view restores the park camera it was entered from; the walking first-person view the original returns to is not implemented", "the first-person walk's camera state (gui_CameraFlags 0x400) and the exit handler FUN_0042a190"),
+		("UI-095", "leaving the ride view restores its prior camera instance, including the host terrain walk; native walking camera and exit behavior remain unverified", "the first-person walk's camera state (gui_CameraFlags 0x400) and the exit handler FUN_0042a190"),
 		("UI-096", "only the pause menu (and the screens opened from it) stops the park simulation; the original's other game-pause callers (the full-screen map, the message dialog, the Load dialog and 0x1015F67C) do not stop it here", "which OpenTPW windows those screens correspond to and whether the pause gate +0x3C is set when they open in normal play"),
 		("UI-900", "a second press of an original window key (B/I/F/R/Space/L/T/G/H) closes that window: the keys open the original's screens, and toggling is OpenTPW's close behaviour; the All Staff key S stays unhandled because the host camera pans with S", "the original key dispatch while a screen window is open"),
 		("UI-901", "the happiness gauge shows the visitors' mean happiness as a rising red-yellow-green bar in the gauge model's empty dish", "capture of the original gauge and its value drawing"),
@@ -95,6 +95,8 @@ public static class UiApproximations
 		("UI-930", "world visitor presses hit the current sprite rectangle, selecting nearest projected depth then lowest id; transparent pixels, terrain/object occlusion and partially clipped sprites are not reproduced", "original visitor picking geometry, occlusion and input precedence"),
 
 		("UI-931", "theme entry offers an explicit New/Continue choice for an application-owned saved park; saved mode/start kind remain authoritative and no native profile or autosave flow is reproduced", "original profile and theme-entry UI behavior"),
+		("UI-932", "plain C arms a terrain click for a host first-person inspection camera; terrain height, eye height, movement/look tuning and flat-plane entry picking are approximations, without object collision, photo or recording", "native camcorder entry, walk movement, collision, eye height, look controls and camera persistence"),
+		("UI-934", "shared Load chooser uses an eight-row scroll viewport with explicit selection and activation; every supplied own, sandbox and original-reference entry remains reachable", "original Load chooser navigation, selection and viewport behavior"),
 	};
 
 	private static bool logged;

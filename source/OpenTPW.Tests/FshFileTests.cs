@@ -108,6 +108,20 @@ public class FshFileTests
 		Build( new Image( "img", new[] { ImageRecord( 4, 4, Enumerable.Range( 0, 16 ).Select( index => (byte)(index % 3) ).ToArray(), compressed ), Palette( 0x24, 3, SampleRgb( 3 ) ), Name( "img" ) } ) );
 
 	private static FshFile Read( byte[] data ) => new( new MemoryStream( data ) );
+	/// <summary>Two distinct synthetic images for the CPU export path; reuses the reader's existing fixture builder.</summary>
+	internal static byte[] CreateExportFixture(bool compressed, byte paletteCode)
+	{
+		var colors = paletteCode switch
+		{
+			0x24 => new byte[] { 10, 20, 30, 40, 50, 60 },
+			0x2A => new byte[] { 30, 20, 10, 0, 60, 50, 40, 173 },
+			0x2D => new byte[] { 0x1f, 0x80, 0, 0x7c },
+			_ => throw new ArgumentOutOfRangeException(nameof(paletteCode))
+		};
+		return Build(new Image("one", new[] { ImageRecord(1, 1, new byte[] { 0 }), Palette(paletteCode, 2, colors) }),
+			new Image("two", new[] { ImageRecord(2, 3, new byte[] { 1, 0, 1, 0, 0, 1 }, compressed), Palette(paletteCode, 2, colors) }));
+	}
+
 
 	[TestMethod]
 	public void ReadsRawImageWithRgbPaletteAndNameWithoutClosingInput()

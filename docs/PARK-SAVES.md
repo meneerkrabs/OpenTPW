@@ -46,14 +46,16 @@ refused this way before anything is replaced.
 | Layout | every path, queue and placed object with its cell, rotation, attraction id and creation seed, plus the id allocators — a demolished object leaves its id hole, ids are never renumbered |
 | Guests | every guest: needs, money, route and navigation buffers, arrival lane, queue/boarding/riding/walk-off/limbo/bounce state, and each attraction's queue cells and membership |
 | Ride scripts | the whole script world: every script's identity and graph position, program state, stacks, variables, timers and waits, RNG state, animation channels and rider head slots |
+| Coasters | every live coaster station's track (station ends, pylons with height, pylon kind and stack, node flags), controller state (open, breakdown, speed, seats, money, clocks) and trains with every rider on board or leaving — joined by attraction id; the curve, rating and braking are re-derived on load, so a loaded coaster continues exactly where it was |
 | Economy | the full economy record (bank, loans, ledger, objects with price/level/repair/statistics, staff, research, challenges, golden tickets, RNG streams) and the exact attraction-to-economy-instance links, so two identical rides never swap their money |
 | World | the fixed-step clock, the sound-event seed, weather with its pending thunder, the park gate, staff positions, and the advisor's pending advice and history when the park had them |
 | Header | theme, world seed, gameplay mode and start kind, park name, save date |
 
 ## Limits
 
-- **Roller coasters and prototype rides are not saved yet.** A park that has one cannot be saved;
-  the save is refused with that reason instead of writing a park that would come back wrong. The
+- **Prototype rides are not saved yet.** A park that has one cannot be saved;
+  the save is refused with that reason instead of writing a park that would come back wrong.
+  Player-built coasters are saved (see above). The
   original `TPWS` import stays partial and read-only ([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)).
 - **Transient sounds are not saved.** A park cannot be saved while a ride scream is playing or the
   advisor is speaking — save again a moment later. No voice, music or audio state persists through a
@@ -75,20 +77,21 @@ embedded by value, so both formats' validators run on every load.
 
 ## Developer notes
 
-- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing prototype rides, coasters,
+- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing prototype rides,
   an attraction's active scream and active advisor speech); `ParkResumeSaveFile.Save`/`Load` do the
   atomic, size-capped, suffix-checked file I/O; `GameFlow.SaveCurrentPark` (the pause menu's Save)
   and `GameFlow.ResumePark` (Load) wire it into the UI.
 - **Loading is a transaction.** `ParkResumeSaveFile.ValidateSnapshot` validates purely against the
   freshly loaded catalog, balance settings and asset manifest; the park is then rebuilt into an
-  isolated candidate (runtimes, script world, queue geometry, guests, clock, then the optional
-  weather/gate/staff/advisor parts, with reference graphs restored in two passes), and only a
-  complete candidate replaces the live park. Every failure path keeps the current park running. Ids,
+  isolated candidate (runtimes, script world, queue geometry, guests, clock, the coasters, then the
+  optional weather/gate/staff/advisor parts, with reference graphs restored in two passes), and only
+  a complete candidate replaces the live park. Every failure path keeps the current park running. Ids,
   iteration order and next-id allocators are restored exactly as saved: nothing is renumbered or
   re-registered, no construction fee is charged again, and no default fixed item appears twice.
 - **Validation layers.** The pure shape check (identity, order, allocator agreement, bounds,
   cross-references — run before a byte is written and again on load), the park check (theme, balance
-  layer, mode/start-kind pinning, catalog, economy bindings, coaster refusal, asset manifest), and
+  layer, mode/start-kind pinning, catalog, economy bindings, the coaster part against the live
+  coaster stations, asset manifest), and
   the destination modules' own validators during candidate construction.
 - **Asset manifest.** SHA-256 over the decompressed content of every `.sam`, `.rse` and `.MD2`
   member of the theme's object catalog (bonus objects included), the category default settings, the

@@ -123,6 +123,25 @@ without that selector retain their range-based volume, and the other parameter
 producers remain outside this crowd fix. Gain is evaluated when a segment starts;
 propagation into an already-playing child remains unverified (AUDIO-036).
 
+## On-demand bank boundaries
+
+`SoundBank` retains the entry offset table and opens a fresh, owned stream for each
+nonempty read. Both sources refuse entry names whose offsets overlap that table;
+MPEG lookup retains its header and payload bounds checks. Stream positions use
+64-bit addition even when the stored entry offset and header size are signed
+32-bit fields, so a valid payload or name beyond 2 GiB does not wrap backwards.
+Each reopened stream's length is checked before allocating the requested buffer.
+Fragmented reads are completed with `ReadExactly`; truncated input throws and the
+stream is disposed on success or failure.
+
+`SoundBankBoundaryTests` uses small byte fixtures and sparse logical streams to
+cover these boundaries, count/offset/header/size extremes, every truncated prefix,
+independent lookups and stream disposal. This is synthetic host-reader evidence;
+fresh original-bank compatibility and playback checks are deferred while the
+asset mount is unavailable. The bank still returns a complete requested sample
+buffer, trusts a stream's reported length, and cannot detect a replacement with
+the same length. No new format size cap or eager bank loading is introduced.
+
 ## Park music
 
 When a park starts, the game sends event 2 of the level's `cat_music` category

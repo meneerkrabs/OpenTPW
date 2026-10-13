@@ -364,8 +364,8 @@ public sealed partial class ParkHud
 			return;
 		void Remove()
 		{
-			if ( !level.IsReadOnlyVisit && !item.IsDeleted )
-				level.Objects.Remove( item ); // Removal sells and unlinks exactly once.
+			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam.
+			level.RemoveAttraction( item );
 			selectedObject = null;
 			SetInfoArm( false );
 		}
@@ -815,7 +815,7 @@ public sealed partial class ParkHud
 			hud.DrawOverlay = DrawMessages;
 		DrawCellToolGhost( context );
 		DrawCoasterGhost( context );
-		Stack.Draw( context );
+		Stack.Draw( context, helpBarVisibility );
 	}
 
 	/// <summary>The preview shows the object's own sign text, like the object in the park (<see cref="ObjectSigns"/>).</summary>

@@ -48,6 +48,33 @@ public static partial class Input
 		return !KeysDown.Contains( button ) && LastKeysDown.Contains( button );
 	}
 
+	/// <summary>Keys queued by <see cref="InjectKeyDown"/> for the next button rebuild; drained when applied.</summary>
+	private static readonly List<InjectedKeyScope> injectedKeys = new();
+
+	/// <summary>
+	/// Queues a physical key press for the next frame only (the native smoke tests' keyboard steps): the key
+	/// reads as held through its <see cref="InputButton"/> bindings for exactly one frame and is released the
+	/// next, like a tap. The injection never enters <see cref="Keyboard"/>'s persistent state or the WASD pan
+	/// axes, physical SDL input is unchanged, and the text-entry gate applies to it as to real keys. Disposing
+	/// the returned scope removes keys not yet consumed, so a frame that never runs cannot leak them.
+	/// </summary>
+	internal static IDisposable InjectKeyDown( params Key[] keys )
+	{
+		var scope = new InjectedKeyScope( keys.ToArray() );
+		injectedKeys.Add( scope );
+		return scope;
+	}
+
+	private sealed class InjectedKeyScope( Key[] keys ) : IDisposable
+	{
+		internal Key[] Keys { get; } = keys;
+		public void Dispose()
+		{
+			// A consumed scope is absent already; never cancel a newer scope for the same key.
+			injectedKeys.Remove( this );
+		}
+	}
+
 	public struct KeyboardInfo
 	{
 		public List<Key> KeysDown { get; set; }
@@ -130,7 +157,21 @@ public static partial class Input
 			Forward += 1;
 		if ( IsKeyPressed( Key.S ) && !TextEntryActive )
 			Forward -= 1;
-		
+
+		UpdateButtons();
+	}
+
+	/// <summary>
+	/// The frame's button state: every <see cref="InputButton"/> whose bound keys the physical keyboard holds,
+	/// plus the keys <see cref="InjectKeyDown"/> queued for this frame (a tap). Drains the queue, so an
+	/// injection holds for exactly one rebuild and releases the next.
+	/// </summary>
+	internal static void UpdateButtons()
+	{
+		var injected = injectedKeys.SelectMany( scope => scope.Keys ).ToArray();
+		injectedKeys.Clear();
+		bool IsDown( Key k ) => Keyboard.KeysDown.Contains( k ) || injected.Contains( k );
+
 		LastKeysDown = [.. KeysDown];
 		KeysDown.Clear();
 
@@ -140,7 +181,8 @@ public static partial class Input
 
 			foreach ( var vkey in vkeys )
 			{
-				if ( !IsKeyPressed( vkey ) )
+				// Help accepts either Ctrl key for physical input and injected one-frame taps.
+				if ( !IsDown( vkey ) && !(button == InputButton.ToggleHelpBar && vkey == Key.ControlLeft && IsDown( Key.ControlRight )) )
 					isPressed = false;
 			}
 

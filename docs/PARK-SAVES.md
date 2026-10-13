@@ -25,6 +25,27 @@ are listed below.
   not kept and nothing is uploaded: the next visit asks for the Theme Park World folder again
   ([WEB.md](WEB.md)), and the saved park is listed once you choose it.
 
+### Atomic I/O audit (2026-10-13)
+
+`ParkResumeSaveFile.Save` validates the snapshot, serializes the full JSON and
+checks its size before opening a file. It creates a unique sibling temporary
+file with `CreateNew`, records ownership only after opening succeeds, writes and
+flushes it to disk, closes it, and moves it over the destination. Failure cleanup
+deletes that exact owned temporary path; it does not search for other `.tmp` files.
+
+`ParkResumeAtomicIoTests` uses synthetic snapshots and local temporary folders to
+check validation refusal, a regular file obstructing the parent path, a late move
+failure over an existing directory, a nonwritable Unix directory, repeated whole
+snapshot overwrites and preservation of foreign temporary files. These paths pass
+without production changes. The Windows case for a destination held without delete
+sharing is platform-specific and skipped on macOS; permission tests also skip when
+an elevated identity bypasses the tested directory permissions.
+
+The audit covers ordinary local I/O failures, not abrupt power loss, disk-full or
+flush-failure injection, a concurrent directory/permission change that prevents
+cleanup, or crash recovery of interrupted temporary files. No original data or
+original-format save behavior is involved.
+
 ## Loading
 
 **Load** (lobby or pause menu) lists your saved parks by name and theme above the shipped original

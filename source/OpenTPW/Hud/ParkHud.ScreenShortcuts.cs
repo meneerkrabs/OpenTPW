@@ -14,6 +14,7 @@ internal enum HudScreenShortcut
 	EntryPrice,
 	StaffApplicants,
 	VisitorWindow,
+	ToggleHelpBar,
 	TimeFaster,
 	TimeSlower,
 	TimeNormal,
@@ -27,7 +28,7 @@ internal enum HudScreenShortcut
 /// The original keyboard shortcuts of the HUD screens: the game's key table (the <see cref="InputButton"/>
 /// default keys and their documented actions; the buy and map buttons' own help rows name B/"(R)"/"(Space)")
 /// opened the screen windows directly. OpenTPW wires the keys whose windows exist; a key whose screen is not
-/// implemented (camcorder, postcard, help bar) stays unhandled, as do the keys the host camera pans with
+/// implemented (camcorder, postcard) stays unhandled, as do the keys the host camera pans with
 /// (All Attractions A, All Staff S: Input's WASD axes).
 /// </summary>
 public sealed partial class ParkHud
@@ -52,6 +53,7 @@ public sealed partial class ParkHud
 		InputButton.EntryPrice => HudScreenShortcut.EntryPrice,
 		InputButton.HireStaff => HudScreenShortcut.StaffApplicants,
 		InputButton.AllVisitors => HudScreenShortcut.VisitorWindow,
+		InputButton.ToggleHelpBar => HudScreenShortcut.ToggleHelpBar,
 		// All Staff (S) and All Attractions (A) stay unhandled: the host camera pans with S and A
 		// (Input's WASD axes, documented in the sandbox panel), and a key press cannot be both —
 		// re-wire them once the pan no longer claims those keys. The attractions window opens through
@@ -101,13 +103,14 @@ public sealed partial class ParkHud
 	/// <summary>Applies the pressed original window/screen shortcut keys (see <see cref="ShortcutFor"/>).</summary>
 	private void HandleScreenShortcuts( bool parkShortcutsAllowed )
 	{
+		var helpPressed = SampleHelpShortcutPressed();
 		// The ride view owns the park input: window keys wait until the visitor has left the ride.
 		if ( IsRiding )
 			return;
 		var windowKeysAllowed = WindowShortcutsAllowed( parkShortcutsAllowed, Stack.Top?.Name );
 		foreach ( var shortcut in AllShortcuts )
 		{
-			if ( shortcut == HudScreenShortcut.None || !Pressed( shortcut ) )
+			if ( shortcut == HudScreenShortcut.None || !(shortcut == HudScreenShortcut.ToggleHelpBar ? helpPressed : Pressed( shortcut )) )
 				continue;
 			// Window keys may also close their own window; every other key follows the plain park gate.
 			if ( !(OpensWindow( shortcut ) ? windowKeysAllowed : parkShortcutsAllowed) )
@@ -125,8 +128,8 @@ public sealed partial class ParkHud
 			HudScreenShortcut.LoansWindow => Input.Pressed( InputButton.Loans ),
 			HudScreenShortcut.StaffCosts => Input.Pressed( InputButton.StaffBudgets ),
 			HudScreenShortcut.EntryPrice => Input.Pressed( InputButton.EntryPrice ),
-			HudScreenShortcut.StaffApplicants => Input.Pressed( InputButton.HireStaff ),
-			HudScreenShortcut.VisitorWindow => Input.Pressed( InputButton.AllVisitors ),
+			HudScreenShortcut.StaffApplicants => Input.Pressed( InputButton.HireStaff ) && !HelpChordDown,
+			HudScreenShortcut.VisitorWindow => VisitorWindowShortcutPressed(),
 			HudScreenShortcut.TimeFaster => Input.Pressed( InputButton.TimeSpeedUp ),
 			HudScreenShortcut.TimeSlower => Input.Pressed( InputButton.TimeSlowDown ),
 			HudScreenShortcut.TimeNormal => Input.Pressed( InputButton.TimeReset ),
@@ -138,10 +141,16 @@ public sealed partial class ParkHud
 		};
 	}
 
+	/// <summary>The plain V window edge; the registered Ctrl+V locator chord owns its raw V match.</summary>
+	internal static bool VisitorWindowShortcutPressed() => Input.Pressed( InputButton.AllVisitors ) && !Input.Down( InputButton.VisitorLocator );
+
 	private void ApplyShortcut( HudScreenShortcut shortcut )
 	{
 		switch ( shortcut )
 		{
+			case HudScreenShortcut.ToggleHelpBar:
+				helpBarVisibility = !HelpBarVisible;
+				break;
 			case HudScreenShortcut.BuyWindow:
 				ToggleWindow( BuyWindowOpen, OpenBuyWindow, CloseBuyWindow );
 				break;

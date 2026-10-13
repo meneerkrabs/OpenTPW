@@ -302,9 +302,59 @@ coordinates. Channels mix by ascending index, the highest channel writing a
 component winning (0xa7960). Node-state bit 0x10 from node lists and toggles
 hides the node's mesh (RIDES-042; the draw-path reader is not traced).
 Relative-animation models play their vertex tracks in set mode, because the
-default ride load path strips header flag 0x4 (RIDES-043). Not played: group-0
-bounds (no consumer traced), texture-frame tracks (RIDES-035; the slot consumer
-is not traced), the 12-byte block and path parameters. `LobbyIsland` (not instantiated by the game yet) uses the composed
+default ride load path strips header flag 0x4 (RIDES-043). Texture-frame tracks
+apply (RIDES-035): `ObjectAnimator.UpdateTextureFrames` resamples every slot a
+bound clip addresses at that channel's tick — channels and tracks mix in
+ascending order, the last non-null `FrameAt` wins (hyenasm1 carries two tracks
+on slot 15; its constant 0 loses to the face cycle), a null sample before a
+track's first key keeps the previous frame (initially 0), and a slot no clip
+addresses any more shows frame 0 again (MD2-900; frame or slot indices outside
+the model are ignored, MD2-901). The renderer binds the effect:
+`ObjectRenderPart.TextureSlots` carries each part texture's MD2 slot, and
+Static batching keeps distinct model slots separate even when their frame-0
+art has the same name. `OriginalObject` decodes each animated slot's frames
+once through the existing path texture cache, then swaps the
+`Texture` of the material slots that show it when the animator's frame changes
+(`Material.SetTextureArrayElement`; nothing is reallocated while the frame
+holds; resource sets are retired and rebuilt only when native texture identity
+changes. Missing art is registered with the animator and holds its effective
+selected frame, MD2-902). Sign-owned slots (`sign1`/`sign2`) are never frame-swapped.
+Corpus (catalogue objects): 37 entries carry enabled texture-frame clips, 203
+clips apply in-range tracks, 155 of them change the frame while playing
+(Belly Bounce eyes `sp_eye01..06`, arcade/arc2x3 attract screens `sf_01..10`,
+Bug TV `tv01..10`, queue-bin fires `fire0..04`, sideshow faces `ss_*`), and
+every keyed frame name resolves in its object's texture directories — the
+never-keyed missing art (`sq_eye.tga`, `Worm.tga`) and the out-of-range
+`Pmegacostm` slot are refused safely. Theme Park Inc Science/Arabian clips
+carry 230 in-range tracks; 101 unique keyed textures decode through the
+edition's FSH/TGA/PNG path. One keyed retail reference is absent:
+`science/tvsim` slot 39 frame 3 (`lt1.tga`), which holds the last available frame.
+
+Own-format saves optionally store plain per-slot frame/animated history and
+the frame version in `ObjectAnimatorSnapshot.TextureFrames`. Null and invalid
+keys, and missing-art holds, continue from the same visible frame after the
+JSON codec and a fresh restore. Older saves without this optional field start
+at frame 0, then sample their restored channels. Slot counts and frame indices
+are validated against the model before mutation; no GPU references are saved.
+When a headless save selects art unavailable to the renderer, restore starts
+that slot at its base texture before sampling the restored channel. Availability
+registration before or after restore therefore produces the same selection.
+Object deletion clears instance bindings and retires its owned materials and
+shaders; shared decoded textures keep their existing process cache ownership.
+
+Native GPU evidence: the opt-in `ObjectTextureFrameGpuTests` check plays the
+Belly Bounce eye track, verifies slot 19 changes from `sp_eye01.wct` to frame 1
+in the material's native texture binding, reads different GPU pixels, and
+checks held selections allocate zero bytes and reuse their resource sets.
+It also checks object deletion retires the owned materials. This is binding
+and texture-readback evidence, not a framebuffer comparison or original-game
+parity. On macOS invoke the public test method from a temporary `net10.0`
+console harness referencing `OpenTPW.Tests.csproj`, on the main thread, with
+`OPENTPW_TEXTURE_FRAME_GPU=1` and `OPENTPW_GAME_PATH` set; MSTest's pool thread
+cannot create a Cocoa window. Native SDL2, cimgui and veldrid-spirv libraries
+must be available beside the harness. No original assets or native binaries
+are committed. Not played: group-0
+bounds (no consumer traced), the 12-byte block and path parameters. `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials
 white instead of requesting `lobby/terrain/textures/.wct`.
 
@@ -386,7 +436,9 @@ count and offset fields, but that does not verify the rest of its layout.
 
 Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
 of the scene clock; a reader of the 12-byte block's floats; path parameters
-(0x200/0x400); consumers of node bit 0x10, the group-0 box and texture frames;
+(0x200/0x400); consumers of node bit 0x10 and the group-0 box; the original
+draw-path reader of a texture slot's current frame (the applied binding follows
+this port's material-slot mapping, RIDES-035/MD2-900..902);
 texture/material flag bits from original captures;
 the heightfield cell-word low bits. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.

@@ -146,7 +146,7 @@ public class OverviewWindowTests
 		var rows = ParkVisitorRoster.StatRows( guest, kidStates, Money );
 		Assert.AreEqual( (UIStrings.CurrentStatus, "Queuing"), rows[0], "selecting a visitor shows that visitor's state" );
 		Assert.AreEqual( (UIStrings.CashRemainingVisitor, "$235"), rows[1], "cash is the guest's simulated money" );
-		Assert.AreEqual( (UIStrings.TimeInParkVisitor, (string?)null), rows[2], "time in park is honestly not simulated" );
+		Assert.AreEqual( (UIStrings.TimeInParkVisitor, "—"), rows[2], "a visitor without a known admission duration stays unknown" );
 		Assert.AreEqual( (UIStrings.RidesRiddenVisitor, "3"), rows[3], "rides ridden is the guest's own count" );
 		Assert.AreEqual( (UIStrings.HappinessVisitor, "61%"), rows[4] );
 		Assert.AreEqual( 100, ParkVisitorRoster.HappinessPercent( 140 ), "happiness clamps at 100" );

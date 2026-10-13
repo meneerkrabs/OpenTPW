@@ -66,6 +66,14 @@ public sealed record AnimatorMeshCacheSnapshot
 	public required float[]? TexCoords { get; init; }
 }
 
+/// <summary>Plain texture-slot history: null/invalid samples retain the last selected frame.</summary>
+public sealed record AnimatorTextureFrameSnapshot
+{
+	public required int[] Frames { get; init; }
+	public required bool[] AnimatedSlots { get; init; }
+	public required int Version { get; init; }
+}
+
 /// <summary>
 /// Explicit state of an <see cref="ObjectAnimator"/> (park-resume slice): the animator clock and serial counter,
 /// every channel (clip identity, timing, ended flag, deferred clip), the node-state bits, the per-mesh caches with
@@ -93,12 +101,19 @@ public sealed record ObjectAnimatorSnapshot
 	/// <summary>Per-mesh caches, in mesh order.</summary>
 	public required IReadOnlyList<AnimatorMeshCacheSnapshot> Meshes { get; init; }
 	public required IReadOnlyList<string> VertexLimitations { get; init; }
+	/// <summary>Optional for older saves; absent history starts at frame 0, then samples restored channels.</summary>
+	public AnimatorTextureFrameSnapshot? TextureFrames { get; init; }
 
 	/// <summary>Deep copy.</summary>
 	public ObjectAnimatorSnapshot DeepCopy() => this with
 	{
 		Channels = Channels.Select( channel => channel with { Deferred = channel.Deferred } ).ToArray(),
 		NodeStateBits = (bool[])NodeStateBits.Clone(),
+		TextureFrames = TextureFrames == null ? null : TextureFrames with
+		{
+			Frames = (int[])TextureFrames.Frames.Clone(),
+			AnimatedSlots = (bool[])TextureFrames.AnimatedSlots.Clone()
+		},
 		Meshes = Meshes.Select( mesh => mesh with { Positions = mesh.Positions == null ? null : (float[])mesh.Positions.Clone(), TexCoords = mesh.TexCoords == null ? null : (float[])mesh.TexCoords.Clone() } ).ToArray(),
 		VertexLimitations = VertexLimitations.ToArray()
 	};
@@ -148,6 +163,15 @@ public sealed record ObjectAnimatorSnapshot
 				if ( deferred.ClipDurationTicks < 0 )
 					throw new InvalidDataException( $"channel {channel.ChannelIndex} deferred clip length {deferred.ClipDurationTicks} is negative." );
 			}
+		}
+		if ( TextureFrames is { } frames )
+		{
+			if ( frames.Frames == null || frames.AnimatedSlots == null || frames.Frames.Length != frames.AnimatedSlots.Length
+				|| frames.Frames.Length > ushort.MaxValue || frames.Version < 0 )
+				throw new InvalidDataException( "animator texture-frame history has invalid arrays or version." );
+			for ( var slot = 0; slot < frames.Frames.Length; slot++ )
+				if ( frames.Frames[slot] < 0 || frames.Frames[slot] > ushort.MaxValue || (!frames.AnimatedSlots[slot] && frames.Frames[slot] != 0) )
+					throw new InvalidDataException( $"texture slot {slot} has invalid frame history." );
 		}
 		if ( NodeStateBits == null )
 			throw new InvalidDataException( "animator snapshot has no node-state bits." );

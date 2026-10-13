@@ -15,6 +15,46 @@ Code: `source/OpenTPW/World/Guests/` (`GuestSimulation`, `Guest`, `GuestSettings
 (inconclusive without `OPENTPW_GAME_PATH`). Native smoke:
 `--load-original-level <theme> --smoke-test`.
 
+## All Visitors elapsed time
+
+`Guest.TimeInParkSeconds` records simulated elapsed seconds for the All Visitors
+detail row. Successful ticket-booth admission starts the counter at zero; the
+first increment is the following simulation tick. Bus/road travel and waiting
+before admission do not count. `SpawnInPark` starts seeded guests at a known zero.
+Walking, attraction queues, rides and walking toward the park exit count; travel
+along the road home and waiting for the bus do not.
+
+Only the guest simulation's supplied tick delta advances the counter. The level's
+fixed-step clock receives scaled simulation time, so pause supplies no steps and
+speed changes the number of simulated steps rather than elapsed wall time. The
+All Visitors row displays whole seconds as `HH:MM:SS`, with total hours continuing
+past 24. A duration unknown from an older save displays an em dash (`—`).
+
+The own-format guest snapshot carries an optional nullable field. Missing/null
+durations remain unknown after restore and subsequent updates: elapsed time is
+not reconstructed from the guest's exit counter, needs or the park clock. A guest
+still outside the park when restored starts a known zero if later admitted.
+Known values must be finite, nonnegative and no greater than
+`TimeSpan.MaxValue.TotalSeconds`; the guest restore and world-file shape validators
+enforce the same bound. A tick that would exceed it rejects before changing the
+simulation. This is an own-format/display range, not a native game limit. Existing
+save versions remain readable; older builds that reject unknown JSON fields may
+not read newly written files.
+
+The counter is saved display metadata and does not drive gameplay. Both the world
+canonical guest digest and the guest gameplay hash exclude it, consistently with
+presentation-only fields. Known and unknown duration metadata can therefore
+produce the same gameplay hash while their displayed values differ. Duration
+range validation is a separate input/display failure: at the supported bound it
+can refuse a tick even though the gameplay digest excludes the counter. Hash
+equality alone does not establish that display metadata passes its range checks.
+
+Native visitor timing and display units remain untraced (`GUEST-920`, `UI-908`).
+`GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,
+known/unknown codec continuation, both validators, invalid/overflow rejection,
+the live UI model and hash exclusion using synthetic fixtures only. No original
+asset or original-runtime parity is claimed.
+
 ## Original data found
 
 ### Guest graphics: sprites, not models

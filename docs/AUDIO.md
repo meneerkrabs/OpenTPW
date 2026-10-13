@@ -1,14 +1,14 @@
 # Sound: catalogues, mixer and park music
 
-October 11, 2026. Status: the original sound catalogues are read, a software mixer plays
+October 13, 2026. Status: the original sound catalogues are read, a software mixer plays
 through SDL, the park plays its original music, the front end plays its original lobby
 music and ambience, control clicks, the map/research drawer, error feedback, ride-script
 sounds (RSE EVENT and REPAIREFFECT), the crowd sentence and the advisor's speech play
 through the mixer. The park's weather plays its rain and thunder, the level's placed
 ambients (scape.omp) play with the mixer's distance law, ride screams play, the staff's
 walking and idle voices play, and the path tool's laying and refused clicks play. Still
-silent: the positioned ride loops (RSE EVENT types 1 and 2), the weather's visuals, the
-path tool's link-end and undo sounds, the visitor click and the lobby's global effects
+silent: the path tool's link-end and undo sounds, the visitor click and the lobby's
+global effects
 (see "Traced but not triggered"). No original data is in the repository.
 
 The integration regressions force a rainy storm, pass its rain level and due thunder
@@ -20,6 +20,53 @@ The earlier native front-end and jungle smoke runs did not reach rain, thunder o
 staff chatter, so those runs do not verify their natural gameplay triggers. The
 weather cadence, staff presentation stream, listener mapping and held-chain timing
 retain the qualifications in the approximation register.
+
+## RSE particle events are outside the sound service
+
+Static inspection of the identified Feral Mac application corrects the earlier
+"positioned loops" label. `EVENT type key effect` passes its first, second and
+third operands to dispatcher registers r4/r5/r6 (`0x100AF9DC–0x100AF9E8`).
+The dispatcher preserves the key in r26 and the effect in r27. Types 1/2 resolve
+the key through `0x100AC7F0` with selector `0x100`; a failed lookup returns before
+creating an effect. This is a model-key selector, not a sound-catalog ID.
+
+| Type | Dispatch branch / constructor | Data supplied |
+| ---: | --- | --- |
+| 1 | `0x100AE97C` / `0x1009FD70` | Effect ID and three position coordinates |
+| 2 | `0x100AEA58` / `0x1009F968` | Effect ID, three position coordinates and a three-component direction vector |
+
+Both constructors use the same template/pool globals as the particle tick
+`0x1009F748` and particle shutdown `0x1009F354` (whose diagnostic is prefixed
+`PTCL:`). They bound effect IDs to 0–104, copy a 320-byte template into an
+allocated pool slot and return a generation/slot handle. They do not call the
+sound submit wrapper `0x100BB4FC`. The existing `ParLib.P_EFFECT_*` names are
+consistent with this classification, but names alone are not the binary proof.
+
+The dispatcher multiplies position floats by 1024 and truncates to integers;
+the constructors arithmetic-shift those coordinates right by four. Type 2's
+second vector is normalized/scaled by the key resolver and initializes velocity
+using the template's +0xB0 value. Effect bit `0x8000` selects an object-scoped
+lookup (`0x10118018` / `0x10119EF4`) with the low 15 bits, rather than a direct
+particle template ID. `EVENT` supplies control 1000; `EVENT_EXT` supplies its
+fourth operand and non-1000 values reach `0x1009F5E8`. That control's meaning,
+the scoped lookup semantics, complete key transforms, particle lifetimes and
+rendering remain unimplemented/unqualified. Do not reinterpret these as audio
+volume, loop flags or SDT member IDs. TPI particle parity is not established.
+
+`GameAudio.RseEventCategory` and `FindRseEvent` intentionally return null for
+1/2, even when an audio catalog contains a numerically matching ID. The generic
+object-effects hook still records these requests as unimplemented. No particle
+renderer, fake sound, audio approximation ID or effect ownership is introduced.
+A future particle slice must bind resolved keys to the owning object's animated
+model/placement and provide removal/park-teardown cleanup; a sound voice handle
+cannot represent this particle pool handle.
+
+Reproduce the static evidence without running original instructions:
+
+```sh
+python3 tools/ppc-analysis/lanes/advisor/rse_particle_evidence.py /path/to/mac-feral/bin
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/advisor -p test_rse_particle_evidence.py
+```
 
 ## Sound catalogues (`cat_*SFX.map`, `cat_*BANK.map`)
 
@@ -140,10 +187,8 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 
 Traced in the binary but not triggered yet:
 
-* RSE `EVENT` types 1 and 2 (positioned loops, `0x100AE97C`/`0x100AEA58` → `0x1009FD70`/`0x1009F968`):
-  the dispatcher and the key lookup are traced, the play routines are not. In the corpus type 1
-  appears on 12 literal instructions and type 2 on 62 (bouncy.wad: 9 type 2); type 0 never does.
-  They stay silent. Type 0 and the custom-bank type 10 are not routed.
+* The custom-bank type 10 is not routed. Type 0 is the dispatcher's default/unsupported path.
+  `EVENT` types 1 and 2 create **particles**, not positioned sound loops; see the particle section above.
 * Staff chase (`cat_staff` 136, `0x100D49F8`), catch (137, `0x100D516C`), the researching turn (138,
   `0x100F05EC`) and a performance's end (135, `0x100D2D98`): the events are traced, but OpenTPW has no
   chase, catch, performance or per-turn research action to hang them on.

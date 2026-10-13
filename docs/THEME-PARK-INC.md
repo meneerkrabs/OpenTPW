@@ -319,6 +319,13 @@ Three German retail saves read to their last byte with every marker in place. Th
 checked by `ThemeParkIncGlobalSaveTests` when `OPENTPW_TPI_SAVES` names their folder. Sections without a traced
 meaning are read and skipped, and nothing is written back.
 
+The reader bounds park counts and names, map flags and ambient tags before reading
+their sections. It rejects truncated sections, trailing bytes and unpaired UTF-16
+surrogates in decoded sign lines or the company name. Valid surrogate pairs are
+accepted through the field's final code unit; unused units after the first NUL
+remain ignored. These text checks are OpenTPW's malformed-input policy. Synthetic
+tests cover every truncated prefix and the maximum supported table sizes.
+
 ### `.GMI`: the refresh snapshot
 
 `.GMI` is not a separate format. One save routine, `0x00745720`, takes a flag. Without the flag it writes a

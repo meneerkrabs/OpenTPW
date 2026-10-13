@@ -387,6 +387,9 @@ glyph in all 14 UI fonts of each language.
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
   delete (`b_erase`). Open/close is disabled for non-attractions; fixed items
   cannot be deleted. Unknown statistics remain labelled as not simulated.
+  The developer prototype's repair gauge follows its linked economy instance,
+  including wear and mechanic repair, in both the info arm and the attractions
+  overview. Without a linked economy record, the bridge retains its last gauge.
   Read-only visits disable build, open/close, delete and Save; callbacks also
   reject direct mutation attempts using the existing localized online message.
 - Speed control (OpenTPW addition, bottom-right): pause, ×1, ×2, ×4 set the
@@ -414,10 +417,24 @@ glyph in all 14 UI fonts of each language.
   and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
   keep acting over their own window. Keys whose screens do not exist
-  (camcorder, postcard, help bar) stay unhandled.
+  (camcorder, postcard) stay unhandled. Ctrl+H toggles the existing contextual
+  help popup (UI-920); it never activates the H staff window. Both Ctrl keys
+  work, held chords toggle once, and input owners consume blocked presses.
+  Until toggled, the HUD follows the global popup-help option. An explicit
+  chord overrides visibility for this HUD, so help can also be enabled when
+  the global option is off; that option and other screen owners are unchanged.
+  Both physical and injected taps accept either Ctrl key. `ParkHudHelpTests`
+  checks actual input dispatch and synthetic hover-help draws without original
+  assets or a GPU.
   Mapping and gating are pure functions (`ParkHud.ShortcutFor`,
   `WindowShortcutsAllowed`, `SteppedSpeed`), tested in `HudScreenShortcutTests`
-  and `OverviewWindowTests`.
+  and `OverviewWindowTests`. The native smoke test presses the real keys:
+  `Input.InjectKeyDown` queues a physical key for the next frame's button
+  rebuild only (`Input.UpdateButtons`), so V and B run through
+  `Input.Pressed` and every gate above exactly like a keyboard tap — the
+  injection never enters the persistent keyboard state or the WASD pan axes
+  (`InputInjectionTests`). Cancellation belongs to the returned scope, so
+  disposing a consumed tap cannot cancel a later tap of the same key.
 - Pause menu (Escape): PAUSED (403) with Resume (7), Save (4), Load (3), Options
   (6), Exit To Lobby (12), Quit Game (8, confirmation 9). Save writes the owning
   game flow's park save (the own-format world save for sandbox and front-end
@@ -458,7 +475,11 @@ glyph in all 14 UI fonts of each language.
   purchase (−3,250; research marked complete as smoke setup) with one paid
   economy object linked to guests, info arm, economy pause, sale (+1,625),
   a second naturally researched catalogue object, exact charges, overlap refusal
-  without a charge, selected-object open/close, pause menu, own-format world save
+  without a charge, selected-object open/close, the developer prototype Totem
+  listed beside the catalogue rides in All Attractions (status following its
+  door, row activation, delete through the prototype removal with the economy
+  record gone and the selection healed), the window keys V and B pressed as
+  real keyboard taps through `Input.InjectKeyDown`, pause menu, own-format world save
   (verified on disk), lobby;
   a prepared read-only visit verifies disabled build/open/delete/save controls
   and their direct callbacks without mutating the park or writing a save; the visit
@@ -524,7 +545,7 @@ the real assets. Approximation tags refer to the register below.
 | --- | --- | --- | --- |
 | Buy (`ParkHud.BuyWindow.cs`) | list select/sort/scroll, category buttons, purchase via row activation, staff button, all-attractions button, exit/Back | wired | `BuyWindowTests`, `FrontEndSmokeTest` |
 | Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on activation, view toggle (UI-090), dismiss with confirmation (UI-092), scroll, locators, all-visitors and all-attractions buttons, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
-| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905/906), row activation selects the object, delete with the original category confirmations, exit/Back | wired | `OverviewWindowTests`, `FrontEndSmokeTest` (list/activation/sell, visit open + read-only refusal) |
+| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905/906), row activation selects the object, delete with the original category confirmations, exit/Back; the sandbox developer Totem is listed beside the catalogue rides and its delete goes through the prototype removal | wired | `OverviewWindowTests`, `FrontEndSmokeTest` (list/activation/sell, prototype list/activation/remove with healed selection, visit open + read-only refusal) |
 | Visitors (`ParkHud.VisitorWindow.cs`) | list select/number-sort/scroll, live visitor detail rows (UI-907/908), row activation locates the visitor, exit/Back, V key | wired | `OverviewWindowTests`, `HudScreenShortcutTests`, `FrontEndSmokeTest` (list/scroll/sort/Enter-locate) |
 | Map (`ParkHud.Map.cs`) | pan, zoom, four category filters, track/visitor/staff/metric layer toggles, close | wired | `MapViewStateTests`, `MapStaffControlTests` |
 | Finance (`ParkHud.FinanceWindow.cs`) | 1/3/12-year periods, eight series toggles (bank balance/park value exclusive), loans/staff-cost/entry detail buttons, exit | wired | `FinanceWindowTests` |
@@ -545,7 +566,7 @@ the real assets. Approximation tags refer to the register below.
 | Quit Game (confirmation 9) | quits | wired | `OriginalUiTests` |
 
 Not implemented (no screen exists; their keys stay unhandled): camcorder mode
-(C), e-mail postcard (Ctrl+P), help bar (Ctrl+H), F1 advisor help speech,
+(C), e-mail postcard (Ctrl+P), F1 advisor help speech,
 player profiles, online world, golden keys. The All Attractions (A) and All
 Staff (S) keys stay with the camera's WASD pan by policy; the attractions
 window opens from both the buy window and the staff window's visitor corner
@@ -638,6 +659,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-908 | `Hud/ParkHud.VisitorWindow.cs`, `Hud/OverviewRosters.cs` | visitor detail: live state (KIDSTATES), cash, rides and happiness; time in park says "not simulated" | the original visitor detail bindings |
 | UI-909 | `Hud/ParkHud.BuyWindow.cs`, `Hud/ParkHud.Staff.cs`, `Hud/ParkHud.ScreenShortcuts.cs` | entry points: a text button above `b_allstaff` opens the attractions window (its rides tab, UITEXT 78) from the buy window — the shipped `b_allthinginfo` art cannot be used, its model's texture `b_allthginfo` is absent from ui.wad — `b_svisit` opens the visitors window from the staff window, and the plain V key toggles the visitors window (A/S stay with the WASD pan) | the original entry buttons' handlers and rectangles, and the original A/V key dispatch |
 | UI-910 | `Hud/ParkHud.AttractionsWindow.cs`, `Hud/ParkHud.VisitorWindow.cs` | row and button semantics: an attractions row activation or the select button selects the object in the park (info arm) and closes, a visitors row activation or `b_gopeep` locates the visitor's live position and closes, `b_erase` deletes through the existing removal and confirmation | the original lists' row activation handlers (`b_goto`'s art also has no texture in ui.wad) |
+| UI-920 | `Hud/ParkHud.Help.cs`, `UI/Original/UiScreen.cs` | Ctrl+H toggles the existing top-edge contextual popup for this HUD, respecting the global popup-help option | original help-bar geometry and toggle state lifetime |
 | UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | original staff dismissal handler and placement |
 | UI-093 | `Hud/ParkHud.cs`, `World/Level.RideView.cs` | the ride view is entered with the E key on the selected ride, not the ride window's "Ride it!" button | the ride window's Ride it button art and layout, and the Ride it handler (maexah/OpenTPW hud.md, FUN_004e15b0) |
 | UI-094 | `World/RideCameraMode.cs` | the ride view's eye sits on the first train's front car (coaster) or the carriage's height (prototype); the walk, sway and field of view are not reproduced | CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies |
@@ -657,3 +679,17 @@ online), cursor drawing, button/arm animations (`b_door` etc. have no animation
 members; arm slide-in is not reproduced), sounds, original thousands separators
 and currency handling in French/German, D3D11/Vulkan runs, captures from the
 original game for comparison.
+
+The developer prototype Totem shares the ordinary objects' per-tick economy
+synchronization: its visitor bridge receives the linked instance's wear, age
+and sideshow terms, while its script supplies open and broken status.
+`PrototypeEconomySyncTests` checks this without original assets or a GPU.
+
+The All Visitors window consumes the plain V edge only when the registered
+Ctrl+V visitor-locator chord is not down. The locator retains its existing park,
+modal and ride-view gates, while plain V retains the existing window toggle
+behavior. `HudModifierShortcutTests` checks both physical Ctrl with injected V
+and a fully injected chord through actual button rebuilding; Ctrl+S remains
+the staff locator (plain S stays unhandled here), and Ctrl+P remains excluded
+from the pause key. Global bindings and help shortcuts are unchanged by this fix.
+These are synthetic model/input checks, not rendered or original-game parity.

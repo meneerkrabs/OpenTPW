@@ -185,7 +185,20 @@ public sealed class ThemeParkIncGlobalSave
 	private static string Text( char[] characters )
 	{
 		var end = Array.IndexOf( characters, '\0' );
-		return new string( characters, 0, end < 0 ? characters.Length : end );
+		if ( end < 0 )
+			end = characters.Length;
+		for ( var index = 0; index < end; index++ )
+		{
+			if ( char.IsHighSurrogate( characters[index] ) )
+			{
+				if ( index + 1 >= end || !char.IsLowSurrogate( characters[index + 1] ) )
+					throw new InvalidDataException( $"Global save text has an unpaired UTF-16 surrogate at code unit {index}." );
+				index++;
+			}
+			else if ( char.IsLowSurrogate( characters[index] ) )
+				throw new InvalidDataException( $"Global save text has an unpaired UTF-16 surrogate at code unit {index}." );
+		}
+		return new string( characters, 0, end );
 	}
 
 	private ref struct Reader

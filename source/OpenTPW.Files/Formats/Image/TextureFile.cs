@@ -1,4 +1,6 @@
-﻿using ICSharpCode.SharpZipLib.Zip.Compression.Streams;
+﻿using System.Buffers.Binary;
+using ICSharpCode.SharpZipLib;
+using ICSharpCode.SharpZipLib.Zip.Compression.Streams;
 
 namespace OpenTPW;
 
@@ -35,53 +37,77 @@ public partial class TextureFile : BaseFormat
 		//
 		// Read header
 		//
-		var fileData = new TextureFileData()
+		TextureFileData fileData;
+		try
 		{
-			Flags = (TextureFlags)binaryReader.ReadByte(),
-			HasAlphaChannel = binaryReader.ReadByte() == 0x01,
-			BitsPerPixel = binaryReader.ReadByte(),
-			Version = binaryReader.ReadByte(),
-			Width = binaryReader.ReadInt16(),
-			Height = binaryReader.ReadInt16(),
-			YChannelQuantizationScale = binaryReader.ReadInt16(),
-			CbChannelQuantizationScale = binaryReader.ReadInt16(),
-			CrChannelQuantizationScale = binaryReader.ReadInt16(),
-			AChannelQuantizationScale = binaryReader.ReadInt16(),
+			fileData = new TextureFileData()
+			{
+				Flags = (TextureFlags)binaryReader.ReadByte(),
+				HasAlphaChannel = binaryReader.ReadByte() == 0x01,
+				BitsPerPixel = binaryReader.ReadByte(),
+				Version = binaryReader.ReadByte(),
+				Width = binaryReader.ReadInt16(),
+				Height = binaryReader.ReadInt16(),
+				YChannelQuantizationScale = binaryReader.ReadInt16(),
+				CbChannelQuantizationScale = binaryReader.ReadInt16(),
+				CrChannelQuantizationScale = binaryReader.ReadInt16(),
+				AChannelQuantizationScale = binaryReader.ReadInt16(),
 
-			ColorChunkSize = binaryReader.ReadInt32(),
-			AlphaChunkSize = binaryReader.ReadInt32(),
+				ColorChunkSize = binaryReader.ReadInt32(),
+				AlphaChunkSize = binaryReader.ReadInt32(),
 
-			Checksum = binaryReader.ReadInt32()
-		};
+				Checksum = binaryReader.ReadInt32()
+			};
+		}
+		catch ( EndOfStreamException exception )
+		{
+			throw new InvalidDataException( "Truncated WCT header.", exception );
+		}
+
+		if ( fileData.Width <= 0 || fileData.Height <= 0 )
+			throw new InvalidDataException( "WCT dimensions must be positive." );
+		var size = (int)Math.Max( GetAlignedSize( (uint)Math.Max( fileData.Height, fileData.Width ) ), 8 );
+		var planeLength = (long)size * size;
+		var rgbaLength = (long)fileData.Width * fileData.Height * 4;
+		// These are the existing decoder's array requirements, not a new texture dimension policy.
+		if ( planeLength * 2 > Array.MaxLength || rgbaLength > Array.MaxLength )
+			throw new InvalidDataException( "WCT dimensions exceed the decoder's supported array lengths." );
+		var colorCoefficientCount = (int)(planeLength + planeLength / 2);
+		var alphaCoefficientCount = (int)planeLength;
 
 		//
 		// Read blocks
 		//
 
 		// Color
-		if ( fileData.ColorChunkSize == 0 )
+		if ( fileData.ColorChunkSize <= 0 )
 			throw new InvalidDataException( "Texture does not have color data" );
+		if ( fileData.AlphaChunkSize < 0 || (fileData.HasAlphaChannel && fileData.AlphaChunkSize == 0) )
+			throw new InvalidDataException( "Invalid WCT alpha chunk length." );
 
-		fileData.ColorChunk = binaryReader.ReadBytes( fileData.ColorChunkSize );
+		fileData.ColorChunk = ReadChunk( binaryReader, fileData.ColorChunkSize );
 
 		// Alpha
 		if ( fileData.AlphaChunkSize > 0 )
-			fileData.AlphaChunk = binaryReader.ReadBytes( fileData.AlphaChunkSize );
+			fileData.AlphaChunk = ReadChunk( binaryReader, fileData.AlphaChunkSize );
 
 		//
 		// Decompress blocks
 		//
 		var alphaData = Array.Empty<byte>();
-		var colorData = Decompress( fileData.ColorChunk );
+		var colorData = Decompress( fileData.ColorChunk, checked(colorCoefficientCount * 3) );
 
 		if ( fileData.HasAlphaChannel )
-			alphaData = Decompress( fileData.AlphaChunk );
+			alphaData = Decompress( fileData.AlphaChunk, checked(alphaCoefficientCount * 3) );
+		if ( colorData.Length < colorCoefficientCount || (fileData.HasAlphaChannel && alphaData.Length < alphaCoefficientCount) )
+			throw new InvalidDataException( "Truncated WCT channel coefficients." );
+		ValidateCoefficientData( colorData, colorCoefficientCount );
+		if ( fileData.HasAlphaChannel )
+			ValidateCoefficientData( alphaData, alphaCoefficientCount );
 
 		//
 		// Decode image
 		//
-		var size = (int)Math.Max( GetAlignedSize( (uint)Math.Max( fileData.Height, fileData.Width ) ), 8 );
-
 		var outputY = new float[size * size];
 		var outputCb = new float[size * size];
 		var outputCr = new float[size * size];
@@ -102,7 +128,7 @@ public partial class TextureFile : BaseFormat
 		// array. Storing a float into the old List<float> staging buffer and
 		// reading it back was value-preserving, so clamping the same float here
 		// yields bit-identical bytes - and drops two full-size intermediates.
-		var textureData = new byte[fileData.Width * fileData.Height * 4];
+		var textureData = new byte[(int)rgbaLength];
 
 		for ( int y = 0; y < fileData.Height; y++ )
 		{
@@ -131,18 +157,59 @@ public partial class TextureFile : BaseFormat
 		Data = new TextureData( fileData.Width, fileData.Height, textureData );
 	}
 
-	private static byte[] Decompress( byte[] data )
+	private static void ValidateCoefficientData( ReadOnlySpan<byte> data, int count )
+	{
+		// Escapes need three bytes, so the minimum one-byte count alone cannot prove the
+		// channels are complete. Validate their existing encoding before allocating image planes.
+		var offset = 0;
+		for ( var coefficient = 0; coefficient < count; coefficient++ )
+		{
+			if ( offset >= data.Length )
+				throw new InvalidDataException( "Truncated WCT channel coefficients." );
+			if ( data[offset++] != 0x80 )
+				continue;
+			if ( data.Length - offset < sizeof( short ) )
+				throw new InvalidDataException( "Truncated WCT coefficient escape." );
+			offset += sizeof( short );
+		}
+	}
+
+	private static byte[] ReadChunk( BinaryReader reader, int length )
+	{
+		if ( reader.BaseStream.CanSeek )
+		{
+			if ( length > reader.BaseStream.Length - reader.BaseStream.Position )
+				throw new InvalidDataException( "Truncated WCT chunk." );
+			var bytes = reader.ReadBytes( length );
+			if ( bytes.Length != length ) throw new InvalidDataException( "Truncated WCT chunk." );
+			return bytes;
+		}
+		// An untrusted count on a nonseekable stream must not cause a count-sized allocation before reading.
+		using var output = new MemoryStream();
+		var buffer = new byte[Math.Min( length, 81920 )];
+		while ( length > 0 )
+		{
+			var read = reader.Read( buffer, 0, Math.Min( length, buffer.Length ) );
+			if ( read == 0 ) throw new InvalidDataException( "Truncated WCT chunk." );
+			output.Write( buffer, 0, read );
+			length -= read;
+		}
+		return output.ToArray();
+	}
+
+	private static byte[] Decompress( byte[] data, int maximumCoefficientBytes )
 	{
 		// Check if the file contains 'BILZ' as the first 4 bytes - if so then it is a zlib
 		// compressed chunk
-		if ( data[0] == 0x42 && data[1] == 0x49 && data[2] == 0x4C && data[3] == 0x5A )
-			return DecompressZLIB( data );
+		if ( data.Length < 2 ) throw new InvalidDataException( "Truncated WCT compression header." );
+		if ( data.Length >= 4 && data[0] == 0x42 && data[1] == 0x49 && data[2] == 0x4C && data[3] == 0x5A )
+			return DecompressZLIB( data, maximumCoefficientBytes );
 
 		// Not zlib, so must be data compressed with LZSS
 		return DecompressLZSS( data );
 	}
 
-	private static byte[] DecompressZLIB( byte[] data )
+	private static byte[] DecompressZLIB( byte[] data, int maximumCoefficientBytes )
 	{
 		/*
 		 * Theme Park World uses ZLIB 1.1.3
@@ -156,18 +223,34 @@ public partial class TextureFile : BaseFormat
 		 * - 4 bytes: Unused 
 		 */
 
-		// We don't need to use any of this data - so we'll just skip it entirely
-		data = data[0x1C..]; // Unused data
-
-		const int maxSize = 256 * 256 * 3 + 128 * 128 * 3 + 128 * 128 * 3 + 256 * 256 * 3;
-		using var outputStream = new MemoryStream( maxSize );
-		using var outputWriter = new BinaryWriter( outputStream );
+		if ( data.Length < 0x1C ) throw new InvalidDataException( "Truncated BILZ header." );
+		var declaredOutput = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 4, 4 ) );
+		var declaredInput = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 8, 4 ) );
+		if ( declaredOutput < 0 || declaredInput <= 0 || declaredInput > data.Length - 0x1C )
+			throw new InvalidDataException( "Invalid BILZ chunk lengths." );
+		// Preserve padded streams, but retain only the prefix any coefficient encoding can consume:
+		// each coefficient is one signed byte, or an escape byte followed by an Int16 (three bytes).
+		using var outputStream = new MemoryStream();
+		using var inputStream = new MemoryStream( data, 0x1C, declaredInput, false );
+		try
 		{
-			using var inputStream = new MemoryStream( data );
 			using var compressed = new InflaterInputStream( inputStream );
-			compressed.CopyTo( outputStream );
+			var buffer = new byte[81920];
+			long produced = 0;
+			int read;
+			while ( (read = compressed.Read( buffer, 0, buffer.Length )) > 0 )
+			{
+				produced += read;
+				if ( produced > declaredOutput ) throw new InvalidDataException( "BILZ output exceeds its declared size." );
+				var keep = (int)Math.Min( read, maximumCoefficientBytes - outputStream.Length );
+				if ( keep > 0 ) outputStream.Write( buffer, 0, keep );
+			}
+			if ( produced != declaredOutput ) throw new InvalidDataException( "BILZ output does not match its declared size." );
 		}
-
+		catch ( SharpZipBaseException exception )
+		{
+			throw new InvalidDataException( "Invalid BILZ compressed stream.", exception );
+		}
 		return outputStream.ToArray();
 	}
 

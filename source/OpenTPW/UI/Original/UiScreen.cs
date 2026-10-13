@@ -251,7 +251,10 @@ public sealed class UiScreenStack
 
 	public bool Covers( UiCanvas canvas, NVector2 point ) => screens.Any( screen => screen.Covers( canvas, point ) );
 
-	public void Draw( UiContext context )
+	public void Draw( UiContext context ) => Draw( context, showHelp: null );
+
+	/// <summary>Draws with an optional owner-local help override; null follows the context option without changing it.</summary>
+	public void Draw( UiContext context, bool? showHelp )
 	{
 		var first = 0;
 		for ( var index = screens.Count - 1; index > 0; index-- )
@@ -269,7 +272,7 @@ public sealed class UiScreenStack
 				context.Batch.AddRectangle( new UiRect( 0, 0, context.Canvas.Width, context.Canvas.Height ), UiColors.Backdrop );
 			screens[index].Draw( context );
 		}
-		if ( context.PopupHelp && !string.IsNullOrEmpty( context.HoverHelp ) )
+		if ( (showHelp ?? context.PopupHelp) && !string.IsNullOrEmpty( context.HoverHelp ) )
 			DrawHelp( context, context.HoverHelp! );
 	}
 

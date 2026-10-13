@@ -15,6 +15,7 @@ namespace OpenTPW.Server;
 public static class ServerProgram
 {
 	public const string Version = "1.0";
+	public const string BuildInfoRoute = "/api/v1/build-info";
 	/// <summary>2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login").</summary>
 	public const int ProtocolVersion = 3;
 	private const string WebsitePolicy = "website";
@@ -239,6 +240,7 @@ public static class ServerProgram
 
 	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, ChatParkDirectory chatParks, CityDirectory cities, WordFilter filter, IEmailSender? emailSender )
 	{
+		app.MapGet( BuildInfoRoute, () => Ok( ServerBuildInfo.Current ) );
 		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
 			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
 

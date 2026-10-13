@@ -144,8 +144,17 @@ rating, trains and riders. The park save holds them all
 and trains with their riders, and the shared generator through the script
 world; the curve samples, rating, winch marks and braking point are re-derived
 on load by the same rebuild completion ran, so a loaded coaster continues
-bit-for-bit. The original's own coaster chunks between EMAK and SAOC are
-neither read nor written (COAST-025).
+bit-for-bit. The original's own coaster chunks between EMAK and SAOC are read
+structurally (`SaveCoasterBlock`: each coaster's 32-byte header, auxiliary link
+block, 34-byte sections with links, and the train payload as raw bytes; docs/
+TPWS-PAYLOAD.md "Coasters block") — proven on the static Mac contract, the
+Easymode empty boundary and a labelled Theme Park Inc cross-check — but nothing
+is imported into a runtime coaster and nothing is written (COAST-025, SAVE-920
+to SAVE-923). `CoasterSections` exposes recognized scene records and attraction
+ids joined by cell and `Info.Id`; this does not identify a controller's station.
+Nonempty original TPW controllers are refused at `ParkObjects.ImportOriginal`
+before any runtime object is created. This includes controllers with no saved
+sections: an empty topology is not proof of an empty controller.
 
 ## Tests
 
@@ -169,6 +178,12 @@ neither read nor written (COAST-025).
   Real guests boarding through the original script stay save-consistent at every
   tick boundary, including the boarding hand-over (a rider seated by `COAST 1`
   one host step before the bridge marks it aboard).
+- `OriginalCoasterSaveTests` (no game data for the synthetic part): the original
+  save's Coasters block reader — every traced field, truncation inside each part,
+  bounds, non-finite floats, out-of-map cells, the two-coaster refusal and the
+  park import with cell joins; plus two gated fixtures (the Easymode empty
+  boundary, and the Theme Park Inc prebuilt body as a labelled structural
+  cross-check).
 - The native smoke test of an original level builds a coaster through HUD clicks
   (pylons, wheel height, close, complete), sees a train leave and the track
   drawn, and removes it.

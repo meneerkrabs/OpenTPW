@@ -118,10 +118,14 @@ var text = "[APPROX:TEST-002] runtime string";
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'docs').mkdir()
+            # Several prefixes may share one register file (RIDES and MD2 both read RidesApproximations.cs).
+            grouped = {}
             for prefix, relative in REGISTERS.items():
+                grouped[relative] = grouped.get(relative, '') + f'// [APPROX:{prefix}-001] fixture\n("{prefix}-001", "rule"),\n'
+            for relative, text in grouped.items():
                 file = root / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
-                file.write_text(f'// [APPROX:{prefix}-001] fixture\n("{prefix}-001", "rule"),\n')
+                file.write_text(text)
             (root / 'source/online.cs').write_text('// [APPROX:ONLINE-001] unresolved fixture\n')
             (root / 'docs/ONLINE.md').write_text('## Approximation register\n| ONLINE-001 | Rule | Original behavior trace |\n')
             data = collect(root)

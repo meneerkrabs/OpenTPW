@@ -25,7 +25,7 @@ public sealed class CoasterRandom
 /// pylon lookup the placement validator's stacking test reads across coasters. Owned by the park's
 /// <see cref="RideScriptWorld"/>, so every object runtime of the park reaches it.
 /// </summary>
-// [APPROX:COAST-025] the own-format park save holds the tracks, trains, riders and the coaster generator state (CoasterSave, since the park-resume coaster slice); the original's own coaster chunks between EMAK and SAOC are neither read nor written — evidence needed: the original chunk layout, should original TPWS coaster import/export ever be attempted
+// [APPROX:COAST-025] the own-format park save holds the tracks, trains, riders and the coaster generator state (CoasterSave, since the park-resume coaster slice); the original's own coaster chunks between EMAK and SAOC are read structurally only (SaveCoasterBlock: header, auxiliary links, sections, links; train payload raw; nonempty TPW runtime import refused) and never written — evidence needed: the train payload layout and flag remap, should original TPWS coaster import ever be attempted
 public sealed class CoasterWorld
 {
 	/// <summary>Key XORed into the script stream seed for the coaster generator's start state.</summary>

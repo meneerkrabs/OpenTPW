@@ -607,6 +607,8 @@ internal static class ParkResumeSaveFile
 					Require( history.Length == Guest.HistorySlots && !history.Any( id => id < 0 ),
 						$"guest {guest.Id} {name} is not {Guest.HistorySlots} non-negative attraction ids" );
 			}
+			Require( guest.TimeInParkSeconds is not { } elapsed || (double.IsFinite( elapsed ) && elapsed >= 0 && elapsed <= Guest.MaximumTimeInParkSeconds),
+				$"guest {guest.Id} time in park is negative, not finite or exceeds the supported duration" );
 			Require( guest.Money >= 0 && guest.RidesTaken >= 0, $"guest {guest.Id} holds negative money or rides" );
 			Require( float.IsFinite( guest.Hunger ) && float.IsFinite( guest.Thirst ) && float.IsFinite( guest.Toilet )
 				&& float.IsFinite( guest.Energy ) && float.IsFinite( guest.Happiness ) && float.IsFinite( guest.Nausea )

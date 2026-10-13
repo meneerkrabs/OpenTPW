@@ -528,24 +528,29 @@ public partial class Level
 		Park?.Guests?.Link( item.Visitors.AttractionId, instance );
 	}
 
-	/// <summary>Mirrors each script's open state into the economy (closed shops/sideshows take no money).</summary>
+	/// <summary>Mirrors ordinary objects and the live prototype between their scripts, visitor bridges and linked economy records.</summary>
 	private void SyncObjectEconomy()
 	{
 		if ( Park == null )
 			return;
 		foreach ( var (item, instance) in economyInstances )
+			SyncEconomyObject( item, instance );
+		if ( PlacedRide is { IsDeleted: false } prototype && prototypeInstance is int prototypeId )
+			SyncEconomyObject( prototype, prototypeId );
+	}
+
+	private void SyncEconomyObject( OriginalObject item, int instance )
+	{
+		if ( Park!.Economy.TryGetObject( instance, out var state ) )
 		{
-			if ( Park.Economy.TryGetObject( instance, out var state ) )
-			{
-				state.IsOpen = item.IsOpen;
-				// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
-				state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
-				// The join gate reads the live sideshow words (0xdff70) and the wear gauge ride +64 (0xdfe34); both live in the economy.
-				item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
-				item.Visitors.WearGauge = state.Repair;
-				// the attraction score's "new ride" test reads the object's own age in days (0xdc520)
-				item.Visitors.AgeDays = Park.Economy.ObjectAgeDays( state );
-			}
+			state.IsOpen = item.IsOpen;
+			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
+			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
+			// The join gate reads the live sideshow words (0xdff70) and the wear gauge ride +64 (0xdfe34); both live in the economy.
+			item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
+			item.Visitors.WearGauge = state.Repair;
+			// the attraction score's "new ride" test reads the object's own age in days (0xdc520)
+			item.Visitors.AgeDays = Park.Economy.ObjectAgeDays( state );
 		}
 	}
 

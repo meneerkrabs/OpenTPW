@@ -8,30 +8,34 @@ internal static class LZSS
 		var position = 0;
 		while ( true )
 		{
-			var isDelta = inputBuffer.GetBits( 1 );
+			var isDelta = inputBuffer.GetBitsChecked( 1 );
 
 			// One byte literal
 			if ( isDelta == 0 )
 			{
-				var literalValue = inputBuffer.GetBits( 8 );
+				var literalValue = inputBuffer.GetBitsChecked( 8 );
+				if ( position == Array.MaxLength )
+					throw new InvalidDataException( "LZSS output exceeds the supported array length." );
 				if ( position == output.Length )
-					Array.Resize( ref output, output.Length * 2 );
+					Array.Resize( ref output, (int)Math.Min( (long)output.Length * 2, Array.MaxLength ) );
 				output[position++] = (byte)literalValue;
 			}
 			else
 			{
-				int offset = (int)inputBuffer.GetBits( 12 );
+				int offset = (int)inputBuffer.GetBitsChecked( 12 );
 
 				if ( offset == 0 )
 					break;
 
-				int length = (int)(inputBuffer.GetBits( 7 )) + 1;
+				int length = (int)(inputBuffer.GetBitsChecked( 7 )) + 1;
 
 				if ( offset > position )
 					throw new Exception( "Offset > stream length" );
 
+				if ( length > Array.MaxLength - position )
+					throw new InvalidDataException( "LZSS output exceeds the supported array length." );
 				if ( length > output.Length - position )
-					Array.Resize( ref output, Math.Max( output.Length * 2, position + length ) );
+					Array.Resize( ref output, (int)Math.Min( Array.MaxLength, Math.Max( (long)output.Length * 2, (long)position + length ) ) );
 				// Forward copying also handles overlap: later bytes repeat those just written.
 				for ( int i = 0; i < length; ++i )
 				{

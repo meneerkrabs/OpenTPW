@@ -32,6 +32,19 @@ public class AudioTriggerTests
 		Assert.IsNull( GameAudio.RseEventCategory( 10 ), "the custom-bank type is not routed" );
 	}
 
+	[DataTestMethod]
+	[DataRow( 1 )]
+	[DataRow( 2 )]
+	public void ParticleEventsNeverResolveAnAudioCategory( int type )
+	{
+		Assert.IsNull( GameAudio.RseEventCategory( type ) );
+		foreach ( var id in new uint[] { 0, 18, 43, 104, uint.MaxValue } )
+		{
+			Assert.IsNull( GameAudio.FindRseEvent( type, id ) );
+			Assert.IsNull( GameAudio.PlayRseEvent( type, id, new Vector3( 100, 20, 30 ) ) );
+		}
+	}
+
 	// ---- crowd (0x100BC210) ----
 
 	[TestMethod]
@@ -206,7 +219,7 @@ public class AudioTriggerTests
 	/// <summary>
 	/// Every literal EVENT instruction of every object script of the four levels stays inside the dispatcher's
 	/// switch, and the routed types' (3-9) literal ids resolve in the level or the global catalogue — so the sounds
-	/// the scripts ask for are the sounds the routing plays (types 0-2 take the untraced 3D-loop path).
+	/// the scripts ask for are the sounds the routing plays (types 1/2 create particles and type 0 is unsupported).
 	/// </summary>
 	// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the switch guards type < 10 (0x100AE938)
 	[TestMethod]
@@ -259,7 +272,7 @@ public class AudioTriggerTests
 						literalTypes++;
 						Assert.IsTrue( type.Value <= 9, $"{entry.ScriptPath}: EVENT type {type.Value} is outside the dispatcher's switch (0x100AE938 guards < 10)" );
 						if ( !routed.Contains( type.Value ) )
-							continue; // types 0-2 take the 3D positioned-loop path (0x1009F968), which is not routed
+							continue; // types 1/2 create particles (0x1009FD70/0x1009F968), not audio; type 0 is unsupported
 						var id = instruction.Operands[2];
 						if ( id.Kind != RideScriptOperandKind.Literal )
 							continue;

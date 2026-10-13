@@ -40,9 +40,10 @@ public sealed partial class ParkHud
 	public bool AttractionsWindowOpen => attractionScreen != null && Stack.Screens.Contains( attractionScreen );
 	public int SelectedAttractionId => SelectedAttractionRow.AttractionId;
 	public int AttractionFirstRow => attractionFirstRow;
-	/// <summary>Live rows of the selected category in list order (by name).</summary>
+	/// <summary>Live rows of the selected category in list order (by name), the developer prototype Totem included.</summary>
+	// [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge
 	public IReadOnlyList<AttractionListRow> AttractionItems =>
-		ParkAttractionRoster.Rows( level.Objects.Objects.Where( IsListedAttraction ).Select( AttractionRow ), attractionCategory, attractionSortDescending );
+		ParkAttractionRoster.Rows( level.ListAttractions().Select( AttractionRow ), attractionCategory, attractionSortDescending );
 
 	/// <summary>
 	/// The window's rows for one frame: the screen refreshes them when it updates and every action that
@@ -62,8 +63,6 @@ public sealed partial class ParkHud
 				return index;
 		return -1;
 	}
-
-	private static bool IsListedAttraction( OriginalObject item ) => !item.IsDeleted && item.Runtime.IsAttraction;
 
 	// [APPROX:UI-906] the projected live values of one placed attraction (wear, queue, riders, excitement) — evidence needed: the original window's value bindings
 	private AttractionListRow AttractionRow( OriginalObject item ) => new( item.Runtime.AttractionId, EntryName( item.Entry ),
@@ -129,24 +128,24 @@ public sealed partial class ParkHud
 	// [APPROX:UI-910] activation selects the attraction and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler
 	public void SelectSelectedAttraction()
 	{
-		var match = level.Objects.Objects.FirstOrDefault( item => IsListedAttraction( item ) && item.Runtime.AttractionId == selectedAttractionId );
+		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == selectedAttractionId );
 		if ( match == null )
 			return;
 		CloseAttractionsWindow();
 		SelectObject( match );
 	}
 
-	/// <summary>Sells and removes the selected attraction through the existing park removal (confirmation when enabled).</summary>
+	/// <summary>Sells and removes the selected attraction through the park's removal seam (confirmation when enabled).</summary>
 	private void ConfirmDeleteSelectedAttraction()
 	{
 		var row = SelectedAttractionRow;
-		var match = level.Objects.Objects.FirstOrDefault( item => IsListedAttraction( item ) && item.Runtime.AttractionId == row.AttractionId );
+		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == row.AttractionId );
 		if ( match == null || RejectReadOnlyAction() )
 			return;
 		void Remove()
 		{
-			if ( !level.IsReadOnlyVisit && !match.IsDeleted )
-				level.Objects.Remove( match ); // Removal sells and unlinks exactly once.
+			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam.
+			level.RemoveAttraction( match );
 			selectedAttractionId = 0;
 			RefreshAttractionRows();
 			EnsureAttractionSelection();

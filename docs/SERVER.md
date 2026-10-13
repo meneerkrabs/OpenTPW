@@ -33,6 +33,38 @@ the container, pass WebSocket upgrades through, and keep the `Host` header.
 
 `docker build --build-arg WEB_CLIENT=false …` builds an image with the API and chat only.
 
+### Public build identity
+
+`GET /api/v1/build-info` returns only the running server assembly's build facts:
+
+```json
+{"version":"1.0.0","sourceRevision":"c884e2b24394e4ced11a0ef880a66d2fa9bd00ee","revisionKnown":true}
+```
+
+The revision is the full 40-digit Git SHA from `AssemblyInformationalVersion`,
+normalized to lowercase. Build metadata uses nonempty dot-separated identifiers;
+malformed metadata yields an unknown build. Other build metadata is omitted. A build
+without that revision returns `sourceRevision: null` and `revisionKnown: false`; missing or
+unrecognized version metadata also returns `version: null`. The endpoint is public,
+read-only, rate-limited and served with `Cache-Control: no-store`. It exposes no
+configuration, credentials or filesystem paths. The existing `/api/v1/server`
+version and protocol fields retain their existing meanings.
+
+Container builds exclude `.git`, so supply the public source revision explicitly:
+
+```sh
+docker build --build-arg BUILD_REVISION="$(git rev-parse HEAD)" -f source/OpenTPW.Server/Dockerfile -t opentpw-server .
+```
+
+Both Server and Web publish stages receive `BUILD_REVISION`; the endpoint describes
+only the server assembly. CI passes `github.sha`, matching the default checkout:
+the tested merge commit for pull requests, or the branch/tag commit for pushes
+and dispatches ([GitHub event SHA definitions](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)).
+Omitting the argument produces an explicitly unknown revision. A source SHA identifies the claimed server source,
+not an OCI image digest or proof of a clean source tree. Compare served browser
+resources separately when checking web identity. This endpoint becomes available
+only after deploying a build that includes it; it does not attest older releases.
+
 ## The official server (`deploy/`)
 
 `play.opentpw.io` runs the published image on a small Hetzner Cloud server (x86, Ubuntu

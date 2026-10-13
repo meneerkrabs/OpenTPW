@@ -8,8 +8,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
-		if ( PlacedRide != null )
-			throw new NotSupportedException( "Saving prototype rides is not supported yet." );
+		var prototype = CapturePrototypeSnapshot();
 		var runtimes = Objects.Objects.Select( item =>
 		{
 			var state = item.Runtime.CaptureSnapshot();
@@ -41,6 +40,7 @@ public partial class Level
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot(),
 			Coasters = CaptureCoastersSnapshot(),
+			Prototype = prototype,
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
@@ -51,6 +51,20 @@ public partial class Level
 	{
 		if ( runtime.HeldScream || runtime.OwnedScreamCount != 0 )
 			throw new NotSupportedException( "An attraction is still playing a scream. Save again after it finishes." );
+	}
+
+	/// <summary>
+	/// The park-resume prototype part: the developer Totem's whole own state — runtime, script root, position, open
+	/// flag and the exact economy association the live park holds — or null when the park has none. The Totem draws its
+	/// attraction id from the same allocator as the placed objects, so the layout's saved allocator covers it.
+	/// </summary>
+	internal PrototypeRideSaveData? CapturePrototypeSnapshot()
+	{
+		if ( PlacedRide is not { } ride )
+			return null;
+		var part = PrototypeRideSave.Capture( ride.Runtime, ride.Position, ride.IsOpen, prototypeInstance, prototypeBought );
+		RequireResumableAudio( part.Runtime );
+		return part;
 	}
 
 	/// <summary>Called only during construction of a staged candidate, before it can simulate or replace the live park.</summary>
@@ -68,6 +82,10 @@ public partial class Level
 			if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
 			if ( saved.RootScriptId != 0 ) roots.Add( saved.RootScriptId, runtime.Script! );
 		}
+		// The prototype Totem goes in beside the placed objects: before the script world (its fresh VM is a restore
+		// root like every object's) and before the guests (its bridge must be registered for the queue-geometry check
+		// and the guest restore to see it).
+		PlacedRide = RestorePrototypeRideSnapshot( snapshot.Prototype, roots );
 		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
 		ValidateResumeQueueGeometry( snapshot.Guests, Guests );
 		Guests.RestoreSnapshot( snapshot.Guests );
@@ -85,6 +103,47 @@ public partial class Level
 		// node), and this restores the saved tracks, controller state, trains and riders over them.
 		RestoreCoastersSnapshot( snapshot.Coasters );
 		renderedCellVersion = Guests.Grid.Cells.Version;
+	}
+
+	/// <summary>
+	/// Rebuilds the saved developer Totem, or null when the save holds none: a fresh candidate with the saved
+	/// position, script seed, open flag and attraction id (the id is adopted, nothing allocated or charged), its
+	/// runtime restored like a placed object's, its bridge registered with the guests through the same entrance
+	/// derivation the placement ran (RegisterRideWithGuests without its purchase — the saved economy instance is
+	/// re-linked, never bought), and its script handed to the world restore as a root. A restore whose entrance
+	/// derivation finds nothing leaves the Totem unregistered, exactly like the live placement would — the guest
+	/// restore then fails with its reason when the saved guests still reference it.
+	/// </summary>
+	private PrototypeRide? RestorePrototypeRideSnapshot( PrototypeRideSaveData? saved, Dictionary<int, RideVM> roots )
+	{
+		if ( saved == null )
+			return null;
+		RequireResumableAudio( saved.Runtime );
+		var ride = new PrototypeRide( new Vector3( saved.PositionX, saved.PositionY, saved.PositionZ ), Objects.ScriptWorld,
+			saved.ScriptSeed, saved.Open, saved.AttractionId );
+		var gaps = ride.Runtime.RestoreSnapshot( saved.Runtime );
+		if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
+		if ( Guests != null && OriginalPark != null
+			&& OriginalParkPlacement.TryGetCell( OriginalPark.Heightfield, ride.Position.X, ride.Position.Y, out var x, out var y )
+			&& FindRideEntrance( Guests.Grid, x - OriginalRideFootprintRadiusCells, y - OriginalRideFootprintRadiusCells,
+				x + OriginalRideFootprintRadiusCells, y + OriginalRideFootprintRadiusCells ) is { } entrance )
+		{
+			ride.Visitors.EntranceCell = entrance;
+			ride.Visitors.ExitCell = entrance;
+			ride.Visitors.HasCells = true;
+			Guests.Register( ride.Visitors );
+			if ( saved.EconomyInstanceId is int instance )
+			{
+				if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.InfoId != ride.Entry.InfoId )
+					throw new InvalidDataException( "The saved prototype does not match its economy instance." );
+				prototypeInstance = instance;
+				prototypeBought = saved.EconomyBought;
+				Park.Guests?.Link( ride.Visitors.AttractionId, instance );
+			}
+		}
+		if ( saved.Runtime.HasScript && !saved.Runtime.Stopped )
+			roots.Add( saved.RootScriptId, ride.Runtime.Script! );
+		return ride;
 	}
 
 	/// <summary>Current cached queues must agree with the restored cells; a cache from before the last edit refreshes on the next tick.</summary>

@@ -83,6 +83,12 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	public CoasterWorldSaveData? Coasters { get; init; }
 	/// <summary>
+	/// The developer prototype Totem, or null when the park had none: where it stands, its runtime and script state
+	/// and its economy association, joined by attraction id (the part joined the envelope with the prototype slice;
+	/// saves from before it carry no part and hold no prototype).
+	/// </summary>
+	public PrototypeRideSaveData? Prototype { get; init; }
+	/// <summary>
 	/// SHA-256 manifest of the assets the park depends on: canonical expected-asset identifier → 64 lowercase hex
 	/// characters. Computed from verified catalog/game-data paths at load; a saved path is never read back.
 	/// </summary>

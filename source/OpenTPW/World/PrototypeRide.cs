@@ -32,7 +32,16 @@ public sealed class PrototypeRide : OriginalObject
 	private readonly int carriageNode;
 
 	public PrototypeRide( Vector3 position, RideScriptWorld? world = null )
-		: base( LoadEntry(), CreatePlacement( position ), world, seed: null, open: false )
+		: this( position, world, seed: null, open: false, attractionId: null ) { }
+
+	/// <summary>
+	/// Constructor body. The placement path draws the script seed from the world's stream and allocates the next
+	/// attraction id; a park-resume restore passes the saved ones (the runtime adopts the id and creates its VM with
+	/// the saved seed — <see cref="OriginalObjectRuntime.CreateForRestore"/>, the same restore path a placed object's
+	/// layout record takes).
+	/// </summary>
+	internal PrototypeRide( Vector3 position, RideScriptWorld? world, int? seed, bool open, int? attractionId )
+		: base( LoadEntry(), CreatePlacement( position ), world, seed, open, attractionId )
 	{
 		var carriage = Runtime.Model.Meshes.FirstOrDefault( mesh => IsCarriage( mesh.Name ) )
 			?? throw new InvalidDataException( "The original Totem model does not contain its tp_cart carriage mesh." );

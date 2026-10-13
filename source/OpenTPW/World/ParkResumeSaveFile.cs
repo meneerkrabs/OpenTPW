@@ -176,6 +176,14 @@ internal static class ParkResumeSaveFile
 			Require( economyCatalog.TryGet( instance.InfoId, out _ ),
 				$"economy object {instance.Id} has Info.Id {instance.InfoId}, which the {settings.Theme} economy catalogue does not know" );
 		}
+		// The prototype's instance must be one this theme's economy knows too (a live Totem only got one when its
+		// catalogue listed the Totem, so anything else is not a state this format could have saved).
+		if ( snapshot.Prototype?.EconomyInstanceId is { } prototypeInstance )
+		{
+			var prototypeObject = instancesById[prototypeInstance];
+			Require( economyCatalog.TryGet( prototypeObject.InfoId, out _ ),
+				$"the prototype's economy object {prototypeInstance} has Info.Id {prototypeObject.InfoId}, which the {settings.Theme} economy catalogue does not know" );
+		}
 		Require( currentAssetHashes != null && currentAssetHashes.Count > 0, "the current asset manifest is empty" );
 		foreach ( var (key, saved) in snapshot.AssetHashes )
 		{
@@ -312,6 +320,41 @@ internal static class ParkResumeSaveFile
 			else
 				Require( runtime.RootScriptId == 0, $"runtime {index} names root script {runtime.RootScriptId} without a live script" );
 		}
+		// The prototype part (null means the park held no developer Totem — saves from before the prototype slice):
+		// it joins the envelope beside the placed objects — its root-script claim, its allocator-made attraction id
+		// (the Totem draws from the same allocator, so the layout's saved frontier covers it and no placed object
+		// shares it), its entry identity (the part describes exactly the Inca Totem; any other entry is refused, not
+		// accepted as opaque state) and its position.
+		if ( snapshot.Prototype is { } prototype )
+		{
+			Require( prototype.Runtime != null, "the prototype part holds no runtime state" );
+			ValidateInner( prototype.Runtime!.ValidateSnapshot, "prototype part" );
+			Require( prototype.Runtime.AttractionId == prototype.AttractionId,
+				$"the prototype names attraction {prototype.AttractionId}, but its runtime is attraction {prototype.Runtime.AttractionId}" );
+			Require( prototype.Runtime.EntryInfoId == PrototypeRide.InfoId
+				&& string.Equals( prototype.Runtime.EntryArchivePath, PrototypeRide.ArchivePath, StringComparison.OrdinalIgnoreCase ),
+				$"the prototype part is Info.Id {prototype.Runtime.EntryInfoId} ('{prototype.Runtime.EntryArchivePath}'), not the Inca Totem ({PrototypeRide.InfoId}, '{PrototypeRide.ArchivePath}')" );
+			Require( prototype.AttractionId >= 1 && prototype.AttractionId < layout.NextAttractionId,
+				$"the prototype's attraction id {prototype.AttractionId} is outside the saved allocator (1..{layout.NextAttractionId})" );
+			Require( !objectsByAttraction.ContainsKey( prototype.AttractionId ),
+				$"the prototype's attraction id {prototype.AttractionId} is also a placed object's" );
+			Require( float.IsFinite( prototype.PositionX ) && float.IsFinite( prototype.PositionY ) && float.IsFinite( prototype.PositionZ )
+				&& Math.Abs( prototype.PositionX ) <= PrototypeRideSave.MaximumCoordinate
+				&& Math.Abs( prototype.PositionY ) <= PrototypeRideSave.MaximumCoordinate
+				&& Math.Abs( prototype.PositionZ ) <= PrototypeRideSave.MaximumCoordinate,
+				"the prototype stands at a position that is not finite or outside the map-scale bound" );
+			if ( prototype.Runtime.HasScript && !prototype.Runtime.Stopped )
+			{
+				Require( prototype.RootScriptId != 0, "the prototype runs a script but names no root script" );
+				Require( scriptsById.TryGetValue( prototype.RootScriptId, out var prototypeRoot ) && prototypeRoot!.ParentScriptId == 0,
+					$"the prototype names root script {prototype.RootScriptId}, which the world does not hold as a root" );
+				Require( prototypeRoot!.Seed == prototype.ScriptSeed,
+					$"the prototype's root script was created with seed {prototypeRoot.Seed}, not the part's {prototype.ScriptSeed}" );
+				Require( claimedRoots.Add( prototype.RootScriptId ), $"root script {prototype.RootScriptId} is claimed by two runtimes" );
+			}
+			else
+				Require( prototype.RootScriptId == 0, $"the prototype names root script {prototype.RootScriptId} without a live script" );
+		}
 		Require( claimedRoots.Count == worldRoots.Count,
 			$"the script world holds {worldRoots.Count} root scripts, but {claimedRoots.Count} live objects name one" );
 
@@ -333,6 +376,18 @@ internal static class ParkResumeSaveFile
 				$"economy binding {index} names economy object {binding.InstanceId}, which the economy does not hold" );
 			Require( instance!.InfoId == record!.InfoId,
 				$"economy binding {index} maps attraction {binding.AttractionId} (Info.Id {record.InfoId}) to instance {binding.InstanceId} (Info.Id {instance.InfoId})" );
+		}
+		// The prototype's economy association: the direct exact instance the live park linked (a Totem without one —
+		// no reachable entrance, or an economy that does not list it — saves no instance), never re-derived.
+		if ( snapshot.Prototype?.EconomyInstanceId is { } prototypeInstance )
+		{
+			Require( prototypeInstance > 0, $"the prototype's economy instance {prototypeInstance} is not positive" );
+			Require( !boundInstances.Contains( prototypeInstance ),
+				$"economy object {prototypeInstance} is bound to a placed attraction and the prototype" );
+			Require( instancesById.TryGetValue( prototypeInstance, out var prototypeObject ),
+				$"the prototype names economy object {prototypeInstance}, which the economy does not hold" );
+			Require( prototypeObject!.InfoId == PrototypeRide.InfoId,
+				$"the prototype's economy object {prototypeInstance} has Info.Id {prototypeObject.InfoId}, not the Inca Totem's {PrototypeRide.InfoId}" );
 		}
 
 		ValidateGuests( snapshot );
@@ -473,7 +528,8 @@ internal static class ParkResumeSaveFile
 			var problems = RideVisitorBridge.ValidateSnapshot( attraction );
 			Require( problems.Count == 0,
 				$"attraction {attraction.AttractionId}'s queue is inconsistent{( problems.Count == 0 ? "" : $": {problems[0]}" )}" );
-			Require( snapshot.Layout.Objects!.Any( record => record != null && record.AttractionId == attraction.AttractionId ),
+			Require( snapshot.Layout.Objects!.Any( record => record != null && record.AttractionId == attraction.AttractionId )
+				|| ( snapshot.Prototype != null && snapshot.Prototype.AttractionId == attraction.AttractionId ),
 				$"attraction {attraction.AttractionId} is registered with the guests, but the park does not place it" );
 			foreach ( var (x, y) in attraction.QueueCells! )
 				Require( InBounds( x, y ), $"attraction {attraction.AttractionId}'s queue cell ({x}, {y}) is outside the cell map" );

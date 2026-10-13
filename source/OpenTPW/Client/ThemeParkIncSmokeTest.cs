@@ -211,8 +211,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			}
 			return true;
 		}) );
-		// Scripts that reach WAITABS/MULT (the two opcodes only Theme Park Inc scripts use, still unimplemented)
-		// fault gracefully: the VM stops them with a logged message and the slice keeps running.
+		// Scripts that reach opcodes without handlers (WAITABS/MULT gained handlers on October 13, 2026;
+		// RSE-VM.md's gap-opcode section) fault gracefully: the VM stops them with a logged message and
+		// the slice keeps running.
 		Do( "survey faulted scripts", () =>
 		{
 			var faulted = FaultedScripts().ToArray();

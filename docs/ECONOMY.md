@@ -317,7 +317,7 @@ tests compare saves before/after load and after identical continuations byte for
   credits `Costs.QueueCell` × the ride's `ScrapPercent` / 100 for a removed queue cell
   (`ClearCell` `0x85dcc`); `ScrapValue` is the sale refund `Upgrades[0].CostOfUpgrade` × `ScrapPercent` / 100 and
   `ScrapPercent` the whole of `0xe2424` (the current level's row by exact 365-day years, 100 for an object nobody
-  used, `ParkObjectState.TimesUsed` = 0, in its first 30 days; ORACLE.md F21).
+  used, `ParkObjectState.TimesUsed` = 0, in its first 30 days; ORACLE.md F21, the same in tp.exe `0x4e2400`, X13).
 - `IParkClock` (`Tick`, `Date`, `Speed`) for the frontend and for the `YEAR/MONTH/DAY/HOUR` RSE opcodes.
 - `ParkEconomyRuntime` (in `Level.Park`, original levels only): created from `OriginalPark`, ticked
   on the level's 60 Hz `FixedStepClock`, logs `Park clock: …; balance $…` per game day.
@@ -358,7 +358,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-021 | `Economy/ParkEconomy.cs:435` | the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically); the timer itself, WorkDuration x (100 - state of repair) / 100 or x DurationOfUpgrade, is the original's (executed, ORACLE F19) | capture of a repair from arrival to completion |
 | ECON-022 | `Economy/ParkEconomy.cs:466` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |
 | ECON-023 | `Economy/ParkEconomy.cs:313` | the wear step and the breakdown check do not know relief objects (toilets are not simulated, +0x2E bit 0), and the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does | the callers that set state 2 for an upgrade, what feeds toilets' wear and the script side of VAR_BREAKSTAT |
-| ECON-025 | `Economy/ParkEconomy.cs:585` | the scrap rule is the Mac build's (0xE25E8 / 0xE2424: base cost x the age percentage, 100 for an unused object in its first 30 days); the Windows build's counterpart is not executed, and the object use counter (thing +412) is ParkObjectState.TimesUsed | the tp.exe counterpart of 0xE25E8 run in the x86 oracle, or a capture of a sale |
 | ECON-026 | `Economy/ParkEconomy.cs:606` | the map's cell points are not added: the cell map has no ownership flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, and the scrap values are no longer part of it | the ownership of the starting park's cells and the original cell types |
 | ECON-027 | `Economy/ParkEconomy.cs:629` | the visitor term counts the guests in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 (the census 0xc3684); every hired staff member counts, where the original skips a staff thing whose byte +3 is set | cell-type provenance for the census (ECON-050) and the writers of the staff byte +3 |
 | ECON-028 | `Economy/ParkEconomy.cs:739` | purchases need a balance covering the cost | capture of building with too little money |

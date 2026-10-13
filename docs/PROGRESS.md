@@ -875,6 +875,9 @@ research batch was included in this merge.
   of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
   flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's
   Haunted Tower reads `HOUR` and its hour reaches the world hash; the game keeps the host clock.
+- **Pick visitors in the park (October 13):** a mouse press on a visible visitor in the park view selects it in the visitors'
+  roster, using the same sprite rectangle the renderer draws; HUD controls, tools, overlays and the ride view keep the press, and
+  the pick only reads the simulation (UI-930: rectangle picking without occlusion or transparent pixels).
 - **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting
   visitors directly instead of building their cell groups a second time (1,500 visitors: 165,168 to 680
   bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the

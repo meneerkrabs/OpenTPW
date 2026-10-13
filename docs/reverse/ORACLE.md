@@ -1441,7 +1441,9 @@ upgrading or closed ride is skipped (it kept wearing, and a closed ride with an 
 counts as closed from then on. Examples a player would notice: the door opens in the morning while the Totem is broken down in the economy: it stays closed (it reopened before)
 and opens when the mechanic has finished; a ride the player closed and that a mechanic then services opens again; a ride with an empty life gauge stays whole overnight with the park
 closed and breaks at the first update after the door opens (it broke at night before); a ride under a mechanic's preventive repair keeps wearing for the job's duration.
-`ECON-049` keeps only the maintenance button and the queue link test, `ECON-023` only the relief objects and the derived state word.
+`ECON-049` keeps only the maintenance button and the queue link test, `ECON-023` the relief objects, the derived state word and a breakdown only the script reports.
+After the review of PR #64, `Level` also closes a ride when its upgrade is bought and reopens it when the upgrade is installed (`0xdf928` start and end, read statically: SetState(2)
+and SetState(0)), and the door and the reopenings follow the economy an in-place load restores. The economy's breakdown still does not reach the ride script (below).
 
 Still open: the upgrade branch of `0xdef2c` (state 2: the level, the open word and the queue), `0xdd744` and the maintenance flag's player action (`0xdf674` callers `0x1452a8`, `0x147174`:
 UI code not traced), what the script does with VAR_BREAKSTAT (the scripts set VAR_BROKEN themselves: OpenTPW's economy does not write VAR_BREAKSTAT, so a ride that breaks down in the

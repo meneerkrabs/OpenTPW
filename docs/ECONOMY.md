@@ -8,7 +8,9 @@ behaviour is unknown is marked *approximation* below and in the code documentati
 
 The Mac PowerPC build does contain the setting names and its code is readable. The ride wear, breakdown and
 repair rules are traced there and implemented, see [reverse/RIDE-WEAR.md](reverse/RIDE-WEAR.md); only the
-ride update's state gates and the reopening guard are executed in the oracle (ORACLE.md F27) and implemented; ECON-023 keeps the relief objects and the derived state word; the life gauge starts at 100 (`0x100DAB1C`).
+ride update's state gates and the reopening guard are executed in the oracle (ORACLE.md F27) and implemented; ECON-023 keeps the relief objects, the derived state word and a breakdown only the script reports; the life gauge starts at 100 (`0x100DAB1C`).
+Not yet connected: an economy breakdown does not reach the ride script (OpenTPW does not write VAR_BREAKSTAT), so guests keep boarding a ride that broke down in the economy until
+its script reports VAR_BROKEN; a bought upgrade closes the ride until it is installed (`0xdf928`, static).
 
 Code: `source/OpenTPW/Economy/` (simulation), `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs`
 (original save records). Tests: `ParkEconomyTests` (synthetic, no assets) and

@@ -109,10 +109,9 @@ are interpretations, based on the comparisons with `MaxSpeed`, `MaxCapacity` and
   to 0 at game initialisation.
 - The main loop `0x101c22dc` adds 31 to an accumulator per step until it reaches a target. The same function
   computes `SamsUtilities::UTimer::GetAbsolute() / 1000`.
-- If `GetAbsolute` returns microseconds, the target is in milliseconds, so one step is 31 ms (about 32.3 steps
-  per second) and one wear step about every 2 s. Not proven: the origin of the target and any game-speed
-  factor.
-- No reader of the counter that derives the hour or day has been found yet, so ECON-001 is unchanged.
+- Superseded (ORACLE.md F30): the counter at `+0x1da70c` is the park turn, which the scheduler advances once per 248 ms at
+  the default clock scale (eight 31 ms substeps), so a wear step (every 64 turns) comes about every 15.9 s at normal speed,
+  not every 2 s as this page first estimated from the 31 ms substep.
 
 ## Game mode
 
@@ -165,7 +164,7 @@ job waits for the script; a ride in any other state is repaired at once. `0x100d
 The timer the arrival `0x100d9c0c` starts was executed (ORACLE.md F19): a repair takes `WorkDuration × (100 − low byte of the truncated +0x40) / 100`
 park turns, an upgrade (ride state 2) `WorkDuration × Upgrades[level + 1].DurationOfUpgrade`; the ride's own level does not scale a repair.
 
-The constructor `0x100da874` first stores 0 in `+0x40`, `+0x44` and `+0x48`, and then 100.0 (`0x100dab1c`, ECON-047).
+The constructor `0x100da874` first stores 0 in `+0x40`, `+0x44` and `+0x48`, and then 100.0 (`0x100dab1c`; this retired ECON-047).
 
 Verified since: the object serializer `0x100daf04` writes the three floats as whole numbers 0–255, and
 `SaveAttractionList` decodes them from original saves (see
@@ -213,7 +212,6 @@ Still approximations:
 | --- | --- |
 | ECON-023 | The wear step and the breakdown check do not know relief objects (toilets are not simulated), and the ride's state is derived from the economy and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does. |
 | ECON-049 | The maintenance flag (+96, a player request) and the back-of-queue link test of the reopening guard are not modelled. |
-| ECON-047 | A newly built ride starts with life gauge 100. Easymode stores 100, but the constructor sets 0 and the code that fills it in was not traced. |
 
 Not in OpenTPW yet:
 

@@ -18,6 +18,8 @@
 		<JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
 		<!-- Readable exception messages instead of resource keys. -->
 		<UseSystemResourceKeys>false</UseSystemResourceKeys>
+		<!-- The published page is compiled ahead of time (the server Dockerfile passes RunAOTCompilation=true with the
+		wasm-tools workload; docs/BROWSER-PERFORMANCE.md). A plain local publish stays an interpreter build that needs no workload. -->
 	</PropertyGroup>
 
 	<PropertyGroup>

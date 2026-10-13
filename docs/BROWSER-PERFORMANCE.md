@@ -25,6 +25,11 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `jungle` | the cold start of Full Simulation Jungle (the construction frame), then a steady window |
 | `buy` | the first buy-menu open (Aztec Mayhem selected) and the first Belly Bounce, Balloon Shop, Burger Shop and Drinks Shop selections |
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
+| `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
+
+`tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by
+side with the change per measure (and how many runs a row rests on when some lacked it), and
+fails unless every run of both builds has the same digest.
 
 Frame times are the wall time of each exported `Program.Frame`, recorded by the page only with
 `?perf=1`. "Main thread busy" is the renderer main thread's task time over wall time
@@ -61,6 +66,40 @@ measure to decide on (the AOT experiment in the browser plan). Main thread busy 
 first-use frames varied by up to about ±30 % between sessions on this laptop. Compare builds with
 `--runs 3` or more (medians, every run kept in the report) and run them alternately on an idle
 machine; a difference smaller than the ranges above is not a result.
+
+## Ahead-of-time compilation (13 October)
+
+The interpreter build against the same sources compiled ahead of time
+(`-p:RunAOTCompilation=true`, the `wasm-tools` workload), three runs each taken alternately on the
+M5 setup above:
+
+| Measure | Interpreter | AOT | Change |
+| --- | ---: | ---: | ---: |
+| Start: first frame | 1,914 ms | 1,367 ms | −29 % |
+| Lobby: main thread busy | 19.3 % | 10.8 % | −44 % |
+| Jungle cold construction, largest frame | 2,540 ms (2,539–2,554) | 1,136 ms (1,132–1,137) | −55 % |
+| Jungle: main thread busy | 23.0 % | 14.5 % | −37 % |
+| Jungle: frame p95 | 5.1 ms | 3.0 ms | −41 % |
+| Open buy menu / Aztec Mayhem | 103.6 ms | 53.5 ms | −48 % |
+| Belly Bounce / Balloon / Burger / Drinks Shop | 70 / 34 / 36 / 51 ms | 37 / 20 / 24 / 27 ms | −32 to −48 % |
+| Digest: 1,698 Jungle textures decoded | 2,396 ms | 626 ms | −74 % |
+| Digest: fixed park run (3000 ticks) | 478 ms | 257 ms | −46 % |
+| Wasm memory in the park | 229 MB | 211 MB | −8 % |
+
+The ranges do not overlap. In every run both builds gave the same digest, texture hash
+`1CC5AEB033691043` and world state hash `120A09CBAE070E0A`, and the desktop runtime gives the
+same two hashes for the same work, as does an AOT build made in the Linux server image. That
+covers decoding the theme's 1,698 textures and the fixed park run, which exercises the economy and
+the guests but not the rides, object scripts, weather or staff; within that coverage AOT changed
+the speed, not the result. These are three runs per build on one machine: they show a large
+improvement there, not a speed guarantee for every device.
+
+The cost is the build: the native module grows from 2.9 to 32.6 MB, the Brotli-compressed
+framework from 11.8 to 16.5 MB, and a publish takes about 110 s instead of 27 s. The browser
+plan's rule (AOT when the cold construction or the first menu frame gets at least 40 % faster,
+judged against the size of the original game the player supplies anyway) is met, so the
+published page (the server image, `source/OpenTPW.Server/Dockerfile`) is compiled ahead of time.
+A local `dotnet publish` stays an interpreter build without a workload (docs/WEB.md).
 
 ## Measured workload
 
@@ -158,8 +197,9 @@ construction frame, versus 10.8 seconds in its v0.7.12 baseline; loading the ori
 folder and copying theme files are outside that frame. Advisor response 587
 prepared in 87.9 ms, including 76.6 ms synchronous PCM decode; the first response
 measured 223.5 ms of PCM decoding. Those first-use costs are outside the matched steady
-windows and are not claimed as eliminated. Occasional smaller frame gaps remain as well. Broad visibility culling, ahead-of-time compilation
-and full scene-material lifetime work are separate optimization opportunities.
+windows and are not claimed as eliminated. Occasional smaller frame gaps remain as well. Broad visibility culling
+and full scene-material lifetime work are separate optimization opportunities; ahead-of-time
+compilation has since halved the cold construction (see above).
 
 ## Verification
 

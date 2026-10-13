@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { listFiles, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
+import { keyMetrics, listFiles, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
 
 // The browser performance harness (tools/web-perf/run.mjs) without a browser: its server, path handling and statistics.
 
@@ -59,6 +59,17 @@ test('several runs combine into medians field by field', () => {
 		buy: { openMenu: { maxFrameMs: 81, selected: 'tvsim' } },
 		memory: { samples: [1] },
 	});
+});
+
+test('the compared measures come from the report, missing ones left out', () => {
+	const rows = keyMetrics({
+		jungle: { cold: { maxFrameMs: 2500, readyMs: 2800 }, steady: { p95Ms: 4.7, memory: { wasmBytes: 230 * 1048576 } } },
+		buy: { openMenu: { maxFrameMs: 80 }, 'Belly Bounce': { maxFrameMs: 70 }, 'Drinks Shop': { missing: true } },
+		digest: { textureMs: 900, simulationMs: 4000 },
+	});
+	assert.deepEqual(rows.map(([name]) => name), ['Jungle cold: largest frame', 'Jungle cold: ready', 'Jungle: frame p95',
+		'Open buy menu: largest frame', 'Belly Bounce: largest frame', 'Digest: texture decoding', 'Digest: fixed park run', 'Wasm memory']);
+	assert.equal(rows.at(-1)[1], 230);
 });
 
 test('the server lists the game folder and serves it beside the page, nothing outside', async () => {

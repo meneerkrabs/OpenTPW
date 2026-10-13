@@ -797,6 +797,14 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Browser build compiled ahead of time (October 13):** the published page (server image) now
+  runs AOT-compiled WebAssembly instead of the interpreter. Measured with the harness, three
+  alternating runs each on an Apple M5: the cold Jungle construction frame fell from 2,540 to
+  1,136 ms, the first buy-menu frame from 104 to 54 ms, main-thread occupancy in the park from
+  23 to 15 %, texture decoding by 74 %; the download grows from 11.8 to 16.5 MB. Interpreter, AOT
+  and the desktop runtime give identical digests for the theme's textures and a fixed economy and
+  guest run (rides, scripts and weather are not in it). The harness gained the
+  `digest` scenario and `compare.mjs`. Phase 1 of the browser performance plan.
 - **Browser performance harness (October 13):** `tools/web-perf/run.mjs` repeats the browser
   measurements with one command: a local server for the published page and the player's own
   files, a fresh headless Chrome over the DevTools Protocol, and fixed scenarios (start, lobby,

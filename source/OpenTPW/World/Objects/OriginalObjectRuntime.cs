@@ -8,7 +8,7 @@ public readonly record struct OriginalObjectState( bool IsOpen, bool IsRunning, 
 /// its original RSE script in a <see cref="RideVM"/> with <see cref="OriginalObjectEffects"/>. No GPU
 /// resources; <see cref="OriginalObject"/> renders it. Used directly by the corpus tests.
 /// </summary>
-public sealed class OriginalObjectRuntime
+public sealed partial class OriginalObjectRuntime
 {
 	private readonly Dictionary<string, ModelAnimation?> clips = new( StringComparer.OrdinalIgnoreCase );
 	private readonly SortedSet<string> unresolvedAnimations = new( StringComparer.Ordinal );
@@ -169,6 +169,7 @@ public sealed class OriginalObjectRuntime
 	public void Stop()
 	{
 		stopped = true;
+		eventOrigin = null;
 		effects.StopSounds();
 		Visitors.ReleaseAll();
 		if ( Coaster != null )
@@ -203,6 +204,8 @@ public sealed class OriginalObjectRuntime
 	/// </summary>
 	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
 	{
+		if (effects.HasLiveEventLoops)
+			throw new NotSupportedException("An attraction is still playing a looping EVENT sound. Live audio cannot be saved; stop the owning object or sound first.");
 		return new OriginalObjectRuntimeSnapshot
 		{
 			AttractionId = AttractionId,
@@ -442,6 +445,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	/// <summary>The ride script's held scream (the original's handle, refused while one is held).</summary>
 	private SoundChain? screamChain;
 	private readonly List<SoundChain> ownedScreams = new();
+	private readonly List<AudioVoice> ownedEventLoops = new();
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
 
@@ -451,6 +455,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		foreach ( var chain in ownedScreams )
 			chain.Stop();
 		ownedScreams.Clear();
+		foreach (var voice in ownedEventLoops) voice.Stop();
+		ownedEventLoops.Clear();
 		screamChain = null;
 	}
 
@@ -459,6 +465,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 
 	/// <summary>Chains this effects object still owns (park-resume capture; live audio is a reported gap).</summary>
 	internal int OwnedScreamCount => ownedScreams.Count;
+	internal bool HasLiveEventLoops => ownedEventLoops.Any(voice => voice.Loops && !voice.IsFinished);
 
 	public int Perform( RideEffectCall call )
 	{
@@ -509,7 +516,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			return ride.Coaster.Perform( call );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
-		// Sound effects play, but their non-audio parts (reverb, 3D position) remain unimplemented effects.
+		// Routed EVENT sounds can use the placed origin; scream/repair placement and reverb remain unimplemented.
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
@@ -533,7 +540,10 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		if ( call.Opcode == Opcode.EVENT )
 		{
 			// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position
-			GameAudio.PlayRseEvent( call.Argument( 0 ), unchecked((uint)call.Argument( 2 )) );
+			var type = call.Argument(0);
+			var voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), type is >= 3 and <= 9 ? ride.ReadEventOrigin() : null);
+			ownedEventLoops.RemoveAll(loop => loop.IsFinished);
+			if (voice is { Loops: true }) ownedEventLoops.Add(voice);
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		if ( call.Opcode == Opcode.REPAIREFFECT )

@@ -778,3 +778,13 @@ In a Theme Park World terrain park, press plain **C**, then press the terrain to
 WASD moves in the horizontal view direction; the rotation keys turn, and holding the right mouse button and dragging looks around. Movement samples the existing bilinear heightfield and refuses outside-terrain or hole cells. Host tuning is an eye height of 1.6 engine units, speed 4 units/second, turn speed 90 degrees/second, 180 degrees of mouse look per viewport width/height and pitch limited to ±80 degrees. Frame delta is capped at 0.1 seconds. These values, flat Z=0 plane entry picking and field-of-view 55 are UI-932 approximations. Picking is not a ray/terrain intersection; the resulting X/Y is sampled on the actual terrain. There is no object/path collision, photo capture, recording, native walking physics or camera save continuation.
 
 Typing, overlays, captured mouse/keyboard input, ride view and build/removal/cell/coaster tools block entry. Both Control keys exclude C and terrain-click entry; existing Ctrl+C park closing stays separate. Blocked C holds and mouse presses are consumed through release, including current-frame injected keys and a hold spanning new HUD creation. This input snapshot is host ownership support, not native input parity. Walking owns park tool/selection clicks and the exit frame. Camera controls freeze under modal/captured input and while a replacement park is building. On level disposal, the owned camera is released without replacing another world's camera.
+
+Independent CPU controls in `FreeWalkCameraReviewTests` additionally pin nonplanar
+bilinear height sampling and hole refusal, raw snapshot stability without widening
+Ctrl bindings, RMB drag reset across capture/text/modal/focus gates, actual park
+closing and read-only refusal, and visitor press ownership with fresh-click recovery
+after walking exits. Guest canonical state remains unchanged by these camera actions.
+These synthetic controls do not qualify native terrain collision, pixel picking,
+renderer/audio behavior or original camcorder equivalence. Whole `Level.Dispose`
+remains source-reviewed because its renderer teardown needs a live renderer; the
+actual walking release and ride-return methods are covered independently.

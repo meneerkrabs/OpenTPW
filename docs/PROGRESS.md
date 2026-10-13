@@ -867,6 +867,10 @@ research batch was included in this merge.
   against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
   instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive
   still reads byte for byte as before; an archive with a member past its end is now refused as a whole (WAD-ROBUSTNESS.md).
+- **Script civil time (October 13):** TPW scripts' `YEAR`/`MONTH`/`DAY`/`HOUR` read the host's local civil time instead
+  of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
+  flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's
+  Haunted Tower reads `HOUR` and its hour reaches the world hash; the game keeps the host clock.
 - **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting
   visitors directly instead of building their cell groups a second time (1,500 visitors: 165,168 to 680
   bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the

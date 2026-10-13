@@ -11,5 +11,6 @@ public static class VmApproximations
 	{
 		("VM-900", "MULT: dest = a × b with the SUB/DIV/MOD dest-first operand order, 32-bit wrap and flags; inferred from the upstream three-operand signature and Theme Park Inc's sole `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` (followed by SETTIMER). No original dispatch of interpreter case 48 is traced, so the native accumulation and flags are unqualified"),
 		("VM-901", "WAITABS: STP-PPC 0xb0710 proves now + operand stored without speed division, first-encounter yield and unsigned-deadline comparison; the port keeps that deadline in its non-wrapping double script clock, so the original's 2^32 wrap and zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled"),
+		("VM-902", "YEAR/MONTH/DAY/HOUR: the TPW object hook samples managed host-local civil time using the Feral C time/localtime field mapping. Provider/current host input is not saved or hashed; VM variable writes/flags remain saved and hashed. Replay depends on the same external samples. Managed timezone, clock changes, invalid/rollover dates and Windows/TPI parity are unqualified; existing destination/literal/flag behavior is not established by the clock-domain witness"),
 	};
 }

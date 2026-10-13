@@ -291,6 +291,27 @@ internal static class Game
 				? (Count: count, Interval: interval) : sequenceText == null ? (Count: 1, Interval: 1) : throw new ArgumentException( "--capture-sequence expects count,interval, for example 120,2." );
 			Render.PostUpdate += new WorldCapture( capturePath, frames, args.Contains( "--capture-interface" ), pose, sequence.Count, sequence.Interval ).Update;
 		}
+#if DEBUG
+		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
+		// converter as soon as the park's weather exists, so captures can show rain/snow/lightning without waiting
+		// for the season's rolls. The drops, bolts and thunder still come from ParkWeather's normal machinery;
+		// Release builds never see the flag.
+		var debugWeather = GetOption( args, "--debug-weather", "a weather quality 1..100 for smoke captures" );
+		if ( debugWeather != null )
+		{
+			if ( !int.TryParse( debugWeather, out var debugQuality ) || debugQuality is < 1 or > 100 )
+				throw new ArgumentException( "--debug-weather expects a quality from 1 to 100." );
+			Render.PostUpdate += ApplyDebugWeather;
+			void ApplyDebugWeather()
+			{
+				if ( flow.Level?.Weather is not { } weather )
+					return;
+				Render.PostUpdate -= ApplyDebugWeather;
+				weather.ApplyQuality( debugQuality );
+				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
+			}
+		}
+#endif
 		if ( startsFrontEnd )
 		{
 			if ( autorun != null )

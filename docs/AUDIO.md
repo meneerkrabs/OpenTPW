@@ -197,8 +197,13 @@ Behaviour worth knowing:
 Seeing it: enter any park whose economy runs (an original level; the sandbox has no weather). The
 weather follows the season's roll, so rain needs the roll to land in the rain or snow band — resume
 a save made during rain, or wait for the next change (`Weather.DaysBetweenChanges`, seven days by
-default). The unit tests (`WeatherVisualTests`) cover the state math without a window: counts, the
-wrapping volume, pause freeze, snow sway, bolt lifetime/jitter and the strike reporting.
+default). Debug builds also take `--debug-weather <quality 1..100>` (`[EXT:debug-weather]`, in
+`Client/Game.cs`): it applies one quality through `ParkWeather`'s own converter as soon as the park's
+weather exists, so captures can show rain, snow and bolts deterministically — e.g.
+`--load-original-level jungle --debug-weather 8 --capture-world rain.png --capture-frames 30`
+(quality 8: rain and lightning on jungle, snow and lightning on hallow). The unit tests
+(`WeatherVisualTests`) cover the state math without a window: counts, the wrapping volume, pause
+freeze, snow sway, bolt lifetime/jitter and the strike reporting.
 
 ## Advisor response table
 

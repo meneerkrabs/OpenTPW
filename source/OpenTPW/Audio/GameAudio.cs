@@ -531,12 +531,12 @@ public static class GameAudio
 	{
 		var category = RseEventCategory( type );
 		var soundEvent = category?.Catalog.Find( eventId );
-		if ( soundEvent == null && category == LevelRides )
+		if ( soundEvent == null && type == 3 )
 		{
 			category = Rides;
 			soundEvent = category?.Catalog.Find( eventId );
 		}
-		if ( soundEvent == null && category == LevelAmbient )
+		if ( soundEvent == null && type == 4 )
 		{
 			category = Ambient;
 			soundEvent = category?.Catalog.Find( eventId );

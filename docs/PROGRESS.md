@@ -802,6 +802,13 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Files read on demand (October 13):** WAD archives opened from a path and SDT sound banks now read
+  a member or entry from the file when it is needed instead of holding the whole file (byte-identical
+  on every original archive member and bank entry); `Texture.Missing` is one shared texture, and the
+  coaster palette and the park gate's sign release their textures and materials. Live memory in Jungle fell from 94
+  to 41 MB and in the lobby from 47 to 24 MB, the page's wasm memory from 254 to 176 MB after the
+  first park; textures without a path no longer accumulate, and the mixer stops growing. Digest
+  unchanged, start time the same. Phase 4 of the browser plan, second part.
 - **Memory across park changes (October 13):** the harness's `switch` scenario (Jungle, lobby,
   another park, lobby, Jungle) with live counters found two leaks. A static `RootPanel.Instance`
   that nothing used kept the first park alive for the whole session; it is gone. The decoded-sample

@@ -68,7 +68,9 @@ public sealed class SoundCategory
 			{
 				if ( fileSystem.FileExists( candidate ) )
 				{
-					bank = new SoundBank( fileSystem.ReadAllBytes( candidate ) );
+					// Read entry by entry from the file, not held whole (a bank is tens of megabytes).
+					var path = candidate;
+					bank = new SoundBank( () => fileSystem.OpenRead( path ), fileSystem.GetSize( path ) );
 					break;
 				}
 			}

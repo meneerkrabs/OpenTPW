@@ -897,6 +897,9 @@ research batch was included in this merge.
   bytes allocated per call, a managed allocation measurement); MD2 readers reject mesh totals above the
   header before decoding another mesh (every shipped model still parses); new save/weather roundtrip
   tests cover real files, paused and fast speeds, live weather, pending thunder and malformed JSON.
+- **FSH image export (October 13):** `--export-fsh-png <file.fsh> <image index> <file.png>` writes one chosen image of an FSH
+  file as PNG without starting the game or its renderer; the file is decoded fully before any output exists, an existing
+  destination is never overwritten, and the result is moved into place from a temporary file (FSH.md, `[EXT:fsh-export]`).
 - **Satisfaction map without regrouping (October 13):** the live map's satisfaction overlay counts each cell's pleased and
   dissatisfied visitors directly, in the order the grouping gave, instead of building transient groups every draw; the drawn
   result is the same (MapCellAggregationTests compares it with the old grouping).

@@ -35,11 +35,16 @@ public static class AudioApproximations
 		("AUDIO-029", "thunder whose countdown computes to 0 plays at the strike; the Mac's countdown test beside 0x10103438 is not fully traced"),
 		("AUDIO-030", "the weather's random draws come from the park's weather stream, not the Mac's world LCG; the seed source is not traced"),
 		("AUDIO-032", "a ride's scream plays flat: the original places it at the ride's box middle, which OpenTPW's ride objects do not map to yet"),
-		("AUDIO-031","weather is simulated for sound only: rain drops, snow, the lightning bolt and the forecast are not drawn or shown"),
+		("AUDIO-031","the forecast's warning is not shown, and the drawn rain drops, snow and lightning bolt are unverified procedural approximations (AUDIO-900..904); the original's weather renderer is not traced"),
 		("AUDIO-033", "the distance mapping uses minimum 2 and exponent 0.8 from the fork's QMixer lead; the packed local PC executable does not independently verify this law"),
 		("AUDIO-034", "held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads, not independently traced Mac routines"),
 		("AUDIO-035", "crowd sample choices use an independent advancing host SplitMix64 stream seeded from the sound seed XOR CROW; the original source of crowd variation is unverified and this presentation stream is not persisted on save/load"),
 		("AUDIO-036", "crowd parameter-controlled volume is evaluated when a PCM segment starts; the original propagation into already-playing sentence children is not established"),
+		("AUDIO-900", "the rain is drawn as one camera-following wrapping drop field with straight falling streaks, its count the simulated current drops; the original's drop volume, speed and streak shape (FUN_0057d300) are not traced"),
+		("AUDIO-901", "snow reuses the rain's drop count but falls slower with a sinusoidal sway; the original's snow motion is not traced"),
+		("AUDIO-902", "the bolt is a jittered polyline from the strike's top (height 300) to the heightfield, shown for a fixed flash time at the strike; the original's bolt shape and flash timing are not traced"),
+		("AUDIO-903", "the weather's visuals advance with the frame delta scaled by the simulation speed, so a paused park freezes drops and bolts mid-flight; the original's pause behaviour for the weather renderer is not traced"),
+		("AUDIO-904", "the visual field, its vertex buffer and the pending bolt queue are capped (600 drops, 4 flashes, 64 pending tops), so a level with a higher MaxRaindrops draws fewer drops than it simulates"),
 	};
 
 	private static bool logged;

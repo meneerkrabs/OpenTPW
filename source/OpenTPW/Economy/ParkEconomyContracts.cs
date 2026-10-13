@@ -186,6 +186,11 @@ public sealed class ParkObjectState
 	public bool IsBrokenDown { get; set; }
 	/// <summary>The ride script reports VAR_BROKEN, which the original's ride update turns into ride state 1 or 4; mirrored each tick by the level, not saved.</summary>
 	public bool ScriptBroken { get; set; }
+	/// <summary>
+	/// The attraction has queue cells from its entrance and room in them: the queue list is shorter than 4 × the queue cells
+	/// (the counts-test's 0x004DE130 back-of-queue walk and 0x004DDF50 list count). Synced by the level; true where nothing syncs it.
+	/// </summary>
+	public bool QueueHasRoom { get; set; } = true;
 	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
 	public int MechanicId { get; set; }
 	/// <summary>

@@ -196,9 +196,10 @@ from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-
 25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (executed in the oracle, F10): the type is
 choosable (`Info.IsChoosable`), the ride is neither broken down nor condemned and is open, its entrance connects
 to a cell, its queue holds fewer guests than four per queue cell, a coaster carries no riders, and a kart or water
-ride has its track word (set when the ride is built). OpenTPW applies the first three (`IsChoosable`,
-`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`), so a closed or broken ride gives no points, while its copies still count in the
-divisor of an untracked type; the entrance, queue room and coaster conditions have no state in the economy
+ride has its track word (set when the ride is built). OpenTPW applies all but the last two (`IsChoosable`,
+`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, and `QueueHasRoom`, which the level syncs: queue cells from the entrance and
+fewer guests than four per cell; tp.exe `0x4dd920`, ORACLE.md X15), so a closed, broken, queue-less or full ride gives no points, while
+its copies still count in the divisor of an untracked type; the coaster and kart/water conditions have no state in the economy
 (ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
 purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`).
 

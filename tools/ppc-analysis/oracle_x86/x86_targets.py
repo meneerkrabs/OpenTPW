@@ -849,6 +849,110 @@ QREEVAL_TARGET = Target(
            '0x5da3c0 log (a level-0 message fails the run). The exit order is checked: animation 13 (id % 3 == 0), unlink, '
            'dismissal, ride word +0x1dc cleared, state 6. Inputs are the states a listed guest can be in (11 to 14).'])
 
+# ============================================================================== (h) tp.exe park points counts-test 0x4dd920
+COUNTS_ENTRY = 0x4DD920        # thiscall (thing) -> 1 when the thing counts for park points; the Mac 0xdc834
+COUNTS_RANGE = (0x4DD920, 0x4DDA20)
+COUNTS_BACK = 0x4DE130         # thiscall (thing, out u16) -> back-of-queue cell (0: no queue cells from the entrance), ret 4; stubbed
+COUNTS_LENGTH = 0x4DDF50       # thiscall (thing, u16 0) -> the queue list's length, ret 4; stubbed (chosen)
+COUNTS_COASTER = 0x441970      # cdecl (thing) -> the coaster controller test (riders +0x140 zero, +0x3c bits); stubbed (chosen)
+COUNTS_THING = {'flags': 0x32, 'state': 0x19C, 'open': 0x68, 'cells': 0x40, 'track_word': 0x2C, 'type': 0xE}
+COUNTS_TRACK_TYPE = 0x9C       # type record: Bumper.WhichTrackType (1 kart, 2 water, 3 coaster)
+COUNTS_STATE = type('CountsState', (), {})()
+
+
+def counts_stubs(target: Target) -> dict:
+    state = COUNTS_STATE
+
+    def back(sb):
+        thiscall_check(sb, state.thing, '0x4de130')
+        sb.write(sb.arg(0), 'H', state.x['back'])
+        return sb.arg(0), 4
+
+    def length(sb):
+        thiscall_check(sb, state.thing, '0x4ddf50')
+        if sb.arg(0) & 0xFFFF:
+            raise AssertionError('0x4ddf50 asked for a guest, not the list length')
+        return state.x['length'] & MASK32, 4
+
+    def lookup(sb):
+        thiscall_check(sb, POINTS_REGISTRY, '0x412e90')
+        return state.record, 4
+
+    def coaster(sb):
+        target.log.append(('coaster',))
+        return int(state.x['controller_ok']), 0
+
+    return {COUNTS_BACK: back, COUNTS_LENGTH: length, POINTS_TYPE_RECORD: lookup, COUNTS_COASTER: coaster}
+
+
+def counts_binary(sb: Sandbox, x: dict, log) -> int:
+    state = COUNTS_STATE
+    state.x = x
+    state.record = sb.object(0x800, {COUNTS_TRACK_TYPE: ('i', x['track'])})
+    f = COUNTS_THING
+    state.thing = sb.object(0x400, {f['flags']: ('H', x['flags']), f['state']: ('i', x['state']), f['open']: ('i', x['open']),
+                                    f['cells']: ('i', x['cells']), f['track_word']: ('i', x['track_word']), f['type']: ('H', 0x101)})
+    result = sb.call(COUNTS_ENTRY, this=state.thing)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return result.eax & 0xFF
+
+
+def counts_reading(x: dict) -> int:
+    """0x4dd920 as read: flags +0x32 bit 4 (IsChoosable), state not 1 (broken down) or 4 (condemned), open word +0x68 nonzero,
+    a back-of-queue cell, a list shorter than 4 x the queue cells (unsigned), then by track type: a coaster (3) needs the
+    controller test, a kart (1) or water ride (2) needs the word +0x2c."""
+    if not (x['flags'] & 4 and x['state'] not in (1, 4) and x['open'] and x['back']):
+        return 0
+    if (x['length'] & MASK32) >= ((x['cells'] << 2) & MASK32):
+        return 0
+    if x['track'] == 3 and not x['controller_ok']:
+        return 0
+    if x['track'] in (1, 2) and not x['track_word']:
+        return 0
+    return 1
+
+
+def counts_csharp_rule(x: dict) -> int:
+    """ParkEconomy.CountsForParkPoints with the level's sync: IsChoosable, not broken (states 1 and 4), open, and QueueHasRoom =
+    queue cells > 0 and length < 4 x cells (the back cell exists exactly when there are queue cells). The coaster controller
+    and the kart/water word are not applied (ARRIVAL-003); for other track types this is the whole test."""
+    has_room = x['back'] != 0 and x['cells'] > 0 and x['length'] < 4 * x['cells']
+    return int(bool(x['flags'] & 4) and x['state'] not in (1, 4) and bool(x['open']) and has_room)
+
+
+def counts_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        cells = rng.choice([0, 1, 2, 3, 6, rng.randrange(0, 30)])
+        x = {'flags': rng.choice([4, 4, 4, 0, 5, 0x24, rng.randrange(0, 0x10000)]), 'state': rng.choice([0, 0, 0, 1, 2, 3, 4]),
+             'open': rng.choice([1, 1, 1, 0]), 'cells': cells, 'back': 0 if cells == 0 else rng.choice([0x1234, 0x1234, 0x1234, 0]),
+             'length': rng.choice([0, 4 * cells - 1, 4 * cells, rng.randrange(0, 4 * cells + 6)]),
+             'track': rng.choice([0, 0, 1, 2, 3, 3, 4]), 'controller_ok': rng.choice([True, False]), 'track_word': rng.choice([1, 1, 0])}
+        x['length'] = max(0, x['length'])
+        x.update(kw)
+        return x
+    base = dict(flags=4, state=0, open=1, cells=2, back=0x1234, length=3, track=0, controller_ok=True, track_word=1)
+    edges = [make(**{**base, **change}) for change in (
+        {}, {'flags': 0}, {'state': 1}, {'state': 4}, {'state': 2}, {'open': 0}, {'back': 0}, {'length': 8}, {'length': 7},
+        {'cells': 0, 'back': 0, 'length': 0}, {'track': 3, 'controller_ok': False}, {'track': 3}, {'track': 1, 'track_word': 0},
+        {'track': 2, 'track_word': 0}, {'track': 2})]
+    return edges + [make() for _ in range(n)]
+
+
+def counts_domain_csharp(x: dict) -> bool:
+    return x['track'] not in (1, 2, 3)
+
+
+COUNTS_TARGET = Target(
+    'tpw-exe-counts-test', 'tpw', 'tp.exe park points counts-test 0x4dd920', 'GUESTS.md "Arrivals" / ARRIVAL-003 (Mac 0xdc834)',
+    COUNTS_ENTRY, [COUNTS_RANGE], counts_stubs, counts_binary, counts_reading, counts_inputs,
+    alternatives={'csharp-rule': counts_csharp_rule,
+                  'csharp-rule-untracked': lambda x: counts_csharp_rule(x) if counts_domain_csharp(x) else counts_reading(x)},
+    notes=['Executed: 0x4dd920. Stubs: 0x4de130 back of queue (chosen; checked for the thing), 0x4ddf50 list length (checked '
+           'to be asked with guest 0), 0x412e90 type record (track type chosen), 0x441970 coaster controller test (chosen). '
+           'csharp-rule differs only for coasters, karts and water rides (ARRIVAL-003); csharp-rule-untracked takes the '
+           'routine reading for those, so it must agree everywhere.'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -1468,5 +1572,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

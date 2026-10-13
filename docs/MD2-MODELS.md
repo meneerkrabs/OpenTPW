@@ -60,6 +60,14 @@ pointer at +148; the remaining words were zero throughout. The reader requires
 every pointer to hit a record start, the root to have no parent/sibling, and a
 walk to reach each node exactly once with matching parent pointers.
 
+Geometry mesh totals are checked as each mesh is reached, before its decoded
+arrays are allocated. A header-total excess cannot be repaired by later meshes;
+this prevents malformed repeated pointers from allocating the same large span
+for every mesh before the final mismatch is discovered. The final equality check
+still refuses deficient totals. `Md2BoundaryTests` also covers all truncated
+geometry prefixes, maximum declared counts and a valid maximum per-mesh vertex
+count. This audit uses synthetic fixtures; fresh retail compatibility is deferred.
+
 Mesh data (all arrays must lie inside the header region for their kind):
 - Positions: blocks of four, X×4/Y×4/Z×4 floats; padding dropped.
 - Corners: `u16` position index each; UVs are U×4/V×4 blocks, one per corner.

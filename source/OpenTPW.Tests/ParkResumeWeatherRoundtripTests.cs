@@ -130,6 +130,8 @@ public class ParkResumeWeatherRoundtripTests
 		original.Frame( 0.004 );
 		original.Economy.Speed = GameSpeed.Paused;
 		var snapshot = original.Capture();
+		Assert.IsTrue( snapshot.Weather!.CurrentDrops > 0 );
+		Assert.IsTrue( snapshot.Weather.PendingStrikes.Count > 0, "the file carries actual due thunder" );
 		Assert.IsTrue( snapshot.Clock.DroppedSeconds > 0 );
 		Assert.IsTrue( snapshot.Clock.PendingSeconds > 0 );
 		var path = Path.Combine( Path.GetTempPath(), $"opentpw-weather-{Guid.NewGuid():N}.otpw" );
@@ -139,9 +141,17 @@ public class ParkResumeWeatherRoundtripTests
 			var loaded = ParkResumeSaveFile.Load( path );
 			var restored = new Rig( template, snow, loaded );
 			Same( original, restored, "full file restore into fresh runtime modules" );
+			Assert.AreEqual( snapshot.Weather!.CurrentDrops, restored.Weather!.CurrentDrops );
+			Assert.AreEqual( snow, restored.Weather.Snow );
+			Assert.AreEqual( !snow, restored.Weather.Rain );
+			Assert.AreEqual( snapshot.Weather.PendingQuality, restored.Weather.Forecast );
+			var pausedBefore = ParkResumeSaveFile.Serialize( original.Capture() );
 			Assert.AreEqual( 0, original.Frame( 20 ) ); Assert.AreEqual( 0, restored.Frame( 20 ) );
+			CollectionAssert.AreEqual( pausedBefore, ParkResumeSaveFile.Serialize( original.Capture() ), "pause preserves the pre-frame state, not just equality between both timelines" );
 			Same( original, restored, "pause does not change any simulation counter" );
-			CollectionAssert.AreEqual( original.Weather.TakeThunder().ToArray(), restored.Weather!.TakeThunder().ToArray() );
+			var due = original.Weather.TakeThunder().ToArray();
+			Assert.IsTrue( due.Length > 0, "the once-only comparison cannot pass on two empty queues" );
+			CollectionAssert.AreEqual( due, restored.Weather!.TakeThunder().ToArray() );
 			Assert.AreEqual( 0, restored.Weather.TakeThunder().Count );
 			Same( original, restored, "pending thunder is consumed once" );
 			for ( var frame = 0; frame < 300; frame++ )
@@ -195,4 +205,29 @@ public class ParkResumeWeatherRoundtripTests
 		Assert.ThrowsException<InvalidDataException>( () => rig.Weather.RestoreSnapshot( loaded.Weather! ) );
 		CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( rig.Weather.CaptureSnapshot() ), "destination settings reject without changing the live weather" );
 	}
+	[TestMethod]
+	public void MalformedNestedWeatherJsonIsRefusedWithoutChangingLiveState()
+	{
+		var rig = new Rig( ParkResumeSaveFileTests.Envelope(), false );
+		Storm( rig );
+		var valid = ParkResumeSaveFile.Serialize( rig.Capture() );
+		var before = ParkResumeJson.Serialize( rig.Weather!.CaptureSnapshot() );
+		foreach ( var corruption in new[] { "missing strikes", "null strikes", "unknown member", "nonfinite coordinate", "overflow coordinate" } )
+		{
+			var json = JsonNode.Parse( valid )!.AsObject();
+			var weather = json["Weather"]!.AsObject();
+			switch ( corruption )
+			{
+				case "missing strikes": weather.Remove( "PendingStrikes" ); break;
+				case "null strikes": weather["PendingStrikes"] = null; break;
+				case "unknown member": weather["UnexpectedWeatherMember"] = 1; break;
+				case "nonfinite coordinate": weather["LastTop"]!["X"] = "NaN"; break;
+				case "overflow coordinate": weather["LastTop"]!["X"] = 1e100; break;
+			}
+			var bytes = Encoding.UTF8.GetBytes( json.ToJsonString() );
+			Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Deserialize( bytes ), corruption );
+			CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( rig.Weather.CaptureSnapshot() ) );
+		}
+	}
+
 }

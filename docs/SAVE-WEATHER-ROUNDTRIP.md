@@ -59,3 +59,14 @@ env -u OPENTPW_GAME_PATH dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj \
   --filter 'FullyQualifiedName~ParkResumeWeatherRoundtripTests|FullyQualifiedName~ParkWeatherSnapshotTests|FullyQualifiedName~ParkWeatherTests|FullyQualifiedName~ParkResumeSaveFileTests|FullyQualifiedName~ParkResumeEconomyTests|FullyQualifiedName~ParkResumeValidationTests|FullyQualifiedName~FixedStepClockTests'
 dotnet build source/OpenTPW.sln -c Release --no-restore
 ```
+
+Independent review of `f7cdd0b89514549c597b0db4f334fd8466b0c3f0` confirms
+**ACCEPT within the same synthetic subsystem scope**. The author filter passed
+44 cases with two private-data cases skipped. The review added actual corrupted
+nested-weather JSON on deserialize (missing/null strikes, unknown members and a
+nonfinite or overflowing coordinates), plus explicit restored drops/bands/forecast and nonempty
+once-only thunder assertions. Pause now also compares against the pre-frame
+state, beyond equality between the two timelines. With these additions, 45 cases pass and the same
+two private-data cases skip. No production behavior changed. Build, changed-file
+style, fidelity and CRLF-aware whitespace checks pass; the integration limits
+above still apply.

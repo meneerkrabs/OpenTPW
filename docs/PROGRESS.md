@@ -279,6 +279,9 @@ preview; original runtime fidelity and the complete offline scope remain open.
   to be the log line every guest prints, not a second exit. C# now also sends away a non-called guest in state 13 beyond the room; it
   keeps its Confused departure for a guest whose cell left the queue (its walk cannot route that guest back), which QUEUE-005 now names
   as the remaining difference. Found in the REA research round over the register (2026-10-13).
+- QUEUE-001 is retired: tp.exe's run-time neighbour table (`0x4d97e0`) maps the links 1, 4, 16, 64 to −Y, +X, +Y, −X, and the
+  queue's predecessor search `0x4de670` reads the link byte +13 with it, as C# assumed. QUEUE-015 is narrowed: the original's cell clear
+  `0x5367a0` removes only the one queue cell (refunded, neighbours unlinked); C# still removes every cell behind it.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

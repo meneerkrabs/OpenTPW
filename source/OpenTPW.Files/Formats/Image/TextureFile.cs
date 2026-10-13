@@ -101,6 +101,9 @@ public partial class TextureFile : BaseFormat
 			alphaData = Decompress( fileData.AlphaChunk, checked(alphaCoefficientCount * 3) );
 		if ( colorData.Length < colorCoefficientCount || (fileData.HasAlphaChannel && alphaData.Length < alphaCoefficientCount) )
 			throw new InvalidDataException( "Truncated WCT channel coefficients." );
+		ValidateCoefficientData( colorData, colorCoefficientCount );
+		if ( fileData.HasAlphaChannel )
+			ValidateCoefficientData( alphaData, alphaCoefficientCount );
 
 		//
 		// Decode image
@@ -152,6 +155,23 @@ public partial class TextureFile : BaseFormat
 		}
 
 		Data = new TextureData( fileData.Width, fileData.Height, textureData );
+	}
+
+	private static void ValidateCoefficientData( ReadOnlySpan<byte> data, int count )
+	{
+		// Escapes need three bytes, so the minimum one-byte count alone cannot prove the
+		// channels are complete. Validate their existing encoding before allocating image planes.
+		var offset = 0;
+		for ( var coefficient = 0; coefficient < count; coefficient++ )
+		{
+			if ( offset >= data.Length )
+				throw new InvalidDataException( "Truncated WCT channel coefficients." );
+			if ( data[offset++] != 0x80 )
+				continue;
+			if ( data.Length - offset < sizeof( short ) )
+				throw new InvalidDataException( "Truncated WCT coefficient escape." );
+			offset += sizeof( short );
+		}
 	}
 
 	private static byte[] ReadChunk( BinaryReader reader, int length )

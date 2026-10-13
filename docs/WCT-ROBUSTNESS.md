@@ -35,9 +35,10 @@ bounded truncated-stream tests.
   three encoded bytes per coefficient (one escape plus an Int16). Colour needs
   `S*S + 2*(S/2)*(S/2)` coefficients; alpha needs `S*S`. No fixed 256px assumption
   or arbitrary decoded-padding cap is introduced.
-- Minimum coefficient bytes are checked before image-plane allocation, including
-  large dimensions paired with tiny payloads. Each channel consumes only its real
-  remaining bytes; absent coefficients or incomplete Int16 escapes are refused.
+- Minimum coefficient bytes and the complete variable-length escape encoding are
+  checked before image-plane allocation, including large dimensions paired with
+  tiny payloads or insufficient escaped coefficients. Each channel consumes only
+  its real remaining bytes; absent coefficients or incomplete Int16 escapes are refused.
 - LZSS uses the additive `BitReader.GetBitsChecked` API, which refuses incomplete
   16-bit-word input rather than inventing bits. The legacy `GetBits` zero-padding
   behavior remains unchanged for other callers. Output growth uses wide
@@ -76,3 +77,10 @@ original assets, binary execution or disassembly are part of this change.
 ```sh
 dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --filter 'FullyQualifiedName~WctBoundsTests|FullyQualifiedName~TextureDecoderIndexingSyntheticTests|FullyQualifiedName~TextureDecoderScratchAllocationTests|FullyQualifiedName~LzssWindowTests'
 ```
+
+Independent review additionally reproduced an incomplete 1024x1 escaped-coefficient
+payload allocating 36,220,592 bytes before refusal. A structural coefficient scan
+now rejects it before image-plane allocation; the regression bounds allocation
+below 16 MiB. Added tests also validate a corrupted padding checksum after the
+retained prefix and compare valid escaped alpha plus BILZ/LZSS padding pixels.
+These checks use synthetic inputs; fresh retail compatibility remains deferred.

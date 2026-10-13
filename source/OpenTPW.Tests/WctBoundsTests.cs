@@ -192,4 +192,43 @@ public class WctBoundsTests
 		Assert.AreEqual( (short)0x5A, padded.GetBitsChecked( 8 ) );
 		Assert.ThrowsException<InvalidDataException>( () => padded.GetBitsChecked( 1 ) );
 	}
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void IncompleteEscapedLargeImageRejectsBeforeAllocatingImagePlanes( bool escapedAlpha )
+	{
+		// The minimum byte count is sufficient only when coefficients use one byte.
+		// An all-escape stream has fewer coefficients and must fail before image-plane allocation.
+		var color = Enumerable.Repeat( escapedAlpha ? (byte)0 : (byte)0x80, 1024 * 1024 * 3 / 2 ).ToArray();
+		var alpha = escapedAlpha ? Bilz( Enumerable.Repeat( (byte)0x80, 1024 * 1024 ).ToArray() ) : null;
+		var malformed = Wct( Bilz( color ), width: 1024, height: 1, alpha: alpha );
+		Assert.ThrowsException<InvalidDataException>( () => Decode( malformed ) );
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		Assert.ThrowsException<InvalidDataException>( () => Decode( malformed ) );
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.IsTrue( allocated < 16 * 1024 * 1024, $"incomplete coefficients allocated image planes: {allocated} bytes" );
+	}
+
+	[TestMethod]
+	public void PaddingChecksumIsValidatedBeyondTheRetainedCoefficientPrefix()
+	{
+		var padded = Bilz( new byte[1024 * 1024] );
+		padded[^1] ^= 1;
+		Assert.ThrowsException<InvalidDataException>( () => Decode( Wct( padded ) ) );
+	}
+
+	[TestMethod]
+	public void ValidEscapedAlphaAndLzssPaddingPreserveDecodedPixels()
+	{
+		var expected = Decode( Wct( Bilz( new byte[96] ), width: 3, height: 5, alpha: Bilz( new byte[64] ) ) );
+		var color = new byte[96 * 3];
+		var alpha = new byte[64 * 3];
+		for ( var index = 0; index < 96; index++ ) color[index * 3] = 0x80;
+		for ( var index = 0; index < 64; index++ ) alpha[index * 3] = 0x80;
+		CollectionAssert.AreEqual( expected.Data, Decode( Wct( Bilz( color.Concat( new byte[1024] ).ToArray() ),
+			width: 3, height: 5, alpha: Bilz( alpha.Concat( new byte[1024] ).ToArray() ) ) ).Data );
+		CollectionAssert.AreEqual( expected.Data, Decode( Wct( LiteralLzss( color.Concat( new byte[1024] ).ToArray() ),
+			width: 3, height: 5, alpha: LiteralLzss( alpha.Concat( new byte[1024] ).ToArray() ) ) ).Data );
+	}
+
 }

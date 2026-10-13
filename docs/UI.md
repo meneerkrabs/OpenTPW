@@ -693,3 +693,11 @@ and a fully injected chord through actual button rebuilding; Ctrl+S remains
 the staff locator (plain S stays unhandled here), and Ctrl+P remains excluded
 from the pause key. Global bindings and help shortcuts are unchanged by this fix.
 These are synthetic model/input checks, not rendered or original-game parity.
+
+### Visitor selection in the park view
+
+A genuine left press on a visible in-park visitor opens the existing All Visitors window and selects that visitor, scrolling its row into view. Picking uses the current guest renderer's interpolated DrawX/DrawY terrain position, selected animation frame/hotspot, mirroring, camera axes and UnitsPerPixel. Overlapping rectangles choose the nearest projected depth, then the lowest visitor id. A successful press consumes the existing tool/release latch before automatic path activation; a miss preserves ordinary path input. The roster's existing live selection healing applies when the visitor leaves.
+
+UI-930 qualifies this host rectangle policy: transparent sprite pixels and terrain/object occlusion are not tested, and partially near/far-clipped sprites are refused. No original picking geometry or GPU parity is claimed. Hidden/removed/outside-park visitors and invalid/nonfinite/behind-camera projections are refused. Overlay/HUD controls, text entry, ImGui capture, build/removal/cell/coaster tools, ride view and its exit frame own their input. Read-only visits may inspect visitors without simulation or finance mutation. The public HUD update samples native capture flags at its existing point; an internal explicit-capture overload runs the same frame body in synthetic tests.
+
+Visitor-specific cat_kids event 129 is deferred: the existing generic park press sound remains, with no new hover/held/release audio trigger. Original assets, native geometry/occlusion and rendered interactions remain unqualified.

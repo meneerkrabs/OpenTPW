@@ -96,7 +96,8 @@ public class ThemeParkIncPlayTests
 	/// <summary>
 	/// The composition the slice drives, without the economy and without GPU models: the world's paths (its prebuilt
 	/// save in science, its MAP initial path elsewhere), its catalog under the build rules, a free path builder and the
-	/// guest simulation over one shared script world.
+	/// guest simulation over one shared script world. The prebuilt save's own objects run as headless runtimes, exactly
+	/// as <see cref="ParkObjects.ImportOriginal"/> selects and places them.
 	/// </summary>
 	private sealed class SlicePark
 	{
@@ -107,6 +108,7 @@ public class ThemeParkIncPlayTests
 		public readonly GuestSimulation Guests;
 		public readonly ParkPathBuilder Paths;
 		public readonly RideScriptWorld Scripts = new();
+		public readonly List<OriginalObjectRuntime> Runtimes = new();
 		/// <summary>Cells the world's own records hold (placed objects and fixed items of a prebuilt save).</summary>
 		public readonly HashSet<(int X, int Y)> Occupied = new();
 
@@ -121,20 +123,28 @@ public class ThemeParkIncPlayTests
 				settings.ArrivalTimeBetween = interval;
 			Guests = new GuestSimulation( Grid, settings, Level.GuestSeed );
 			Paths = new ParkPathBuilder( Grid.Cells, Grid, () => null, BuildGrid, ( x, y ) => Occupied.Contains( (x, y) ) );
-			if ( Park.Save != null )
-				foreach ( var record in Park.Save.PlacedObjects )
-					for ( var y = record.MinY; y <= record.MaxY; y++ )
-						for ( var x = record.MinX; x <= record.MaxX; x++ )
-							Occupied.Add( (x, y) );
+			if ( Park.Save == null )
+				return;
+			foreach ( var record in Park.Save.PlacedObjects.Select( item => item.Record ).Concat( Park.Save.UnresolvedObjects ).Concat( Park.Save.FixedItems ) )
+			{
+				var entry = Catalog.Find( record.InfoId );
+				if ( entry == null || entry.IsTool )
+					continue;
+				foreach ( var cell in ObjectFootprint.GetCells( entry.Shape, record.X, record.Y, record.Rotation ) )
+					Occupied.Add( (cell.X, cell.Y) );
+				var runtime = new OriginalObjectRuntime( entry, Scripts, open: true );
+				Runtimes.Add( runtime );
+				Level.RegisterWithGuests( runtime, ObjectFootprint.GetAccessPoints( entry.Shape, record.X, record.Y, record.Rotation ), Guests, record.Rotation );
+			}
 		}
 
 		public bool IsBlocked( int x, int y ) => Occupied.Contains( (x, y) ) || Grid.IsWalkable( x, y ) || Grid.IsQueue( x, y );
 
 		/// <summary>One simulation step of the slice's frame (Level.AdvanceSimulation without the economy systems).</summary>
-		public void Step( double deltaSeconds, params OriginalObjectRuntime[] runtimes )
+		public void Step( double deltaSeconds )
 		{
 			Guests.Tick( (float)deltaSeconds );
-			foreach ( var runtime in runtimes )
+			foreach ( var runtime in Runtimes )
 				runtime.Simulate( deltaSeconds );
 		}
 	}
@@ -145,6 +155,7 @@ public class ThemeParkIncPlayTests
 		UseTpiData();
 		var park = new SlicePark( "science" );
 		Assert.IsTrue( park.Grid.WalkableCount > 0, "the prebuilt save's paths are walkable" );
+		Assert.IsTrue( park.Runtimes.Count > 0, "the prebuilt save's objects run as headless runtimes" );
 		// A buildable ride with a queue, placed through the HUD build flow's rules beside an existing path.
 		var entry = park.Catalog.Buildable.First( candidate => candidate.HasQueue && candidate.ScriptPath != null );
 		var placed = PlaceBesidePath( park, entry, out var anchor, out var rotation );
@@ -153,10 +164,11 @@ public class ThemeParkIncPlayTests
 		Assert.IsTrue( park.Guests.Attractions.Contains( placed.Visitors ), "the placed ride registers with the guests" );
 		// The placed object and the guests advance together for ten simulated seconds; the script must not fault.
 		for ( var step = 0; step < 10 * FixedStepClock.TicksPerSecond; step++ )
-			park.Step( FixedStepClock.TickDuration, placed );
+			park.Step( FixedStepClock.TickDuration );
 		Assert.AreNotEqual( RideVMState.Faulted, placed.Script?.State, placed.Script?.FaultMessage );
 		// The remove flow's guest side (Level wires this to Objects.ObjectRemoved): the attraction unregisters.
 		park.Guests.Unregister( placed.Visitors );
+		park.Runtimes.Remove( placed );
 		Assert.IsFalse( park.Guests.Attractions.Contains( placed.Visitors ), "a removed object unregisters with the guests" );
 		// Its cells are buildable again once the footprint is freed.
 		park.Occupied.ExceptWith( ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ) );
@@ -226,21 +238,26 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
-	public void GuestsArriveAndWalkInTheThemeParkIncSciencePark()
+	public void GuestsArriveWalkAndQueueAtThePrebuiltRidesInTheSciencePark()
 	{
 		UseTpiData();
 		// Arrivals sped up as in the M3 gate's ArrivalTimeBetween option; the slice runs the same guest systems.
 		var park = new SlicePark( "science", arrivalTimeBetween: 2 );
 		Assert.IsTrue( park.Grid.WalkableCount > 0, "the prebuilt save's paths are walkable" );
+		Assert.IsTrue( park.Guests.Attractions.Any(), "the prebuilt save's attractions register with the guests" );
 		for ( var step = 0; step < 90 * FixedStepClock.TicksPerSecond && park.Guests.GetStatistics().InPark == 0; step++ )
 			park.Step( FixedStepClock.TickDuration );
 		var statistics = park.Guests.GetStatistics();
 		Assert.IsTrue( statistics.InPark > 0, "guests arrive from the bus stop through the ticket booth" );
-		for ( var step = 0; step < 10 * FixedStepClock.TicksPerSecond; step++ )
+		// Arrived guests choose attractions and queue: what the live slice shows by about forty seconds.
+		var queueing = 0;
+		for ( var step = 0; step < 120 * FixedStepClock.TicksPerSecond; step++ )
+		{
 			park.Step( FixedStepClock.TickDuration );
-		statistics = park.Guests.GetStatistics();
-		Assert.IsTrue( statistics.Walking + statistics.Queueing + statistics.OnRides > 0,
-			$"the arrived guests move through the park ({statistics.Walking} walking, {statistics.Queueing} queueing, {statistics.OnRides} on rides)" );
+			if ( step % FixedStepClock.TicksPerSecond == 0 )
+				queueing = Math.Max( queueing, park.Guests.GetStatistics().Queueing );
+		}
+		Assert.IsTrue( queueing > 0, "an arrived guest queues at a prebuilt attraction within two minutes" );
 	}
 
 	/// <summary>Places <paramref name="entry"/> through the HUD build flow's rules (Level.PlaceObject without the purchase) beside a walkable path cell.</summary>
@@ -262,6 +279,7 @@ public class ThemeParkIncPlayTests
 				{
 					foreach ( var cell in ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ) )
 						park.Occupied.Add( (cell.X, cell.Y) );
+					park.Runtimes.Add( runtime );
 					return runtime;
 				}
 				runtime.Stop();

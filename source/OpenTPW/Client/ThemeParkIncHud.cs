@@ -73,6 +73,8 @@ public sealed class ThemeParkIncHud
 				level.CellTool.Cancel();
 			else if ( level.BuildEntry != null )
 				DisarmBuild();
+			else if ( buildOpen )
+				CloseBuildWindow();
 			else if ( level.IsRemovingObjects )
 				level.IsRemovingObjects = false;
 			else

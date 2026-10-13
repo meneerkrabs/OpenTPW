@@ -145,8 +145,18 @@ public sealed class OriginalObjectRuntime
 	{
 		if ( stopped )
 			return;
+		if ( Script is { State: RideVMState.Faulted } )
+		{
+			Stop();
+			return;
+		}
 		Visitors.HostStep();
 		Script?.Advance( deltaSeconds );
+		if ( Script is { State: RideVMState.Faulted } )
+		{
+			Stop();
+			return;
+		}
 		Coaster?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;

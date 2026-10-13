@@ -191,9 +191,19 @@ public sealed class RideVM
 	{
 		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
-		TimeMilliseconds += deltaSeconds * 1000;
-		World.ObserveClock( SchedulerMilliseconds );
-		RunSlice();
+		if ( State != RideVMState.Faulted )
+		{
+			TimeMilliseconds += deltaSeconds * 1000;
+			World.ObserveClock( SchedulerMilliseconds );
+			RunSlice();
+		}
+		// Managed host containment: a faulted parent cannot keep driving its owned descendants.
+		if ( State == RideVMState.Faulted )
+		{
+			RemoveChild();
+			RemoveSoundChild();
+			return;
+		}
 		Child?.Advance( deltaSeconds );
 		SoundChild?.Advance( deltaSeconds );
 	}

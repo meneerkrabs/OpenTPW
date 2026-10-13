@@ -111,6 +111,25 @@ implementation against those inputs, not equivalence to an executed PC game.
   bound, wrong operand kind, missing child script,
   child/parent variable index out of range, missing child or parent.
 
+## Managed root-fault containment
+
+A faulted VM freezes its own clock and stops both owned child slots before
+another child slice can run. A live object runtime checks its root before and
+after the root slice; a fault uses the existing object `Stop()` teardown before
+coaster or animation progression. This releases riders, unregisters scripts,
+stops owned sound chains and clears animation channels. The root's fault state
+and diagnostic remain available. Normal completion, waits and child-only faults
+do not stop the parent runtime; fixed-step pause still skips the runtime callback.
+This is OpenTPW's deterministic host safety policy, not qualified native fault
+handling, TOUR/BUMP success semantics or audio ownership equivalence.
+
+The existing stopped-runtime snapshot records the root fault message and restores
+it onto a stopped candidate. No snapshot schema changes or new support for live
+sound-chain capture are introduced. `RootVmFaultContainmentTests` uses actual
+synthetic VMs and CPU object runtimes to pin fault teardown, frozen presentation,
+stopped-fault restore, ordinary completion and no-root controls. Fresh original
+corpus, native audio and GPU checks remain deferred.
+
 ## Corrections to the upstream instruction notes
 
 | Opcode | Upstream | Corpus evidence |

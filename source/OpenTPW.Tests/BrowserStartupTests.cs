@@ -96,4 +96,14 @@ public class BrowserStartupTests
 		Assert.IsTrue( File.Exists( Path.Combine( Data, "levels", "water", "terrain.wad" ) ) );
 		Assert.AreEqual( GameEdition.ThemeParkInc, BrowserStartup.Validate( Data, "water" ).Edition );
 	}
+	[TestMethod]
+	public void DeferringTheThemeWouldEraseNativeStructuralEditionEvidence()
+	{
+		Installation( "water", true );
+		Assert.ThrowsException<ArgumentException>( () => BrowserStartup.Validate( Data, "" ) );
+		Directory.Move( Path.Combine( Data, "levels", "water" ), Path.Combine( root, "deferred-water" ) );
+		Assert.AreEqual( GameEdition.ThemeParkWorld, BrowserStartup.Validate( Data, "" ).Edition,
+			"The native detector sees only the staged directories, so source-list preflight must preserve or refuse the omitted evidence." );
+	}
+
 }

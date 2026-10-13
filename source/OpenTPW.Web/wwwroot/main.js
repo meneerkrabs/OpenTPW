@@ -225,7 +225,7 @@ async function sameInstallation(folder) {
 async function readFromFolder(relative, size) {
 	let file = chosenFolder && findIn(chosenFolder, relative);
 	if (!file || size != null && file.size !== size) {
-		chosenFolder = await askForFolder('Some game files are not kept in this browser yet: choose your Theme Park World folder again to load them.', relative, size);
+		chosenFolder = await askForFolder('Some game files are not kept in this browser yet: choose your game folder again to load them.', relative, size);
 		file = findIn(chosenFolder, relative);
 	}
 	return file.arrayBuffer();

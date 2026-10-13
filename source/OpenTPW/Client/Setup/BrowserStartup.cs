@@ -21,7 +21,7 @@ public static class BrowserStartup
 	public static void BeginImport( string gameRoot, bool rendererCreated )
 	{
 		if ( rendererCreated )
-			throw new InvalidOperationException( "The game has already created its renderer. Reload the page before choosing another installation." );
+			throw new InvalidOperationException( "The game has already started loading. Reload the page before choosing another installation." );
 		if ( Directory.Exists( gameRoot ) )
 			Directory.Delete( gameRoot, recursive: true );
 	}

@@ -10,8 +10,8 @@ the interpreter. Sound plays through WebAudio, and saves, options, online files 
 stay in the browser between visits. Movies and the developer panels are not in the browser yet
 (see the end of this page).
 
-Nothing from the game is shipped or uploaded: the player chooses their own Theme Park World
-folder, and the page copies the files the front end needs into the runtime's memory.
+Nothing from the game is shipped or uploaded: the player chooses their own game
+folder, and the page copies the files needed for the selected start into the runtime's memory.
 
 ## Building and running
 
@@ -125,7 +125,10 @@ startup exception; this route does not dispose/recreate an active world.
 
 `BrowserStartupTests`, `test_web_startup.mjs` and the originals-store tests cover synthetic
 edition refusal, staging isolation, explicit dispatch, complete theme import, retry and
-cache reopening. The browser project compiles this route. These are CPU and handle-stub
+cache reopening. Independent review also executes the actual page module and registered
+folder handler with synthetic DOM and runtime-export stubs, covering selected-theme dispatch,
+partial-copy retry, refusal before cache work and the unchanged TPW lobby route. The browser
+project compiles this route. These are CPU and handle-stub
 controls: no fresh original-data, actual browser gameplay, WebGL rendering or original-game
 parity qualification is claimed. The existing deferred Theme Park World park-copy failure
 behavior is outside this initial Theme Park Inc import path.

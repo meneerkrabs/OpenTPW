@@ -96,7 +96,7 @@ public static partial class Program
 	private static void StartGame( string theme )
 	{
 		if ( renderer != null || flow != null )
-			throw new InvalidOperationException( "The game has already created its renderer. Reload the page before starting again." );
+			throw new InvalidOperationException( "The game has already started loading. Reload the page before starting again." );
 		WriteContent();
 		var dataDirectory = GameLanguage.FindEntry( GameRoot, "data", true )
 			?? throw new DirectoryNotFoundException( "No Data folder among the chosen files." );

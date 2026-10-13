@@ -863,6 +863,10 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **WAD ranges checked before allocating (October 13):** a WAD's header, directory and member ranges are checked
+  against the file before any buffer is reserved, so a short, truncated or wrapped archive is refused with a clear error
+  instead of a failed allocation or hidden zeros, and a reopened member read checks its range first. Every shipped archive
+  still reads byte for byte as before; an archive with a member past its end is now refused as a whole (WAD-ROBUSTNESS.md).
 - **Script civil time (October 13):** TPW scripts' `YEAR`/`MONTH`/`DAY`/`HOUR` read the host's local civil time instead
   of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
   flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's

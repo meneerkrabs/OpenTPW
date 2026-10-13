@@ -189,6 +189,14 @@ keeps less, and the next visit asks for the folder for what is missing. Only one
 Lock); a second tab plays without them. **Remove kept files** deletes them (saves stay). Browsers
 without writable OPFS streams, or whose storage does not open, keep nothing and show no choice.
 
+Content hashing succeeds before a kept file is changed. Replacing a previously kept path first
+persists it as missing, then writes its new bytes and makes it available after close succeeds;
+the next manifest flush publishes the new hash. A failed replacement can therefore temporarily
+make that path unavailable until it is kept again, rather than expose new bytes under an old
+persisted hash. Initial lazy writes retain their existing checkpoint schedule. Failed manifest
+flushes remain retryable. [Cache recovery checks](BROWSER-ORIGINAL-CACHE-RECOVERY.md) use synthetic
+storage; they do not establish atomic multi-file OPFS transactions or real-browser behavior.
+
 ### Saves and settings
 
 The display choices the browser honours (render scale, interface scale and the frame rate limit)

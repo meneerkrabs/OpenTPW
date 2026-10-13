@@ -8,7 +8,9 @@ namespace OpenTPW;
 /// from the HUD build menu with its queue laid by the queue tool's clicks, a second copy of the same ride placed
 /// through the authoritative placement at another rotation with its queue built and then edited cell by cell, two
 /// same-catalogue shops with distinct prices, a toilet, a demolished object (an id hole), staff, and real guests
-/// seeded on the paths so queues, boarding and rides happen through the original scripts.
+/// seeded on the paths so queues, boarding and rides happen through the original scripts. The opt-in prototype
+/// variant (<see cref="PrototypeVariant"/>) also places the developer Totem beside the spine, so the whole
+/// save/resume pair proves the prototype part natively; the default fixture is exactly what it was.
 /// </summary>
 internal sealed partial class ParkResumeSmokeTest
 {
@@ -94,6 +96,28 @@ internal sealed partial class ParkResumeSmokeTest
 			Require( level.RemoveObjectAt( cell.X, cell.Y ), "demolish the sacrificial object for an id hole" );
 		}
 
+		// The prototype variant's developer Totem: placed last (after the budgeted picks above, so its catalogue
+		// purchase cannot drain their balance) near the spine, whose walkable cells give its entrance derivation a
+		// queue front. Its purchase outcome — bought, or registered uncharged when research refuses — is saved either way.
+		PrototypeRide? totem = null;
+		if ( PrototypeVariant )
+		{
+			var walkGrid = level.Guests!.Grid;
+			var sites = Enumerable.Range( 0, walkGrid.CountX * walkGrid.CountY ).Select( index => (X: index % walkGrid.CountX, Y: index / walkGrid.CountX) )
+				.OrderBy( cell => Math.Abs( cell.X - spineEnd.X ) + Math.Abs( cell.Y - spineEnd.Y ) );
+			foreach ( var cell in sites )
+			{
+				if ( level.PlaceRide( OriginalParkPlacement.GetCellCenter( level.OriginalPark!.Heightfield, cell.X, cell.Y ) ) )
+					break;
+			}
+			totem = level.PlacedRide;
+			Require( totem != null && totem.Visitors.HasCells, "place the developer Totem near the spine and register it with the guests" );
+			Require( level.Park!.Guests!.TryGetInstance( totem!.Visitors.AttractionId, out _ ),
+				"the Totem binds an economy instance through its catalogue entry" );
+			totem.Start();
+			Log.Trace( $"Park-resume fixture: developer Totem placed and opened (attraction {totem.Visitors.AttractionId}, queue at {totem.Visitors.EntranceCell})." );
+		}
+
 		// Staff for the staff world to travel.
 		foreach ( var type in new[] { StaffType.Mechanic, StaffType.Entertainer } )
 		{
@@ -103,7 +127,7 @@ internal sealed partial class ParkResumeSmokeTest
 		}
 		Require( economy.Staff.Members.Count >= 2, "hire staff into the fresh park" );
 
-		SeedGuests( rideA, rideB, shopA, shopB, spineCells );
+		SeedGuests( rideA, rideB, shopA, shopB, spineCells, totem );
 		Log.Trace( $"Park-resume fixture: spine {start} -> {spineEnd}, rides {rideA.Entry.DisplayName} #{rideA.Visitors.AttractionId}/#{bridge.AttractionId}, "
 			+ $"shops #{shopA!.Visitors.AttractionId}/#{shopB!.Visitors.AttractionId} at ${pricedA!.Price}/${pricedB!.Price}, {level.Objects.Objects.Count} objects, "
 			+ $"{economy.Staff.Members.Count} staff, {level.Guests!.Guests.Count} seeded guests, balance ${economy.Balance}." );
@@ -288,7 +312,8 @@ internal sealed partial class ParkResumeSmokeTest
 
 	// ---- Guests ----------------------------------------------------------------------------------
 
-	private void SeedGuests( OriginalObject rideA, OriginalObject rideB, OriginalObject shopA, OriginalObject shopB, IReadOnlyList<(int X, int Y)> spineCells )
+	private void SeedGuests( OriginalObject rideA, OriginalObject rideB, OriginalObject shopA, OriginalObject shopB,
+		IReadOnlyList<(int X, int Y)> spineCells, PrototypeRide? totem = null )
 	{
 		var guests = level.Guests!;
 		void Seed( OriginalObject attraction, int count )
@@ -306,6 +331,8 @@ internal sealed partial class ParkResumeSmokeTest
 		Seed( rideB, 4 );
 		Seed( shopA, 1 );
 		Seed( shopB, 1 );
+		if ( totem != null )
+			Seed( totem, 3 );
 		// Wanderers spread along the actually-laid spine cells, so the park is not only commuters.
 		foreach ( var cell in spineCells.Where( ( _, index ) => index % Math.Max( 1, spineCells.Count / 4 ) == 0 ).Take( 4 ) )
 			guests.SpawnInPark( cell.X, cell.Y );

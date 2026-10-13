@@ -13,6 +13,8 @@ namespace OpenTPW;
 /// snapshot section per continuation tick. A second, fresh process loads the same file through the actual menu load
 /// entry and must reproduce the boundary and every tick exactly, reject each corrupt file without disturbing the live
 /// park, and pass the post-load gameplay checks (open/close, admissions, sale, staff wages, payment bindings).
+/// The opt-in prototype variant (<see cref="PrototypeVariant"/>, <c>OPENTPW_SMOKE_PROTOTYPE=1</c> in both phases)
+/// adds the developer Totem to the fixture and its own probes and post-load checks; the default pair is unchanged.
 /// Root invokes <see cref="Run"/> from the <c>--park-resume-smoke</c> CLI hook after the flow is created and before
 /// the normal update/render hooks and the intro branch; the harness then owns the loop: it registers its own update
 /// (the only simulation driver — controlled 1/60 advances through <see cref="Level.AdvanceSimulation"/>) and the real
@@ -33,6 +35,12 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	/// <summary>One-shot watchdog (the sandbox smoke test's pattern): a run that stops getting frames fails, not hangs.</summary>
 	private const double MaximumSeconds = 900;
 
+	/// <summary>
+	/// The explicit test-fixture option (both phases must set it): <c>OPENTPW_SMOKE_PROTOTYPE=1</c> adds the developer
+	/// Totem to the fixture park — the native prototype-resume variant. The default fixture is unchanged.
+	/// </summary>
+	internal static bool PrototypeVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PROTOTYPE" ) is "1" or "true";
+
 	private readonly GameFlow flow;
 	private readonly string savePath;
 	private readonly string evidenceDirectory;
@@ -48,6 +56,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	private SmokeEvidence? capture;
 	private SmokeSample boundarySample = new() { Tick = -1 };
 	private IReadOnlyDictionary<string, string>? verifiedAssets;
+	/// <summary>The Totem's identity as this phase's save holds it (set at save time; the restore phase reads it before its post-load removal).</summary>
+	private SmokePrototype? savedPrototype;
 	private string savedUtc = "";
 	private string themeText = "jungle";
 	private string startKindText = "";
@@ -190,6 +200,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		savedUtc = ParkResumeSaveFile.Load( savePath ).SavedUtc.UtcDateTime.ToString( "O", System.Globalization.CultureInfo.InvariantCulture );
 		Require( bytes.SequenceEqual( ParkResumeSaveFile.Serialize( ParkResumeSaveFile.Load( savePath ) ) ),
 			"the saved file round-trips byte-identically through the own codec" );
+		savedPrototype = SmokePrototypeOf( ParkResumeSaveFile.Load( savePath ).Prototype, level.PlacedRide );
 		Log.Trace( $"Park-resume capture: saved {bytes.Length} bytes ({boundarySample.Counters.Objects} objects, {boundarySample.Counters.Guests} guests, "
 			+ $"{boundarySample.Counters.QueuedGuests} queued, {boundarySample.Counters.Riders} riding, balance ${boundarySample.Counters.Balance})." );
 		CaptureFrame( "park-resume-capture-saved.png" );
@@ -230,8 +241,20 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		level = flow.Level ?? throw new InvalidOperationException( "Native park-resume smoke test failed: the menu load left no level." );
 		Require( level.Park != null && level.Guests != null && level.Paths != null && level.OriginalPark != null, "the resumed park has its economy, guests, paths and original park" );
 		Require( ReferenceEquals( Level.Current, level ), "the resumed level is the current level" );
-		Require( level.PlacedRide == null && level.Coasters.Count == 0, "the resumed park carries no prototype or coaster state" );
+		Require( level.Coasters.Count == 0, "the resumed park carries no coaster state" );
+		if ( PrototypeVariant )
+		{
+			var totem = level.PlacedRide;
+			Require( totem != null && totem.Visitors.HasCells, "the resumed park rebuilds the developer Totem with its saved guest cells" );
+			Require( capture!.Prototype is { } saved && totem!.Visitors.AttractionId == saved.AttractionId,
+				"the resumed Totem adopts the saved attraction id" );
+			Require( level.Park.Guests!.TryGetInstance( totem.Visitors.AttractionId, out var instance ) && instance == capture.Prototype!.EconomyInstanceId,
+				"the resumed Totem is re-linked to its saved economy instance, never bought again" );
+		}
+		else
+			Require( level.PlacedRide == null, "the resumed park carries no prototype ride" );
 		Require( flow.StartKind?.ToString() == startKindText, $"the flow's start kind is the saved one ({flow.StartKind} vs {startKindText})" );
+		savedPrototype = SmokePrototypeOf( ParkResumeSaveFile.Load( savePath ).Prototype, level.PlacedRide );
 		Log.Trace( $"Park-resume restore: loaded '{Path.GetFileName( savePath )}' through the menu entry ({level.Objects.Objects.Count} objects, {level.Guests.Guests.Count} guests)." );
 		pendingCapture = "park-resume-restored.png";
 		captureAtFrame = frame + WarmUpFrames;
@@ -298,6 +321,17 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 				? runtime with { State = runtime.State with { ScriptIdentityHash = 1 } } : runtime ).ToArray()
 		};
 		Probe( baseline, "runtime-script-identity", wrongScriptIdentities, viaMenu: false );
+		// The prototype part (variant runs only): dropping it leaves the Totem's root script and guest record
+		// unclaimed, and its saved guest cells cannot be swapped for cells outside the map.
+		if ( good.Prototype is { } prototype )
+		{
+			Probe( baseline, "prototype-part-dropped", good with { Prototype = null }, viaMenu: false );
+			Probe( baseline, "prototype-cell-off-map", good with { Prototype = prototype with
+			{
+				EntranceCell = (good.Layout.Cells.Width * 4, good.Layout.Cells.Height * 4),
+				ExitCell = (good.Layout.Cells.Width * 4, good.Layout.Cells.Height * 4)
+			} }, viaMenu: false );
+		}
 		// An unsupported future version, through the actual menu entry: a failure dialog, never a crash or a swap.
 		Probe( baseline, "unsupported-version", good with { Version = ParkResumeSaveFile.CurrentVersion + 5 }, viaMenu: true );
 		// The load menu's own listing: a malformed save file is skipped with a warning, a good one is listed.
@@ -457,6 +491,26 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 				$"{item.Entry.DisplayName} binds its attraction to its own economy instance" );
 			Require( boundInstances.Add( binding!.Value ), $"economy instance {binding} is bound to one attraction only" );
 		}
+		// The prototype variant's own proof: the resumed Totem carries its saved economy link, and removing it sells
+		// (or, when the live park never paid, deregisters) exactly once — the saved association, never a re-buy.
+		bool? prototypeRemoved = null;
+		if ( PrototypeVariant && level.PlacedRide is { } totem )
+		{
+			var savedTotem = capture!.Prototype;
+			var linked = payments.TryGetInstance( totem.Visitors.AttractionId, out var totemInstance );
+			Require( savedTotem != null && linked && totemInstance == savedTotem.EconomyInstanceId,
+				"the resumed Totem still binds its saved economy instance" );
+			var balanceBefore = economy.Balance;
+			var scrapValue = economy.TryGetObject( totemInstance, out var totemObject ) ? economy.ScrapValue( totemObject! ) : 0;
+			level.RemoveRide();
+			Require( level.PlacedRide == null && !payments.TryGetInstance( totem.Visitors.AttractionId, out _ ),
+				"removing the resumed Totem unregisters its bridge and unlinks its payments" );
+			Require( !economy.TryGetObject( totemInstance, out _ ),
+				savedTotem.EconomyBought ? "removing the resumed Totem sells its instance exactly once" : "removing the never-bought resumed Totem deregisters its instance" );
+			Require( !savedTotem.EconomyBought || economy.Balance == balanceBefore + scrapValue,
+				$"the Totem's sale credits its scrap exactly once (${balanceBefore} + ${scrapValue} = ${economy.Balance})" );
+			prototypeRemoved = true;
+		}
 		postLoad = new SmokePostLoad
 		{
 			ParkReopenedAndClosed = true,
@@ -467,6 +521,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			NewObjectPlacedAfterSale = true,
 			StaffHiredAndPaidOnce = true,
 			PaymentBindingsOneToOne = true,
+			PrototypeRemoved = prototypeRemoved,
 			BalanceAfter = economy.Balance,
 			ScrapCredited = scrap,
 			WagesCharged = wages,
@@ -506,6 +561,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			["gate"] = SectionSha256( snapshot.Gate ),
 			["staff"] = SectionSha256( snapshot.Staff ),
 			["advisor"] = SectionSha256( snapshot.Advisor ),
+			// Null (a park without the Totem) hashes to the codec's own 'null' bytes — one stable sentinel.
+			["prototype"] = SectionSha256( snapshot.Prototype ),
 		};
 		var composite = new StringBuilder( "opentpw-park-resume/1|" ).Append( snapshot.Theme ).Append( '|' )
 			.Append( snapshot.StartKind ).Append( '|' ).Append( snapshot.Seed ).Append( '|' ).Append( snapshot.SoundSeed );
@@ -618,6 +675,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			Seed = level.Seed.ToString(),
 			SavedUtc = savedUtc,
 			ManifestSha256 = CanonicalManifestSha256( verifiedAssets ),
+			PrototypeVariant = PrototypeVariant,
+			Prototype = savedPrototype,
 			Save = new SmokeSaveFile { Name = Path.GetFileName( savePath ), ByteCount = bytes.Length, Sha256 = Sha256Hex( bytes ) },
 			Boundary = boundarySample,
 			Ticks = tickSamples,
@@ -627,6 +686,20 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			Completed = completed,
 			Failure = failure,
 		};
+	}
+
+	/// <summary>The saved Totem's evidence facts, cross-checked against the live ride this phase holds (null when the save holds no part).</summary>
+	private SmokePrototype? SmokePrototypeOf( PrototypeRideSaveData? part, PrototypeRide? live )
+	{
+		if ( part == null )
+		{
+			Require( live == null, "the save holds no prototype part, but the park places a Totem" );
+			return null;
+		}
+		Require( live != null, "the save holds a prototype part, but the park places no Totem" );
+		Require( part.AttractionId == live!.Visitors.AttractionId && part.EconomyInstanceId != null,
+			"the saved Totem joins the live park by attraction id with its economy instance" );
+		return new SmokePrototype { AttractionId = part.AttractionId, Open = part.Open, EconomyInstanceId = part.EconomyInstanceId!.Value, EconomyBought = part.EconomyBought };
 	}
 
 	/// <summary>Post-load staff actors are the world-side authority: one recapture, after the hire, is enough.</summary>

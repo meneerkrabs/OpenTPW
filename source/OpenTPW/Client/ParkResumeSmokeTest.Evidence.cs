@@ -34,6 +34,10 @@ internal sealed partial class ParkResumeSmokeTest
 		public string SavedUtc { get; init; } = "";
 		/// <summary>SHA-256 of the canonical (sorted-key) asset manifest: hashes of hashes, never the manifest's file content.</summary>
 		public string ManifestSha256 { get; init; } = "";
+		/// <summary>Whether both phases ran the prototype-Totem fixture option (they must agree).</summary>
+		public bool PrototypeVariant { get; init; }
+		/// <summary>The fixture Totem's identity (capture phase); null when the fixture placed none.</summary>
+		public SmokePrototype? Prototype { get; init; }
 		public SmokeSaveFile Save { get; init; } = new();
 		public SmokeSample Boundary { get; init; } = new() { Tick = -1 };
 		public IReadOnlyList<SmokeSample> Ticks { get; init; } = Array.Empty<SmokeSample>();
@@ -54,6 +58,17 @@ internal sealed partial class ParkResumeSmokeTest
 		public string Name { get; init; } = "";
 		public long ByteCount { get; init; }
 		public string Sha256 { get; init; } = "";
+	}
+
+	/// <summary>The fixture Totem's identity and economy association as the capture phase saved it (hashes and ids only).</summary>
+	internal sealed record SmokePrototype
+	{
+		public int AttractionId { get; init; }
+		public bool Open { get; init; }
+		/// <summary>The economy instance the live park linked (never null in the variant: the jungle catalogue lists the Totem).</summary>
+		public int EconomyInstanceId { get; init; }
+		/// <summary>Whether the live park paid for the Totem; a removal after resume sells it only when bought.</summary>
+		public bool EconomyBought { get; init; }
 	}
 
 	/// <summary>One captured moment: the save boundary or one continuation tick.</summary>
@@ -125,6 +140,8 @@ internal sealed partial class ParkResumeSmokeTest
 		public bool NewObjectPlacedAfterSale { get; init; }
 		public bool StaffHiredAndPaidOnce { get; init; }
 		public bool PaymentBindingsOneToOne { get; init; }
+		/// <summary>The prototype variant: the resumed Totem's removal observed (sold exactly once / deregistered). Null when the fixture placed no Totem.</summary>
+		public bool? PrototypeRemoved { get; init; }
 		public long BalanceAfter { get; init; }
 		public long ScrapCredited { get; init; }
 		public long WagesCharged { get; init; }
@@ -186,6 +203,14 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( capture.Failure == null && restore.Failure == null, $"no phase failed (capture: {capture.Failure ?? "ok"}, restore: {restore.Failure ?? "ok"})" );
 		Require( capture.Theme == restore.Theme && capture.StartKind == restore.StartKind && capture.Seed == restore.Seed,
 			$"the parks match (theme {capture.Theme}/{restore.Theme}, start {capture.StartKind}/{restore.StartKind}, seed {capture.Seed}/{restore.Seed})" );
+		Require( capture.PrototypeVariant == restore.PrototypeVariant,
+			$"both phases ran the same fixture (prototype variant {capture.PrototypeVariant}/{restore.PrototypeVariant})" );
+		if ( capture.PrototypeVariant )
+			Require( capture.Prototype != null && restore.Prototype != null
+				&& capture.Prototype.AttractionId == restore.Prototype.AttractionId
+				&& capture.Prototype.EconomyInstanceId == restore.Prototype.EconomyInstanceId
+				&& capture.Prototype.EconomyBought == restore.Prototype.EconomyBought,
+				"both phases saw the same Totem (attraction id, economy instance, bought flag)" );
 		Require( capture.Save.Sha256.Length == 64 && capture.Save.Sha256 == restore.Save.Sha256,
 			$"both phases used the same save bytes ({capture.Save.Sha256 ?? ""} vs {restore.Save.Sha256 ?? ""})" );
 		Require( capture.ManifestSha256.Length == 64 && capture.ManifestSha256 == restore.ManifestSha256,
@@ -208,6 +233,8 @@ internal sealed partial class ParkResumeSmokeTest
 			Require( postLoad.NewObjectPlacedAfterSale, "post-load: a new object was placed after the sale" );
 			Require( postLoad.StaffHiredAndPaidOnce, "post-load: hired staff were paid exactly once at month end" );
 			Require( postLoad.PaymentBindingsOneToOne, "post-load: guest payments bind one attraction to one economy instance" );
+			if ( postLoad.PrototypeRemoved != null )
+				Require( postLoad.PrototypeRemoved == true, "post-load: the resumed Totem was removed with its economy link settled exactly once" );
 		}
 		else
 			problems.Add( "the restore phase recorded no post-load gameplay observations" );

@@ -49,7 +49,11 @@ public enum ParkEventKind
 	/// A staff strike message (ECON-014): <see cref="ParkEvent.InfoId"/> the role (<see cref="StaffType"/>), <see cref="ParkEvent.Amount"/> the
 	/// <see cref="StrikeMessageKind"/>, <see cref="ParkEvent.Detail"/> "TAG_SYSTEM n" with the index of the message text.
 	/// </summary>
-	StaffStrikeMessage
+	StaffStrikeMessage,
+	/// <summary>A toilet's gauge fell below 25 ("Toilet has become dirty and smelly", tp.exe 0x004E2440): <see cref="ParkEvent.InstanceId"/> the toilet.</summary>
+	ToiletDirty,
+	/// <summary>A handyman finished cleaning a toilet (tp.exe 0x004DFD80): <see cref="ParkEvent.InstanceId"/> the toilet.</summary>
+	ToiletCleaned
 }
 
 /// <summary>

@@ -71,6 +71,12 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 		}
 	}
 
+	public void ReliefUsed( IRideVisitorBridge attraction, int toiletByte )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().UseRelief( instance, toiletByte );
+	}
+
 	public void VisitFinished( IRideVisitorBridge attraction )
 	{
 		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )

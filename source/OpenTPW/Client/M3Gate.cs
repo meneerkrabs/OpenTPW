@@ -1022,6 +1022,7 @@ internal sealed class M3GateRun
 					state.IsOpen = item.IsOpen;
 					state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, grid );
 					item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );   // the price test reads the live words, as Level does
+					item.Visitors.WearGauge = state.Repair;   // the worn-toilet exit reads the gauge the relief visits wear, as Level does
 				}
 			}
 			guests.Tick( Tick );

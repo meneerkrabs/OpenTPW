@@ -1093,6 +1093,87 @@ PRICE_TARGET = Target(
            '+0x4ac kind), 0x4e2740 park type record (word +0xc chosen), 0x519510 park, 0x4c74b0 statistic (recorded). '
            'x87 control word 0x27F.'])
 
+# ============================================================================== (j) tp.exe toilet wear 0x4e2440
+WEAR_ENTRY = 0x4E2440          # thiscall (thing, toilet byte), ret 4: a relief object's gauge after one use
+WEAR_RANGES = [(0x4E2440, 0x4E2647), FTOL]
+WEAR_GUARD = 0xFB34B8          # bit 0: the GameType object is constructed (its constructor 0x550ca0 must not run)
+WEAR_MODE = 0xFB3B7C           # GameType word 0: 1 = online (the self-cleaning branch, not compared here)
+WEAR_MAP = 0x8023A0            # the cell map object the dirty-toilet messages go to
+WEAR_MESSAGE_A = 0x4D8460      # thiscall (map, 1, cell), ret 8; stubbed (recorded)
+WEAR_MESSAGE_B = 0x4D8440      # thiscall (map, 6, cell), ret 8; stubbed (recorded)
+WEAR_STATE = type('WearState', (), {})()
+_F32 = lambda v: struct.unpack('<f', struct.pack('<f', v))[0]
+
+
+def wear_stubs(target: Target) -> dict:
+    state = WEAR_STATE
+
+    def message(name):
+        def stub(sb):
+            thiscall_check(sb, state.map, name)
+            target.log.append((name, sb.arg(0), sb.arg(1) & 0xFFFF))
+            return 0, 8
+        return stub
+
+    def log(sb):
+        target.log.append(('log', sb.arg(0)))
+        return 0, 0
+
+    return {WEAR_MESSAGE_A: message('0x4d8460'), WEAR_MESSAGE_B: message('0x4d8440'), DEBUG_PRINT: log}
+
+
+def wear_binary(sb: Sandbox, x: dict, log) -> tuple:
+    state = WEAR_STATE
+    sb.write(WEAR_GUARD, 'B', 1)
+    sb.write(WEAR_MODE, 'I', 0)
+    state.map = sb.object(16)
+    sb.write(WEAR_MAP, 'I', state.map)
+    thing = sb.object(0x200, {0x32: ('H', 1 if x['relief'] else 0), 0x44: ('f', x['gauge']), 5: ('B', x['cx']), 7: ('B', x['cy'])})
+    sb.set_fpcw(X87_CONTROL_WORD)
+    result = sb.call(WEAR_ENTRY, args=(x['toilet'] & 0xFF,), this=thing)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    gauge = sb.read(thing + 0x44, 'I')
+    return gauge, tuple(e for e in log if e[0] != 'log'), sum(1 for e in log if e[0] == 'log')
+
+
+def _gauge_byte(value: float) -> int:
+    return fistp_low32(_F32(value)) & 0xFF
+
+
+def wear_reading(x: dict, constant: float | None = None) -> tuple:
+    """0x4e2440 offline: a relief object's gauge += toilet x -0.05f (exact in x87 precision), clamped to 0..100, stored as a single;
+    a gauge byte that falls below 25 (and was not below it) logs once and posts messages 1 and 6 for the thing's cell."""
+    gauge = _F32(x['gauge'])
+    step = _F32(-0.05) if constant is None else constant
+    value = Fraction(x['toilet'] & 0xFF) * Fraction(step) + Fraction(gauge)
+    new = 100.0 if value > 100 else (_F32(float(x87_round(value, 53))) if value >= 0 else 0.0)
+    bits = struct.unpack('<I', struct.pack('<f', new))[0]
+    was = x['relief'] and _gauge_byte(gauge) < 25
+    now = x['relief'] and _gauge_byte(new) < 25
+    cell = (x['cy'] * 0x80 + 1 + x['cx']) & 0xFFFF
+    events = (('0x4d8460', 1, cell), ('0x4d8440', 6, cell)) if now and not was else ()
+    return bits, events, len(events) // 2
+
+
+def wear_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'gauge': rng.choice([100.0, 50.0, 25.0, 24.99, 25.04, 0.0, 3.3, rng.uniform(0, 100)]), 'toilet': rng.choice([0, 1, 100, 255, rng.randrange(256)]),
+             'relief': rng.choice([True, True, False]), 'cx': rng.randrange(128), 'cy': rng.randrange(128)}
+        x.update(kw)
+        return x
+    edges = [make(gauge=g, toilet=t, relief=True) for g in (100.0, 25.5, 25.04, 25.0, 24.99, 1.0, 0.0) for t in (0, 1, 10, 255)]
+    return edges + [make() for _ in range(n)]
+
+
+WEAR_TARGET = Target(
+    'tpw-exe-toilet-wear', 'tpw', 'tp.exe toilet wear 0x4e2440', 'QUEUE-008 (the relief wear step; ParkEconomy.UseRelief)',
+    WEAR_ENTRY, WEAR_RANGES, wear_stubs, wear_binary, wear_reading, wear_inputs,
+    alternatives={'double-constant': lambda x: wear_reading(x, -0.05)},
+    notes=['Executed: 0x4e2440 in the offline game type and _ftol. Stubs: the dirty-toilet messages 0x4d8460 / 0x4d8440 (recorded '
+           'with their cell), 0x5da3c0 log (counted); the GameType object is marked constructed. x87 control word 0x27F. '
+           'ParkEconomy.UseRelief computes the same in double precision (the product of a byte and a single plus a single is exact).'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -1712,5 +1793,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

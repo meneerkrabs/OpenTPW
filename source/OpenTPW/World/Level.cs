@@ -102,8 +102,11 @@ public partial class Level : IDisposable
 		new( levelName, loadOriginalLevel, visit, onlineFolders, start, null, null, null, overFrames: true );
 
 	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
-		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames )
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null )
 	{
+		if (checkpoint != null && !GameEditions.IsThemeParkInc)
+			throw new NotSupportedException("TPI layout checkpoints require Theme Park Inc data.");
+		incLayout = checkpoint;
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
 		LevelName = levelName;
@@ -152,7 +155,7 @@ public partial class Level : IDisposable
 			using ( LoadProfile.Measure( "original-park" ) )
 			{
 				var parts = 0;
-				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) ) )
+				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) ) )
 				{
 					if ( loaded == null )
 						yield return Math.Min( 0.14f, 0.004f * ++parts );
@@ -183,6 +186,8 @@ public partial class Level : IDisposable
 		using ( LoadProfile.Measure( "level-hud" ) )
 			SetupHud( onlineFolders );
 		resumeState = null;
+		incLayout = null;
+		incLayoutCells = null;
 		if ( visitLayout != null )
 			ApplyVisitedLayout();
 		if ( Visit?.Payload.PrototypeRide is { } ride )
@@ -317,7 +322,7 @@ public partial class Level : IDisposable
 				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				OriginalTerrain.QueueLinkSource = cells.QueueLinkAt;
-				if ( resumeState != null ) OriginalTerrain.RefreshPaths();
+				if ( resumeState != null || incLayout != null ) OriginalTerrain.RefreshPaths();
 				renderedCellVersion = cells.Version;
 			}
 			if ( Park != null && Guests != null )
@@ -335,7 +340,8 @@ public partial class Level : IDisposable
 	private void SetupGuests( OriginalPark park )
 	{
 		// A version 2 visit walks the shared park's own cell map (the owner's built paths and queues), not the shipped import.
-		var grid = resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout ) )
+		var grid = incLayoutCells != null ? new GuestPathGrid(incLayoutCells)
+			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: GuestPathGrid.FromOriginal( park.Map, park.Save );

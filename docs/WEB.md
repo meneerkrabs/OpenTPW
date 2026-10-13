@@ -103,6 +103,33 @@ dotnet run --project tools/AssemblySurface -- path/to/OpenTPW.dll Veldrid
 
 ### Game files on demand
 
+The setup screen also offers an explicit **experimental Theme Park Inc** start in Arabian,
+Science or Water. Choose the extracted installation folder containing `Data`, then choose
+the theme before importing or pressing Play. That theme's complete browser-supported file
+set is copied at startup. The existing edition detector checks its identity or structure,
+and an edition/theme mismatch refuses before renderer creation. No Theme Park World lobby
+is opened for Theme Park Inc. The browser calls the same `GameFlow.StartLevel` route as
+desktop `--load-original-level`, including its existing shipped-layout eligibility.
+The experimental HUD and capability policy stay unchanged: free building and guests, no
+economy, staff, research, missions, original game save writing, tickets or sharing. OpenTPW's own
+layout checkpoint is separate from an original game save.
+
+A failed setup import does not mark the selected theme loaded. Before a retry, only the
+runtime-owned `/game` staging tree and import readiness/speech tracking are reset; kept
+original files, `/save`, `/online` and `/config` are retained. Play requires every selected
+theme entry to be kept; missing or size-mismatched kept data still goes through the existing
+folder recovery reader. Already verified individual files can remain kept after a partial
+import, but that does not make the theme ready. Once a renderer has been created, choosing
+another installation or retrying startup requires a page reload, including after a later
+startup exception; this route does not dispose/recreate an active world.
+
+`BrowserStartupTests`, `test_web_startup.mjs` and the originals-store tests cover synthetic
+edition refusal, staging isolation, explicit dispatch, complete theme import, retry and
+cache reopening. The browser project compiles this route. These are CPU and handle-stub
+controls: no fresh original-data, actual browser gameplay, WebGL rendering or original-game
+parity qualification is claimed. The existing deferred Theme Park World park-copy failure
+behavior is outside this initial Theme Park Inc import path.
+
 The page copies the files the front end needs when the player chooses the folder, and keeps
 the theme folders below `levels` (about 10 MB each without sound) for later. Starting, loading
 or visiting a park goes through `GameFlow.QueueLevel`, which waits until

@@ -11,7 +11,15 @@
 <div id="loading" role="status" hidden></div>
 <div id="setup">
 	<h1>OpenTPW</h1>
-	<p>Choose your own Theme Park World folder (the one that holds <code>Data</code>).<br>The files stay in this browser; nothing is uploaded.</p>
+	<p>Choose your own game folder (the one that holds <code>Data</code>).<br>The files stay in this browser; nothing is uploaded.</p>
+	<p><label>Start:
+		<select id="edition">
+			<option value="">Theme Park World</option>
+			<option value="arabian">Theme Park Inc — experimental Arabian</option>
+			<option value="science">Theme Park Inc — experimental Science</option>
+			<option value="water">Theme Park Inc — experimental Water</option>
+		</select>
+	</label><br>Theme Park Inc: free building and guests; no economy, staff, research, missions, original game save writing, tickets or sharing. Original-game behaviour is unverified.</p>
 	<p id="kept" hidden>Game files kept in this browser: <span id="keptSize"></span><br><button id="play" type="button">Play</button></p>
 	<p><label><span id="folderText">Choose folder</span><input type="file" id="folder" webkitdirectory directory multiple></label></p>
 	<p id="keepRow" hidden>Keep the game files in this browser:

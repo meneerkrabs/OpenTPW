@@ -57,11 +57,33 @@ public static partial class Program
 	/// </summary>
 	[JSExport]
 	public static void Start( string origin )
+		=> StartSelected( origin, "" );
+
+	/// <summary>Starts the existing experimental slice, with an explicitly selected Theme Park Inc theme.</summary>
+	[JSExport]
+	public static void StartExperimental( string origin, string theme )
+		=> StartSelected( origin, theme );
+
+	/// <summary>Clears only this runtime's game-file staging before a new setup attempt.</summary>
+	[JSExport]
+	public static void BeginImport()
+	{
+		BrowserStartup.BeginImport( GameRoot, renderer != null || flow != null );
+		loadedLevels.Clear();
+		requestedLevels.Clear();
+		loadedLanguages.Clear();
+		requestedLanguages.Clear();
+		failedLanguages.Clear();
+		installedLanguages = Array.Empty<string>();
+		FileSystem = null!;
+	}
+
+	private static void StartSelected( string origin, string theme )
 	{
 		try
 		{
 			OnlineSession.SuggestedServerUrl = origin;
-			StartGame();
+			StartGame( theme );
 		}
 		catch ( Exception exception )
 		{
@@ -71,18 +93,16 @@ public static partial class Program
 		}
 	}
 
-	private static void StartGame()
+	private static void StartGame( string theme )
 	{
+		if ( renderer != null || flow != null )
+			throw new InvalidOperationException( "The game has already created its renderer. Reload the page before starting again." );
 		WriteContent();
 		var dataDirectory = GameLanguage.FindEntry( GameRoot, "data", true )
 			?? throw new DirectoryNotFoundException( "No Data folder among the chosen files." );
-		// [EXT:tpi-viewer] the browser front end needs Theme Park World data; Theme Park Inc data is refused here too,
-		// so no Theme Park World system (front end, economy, saves, sharing) can run on it (docs/THEME-PARK-INC.md).
-		var edition = GameEditions.Detect( dataDirectory );
+		// [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals.
+		var edition = BrowserStartup.Validate( dataDirectory, theme );
 		GameEditions.Select( edition.Edition );
-		if ( GameEditions.IsThemeParkInc )
-			throw new ArgumentException( "The chosen files hold Theme Park Inc (Sim Coaster) data, which the browser does not run. "
-				+ "The experimental slice is a desktop start: --load-original-level arabian, science or water (docs/THEME-PARK-INC.md)." );
 		// The game data changes only through AddFile, which invalidates the remembered lookups.
 		FileSystem = new BaseFileSystem( dataDirectory ) { CacheLookups = true };
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
@@ -147,7 +167,10 @@ public static partial class Program
 		LanguageDataReady( GameLanguage.Current.Name );
 		renderer.OnUpdate += flow.Update;
 		renderer.OnRender += flow.Render;
-		flow.ShowFrontEnd();
+		if ( theme.Length == 0 )
+			flow.ShowFrontEnd();
+		else
+			flow.StartLevel( theme, original: true, developerPanels: false );
 		renderer.Start();
 	}
 

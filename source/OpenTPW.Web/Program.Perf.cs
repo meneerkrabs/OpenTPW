@@ -71,6 +71,10 @@ public static partial class Program
 		return false;
 	}
 
+	/// <summary>The construction time of each frame of the last park built over frames (GameFlow.LastParkBuildFrames), as a JSON array of milliseconds.</summary>
+	[JSExport]
+	public static string PerfParkBuild() => new JsonArray( (flow?.LastParkBuildFrames ?? Array.Empty<double>() ).Select( value => (JsonNode?)Math.Round( value, 2 ) ).ToArray() ).ToJsonString();
+
 	/// <summary>Presses a UI key by its <see cref="UiKeys"/> name (Accept, Back, Left, ...); false for an unknown name.</summary>
 	[JSExport]
 	public static bool PerfKey( string key )
@@ -158,7 +162,7 @@ public static partial class Program
 		var park = ParkEconomyRuntime.ForOriginalLevel( original, ParkStartKind.OriginalSaveReference, seed );
 		var guests = new GuestSimulation( GuestPathGrid.FromOriginal( original.Map, original.Save ), GuestSettings.Load( theme ), seed.GuestStream );
 		park.AttachGuests( guests );
-		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) );
+		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream, RideScriptWorld.FixedClock ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) );
 		park.Economy.Speed = GameSpeed.Fastest;
 		for ( var tick = 0; tick < 3000; tick++ )
 		{

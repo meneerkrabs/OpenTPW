@@ -16,7 +16,7 @@ public class WctBoundsTests
 		using var compressed = new MemoryStream();
 		using ( var zip = new ZLibStream( compressed, CompressionLevel.Optimal, true ) ) zip.Write( raw );
 		using var output = new MemoryStream(); using var writer = new BinaryWriter( output );
-		writer.Write( Encoding.ASCII.GetBytes( "BILZ" ) ); writer.Write( raw.Length ); writer.Write( (int)compressed.Length );
+		writer.Write( Encoding.ASCII.GetBytes( "BILZ" ) ); writer.Write( raw.Length ); writer.Write( 0x1C + (int)compressed.Length );
 		writer.Write( 15 ); writer.Write( 9 ); writer.Write( 0 ); writer.Write( 0 ); writer.Write( compressed.ToArray() );
 		return output.ToArray();
 	}
@@ -81,6 +81,21 @@ public class WctBoundsTests
 		var bytes = new byte[(bits.Count + 15) / 16 * 2];
 		for ( var i = 0; i < bits.Count; i++ ) if ( bits[i] ) bytes[i / 8] |= (byte)(1 << (i % 8));
 		return bytes;
+	}
+
+	[TestMethod]
+	public void OddLengthLzssReadsItsFinalByteAsAHalfWord()
+	{
+		// 97 literals and the terminator take 886 bits: 111 bytes, one past a whole 16-bit word. Retail chunks end
+		// like this (thousands of the original WCTs have an odd LZSS length); the last word is that byte plus zeros.
+		var raw = new byte[97];
+		for ( var i = 0; i < raw.Length; i++ ) raw[i] = (byte)(i * 7);
+		var padded = LiteralLzss( raw );
+		Assert.AreEqual( 112, padded.Length );
+		Assert.AreEqual( 0, padded[^1] );
+		CollectionAssert.AreEqual( Decode( Wct( padded ) ).Data, Decode( Wct( padded[..^1] ) ).Data );
+		// Without that byte the terminator is gone: the stream is refused rather than completed with invented bits.
+		Assert.ThrowsException<InvalidDataException>( () => Decode( Wct( padded[..^2] ) ) );
 	}
 
 	[TestMethod]

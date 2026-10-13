@@ -105,14 +105,19 @@ public static class OptionsScreen
 	{
 		if ( textureSwitch.Finished )
 			return;
+		var text = string.Format( strings.Extra( OpenTpwText.LoadingTextures ), textureSwitch.Done, textureSwitch.Total );
+		DrawProgressLine( context, text, textureSwitch.Total == 0 ? 1f : textureSwitch.Done / (float)textureSwitch.Total );
+	}
+
+	/// <summary>A progress line at the top centre: <paramref name="text"/> over a thin bar filled to <paramref name="fraction"/> (0 to 1).</summary>
+	public static void DrawProgressLine( UiContext context, string text, float fraction )
+	{
 		var area = context.Canvas.Map( new UiRect( 624, 24, 800, 64 ), UiAnchor.Top );
 		context.Batch.AddRectangle( area, UiColors.HelpBackground );
-		var text = string.Format( strings.Extra( OpenTpwText.LoadingTextures ), textureSwitch.Done, textureSwitch.Total );
 		context.DrawFittedText( context.Fonts.Small, text, area with { Height = area.Height * 0.7f }, UiColors.Text );
 		var bar = new UiRect( area.X + area.Width * 0.05f, area.Y + area.Height * 0.74f, area.Width * 0.9f, area.Height * 0.12f );
 		context.Batch.AddRectangle( bar, UiColors.Shadow );
-		var fraction = textureSwitch.Total == 0 ? 1f : Math.Clamp( textureSwitch.Done / (float)textureSwitch.Total, 0f, 1f );
-		context.Batch.AddRectangle( bar with { Width = bar.Width * fraction }, UiColors.Value );
+		context.Batch.AddRectangle( bar with { Width = bar.Width * Math.Clamp( fraction, 0f, 1f ) }, UiColors.Value );
 	}
 
 	public static T Cycle<T>( IReadOnlyList<T> values, T current, int direction )

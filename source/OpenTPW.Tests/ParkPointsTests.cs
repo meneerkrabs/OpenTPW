@@ -62,6 +62,21 @@ public class ParkPointsTests
 	}
 
 	[TestMethod]
+	public void AnAttractionWithoutRoomInItsQueueDoesNotCount()
+	{
+		// tp.exe 0x004DD920: no queue cells from the entrance (0x004DE130 gives no back cell) or a queue list of 4 × cells or more fails the counts-test.
+		var park = Park();
+		var full = park.RegisterExisting( Tracked );
+		var waiting = park.RegisterExisting( Tracked );
+		Assert.AreEqual( 2 * (30 + 25), park.ParkPoints() );
+		full.QueueHasRoom = false;
+		Assert.AreEqual( 30 + 25, park.ParkPoints() );
+		Assert.IsTrue( park.Catalog.TryGet( Tracked, out var info ) );
+		Assert.IsFalse( ParkEconomy.CountsForParkPoints( full, info ) );
+		Assert.IsTrue( ParkEconomy.CountsForParkPoints( waiting, info ) );
+	}
+
+	[TestMethod]
 	public void SellingDoesNotClearTheFirstPurchase()
 	{
 		var park = Park();

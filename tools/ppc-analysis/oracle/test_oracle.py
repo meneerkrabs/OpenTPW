@@ -2065,7 +2065,7 @@ class CSharpMutation(unittest.TestCase):
         ('queue-join-difference', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
          'Math.Clamp( terms.CostOfGoods - terms.PricePerUse, 0, 100 )', 'Math.Clamp( terms.CostOfGoods - terms.PricePerUse, 0, 99 )'),
         ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
-         '!item.ScriptBroken && item.IsOpen;', '!item.ScriptBroken;'),
+         '!item.ScriptBroken && item.IsOpen && item.QueueHasRoom;', '!item.ScriptBroken && item.QueueHasRoom;'),
         ('loan-offers', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',
          'return TruncateUnsigned( amount * power / months );', 'return TruncateUnsigned( amount * power / months + 1.0 );'),
         ('loan-term', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',

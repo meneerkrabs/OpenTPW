@@ -108,6 +108,77 @@ public class OnDemandReadTests
 		}
 	}
 
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void ChangedReopenedLengthIsRefusedBeforeAllocatingTheRequestedPayload( bool grow )
+	{
+		const int requested = 16 * 1024 * 1024;
+		var directory = Directory.CreateTempSubdirectory( "opentpw-wad-preflight-" ).FullName;
+		WadArchiveFile? member = null;
+		try
+		{
+			var path = Path.Combine( directory, "a.wad" );
+			WriteWad( path, "original member" );
+			var original = File.ReadAllBytes( path );
+			using var archive = new WadArchive( path );
+			member = Members( archive.Root ).Single();
+			var cached = member.GetData();
+			using ( var changed = new FileStream( path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete ) )
+				changed.SetLength( grow ? original.Length + 1 : original.Length - 1 );
+			// Warm the existing refusal/exception path without a large payload.
+			Assert.ThrowsException<IOException>( () => archive.GetData( 0, 1 ) );
+			var allocated = GC.GetAllocatedBytesForCurrentThread();
+			Assert.ThrowsException<IOException>( () => archive.GetData( 0, requested ) );
+			allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+			Console.WriteLine( $"Changed-source refusal: {allocated} bytes allocated for a {requested}-byte request (grow={grow})." );
+			Assert.IsTrue( allocated < requested / 2, $"Changed-source refusal allocated {allocated} bytes for a {requested}-byte request." );
+			File.WriteAllBytes( path, original );
+			CollectionAssert.AreEqual( original.Take( 32 ).ToArray(), archive.GetData( 0, 32 ), "A refused read leaves the handle closed and can recover after the original bytes are restored." );
+			archive.Dispose();
+			Assert.AreSame( cached, member.GetData(), "Already cached member data remains available after archive disposal." );
+		}
+		finally { member?.Free(); Directory.Delete( directory, recursive: true ); }
+	}
+
+	[TestMethod]
+	public void UnchangedPathSourceStillAllowsLargeZeroPaddedDirectReads()
+	{
+		const int requested = 16 * 1024 * 1024;
+		var directory = Directory.CreateTempSubdirectory( "opentpw-wad-padding-" ).FullName;
+		try
+		{
+			var path = Path.Combine( directory, "a.wad" );
+			WriteWad( path, "small member" );
+			var original = File.ReadAllBytes( path );
+			using var archive = new WadArchive( path );
+			var data = archive.GetData( 0, requested );
+			Assert.AreEqual( requested, data.Length, "No arbitrary request-size cap is introduced." );
+			CollectionAssert.AreEqual( original, data.Take( original.Length ).ToArray() );
+			Assert.AreEqual( -1, data.AsSpan( original.Length ).IndexOfAnyExcept( (byte)0 ), "An unchanged short source retains zero padding." );
+		}
+		finally { Directory.Delete( directory, recursive: true ); }
+	}
+
+	[TestMethod]
+	public void ZeroLengthAndBeyondOriginalEndStillDoNotReopenThePath()
+	{
+		var directory = Directory.CreateTempSubdirectory( "opentpw-wad-shortcuts-" ).FullName;
+		try
+		{
+			var path = Path.Combine( directory, "a.wad" );
+			WriteWad( path, "small member" );
+			var size = new FileInfo( path ).Length;
+			using var archive = new WadArchive( path );
+			File.Delete( path );
+			Assert.AreEqual( 0, archive.GetData( 0, 0 ).Length );
+			CollectionAssert.AreEqual( new byte[8], archive.GetData( checked((int)size), 8 ) );
+			CollectionAssert.AreEqual( new byte[8], archive.GetData( int.MaxValue, 8 ), "Wide beyond-end offsets keep their existing padding behavior." );
+			Assert.ThrowsException<FileNotFoundException>( () => archive.GetData( 0, 1 ), "A request that needs original bytes still reopens the source." );
+		}
+		finally { Directory.Delete( directory, recursive: true ); }
+	}
+
 	[TestMethod]
 	public void BanksFromAFileReadTheSameEntriesAsBanksInMemory()
 	{

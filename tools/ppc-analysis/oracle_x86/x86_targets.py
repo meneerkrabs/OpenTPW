@@ -849,6 +849,250 @@ QREEVAL_TARGET = Target(
            '0x5da3c0 log (a level-0 message fails the run). The exit order is checked: animation 13 (id % 3 == 0), unlink, '
            'dismissal, ride word +0x1dc cleared, state 6. Inputs are the states a listed guest can be in (11 to 14).'])
 
+# ============================================================================== (h) tp.exe park points counts-test 0x4dd920
+COUNTS_ENTRY = 0x4DD920        # thiscall (thing) -> 1 when the thing counts for park points; the Mac 0xdc834
+COUNTS_RANGE = (0x4DD920, 0x4DDA20)
+COUNTS_BACK = 0x4DE130         # thiscall (thing, out u16) -> back-of-queue cell (0: no queue cells from the entrance), ret 4; stubbed
+COUNTS_LENGTH = 0x4DDF50       # thiscall (thing, u16 0) -> the queue list's length, ret 4; stubbed (chosen)
+COUNTS_COASTER = 0x441970      # cdecl (thing) -> the coaster controller test (riders +0x140 zero, +0x3c bits); stubbed (chosen)
+COUNTS_THING = {'flags': 0x32, 'state': 0x19C, 'open': 0x68, 'cells': 0x40, 'track_word': 0x2C, 'type': 0xE}
+COUNTS_TRACK_TYPE = 0x9C       # type record: Bumper.WhichTrackType (1 kart, 2 water, 3 coaster)
+COUNTS_STATE = type('CountsState', (), {})()
+
+
+def counts_stubs(target: Target) -> dict:
+    state = COUNTS_STATE
+
+    def back(sb):
+        thiscall_check(sb, state.thing, '0x4de130')
+        sb.write(sb.arg(0), 'H', state.x['back'])
+        return sb.arg(0), 4
+
+    def length(sb):
+        thiscall_check(sb, state.thing, '0x4ddf50')
+        if sb.arg(0) & 0xFFFF:
+            raise AssertionError('0x4ddf50 asked for a guest, not the list length')
+        return state.x['length'] & MASK32, 4
+
+    def lookup(sb):
+        thiscall_check(sb, POINTS_REGISTRY, '0x412e90')
+        return state.record, 4
+
+    def coaster(sb):
+        target.log.append(('coaster',))
+        return int(state.x['controller_ok']), 0
+
+    return {COUNTS_BACK: back, COUNTS_LENGTH: length, POINTS_TYPE_RECORD: lookup, COUNTS_COASTER: coaster}
+
+
+def counts_binary(sb: Sandbox, x: dict, log) -> int:
+    state = COUNTS_STATE
+    state.x = x
+    state.record = sb.object(0x800, {COUNTS_TRACK_TYPE: ('i', x['track'])})
+    f = COUNTS_THING
+    state.thing = sb.object(0x400, {f['flags']: ('H', x['flags']), f['state']: ('i', x['state']), f['open']: ('i', x['open']),
+                                    f['cells']: ('i', x['cells']), f['track_word']: ('i', x['track_word']), f['type']: ('H', 0x101)})
+    result = sb.call(COUNTS_ENTRY, this=state.thing)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return result.eax & 0xFF
+
+
+def counts_reading(x: dict) -> int:
+    """0x4dd920 as read: flags +0x32 bit 4 (IsChoosable), state not 1 (broken down) or 4 (condemned), open word +0x68 nonzero,
+    a back-of-queue cell, a list shorter than 4 x the queue cells (unsigned), then by track type: a coaster (3) needs the
+    controller test, a kart (1) or water ride (2) needs the word +0x2c."""
+    if not (x['flags'] & 4 and x['state'] not in (1, 4) and x['open'] and x['back']):
+        return 0
+    if (x['length'] & MASK32) >= ((x['cells'] << 2) & MASK32):
+        return 0
+    if x['track'] == 3 and not x['controller_ok']:
+        return 0
+    if x['track'] in (1, 2) and not x['track_word']:
+        return 0
+    return 1
+
+
+def counts_csharp_rule(x: dict) -> int:
+    """ParkEconomy.CountsForParkPoints with the level's sync, in the routine's terms: IsChoosable, not broken (states 1 and 4),
+    open, and QueueHasRoom (QueueJoinRules.QueueCountsForParkPoints: real queue cells > 0, which is when the back cell exists,
+    and length < 4 x cells). This transcribes the C# rule; the C# helper itself is covered by a unit test. The coaster
+    controller and the kart/water word are not applied (ARRIVAL-003)."""
+    has_room = x['back'] != 0 and x['cells'] > 0 and x['length'] < 4 * x['cells']
+    return int(bool(x['flags'] & 4) and x['state'] not in (1, 4) and bool(x['open']) and has_room)
+
+
+def counts_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        cells = rng.choice([0, 1, 2, 3, 6, rng.randrange(0, 30)])
+        x = {'flags': rng.choice([4, 4, 4, 0, 5, 0x24, rng.randrange(0, 0x10000)]), 'state': rng.choice([0, 0, 0, 1, 2, 3, 4]),
+             'open': rng.choice([1, 1, 1, 0]), 'cells': cells, 'back': 0 if cells == 0 else rng.choice([0x1234, 0x1234, 0x1234, 0]),
+             'length': rng.choice([0, 4 * cells - 1, 4 * cells, rng.randrange(0, 4 * cells + 6)]),
+             'track': rng.choice([0, 0, 1, 2, 3, 3, 4]), 'controller_ok': rng.choice([True, False]), 'track_word': rng.choice([1, 1, 0])}
+        x['length'] = max(0, x['length'])
+        x.update(kw)
+        return x
+    base = dict(flags=4, state=0, open=1, cells=2, back=0x1234, length=3, track=0, controller_ok=True, track_word=1)
+    edges = [make(**{**base, **change}) for change in (
+        {}, {'flags': 0}, {'state': 1}, {'state': 4}, {'state': 2}, {'open': 0}, {'back': 0}, {'length': 8}, {'length': 7},
+        {'cells': 0, 'back': 0, 'length': 0}, {'track': 3, 'controller_ok': False}, {'track': 3}, {'track': 1, 'track_word': 0},
+        {'track': 2, 'track_word': 0}, {'track': 2})]
+    return edges + [make() for _ in range(n)]
+
+
+def counts_domain_csharp(x: dict) -> bool:
+    return x['track'] not in (1, 2, 3)
+
+
+COUNTS_TARGET = Target(
+    'tpw-exe-counts-test', 'tpw', 'tp.exe park points counts-test 0x4dd920', 'GUESTS.md "Arrivals" / ARRIVAL-003 (Mac 0xdc834)',
+    COUNTS_ENTRY, [COUNTS_RANGE], counts_stubs, counts_binary, counts_reading, counts_inputs,
+    alternatives={'csharp-rule': counts_csharp_rule,
+                  'csharp-rule-untracked': lambda x: counts_csharp_rule(x) if counts_domain_csharp(x) else counts_reading(x)},
+    notes=['Executed: 0x4dd920. Stubs: 0x4de130 back of queue (chosen; checked for the thing), 0x4ddf50 list length (checked '
+           'to be asked with guest 0), 0x412e90 type record (track type chosen), 0x441970 coaster controller test (chosen). '
+           'csharp-rule differs only for coasters, karts and water rides (ARRIVAL-003); csharp-rule-untracked takes the '
+           'routine reading for those, so it must agree everywhere.'])
+
+# ============================================================================== (i) tp.exe price test 0x4fde50
+PRICE_ENTRY = 0x4FDE50         # thiscall (guest, ride), ret 4 -> 1 when the ride is too expensive for the guest
+PRICE_RANGES = [(0x4FDE50, 0x4FE182),       # the routine (its jump table at 0x4fe184 is data)
+                (0x4E1A00, 0x4E1A07), (0x4E1A10, 0x4E1A17), (0x4E21B0, 0x4E21B7),   # price, cost of goods, win byte getters
+                FTOL]
+PRICE_TYPE_RECORD = 0x4DD4E0   # thiscall (thing) -> its type record; stubbed (synthetic record)
+PRICE_PARK_RECORD = 0x4E2740   # thiscall (thing) -> the park's record for the type (0x4d3d10); stubbed (its word +0xc chosen)
+PRICE_STATISTIC = 0x4C74B0     # thiscall (park, category, value), ret 8: the price perception statistic; stubbed (recorded)
+PRICE_GUEST = {'happiness': 0x19C, 'money': 0x1A0, 'thirst': 0x1A4, 'hunger': 0x1A8, 'illness': 0x1B0}
+PRICE_RIDE = {'goods': 0x188, 'win': 0x190, 'price': 0x194}   # mCostOfGoods, mChanceOfWinning (byte), mPricePerUse
+PRICE_RECORD = {'base': 0x140, 'thirst': 0x144, 'hunger': 0x148, 'vomit': 0x14C, 'happy': 0x150, 'product': 0x158, 'extra': 0x15C}
+PRICE_STATE = type('PriceState', (), {})()   # record: InitCostOfGoods, Thirst/Hunger/Vomit/HappinessEffect; kind word +0x4ac
+
+
+def price_stubs(target: Target) -> dict:
+    state = PRICE_STATE
+
+    def record(sb):
+        thiscall_check(sb, state.ride, '0x4dd4e0')
+        return state.record, 0
+
+    def park_record(sb):
+        thiscall_check(sb, state.ride, '0x4e2740')
+        return state.park_record, 0
+
+    def park(sb):
+        thiscall_check(sb, state.game, '0x519510')
+        return state.park, 0
+
+    def statistic(sb):
+        thiscall_check(sb, state.park, '0x4c74b0')
+        target.log.append(('statistic', sb.arg(0), sb.arg(1)))
+        return 0, 8
+
+    return {PRICE_TYPE_RECORD: record, PRICE_PARK_RECORD: park_record, PARK_OF_GAME: park, PRICE_STATISTIC: statistic}
+
+
+def price_binary(sb: Sandbox, x: dict, log) -> tuple:
+    state = PRICE_STATE
+    state.game = bind_game(sb)
+    state.park = sb.object(16)
+    r = PRICE_RECORD
+    state.record = sb.object(0x800, {r['base']: ('i', x['base']), r['thirst']: ('i', x['e_thirst']), r['hunger']: ('i', x['e_hunger']),
+                                     r['vomit']: ('i', x['e_vomit']), r['happy']: ('i', x['e_happy']), r['product']: ('i', x['product']),
+                                     r['extra']: ('i', x['extra']), POINTS_KIND: ('i', x['kind'])})
+    state.park_record = sb.object(32, {0xC: ('i', x['type_word'])})
+    state.ride = sb.object(0x400, {PRICE_RIDE['goods']: ('i', x['goods']), PRICE_RIDE['win']: ('B', x['win'] & 0xFF),
+                                   PRICE_RIDE['price']: ('I', x['price'] & MASK32), 0xE: ('H', 0x101)})
+    g = PRICE_GUEST
+    guest = sb.object(0x400, {g['happiness']: ('f', x['happiness']), g['money']: ('I', x['money'] & MASK32),
+                              g['thirst']: ('f', x['thirst']), g['hunger']: ('f', x['hunger']), g['illness']: ('f', x['illness'])})
+    sb.set_fpcw(X87_CONTROL_WORD)
+    result = sb.call(PRICE_ENTRY, args=(state.ride,), this=guest)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return result.eax & 0xFF, tuple(e[1:] for e in log if e[0] == 'statistic')
+
+
+def _byte(value: float) -> int:
+    """The routine reads the meter as a float32 and truncates it (fistp), keeping the low byte."""
+    return fistp_low32(struct.unpack('<f', struct.pack('<f', value))[0]) & 0xFF
+
+
+def _sdiv100(value: int) -> int:
+    value = s32(value)
+    return trunc_div(value, 100)
+
+
+def price_willingness(x: dict) -> int:
+    """0x4fde50's willingness to pay, an unsigned 32-bit word."""
+    h = _byte(x['happiness'])
+    total = s32(_sdiv100(x['e_happy'] * (100 - h)) + _sdiv100(x['e_thirst'] * _byte(x['thirst'])) + _sdiv100(x['e_hunger'] * _byte(x['hunger']))
+                - _sdiv100(x['e_vomit'] * _byte(x['illness'])) + 100)
+    base = _sdiv100(x['base'] * 115)
+    value = ((total * base) & MASK32) // 100
+    sideshow = _sdiv100(x['goods'] * (x['win'] & 0xFF)) if x['kind'] == 2 else 0
+    value = (((sideshow + value) * (x['type_word'] + 100)) & MASK32) // 100
+    return ((value * (h + 100)) & MASK32) // 100
+
+
+def price_reading(x: dict) -> tuple:
+    """0x4fde50 as read: a price of 0 is never too expensive; otherwise too expensive when the price exceeds the willingness or
+    the guest's money (both unsigned). The statistic min(100, (W + 5) x 10 - price x 10) goes to category 1..4 by the record's
+    product word (+0x158) and 6/7 by +0x15c for a shop (kind 1), to 9 for a sideshow (kind 2)."""
+    price = x['price'] & MASK32
+    if price == 0:
+        return 0, ()
+    w = price_willingness(x)
+    def perceived():
+        v = ((w + 5) * 10 - price * 10) & MASK32
+        return 100 if v >= 100 else v
+    stats = []
+    if x['kind'] == 1:
+        if 1 <= x['product'] <= 4:
+            stats.append((x['product'], perceived()))
+        if x['extra'] in (1, 2):
+            stats.append((x['extra'] + 5, perceived()))
+    elif x['kind'] == 2:
+        stats.append((9, perceived()))
+    expensive = not (price <= w and price <= (x['money'] & MASK32))
+    return int(expensive), tuple(stats)
+
+
+def price_inputs(rng: random.Random, n: int) -> list:
+    def meter() -> float:
+        return rng.choice([0.0, 100.0, 50.0, float(rng.randrange(0, 101)), rng.uniform(0, 100)])
+
+    def make(**kw) -> dict:
+        x = {'happiness': meter(), 'thirst': meter(), 'hunger': meter(), 'illness': meter(),
+             'money': rng.choice([0, 50, 200, 1000, rng.randrange(0, 3000)]),
+             'price': rng.choice([0, 1, 5, 10, 20, 50, rng.randrange(0, 400)]),
+             'goods': rng.choice([0, 10, 50, rng.randrange(0, 300)]), 'win': rng.choice([0, 30, 70, 100, rng.randrange(0, 256)]),
+             'kind': rng.choice([0, 1, 1, 2, 3]), 'base': rng.choice([0, 5, 10, 20, 50, rng.randrange(0, 300)]),
+             'e_thirst': rng.choice([0, 20, 50, rng.randrange(-50, 101)]), 'e_hunger': rng.choice([0, 20, 50, rng.randrange(-50, 101)]),
+             'e_vomit': rng.choice([0, 10, rng.randrange(-20, 60)]), 'e_happy': rng.choice([0, 10, 30, rng.randrange(-30, 101)]),
+             'product': rng.choice([0, 1, 2, 3, 4, 5]), 'extra': rng.choice([0, 0, 1, 2, 3]),
+             'type_word': rng.choice([0, 0, 0, 10, -20, rng.randrange(-100, 200)])}
+        x.update(kw)
+        return x
+    edges = [make(price=p, money=m, kind=1, base=20, e_thirst=40, e_hunger=0, e_vomit=0, e_happy=10, type_word=0,
+                  happiness=60.0, thirst=80.0, hunger=10.0, illness=0.0, goods=0, win=0, product=2, extra=0)
+             for p in (0, 1, 30, 31, 32, 40) for m in (0, 31, 1000)]
+    # meters that round up to the next integer as float32 (1.99999999 is stored as 2.0) and that sit just below one
+    edges += [make(price=p, money=1000, kind=1, base=150, e_thirst=40, e_hunger=0, e_vomit=0, e_happy=-30, type_word=0,
+                   happiness=h, thirst=79.99999999, hunger=10.0, illness=0.0, goods=0, win=0, product=0, extra=0)
+              for h in (1.99999999, 1.9999, 2.0) for p in (163, 164, 165, 166)]
+    return edges + [make() for _ in range(n)]
+
+
+PRICE_TARGET = Target(
+    'tpw-exe-price-test', 'tpw', 'tp.exe price test 0x4fde50', 'GUEST-003 (the boarding price test; no Mac counterpart traced)',
+    PRICE_ENTRY, PRICE_RANGES, price_stubs, price_binary, price_reading, price_inputs,
+    alternatives={'no-money-test': lambda x: (int(bool(x['price'] & MASK32) and (x['price'] & MASK32) > price_willingness(x)),
+                                              price_reading(x)[1])},
+    notes=['Executed: 0x4fde50, the price, cost of goods and win byte getters, _ftol. Stubs: 0x4dd4e0 type record (synthetic: '
+           '+0x140 InitCostOfGoods, +0x144..+0x150 Thirst/Hunger/Vomit/HappinessEffect, +0x158 / +0x15c product words, '
+           '+0x4ac kind), 0x4e2740 park type record (word +0xc chosen), 0x519510 park, 0x4c74b0 statistic (recorded). '
+           'x87 control word 0x27F.'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -1468,5 +1712,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

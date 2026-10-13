@@ -183,7 +183,8 @@ export function percentile(sorted, q) {
 
 /**
  * Statistics of the frames the page recorded ([start ms, Program.Frame wall time ms]) over a window of windowMs: the
- * frame rate, the percentiles and maximum of the frame time, the frames over 50 ms and the largest gap between frame starts.
+ * frame rate, the percentiles and maximum of the frame time, the frames over 50 ms (their count, and their times in order) and the
+ * largest gap between frame starts.
  */
 export function summarizeFrames(frames, windowMs) {
 	const durations = frames.map(([, duration]) => duration).sort((a, b) => a - b);
@@ -200,6 +201,7 @@ export function summarizeFrames(frames, windowMs) {
 		maxMs: round(durations.at(-1) ?? null),
 		totalMs: round(durations.reduce((sum, value) => sum + value, 0)),
 		over50Ms: durations.filter(value => value >= 50).length,
+		longFramesMs: frames.map(([, duration]) => duration).filter(value => value >= 50).map(round),
 		largestGapMs: round(largestGap),
 	};
 }

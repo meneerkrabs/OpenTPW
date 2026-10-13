@@ -84,3 +84,23 @@ now rejects it before image-plane allocation; the regression bounds allocation
 below 16 MiB. Added tests also validate a corrupted padding checksum after the
 retained prefix and compare valid escaped alpha plus BILZ/LZSS padding pixels.
 These checks use synthetic inputs; fresh retail compatibility remains deferred.
+
+## Retail corpus correction (October 13, 2026)
+
+Run against the original data, the checks above refused 5,055 of 8,416 shipped
+WCTs (990 BILZ, 4,061 LZSS), so the lobby and every park failed to load. Two
+assumptions made from synthetic inputs were wrong:
+
+- The BILZ stream size counts the whole chunk, its 28-byte header included: in all
+  990 retail BILZ chunks it equals the chunk length. The deflate data is that size
+  minus 28 bytes; a size of 28 or less, or one beyond the chunk, is refused.
+- LZSS reads 16-bit little-endian words, and 4,061 retail chunks have an odd length.
+  `GetBitsChecked` now reads that final byte as a word with a zero high byte; only
+  input with no byte left is refused, so a missing terminator still cannot be
+  completed with invented bits. The legacy `GetBits` is unchanged.
+
+With both, every texture the pre-audit decoder handled decodes again with
+byte-identical RGBA (8,412 SHA-256 hashes compared); the same four malformed
+textures fail, two of them now as `InvalidDataException`.
+`EveryOriginalTextureDecodesExceptThePinnedFailures` walks every shipped WCT
+(with `OPENTPW_GAME_PATH`) so a synthetic-only change cannot refuse the corpus again.

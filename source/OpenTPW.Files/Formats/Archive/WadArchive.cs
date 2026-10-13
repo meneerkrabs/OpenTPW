@@ -94,6 +94,8 @@ public sealed class WadArchive : IArchive
 
 	private void ReadArchive()
 	{
+		if ( memoryStream!.Length < 88 )
+			throw new InvalidDataException( "WAD header is truncated." );
 		memoryStream.Seek( 0, SeekOrigin.Begin );
 
 		/* 
@@ -111,7 +113,7 @@ public sealed class WadArchive : IArchive
 
 		// Magic number
 		if ( magicNumber != "DWFB" )
-			throw new Exception( $"Magic number did not match: {magicNumber}" );
+			throw new InvalidDataException( $"WAD magic number did not match: {magicNumber}" );
 
 		// Version
 		_ = memoryStream.ReadInt32();
@@ -121,6 +123,8 @@ public sealed class WadArchive : IArchive
 
 		// File count
 		var fileCount = memoryStream.ReadInt32();
+		if ( fileCount < 0 || (long)fileCount * 40 > memoryStream.Length - 88 )
+			throw new InvalidDataException( "WAD directory count exceeds its available records." );
 
 		// File list offset
 		_ = memoryStream.ReadInt32();
@@ -171,16 +175,23 @@ public sealed class WadArchive : IArchive
 			var filenameLength = memoryStream.ReadUInt32();
 
 			// Data offset
-			newFile.OffsetInArchive = (int)memoryStream.ReadUInt32();
+			var dataOffset = memoryStream.ReadUInt32();
 
 			// Data length
-			newFile.SizeInArchive = (int)memoryStream.ReadUInt32();
+			var dataLength = memoryStream.ReadUInt32();
 
 			// Compression type
 			newFile.Compressed = memoryStream.ReadUInt32() == 4;
 
 			// Decompressed size
 			var decompressedSize = memoryStream.ReadUInt32();
+
+			if ( filenameLength == 0 )
+				throw new InvalidDataException( "WAD filename length does not include its terminator." );
+			RequireRange( filenameOffset, filenameLength, "filename" );
+			RequireRange( dataOffset, dataLength, "member" );
+			newFile.OffsetInArchive = (int)dataOffset;
+			newFile.SizeInArchive = (int)dataLength;
 
 			// Set file's name name
 			memoryStream.Seek( filenameOffset, SeekOrigin.Begin );
@@ -228,6 +239,12 @@ public sealed class WadArchive : IArchive
 			// Return to initial position, skip to the next file's data
 			memoryStream.Seek( initialPos + 40, SeekOrigin.Begin );
 		}
+
+		void RequireRange( uint offset, uint length, string section )
+		{
+			if ( (ulong)offset + length > (ulong)memoryStream!.Length )
+				throw new InvalidDataException( $"WAD {section} range exceeds the archive." );
+		}
 	}
 
 	public void ReadFromStream( Stream stream ) => ReadFromStream( stream, keepInMemory: true );
@@ -236,11 +253,21 @@ public sealed class WadArchive : IArchive
 	private void ReadFromStream( Stream stream, bool keepInMemory )
 	{
 		// Set up read buffer
-		var tempStreamReader = new StreamReader( stream );
-		var fileLength = (int)tempStreamReader.BaseStream.Length;
+		using var tempStreamReader = new StreamReader( stream );
+		var remaining = tempStreamReader.BaseStream.Length - tempStreamReader.BaseStream.Position;
+		if ( remaining < 0 || remaining > Array.MaxLength )
+			throw new InvalidDataException( "WAD input exceeds the supported managed buffer range." );
+		var fileLength = (int)remaining;
 
 		var bytes = new byte[fileLength];
-		tempStreamReader.BaseStream.Read( bytes, 0, fileLength );
+		try
+		{
+			tempStreamReader.BaseStream.ReadExactly( bytes );
+		}
+		catch ( EndOfStreamException exception )
+		{
+			throw new InvalidDataException( "WAD input stream is truncated.", exception );
+		}
 		tempStreamReader.Close();
 
 		memoryStream = new ExpandedMemoryStream( bytes );
@@ -344,14 +371,14 @@ public sealed class WadArchive : IArchive
 				return memoryStream.ReadBytes( length );
 			}
 			// From the file, the same bytes the in-memory copy gave: a range past its end comes back padded with zeros.
-			var data = new byte[length];
 			if ( offset >= fileSize || length == 0 )
-				return data;
+				return new byte[length];
 			// Opened per read and closed again, so the file can still be replaced or deleted (a bonus import on Windows) while the
 			// archive is open; a file of another length is not the one whose directory was read.
 			using var file = new FileStream( path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1 );
 			if ( file.Length != fileSize )
 				throw new IOException( $"{path} changed on disk after its directory was read." );
+			var data = new byte[length];
 			file.Seek( offset, SeekOrigin.Begin );
 			var filled = 0;
 			while ( filled < length )

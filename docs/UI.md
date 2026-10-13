@@ -701,6 +701,18 @@ the staff locator (plain S stays unhandled here), and Ctrl+P remains excluded
 from the pause key. Global bindings and help shortcuts are unchanged by this fix.
 These are synthetic model/input checks, not rendered or original-game parity.
 
+Ctrl+P opens the existing postcard composer directly from a Theme Park World park,
+including a read-only visit. It keeps plain P as pause and follows modal, text,
+ImGui, build/removal/cell/coaster and ride-view input ownership. An unavailable
+host callback or edition sharing capability reports the existing unavailable
+message. The chord opens a form once; it never sends a message automatically.
+The existing composer, local outbox and map-thumbnail attachment are reused
+(ONLINE-022 still qualifies the photo). A simultaneous park press/release belongs
+to the opened composer, without activating a path or selecting a visitor/object.
+`PostcardShortcutIngressTests` exercises actual injected button rebuilding and
+the full HUD frame, including the GameFlow composer and a temporary local outbox.
+Original assets, native/GPU layout and network delivery are not qualified here.
+
 ### Visitor selection in the park view
 
 A genuine left press on a visible in-park visitor opens the existing All Visitors window and selects that visitor, scrolling its row into view. Picking uses the current guest renderer's interpolated DrawX/DrawY terrain position, selected animation frame/hotspot, mirroring, camera axes and UnitsPerPixel. Overlapping rectangles choose the nearest projected depth, then the lowest visitor id. A successful press consumes the existing tool/release latch before automatic path activation; a miss preserves ordinary path input. The roster's existing live selection healing applies when the visitor leaves.

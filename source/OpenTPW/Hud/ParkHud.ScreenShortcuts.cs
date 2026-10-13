@@ -1,3 +1,5 @@
+using OpenTPW.UI.Original;
+
 namespace OpenTPW.Hud;
 
 /// <summary>The HUD action an original keyboard shortcut performs (the key table the InputButton defaults document).</summary>
@@ -28,8 +30,9 @@ internal enum HudScreenShortcut
 /// The original keyboard shortcuts of the HUD screens: the game's key table (the <see cref="InputButton"/>
 /// default keys and their documented actions; the buy and map buttons' own help rows name B/"(R)"/"(Space)")
 /// opened the screen windows directly. OpenTPW wires the keys whose windows exist; a key whose screen is not
-/// implemented (camcorder, postcard) stays unhandled, as do the keys the host camera pans with
+/// implemented (camcorder) stays unhandled, as do the keys the host camera pans with
 /// (All Attractions A, All Staff S: Input's WASD axes).
+/// Postcard ingress follows its own full-frame input ownership checks.
 /// </summary>
 public sealed partial class ParkHud
 {
@@ -203,6 +206,21 @@ public sealed partial class ParkHud
 				LocateVisitor();
 				break;
 		}
+	}
+
+	private bool TryOpenPostcard( bool inputAllowed )
+	{
+		if ( !inputAllowed || !Input.Pressed( InputButton.SendEmailPostcard ) || IsRiding || Stack.Screens.Count != 1 ||
+			Camera.Mode is not ParkCameraMode || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects ||
+			level.CellTool.IsActive || level.IsCoasterToolActive )
+			return false;
+		if ( !GameEditions.Capabilities.Sharing || host.OpenPostcard == null )
+		{
+			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
+			return false;
+		}
+		host.OpenPostcard( Stack );
+		return true;
 	}
 
 	/// <summary>Opens the window, or closes it when it is already open (UI-900).</summary>

@@ -9,6 +9,15 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		var fshExportIndex = Array.IndexOf(args, "--export-fsh-png");
+		if (fshExportIndex >= 0)
+		{
+			if (fshExportIndex + 3 >= args.Length || args.Skip(fshExportIndex + 1).Take(3).Any(value => value.StartsWith("--")) ||
+				!int.TryParse(args[fshExportIndex + 2], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var imageIndex))
+				throw new ArgumentException("--export-fsh-png requires <local.fsh> <zero-based image index> <output.png> (docs/FSH.md).");
+			FshPngExport.Run(args[fshExportIndex + 1], imageIndex, args[fshExportIndex + 3]);
+			return;
+		}
 		if ( args.Contains( "--shader-hot-reload" ) )
 			Shader.HotReload = true;
 		var fontIndex = Array.IndexOf( args, "--inspect-font" );

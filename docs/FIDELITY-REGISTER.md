@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **376 unresolved unique APPROX IDs**, 447 APPROX occurrences, 149 EXT occurrences, 166 DATA occurrences and 476 BIN occurrences.
+Current inventory: **376 unresolved unique APPROX IDs**, 447 APPROX occurrences, 151 EXT occurrences, 166 DATA occurrences and 476 BIN occurrences.
 
 Of these, 352 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -890,7 +890,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-081 | `source/OpenTPW/Hud/ParkHud.Staff.cs:244` | [APPROX:UI-081] Applicant summary fields use the economy's expected monthly wage and grade-derived skill; the original candidate detail binding is not decoded. |
 | UI-082 | `source/OpenTPW/Hud/ParkHud.Staff.cs:286` | [APPROX:UI-082] The staff portrait content has no resolved per-role art; show the selected role and grade as text in f_staffpic. |
 | UI-083 | `source/OpenTPW/Hud/ParkHud.Staff.cs:396` | [APPROX:UI-083] Help 161 identifies hiring the selected applicant; Enter or a second row click activates it. |
-| UI-084 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:116` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
+| UI-084 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:115` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.Staff.cs:437` | [APPROX:UI-084] Repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:97` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:196` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
@@ -916,9 +916,9 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-904 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:237` | [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S cycling order is not traced — evidence needed: the original staff-locator key handler |
 | UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:14` | [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry (no table is decoded for this window) — evidence needed: the original all-attractions window table |
 | UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:28` | [APPROX:UI-905] seven equal detail rows fill the stats frame's area (the sideshow category has |
-| UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:196` | [APPROX:UI-905] the staff/buy window frames at their authored rectangles; &#96;list_all&#96; is the shipped all-list frame art. |
+| UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:195` | [APPROX:UI-905] the staff/buy window frames at their authored rectangles; &#96;list_all&#96; is the shipped all-list frame art. |
 | UI-906 | `source/OpenTPW/Hud/OverviewRosters.cs:50` | [APPROX:UI-906] per-attraction monthly users, profit and customer satisfaction are not simulated; state of repair is the live wear gauge and excitement the bridge's live level — evidence needed: the original window's value bindings |
-| UI-906 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:68` | [APPROX:UI-906] the projected live values of one placed attraction (wear, queue, riders, excitement) — evidence needed: the original window's value bindings |
+| UI-906 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:67` | [APPROX:UI-906] the projected live values of one placed attraction (wear, queue, riders, excitement) — evidence needed: the original window's value bindings |
 | UI-907 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:12` | [APPROX:UI-907] window layout, list columns and detail placement follow the staff/buy table geometry (no table is decoded for this window) — evidence needed: the original all-visitors window table |
 | UI-907 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:18` | [APPROX:UI-907] six equal detail rows fill the stats frame's area (five original rows plus the live thought row). |
 | UI-907 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:158` | [APPROX:UI-907] the staff/buy window frames at their authored rectangles. |
@@ -926,8 +926,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-909 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:227` | [APPROX:UI-909] a text button above b_allstaff opens the All Attractions window (its rides tab, |
 | UI-909 | `source/OpenTPW/Hud/ParkHud.Staff.cs:332` | [APPROX:UI-909] the shipped b_svisit button art (the map window's visitors layer uses the same |
 | UI-909 | `source/OpenTPW/Hud/ParkHud.Staff.cs:340` | [APPROX:UI-909] a text button: the shipped b_allthinginfo art has no texture in ui.wad. |
-| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:129` | [APPROX:UI-910] activation selects the attraction and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler |
-| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:238` | [APPROX:UI-910] the select button selects the row's object in the park; the delete button sells it |
+| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:128` | [APPROX:UI-910] activation selects the attraction and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler |
+| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:237` | [APPROX:UI-910] the select button selects the row's object in the park; the delete button sells it |
 | UI-910 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:110` | [APPROX:UI-910] activation locates the visitor and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler |
 | UI-910 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:195` | [APPROX:UI-910] the go-to button locates the selected visitor, like the row activation. |
 | VM-900 | `source/OpenTPW/VM/Handlers/Math.cs:59` | [APPROX:VM-900] MULT's native dispatch (interpreter case 48) is traced on no original build (the Mac jump table is data:0x3f2a4, unvisited for this case), so the destination order and the wrap/flags policy are family inference, not static evidence. Evidence needed: the case-48 handler in any original executable; the Theme Park Inc corpus only proves &#96;MULT dest a b&#96; shape and a SETTIMER consumer. |
@@ -1018,8 +1018,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | debug-forecast | `source/OpenTPW/World/ParkWeather.cs:128` | Smoke-only (&lt;c&gt;[EXT:debug-forecast]&lt;/c&gt;): posts a forecast of &lt;paramref name="quality"/&gt; the warning |
 | debug-weather | `source/OpenTPW/Client/Game.cs:300` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:62` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:44` | [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:448` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:559` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.cs:547` | [EXT:developer-prototype] the original window had no developer prototype to list; the Totem joins the placed rides as one more row |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:467` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
@@ -1031,8 +1033,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | language-settings | `source/OpenTPW/Client/LanguageStartup.cs:7` | [EXT:language-settings] where the choice is stored and offered is an OpenTPW matter; the original read its language from the install |
 | live-language | `source/OpenTPW/Client/GameFlow.cs:499` | [EXT:live-language] Switches to &lt;see cref="pendingLanguage"/&gt;: the language, the string table and the fonts. Caches of |
 | live-language | `source/OpenTPW/Client/PendingLanguage.cs:9` | [EXT:live-language] where the files of a language come from is an OpenTPW matter |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1201` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1272` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1335` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1406` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
 | live-language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:351` | [EXT:live-language] the original read its language once; OpenTPW switches in the front end, and after the park |
 | maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3) | `source/OpenTPW/Hud/ParkHud.Management.cs:92` | the door routine with the switch's new state. [EXT:maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3)] |
 | maexah/OpenTPW park-engine.md | `source/OpenTPW/Hud/ParkHud.cs:543` | [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410) |
@@ -1054,7 +1056,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:408` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:437` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
 | opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:592` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
-| overview | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:180` | [EXT:overview] queue length and riders are live OpenTPW rows with supplementary labels (no original label is decoded). |
+| overview | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:179` | [EXT:overview] queue length and riders are live OpenTPW rows with supplementary labels (no original label is decoded). |
 | overview | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:141` | [EXT:overview] the current thought is a live OpenTPW row with a supplementary label (no original label is decoded). |
 | park-summary | `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:14` | [EXT:park-summary] functional host summary; original information-screen layout remains unqualified |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
@@ -1066,7 +1068,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:457` | [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused. |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:742` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default); |
-| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:156` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
+| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:164` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
 | texture-pack | `source/OpenTPW/Render/Assets/Material.cs:25` | [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object. |
 | texture-pack | `source/OpenTPW/Render/Assets/PredecodedUiArt.cs:16` | [EXT:texture-pack] predecoded interface art is an OpenTPW build option, not original behaviour. |
@@ -1224,7 +1226,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:49` | [DATA:UITEXT.str:125-133] stats-frame labels per category (the enum names these by their other uses) |
 | UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:145` | [DATA:UITEXT.str:125-133] the labels per category (rides list five values, as the five rows of frame 493) |
 | UITEXT.str:364,365 | `source/OpenTPW/Hud/OverviewRosters.cs:24` | [DATA:UITEXT.str:364,365] the original status labels; which status the original list showed per state — evidence needed: the original all-attractions list |
-| UITEXT.str:392-395 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:161` | [DATA:UITEXT.str:392-395] the original delete confirmations name the category. |
+| UITEXT.str:392-395 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:160` | [DATA:UITEXT.str:392-395] the original delete confirmations name the category. |
 | UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:86` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | UITEXT.str:78-81 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:20` | [DATA:UITEXT.str:78-81] the four category titles of this window; the tab art is the buy window's. |
 | coaster.sam:asPylonControls[1] | `source/OpenTPW/World/Coasters/CoasterDefinition.cs:288` | [DATA:coaster.sam:asPylonControls[1]] only coasters whose settings name a second pylon control offer loop pylons (9 of the 12 PC coasters) |

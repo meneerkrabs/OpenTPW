@@ -16,7 +16,11 @@ namespace OpenTPW;
 /// bought through the catalogue buy window and charged exactly once; a second researched object is
 /// built, opened/closed and checked for overlap refusal. The All Visitors window lists seeded
 /// visitors (select, wheel, sort, Enter-locate) and the All Attractions window selects, activates and
-/// sells a placed fixture with its confirmation. The game exits to the lobby, then loads a read-only
+/// sells a placed fixture with its confirmation; the sandbox developer Totem is placed beside the
+/// catalogue objects, listed as one more ride, activated like any row and removed through the
+/// prototype removal. The window keys V and B are pressed as real one-frame keyboard taps
+/// (<see cref="Input.InjectKeyDown"/>) so they run through the same dispatch and gates as a keyboard.
+/// The game exits to the lobby, then loads a read-only
 /// visit and checks build/open/delete/save mutation boundaries (the attractions window opens through
 /// the staff window there and its delete refuses at the handler), then starts jungle again in
 /// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
@@ -53,6 +57,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private int thirdAttractionId;
 	private int visitAttractionRows;
 	private string[] visitRowNames = Array.Empty<string>();
+	private int ridesBeforePrototype;
+	private int objectsBeforePrototype;
+	private int prototypeAttractionId;
+	private RideVisitorBridge? prototypeVisitors;
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -911,8 +919,134 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( hud.Stack.Top!, "exit" );
 		} );
 		Wait( "attractions closes", 3 );
+		// The developer prototype Totem joins the same window (Level.ListAttractions): it is placed beside the
+		// catalogue objects, listed as one more closed ride, activated like any row, and its delete goes through
+		// Level.RemoveRide — selling its economy record — instead of the object world, which does not own it.
+		Do( "attractions window opens over the prototype", () =>
+		{
+			Require( flow.Hud!.BuyWindowOpen && !flow.Hud.AttractionsWindowOpen, "the buy window is open, the attractions window closed" );
+			Click( flow.Hud.Stack.Top!, "allAttractions" );
+		} );
+		Wait( "attractions renders for the prototype", 3 );
+		Do( "back to the rides tab", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen, "the attractions window is open" );
+			Click( hud.Stack.Top!, "categoryRides" );
+		} );
+		Wait( "rides tab again", 3 );
+		Do( "rides before the prototype", () =>
+		{
+			var hud = flow.Hud!;
+			var rows = hud.AttractionItems;
+			Require( rows.Count > 0 && rows.All( row => row.Category == BuildCategory.Rides ), "the rides tab lists the park's rides" );
+			ridesBeforePrototype = rows.Count;
+			objectsBeforePrototype = flow.Level!.Park!.Economy.Objects.Count;
+		} );
+		Do( "place the developer prototype", () =>
+		{
+			var level = flow.Level!;
+			PlacePrototypeAtFirstFreeSite( level );
+			Require( level.PlacedRide != null, "the developer prototype Totem is placed beside the catalogue objects" );
+			prototypeAttractionId = level.PlacedRide.Runtime.AttractionId;
+			prototypeVisitors = level.PlacedRide.Visitors;
+			Require( level.Park!.Economy.Objects.Count == objectsBeforePrototype + 1,
+				"the prototype registers exactly one economy record (bought, or uncharged when refused)" );
+		} );
+		Wait( "the prototype joins the list", 3 );
+		Do( "the prototype is listed once", () =>
+		{
+			var hud = flow.Hud!;
+			var rows = hud.AttractionItems;
+			Require( rows.Count == ridesBeforePrototype + 1 && rows.Any( row => row.AttractionId == prototypeAttractionId ),
+				"the live list picks the placed prototype up as one more ride" );
+			Require( rows.GroupBy( row => row.AttractionId ).All( group => group.Count() == 1 ), "no attraction id is listed twice" );
+			var prototype = rows.Single( row => row.AttractionId == prototypeAttractionId );
+			Require( ParkAttractionRoster.StatusOf( prototype ) == UIStrings.Closed, "the prototype starts closed (UITTEXT 364)" );
+			Require( prototype.Name == hud.ItemName( TotemItem ), "the prototype row shows the catalogue Totem name" );
+			ClickAttractionRow( hud, prototypeAttractionId );
+		} );
+		Wait( "prototype row selected", 3 );
+		Do( "the prototype's details are live", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == prototypeAttractionId, "the prototype's row is selected" );
+			var prototype = hud.AttractionItems.Single( row => row.AttractionId == prototypeAttractionId );
+			Require( prototype.WearPercent == 100, "the prototype's state of repair is its live wear gauge (a new ride)" );
+			flow.Level!.PlacedRide!.Start();
+		} );
+		Wait( "prototype opens", 3 );
+		Do( "the prototype's status follows its door", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.PlacedRide!.IsOpen
+				&& ParkAttractionRoster.StatusOf( hud.AttractionItems.Single( row => row.AttractionId == prototypeAttractionId ) ) == UIStrings.Blank,
+				"opening the prototype clears its CLOSED status" );
+			ClickAttractionRow( hud, prototypeAttractionId ); // the selected row activates on a second click
+		} );
+		Wait( "prototype row activated", 3 );
+		Do( "prototype activation selects the Totem", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.AttractionsWindowOpen && hud.InfoArmOpen && hud.SelectedObject == flow.Level!.PlacedRide,
+				"activating the prototype's row selects the Totem in the park and closes the window" );
+			flow.Hud.OpenBuyWindow();
+			Click( flow.Hud.Stack.Top!, "allAttractions" );
+		} );
+		Wait( "attractions reopens over the prototype", 3 );
+		Do( "select the prototype row again", () => ClickAttractionRow( flow.Hud!, prototypeAttractionId ) );
+		Wait( "prototype row selected again", 3 );
+		Do( "delete the prototype", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == prototypeAttractionId
+				&& hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: true }, "the delete button is enabled for the prototype" );
+			Click( hud.Stack.Top!, "deleteAttraction" );
+		} );
+		Wait( "prototype delete confirmation", 3 );
+		Do( "prototype delete confirmation", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction", "deleting the prototype asks with the ride confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "prototype removed", 3 );
+		Do( "prototype removed through its own seam", () =>
+		{
+			var hud = flow.Hud!;
+			var level = flow.Level!;
+			Require( level.PlacedRide == null && level.IsPlacing == false, "the window's delete removes the prototype through Level.RemoveRide" );
+			Require( level.Park!.Economy.Objects.Count == objectsBeforePrototype,
+				"the prototype's economy record is sold or removed with it (the object world never owned it)" );
+			Require( level.Guests?.Attractions.Contains( prototypeVisitors! ) != true, "the prototype's guest queue is unregistered" );
+			var rows = hud.AttractionItems;
+			Require( rows.Count == ridesBeforePrototype && rows.All( row => row.AttractionId != prototypeAttractionId )
+				&& hud.SelectedAttractionId == rows[0].AttractionId, "the sold prototype leaves the list and the selection heals" );
+			Log.Trace( "Front-end smoke: the developer prototype Totem was listed, activated and removed through the attractions window." );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "attractions closes after the prototype", 3 );
 		Do( "buy window closes after attractions", () => Click( flow.Hud!.Stack.Top!, "exit" ) );
 		Wait( "buy closed before Escape", 3 );
+		// The window keys through the real dispatch: Input.InjectKeyDown queues a physical key, the frame's
+		// button rebuild consumes it and the HUD shortcut handler sees Input.Pressed exactly once per tap
+		// (the same path a real keyboard takes; a Wait between taps gives the one-frame release).
+		Do( "press the All Visitors key", () => Input.InjectKeyDown( Key.V ) );
+		Wait( "visitors key frame", 2 );
+		Do( "the visitors key opens the window", () =>
+			Require( flow.Hud!.VisitorWindowOpen && flow.Hud.Stack.Top?.Name == "visitors",
+				"the injected V opens the All Visitors window through Input.Pressed" ) );
+		Do( "press the All Visitors key again", () => Input.InjectKeyDown( Key.V ) );
+		Wait( "visitors key frame again", 2 );
+		Do( "the visitors key closes the window", () =>
+			Require( !flow.Hud!.VisitorWindowOpen, "a second V toggles the window closed" ) );
+		Do( "press the Buy Attractions key", () => Input.InjectKeyDown( Key.B ) );
+		Wait( "buy key frame", 2 );
+		Do( "the buy key opens the window", () =>
+			Require( flow.Hud!.BuyWindowOpen, "the injected B opens the buy window through Input.Pressed" ) );
+		Do( "press the Buy Attractions key again", () => Input.InjectKeyDown( Key.B ) );
+		Wait( "buy key frame again", 2 );
+		Do( "the buy key closes the window", () =>
+			Require( !flow.Hud!.BuyWindowOpen, "a second B toggles the buy window closed" ) );
 		Do( "closed state", () =>
 		{
 			Require( !secondObject!.IsOpen, "HUD door closes the selected original object" );
@@ -1154,7 +1288,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the visit's attractions listed, sorted and its delete refused." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
 		GameFlow.Quit();
 	}
 
@@ -1351,6 +1485,22 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Enumerable.Range( 0, level.Objects.Grid.Width * level.Objects.Grid.Height )
 			.Select( index => (X: index % level.Objects.Grid.Width, Y: index / level.Objects.Grid.Width) )
 			.First( cell => level.CheckObject( entry, cell.X, cell.Y, level.BuildRotation ) == OriginalPlacementResult.Allowed );
+
+	/// <summary>
+	/// Places the developer prototype Totem at the first buildable cell centre: <see cref="Level.PlaceRide"/>
+	/// itself refuses overlapping sites, so the first call that succeeds is the site (the park keeps enough
+	/// free cells beside its catalogue objects).
+	/// </summary>
+	private static void PlacePrototypeAtFirstFreeSite( Level level )
+	{
+		var field = level.OriginalPark!.Heightfield;
+		for ( var index = 0; index < field.CellCountX * field.CellCountZ; index++ )
+		{
+			if ( level.PlaceRide( OriginalParkPlacement.GetCellCenter( field, index % field.CellCountX, index / field.CellCountX ) ) )
+				return;
+		}
+		Require( false, "no free site for the developer prototype" );
+	}
 
 	/// <summary>
 	/// Finds the glyphs drawn for <paramref name="text"/> in the last UI batch and requires every fully

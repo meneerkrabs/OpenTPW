@@ -417,7 +417,12 @@ glyph in all 14 UI fonts of each language.
   (camcorder, postcard, help bar) stay unhandled.
   Mapping and gating are pure functions (`ParkHud.ShortcutFor`,
   `WindowShortcutsAllowed`, `SteppedSpeed`), tested in `HudScreenShortcutTests`
-  and `OverviewWindowTests`.
+  and `OverviewWindowTests`. The native smoke test presses the real keys:
+  `Input.InjectKeyDown` queues a physical key for the next frame's button
+  rebuild only (`Input.UpdateButtons`), so V and B run through
+  `Input.Pressed` and every gate above exactly like a keyboard tap — the
+  injection never enters the persistent keyboard state or the WASD pan axes
+  (`InputInjectionTests`).
 - Pause menu (Escape): PAUSED (403) with Resume (7), Save (4), Load (3), Options
   (6), Exit To Lobby (12), Quit Game (8, confirmation 9). Save writes the owning
   game flow's park save (the own-format world save for sandbox and front-end
@@ -458,7 +463,11 @@ glyph in all 14 UI fonts of each language.
   purchase (−3,250; research marked complete as smoke setup) with one paid
   economy object linked to guests, info arm, economy pause, sale (+1,625),
   a second naturally researched catalogue object, exact charges, overlap refusal
-  without a charge, selected-object open/close, pause menu, own-format world save
+  without a charge, selected-object open/close, the developer prototype Totem
+  listed beside the catalogue rides in All Attractions (status following its
+  door, row activation, delete through the prototype removal with the economy
+  record gone and the selection healed), the window keys V and B pressed as
+  real keyboard taps through `Input.InjectKeyDown`, pause menu, own-format world save
   (verified on disk), lobby;
   a prepared read-only visit verifies disabled build/open/delete/save controls
   and their direct callbacks without mutating the park or writing a save; the visit
@@ -524,7 +533,7 @@ the real assets. Approximation tags refer to the register below.
 | --- | --- | --- | --- |
 | Buy (`ParkHud.BuyWindow.cs`) | list select/sort/scroll, category buttons, purchase via row activation, staff button, all-attractions button, exit/Back | wired | `BuyWindowTests`, `FrontEndSmokeTest` |
 | Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on activation, view toggle (UI-090), dismiss with confirmation (UI-092), scroll, locators, all-visitors and all-attractions buttons, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
-| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905/906), row activation selects the object, delete with the original category confirmations, exit/Back | wired | `OverviewWindowTests`, `FrontEndSmokeTest` (list/activation/sell, visit open + read-only refusal) |
+| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905/906), row activation selects the object, delete with the original category confirmations, exit/Back; the sandbox developer Totem is listed beside the catalogue rides and its delete goes through the prototype removal | wired | `OverviewWindowTests`, `FrontEndSmokeTest` (list/activation/sell, prototype list/activation/remove with healed selection, visit open + read-only refusal) |
 | Visitors (`ParkHud.VisitorWindow.cs`) | list select/number-sort/scroll, live visitor detail rows (UI-907/908), row activation locates the visitor, exit/Back, V key | wired | `OverviewWindowTests`, `HudScreenShortcutTests`, `FrontEndSmokeTest` (list/scroll/sort/Enter-locate) |
 | Map (`ParkHud.Map.cs`) | pan, zoom, four category filters, track/visitor/staff/metric layer toggles, close | wired | `MapViewStateTests`, `MapStaffControlTests` |
 | Finance (`ParkHud.FinanceWindow.cs`) | 1/3/12-year periods, eight series toggles (bank balance/park value exclusive), loans/staff-cost/entry detail buttons, exit | wired | `FinanceWindowTests` |

@@ -182,8 +182,11 @@ detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Pa
 Theme Park Inc data given to any other start (no `--load-original-level`, a Theme Park World level,
 `--sandbox`, `--front-end`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
 `--visit-park`) is refused with a message that points here. The setup window and the saved game
-folder still reject it. See [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for
-what works.
+folder still reject it, and so does the browser: its front end needs Theme Park World data. Adding
+`--tpi-smoke-test` (best on `science`) drives the slice's whole HUD user flow with injected input —
+build window, place, queue tool, Escape ordering, pause and the pause menu's Quit — and fails loudly
+if any of it breaks; on Theme Park World data it is refused. See
+[THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for what works.
 
 Extracting the CD: the data sits in the InstallShield cabinets `data1.cab`/`data2.cab` on the retail CD.
 With [unshield](https://github.com/twogood/unshield) (`brew install unshield`):

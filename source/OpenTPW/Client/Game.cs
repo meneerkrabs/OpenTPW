@@ -268,6 +268,11 @@ internal static class Game
 			flow.PrepareTexturePack = ( stack, name ) => OpenTPW.UI.Original.TexturePackDownloadScreen.TryShow( stack, flow.Strings, name, ApplyPack );
 		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
+		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.
+		var sliceSmoke = args.Contains( "--tpi-smoke-test" );
+		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
+			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
 		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
@@ -342,6 +347,16 @@ internal static class Game
 			: originalLevelIndex >= 0
 			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
+
+		if ( sliceSmoke )
+		{
+			using var sliceSmokeTest = new ThemeParkIncSmokeTest( flow );
+			Render.PostUpdate += sliceSmokeTest.Update;
+			Render.Run();
+			Render.PostUpdate -= sliceSmokeTest.Update;
+			sliceSmokeTest.VerifyCompleted();
+			return;
+		}
 
 		//
 		// Run game loop

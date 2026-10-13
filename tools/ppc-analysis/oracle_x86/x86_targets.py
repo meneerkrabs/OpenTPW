@@ -641,6 +641,85 @@ POINTS_TARGET = Target(
            'Fields as on the Mac except the kind word (+0x4ac). Park record +0x18 is the number of listed copies and +0x1c '
            'follows the Mac 0xda874 write rule (points_first).'])
 
+# ============================================================================== (f) tp.exe object scrap value 0x4e2400
+SCRAP_ENTRY = 0x4E2400         # thiscall (thing) -> the sale refund; the Mac 0xe25e8 (the sale 0x4dd0a0 inlines the same product)
+SCRAP_RANGES = [(0x4E2400, 0x4E243F),       # the refund: percentage x record +0x1b8 (Upgrades[0].CostOfUpgrade), unsigned / 100
+                (0x4E2290, 0x4E23F4),       # the percentage, the Mac 0xe2424
+                (0x4F8690, 0x4F872E),       # the clock's current stamp: clock +0 + turn x rate / 4 x 10^7 (the Mac 0xe4394)
+                (0x5FC530, 0x5FC550),       # 64-bit stamp addition
+                (0x5FC550, 0x5FC570),       # 64-bit stamp subtraction (the Mac glue 0x1c5c64)
+                S64_DIV, U64_MUL]
+SCRAP_SYSTEM_TIME = 0x5FC660   # thiscall (stamp; status out, then 8 field out-pointers, null here) -> FileTimeToSystemTime; stubbed
+SCRAP_THING = {'type': 0xE, 'stamp': 0x18, 'level': 0x50, 'used': 0x1A0}   # the Mac +14, +20 (big-endian), +76, +412
+SCRAP_PERCENT = 0x188          # record: percentages at +0x188 + 64 x level + 4 x year (the Mac +392)
+SCRAP_COST = 0x1B8             # record: CostOfUpgrade at +0x1b8 + 64 x level (the Mac +440)
+SCRAP_TYPE = 0x101
+SCRAP_STATE = type('ScrapState', (), {})()
+
+
+def scrap_stubs(target: Target) -> dict:
+    state = SCRAP_STATE
+
+    def lookup(sb):
+        thiscall_check(sb, POINTS_REGISTRY, '0x412e90')
+        if sb.arg(0) & 0xFFFF != SCRAP_TYPE:
+            raise AssertionError('0x412e90 called with an unexpected type id')
+        return state.record, 4
+
+    def system_time(sb):
+        # argument 0 is the status word (a slot in 0x4f8690's own arguments, not read again), 1..8 the SYSTEMTIME fields
+        if not sb.arg(0) or any(sb.arg(n) for n in range(1, 9)):
+            raise AssertionError('0x5fc660 called with unexpected output pointers')
+        sb.write(sb.arg(0), 'I', 0)   # the success path's status
+        return 0, 0x24
+
+    return {POINTS_TYPE_RECORD: lookup, SCRAP_SYSTEM_TIME: system_time}
+
+
+def scrap_stamp(turn: int, base: int) -> int:
+    return (base + mac().scrap_stamp(turn)) & ((1 << 64) - 1)
+
+
+def scrap_binary(sb: Sandbox, x: dict, log) -> int:
+    state = SCRAP_STATE
+    game = bind_game(sb)
+    sb.write(game + POINTS_TURN, 'I', x['now'] & MASK32)
+    clock = game + POINTS_CLOCK
+    sb.write(clock, 'Q', x['base'])
+    sb.write(clock + 0x1C, 'I', mac().CLOCK_RATE)
+    fields = {SCRAP_COST + 64 * level: ('i', cost) for level, cost in enumerate(x['cost'])}
+    for level, row in enumerate(x['pct']):
+        fields.update({SCRAP_PERCENT + 64 * level + 4 * year: ('i', value) for year, value in enumerate(row)})
+    state.record = sb.object(2048, fields)
+    thing = sb.object(0x200, {SCRAP_THING['type']: ('H', SCRAP_TYPE), SCRAP_THING['stamp']: ('Q', scrap_stamp(x['built'], x['base'])),
+                              SCRAP_THING['level']: ('B', x['level']), SCRAP_THING['used']: ('I', x['used'] & MASK32)})
+    return sb.call(SCRAP_ENTRY, this=thing).eax
+
+
+def scrap_plan(x: dict) -> int:
+    """The Mac routine reading (F21), which ParkEconomy.ScrapValue / ScrapPercent follow; the clock base cancels in the age."""
+    return mac().scrap_reading(x)
+
+
+def scrap_inputs(rng: random.Random, n: int) -> list:
+    """The Mac target's inputs (edges and random), each with a clock base: zero, small, or anywhere in the 64-bit range."""
+    inputs = mac().scrap_inputs(rng, n)
+    for x in inputs:
+        x['base'] = rng.choice([0, rng.randrange(1 << 32), rng.randrange(1 << 64)])
+    return inputs
+
+
+SCRAP_TARGET = Target(
+    'tpw-exe-scrap-value', 'tpw', 'tp.exe object scrap value 0x4e2400', 'ECONOMY.md / ORACLE.md F21 (Mac 0xe25e8, ECON-025)',
+    SCRAP_ENTRY, SCRAP_RANGES, scrap_stubs, scrap_binary, scrap_plan, scrap_inputs,
+    alternatives={'all-levels-cost': lambda x: mac().scrap_reading(x, base_cost=False),
+                  'no-first-month-refund': lambda x: mac().scrap_reading(x, initial=False),
+                  'base-row': lambda x: mac().scrap_reading(x, level_row=False)},
+    notes=['Executed: 0x4e2400, the percentage 0x4e2290, the clock stamp 0x4f8690 with its 64-bit add / subtract and the '
+           '64-bit divide and multiply helpers. Stubs: 0x412e90 type record (a synthetic one), 0x5fc660 (FileTimeToSystemTime '
+           'into null out-pointers; its result is not read). The clock base (+0, a 64-bit stamp) is random and cancels.',
+           'Thing fields at other offsets than the Mac: stamp +0x18 (little-endian), level byte +0x50, use counter +0x1a0.'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -1260,4 +1339,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
+           SCRAP_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

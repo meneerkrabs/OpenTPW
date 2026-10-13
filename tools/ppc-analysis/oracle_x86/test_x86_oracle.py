@@ -70,6 +70,16 @@ EXPECTED = {
     ('tpw-exe-loan-month', 'routine-reading'): AGREE,
     # X6 (park points 0x4c8240 vs the Mac 0xc24c0, F10): identical on 507 inputs.
     ('tpw-exe-park-points', 'plan'): AGREE,
+    # X13 (object scrap value 0x4e2400 / percentage 0x4e2290 vs the Mac 0xe25e8 / 0xe2424, F21): identical on 572 inputs; the
+    # three wrong readings (every level's cost, no first-month refund, the base level's row) are each caught.
+    ('tpw-exe-scrap-value', 'plan'): AGREE,
+    ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
+                                                       'pct': [[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]], 'base': 0}),
+    ('tpw-exe-scrap-value', 'no-first-month-refund'): (57, {'now': 1000, 'built': 1000, 'level': 0, 'used': 0,
+                                                            'cost': [10000, 8000, 12000],
+                                                            'pct': [[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]], 'base': 0}),
+    ('tpw-exe-scrap-value', 'base-row'): (181, {'now': 1692, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
+                                                'pct': [[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]], 'base': 587586201}),
     # X7 (arrival group size 0x5bcd60 vs the TPW / Mac rule, F9): a different rule. The factor is the weather percentage
     # (state 1 to 4: Heatwave, Rain, Storm, Snow words, else 100) instead of 0.8 / 1.2, the divide is floating (times the
     # single-precision 0.01), and a mode object word of 3 gives no group. 216 of 532 inputs differ from the TPW rule; the
@@ -712,6 +722,23 @@ class Oracle(CoastTests, unittest.TestCase):
         tracked = {**x, 'types': [{**ride, 'f9c': 1}]}
         self.assertEqual(self.run_target(target, tracked), targets.mac().points_full(tracked))
         self.assertNotEqual(self.run_target(target, x), self.run_target(target, tracked))
+
+    # ------------------------------------------------------------------ X13: object scrap value
+    def test_scrap_value_matches_the_mac_rule(self):
+        self.check(('tpw-exe-scrap-value', 'plan'))
+        for side in ('all-levels-cost', 'no-first-month-refund', 'base-row'):
+            self.check(('tpw-exe-scrap-value', side))
+
+    def test_scrap_first_month_needs_an_unused_object_and_the_clock_base_cancels(self):
+        """A new Belly Bounce-like ride: its whole price within 30 days while unused (+0x1a0 = 0), the year-1 row once a
+        guest has left it or after 30 days; the same refunds with any clock base."""
+        target = targets.SCRAP_TARGET
+        rows = dict(cost=[500, 400, 500], pct=[[50, 30, 20, 10], [60, 40, 30, 15], [65, 45, 35, 20]], level=0)
+        for base in (0, 0xFFFFFFFF00000000):
+            new = {**rows, 'now': 1010, 'built': 1000, 'used': 0, 'base': base}
+            self.assertEqual(self.run_target(target, new), 500)
+            self.assertEqual(self.run_target(target, {**new, 'used': 1}), 250)
+            self.assertEqual(self.run_target(target, {**new, 'now': 1000 + 692}), 250)
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

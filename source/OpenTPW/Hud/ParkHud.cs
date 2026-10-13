@@ -815,7 +815,7 @@ public sealed partial class ParkHud
 			hud.DrawOverlay = DrawMessages;
 		DrawCellToolGhost( context );
 		DrawCoasterGhost( context );
-		Stack.Draw( context, HelpBarVisible );
+		Stack.Draw( context, helpBarVisibility );
 	}
 
 	/// <summary>The preview shows the object's own sign text, like the object in the park (<see cref="ObjectSigns"/>).</summary>

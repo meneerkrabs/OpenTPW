@@ -181,7 +181,8 @@ public static partial class Input
 
 			foreach ( var vkey in vkeys )
 			{
-				if ( !IsDown( vkey ) )
+				// Help accepts either Ctrl key for physical input and injected one-frame taps.
+				if ( !IsDown( vkey ) && !(button == InputButton.ToggleHelpBar && vkey == Key.ControlLeft && IsDown( Key.ControlRight )) )
 					isPressed = false;
 			}
 

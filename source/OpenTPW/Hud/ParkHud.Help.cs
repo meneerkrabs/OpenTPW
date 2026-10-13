@@ -4,9 +4,11 @@ namespace OpenTPW.Hud;
 
 public sealed partial class ParkHud
 {
-	/// <summary>Whether the HUD shows the existing contextual help popup; the global popup-help option still applies.</summary>
+	/// <summary>Whether the HUD shows contextual help; until explicitly toggled it follows the global option.</summary>
 	// [APPROX:UI-920] Ctrl+H toggles the existing top-edge contextual popup instead of an untraced original help-bar layout — evidence needed: original help-bar geometry and toggle state lifetime
-	public bool HelpBarVisible { get; private set; } = true;
+	public bool HelpBarVisible => helpBarVisibility ?? GameOptions.Current.PopupHelp;
+
+	private bool? helpBarVisibility;
 
 	private bool helpChordWasDown;
 

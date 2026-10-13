@@ -146,7 +146,7 @@ public sealed partial class ParkHud
 		switch ( shortcut )
 		{
 			case HudScreenShortcut.ToggleHelpBar:
-				HelpBarVisible = !HelpBarVisible;
+				helpBarVisibility = !HelpBarVisible;
 				break;
 			case HudScreenShortcut.BuyWindow:
 				ToggleWindow( BuyWindowOpen, OpenBuyWindow, CloseBuyWindow );

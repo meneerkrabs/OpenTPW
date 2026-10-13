@@ -19,6 +19,7 @@ public class ParkHudHelpTests
 	private List<InputButton> previousDown = null!;
 	private List<InputButton> previousLast = null!;
 	private bool previousTextEntry;
+	private GameOptions previousOptions = null!;
 
 	[TestInitialize]
 	public void Initialize()
@@ -27,6 +28,8 @@ public class ParkHudHelpTests
 		previousDown = Input.KeysDown;
 		previousLast = Input.LastKeysDown;
 		previousTextEntry = Input.TextEntryActive;
+		previousOptions = GameOptions.Current;
+		GameOptions.Current = new GameOptions();
 		Input.Keyboard = new Input.KeyboardInfo();
 		Input.KeysDown = new();
 		Input.LastKeysDown = new();
@@ -40,21 +43,24 @@ public class ParkHudHelpTests
 		Input.KeysDown = previousDown;
 		Input.LastKeysDown = previousLast;
 		Input.TextEntryActive = previousTextEntry;
+		GameOptions.Current = previousOptions;
 	}
 
-	[TestMethod]
-	public void ControlHDoesNotActivateTheStaffWindow()
+	[DataTestMethod]
+	[DataRow( Key.ControlLeft )]
+	[DataRow( Key.ControlRight )]
+	public void ControlHDoesNotActivateTheStaffWindow( Key control )
 	{
 		var hud = CreateHud();
 		var staff = new UiScreen( "staff" ) { Modal = false };
 		SetField( hud, typeof( ParkHud ), "staffScreen", staff );
 		hud.Stack.Push( staff );
-		using var tap = Input.InjectKeyDown( Key.ControlLeft, Key.H );
+		using var tap = Input.InjectKeyDown( control, Key.H );
 		Input.UpdateButtons();
-		Assert.IsTrue( Input.Pressed( InputButton.ToggleHelpBar ) );
 		Assert.IsTrue( Input.Pressed( InputButton.HireStaff ), "the shared physical H reaches both button bindings" );
 		Handler( hud )( false );
 		Assert.IsTrue( hud.StaffWindowOpen, "Ctrl+H cannot close the unrelated staff window" );
+		Assert.IsTrue( Input.Pressed( InputButton.ToggleHelpBar ) );
 		Input.UpdateButtons();
 		Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.H } );
 		Input.UpdateButtons();
@@ -145,11 +151,45 @@ public class ParkHudHelpTests
 		Assert.IsTrue( context.PopupHelp, "the owner gate never overwrites the global popup-help option" );
 		Assert.AreSame( font, context.Fonts.Small, "the existing borrowed font remains usable" );
 		context.PopupHelp = false;
-		hud.Stack.Draw( context, showHelp: true );
-		Assert.AreEqual( 0, context.Batch.Texts.Count, "the global option also suppresses help" );
+		hud.Stack.Draw( context );
+		Assert.AreEqual( 0, context.Batch.Texts.Count, "the compatibility overload follows the global option" );
 		context.PopupHelp = true;
 		hud.Stack.Draw( context );
 		Assert.IsTrue( context.Batch.Texts.Any( text => text.Text == "AA" ), "another screen owner keeps its normal help route" );
+	}
+
+	[TestMethod]
+	public void HelpChordCanEnableHudHelpWhenTheGlobalOptionIsOffWithoutChangingOtherOwners()
+	{
+		GameOptions.Current.PopupHelp = false;
+		var hud = CreateHud();
+		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
+		var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ),
+			new UiModels( name => throw new FileNotFoundException( name ) ) ) { ResolveTexture = _ => null, PopupHelp = false };
+		var button = hud.Screen.Add( new UiButton { Help = "AA", Bounds = new UiRect( 100, 100, 100, 100 ) } );
+		hud.Stack.Update( context, UiInput.Idle( button.ScreenRect( context.Canvas ).Center ) );
+		Assert.AreEqual( "AA", context.HoverHelp );
+		hud.Draw( context );
+		Assert.IsFalse( context.Batch.Texts.Any( text => text.Text == "AA" ), "before a chord, the HUD follows the global option" );
+		using var tap = Input.InjectKeyDown( Key.ControlLeft, Key.H );
+		Input.UpdateButtons();
+		Handler( hud )( true );
+		context.Batch.Clear();
+		hud.Draw( context );
+		Assert.IsTrue( context.Batch.Texts.Any( text => text.Text == "AA" ), "Ctrl+H enables actual HUD help even when the global option is off" );
+		Assert.IsFalse( context.PopupHelp );
+		Assert.IsFalse( GameOptions.Current.PopupHelp );
+		context.Batch.Clear();
+		hud.Stack.Draw( context );
+		Assert.IsFalse( context.Batch.Texts.Any( text => text.Text == "AA" ), "the compatibility overload still follows the global option" );
+		Input.UpdateButtons();
+		Handler( hud )( true );
+		using var secondTap = Input.InjectKeyDown( Key.ControlLeft, Key.H );
+		Input.UpdateButtons();
+		Handler( hud )( true );
+		context.Batch.Clear();
+		hud.Draw( context );
+		Assert.IsFalse( context.Batch.Texts.Any( text => text.Text == "AA" ), "the next chord hides the same help again" );
 	}
 
 	[TestMethod]
@@ -171,12 +211,14 @@ public class ParkHudHelpTests
 	private static ParkHud CreateHud()
 	{
 		var hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
-		SetField( hud, typeof( ParkHud ), "level", RuntimeHelpers.GetUninitializedObject( typeof( Level ) ) );
+		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		SetField( level, typeof( Level ), "<CellTool>k__BackingField", new CellBuildTool() );
+		SetField( hud, typeof( ParkHud ), "level", level );
 		SetField( hud, typeof( ParkHud ), "<Stack>k__BackingField", new UiScreenStack() );
 		var screen = new UiScreen( "hud" ) { Modal = false };
 		SetField( hud, typeof( ParkHud ), "hud", screen );
+		SetField( hud, typeof( ParkHud ), "messages", new List<(string Text, float Age)>() );
 		hud.Stack.Push( screen );
-		SetField( hud, typeof( ParkHud ), "<HelpBarVisible>k__BackingField", true );
 		return hud;
 	}
 

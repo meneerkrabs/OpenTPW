@@ -420,9 +420,12 @@ glyph in all 14 UI fonts of each language.
   (camcorder, postcard) stay unhandled. Ctrl+H toggles the existing contextual
   help popup (UI-920); it never activates the H staff window. Both Ctrl keys
   work, held chords toggle once, and input owners consume blocked presses.
-  The HUD-local visibility gate combines with the global popup-help option
-  without changing it. `ParkHudHelpTests` checks actual input dispatch and
-  synthetic hover-help draws without original assets or a GPU.
+  Until toggled, the HUD follows the global popup-help option. An explicit
+  chord overrides visibility for this HUD, so help can also be enabled when
+  the global option is off; that option and other screen owners are unchanged.
+  Both physical and injected taps accept either Ctrl key. `ParkHudHelpTests`
+  checks actual input dispatch and synthetic hover-help draws without original
+  assets or a GPU.
   Mapping and gating are pure functions (`ParkHud.ShortcutFor`,
   `WindowShortcutsAllowed`, `SteppedSpeed`), tested in `HudScreenShortcutTests`
   and `OverviewWindowTests`. The native smoke test presses the real keys:

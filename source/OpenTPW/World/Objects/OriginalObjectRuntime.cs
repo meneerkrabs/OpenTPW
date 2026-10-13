@@ -145,6 +145,7 @@ public sealed partial class OriginalObjectRuntime
 	{
 		if ( stopped )
 			return;
+		// [EXT:vm-fault-containment] a faulted root script stops its object: riders, trains, controller and sounds are released
 		if ( Script is { State: RideVMState.Faulted } )
 		{
 			Stop();

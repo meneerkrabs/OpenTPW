@@ -194,7 +194,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.ExitLevel = start.ExitLevel;
 		guest.OffsetX = (random.NextFloat() - 0.5f) * 0.5f;
 		guest.OffsetY = (random.NextFloat() - 0.5f) * 0.5f;
-		guest.DecisionTimer = random.NextFloat() * Settings.DecisionIntervalSeconds;
 		guest.BaseSpeed = GuestSpeed.BaseSpeeds[random.Next( GuestSpeed.BaseSpeeds.Length )];
 		guests.Add( guest );
 		byId.Add( guest.Id, guest );
@@ -228,9 +227,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			throw new ArgumentException( $"Cell ({x}, {y}) is not a walkable path cell." );
 		var guest = Create();
 		PlaceOnGrid( guest, x, y );
-		guest.State = GuestState.WalkingAround;
+		guest.State = GuestState.DoingNothing;
 		guest.TimeInParkSeconds = 0;
-		guest.DecisionTimer = 0;
 		return guest;
 	}
 
@@ -383,10 +381,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		if ( turnStarted )
 		{
 			UpdateNeedsTurn( guest );
-			// [APPROX:GUEST-010] the leaving test belongs to the original's state 6 (standing at a cell, deciding); OpenTPW has no separate state 6 and tests every guest that is walking around or doing nothing, on every park turn — evidence needed: how long a guest dwells in the original's states 6 and 7
-			if ( guest.State is GuestState.WalkingAround or GuestState.DoingNothing && GuestLifecycle.ShouldLeave( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
-				StartLeaving( guest );
-			// The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
+			// The leaving test itself runs in state 6 (UpdateDeciding). The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
 			// would strand every guest whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the
 			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
 			// [APPROX:GUEST-011] OpenTPW pulls queued and boarding guests out when the park closes; in tp.exe nothing in the queue reads the closed word (game +0x1DA710, 0x0051A280): its readers are the guest state handlers for states 2, 3, 5, 6, 10 and 18 (0x004FF730, 0x004FF7F0, 0x004FFB20, 0x004FEC90, 0x004FFBC0, 0x00500A50; the state dispatcher 0x005019F0), the strike test 0x00508E70, staff code 0x00506300, the park's average happiness 0x004C7BB0 (0 while closed), 0x004C9050 and the UI 0x00498D80, so the original's queues keep running and their guests leave only after the ride — evidence needed: whether OpenTPW's rides keep admitting in a closed park (oracle F26), which decides whether the safeguard can go
@@ -407,10 +402,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [APPROX:GUEST-012] the original also demands the guest's cell pass 0xe6c6c (its cell record through 0x10a9b0 and 0x85190..0x851d0) — evidence needed: which cells qualify; OpenTPW approximates the predicate by the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane), the stage before leaving. The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc)
 			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
-			{
-				guest.State = GuestState.WalkingAround;
-				guest.DecisionTimer = Settings.DecisionIntervalSeconds;
-			}
+				guest.State = GuestState.DoingNothing;
 		}
 		if ( InPark( guest ) )
 			UpdateNeeds( guest, dt );
@@ -486,8 +478,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 					guest.State = GuestState.Gone;
 				break;
 			case GuestState.WalkingAround:
+				UpdateWalkingAround( guest );
+				break;
 			case GuestState.DoingNothing:
-				UpdateWalking( guest, dt );
+				UpdateDeciding( guest );
 				break;
 			case GuestState.GoingToRide:
 				UpdateGoingToRide( guest, dt );
@@ -506,10 +500,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			case GuestState.ExitingRide:
 				guest.StateTimer -= dt;
 				if ( guest.StateTimer <= 0 )
-				{
-					guest.State = GuestState.WalkingAround;
-					guest.DecisionTimer = Settings.DecisionIntervalSeconds;
-				}
+					guest.State = GuestState.DoingNothing;
 				break;
 		}
 	}
@@ -664,8 +655,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			if ( guest.LaneIndex == lane.Length - 1 )
 			{
 				PlaceOnGrid( guest, lane[^1].X, lane[^1].Y );
-				guest.State = GuestState.WalkingAround;
-				guest.DecisionTimer = 0;
+				guest.State = GuestState.DoingNothing;
 				return;
 			}
 			if ( guest.LaneIndex == lane.Length - 2 && guest.State != GuestState.EnteringPark )
@@ -727,49 +717,171 @@ public sealed class GuestSimulation : IRideVisitorHost
 		SetLaneWaypoint( guest );
 	}
 
-	private void UpdateWalking( Guest guest, float dt )
+	/// <summary>
+	/// State 6 (<c>0x004FEC90</c>), once per park turn: the tests of <see cref="GuestDecision"/> in the original order. A guest in an
+	/// activity (the original's state 8) waits it out instead.
+	/// </summary>
+	private void UpdateDeciding( Guest guest )
 	{
-		guest.DecisionTimer -= dt;
-		if ( guest.HasWaypoint && !Move( guest ) )
+		if ( !turnStarted )
 			return;
-		if ( guest.DecisionTimer <= 0 )
+		var turn = (uint)ParkTurn;
+		if ( guest.Activity != GuestActivity.None )
 		{
-			guest.DecisionTimer = Settings.DecisionIntervalSeconds;
-			UpdateMood( guest );
-			var choice = ChooseAttraction( guest );
-			if ( choice != null )
-			{
-				guest.AttractionId = choice.AttractionId;
-				guest.State = GuestState.GoingToRide;
-				return;
-			}
+			// [BIN:TPW-EXE:0x00501D26 state 8] the activity ends (0x004FC890, back to the state saved at +0x224) once the turn is above +0x208 + 10 (unsigned)
+			if ( turn > unchecked((uint)guest.InterludeTurn + GuestDecision.ActivityTurns) )
+				guest.Activity = GuestActivity.None;
+			return;
 		}
-		Wander( guest );
+		IRideVisitorBridge? choice = null;
+		var input = new GuestDecision.Input( turn, (uint)guest.InterludeTurn, (uint)guest.QueueStandingSinceTurn, guest.Happiness, guest.Nausea, guest.ExitLevel,
+			Payments?.ParkClosed ?? false, random.NextWord() );
+		var outcome = GuestDecision.Decide( input, () =>
+		{
+			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
+			if ( !HasWayOut( guest ) )
+				return false;
+			guest.State = GuestState.LeavingPark;
+			return true;
+		}, () =>
+		{
+			UpdateMood( guest );
+			choice = ChooseAttraction( guest );
+			return choice != null;
+		}, () => Wander( guest ) );
+		switch ( outcome )
+		{
+			case GuestDecision.Outcome.Cheer:
+				StartActivity( guest, GuestActivity.Cheering );
+				break;
+			case GuestDecision.Outcome.Vomit:
+				StartActivity( guest, GuestActivity.Vomiting );
+				guest.Nausea = 0;
+				break;
+			case GuestDecision.Outcome.GoToRide:
+				guest.AttractionId = choice!.AttractionId;
+				guest.State = GuestState.GoingToRide;
+				break;
+			case GuestDecision.Outcome.CantDecide:
+				StartActivity( guest, GuestActivity.CantDecide );
+				guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.SmallHappinessChange );
+				guest.QueueStandingSinceTurn = turn;
+				break;
+			case GuestDecision.Outcome.Wander:
+				guest.State = GuestState.WalkingAround;
+				break;
+			case GuestDecision.Outcome.WanderFailed:
+				guest.QueueStandingSinceTurn = turn;
+				break;
+		}
 	}
 
-	private void Wander( Guest guest )
+	/// <summary>
+	/// True when a path leads from the guest's cell to the end of an arrival lane, the way out <see cref="UpdateLeaving"/> takes. A park
+	/// without arrival lanes has no modelled gate: its guests leave and vanish, as <see cref="UpdateLeaving"/> handles it.
+	/// </summary>
+	private bool HasWayOut( Guest guest )
 	{
-		var count = Grid.NeighbourCount( guest.CellX, guest.CellY );
-		if ( count == 0 )
+		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
+		if ( lanes.All( lane => lane == null ) )
+			return true;
+		foreach ( var lane in lanes )
 		{
-			guest.State = GuestState.DoingNothing;
+			if ( lane != null && Grid.Distance( guest.CellX, guest.CellY, lane[^1].X, lane[^1].Y ) >= 0 )
+				return true;
+		}
+		return false;
+	}
+
+	/// <summary>An activity (<c>0x004FC800</c>): stamps +0x208 with the turn and holds the guest in state 8 for ten park turns.</summary>
+	private void StartActivity( Guest guest, GuestActivity activity )
+	{
+		guest.Activity = activity;
+		guest.InterludeTurn = ParkTurn;
+	}
+
+	/// <summary>
+	/// State 7 (the dispatcher's case 7, <c>0x00501ABB</c>): one walk step per park turn. On arrival a draw with <c>rand &amp; 3 == 0</c> may
+	/// pick the next wander destination and keep walking; otherwise the guest decides again (state 6).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00501ABB state 7] the walk step 0x004FA2A0 returns 0 (arrived), 1 (walking) or 2 (stuck); on 0 or 2 one draw, and when its low two bits are 0 the wander destination 0x004F9490 keeps state 7 on success; every other case sets state 6
+	// [APPROX:GUEST-010] OpenTPW's walk has no stuck result (its steering reroutes, WALK-I): a walk ends on arrival, or as stuck when a grid edit takes a cell of its route (EndBrokenWalks)
+	private void UpdateWalkingAround( Guest guest )
+	{
+		if ( !turnStarted )
 			return;
-		}
-		guest.State = GuestState.WalkingAround;
-		Span<int> options = stackalloc int[4];
-		var optionCount = 0;
-		for ( var direction = 0; direction < 4; direction++ )
+		if ( guest.HasWaypoint )
 		{
-			if ( !Grid.AreConnected( guest.CellX, guest.CellY, direction ) )
-				continue;
-			var nx = guest.CellX + GuestPathGrid.Directions[direction].DX;
-			var ny = guest.CellY + GuestPathGrid.Directions[direction].DY;
-			if ( count > 1 && nx == guest.PreviousCellX && ny == guest.PreviousCellY )
-				continue;
-			options[optionCount++] = direction;
+			var arrived = Move( guest );
+			// The guest's cell is the one it stands on (the original's thing cell +5/+7), which the next wander starts from;
+			// arriving within reach of a point near a cell's edge can leave it in the cell before.
+			var cell = guest.Navigation.Cell;
+			if ( cell != (guest.CellX, guest.CellY) && Grid.IsWalkable( cell.X, cell.Y ) )
+			{
+				(guest.PreviousCellX, guest.PreviousCellY) = (guest.CellX, guest.CellY);
+				(guest.CellX, guest.CellY) = cell;
+			}
+			if ( !arrived )
+				return;
 		}
-		var chosen = options[random.Next( optionCount )];
-		SetCellWaypoint( guest, guest.CellX + GuestPathGrid.Directions[chosen].DX, guest.CellY + GuestPathGrid.Directions[chosen].DY );
+		if ( (random.NextWord() & 3) == 0 && Wander( guest ) )
+			return;
+		guest.State = GuestState.DoingNothing;
+	}
+
+	/// <summary>
+	/// After a grid edit, a wander walk whose route ahead lost a path cell or a link ends where the guest stands, as the original's walk
+	/// step reports "stuck" (2); the guest then picks again or decides at its next turn (state 7). A guest left off the paths is put on the
+	/// nearest one.
+	/// </summary>
+	private void EndBrokenWalks()
+	{
+		foreach ( var guest in guests )
+		{
+			if ( guest.State != GuestState.WalkingAround || !guest.HasWaypoint || RouteAheadHolds( guest.Navigation ) )
+				continue;
+			var navigation = guest.Navigation;
+			navigation.SetDestination( navigation.X, navigation.Y, [] );
+			guest.HasWaypoint = false;
+			var cell = navigation.Cell;
+			if ( Grid.IsWalkable( cell.X, cell.Y ) )
+				(guest.CellX, guest.CellY) = cell;
+			else
+			{
+				var (x, y) = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
+				PlaceOnGrid( guest, x, y );
+			}
+		}
+	}
+
+	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
+	private bool RouteAheadHolds( GuestNavigation navigation )
+	{
+		var route = navigation.Route;
+		var from = Math.Max( 0, Array.IndexOf( route, navigation.Cell ) );
+		for ( var index = from; index < route.Length; index++ )
+		{
+			var (x, y) = route[index];
+			if ( !Grid.IsWalkable( x, y ) )
+				return false;
+			if ( index + 1 < route.Length && GuestPathGrid.DirectionBetween( x, y, route[index + 1].X, route[index + 1].Y ) is var direction
+				&& (direction < 0 || !Grid.AreConnected( x, y, direction )) )
+				return false;
+		}
+		return true;
+	}
+
+	/// <summary>Sets a wander destination (<see cref="GuestWander"/>) and the shortest route to it; false when there is none.</summary>
+	private bool Wander( Guest guest )
+	{
+		var start = (X: guest.CellX, Y: guest.CellY);
+		if ( GuestWander.Pick( Grid, start, () => random.NextWord() ) is not { } destination )
+			return false;
+		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
+		if ( route.Count == 0 )
+			return false;
+		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
+		return true;
 	}
 
 	// [APPROX:GUEST-009] the thought thresholds (a need from NeedThoughtLevel 70, toilet scaled by ToiletDesparate) and the boredom loss of SmallHappinessChange per decision after BoredomThreshold seconds have no original source; the original's thoughts (0xe8c58: hunger and thirst both above 90, a single need above 99, happiness above 99 or below 10, litter) come from a draw each needs phase and its happiness costs are the exact-100 penalties of the needs update (NeedsUpdate) — evidence needed: the thought selection and the boredom rule behind PeepTypes BoredomThreshold
@@ -866,14 +978,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 		if ( attraction == null || !attraction.IsOpen )
 		{
 			guest.AttractionId = 0;
-			guest.State = GuestState.WalkingAround;
+			guest.State = GuestState.DoingNothing;
 			return;
 		}
 		if ( attraction.JoinCell is not { } join )
 		{
 			guest.Thought = GuestThought.Confused;
 			guest.AttractionId = 0;
-			guest.State = GuestState.WalkingAround;
+			guest.State = GuestState.DoingNothing;
 			return;
 		}
 		var (tx, ty) = join;
@@ -898,10 +1010,12 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// [APPROX:GUEST-004] a full queue room (NoRoom, count ≥ 4 × queue cells) is treated like the original's queue-too-long refusal for the thought and the happiness loss, but pushes no history: its original path (0xdc988 then the dismissal 0xee804) pushes none — evidence needed: where a guest meets a physically full queue in state 10
 			if ( result is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
 				PushHistory( guest.TemporaryHistory, attraction.AttractionId );
+			// [BIN:TPW-EXE:0x004FFCF6 excitement refusal] the refusal clears the target and the decision stamp +0x1FC, so the next major decision is not held back 30 turns
+			if ( result is QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
+				guest.QueueStandingSinceTurn = 0;
 			guest.LastAttractionId = attraction.AttractionId;
 			guest.AttractionId = 0;
-			guest.State = GuestState.WalkingAround;
-			guest.DecisionTimer = Settings.DecisionIntervalSeconds;
+			guest.State = GuestState.DoingNothing;
 			return;
 		}
 		if ( Grid.TryStep( guest.CellX, guest.CellY, tx, ty, out var nx, out var ny ) )
@@ -910,7 +1024,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		{
 			guest.Thought = GuestThought.Confused;
 			guest.AttractionId = 0;
-			guest.State = GuestState.WalkingAround;
+			guest.State = GuestState.DoingNothing;
 		}
 	}
 
@@ -924,6 +1038,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			seenGridVersion = Grid.Version;
 			foreach ( var attraction in attractions )
 				attraction.RecomputeQueue( Grid );
+			EndBrokenWalks();
 		}
 		foreach ( var attraction in attractions )
 		{
@@ -1405,8 +1520,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		if ( !Grid.IsWalkable( cell.X, cell.Y ) )
 			cell = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
 		PlaceOnGrid( guest, cell.X, cell.Y );
-		guest.State = GuestState.WalkingAround;
-		guest.DecisionTimer = Settings.DecisionIntervalSeconds;
+		guest.State = GuestState.DoingNothing;
 	}
 
 	long IRideVisitorHost.ParkTurn => ParkTurn;
@@ -1648,6 +1762,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			QueueStandingSinceTurn = guest.QueueStandingSinceTurn,
 			InterludeTurn = guest.InterludeTurn,
 			InQueueInterlude = guest.InQueueInterlude,
+			Activity = guest.Activity,
 			QueueJoinHappiness = guest.QueueJoinHappiness,
 			QueueCellIndex = guest.QueueCellIndex,
 			QueueTargetIndex = guest.QueueTargetIndex,
@@ -1691,8 +1806,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Lane = guest.Lane?.ToArray(),
 			LaneIndex = guest.LaneIndex,
 			LaneReversed = guest.LaneReversed,
-			StateTimer = guest.StateTimer,
-			DecisionTimer = guest.DecisionTimer
+			StateTimer = guest.StateTimer
 		};
 	}
 
@@ -1919,7 +2033,12 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Finite( guest.Id, guest.QueueTargetX, nameof( guest.QueueTargetX ) );
 			Finite( guest.Id, guest.QueueTargetY, nameof( guest.QueueTargetY ) );
 			Finite( guest.Id, guest.StateTimer, nameof( guest.StateTimer ) );
-			Finite( guest.Id, guest.DecisionTimer, nameof( guest.DecisionTimer ) );
+			if ( guest.DecisionTimer is { } decisionTimer )
+				Finite( guest.Id, decisionTimer, nameof( guest.DecisionTimer ) );
+			if ( !Enum.IsDefined( guest.Activity ) )
+				Error( $"Guest {guest.Id} activity {(int)guest.Activity} is not a state-6 activity." );
+			else if ( guest.Activity != GuestActivity.None && guest.State != GuestState.DoingNothing )
+				Error( $"Guest {guest.Id} has activity {guest.Activity} outside state 6 (DoingNothing)." );
 			if ( guest.Navigation == null )
 				Error( $"Guests[{index}] (guest {guest.Id}) has no navigation snapshot." );
 			else
@@ -2173,6 +2292,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.QueueStandingSinceTurn = snapshot.QueueStandingSinceTurn;
 		guest.InterludeTurn = snapshot.InterludeTurn;
 		guest.InQueueInterlude = snapshot.InQueueInterlude;
+		guest.Activity = snapshot.Activity;
 		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
 		guest.QueueCellIndex = snapshot.QueueCellIndex;
 		guest.QueueTargetIndex = snapshot.QueueTargetIndex;
@@ -2197,7 +2317,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.LaneIndex = snapshot.LaneIndex;
 		guest.LaneReversed = snapshot.LaneReversed;
 		guest.StateTimer = snapshot.StateTimer;
-		guest.DecisionTimer = snapshot.DecisionTimer;
 		var navigation = guest.Navigation;
 		var navigationSnapshot = snapshot.Navigation;
 		navigation.X = navigationSnapshot.X;
@@ -2286,7 +2405,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( guest.LaneIndex );
 			hash.Add( guest.LaneReversed );
 			hash.Add( guest.StateTimer );
-			hash.Add( guest.DecisionTimer );
+			hash.Add( (byte)guest.Activity );
 			hash.Add( guest.QueuePosition );
 			hash.Add( guest.QueueJoinTurn );
 			hash.Add( guest.LastQueueWaitTurns );

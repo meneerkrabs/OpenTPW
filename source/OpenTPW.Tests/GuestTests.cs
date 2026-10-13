@@ -414,7 +414,7 @@ public class GuestTests
 		var previous = guests.ToDictionary( guest => guest.Id, guest => guest.Happiness );
 		var firstRideChange = new Dictionary<int, float>();
 		var sawQueue = false;
-		for ( var tick = 0; tick < 40 * 60; tick++ )
+		for ( var tick = 0; tick < 120 * 60; tick++ )
 		{
 			Run( simulation, new[] { ride }, 1 );
 			sawQueue |= ride.Bridge.QueueLength > 0 && guests.Any( guest => guest.State == GuestState.Queueing );
@@ -586,39 +586,45 @@ public class GuestTests
 	[TestMethod]
 	public void ReopeningTheParkRecallsALeavingGuestWhoseCounterAndHappinessStillHold()
 	{
-		// The dismissal: a walking guest with a fresh counter and healthy happiness is sent home by the closing word alone.
-		var rig = new QueueTests.Rig();
+		// The dismissal: a walking guest with a fresh counter and healthy happiness is sent home by the closing word alone. The leaving
+		// gate needs a way out (a path to an arrival lane's end), so the rig gets a lane ending at the far end of its path.
+		var rig = new QueueTests.Rig( configure: WayOut );
 		var guest = rig.Simulation.SpawnInPark( 5, 0 );
 		guest.Happiness = 50f;
 		guest.ExitLevel = 100;
 		var payments = new QueueTests.ClosedPayments();
 		rig.Simulation.Payments = payments;
 		payments.Closed = true;
-		for ( var steps = 0; steps < 200 && guest.State != GuestState.LeavingPark; steps++ )
+		for ( var steps = 0; steps < 2000 && guest.State != GuestState.LeavingPark; steps++ )
 			rig.Step();
 		Assert.AreEqual( GuestState.LeavingPark, guest.State, "the closed park sent the guest home" );
 		Assert.AreEqual( 25f, guest.Happiness, 0.0001f, "the dismissal lost the big happiness change and the byte stays nonzero" );
 
-		// The recall: the same guest, one turn after the park reopens, walks around again.
+		// The recall: the same guest, one turn after the park reopens, decides again (state 6).
 		payments.Closed = false;
 		rig.RunTurns( 1 );
-		Assert.AreEqual( GuestState.WalkingAround, guest.State, "the recall returns the guest to deciding" );
+		Assert.IsTrue( guest.State is GuestState.DoingNothing or GuestState.WalkingAround, $"the recall returns the guest to deciding: {guest.State}" );
 
 		// Past recalling: a guest that left when its counter read 0 keeps a counter at or below 0 (it loses one per needs
 		// phase in every state) and is never recalled, and a guest below happiness 1 has a zero happiness byte for good.
-		var counterRig = new QueueTests.Rig();
+		var counterRig = new QueueTests.Rig( configure: WayOut );
 		var counterGuest = counterRig.Simulation.SpawnInPark( 5, 0 );
 		counterGuest.Happiness = 50f;
 		counterGuest.ExitLevel = 0;
+		// It left on its zero counter (the needs phase that takes it below 0 may come before its next state-6 turn, so the leaving is set directly).
+		counterGuest.State = GuestState.LeavingPark;
 		counterRig.RunTurns( 3 );
-		Assert.AreNotEqual( GuestState.WalkingAround, counterGuest.State, "the empty counter leaves for good" );
-		var sadRig = new QueueTests.Rig();
+		Assert.IsFalse( counterGuest.State is GuestState.DoingNothing or GuestState.WalkingAround, "the empty counter leaves for good" );
+		var sadRig = new QueueTests.Rig( configure: WayOut );
 		var sadGuest = sadRig.Simulation.SpawnInPark( 5, 0 );
 		sadGuest.Happiness = 0.5f;
 		sadGuest.ExitLevel = 100;
 		sadRig.RunTurns( 3 );
-		Assert.AreNotEqual( GuestState.WalkingAround, sadGuest.State, "a happiness byte of zero leaves for good" );
+		Assert.IsFalse( sadGuest.State is GuestState.DoingNothing or GuestState.WalkingAround, "a happiness byte of zero leaves for good" );
 	}
+
+	/// <summary>An arrival lane ending at (9, 0), the far end of <see cref="QueueTests.Rig"/>'s path: a way out for the leaving gate.</summary>
+	private static void WayOut( GuestSettings settings ) => settings.ArrivalLaneA = new[] { (11, 3), (11, 2), (11, 1), (10, 0), (9, 0) };
 
 	[TestMethod]
 	public void AGuestLeavesWhenItsCounterReadsZeroAndLosesTheBigHappinessChangeOnTheWay()
@@ -675,7 +681,8 @@ public class GuestTests
 			simulation.Tick( Tick );
 		Assert.IsTrue( guests.All( guest => guest.State is GuestState.WalkingAround or GuestState.DoingNothing ), "an open park keeps them" );
 		payments.Closed = true;
-		for ( var tick = 0; tick < 5 * 60; tick++ )
+		// A guest walking to a wander destination (state 7) reads the closed word at its next state-6 turn, after the walk.
+		for ( var tick = 0; tick < 60 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.IsTrue( guests.All( guest => guest.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone ),
 			string.Join( ", ", guests.Select( guest => guest.State ) ) );
@@ -922,6 +929,9 @@ public class GuestTests
 		var simulation = new GuestSimulation( CreateCross(), settings, 5 ) { ArrivalsEnabled = false };
 		simulation.Register( ride.Bridge );
 		var guest = simulation.SpawnInPark( 6, 5 );
+		// Sent on its way at once: from (6, 5) the ride scores below the floor, so a wandering guest would choose it only near it.
+		guest.AttractionId = ride.Bridge.AttractionId;
+		guest.State = GuestState.GoingToRide;
 		var refused = false;
 		for ( var tick = 0; tick < 60 * 60 && !refused; tick++ )
 		{
@@ -929,6 +939,7 @@ public class GuestTests
 			refused = guest.TemporaryHistory[0] == ride.Bridge.AttractionId;
 		}
 		Assert.IsTrue( refused, "the refusal pushed the ride's id into the temporary history" );
+		Assert.AreEqual( 0L, guest.QueueStandingSinceTurn, "an excitement refusal clears the decision stamp (tp.exe 0x004FFCF6)" );
 		Assert.AreEqual( 0, guest.RidesTaken );
 		Assert.IsTrue( simulation.ScoreAttraction( guest, ride.Bridge ) < AttractionScore.CandidateFloor, "so its score fell below the choice floor" );
 	}

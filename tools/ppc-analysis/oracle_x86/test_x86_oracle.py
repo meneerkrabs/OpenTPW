@@ -89,6 +89,12 @@ EXPECTED = {
     ('tpw-exe-price-test', 'no-money-test'): (56, {'happiness': 60.0, 'thirst': 80.0, 'hunger': 10.0, 'illness': 0.0, 'money': 0, 'price': 1,
                                                    'goods': 0, 'win': 0, 'kind': 1, 'base': 20, 'e_thirst': 40, 'e_hunger': 0, 'e_vomit': 0,
                                                    'e_happy': 10, 'product': 2, 'extra': 0, 'type_word': 0}),
+    # X18 (guest state 6 0x4fec90, GUEST-010): the decision order of WANDER-plan §2, every branch's effects included.
+    ('tpw-exe-guest-state6', 'plan'): AGREE,
+    # X19 (wander destination 0x4f9490, GUEST-010): GuestWander's steps, draws and sub-cell bytes on synthetic cells.
+    ('tpw-exe-wander-destination', 'plan'): AGREE,
+    # The rule a step reads is the current cell's own link; with links on either side 164 differ (inputs with one-sided links).
+    ('tpw-exe-wander-destination', 'either-side-links'): (164, ((24, 31), 1062577813)),
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -361,13 +367,18 @@ def check_pinned(case, comparison, key):
         case.assertEqual(comparison.mismatches, count, f'{key}: first {comparison.first}')
         first = comparison.first['input']
         if isinstance(first_input, tuple):
-            first = coast_summary(first)
+            first = wander_summary(first) if key[0] == 'tpw-exe-wander-destination' else coast_summary(first)
         case.assertEqual(first, first_input, key)
 
 
 def coast_summary(x):
     """Short identity of a coaster input: (sample index, bank, speed) for a step, (S, E, peak S, peak E) for a final."""
     return (x['i'], x['bank'], x['v']) if 'def' in x else (x['S'], x['E'], x['peak_s'], x['peak_e'])
+
+
+def wander_summary(x):
+    """Short identity of a wander input: the start cell and the first draw (the cells come from the same seeded stream)."""
+    return tuple(x['start']), x['draws'][0]
 
 
 def ulps(a: float, b: float) -> int:
@@ -777,6 +788,14 @@ class Oracle(CoastTests, unittest.TestCase):
     def test_toilet_wear_matches_the_reading(self):
         for side in ('plan', 'double-constant'):
             self.check(('tpw-exe-toilet-wear', side))
+
+    # ------------------------------------------------------------------ X18 / X19: guest states 6 and 7
+    def test_state_six_runs_the_planned_order(self):
+        self.check(('tpw-exe-guest-state6', 'plan'))
+
+    def test_wander_destination_follows_guest_wander(self):
+        for side in ('plan', 'either-side-links'):
+            self.check(('tpw-exe-wander-destination', side))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

@@ -67,6 +67,10 @@ STACK_SIZE = 0x00040000
 TRAP_BASE = 0x70000000   # one 16-byte slot per import; mapped executable, never allowed to run
 TRAP_SLOT = 16
 SENTINEL = 0x78000000    # return address of every call: a page holding `hlt`
+TIB_BASE = 0x74000000    # the thread information block fs points at: fs:[0] is the SEH chain head (routines with a frame handler)
+GDT_BASE = 0x74010000    # a flat data descriptor for ds/es/ss and one over the TIB for fs (32-bit unicorn ignores the FS base register)
+DATA_SELECTOR = 2 * 8
+FS_SELECTOR = 3 * 8
 PAGE = 0x1000
 MASK32 = 0xFFFFFFFF
 
@@ -195,6 +199,8 @@ class Sandbox:
         self.uc.mem_write(TRAP_BASE, b'\xCC' * (image.trap_end - TRAP_BASE))
         self.uc.mem_map(SENTINEL, PAGE, unicorn.UC_PROT_READ | unicorn.UC_PROT_EXEC)
         self.uc.mem_write(SENTINEL, b'\xF4')
+        self._map('tib', TIB_BASE, PAGE, None, unicorn.UC_PROT_READ | unicorn.UC_PROT_WRITE)
+        self._map_fs()
         self.uc.hook_add(unicorn.UC_HOOK_MEM_WRITE, self._on_write)
         self.uc.hook_add(unicorn.UC_HOOK_CODE, self._on_code)
         self.executed = 0
@@ -221,6 +227,19 @@ class Sandbox:
                 perms |= uc.UC_PROT_EXEC
             data = image.data[section.rva:section.rva + section.span]
             self._map(section.name, image.base + section.rva, section.span, bytes(data), perms)
+
+    def _map_fs(self) -> None:
+        """fs selects a byte-granular data segment over the TIB page, as Windows gives a thread; fs:[0] starts as 0 (no handler).
+        Once a descriptor table is loaded the other data segments need flat descriptors of their own."""
+        def descriptor(base: int, limit: int, flags: int) -> bytes:
+            return struct.pack('<HHBBBB', limit & 0xFFFF, base & 0xFFFF, (base >> 16) & 0xFF, 0x93, flags | (limit >> 16), base >> 24)
+        self.uc.mem_map(GDT_BASE, PAGE, unicorn.UC_PROT_READ)
+        self.uc.mem_write(GDT_BASE + DATA_SELECTOR, descriptor(0, 0xFFFFF, 0xC0))
+        self.uc.mem_write(GDT_BASE + FS_SELECTOR, descriptor(TIB_BASE, PAGE - 1, 0x40))
+        self.uc.reg_write(x86.UC_X86_REG_GDTR, (0, GDT_BASE, FS_SELECTOR + 7, 0))
+        for register in (x86.UC_X86_REG_SS, x86.UC_X86_REG_DS, x86.UC_X86_REG_ES):
+            self.uc.reg_write(register, DATA_SELECTOR)
+        self.uc.reg_write(x86.UC_X86_REG_FS, FS_SELECTOR)
 
     def _on_write(self, uc, access, address, size, value, user) -> None:
         for page in range(address >> 12, ((address + size - 1) >> 12) + 1):

@@ -236,7 +236,7 @@ home (21) → removed.
 | Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts from level 70 (GUEST-009) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
-| Decision | every 3 s (cadence approximated): the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10, otherwise wander (random link, no U-turn). Leaving is tested every park turn instead ([below](#lifecycle)) |
+| Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step, pranks and the presentation turns are not modelled (GUEST-010, GUEST-007) |
 | Boredom | `BoredomThreshold` read as seconds since the last ride |
 | Ride outcome | the original's bands and illness gain (oracle F24); a ride does not extend the exit counter |
 | Queues | traced; see [Queues](#queues) and its `QUEUE-NNN` register |
@@ -288,8 +288,22 @@ Open: the thought selection (hunger and thirst above 90, a single need above 99,
 
 Traced and executed (finding F26, [ORACLE.md](reverse/ORACLE.md)); implemented in `GuestLifecycle`. A guest starts at happiness **50** with the exit counter described under [Needs](#needs-and-starting-values), which loses one per
 needs phase (4 park turns, 0.992 s) in every state. A guest that is walking around or doing nothing (the original's state 6) **leaves when its happiness is below 1, when its exit counter is exactly 0, or when the park is closed**, and
-loses `BigHappinessChange` (25) as it goes home; the test is evaluated every park turn (GUEST-010). The counter compares for equality, so a guest that is queueing or riding in the four turns it reads 0 never leaves by it;
-rides do not add to it. There is no "happiness at most 10" rule.
+loses `BigHappinessChange` (25) as it goes home; the test runs on every park turn the guest spends in state 6 ([below](#deciding-and-wandering)). The counter compares for equality, so a guest that is walking to a wander
+destination, queueing or riding in the four turns it reads 0 never leaves by it; rides do not add to it. There is no "happiness at most 10" rule. The leaving gate needs a way out (a path to an arrival lane's end); without one
+the guest still loses `BigHappinessChange` and decides on.
+
+### Deciding and wandering
+
+Traced and executed (x86 findings X18, X19, [ORACLE.md](reverse/ORACLE.md) section 7.14; [WANDER-plan.md](reverse/WANDER-plan.md)); implemented in `GuestDecision` and `GuestWander`. A guest in the park alternates
+between deciding (state 6, `DoingNothing`) and walking to a wander destination (state 7, `WalkingAround`). Once per park turn in state 6 it draws one number R and acts on the first test that applies:
+
+1. **Cheering** when more than 100 turns have passed since its last activity and its happiness byte is above 80.
+2. **Vomiting** when its illness byte is 100 and R % 3 is 0: illness drops to 0.
+3. **Leaving** by the [lifecycle](#lifecycle) test.
+4. **R % 3 = 0:** a major decision, if more than 30 turns have passed since the decision stamp (the turn it last entered a queue or last failed a decision). It picks an attraction (state 10), or it pauses ("can't decide"), loses `SmallHappinessChange` and stamps the turn.
+5. **R % 3 = 1:** a wander. The guest takes R′ % 5 + 1 random steps along the path links (never straight back while another way is open, one more step if it ends where it started) and walks the shortest route to a random point in the first quarter of the last cell. If there is no destination, it stamps the turn.
+
+An activity (cheering, vomiting, can't decide) holds the guest for ten park turns (the original's state 8). On arriving, a walking guest picks another destination with a chance of one in four, otherwise it decides again. A new park's guests make their first major decision at turn 31.
 
 ### Walking
 

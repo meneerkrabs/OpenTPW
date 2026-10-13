@@ -736,10 +736,13 @@ public class QueueTests
 		var medium = rig.Simulation.Settings.MediumHappinessChange;
 
 		var placesBefore = guests.Select( guest => (guest.QueuePosition, guest.Cell) ).ToList();
+		// Read on the dismissal turn: from the next turn on a dismissed guest decides again (state 6), which may change both.
+		var atDismissal = new (float Happiness, GuestThought Thought)[guests.Count];
 		rig.Script[RideVariables.VAR_BROKEN] = 1;
 		for ( var gone = 1; gone <= guests.Count; gone++ )
 		{
 			rig.RunTurns( 1 );
+			atDismissal[gone - 1] = (guests[gone - 1].Happiness, guests[gone - 1].Thought);
 			for ( var index = gone; index < guests.Count; index++ )
 				Assert.AreEqual( placesBefore[index], (guests[index].QueuePosition, guests[index].Cell), $"guest {index} keeps its physical place while the ride is broken (0xed4b0)" );
 			Assert.AreEqual( guests.Count - gone, rig.Ride.QueueLength, $"{gone} turns after the breakdown" );
@@ -749,9 +752,9 @@ public class QueueTests
 		Assert.AreEqual( guests.Count, rig.Ride.Dismissed );
 		for ( var index = 0; index < guests.Count; index++ )
 		{
-			Assert.AreEqual( GuestState.WalkingAround, guests[index].State );
-			Assert.AreEqual( before[index].Thought, guests[index].Thought, "dismissal sets no thought, in particular not 'feeling sick'" );
-			Assert.AreEqual( before[index].Happiness - medium, guests[index].Happiness, 0.01f, "0xeb6f4 with selector 1 (PeepInfo.MediumHappinessChange)" );
+			Assert.IsTrue( guests[index].State is GuestState.DoingNothing or GuestState.WalkingAround, $"guest {index} decides or wanders again: {guests[index].State}" );
+			Assert.AreEqual( before[index].Thought, atDismissal[index].Thought, "dismissal sets no thought, in particular not 'feeling sick'" );
+			Assert.AreEqual( before[index].Happiness - medium, atDismissal[index].Happiness, 0.01f, "0xeb6f4 with selector 1 (PeepInfo.MediumHappinessChange)" );
 		}
 	}
 
@@ -810,7 +813,7 @@ public class QueueTests
 			var thought = GuestThought.None;
 			rig.RunTurns( 5, () =>
 			{
-				if ( thought == GuestThought.None && guest.State == GuestState.WalkingAround )
+				if ( thought == GuestThought.None && guest.State == GuestState.DoingNothing )
 					thought = guest.Thought;
 			} );
 			Assert.AreEqual( leaves, !guest.IsInQueue, $"relief {relief}, gauge {gauge}" );
@@ -1020,14 +1023,14 @@ public class QueueTests
 		Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, "repaired: the head is called again" );
 		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2 ) );
 
-		// Choosing: walking guests skip a broken attraction (APPROX:QUEUE-017).
+		// Choosing: walking guests skip a broken attraction (APPROX:QUEUE-017). The first major decision waits until turn 31 (state 6: T > +0x1FC + 30).
 		foreach ( var broken in new[] { false, true } )
 		{
 			var rig = new Rig( excitement: 25 );
 			rig.Script[RideVariables.VAR_BROKEN] = broken ? 1 : 0;
 			var guests = Enumerable.Range( 0, 10 ).Select( _ => rig.Simulation.SpawnInPark( 2, 0 ) ).ToList();
 			var chose = 0;
-			rig.RunTurns( 4, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
+			rig.RunTurns( 60, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
 			Assert.AreEqual( broken, chose == 0, $"broken {broken}: {chose} guest-ticks heading for the ride" );
 		}
 	}
@@ -1060,7 +1063,7 @@ public class QueueTests
 		orphan.QueueJoinTurn = rig.Simulation.ParkTurn;
 		orphan.QueueCalled = true;
 		rig.Step();
-		Assert.AreEqual( (GuestState.WalkingAround, -1, -1L, false), (orphan.State, orphan.QueuePosition, orphan.QueueJoinTurn, orphan.QueueCalled) );
+		Assert.AreEqual( (GuestState.DoingNothing, -1, -1L, false), (orphan.State, orphan.QueuePosition, orphan.QueueJoinTurn, orphan.QueueCalled) );
 	}
 
 	[TestMethod]

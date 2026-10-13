@@ -1112,7 +1112,7 @@ internal sealed class M3GateRun
 				}
 				if ( track.State == GuestState.AtTicketBooth && guest.State is GuestState.CrossingRoadHome or GuestState.LeavingPark )
 					turnedBackAtBooth++;
-				if ( guest.Thought == GuestThought.Confused && track.State == GuestState.GoingToRide && guest.State == GuestState.WalkingAround )
+				if ( guest.Thought == GuestThought.Confused && track.State == GuestState.GoingToRide && guest.State == GuestState.DoingNothing )
 					confusedGiveUps++;
 				if ( guest.State == GuestState.GoingToRide )
 				{

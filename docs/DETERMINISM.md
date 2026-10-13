@@ -227,7 +227,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xB7F84A5A989B61F7`, schema 12: the hashed fields are unchanged, but guests now step off the bus one per park turn instead of every 0.4 s (tp.exe `0x4cf3e0`, ARRIVAL-001), so the run changes. Before that:
+  (`0x1896F89BF157D816`, schema 13: a guest's seconds-based decision timer leaves the hash and its state-6 activity joins it, so the schema is bumped,
+  and the run changes: a guest in the park follows the original's state 6 (one decision per park turn, the major choice at most every 30 turns) and state 7 (a walk of
+  one to five cells to a wander destination) instead of deciding every 3 s and wandering one cell at a time (docs/reverse/WANDER-plan.md, GUEST-010). Before that:
+  `0xB7F84A5A989B61F7`, schema 12: the hashed fields are unchanged, but guests now step off the bus one per park turn instead of every 0.4 s (tp.exe `0x4cf3e0`, ARRIVAL-001), so the run changes. Before that:
   `0xA35A9A8C809310FB`, schema 12: the hashed fields are unchanged, but the park value that the ledger months record (hashed with the economy) is now the original's object rule (PPC oracle F29: the costs of an object's levels times its state of repair / 100) instead of the age-scaled catalogue costs, so the run's hash changes. Before that:
   `0xC028F4EF0BED9D1C`, schema 12: the guests' used and temporary attraction histories and an integer exit counter join the hash, so the schema is bumped,
   and the run changes: guests choose and rate attractions by the original's score (PPC oracle F24), start and grow by the traced needs update and constructor

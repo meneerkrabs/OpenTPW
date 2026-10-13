@@ -613,7 +613,7 @@ internal static class ParkResumeSaveFile
 			Require( float.IsFinite( guest.Hunger ) && float.IsFinite( guest.Thirst ) && float.IsFinite( guest.Toilet )
 				&& float.IsFinite( guest.Energy ) && float.IsFinite( guest.Happiness ) && float.IsFinite( guest.Nausea )
 				&& float.IsFinite( guest.QueueJoinHappiness ) && float.IsFinite( guest.SecondsSinceRide )
-				&& float.IsFinite( guest.StateTimer ) && float.IsFinite( guest.DecisionTimer ) && float.IsFinite( guest.SmoothedSpeed ),
+				&& float.IsFinite( guest.StateTimer ) && (guest.DecisionTimer is not { } decisionTimer || float.IsFinite( decisionTimer )) && float.IsFinite( guest.SmoothedSpeed ),
 				$"guest {guest.Id} holds a need or timer that is not finite" );
 			Require( float.IsFinite( guest.HeadingX ) && float.IsFinite( guest.HeadingY ) && float.IsFinite( guest.DistanceWalked )
 				&& float.IsFinite( guest.DrawX ) && float.IsFinite( guest.DrawY ) && float.IsFinite( guest.DrawDistanceWalked )

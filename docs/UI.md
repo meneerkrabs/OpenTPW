@@ -387,9 +387,9 @@ glyph in all 14 UI fonts of each language.
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
   delete (`b_erase`). Open/close is disabled for non-attractions; fixed items
   cannot be deleted. Unknown statistics remain labelled as not simulated.
-  The developer prototype's repair gauge currently stays at 100%; the economy
-  wear synchronization updates catalogue objects only, so prototype wear is
-  a static limitation in both the info arm and the attractions overview.
+  The developer prototype's repair gauge follows its linked economy instance,
+  including wear and mechanic repair, in both the info arm and the attractions
+  overview. Without a linked economy record, the bridge retains its last gauge.
   Read-only visits disable build, open/close, delete and Save; callbacks also
   reject direct mutation attempts using the existing localized online message.
 - Speed control (OpenTPW addition, bottom-right): pause, ×1, ×2, ×4 set the

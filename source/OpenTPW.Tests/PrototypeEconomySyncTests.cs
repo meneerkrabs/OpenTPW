@@ -144,6 +144,76 @@ public class PrototypeEconomySyncTests
 		Assert.AreSame( prototypeState, state );
 	}
 
+	[TestMethod]
+	public void DistinctEconomyRecordsStayWithTheirOwnRuntimeAndBridge()
+	{
+		prototype.Close();
+		prototype.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
+		ordinary.Open();
+		ordinary.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 0 );
+		prototypeState.Repair = 17.25;
+		prototypeState.Price = 31;
+		prototypeState.CostOfGoods = 11;
+		prototypeState.ChanceOfLosingPercent = 51;
+		ordinaryState.Repair = 83.75;
+		ordinaryState.Price = 42;
+		ordinaryState.CostOfGoods = 22;
+		ordinaryState.ChanceOfLosingPercent = 62;
+		var balance = economy.Balance;
+		Invoke( "SyncObjectEconomy" );
+		Invoke( "SyncObjectEconomy" );
+		Assert.AreEqual( 17.25, prototype.Visitors.WearGauge );
+		Assert.AreEqual( 83.75, ordinary.Visitors.WearGauge );
+		Assert.AreEqual( new SideshowTerms( 11, 31, 51 ), prototype.Visitors.Sideshow );
+		Assert.AreEqual( new SideshowTerms( 22, 42, 62 ), ordinary.Visitors.Sideshow );
+		Assert.IsFalse( prototypeState.IsOpen );
+		Assert.IsTrue( prototypeState.ScriptBroken );
+		Assert.IsTrue( ordinaryState.IsOpen );
+		Assert.IsFalse( ordinaryState.ScriptBroken );
+		Assert.AreEqual( balance, economy.Balance );
+		Assert.AreEqual( 2, economy.Objects.Count );
+	}
+
+	[TestMethod]
+	public void MissingPrototypeRecordNeverBindsAReplacementOfTheSameInfoId()
+	{
+		economy.Remove( prototypeState.Id );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( PrototypeRide.InfoId, out var replacement ) );
+		Assert.AreNotEqual( prototypeState.Id, replacement!.Id );
+		replacement.Repair = 5;
+		prototype.Visitors.WearGauge = 79;
+		prototype.Close();
+		var balance = economy.Balance;
+		Invoke( "SyncObjectEconomy" );
+		Assert.AreEqual( 79d, prototype.Visitors.WearGauge );
+		Assert.IsTrue( replacement.IsOpen, "a stale binding must not follow an Info.Id match" );
+		Assert.AreEqual( 5d, replacement.Repair );
+		Assert.AreEqual( balance, economy.Balance );
+		Assert.AreEqual( 2, economy.Objects.Count );
+	}
+
+	[TestMethod]
+	public void DeletedAbsentOrUnlinkedPrototypeLeavesItsBridgeAndRecordUntouched()
+	{
+		prototype.Visitors.WearGauge = 79;
+		prototypeState.Repair = 5;
+		prototype.Close();
+		Field( typeof( OriginalObject ), "deleted" ).SetValue( prototype, true );
+		Invoke( "SyncObjectEconomy" );
+		Assert.AreEqual( 79d, prototype.Visitors.WearGauge );
+		Assert.IsTrue( prototypeState.IsOpen );
+		Field( typeof( OriginalObject ), "deleted" ).SetValue( prototype, false );
+		SetProperty( level, "PlacedRide", null! );
+		Invoke( "SyncObjectEconomy" );
+		Assert.IsTrue( prototypeState.IsOpen );
+		SetProperty( level, "PlacedRide", prototype );
+		Field( typeof( Level ), "prototypeInstance" ).SetValue( level, null );
+		Invoke( "SyncObjectEconomy" );
+		Assert.AreEqual( 79d, prototype.Visitors.WearGauge );
+		Assert.IsTrue( prototypeState.IsOpen );
+		Assert.AreEqual( 2, economy.Objects.Count );
+	}
+
 	private OriginalObjectRuntime Runtime( int infoId, RideScriptWorld world )
 	{
 		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {infoId}\nInfo.Name Synthetic\nInfo.IsChoosable 1\n", "synthetic.sam" ) } );

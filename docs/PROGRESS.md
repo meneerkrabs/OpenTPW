@@ -896,6 +896,9 @@ research batch was included in this merge.
   of unimplemented zeros, as the Mac RSE does (`0xb2144`, C `time`/`localtime`, PPC-clock.md; VM-902 keeps the timezone and
   flag-ordering limits). The clock is injectable: the M4 gate and the browser digest use a fixed time, because Halloween's
   Haunted Tower reads `HOUR` and its hour reaches the world hash; the game keeps the host clock.
+- **Particle event diagnostics (October 13):** an object script's EVENT 1/2 particle request now records its latest prepared
+  event (effect, control and position in render coordinates) for diagnostics, cleared on Stop and kept out of saves and the
+  simulation hash; particles are still not drawn (PTCL-901).
 - **Pick visitors in the park (October 13):** a mouse press on a visible visitor in the park view selects it in the visitors'
   roster, using the same sprite rectangle the renderer draws; HUD controls, tools, overlays and the ride view keep the press, and
   the pick only reads the simulation (UI-930: rectangle picking without occlusion or transparent pixels).

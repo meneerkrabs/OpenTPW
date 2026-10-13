@@ -216,4 +216,28 @@ public class WeatherForecastTests
 		Assert.IsNull( weather.Forecast );
 		Assert.AreEqual( 100, weather.Quality, "the debug forecast applies on its day like a natural one" );
 	}
+
+	[TestMethod]
+	public void ARestoredWeatherKeepsTheCurrentDayTheCountdownReads()
+	{
+		var weather = new ParkWeather( Jungle(), 4, 10, 10 );
+		weather.AdvanceTo( 0 );
+		weather.AdvanceTo( ParkCalendar.TickAtDay( 5 ) ); // turn by turn: day 3 rolls the forecast (apply day 7)
+		Assert.AreEqual( 5, weather.CurrentDay );
+		Assert.IsNotNull( weather.Forecast, "the seed's schedule has a forecast pending on day 5" );
+		var snapshot = weather.CaptureSnapshot();
+		var restored = new ParkWeather( Jungle(), 4, 10, 10 );
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( 5, restored.CurrentDay, "the countdown's 'now' resumes at the saved day, not day 0" );
+		Assert.AreEqual( 7, restored.ForecastApplyDay );
+		// The first presentation step after restore reads the true remaining distance, before any turn steps.
+		var state = new WeatherForecastState();
+		var quality = restored.Forecast;
+		Assert.IsNotNull( quality );
+		state.Step( new WeatherForecastSample( restored.CurrentDay, quality, restored.ForecastApplyDay,
+			restored.BandsOf( quality.Value ), default ), 0.016f );
+		var expected = $"Weather forecast: {WeatherForecastState.KindText( restored.BandsOf( quality.Value ) )} in 2 days.";
+		CollectionAssert.AreEqual( new[] { expected }, state.TakeAnnouncements().ToArray(),
+			"a park resumed mid-warning announces the true distance on its first frame" );
+	}
 }

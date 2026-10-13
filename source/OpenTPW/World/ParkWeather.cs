@@ -271,6 +271,9 @@ public sealed class ParkWeather
 		random.Restore( snapshot.RandomState );
 		started = snapshot.Started;
 		lastTurn = snapshot.LastTurn;
+		// The countdown's "now" resumes with the schedule: a restore mid-warning reads its true distance
+		// on the first frame, before the next turn (248 ms) steps the day.
+		CurrentDay = ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( snapshot.LastTurn ) );
 		lastChanged = snapshot.LastChanged;
 		nextRollDay = snapshot.NextRollDay;
 		pendingQuality = snapshot.PendingQuality;

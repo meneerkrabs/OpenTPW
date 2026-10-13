@@ -57,7 +57,7 @@ internal sealed partial class GameFlow : IDisposable
 	public Func<UiScreenStack, string, bool>? PrepareTexturePack { get; set; }
 	public Level? Level { get; private set; }
 	public ParkHud? Hud { get; private set; }
-	/// <summary>The level of the Theme Park Inc viewer, which has no <see cref="Hud"/> (docs/THEME-PARK-INC.md).</summary>
+	/// <summary>The level of the Theme Park Inc slice, which has no <see cref="Hud"/> but the experimental <see cref="IncHud"/> (docs/THEME-PARK-INC.md).</summary>
 	// [EXT:tpi-viewer] viewing aid, not original behaviour
 	private Level? ViewerLevel { get; set; }
 	public FrontEndMenu? Menu { get; private set; }
@@ -280,11 +280,21 @@ internal sealed partial class GameFlow : IDisposable
 		if ( original )
 			GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
-		// [EXT:tpi-viewer] Theme Park Inc worlds are viewed without economy, HUD or advisor (the camera, Esc and P only).
-		if ( GameEditions.IsThemeParkInc )
+		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
+		// build and guest systems under the experimental HUD, without the reference game's economy, HUD or advisor.
+		if ( level.IsThemeParkIncSlice )
 		{
 			ViewerLevel = level;
-			Log.Trace( $"Theme Park Inc viewer: {levelName} without economy, HUD or advisor. Esc quits, P pauses." );
+			try
+			{
+				IncHud = CreateThemeParkIncHud( level );
+				Log.Trace( $"Theme Park Inc experimental slice: {levelName} with the experimental HUD; {GameEditions.SliceNotice}" );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException )
+			{
+				IncHud = null;
+				Log.Warning( $"Theme Park Inc experimental HUD unavailable ({exception.Message}); {levelName} runs as the bare viewer. Esc quits, P pauses." );
+			}
 			return level;
 		}
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
@@ -356,6 +366,7 @@ internal sealed partial class GameFlow : IDisposable
 			Level = null;
 			Hud = null;
 			ViewerLevel = null;
+			IncHud = null;
 			StartKind = null;
 			OpenTPW.Level.Current = null!;
 		}
@@ -450,7 +461,14 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		if ( Level != null && ViewerLevel == Level )
 		{
-			UpdateViewer( Level, input );
+			if ( IncHud != null )
+			{
+				UpdateThemeParkIncSlice( Level, IncHud, input );
+			}
+			else
+			{
+				UpdateViewer( Level, input );
+			}
 			return;
 		}
 		GameAudio.EnsureStarted();
@@ -500,7 +518,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 	}
 
-	/// <summary>The Theme Park Inc viewer's frame: Esc quits, P pauses and resumes, the camera moves as in a park.</summary>
+	/// <summary>The bare Theme Park Inc viewer's frame (the experimental HUD could not be built): Esc quits, P pauses and resumes, the camera moves as in a park.</summary>
 	private void UpdateViewer( Level level, UiInput input )
 	{
 		if ( input.Has( UiKeys.Back ) )
@@ -710,6 +728,8 @@ internal sealed partial class GameFlow : IDisposable
 			Hud.Draw( Context );
 			Advisor?.Draw( Context );
 		}
+		else if ( IncHud != null )
+			IncHud.Draw( Context );
 		else
 			Menu?.Stack.Draw( Context );
 		// [EXT:texture-pack] a running texture switch shows its progress without blocking the game

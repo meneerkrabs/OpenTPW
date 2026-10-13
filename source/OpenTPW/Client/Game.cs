@@ -599,17 +599,17 @@ internal static class Game
 	}
 
 	/// <summary>
-	/// Theme Park Inc is not a supported game. Its data may only be opened by the experimental level viewer:
+	/// Theme Park Inc is not a supported game. Its data may only be opened by the experimental slice:
 	/// <c>--load-original-level arabian|science|water</c> (docs/THEME-PARK-INC.md, "Theme Park Inc level viewer").
 	/// </summary>
-	// [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support.
+	// [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support.
 	private static void RequireThemeParkIncViewer( string[] args, GameEditionReport edition )
 	{
 		if ( GameEditions.ViewerRefusal( args ) is { } refusal )
 			throw new ArgumentException( refusal );
 		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
-		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental level viewer for '{level}'. "
-			+ "This is not Theme Park Inc support: no economy, advisor or HUD, and original behaviour is not verified." );
+		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice for '{level}'. "
+			+ GameEditions.SliceNotice );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

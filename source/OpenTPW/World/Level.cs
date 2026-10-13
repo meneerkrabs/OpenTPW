@@ -60,6 +60,8 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+	/// <summary>True while this level runs the experimental Theme Park Inc slice: no economy, HUD or advisor of the reference game.</summary>
+	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
 	private readonly OpenTPW.Online.Packages.MinimalParkPayload? visitLayout;
 	/// <summary>The visit's placed objects, one entry per payload record (null where content was missing); coaster stations are looked up here.</summary>
@@ -93,8 +95,9 @@ public partial class Level : IDisposable
 			OriginalPark = OriginalPark.Load( levelName, readShippedSave: resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
 			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
-			// [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md).
-			if ( !IsReadOnlyVisit && !GameEditions.IsThemeParkInc )
+			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the
+			// balance keys it reads, so its worlds run without one and building stays free (docs/THEME-PARK-INC.md).
+			if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
 				Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
 					: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 		}

@@ -302,6 +302,34 @@ audio decodes; other variants throw `NotSupportedException`. Caller streams stay
 open; nonseekable short reads are supported. Asset tests are inconclusive (not
 passing) without `OPENTPW_GAME_PATH`; the all-frames test takes ~1 min in Debug.
 
+### Container robustness audit (2026-10-13)
+
+PT numeric tags exposed as signed `int` metadata reject values greater than
+`int.MaxValue` instead of wrapping negative (frame rate, compression/revision,
+channels and sample rate). This is OpenTPW's typed representation policy, not a
+new inferred codec limit; representable unknown metadata remains available to
+callers, whose supported-variant checks still apply. The sample count stays a
+`long` with its existing supported bound. No transform or quantizer math changed.
+
+`TgqAudioReader` advances its block ordinal only after a successful decode. A
+malformed block with a valid encoded length therefore remains the failing block
+on retry rather than being silently skipped. Reads that throw do not return a
+frame count; their caller buffer may already contain data copied from an earlier
+block in that call and should be discarded.
+
+Synthetic regressions failed on the unsigned-tag wraparound and failed-decode
+retry paths before the fixes. Tests preserve the largest representable metadata,
+reject every truncated prefix of a valid miniature container, and decode its
+valid patch/audio/bitstream padding. The audit also checked that chunk sizes and
+file offsets are bounded before slicing, PT extended lengths are bounded before
+copying, audio sums use `long`, and frame dimensions bound plane allocation.
+Existing file/chunk/count/dimension limits remain unchanged.
+
+Fresh verification: 55 synthetic container/decoder/playback cases pass; four
+original movie cases skip without the private corpus. Original corpus compatibility
+and original-player malformed-input behavior were not requalified because USBSSD
+reads are blocked. Existing codec-fidelity gates above remain open.
+
 ## Playback
 
 `bash scripts/run.sh --game-path <install> --play-movie bf` plays

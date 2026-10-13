@@ -43,7 +43,8 @@ public sealed class TgqAudioReader
 				var frames = movie.GetAudioBlockSampleCount( blockIndex );
 				if ( block.Length < frames * Channels )
 					block = new short[frames * Channels];
-				blockFrames = movie.DecodeAudioBlock( blockIndex++, block );
+				blockFrames = movie.DecodeAudioBlock( blockIndex, block );
+				blockIndex++;
 				blockPosition = 0;
 				continue;
 			}

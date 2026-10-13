@@ -231,14 +231,21 @@ public sealed class TgqMovieFile : BaseFormat
 		foreach ( var padding in payload[offset..] )
 			if ( padding != 0 )
 				throw new InvalidDataException( "TGQ SCHl has nonzero bytes after its PT patch." );
-		var channels = (int)numeric.GetValueOrDefault( (byte)0x82, 1 );
-		var sampleRate = (int)numeric.GetValueOrDefault( (byte)0x84, DefaultSampleRate );
+		int IntegerTag( byte tag, int fallback )
+		{
+			var number = numeric.GetValueOrDefault( tag, fallback );
+			if ( number > int.MaxValue )
+				throw new InvalidDataException( $"TGQ PT patch tag 0x{tag:X2} exceeds the supported integer range." );
+			return (int)number;
+		}
+		var channels = IntegerTag( 0x82, 1 );
+		var sampleRate = IntegerTag( 0x84, DefaultSampleRate );
 		var sampleCount = numeric.GetValueOrDefault( (byte)0x85, 0 );
 		if ( channels is < 1 or > 8 || sampleRate is < 1 or > 192000 || sampleCount > MaximumAudioSamplesPerChannel )
 			throw new InvalidDataException( "TGQ audio header values are outside supported limits." );
-		return new TgqAudioHeader( platform, channels, (int)numeric.GetValueOrDefault( (byte)0x83, 7 ),
-			numeric.TryGetValue( 0x80, out var revision ) ? (int)revision : null, sampleRate, sampleCount,
-			numeric.TryGetValue( 0x1b, out var rate ) ? (int)rate : null, tags.AsReadOnly() );
+		return new TgqAudioHeader( platform, channels, IntegerTag( 0x83, 7 ),
+			numeric.ContainsKey( 0x80 ) ? IntegerTag( 0x80, 0 ) : null, sampleRate, sampleCount,
+			numeric.ContainsKey( 0x1b ) ? IntegerTag( 0x1b, 0 ) : null, tags.AsReadOnly() );
 	}
 
 	private static byte[] ReadBounded( Stream stream )

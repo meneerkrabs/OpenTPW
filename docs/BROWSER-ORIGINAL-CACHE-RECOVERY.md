@@ -30,8 +30,24 @@ comparison, overlapping manifest flush, folder replacement and removal checks.
 Independent controls also keep the old bytes/hash readable during deferred
 hashing without opening a writable file, and verify pre-invalidation write and
 close failure/retry with content-sensitive hashes.
-All 47 browser-helper Node tests pass, including the texture and performance
+All 51 browser-helper Node tests pass, including the texture and performance
 helper selections; these results are functional checks, not performance data.
+
+An exposed-store concurrency probe also reproduced final `BB` bytes advertised
+with an `AA` content hash when two writes to the same listed path overlapped and
+the first close completed later. Mutations to that path within one store run through a
+promise tail after hashing. A rejection does not block the next mutation, and the
+last settled tail is removed. Entry identity is rechecked when a queued mutation
+starts, so an old queued request cannot write into a replacement folder. Different
+paths remain independent. Tests cover the mismatch, rejection followed by queued
+and later retries, unrelated-path completion/flush, and a queued request invalidated
+by clear/begin. An initial lazy write still adds no manifest checkpoint.
+
+The page's `main.js` already serializes its ordinary writes with `keepChain` and
+skips kept/queued paths; this probe does not demonstrate corruption in that normal
+call path. The change protects the exposed store API and leaves the page queue and
+its lazy checkpoint schedule unchanged. Mutation order follows completed digests,
+not a promise of invocation order while hashes are still pending.
 
 Failed rewrites can temporarily invalidate cache availability, even when the
 older physical file remains. The page can ask for that missing file again.
@@ -39,7 +55,8 @@ The module does not promise an atomic transaction across data and manifest files
 or power-loss durability. The in-memory handles model writes that reject before
 committing and cannot qualify browser-specific quota, permission, stream cleanup
 or crash behavior. No real-browser storage or user-profile check was performed.
-The entry checks cover the digest and invalidation waits; they do not serialize
-clear/begin or concurrent writes to the same path during subsequent file-handle,
-write or close waits. The page's ordinary write queue remains responsible for
-serializing queued writes. Cached reads still validate size, not the content hash.
+Entry checks cover digest, invalidation and queued-start waits. Clear/begin is not
+serialized with mutations already inside later file-handle/write/close waits, and
+separately opened store instances do not share mutation tails. There is no atomic
+transaction across different paths. Caller-owned input bytes must remain unchanged
+until their write completes. Cached reads still validate size, not the content hash.

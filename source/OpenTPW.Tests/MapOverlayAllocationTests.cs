@@ -14,7 +14,7 @@ public class MapOverlayAllocationTests
 {
 	public TestContext TestContext { get; set; } = null!;
 
-	private sealed class Rig
+	internal sealed class Rig
 	{
 		public readonly ParkHud Hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
 		public readonly GuestSimulation Guests;

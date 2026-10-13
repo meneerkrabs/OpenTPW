@@ -720,3 +720,6 @@ projection/control tests remain green. These are allocation measurements, not
 wall-clock or browser/GPU/original-player performance claims; ordinary tiered-JIT
 runs can report different allocation counts. Per-cell overlay grouping remains
 an explicitly measured source of allocations for a separate bounded pass.
+
+The [independent map allocation review](MAP-ALLOCATION-REVIEW.md) records fresh
+marker/legend lifecycle coverage and matched managed red/green measurements.

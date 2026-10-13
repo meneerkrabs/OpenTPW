@@ -47,6 +47,8 @@ public static partial class Program
 		var path = Path.Combine( GameRoot, relativePath.TrimStart( '/' ) );
 		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
 		File.WriteAllBytes( path, contents );
+		// A theme folder copied while the game runs: the game data's remembered lookups may name it missing.
+		FileSystem?.InvalidateLookups();
 	}
 
 	/// <summary>
@@ -81,7 +83,8 @@ public static partial class Program
 		if ( GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "The chosen files hold Theme Park Inc (Sim Coaster) data, which the browser does not run. "
 				+ "The experimental slice is a desktop start: --load-original-level arabian, science or water (docs/THEME-PARK-INC.md)." );
-		FileSystem = new BaseFileSystem( dataDirectory );
+		// The game data changes only through AddFile, which invalidates the remembered lookups.
+		FileSystem = new BaseFileSystem( dataDirectory ) { CacheLookups = true };
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
 		// Like the desktop: the saved choice (/config/language.json, kept by the page) and the CD's other languages

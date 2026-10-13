@@ -25,7 +25,7 @@ public sealed class WadArchiveFile : ArchiveFile
 		if ( Compressed )
 		{
 			var refpack = new Refpack( data );
-			data = refpack.Decompress().ToArray();
+			data = refpack.Decompress();
 		}
 
 		// Save off data so we can use it again quickly if we need to

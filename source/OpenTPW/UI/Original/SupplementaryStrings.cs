@@ -86,6 +86,7 @@ public enum OpenTpwText
 	NewPark,
 	ContinueSavedPark,
 	CamcorderArmed,
+	InvalidPrice,
 }
 
 public static class SupplementaryStrings
@@ -150,6 +151,10 @@ public static class SupplementaryStrings
 			"Cliquez sur le sol pour marcher. C ou Échap revient à la vue du parc.",
 			"Zum Gehen auf den Boden klicken. C oder Escape kehrt zur Parkansicht zurück.",
 			"Klicka på marken för att gå. C eller Escape återgår till parkvyn." },
+		[OpenTpwText.InvalidPrice] = new[] {
+			"Enter a whole price from 0 to 2147483647.", "Indtast en hel pris fra 0 til 2147483647.",
+			"Voer een gehele prijs van 0 tot 2147483647 in.", "Saisissez un prix entier de 0 à 2147483647.",
+			"Einen ganzzahligen Preis von 0 bis 2147483647 eingeben.", "Ange ett helt pris från 0 till 2147483647." },
 		[OpenTpwText.NoSavedParks] = new[] { "No saved parks", "Ingen gemte parker", "Geen opgeslagen parken", "Aucun parc sauvegardé", "Keine gespeicherten Parks", "Inga sparade parker" },
 		[OpenTpwText.CannotBuildHere] = new[] { "You can't build here", "Du kan ikke bygge her", "U kunt hier niet bouwen", "Impossible de construire ici", "Hier kann nicht gebaut werden", "Du kan inte bygga här" },
 		[OpenTpwText.NotSimulated] = new[] { "Not simulated yet", "Endnu ikke simuleret", "Nog niet gesimuleerd", "Pas encore simulé", "Noch nicht simuliert", "Inte simulerad ännu" },

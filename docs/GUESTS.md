@@ -557,7 +557,6 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
-| QUEUE-001 | The queue link (+13) uses the connection bits' compass: 1/4/16/64 = −Y/+X/+Y/−X (verified for +12 on 78 Easymode cells) | Run-time neighbour offset tables (data `0xec52c..0xec5a4`) |
 | QUEUE-002 | The next queue cell is searched in grid direction order | Same tables; the order paired with links 16, 1, 64, 4 |
 | QUEUE-003 | Guests step onto the back cell from its first walkable neighbour | `0xdd744` and the state-10 walk to the back cell |
 | QUEUE-004 | The join excitement gate, clamped difference and live excitement follow the original (ORACLE.md F16, executed); only the excitement of a ride with a thing behind ride `+36` (60 % of the level plus up to 40 from three piece counts of `0x1ea40`) is not modelled | What ride `+36` and the three counts are (no OpenTPW object has one) |
@@ -570,7 +569,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-012 | Queue cells need allowed terrain and no object | The queue tool's validity checks |
 | QUEUE-013 | At most 25 cells per queue | The queue tool (`0x70b98..0x8c7c0`) |
 | QUEUE-014 | Laid cell by cell from the front, each touching the back | The queue tool's placement rules (UI-031) |
-| QUEUE-015 | Removing a queue cell removes every cell behind it | The remove tool's route into `ClearCell` `0x859b4` |
+| QUEUE-015 | Removing a queue cell removes every cell behind it; the original's cell clear (tp.exe `0x5367a0`) removes only that cell and leaves the rest unreached on the map | The remove tool's route into `0x5367a0` (callers `0x452ca0` / `0x452d30`) |
 | QUEUE-016 | Admission and state 11 run once per park turn | Live-list eligibility of objects and guests |
 | QUEUE-017 | Guests do not choose a broken attraction | The state-6 attraction choice and its test of ride `+408` |
 | QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |

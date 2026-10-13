@@ -9,7 +9,6 @@ public static class QueueApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("QUEUE-001", "queue link values 1/4/16/64 map to −Y/+X/+Y/−X like the saved connection bits"),
 		("QUEUE-002", "the next queue cell is searched in grid direction order"),
 		("QUEUE-003", "guests step onto the back of a queue from its first walkable neighbour (the join cell)"),
 		("QUEUE-004", "the join excitement of a ride with a thing behind ride +36 (60 % of the level plus up to 40 from three piece counts) is not modelled; the gate, the clamped difference and the live excitement (sideshow, speed and duration ratios, coaster) follow the original (ORACLE.md F16)"),
@@ -22,7 +21,7 @@ public static class QueueApproximations
 		("QUEUE-012", "queue cells need allowed terrain and no object footprint"),
 		("QUEUE-013", "a queue has at most 25 cells"),
 		("QUEUE-014", "queues are laid cell by cell from the entrance's outside cell, each touching the back cell"),
-		("QUEUE-015", "removing a queue cell removes every cell behind it"),
+		("QUEUE-015", "removing a queue cell removes every cell behind it, where the original's cell clear removes only that cell"),
 		("QUEUE-016", "rides evaluate admission and queued guests run state 11 once per park turn"),
 		("QUEUE-017", "guests do not choose a broken attraction (VAR_BROKEN ≠ 0)"),
 		("QUEUE-018", "a broken attraction refuses joins as if closed"),

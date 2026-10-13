@@ -305,6 +305,9 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- ECON-015 is retired: tp.exe's researcher update `0x502960` skips display states 3, 4 and 5 of `0x5064f0`, which maps the internal
+  staff state to the STAFFSTATES names (Idle, Patrolling, Working, Resting, On strike, Picked up); C#'s StaffState is that index, and its
+  exclusion of Resting, OnStrike and PickedUp is the original's. GUEST-007 is narrowed with the prank rule of the state-6 handler.
 - The oracle now executes the Mac park calendar and the cadence of park turns (finding F30, ECON-001/002/003, [ORACLE.md](reverse/ORACLE.md)):
   the conversion `0xe4394` (2000-01-01 + floor(turn × rate / 4) s through the civil calendar, 652 inputs around every month, leap-day and year
   boundary), the update `0xe3f0c` (a day, month and year message when the date's day, month or year differs from the stored one, 579 scripts) and the

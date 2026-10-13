@@ -203,6 +203,59 @@ public class RideVMTests
 	}
 
 	[DataTestMethod]
+	[DataRow( 6, 7, 42, RideVM.VMFlags.None )]
+	[DataRow( -6, 7, -42, RideVM.VMFlags.Sign )]
+	[DataRow( 3, -3, -9, RideVM.VMFlags.Sign )]
+	[DataRow( -4, -5, 20, RideVM.VMFlags.None )]
+	[DataRow( 0, 5, 0, RideVM.VMFlags.Zero )]
+	[DataRow( 1000, 1000, 1_000_000, RideVM.VMFlags.None )]
+	public void MultWritesTheProductDestinationFirstAndSetsFlags( int a, int b, int expected, RideVM.VMFlags expectedFlags )
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.COPY, V( 0 ), a )
+			.I( Opcode.COPY, V( 3 ), b )
+			.I( Opcode.MULT, V( 1 ), V( 0 ), b )
+			.I( Opcode.MULT, V( 2 ), a, V( 3 ) )
+			.I( Opcode.ENDSLICE ) );
+		Run( vm, 1 );
+		Assert.AreEqual( expected, vm.Variables[1], "variable × literal" );
+		Assert.AreEqual( expected, vm.Variables[2], "literal × variable" );
+		Assert.AreEqual( expectedFlags, vm.Flags );
+	}
+
+	[TestMethod]
+	public void MultLiteralDestinationDiscardsTheProductButSetsFlags()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.COPY, V( 0 ), 9 )
+			.I( Opcode.MULT, 0, V( 0 ), 8 )
+			.I( Opcode.BRANCH_PV, "positive" )
+			.I( Opcode.COPY, V( 1 ), 99 ).I( Opcode.BRANCH, "idle" )
+			.Label( "positive" ).I( Opcode.COPY, V( 1 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( 1, vm.Variables[1], "flags-only MULT still drives the following branch" );
+		Assert.AreEqual( 0, vm.Instructions[1].Operands[0].Value, "writes to a literal destination are discarded" );
+	}
+
+	[TestMethod]
+	public void MultProductWrapsAtThirtyTwoBitsLikeAddAndSub()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.COPY, V( 0 ), 16384 )
+			.I( Opcode.MULT, V( 1 ), V( 0 ), 4 ) // 65536 = 2^16, past the literal range
+			.I( Opcode.MULT, V( 2 ), V( 1 ), V( 1 ) ) // 2^32 wraps to 0
+			.I( Opcode.BRANCH_Z, "wrapped" )
+			.I( Opcode.COPY, V( 3 ), 99 ).I( Opcode.BRANCH, "idle" )
+			.Label( "wrapped" ).I( Opcode.COPY, V( 3 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( 65536, vm.Variables[1] );
+		Assert.AreEqual( 0, vm.Variables[2], "2^16 × 2^16 wraps to zero in 32 bits" );
+		Assert.AreEqual( 1, vm.Variables[3], "the zero flag drove the branch" );
+	}
+
+	[DataTestMethod]
 	[DataRow( -5, 3 )]
 	[DataRow( 0, 1 )]
 	[DataRow( 7, 2 )]
@@ -363,6 +416,133 @@ public class RideVMTests
 		Assert.AreEqual( 0, vm.Variables[0], "500 ms = 30 ticks have not passed" );
 		Run( vm, 2 );
 		Assert.AreEqual( 1, vm.Variables[0] );
+	}
+
+	/// <summary>
+	/// WAITABS keeps the traced Mac shape (STP-PPC 0xb0710): despite the name the deadline is now + operand — a
+	/// relative wait without WAIT's speed division — the first encounter always yields, and flags survive it.
+	/// </summary>
+	[TestMethod]
+	public void WaitAbsoluteCountsUnscaledMillisecondsAndKeepsFlags()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 1 ) )
+			.I( Opcode.WAITABS, 500 )
+			.I( Opcode.BRANCH_Z, "zero" )
+			.I( Opcode.COPY, V( 0 ), 2 ).I( Opcode.BRANCH, "idle" )
+			.Label( "zero" ).I( Opcode.COPY, V( 0 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( RideVMState.Waiting, vm.State );
+		Assert.AreEqual( 1000d / 60 + 500, vm.WakeTimeMilliseconds, 1e-9, "now + operand, not an absolute clock word" );
+		Run( vm, 29 );
+		Assert.AreEqual( 0, vm.Variables[0], "500 ms = 30 ticks have not passed" );
+		Run( vm, 2 );
+		Assert.AreEqual( 1, vm.Variables[0], "the branch after the wait still sees the pre-wait flags" );
+	}
+
+	[TestMethod]
+	public void WaitAbsoluteAcceptsAVariableOperand()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.COPY, V( 1 ), 250 )
+			.I( Opcode.WAITABS, V( 1 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( 1000d / 60 + 250, vm.WakeTimeMilliseconds, 1e-9 );
+		Run( vm, 14 );
+		Assert.AreEqual( RideVMState.Waiting, vm.State, "250 ms ≈ 15 ticks have not fully passed" );
+		Run( vm, 2 );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	/// <summary>
+	/// The original's first encounter always yields, even when the deadline is not in the future: WAITABS 0 and a
+	/// negative operand wake at the next servicing pass instead of continuing the same slice.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( -100 )]
+	public void WaitAbsoluteWithAPastDeadlineYieldsOnceAndResumesNextTick( int operand )
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.WAITABS, operand )
+			.I( Opcode.COPY, V( 0 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( RideVMState.Waiting, vm.State, "the first encounter yields" );
+		Assert.AreEqual( 0, vm.Variables[0] );
+		Assert.AreEqual( 1000d / 60, vm.WakeTimeMilliseconds, 1e-9, "a past deadline clamps to now" );
+		Run( vm, 1 );
+		Assert.AreEqual( 7, vm.Variables[0], "the next servicing pass resumes past the wait" );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	[TestMethod]
+	public void WaitAbsoluteSharesTheWakeDeadlineWithWait()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.WAIT, 100 )
+			.I( Opcode.WAITABS, 200 )
+			.I( Opcode.COPY, V( 0 ), 3 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( 1000d / 60 + 100, vm.WakeTimeMilliseconds, 1e-9 );
+		Run( vm, 6 );
+		Assert.AreEqual( 0, vm.Variables[0], "WAIT 100 ≈ 6 ticks; the slice is inside WAITABS now" );
+		Run( vm, 6 );
+		Assert.AreEqual( 0, vm.Variables[0], "WAITABS 200 ≈ 12 more ticks" );
+		Run( vm, 6 );
+		Assert.AreEqual( 3, vm.Variables[0], "the second wait re-arms the shared deadline field (+160)" );
+	}
+
+	/// <summary>Stopping the script cancels a pending WAITABS like any other wait: no slice runs after it.</summary>
+	[TestMethod]
+	public void StopCancelsAPendingWaitAbsolute()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.WAITABS, 5000 )
+			.I( Opcode.COPY, V( 0 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( RideVMState.Waiting, vm.State );
+		var slices = vm.SliceCount;
+		vm.Stop();
+		Assert.AreEqual( RideVMState.Halted, vm.State );
+		Run( vm, 10 );
+		Assert.AreEqual( slices, vm.SliceCount, "a stopped script never slices again" );
+		Assert.AreEqual( 0, vm.Variables[0], "the instruction after the wait never runs" );
+	}
+
+	/// <summary>WAIT and WAITABS use the same snapshotted wake deadline, so a WAITABS mid-wait restores identically.</summary>
+	[TestMethod]
+	public void WaitAbsoluteSurvivesSnapshotRestoreWithItsDeadline()
+	{
+		RideScriptFile Script() => new( new MemoryStream( new Asm()
+			.I( Opcode.WAITABS, 500 )
+			.I( Opcode.COPY, V( 0 ), 5 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( Vars ) ) );
+		var world = new RideScriptWorld();
+		var original = new RideVM( Script(), new RideVMOptions { Seed = 1, World = world, SourceName = "waitabs.rse" } );
+		original.Advance( Tick );
+		Assert.AreEqual( RideVMState.Waiting, original.State );
+		var snapshot = world.CaptureSnapshot();
+		var id = original.ScriptId;
+
+		var restored = new RideScriptWorld();
+		var candidate = new RideVM( Script(), new RideVMOptions { Seed = 1, World = restored, SourceName = "waitabs.rse" } );
+		restored.RestoreSnapshot( snapshot, new Dictionary<int, RideVM> { [id] = candidate } );
+		Assert.AreEqual( original.WakeTimeMilliseconds, candidate.WakeTimeMilliseconds, 1e-9 );
+		Assert.AreEqual( RideVMState.Waiting, candidate.State );
+		for ( var tick = 0; tick < 40; tick++ )
+		{
+			original.Advance( Tick );
+			candidate.Advance( Tick );
+		}
+		Assert.AreEqual( 5, original.Variables[0], "the wait completed after the restore" );
+		Assert.AreEqual( original.Variables[0], candidate.Variables[0] );
+		Assert.AreEqual( original.WakeTimeMilliseconds, candidate.WakeTimeMilliseconds, 1e-9 );
 	}
 
 	[TestMethod]

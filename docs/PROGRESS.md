@@ -797,6 +797,14 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Memory across park changes (October 13):** the harness's `switch` scenario (Jungle, lobby,
+  another park, lobby, Jungle) with live counters found two leaks. A static `RootPanel.Instance`
+  that nothing used kept the first park alive for the whole session; it is gone. The decoded-sample
+  cache kept every park's sound categories and banks alive; `SoundEventSystem.Forget` drops them
+  when a park or the lobby ends. In the measured run, live memory in the lobby after a park fell from
+  67 to 47 MB, after a second park from 81 to 58 MB, and no old park stayed alive. Diagnostics for the harness name the
+  static paths to stale parks and the largest holders. Still open: run-time textures without a path,
+  whole archive and sound-bank files in memory. Phase 4 of the browser plan, first part.
 - **Three start costs removed (October 13):** the RefPack decoder of the WAD archives reflected over
   the assembly on every call and built its output byte by byte (269 ms of the Jungle start); it is
   now one pass, byte-identical to the former decoder on every compressed member of the original

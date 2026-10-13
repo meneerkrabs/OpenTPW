@@ -25,6 +25,7 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `jungle` | the cold start of Full Simulation Jungle (the construction frame) with its load profile, then a steady window |
 | `buy` | the first buy-menu open (Aztec Mayhem selected) and the first Belly Bounce, Balloon Shop, Burger Shop and Drinks Shop selections |
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
+| `switch` | memory across park changes (Jungle, the lobby, the next island's park, the lobby, Jungle again), each point after a full collection: wasm, live managed memory, live parks, entities, live textures by source, archive and sound bytes, and in the lobby the static fields that hold the most |
 | `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
@@ -155,6 +156,37 @@ In these runs decoding was about 6 % of the AOT start (10 % in the interpreter),
 decoded textures could save at most about 60 ms of a Jungle start, less the time to read it back;
 the browser plan's phase 3 therefore waits. The larger shares are the object catalogue, the kid sprite sets, starting the park
 audio and the object placement: those, or spreading the start over frames, are the next targets.
+
+## Memory across park changes (13 October)
+
+The `switch` scenario takes each point after a full collection, so the managed figure is live
+memory. On the AOT build (M5 setup) it found two leaks:
+
+- **The first park stayed alive for the session.** `RootPanel` (an entity) stored the first one ever
+  made in a static `Instance` that nothing used; through it the first park's `Level` and everything it
+  held stayed reachable. The diagnostic `PerfStaleLevelPaths` (a walk from the static fields to any
+  park but the current one) named the path. The field is gone.
+- **Each park left its sound banks behind.** The decoded-sample cache is keyed by sound category; after
+  a park the old categories, with their whole sound banks, stayed reachable through it.
+  `SoundEventSystem.Forget` now drops a park's and the lobby's categories when they end, and a decode
+  that finishes later does not put them back. `PerfMemoryRoots` (bytes of arrays per static field)
+  showed the mixer's share.
+
+| Step | Live managed before | After | Live parks before → after |
+| --- | ---: | ---: | --- |
+| Jungle | 94 MB | 94 MB | 1 → 1 |
+| Lobby | 67 MB | 47 MB | 1 → 0 |
+| Fantasy | 124 MB | 109 MB | 2 → 1 |
+| Lobby again | 81 MB | 58 MB | 1 → 0 |
+| Jungle again | 132 MB | 113 MB | 2 → 1 |
+
+These are one run of the scenario on one machine. Still open, and larger: the textures made at run
+time without a path (signs, object textures, colour blocks) stay in `Asset.All` and on the GPU after
+their park (textures held 265 → 251 → 333 → 319 → 345 over the scenario: Fantasy's own textures stay
+cached by path, and about a dozen path-less ones remain per park); the archive files (22–29 MB read
+so far; archives are never closed) and the sound banks (about 35 MB) are kept whole in managed memory
+although the browser already holds the files; and the mixer's share still grows by about 6 MB a park.
+The page's wasm memory peaks at 305 MB after the second park and does not shrink.
 
 ## Three start costs removed (13 October)
 

@@ -30,18 +30,30 @@ public sealed class WadArchiveFile : ArchiveFile
 
 		// Save off data so we can use it again quickly if we need to
 		CachedData = data;
+		Interlocked.Add( ref WadArchive.cachedMemberBytes, data.Length );
 
 		return data;
 	}
 
 	public void Free()
 	{
+		if ( CachedData != null )
+			Interlocked.Add( ref WadArchive.cachedMemberBytes, -CachedData.Length );
 		CachedData = null;
 	}
 }
 
 public sealed class WadArchive : IArchive
 {
+	internal static long loadedBytes;
+	internal static long cachedMemberBytes;
+
+	/// <summary>
+	/// Bytes of the archive files read into memory so far (archives are never closed, so this is also what they hold) and of the members
+	/// kept decompressed now, for the memory accounting of the browser harness.
+	/// </summary>
+	public static (long Archives, long Members) MemoryInUse => (Interlocked.Read( ref loadedBytes ), Interlocked.Read( ref cachedMemberBytes ));
+
 	private ExpandedMemoryStream memoryStream;
 	public byte[] Buffer { get; internal set; }
 
@@ -213,6 +225,7 @@ public sealed class WadArchive : IArchive
 
 		Buffer = new byte[fileLength];
 		tempStreamReader.BaseStream.Read( Buffer, 0, fileLength );
+		Interlocked.Add( ref loadedBytes, fileLength );
 		tempStreamReader.Close();
 
 		memoryStream = new ExpandedMemoryStream( Buffer );

@@ -5,12 +5,6 @@ namespace OpenTPW.UI;
 public class RootPanel : Entity
 {
 	public List<Panel> Children { get; set; } = new();
-	public static RootPanel? Instance { get; set; }
-
-	public RootPanel()
-	{
-		Instance ??= this;
-	}
 
 	protected override void OnRender()
 	{

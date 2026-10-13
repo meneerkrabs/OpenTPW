@@ -174,4 +174,98 @@ public class ShopPriceIngressTests
 		var button=hud.Screen.Find("shopPrice") as UiButton;Assert.IsNotNull(button);Assert.IsFalse(button.Visible&&button.Enabled);
 		hud.Screen.Focus(button);hud.Update(context,UiInput.Key(UiKeys.Accept),gate=="mouse",gate=="keyboard",false);Assert.IsFalse(hud.Stack.Screens.Any(s=>s.Name=="shopPrice"));
 	}
+	[DataTestMethod, DataRow( BuildCategory.Shops ), DataRow( BuildCategory.Sideshows )]
+	public void ReviewerMouseActionEditsTheSecondIdenticalOwnerAndPostsItsRealPayment( BuildCategory category )
+	{
+		var hud = Fixture( category, out var level, out var economy, out var first, out var second, out var bridge );
+		var context = Context();
+		economy.TryGetObject( level.GetEconomyInstance( first )!.Value, out var firstState );
+		economy.TryGetObject( level.GetEconomyInstance( second )!.Value, out var secondState );
+		Assert.AreEqual( firstState.InfoId, secondState.InfoId );
+		var firstPrice = firstState.Price;
+		var cost = secondState.CostOfGoods;
+		var chance = secondState.ChanceOfLosingPercent;
+		hud.SelectObject( second );
+		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		Assert.IsFalse( hud.Screen.Find( "rideView" )!.Visible, "The shared slot cannot expose both actions." );
+		var button = (UiButton)hud.Screen.Find( "shopPrice" )!;
+		Assert.IsTrue( button.Visible && button.Enabled );
+		hud.Update( context, UiInput.Click( button.ScreenRect( context.Canvas ).Center ), false, false, false );
+		Assert.AreEqual( "shopPrice", hud.Stack.Top!.Name );
+		hud.Update( context, UiInput.Type( "61", 64 ), false, false, false );
+		var apply = hud.Stack.Top!.Find( "apply" )!;
+		hud.Update( context, UiInput.Click( apply.ScreenRect( context.Canvas ).Center ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name );
+		Assert.AreEqual( firstPrice, firstState.Price );
+		Assert.AreEqual( 61, secondState.Price );
+		Assert.AreEqual( cost, secondState.CostOfGoods );
+		Assert.AreEqual( chance, secondState.ChanceOfLosingPercent );
+		var balance = economy.Balance;
+		var totals = economy.Ledger.CurrentTotals.ToArray();
+		Assert.IsFalse( bridge.TryPayVisit( second.Visitors, 60, out _ ) );
+		Assert.AreEqual( balance, economy.Balance );
+		CollectionAssert.AreEqual( totals, economy.Ledger.CurrentTotals.ToArray() );
+		Assert.IsTrue( bridge.TryPayVisit( second.Visitors, 100, out var paid ) );
+		Assert.AreEqual( 61, paid );
+		Assert.AreEqual( 0, firstState.CustomersThisMonth );
+		Assert.AreEqual( 1, secondState.CustomersThisMonth );
+		Assert.AreEqual( 61L, secondState.TakingsThisMonth );
+		Assert.AreEqual( 61L, economy.Ledger.CurrentTotals[category == BuildCategory.Shops ? LedgerCategory.ShopTakings : LedgerCategory.SideshowTakings] );
+	}
+
+	[DataTestMethod, DataRow( "mouse" ), DataRow( "keyboard" ), DataRow( "text" )]
+	public void ReviewerCapturedApplyCanRetryAfterCaptureEndsWithoutChangingTheStagedTarget( string capture )
+	{
+		var hud = Fixture( BuildCategory.Shops, out var level, out var economy, out var item, out var other, out _ );
+		var context = Context();
+		economy.TryGetObject( level.GetEconomyInstance( item )!.Value, out var state );
+		economy.TryGetObject( level.GetEconomyInstance( other )!.Value, out var otherState );
+		var before = state.Price;
+		var otherPrice = otherState.Price;
+		Open( hud, context );
+		hud.Update( context, UiInput.Type( "61", 64 ), false, false, false );
+		var modal = hud.Stack.Top!;
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), capture == "mouse", capture == "keyboard", capture == "text" );
+		Assert.AreSame( modal, hud.Stack.Top );
+		Assert.AreEqual( before, state.Price );
+		Assert.AreEqual( "61", ((UiTextField)modal.Find( "price" )!).Text );
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name );
+		Assert.AreEqual( 61, state.Price );
+		Assert.AreEqual( otherPrice, otherState.Price );
+	}
+
+	[DataTestMethod]
+	[DataRow( "English" )]
+	[DataRow( "Danish" )]
+	[DataRow( "Dutch" )]
+	[DataRow( "French" )]
+	[DataRow( "German" )]
+	[DataRow( "Swedish" )]
+	public void ReviewerLocalizedErrorsAndInvariantDecimalInputReachTheActualEditor( string language )
+	{
+		var hud = Fixture( BuildCategory.Shops, out var level, out var economy, out var item, out _, out _ );
+		Set( hud, "strings", OriginalUiTests.FakeStrings( language ) );
+		economy.TryGetObject( level.GetEconomyInstance( item )!.Value, out var state );
+		var before = state.Price;
+		var culture = System.Globalization.CultureInfo.CurrentCulture;
+		try
+		{
+			System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo( "fr-FR" );
+			var context = Context();
+			Open( hud, context );
+			hud.Update( context, UiInput.Type( "1,5", 64 ), false, false, false );
+			hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+			Assert.AreEqual( before, state.Price );
+			Assert.AreEqual( SupplementaryStrings.Get( OpenTpwText.InvalidPrice, language ), ((UiLabel)hud.Stack.Top!.Find( "error" )!).Text() );
+			hud.Update( context, UiInput.Type( "61", 64 ), false, false, false );
+			hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+			Assert.AreEqual( "hud", hud.Stack.Top!.Name );
+			Assert.AreEqual( 61, state.Price );
+		}
+		finally
+		{
+			System.Globalization.CultureInfo.CurrentCulture = culture;
+		}
+	}
 }

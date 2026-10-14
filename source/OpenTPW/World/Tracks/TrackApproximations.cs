@@ -22,7 +22,6 @@ public static class TrackApproximations
 		("TRACK-012", "TRACK-HEADING: a launched boat or kart starts heading (and a kart drawing along) the station's flow; the original leaves a new vehicle at heading 0"),
 		("TRACK-013", "TRACK-BREAK: BUMP 8 sets the controller state to broken (2) or fixed (0) and BUMP 9 to worn (1) or fixed, as the traced routines do; a worn kart puffs (sparks or exhaust) but what the worn state changes for water boats is not traced, and nothing but BUMP 9 sets it in the shipped data"),
 		("TRACK-014", "TRACK-WALK: the circuit walk's junction rule beyond 'the cell ahead has type 0', its cut-off and arrival from a side arm are not traced"),
-		("TRACK-015", "TRACK-BUMPER: the bumper cars' controller types (-1, -6, -11, -14) board, run and release their riders as traced; what remains is listed under TRACK-029 (chase), TRACK-030 (arena centre) and TRACK-031 (no drawing or effects), and the add-on handler 0x00548E80 (TRACK-008) is not ported"),
 		("TRACK-016", "TRACK-SPRAY: the water boats' spray cadence keeps a counter only and makes no particle (the particle 0x60 of 0x00547F50), no boat sound, and no boat model variants; the kart effects are TRACK-025"),
 		("TRACK-017", "TRACK-XKEEP: the four keep-out circles of a crossing are clipped to the tile's quadrants like a corner's; the trace gives their centres and radius only"),
 		("TRACK-018", "TRACK-ANIM: the pieces are static; the water texture animation (BUMP 17) is stored but not played and the tee pieces show all four arms"),
@@ -35,8 +34,7 @@ public static class TrackApproximations
 		("TRACK-026", "TRACK-HEADS: a kart's riders are drawn as head sprites at the head dummies (class 0x100000B1, numbers 1 and 2) through the ride-head renderer; the original's draw internals (0x0044B410, 0x00475A10) and the seat order of riders are not traced, and a boarding guest is not drawn between BUMP 1 and the car's creation"),
 		("TRACK-027", "TRACK-LEGACYKART: a park-resume save from before the go-kart or bumper-car controllers (no controller for such a ride) restores its rides as freshly placed ones: station tiles and an empty circuit for karts, an arena for bumper cars, a closed controller; the guests a bumper ride still held are handed to its leaving list"),
 		("TRACK-028", "TRACK-LATEKART: BUMP 4 on a kart ride is refused while the race is over (phase 3); the original creates a kart whose relaunch gives it no movement flags, so it never moves, laps or unloads"),
-		("TRACK-029", "TRACK-CHASE: a bumper car never locks onto another car (the relaunch's one-in-five-or-so chase choice and the chase step of 0x005474B0 are not ported); it only wanders between the eight buoys"),
 		("TRACK-030", "TRACK-ARENA: the bumper arena is centred on the middle of the ride's footprint, where the original adds a per-rotation offset from the object type record to the placement cell"),
-		("TRACK-031", "TRACK-BUMPERFX: bumper cars are not drawn and make no sound or particle (the crunch code 5, the engine voices, the jungle presentation object)")
+		("TRACK-031", "TRACK-BUMPERLOOK: bumper cars are drawn like karts on flat ground: the four probes read the terrain, not the ride's own platform mesh, the jungle cars' wake (mesh 0) is drawn as a shadow-style instance, and the sparks, crash and engine sounds are submitted as traced but the cat_rides ids are unmapped and the engine voice gets no pitch (TRACK-025)")
 	};
 }

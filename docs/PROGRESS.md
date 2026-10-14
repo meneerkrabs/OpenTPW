@@ -875,6 +875,9 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Front-end smoke follows the saved-park offer (October 14):** since entering an island with a saved park first offers to
+  continue it (79726a00), the native front-end smoke, which saves a Jungle park earlier on, met that dialog instead of the game
+  mode menu and stopped; it now checks the offer and takes "New park".
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.

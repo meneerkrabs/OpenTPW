@@ -123,4 +123,29 @@ public class AdvisorSequenceTests
 		Assert.IsTrue( start.AudioDue( 5800 ) );
 		Assert.IsTrue( start.AudioDue( 6000 ) );
 	}
+
+	[TestMethod]
+	public void TheDeadlinesSurviveTheWrapOfTheThirtyTwoBitAdvisorClock()
+	{
+		long request = uint.MaxValue - 300; // 4294966995; 800 ms later the clock reads 499 after the wrap
+		var delayed = AdvisorSpeechStart.For( request, -1 );
+		Assert.IsFalse( delayed.AudioDue( request + 799 - (1L << 32) ) );
+		Assert.IsFalse( delayed.AudioDue( uint.MaxValue ) );
+		Assert.IsTrue( delayed.AudioDue( 499 ), "800 ms after the request, past the wrap" );
+		Assert.IsTrue( delayed.AudioDue( 1000 ) );
+		Assert.IsTrue( AdvisorSpeechStart.For( request, 16 ).AudioDue( request ) );
+		Assert.IsTrue( delayed.Within( 499, 2000 ) );
+		Assert.IsFalse( delayed.Within( 1800, 2000 ) );
+		// The LIP clock runs on the advisor clock minus its base, also across the wrap: 1000 ms after the restart.
+		Assert.AreEqual( 1000, delayed.LipMilliseconds( 1499 ) );
+		Assert.AreEqual( 200 + 50, AdvisorSpeechStart.For( 100, 16 ).LipMilliseconds( 150 ) );
+	}
+
+	[TestMethod]
+	public void ALateFirstFrameStillStartsTheMouthAtTheElapsedAdvisorTime()
+	{
+		var start = AdvisorSpeechStart.For( 5000, -1 );
+		Assert.AreEqual( 0, start.LipMilliseconds( 5800 ) );
+		Assert.AreEqual( 120, start.LipMilliseconds( 5920 ), "a frame 120 ms after the deadline reads 120, not 0" );
+	}
 }

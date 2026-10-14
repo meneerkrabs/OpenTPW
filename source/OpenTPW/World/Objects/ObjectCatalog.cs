@@ -655,7 +655,14 @@ public static class BonusNames
 		return null;
 	}
 
-	private static string Truncate( string line ) => line.Length > SignLineCharacters ? line[..SignLineCharacters] : line;
+	/// <summary>A line cut to <see cref="SignLineCharacters"/> UTF-16 units, backing off one when the cut would split a surrogate pair.</summary>
+	public static string Truncate( string line )
+	{
+		if ( line.Length <= SignLineCharacters )
+			return line;
+		var length = char.IsHighSurrogate( line[SignLineCharacters - 1] ) && char.IsLowSurrogate( line[SignLineCharacters] ) ? SignLineCharacters - 1 : SignLineCharacters;
+		return line[..length];
+	}
 
 	/// <summary>A sign's line 1 as the original's reader returns it: a trailing "--" (two hyphens, on a line of at least two characters) is dropped.</summary>
 	// [BIN:TPW-EXE:0x004E2860 sign line 1] when the line is longer than one character and ends in two '-' (0x2D), it is copied without them

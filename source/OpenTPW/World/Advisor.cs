@@ -45,7 +45,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-012", "mono speech duplicated to both stereo channels (the original's 0x51BFC0 gets three 0.0 floats, panning and volume unknown)"),
 		("ADVISOR-016", "fixed-sequence responses (60 of 610) return speech length + 200 + 300 + 1000 ms because the table 0x76DC18 is not imported, as does a game without advisor clip archives; generated sequences return the sequence sum + 1000 + the length of clip 15"),
 		("ADVISOR-017", "advisor clock starts at 0 with the automatic advisor and stands still while the pause menu is open; open: carrying the saved clock on an original save import (0x415140 → 0x402E80 → 0x403160) and which screen each pause caller is"),
-		("ADVISOR-018", "the model is drawn from the response request to the end of its span, not until the next Kill advisor; whether 0x4735D0 hides it after clip 15 is open"),
+		("ADVISOR-018", "the model is drawn until the response's span ends instead of until Kill, because the clips are not drawn (ADVISOR-006); whether 0x4735D0 hides it after clip 15 is open"),
 		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not the original's producers (0x4D0370: two months below zero and a rate-weighted time in the red above 5, posted every month it holds; 0x519EF0: every press of the open/close button)"),
 		("ADVISOR-022", "OpenTPW's own park save does not store the advisor's pending advice and history; an original save's records and history of messages without a bound descriptor are dropped on import"),
 		("ADVISOR-023", "the advisor's unprojected coordinates span the screen from -1 to 1"),
@@ -60,7 +60,6 @@ internal sealed class Advisor : IDisposable
 	// --advisor-say / --advisor-response tools, which start their speech at the first rendered frame.
 	private readonly Func<long>? clock;
 	private AdvisorSpeechStart? speechStart;
-	private long shownUntil;
 	// The generated sequences draw from their own stream (see AdvisorRandom).
 	private readonly AdvisorRandom sequenceRandom = new();
 	private AdvisorClipDurations? clipDurations;
@@ -110,7 +109,8 @@ internal sealed class Advisor : IDisposable
 	public bool ModelShown { get; private set; }
 
 	/// <summary>The model is drawn: shown, and (automatic advisor) within the response's span or (manual tools) while the speech plays.</summary>
-	public bool IsDrawn => !disposed && ModelShown && (clock == null || speechStart == null ? IsSpeaking : clock() < shownUntil);
+	// [APPROX:ADVISOR-018] The model is drawn until the response's span ends instead of until Kill, because the clips are not drawn (ADVISOR-006): a bind-pose advisor that never leaves would look wrong — evidence needed: whether the clip-15 end (0x4735D0) hides the model
+	public bool IsDrawn => !disposed && ModelShown && (clock == null || speechStart == null ? IsSpeaking : speechStart.Value.Within( clock(), ResponseSpanMilliseconds ));
 
 	/// <summary>
 	/// Pixel rectangle (y down) of a <paramref name="target"/> covered by the clip-space box the advisor is drawn in:
@@ -375,7 +375,6 @@ internal sealed class Advisor : IDisposable
 			}
 			else
 				ResponseSpanMilliseconds = checked((uint)(length + AdvisorSequences.BudgetSlackMilliseconds + 1000));
-			shownUntil = now + ResponseSpanMilliseconds;
 			Update();
 		}
 		Log.Trace( $"Advisor says {description}: {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}{(Sequence == null ? "" : $", sequence {string.Join( ",", Sequence.Clips )} ({Sequence.SumMilliseconds} ms)")}{(speechStart is { } start ? $", audio starts at +{start.AudioStartMilliseconds - start.RequestMilliseconds} ms" : "")}." );
@@ -393,8 +392,10 @@ internal sealed class Advisor : IDisposable
 			player.Start();
 	}
 
-	/// <summary>Where the mouth's LIP clock stands: the audio position plus the lead of an immediate start; silent before the audio starts.</summary>
-	private TimeSpan LipPosition => player is { IsStarted: true } ? Position + TimeSpan.FromMilliseconds( speechStart?.LipLeadOverAudioMilliseconds ?? 0 ) : TimeSpan.Zero;
+	/// <summary>Where the mouth's LIP clock stands: the advisor clock minus the LIP base (the original's mouth never follows the audio); the audio position for the manual tools; silent before the audio starts.</summary>
+	private TimeSpan LipPosition => player is not { IsStarted: true } ? TimeSpan.Zero
+		: clock != null && speechStart is { } start ? TimeSpan.FromMilliseconds( start.LipMilliseconds( clock() ) )
+		: Position;
 
 	/// <summary>
 	/// Speech goes through the game mixer when sound is on. Without a mixer it opens its own SDL device,

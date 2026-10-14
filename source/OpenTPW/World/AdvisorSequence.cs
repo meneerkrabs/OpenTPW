@@ -200,5 +200,15 @@ internal readonly record struct AdvisorSpeechStart( long RequestMilliseconds, bo
 	/// <summary>How far the mouth leads the audio that started at <see cref="AudioStartMilliseconds"/>.</summary>
 	public long LipLeadOverAudioMilliseconds => AudioStartMilliseconds - LipBaseMilliseconds;
 
-	public bool AudioDue( long nowMilliseconds ) => nowMilliseconds >= AudioStartMilliseconds;
+	/// <summary>
+	/// Whether the audio is due. The advisor clock is a wrapping 32-bit millisecond count, so the elapsed time since the
+	/// request is taken modulo 2^32 and a request just before the wrap still reaches its deadline.
+	/// </summary>
+	public bool AudioDue( long nowMilliseconds ) => unchecked((uint)(nowMilliseconds - RequestMilliseconds)) >= (Delayed ? (uint)DelayMilliseconds : 0u);
+
+	/// <summary>Milliseconds the LIP clock reads at advisor-clock time <paramref name="nowMilliseconds"/> (wrap-safe): the clock minus <see cref="LipBaseMilliseconds"/>.</summary>
+	public long LipMilliseconds( long nowMilliseconds ) => unchecked((uint)(nowMilliseconds - LipBaseMilliseconds));
+
+	/// <summary>Whether <paramref name="spanMilliseconds"/> have not yet passed since the request (wrap-safe).</summary>
+	public bool Within( long nowMilliseconds, uint spanMilliseconds ) => unchecked((uint)(nowMilliseconds - RequestMilliseconds)) < spanMilliseconds;
 }

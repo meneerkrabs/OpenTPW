@@ -234,7 +234,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>World pass: renders the shown advisor into its own image (see <see cref="Draw"/>).</summary>
-	// [APPROX:ADVISOR-018] The model is drawn from the response request to the end of its span (the clips are not drawn), where the original keeps it shown until the next Kill advisor — evidence needed: whether the clip-15 end (0x4735D0) hides the model
+	// [APPROX:ADVISOR-018] The model is drawn until the response's span ends instead of until Kill, because the clips are not drawn (ADVISOR-006), where the original keeps it shown until the next Kill advisor — evidence needed: whether the clip-15 end (0x4735D0) hides the model
 	public void Render() =>
 		Image = presentation is { IsDrawn: true } ? presentation.RenderImage( Screen.PixelSize ) : null;
 

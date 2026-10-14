@@ -59,4 +59,16 @@ public class SignWidthPercentTests
 		Assert.AreEqual( "A--B", BonusNames.StripTrailingDashes( "A--B" ) );
 		Assert.AreEqual( "x-", BonusNames.StripTrailingDashes( "x---" ) );
 	}
+
+	[TestMethod]
+	public void TheThirtyTwoCharacterCutNeverSplitsASurrogatePair()
+	{
+		var plain = new string( 'a', 40 );
+		Assert.AreEqual( 32, BonusNames.Truncate( plain ).Length );
+		Assert.AreEqual( "short", BonusNames.Truncate( "short" ) );
+		var split = new string( 'a', 31 ) + "\U0001F3A2" + "bcd"; // the pair occupies units 31 and 32
+		Assert.AreEqual( 31, BonusNames.Truncate( split ).Length );
+		var whole = new string( 'a', 30 ) + "\U0001F3A2" + "bcd"; // the pair ends at unit 31
+		Assert.AreEqual( 32, BonusNames.Truncate( whole ).Length );
+	}
 }

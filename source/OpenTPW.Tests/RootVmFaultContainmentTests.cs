@@ -226,13 +226,20 @@ public class RootVmFaultContainmentTests
 			}
 			var held = Scream( runtime ); var otherHeld = Scream( other );
 			Assert.IsNotNull( held ); Assert.IsNotNull( otherHeld ); Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ) );
-			Assert.ThrowsException<NotSupportedException>( () => Level.RequireResumableAudio( runtime.CaptureSnapshot() ), "Existing live-sound refusal is unchanged." );
+			var live = runtime.CaptureSnapshot();
+			Assert.IsTrue( live.HeldScream, "a held scream is captured with its operands" );
+			Assert.AreEqual( (2, 50), (live.HeldScreamBand, live.HeldScreamLevel) );
 			runtime.Script!.Abort( "review fault" ); runtime.Simulate( Tick );
 			Assert.IsTrue( held.IsStopped ); Assert.IsFalse( otherHeld.IsStopped );
 			var stopped = runtime.CaptureSnapshot(); Assert.IsFalse( stopped.HeldScream ); Assert.AreEqual( 0, stopped.OwnedScreamCount );
-			Level.RequireResumableAudio( stopped ); Assert.AreEqual( "review fault", stopped.StoppedScriptFault );
+			Assert.AreEqual( "review fault", stopped.StoppedScriptFault );
 			Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ), "The healthy owner remains audible." );
 			runtime.Stop(); Assert.IsFalse( otherHeld.IsStopped );
+			// STOPSCREAM ends the held chain; the stopped chain no longer counts, so the park can be saved again.
+			other.Script!.Effect( Opcode.STOPSCREAM, System.Array.Empty<Operand>() );
+			Assert.IsTrue( otherHeld.IsStopped );
+			var afterStop = other.CaptureSnapshot();
+			Assert.IsFalse( afterStop.HeldScream ); Assert.AreEqual( 0, afterStop.OwnedScreamCount );
 		}
 		finally { runtime.Stop(); other.Stop(); events.SetValue( null, previousEvents ); kids.SetValue( null, previousKids ); }
 	}
@@ -272,7 +279,7 @@ public class RootVmFaultContainmentTests
 			runtime.Script!.Abort( "review fault" ); runtime.Simulate( Tick );
 			Assert.IsTrue( held.IsFinished ); Assert.IsFalse( otherHeld.IsFinished );
 			var stopped = runtime.CaptureSnapshot(); Assert.IsFalse( stopped.HeldScream ); Assert.AreEqual( 0, stopped.OwnedScreamCount );
-			Level.RequireResumableAudio( stopped ); Assert.AreEqual( "review fault", stopped.StoppedScriptFault );
+			Assert.AreEqual( "review fault", stopped.StoppedScriptFault );
 			Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ), "The healthy owner remains audible." );
 			runtime.Stop(); Assert.IsFalse( otherHeld.IsFinished );
 		}
@@ -288,7 +295,7 @@ public class RootVmFaultContainmentTests
 			runtime.Script!.Abort( "pending diagnostic" );
 			var live = runtime.CaptureSnapshot(); Assert.IsFalse( live.Stopped ); Assert.IsNull( live.StoppedScriptFault );
 			Assert.AreEqual( "pending diagnostic", runtime.Script.CaptureSnapshot().FaultMessage );
-			live.ValidateSnapshot(); Level.RequireResumableAudio( live );
+			live.ValidateSnapshot();
 			runtime.Simulate( Tick ); Assert.AreEqual( "pending diagnostic", runtime.CaptureSnapshot().StoppedScriptFault );
 		}
 		finally { runtime.Stop(); }

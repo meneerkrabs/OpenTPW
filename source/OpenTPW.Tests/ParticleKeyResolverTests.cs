@@ -93,7 +93,7 @@ public class ParticleKeyResolverTests
 	}
 
 	[TestMethod]
-	public void FirstMatchingAttributeWinsEvenWhenItsNodeIsUnsupported()
+	public void FirstMatchingAttributeWinsAndAKeyWithoutAMatrixStartsAtTheWorldOrigin()
 	{
 		var original = Md2ModelFileTests.CreateGeometry();
 		var bytes = new byte[original.Length + 40];
@@ -109,7 +109,8 @@ public class ParticleKeyResolverTests
 		var model = new ModelFile( new MemoryStream( bytes ) );
 		var result = new ParticleKeyResolver( model ).Resolve( 7, 0x100,
 			ModelAnimationPlayer.ComputeRestTransforms( model ), Placement(), true );
-		Assert.AreEqual( ParticleKeyStatus.UnsupportedNode, result.Status );
+		// [BIN:TPW-EXE:0x556BF1] a key entry without a matrix (flags 0x30 clear) is a success at world position (0, 0, 0), not a refusal
+		Assert.AreEqual( ParticleKeyStatus.ResolvedAtWorldOrigin, result.Status );
 		Assert.AreEqual( (0, 0), (result.AttributeIndex, result.NodeIndex) );
 		Assert.IsNull( result.EnginePosition );
 		Assert.IsNull( result.EngineUnitDirection );

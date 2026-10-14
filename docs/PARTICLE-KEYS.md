@@ -23,10 +23,13 @@ Native fixed-point conversion, particle speed and template parameter handling
 belong to the future constructor.
 
 Unsupported selectors (including camera `0x40` and head `0x80`), negative keys,
-missing keys, records without qualified matrices, and invalid transforms return
+missing keys, nodes outside the model, and invalid transforms return
 status values with no pose. In particular, a negative key follows native object
-box midpoint and height logic that is not qualified here: model bounds must not
-be substituted for that object box.
+box midpoint and height logic (`0x556B90`, `0x466B70`: the box is the object's tile times 10 to the next tile times
+10, the height the float at model record `+0x78` + `0x44`) that is not wired here: model bounds must not
+be substituted for that object box. A key entry without a matrix (flags `0x30` clear) is a success at the world
+origin, as in the original (`[BIN:TPW-EXE:0x556BF1]`: position (0, 0, 0), direction (0, 0, 1024) in world space): the
+result is `ResolvedAtWorldOrigin`, carries no engine pose, and the particle request is marked `AtWorldOrigin`.
 
 The owner-bound preparation hook retains one resolver for `Runtime.Model` and
 calls:
@@ -37,8 +40,10 @@ resolver.Resolve(key, ParticleKeyResolver.EventSelector,
 ```
 
 The caller must select the intended pose at the event boundary. `PTCL-900`
-records that the native lookup-table refresh gates and callback timing are still
-unqualified. The resolver itself supplies no particle constructor; the prepared
+records that the original reads the key-table matrices refreshed by the object's last draw (instance update
+`0x473C70` -> `0x44AB30`, gated by instance-header bit `0x1`, table bit `0x1` and the mode and instance flags), about
+one render frame behind the script and stale while the object is culled, where OpenTPW uses the animator's current
+matrices. The resolver itself supplies no particle constructor; the prepared
 request feeds the particle pool (PARTICLES.md). The preparation hook below
 preserves the independently reviewed EVENT classification.
 
@@ -69,7 +74,9 @@ Every EVENT keeps its existing unimplemented return/count/log behavior, even
 when preparation succeeds. Each prepared request is also announced once to the
 level's particle pool, which starts the effect (PARTICLES.md, PTCL-908 for the
 callers that are not wired); the latest-attempt diagnostic stays as described
-here. Scoped lookup and refresh timing remain unqualified.
+here. RSE `ADDOBJ` types 1 and 2 prepare the same request through
+`LastParticleObjectAttempt` (a separate diagnostic) and keep the pool handle under their slot operand for `KILLOBJ`.
+Scoped lookup remains unwired.
 Synthetic tests exercise actual VM/object effects, animated poses, independent
 owners/children, explicit refusals and teardown, with real sound controls and
 zero particle PCM; they create no GPU resources or original assets.

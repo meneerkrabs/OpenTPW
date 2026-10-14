@@ -6,6 +6,13 @@ namespace OpenTPW;
 /// (its instruction state lives in the <see cref="RideScriptWorldSnapshot"/>). Sound chains are live audio: a held
 /// scream is saved by its STARTSCREAM operands and started again on restore; unreferenced chains are only counted.
 /// </summary>
+/// <summary>One ADDOBJ record of a live particle effect: the slot operand KILLOBJ names and the pool handle.</summary>
+public sealed record ParticleObjectRecord
+{
+	public int Slot { get; init; }
+	public int Handle { get; init; }
+}
+
 public sealed record OriginalObjectRuntimeSnapshot
 {
 	public const int CurrentSchemaVersion = 1;
@@ -49,13 +56,18 @@ public sealed record OriginalObjectRuntimeSnapshot
 	/// Null unless the runtime is stopped and its script had faulted.
 	/// </summary>
 	public string? StoppedScriptFault { get; init; }
+	/// <summary>Maximum ADDOBJ particle records of one object (a script holds a handful).</summary>
+	public const int MaximumParticleObjects = 4096;
+	/// <summary>The ADDOBJ type 1/2 records of live particle effects (slot operand and pool handle), or null when none; the pool's generations and counters restore exactly, so the handles stay valid.</summary>
+	public IReadOnlyList<ParticleObjectRecord>? ParticleObjects { get; init; }
 
 	/// <summary>Deep copy.</summary>
 	public OriginalObjectRuntimeSnapshot DeepCopy() => this with
 	{
 		Animator = Animator.DeepCopy(),
 		Heads = Heads?.DeepCopy(),
-		UnresolvedAnimations = UnresolvedAnimations.ToArray()
+		UnresolvedAnimations = UnresolvedAnimations.ToArray(),
+		ParticleObjects = ParticleObjects?.ToArray()
 	};
 
 	/// <summary>Pure structural validation; throws <see cref="InvalidDataException"/> on any violation.</summary>
@@ -81,6 +93,8 @@ public sealed record OriginalObjectRuntimeSnapshot
 			throw new InvalidDataException( "runtime snapshot has a null unresolved animation." );
 		if ( OwnedScreamCount < 0 )
 			throw new InvalidDataException( "runtime snapshot has a negative scream-chain count." );
+		if ( ParticleObjects != null && ( ParticleObjects.Count > MaximumParticleObjects || ParticleObjects.Any( record => record == null || record.Handle == 0 ) ) )
+			throw new InvalidDataException( "runtime snapshot has too many or malformed particle object records." );
 		if ( StoppedScriptFault != null && ( !Stopped || !HasScript ) )
 			throw new InvalidDataException( "runtime snapshot carries a stopped script fault without a stopped scripted runtime." );
 	}

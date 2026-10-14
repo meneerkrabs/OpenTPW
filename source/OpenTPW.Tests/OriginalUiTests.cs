@@ -650,7 +650,7 @@ public class OriginalUiTests
 				var text = SupplementaryStrings.Get( key, language );
 				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{key} {language}" );
 				CollectionAssert.AreEqual( placeholders, System.Text.RegularExpressions.Regex.Matches( text, @"\{\d\}" ).Select( match => match.Value ).OrderBy( value => value ).ToArray(), $"{key} {language}" );
-				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative or OpenTpwText.OpenTpwPage) )
+				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative or OpenTpwText.OpenTpwPage or OpenTpwText.EditionThemeParkWorld) )
 					Assert.AreNotEqual( english, text, $"{key} is translated to {language}" );
 			}
 		}

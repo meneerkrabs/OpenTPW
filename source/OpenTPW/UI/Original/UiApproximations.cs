@@ -98,6 +98,7 @@ public static class UiApproximations
 		("UI-932", "plain C arms a terrain click for a host first-person inspection camera; terrain height, eye height, movement/look tuning and flat-plane entry picking are approximations, without object collision, photo or recording", "native camcorder entry, walk movement, collision, eye height, look controls and camera persistence"),
 		("UI-933", "an editable selected shop or sideshow exposes a host decimal price editor in the information arm; it changes only the mapped instance Price using the existing nonnegative int API, without native slider/layout or quality/prize policy reconstruction", "original shop/sideshow control placement, native slider bounds and mode gating"),
 		("UI-934", "shared Load chooser uses an eight-row scroll viewport with explicit selection and activation; every supplied own, sandbox and original-reference entry remains reachable", "original Load chooser navigation, selection and viewport behavior"),
+		("UI-935", "selected factory-owned ordinary TPW rides expose a host next-tier cost confirmation calling the existing upgrade purchase API; live catalogue defaults remain separate from authored CAP/DUR", "original upgrade window geometry, confirmation and live reset/performance behavior"),
 	};
 
 	private static bool logged;

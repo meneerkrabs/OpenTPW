@@ -36,6 +36,16 @@ public sealed partial class OriginalObjectRuntime
 		return true;
 	}
 
+	/// <summary>Pure purchase preflight; no catalogue metadata or live VM state is changed.</summary>
+	internal bool CanBuyCatalogueTier( int currentTier, int nextTier )
+	{
+		if ( !CanConfigureCatalogue( out _ ) || CatalogueTier != currentTier || currentTier < 0
+			|| currentTier == int.MaxValue || nextTier != currentTier + 1 ) return false;
+		for ( var index = 0; index < Entry.Upgrades.Count; index++ )
+			if ( Entry.Upgrades[index].Level == nextTier ) return true;
+		return false;
+	}
+
 	/// <summary>Before execution/restore only: seed requested catalogue defaults, then saved VM state may replace them.</summary>
 	internal bool TryInitializeCatalogueTier( int tier, out string reason )
 	{

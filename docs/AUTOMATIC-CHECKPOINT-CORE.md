@@ -62,3 +62,11 @@ the real Level.CaptureResumeSnapshot with verified synthetic asset hashes, then
 the real writer/reader; an unrepresentable factory-parameter capture still
 refuses and preserves the prior file. It does not exercise native assets,
 renderer/GPU construction/disposal or actual application/menu retirement.
+
+Independent controls additionally distinguish exact opaque profile-byte binding
+from semantic automatic-envelope selection, accept the existing 64 KiB profile
+boundary, reject an incorrect flush receipt before capture, and retain a
+legitimate progress write when the current namespace changes during flush without
+writing an automatic checkpoint or retiring the old owner. Removing the receipt
+comparison makes the dedicated control fail. These are CPU core controls; they
+do not establish the pending application exit or menu wiring.

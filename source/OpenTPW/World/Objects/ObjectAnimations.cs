@@ -10,51 +10,26 @@ public sealed record ObjectAnimationFile( string Path, string BaseModel, char Le
 
 /// <summary>
 /// Maps the RSE animation numbers (<c>TRIGANIM a v</c>, <c>WAITANIM a v</c>, ...) to animation members.
-/// The first operand is an <see cref="ScriptDefs.Animations"/> value; its first letter names the file
-/// suffix (Create → c, Idle → i, Load → l, Start → s, Main → m, End → e, Unload → u, Break → b,
-/// Repair → r, Other → o). The second operand selects the numbered variant: variant v plays
-/// <c>&lt;model&gt;&lt;letter&gt;{v+1}</c>, or the unnumbered <c>&lt;model&gt;&lt;letter&gt;</c> for v = 0.
-/// Evidence (docs/OBJECTS.md): all ten letters occur as suffixes and no other letter does except
-/// <c>d</c> (2 files, never requested); the ScriptDefs names and letters agree one-to-one;
-/// variant counts match exactly (Totem plays m1 with variant 0 and m2…m10 with TRIGANIM_CH variants
-/// 1…9, Spider WAITANIM 5 0…3 ↔ spiderm1…m4, Monkey 5 0…6 ↔ monkeym1…m7, Bouncy LOOPANIM 5 0/1 ↔
-/// bouncym1/m2, Spider LOOPANIM 9 1 ↔ spiderb2). The original executable is encrypted, so the
-/// binding is derived from file names and scripts, not traced.
+/// The first operand is the AnimID indexing the original's letter table C D I L S M E U W B R O (0..11;
+/// <see cref="ScriptDefs.Animations"/> names ten of them). The second operand selects the numbered variant: variant v plays
+/// <c>&lt;model&gt;&lt;letter&gt;{v+1}</c>; the unnumbered <c>&lt;model&gt;&lt;letter&gt;</c> is only loaded when
+/// <c>&lt;letter&gt;1</c> is missing, and numbered members load only up to the first gap (RIDES-008 retired against
+/// the Windows loader 0x461f10).
 /// </summary>
 public static class ObjectAnimations
 {
-	private static readonly Regex Suffix = new( @"^(?<letter>[cilsmeubrod])(?<number>\d*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant );
+	private static readonly Regex Suffix = new( @"^(?<letter>[cdilsmeuwbro])(?<number>\d*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant );
 
-	// [APPROX:RIDES-008] ANIM_* → suffix letter and variant v → number v+1 (derived from file names and scripts, no counterexample) — evidence needed: binary confirmation of the member lookup
-	public static char? GetLetter( int animation ) => animation switch
-	{
-		(int)ScriptDefs.Animations.ANIM_Create => 'c',
-		(int)ScriptDefs.Animations.ANIM_Idle => 'i',
-		(int)ScriptDefs.Animations.ANIM_Load => 'l',
-		(int)ScriptDefs.Animations.ANIM_Start => 's',
-		(int)ScriptDefs.Animations.ANIM_Main => 'm',
-		(int)ScriptDefs.Animations.ANIM_End => 'e',
-		(int)ScriptDefs.Animations.ANIM_Unload => 'u',
-		(int)ScriptDefs.Animations.ANIM_Break => 'b',
-		(int)ScriptDefs.Animations.ANIM_Repair => 'r',
-		(int)ScriptDefs.Animations.ANIM_Other => 'o',
-		_ => null
-	};
+	// [BIN:TPW-EXE:0x6fe6bc animation letter table] The 12-entry table is indexed by AnimID: C D I L S M E U W B R O (AnimIDs 1 and 8 name 'd' and 'w', which have no ScriptDefs constant). The loader 0x461f10 formats %s%s%c%d.md2 (0x74d2b4) for <letter>1, <letter>2, … and stops at the first missing file, and %s%s%c.md2 (0x74d2a8) only when <letter>1 is missing.
+	private const string Letters = "cdilsmeuwbro";
 
-	public static int? GetAnimation( char letter ) => char.ToLowerInvariant( letter ) switch
+	public static char? GetLetter( int animation ) => animation >= 0 && animation < Letters.Length ? Letters[animation] : null;
+
+	public static int? GetAnimation( char letter )
 	{
-		'c' => (int)ScriptDefs.Animations.ANIM_Create,
-		'i' => (int)ScriptDefs.Animations.ANIM_Idle,
-		'l' => (int)ScriptDefs.Animations.ANIM_Load,
-		's' => (int)ScriptDefs.Animations.ANIM_Start,
-		'm' => (int)ScriptDefs.Animations.ANIM_Main,
-		'e' => (int)ScriptDefs.Animations.ANIM_End,
-		'u' => (int)ScriptDefs.Animations.ANIM_Unload,
-		'b' => (int)ScriptDefs.Animations.ANIM_Break,
-		'r' => (int)ScriptDefs.Animations.ANIM_Repair,
-		'o' => (int)ScriptDefs.Animations.ANIM_Other,
-		_ => null
-	};
+		var index = Letters.IndexOf( char.ToLowerInvariant( letter ) );
+		return index < 0 ? null : index;
+	}
 
 	/// <summary>
 	/// Classifies <paramref name="memberPaths"/> as animations of <paramref name="baseModel"/> (name = base + letter +
@@ -88,7 +63,15 @@ public static class ObjectAnimations
 		var letter = GetLetter( animation );
 		if ( letter == null || variant < 0 )
 			return null;
-		return animations.FirstOrDefault( file => file.Letter == letter && file.Numbered && file.Variant == variant )
-			?? (variant == 0 ? animations.FirstOrDefault( file => file.Letter == letter && !file.Numbered ) : null);
+		var numbered = animations.Where( file => file.Letter == letter && file.Numbered ).Select( file => file.Variant ).ToHashSet();
+		if ( numbered.Contains( 0 ) )
+		{
+			// The loader reads <letter>1, <letter>2, … until the first gap; the unnumbered member is read only without <letter>1.
+			for ( var index = 0; index <= variant; index++ )
+				if ( !numbered.Contains( index ) )
+					return null;
+			return animations.First( file => file.Letter == letter && file.Numbered && file.Variant == variant );
+		}
+		return variant == 0 ? animations.FirstOrDefault( file => file.Letter == letter && !file.Numbered ) : null;
 	}
 }

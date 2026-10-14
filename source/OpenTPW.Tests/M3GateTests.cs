@@ -163,6 +163,7 @@ public class M3GateTests
 		// P = 1 + ceil(WAIT 500 / 248) = 4.
 		Assert.AreEqual( 4L, M3GateRun.BounceLoopPeriodTurns( 500 ) );
 		Assert.AreEqual( 3L, M3GateRun.BounceLoopPeriodTurns( 496 ) );
+		Assert.AreEqual( 3L, M3GateRun.BounceLoopPeriodTurns( RideAnimationTiming.TriggerDelay( 500, 0.5f + 60 / 100f ) ), "WAIT 500 at InitSpeed 60 is 454 ms" );
 		// R from the UNBOUNCE poll rule: 4 DUR + 1 for 8 <= DUR <= 30 (121 for Belly Bounce, 41 for DUR 10); 29 for DUR <= 7.
 		Assert.AreEqual( 121L, M3GateRun.BounceHoldTurns( 30, 4 ) );
 		Assert.AreEqual( 41L, M3GateRun.BounceHoldTurns( 10, 4 ) );
@@ -229,10 +230,11 @@ public class M3GateAssetTests
 		Assert.AreEqual( 6L * 75, (long)queue.Evidence["charged"]! );
 		Assert.AreEqual( 21, (int)queue.Evidence["maximumQueueLength"]! );
 		Assert.IsTrue( (int)queue.Evidence["boardedFromQueueCells"]! > 0, report.ToSummary() );
-		// No progress violation and no wait beyond W(p) with H = 56, R = 121; at least one wait judged, so the row passes.
+		// No progress violation and no wait beyond W(p) with H = 55 (the loop WAIT divided by the ride's script speed); at
+		// least one wait judged, so the row passes.
 		var stuck = report["queues.no-stuck-queue"];
 		Assert.AreEqual( M3GateVerdict.Pass, stuck.Verdict, report.ToSummary() );
-		Assert.AreEqual( 56L, (long)stuck.Evidence["attraction"]!["waitBound"]!["latencyTurns"]! );
+		Assert.AreEqual( 55L, (long)stuck.Evidence["attraction"]!["waitBound"]!["latencyTurns"]! );
 		Assert.AreEqual( 0L, (long)stuck.Evidence["attraction"]!["waitBound"]!["walkStalls"]! );
 		Assert.AreEqual( M3GateVerdict.Pass, report["staff.work"].Verdict, report.ToSummary() );
 		Assert.IsTrue( (long)report["guests.flow"].Evidence["admitted"]! > 0, report.ToSummary() );

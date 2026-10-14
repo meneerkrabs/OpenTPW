@@ -875,6 +875,31 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Rides register round (October 14):** the rides register is read against the decrypted Windows tp.exe. Ride init writes
+  `InitDuration` only when above 0, as its low byte clamped to `UsageInfo.MinDuration..MaxDuration` (also the tier seed;
+  RIDES-016 retired), and the script speed is now `0.5 + bias / 100` with the bias from the ride's `Upgrades[0].InitSpeed`
+  (children copy it; jungle Bouncy runs at 1.1, RIDES-033 narrowed to the settings/upgrade writers). A literal TRIGWAITANIM
+  out operand resumes a script without an object once its value equals the triggered AnimID (RIDES-037 retired). The member
+  letter table is the original's twelve (C D I L S M E U W B R O by AnimID), numbered clips load up to the first gap and the
+  unnumbered one only without number 1 (RIDES-008 retired). RIDES-001 and RIDES-034 are retired with PC citations (30 frames
+  a second; placed rides never take the idle restart); RIDES-022, 032, 036, 038, 043 and 044 are rewritten around what the
+  PC shows. WAIT is divided by the script speed as well (`0xb0658`), screams use the script's speed word (AUDIO-016
+  retired), and the M3 gate's boarding period follows the scaled WAIT (Belly Bounce: P 3, H 55).
+- **Riders' heads on their traced seats (October 14):** a head is now attached through the model's own records, traced in
+  the Mac binary: attribute record `i` belongs to node `Unknown46 + i`, a head id is the first record with flag `0x80` and
+  that value, and the node-name guess is gone (Eruption's `Head1a` and the other previously unresolved ids now draw;
+  `monkey.MD2` id 3 is node 10 `Head02`, `Bird.MD2` id 9 is node 2 `Head03`). The head is drawn the way `0x1019B6F8` does:
+  at exactly the node's world position, hidden for node flag `0x8000`, the camera binned in the node's frame to the 7 x 8
+  frames of the kids' head art (direction row times 8 plus azimuth column), and the sprite rolled with the seat
+  (`atan2(-m10, m11)`), at scale 0.685. The new GPU-free `HeadPresentation` is unit-tested and `RideHeadRenderer` draws from
+  a list of head sources, ready for the coaster seats. Every script (root, child, sound) has its own head table, as the
+  script init allocates one for each, and the slot draw uses the original `labs(rand >> 1) % length` formula on the ride's
+  own stream. Register: HEADS-002 and HEADS-003 retired, HEADS-001/004/005 narrowed.
+- **Audio register round (October 14):** the storm's thunder follows the original countdown (`0x101033CC`/`0x101034D8`):
+  a bolt starts the countdown only when none is running, at `ThunderStartsThisFarAway` minus the storm's bolts so far plus a
+  random term, and the thunder rings when the countdown steps from 1 to 0 (a computed 0 never rings), at the last bolt's top;
+  AUDIO-029 is retired. Speech ducking (AUDIO-001) is retired with its Mac citation (`0x100BB18C`); AUDIO-002, 005, 019,
+  025 and 033 are narrowed to what the PC and Mac traces leave open (AUDIO.md).
 - **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
   (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
   the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points

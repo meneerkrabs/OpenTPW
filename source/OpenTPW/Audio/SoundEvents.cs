@@ -63,7 +63,7 @@ public sealed class SoundCategory
 		if ( bankNumber >= 1 && bankNumber <= bankNames.Count )
 		{
 			var relative = bankNames[bankNumber - 1].Replace( '\\', '/' );
-			// [APPROX:AUDIO-002] banks resolve to <map folder's parent>/<name>HD.sdt, then to global/<name>HD.sdt — evidence needed: TbMapStreamer::BankDoesNotExist (0x10015234) and the quality suffix rule
+			// [APPROX:AUDIO-002] banks resolve to <map folder's parent>/<name>HD.sdt, then to global/<name>HD.sdt; the suffix rule is settled (tp.exe 0x6C58F0: <name>HW.sdt first, HD.sdt as fallback, reversed when the manager's flags +0x28 have bits 0 and 1; only HD files ship), the folder order is not traced (TbMapStreamer::BankDoesNotExist 0x10015234) — the suffix rule
 			foreach ( var candidate in new[] { $"{root}/{relative}HD.sdt", $"/global/{relative}HD.sdt" } )
 			{
 				if ( fileSystem.FileExists( candidate ) )
@@ -360,7 +360,7 @@ public sealed class SoundEventSystem
 			return null;
 		// [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8
 		// [LEAD:maexah/OpenTPW docs/exe/audio.md "A voice's range" table: bit 0x8 loops the sample, the voice lives on] PC addresses unverifiable (packed exe)
-		// [APPROX:AUDIO-019] the loop is applied to positioned one-shots only; a flat one-shot with 0x8 still plays once — evidence needed: the Mac flat path's flag test beside 0x0051C130
+		// [APPROX:AUDIO-019] the loop is applied to positioned one-shots only; on the Mac the event flag 0x8 sets placeholder bits 4 and 2 (CAudioPlaceHolder::SetFlagsFromEvent 0x1000EE34) and FillSampleInfo (0x1000FC1C, 0x100186A0) sets the loop count 9999 after both the positioned and the fixed-position branches, so flat one-shots likely loop too — not yet verified that flat plays pass through FillSampleInfo
 		var voice = mixer.Play( audio, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
 		return voice;
@@ -591,7 +591,7 @@ public sealed class SoundSentence
 		// [APPROX:AUDIO-036] density-controlled crowd gain is evaluated when a segment starts; native parameter propagation into an already-playing sentence child is unverified
 		voice = system.Mixer.Play( audio, channel, system.Volume( soundEvent.Sounds[sound], ParameterCode, Parameter ) / 100f );
 		voice.Completed += _ => OnCompleted();
-		// [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample
+		// [APPROX:AUDIO-005] the original chooses the next segment when the current one's data runs out, inside a mix-buffer fill, and keeps filling the same buffer (sound_shared GetDataChunk 0x10008CC4 → GetNextSample 0x10008E60 → CPlaceHolderSentence::SoundCallback 0x1001A1F0); OpenTPW chooses it when the current one starts, to decode in time, so the draw and the parameter are taken one segment early
 		var successor = Successor();
 		if ( successor >= 0 )
 			Prefetch( successor );

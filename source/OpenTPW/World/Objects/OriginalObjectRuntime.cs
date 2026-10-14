@@ -64,15 +64,38 @@ public sealed partial class OriginalObjectRuntime
 				SourceName = entry.ScriptPath,
 				ResolveScript = ResolveChildScript
 			} );
-			// Upgrade level 0 values from the .sam layers; units of InitDuration follow Info.DurationUnit (not verified).
+			// Upgrade level 0 values from the .sam layers.
 			// [DATA:<object>.sam:Upgrades[0].InitCapacity]
 			SetVariable( nameof( RideVariables.VAR_CAPACITY ), entry.InitialCapacity );
-			// [DATA:<object>.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration
-			SetVariable( nameof( RideVariables.VAR_DURATION ), entry.Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "InitDuration" ) ?? 0 );
+			var level0 = entry.Upgrades.FirstOrDefault( level => level.Level == 0 );
+			// [BIN:TPW-EXE:0x4db565 ride init duration] [DATA:<object>.sam:Upgrades[0].InitDuration] written only when above 0: the low byte, clamped to [UsageInfo.MinDuration, UsageInfo.MaxDuration] (type +0x12c/+0x130), into script variable 3 and ride +0x5c; DurationUnit is never read. The same clamp runs at ride settings (0x4dd720) and upgrade (0x4df8f0).
+			if ( ClampInitDuration( entry.Settings, level0?.GetInt( "InitDuration" ) ?? 0 ) is { } duration )
+				SetVariable( nameof( RideVariables.VAR_DURATION ), duration );
+			// [BIN:TPW-EXE:0x4db51c ride init speed] [DATA:<object>.sam:Upgrades[0].InitSpeed] the script speed bias, written only when above 0 (setter 0x55a300).
+			if ( level0?.GetInt( "InitSpeed" ) is > 0 and var speed )
+				Script.SpeedBias = speed;
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
 			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the callers of the completion predicates 0x10045DA4/0x10045EAC in the guest and queue code are not traced — evidence needed: what 0x100DC834, 0x100DE654 and 0x100ED244 do with 0x10045EAC
 			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) );
 		}
+	}
+
+	/// <summary>
+	/// The ride-init duration rule (0x4db565..0x4db64f): null when <paramref name="initDuration"/> is not above 0 (nothing is written),
+	/// else its low byte clamped to [MinDuration, MaxDuration] of the object type (a byte below the minimum takes the minimum, one above the maximum the maximum).
+	/// </summary>
+	internal static int? ClampInitDuration( ObjectSettings settings, int initDuration )
+	{
+		if ( initDuration <= 0 )
+			return null;
+		var value = initDuration & 0xFF;
+		var min = settings.GetInt( "UsageInfo.MinDuration" );
+		var max = settings.GetInt( "UsageInfo.MaxDuration" );
+		if ( value < min )
+			return min & 0xFF;
+		if ( max < value )
+			return max & 0xFF;
+		return value;
 	}
 
 	public ObjectCatalogEntry Entry { get; }
@@ -207,6 +230,9 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
 	{
+		// [APPROX:HEADS-005] child/sound head tables are not saved; refuse rather than lose a rider's head
+		if ( Visitors.ChildHeadsOccupied() )
+			throw new InvalidOperationException( $"'{Entry.ArchivePath}': a child or sound script holds a rider head, which the park-resume snapshot cannot store." );
 		if (effects.HasLiveEventLoops)
 			throw new NotSupportedException("An attraction is still playing a looping EVENT or repair-hide sound. Live audio cannot be saved; stop the owning object or sound first.");
 		return new OriginalObjectRuntimeSnapshot
@@ -496,19 +522,19 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			case Opcode.TRIGANIM:
 			case Opcode.WAITANIM:
 			case Opcode.TRIGWAITANIM:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, call.VM.ScriptSpeed );
 			case Opcode.TRIGANIMSPEED:
 				// [BIN:STP-PPC:0x100AFFC4 TRIGANIMSPEED] the clip runs at script speed × operand / 1000 (0x100B003C–0x100B0070); the handler also keeps the operand at script +228, whose reader is not traced
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideAnimationTiming.SpeedOperand( RideVM.ScriptSpeed, call.Argument( 3 ) ) );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideAnimationTiming.SpeedOperand( call.VM.ScriptSpeed, call.Argument( 3 ) ) );
 			case Opcode.LOOPANIM:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: true, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: true, call.VM.ScriptSpeed );
 			case Opcode.TRIGANIM_CH:
 			case Opcode.TRIGWAITANIM_CH:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 3 ), loop: false, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 3 ), loop: false, call.VM.ScriptSpeed );
 			case Opcode.WAITANIM_CH:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: false, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: false, call.VM.ScriptSpeed );
 			case Opcode.LOOPANIM_CH:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: true, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: true, call.VM.ScriptSpeed );
 			case Opcode.GETANIM:
 				return ride.Animator.GetAnimation( MainChannel );
 			case Opcode.GETANIM_CH:
@@ -528,7 +554,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
-			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null );
+			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null, call.VM.SpeedBias );
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			if ( screamChain != null )
 				ownedScreams.Add( screamChain );
@@ -542,7 +568,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.SINGLESCREAM )
 		{
-			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null );
+			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null, call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		if ( call.Opcode == Opcode.EVENT )

@@ -216,7 +216,7 @@ class Source(unittest.TestCase):
         animation = self.read('source/OpenTPW/VM/Handlers/Animation.cs')
         self.assertIn('NoObjectMilliseconds = 0', animation)
         self.assertIn('WaitUntilDeadline( vm, wait )', animation)
-        self.assertIn('[APPROX:RIDES-037]', animation)
+        self.assertIn('[BIN:TPW-EXE:0x5535c7 TRIGWAITANIM compare]', animation)  # RIDES-037 retired
         self.assertIn('[APPROX:RIDES-038]', animation)
 
     def test_aw1_script_clock_versus_scheduler_clock_is_registered(self):

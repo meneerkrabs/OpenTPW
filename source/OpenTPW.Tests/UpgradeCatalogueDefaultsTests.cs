@@ -215,5 +215,22 @@ public class UpgradeCatalogueDefaultsTests
 		if ( change == "custom" ) w.One.Visitors.Parameters = w.One.Visitors.Parameters with { }; else { if ( change == "refused" ) w.One.Visitors.Parameters = w.One.Visitors.Parameters with { Speed = 123 }; Complete( w ); }
 		Assert.ThrowsException<NotSupportedException>( () => ParkResumeSaveFile.Save( path, w.Level.CaptureResumeSnapshot( null, "unrepresentable", assets ) ) ); CollectionAssert.AreEqual( prior, File.ReadAllBytes( path ) ); Assert.AreEqual( 1, w.One.Visitors.Capacity );
 	}
+	/// <summary>Ride init writes the clamped low byte of InitDuration and the ride's InitSpeed as the script speed bias (RIDES-016, RIDES-033; PC 0x4db51c..0x4db64f).</summary>
+	[TestMethod]
+	public void RideInitClampsDurationAndSetsTheScriptSpeedBias()
+	{
+		var plain = World();
+		Assert.AreEqual( 10, plain.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
+		Assert.AreEqual( 50, plain.One.Script!.SpeedBias ); Assert.AreEqual( 1f, plain.One.Script.ScriptSpeed );
+		var clamped = World( "UsageInfo.MinDuration 12\nUsageInfo.MaxDuration 15\nUpgrades[0].InitSpeed 60\n" );
+		Assert.AreEqual( 12, clamped.One.Runtime.GetVariable( RideVariables.VAR_DURATION ), "below MinDuration" );
+		Assert.AreEqual( 60, clamped.One.Script!.SpeedBias ); Assert.AreEqual( 1.1f, clamped.One.Script.ScriptSpeed, 1e-6f );
+		var high = World( "UsageInfo.MaxDuration 8\n" );
+		Assert.AreEqual( 8, high.One.Runtime.GetVariable( RideVariables.VAR_DURATION ), "above MaxDuration" );
+		var wrapped = World( "Upgrades[0].InitDuration 266\nUsageInfo.MaxDuration 255\n" );
+		Assert.AreEqual( 10, wrapped.One.Runtime.GetVariable( RideVariables.VAR_DURATION ), "266 keeps its low byte 10" );
+		Assert.IsNull( OriginalObjectRuntime.ClampInitDuration( plain.One.Entry.Settings, 0 ), "nothing is written for 0" );
+		Assert.IsNull( OriginalObjectRuntime.ClampInitDuration( plain.One.Entry.Settings, -5 ) );
+	}
 
 }

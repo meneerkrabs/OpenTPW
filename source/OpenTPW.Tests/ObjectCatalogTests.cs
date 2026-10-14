@@ -101,9 +101,9 @@ public class ObjectSettingsTests
 	[TestMethod]
 	public void AnimationNumbersSelectSuffixLettersAndVariants()
 	{
-		var members = new[] { "/a/totem.MD2", "/a/totemc.MD2", "/a/totemm1.MD2", "/a/totemm2.MD2", "/a/totemm10.MD2", "/a/totemb1.MD2", "/a/totemr.MD2", "/a/Ptotem.MD2", "/a/totemx.MD2" };
+		var members = new[] { "/a/totem.MD2", "/a/totemc.MD2", "/a/totemm1.MD2", "/a/totemm2.MD2", "/a/totemm3.MD2", "/a/totemm4.MD2", "/a/totemm5.MD2", "/a/totemm6.MD2", "/a/totemm7.MD2", "/a/totemm8.MD2", "/a/totemm9.MD2", "/a/totemm10.MD2", "/a/totemb1.MD2", "/a/totemr.MD2", "/a/Ptotem.MD2", "/a/totemx.MD2" };
 		var animations = ObjectAnimations.Find( "totem", members );
-		Assert.AreEqual( 6, animations.Count );
+		Assert.AreEqual( 13, animations.Count );
 		Assert.AreEqual( "/a/totemm1.MD2", ObjectAnimations.Resolve( animations, 5, 0 )!.Path );
 		Assert.AreEqual( "/a/totemm10.MD2", ObjectAnimations.Resolve( animations, 5, 9 )!.Path );
 		Assert.AreEqual( "/a/totemc.MD2", ObjectAnimations.Resolve( animations, 0, 0 )!.Path );
@@ -113,6 +113,28 @@ public class ObjectSettingsTests
 		Assert.IsNull( ObjectAnimations.Resolve( animations, 2, 0 ) );
 		foreach ( var value in Enum.GetValues<ScriptDefs.Animations>() )
 			Assert.AreEqual( (int)value, ObjectAnimations.GetAnimation( ObjectAnimations.GetLetter( (int)value )!.Value ) );
+	}
+
+	/// <summary>RIDES-008 (PC 0x6fe6bc, loader 0x461f10): twelve letters C D I L S M E U W B R O by AnimID; numbered members load until the first gap; the unnumbered one only without number 1.</summary>
+	[TestMethod]
+	public void AnimationLettersFollowTheOriginalTableAndStopAtGaps()
+	{
+		Assert.AreEqual( "cdilsmeuwbro", new string( Enumerable.Range( 0, 12 ).Select( id => ObjectAnimations.GetLetter( id )!.Value ).ToArray() ) );
+		Assert.IsNull( ObjectAnimations.GetLetter( 12 ) );
+		Assert.IsNull( ObjectAnimations.GetLetter( -1 ) );
+		Assert.AreEqual( 1, ObjectAnimations.GetAnimation( 'd' ) );
+		Assert.AreEqual( 8, ObjectAnimations.GetAnimation( 'W' ) );
+		var members = new[] { "/a/xm1.MD2", "/a/xm2.MD2", "/a/xm4.MD2", "/a/xm.MD2", "/a/xd.MD2", "/a/xw2.MD2", "/a/xs.MD2", "/a/xs2.MD2" };
+		var animations = ObjectAnimations.Find( "x", members );
+		Assert.AreEqual( "/a/xm1.MD2", ObjectAnimations.Resolve( animations, 5, 0 )!.Path );
+		Assert.AreEqual( "/a/xm2.MD2", ObjectAnimations.Resolve( animations, 5, 1 )!.Path );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 5, 2 ), "m3 is missing" );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 5, 3 ), "m4 lies behind the gap" );
+		Assert.AreEqual( "/a/xd.MD2", ObjectAnimations.Resolve( animations, 1, 0 )!.Path );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 8, 0 ), "w1 is missing, so only the unnumbered w would load" );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 8, 1 ), "w2 is behind the gap" );
+		Assert.AreEqual( "/a/xs.MD2", ObjectAnimations.Resolve( animations, 4, 0 )!.Path, "no s1: the unnumbered clip plays" );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 4, 1 ), "s2 is behind the missing s1" );
 	}
 }
 
@@ -240,7 +262,7 @@ public class ObjectCatalogCorpusTests
 							continue;
 						}
 						var milliseconds = ObjectAnimator.Fctiwz( 1000f * (clip.Duration - clip.FirstTick) / ObjectAnimator.DefaultTicksPerSecond );
-						if ( RideAnimationTiming.WaitAnimDelay( milliseconds, RideVM.ScriptSpeed ) == int.MaxValue )
+						if ( RideAnimationTiming.WaitAnimDelay( milliseconds, RideVM.DefaultScriptSpeed ) == int.MaxValue )
 							wraps.Add( $"{member} word {instruction.WordOffset}: {(Opcode)instruction.Opcode} {animation} {variant} → {resolved!.Path} ({clip.Duration} ticks, {milliseconds} ms)" );
 					}
 				}

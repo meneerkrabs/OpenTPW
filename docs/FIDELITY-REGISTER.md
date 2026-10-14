@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **405 unresolved unique APPROX IDs**, 489 APPROX occurrences, 186 EXT occurrences, 193 DATA occurrences and 804 BIN occurrences.
+Current inventory: **403 unresolved unique APPROX IDs**, 487 APPROX occurrences, 187 EXT occurrences, 193 DATA occurrences and 805 BIN occurrences.
 
-Of these, 381 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 379 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -30,7 +30,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | BLUEPRINT | 3 | 3 |
 | COAST | 21 | 30 |
 | COMPAT | 18 | 21 |
-| DET | 5 | 10 |
+| DET | 4 | 9 |
 | ECON | 33 | 33 |
 | GATE | 2 | 4 |
 | GATEM4 | 2 | 2 |
@@ -46,7 +46,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | TPI | 5 | 7 |
 | TRACK | 28 | 37 |
 | UI | 81 | 105 |
-| VM | 3 | 4 |
+| VM | 2 | 3 |
 | WALK | 10 | 10 |
 
 ## Approximation declarations
@@ -154,11 +154,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-019 | Original-fidelity area (scope unadjudicated) | Theme Park Inc lake | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:32` |
 | COMPAT-030 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:25` |
 | COMPAT-031 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:26` |
-| DET-002 | Original-fidelity area (scope unadjudicated) | runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:11` |
-| DET-013 | Original-fidelity area (scope unadjudicated) | scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:12` |
-| DET-014 | Original-fidelity area (scope unadjudicated) | guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:13` |
-| DET-015 | Original-fidelity area (scope unadjudicated) | the economy draws from its own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:14` |
-| DET-016 | Original-fidelity area (scope unadjudicated) | the park save persists the economy and every random stream, but not guests, queues or object script state | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:15` |
+| DET-013 | Original-fidelity area (scope unadjudicated) | scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:11` |
+| DET-014 | Original-fidelity area (scope unadjudicated) | guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:12` |
+| DET-015 | Original-fidelity area (scope unadjudicated) | the economy draws from its own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:13` |
+| DET-016 | Original-fidelity area (scope unadjudicated) | the park save persists the economy and every random stream, but not guests, queues or object script state | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:14` |
 | ECON-001 | Original-fidelity area (scope unadjudicated) | OpenTPW's fixed 60 Hz clock is sampled into 248 ms park turns (4.03 a second at normal speed, the rate the original's scheduler executes at its default clock scale 1.0 over a millisecond clock), without the original's 31 ms substeps, its limit of three park turns per call and its drop of a backlog above 2000 ms (ORACLE F30) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:12` |
 | ECON-002 | Original-fidelity area (scope unadjudicated) | the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:13` |
 | ECON-004 | Original-fidelity area (scope unadjudicated) | Fast x2 and Fastest x4 are OpenTPW's buttons: the original steps its clock scale by 1.25 within 0.25..2 (x4 exceeds its maximum) with key actions whose physical keys are unnamed | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:14` |
@@ -445,9 +444,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-940 | Original-fidelity area (scope unadjudicated) | the lobby effects advance at a fixed 30 ticks a second; the original steps them once per rendered frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:91` |
 | UI-941 | Original-fidelity area (scope unadjudicated) | only the lobby islands' own draws advance the lobby generator; its flying meshes and camera wander also draw from it in the original, so strikes and one-shots come in a different rhythm | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:92` |
 | UI-942 | Original-fidelity area (scope unadjudicated) | the globe's music and ambience (cat_globallobbysfx 2 and 3) replace the lobby's while the globe is up, and the enter-park sound (event 4) plays whatever game mode follows; the original keeps or stops the lobby's own sentences untraced and skips event 4 for game type 2 | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:93` |
-| VM-900 | Original-fidelity area (scope unadjudicated) | MULT: dest = a × b with the SUB/DIV/MOD dest-first operand order, 32-bit wrap and flags; inferred from the upstream three-operand signature and Theme Park Inc's sole &#96;MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE&#96; (followed by SETTIMER). No original dispatch of interpreter case 48 is traced, so the native accumulation and flags are unqualified | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:12` |
-| VM-901 | Original-fidelity area (scope unadjudicated) | WAITABS: STP-PPC 0xb0710 proves now + operand stored without speed division, first-encounter yield and unsigned-deadline comparison; the port keeps that deadline in its non-wrapping double script clock, so the original's 2^32 wrap and zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:13` |
-| VM-902 | Original-fidelity area (scope unadjudicated) | YEAR/MONTH/DAY/HOUR: the TPW object hook samples managed host-local civil time using the Feral C time/localtime field mapping. Provider/current host input is not saved or hashed; VM variable writes/flags remain saved and hashed. Replay depends on the same external samples. Managed timezone, clock changes, invalid/rollover dates and Windows/TPI parity are unqualified; existing destination/literal/flag behavior is not established by the clock-domain witness | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:14` |
+| VM-901 | Original-fidelity area (scope unadjudicated) | WAITABS: STP-PPC 0xb0710 proves now + operand stored without speed division, first-encounter yield and unsigned-deadline comparison; the port keeps that deadline in its non-wrapping double script clock, so the original's 2^32 wrap and zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:12` |
+| VM-902 | Original-fidelity area (scope unadjudicated) | YEAR/MONTH/DAY/HOUR: the TPW object hook samples managed host-local civil time using the Feral C time/localtime field mapping. Provider/current host input is not saved or hashed; VM variable writes/flags remain saved and hashed. Replay depends on the same external samples. Managed timezone, clock changes, invalid/rollover dates and Windows/TPI parity are unqualified; existing destination/literal/flag behavior is not established by the clock-domain witness | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:13` |
 | WALK-001 | Original-fidelity area (scope unadjudicated) | the speed boost +196 comes from the Sugar ingredient only, with the ride build's amount 50 (+3 per visit); the original's per-object amount (ride +404, set from the shop screen and saved) is not modelled | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:13` |
 | WALK-002 | Original-fidelity area (scope unadjudicated) | avoid_walls models only its edge branch (the first pushing edge of +x, -x, +y, -y); the diagonal-corner branches tried when no edge pushes are left out | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:14` |
 | WALK-003 | Original-fidelity area (scope unadjudicated) | separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists; the original's query 0x10087c also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:15` |
@@ -483,6 +481,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 - `COMPAT-008` (docs/reverse/APPROX-TRACE.md)
 - `COMPAT-013` (docs/reverse/APPROX-TRACE.md)
 - `DET-001` (docs/reverse/DET-plan.md)
+- `DET-002` (docs/reverse/DET-plan.md)
 - `DET-003` (docs/reverse/DET-plan.md)
 - `DET-004` (docs/reverse/DET-plan.md)
 - `DET-005` (docs/reverse/DET-plan.md)
@@ -675,7 +674,6 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | COMPAT-031 | `source/OpenTPW/World/Objects/OriginalObject.cs:211` | [APPROX:COMPAT-031] orient the gate's sign lighting upward so the light stone name remains legible. |
 | COMPAT-031 | `source/OpenTPW/World/Original/OriginalGateSign.cs:90` | [APPROX:COMPAT-031] the stored black paint is illegible on the decoded dark stone gate; use a light stone tint until original-platform pixels are available. |
 | COMPAT-031 | `source/OpenTPW/World/Original/OriginalGateSign.cs:134` | [APPROX:COMPAT-031] the sign's lit face uses an upward normal for readable stone text. |
-| DET-002 | `source/OpenTPW/World/WorldSeed.cs:9` | [APPROX:DET-002] runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds — evidence needed: none possible; explicit seeding is an OpenTPW replay policy |
 | DET-013 | `source/OpenTPW/VM/RideScriptWorld.cs:80` | [APPROX:DET-013] scripts without an explicit seed get a per-VM generator of the .NET-seed-compatible ScriptRandom class (draws exactly like a seeded System.Random; ScriptRandomTests proves it), seeded from the park's SplitMix64 stream, instead of the traced world-LCG draws — evidence needed: none; implementation waits for the DET-I2 port of the shared world generator (docs/reverse/DET-plan.md §4.3) |
 | DET-013 | `source/OpenTPW/VM/ScriptRandom.cs:48` | [APPROX:DET-013] scripts without an explicit seed get a per-VM generator of this class, seeded from the park's |
 | DET-013 | `source/OpenTPW/World/Tracks/BumpController.cs:597` | [APPROX:DET-013] the draw comes from the park's seeded world stream instead of the original's world generator |
@@ -1021,7 +1019,6 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-941 | `source/OpenTPW/World/Lobby/LobbyEffects.cs:63` | [APPROX:UI-941] only the islands' own draws advance the generator; the original's flying meshes and camera wander draw from it too (0x10090174, 0x1009476C), so the strikes come in a different rhythm |
 | UI-942 | `source/OpenTPW/Audio/GameAudio.cs:310` | [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat; [APPROX:UI-942] its game-type 2 check is not reproduced |
 | UI-942 | `source/OpenTPW/Audio/GameAudio.cs:319` | [APPROX:UI-942] the lobby's own music and ambience are stopped while the globe plays and restarted after it; what the original does with them is not traced |
-| VM-900 | `source/OpenTPW/VM/Handlers/Math.cs:59` | [APPROX:VM-900] MULT's native dispatch (interpreter case 48) is traced on no original build (the Mac jump table is data:0x3f2a4, unvisited for this case), so the destination order and the wrap/flags policy are family inference, not static evidence. Evidence needed: the case-48 handler in any original executable; the Theme Park Inc corpus only proves &#96;MULT dest a b&#96; shape and a SETTIMER consumer. |
 | VM-901 | `source/OpenTPW/VM/Handlers/Scheduling.cs:24` | [APPROX:VM-901] The traced facts are STP-PPC 0xb0710–0xb0798: WAITABS stores now + operand as a 32-bit deadline word in the field WAIT uses (no script-speed division), its first encounter always yields, and later encounters wait while unsigned now &lt; deadline. The port models that deadline in its non-wrapping double script clock, so the original's unsigned comparison, its 2^32 wrap and its zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled; a session that never nears 2^31 ms of scheduler clock cannot observe the difference. |
 | VM-901 | `source/OpenTPW/VM/RideVM.cs:459` | [APPROX:VM-901] The deadline lives in this VM's non-wrapping double script clock, not the original's wrapping unsigned 32-bit word with its zero-deadline sentinel (docs/reverse/PPC-clock.md); wrap-past-2^31/2^32 behaviour is unmodelled. |
 | VM-902 | `source/OpenTPW/VM/RideScriptWorld.cs:42` | [APPROX:VM-902] managed host-local time is an external, unsaved/unhashed input; variable writes and flags remain VM state. Native timezone/clock changes and destination/flag ordering are unqualified (PPC-clock.md). |
@@ -1122,6 +1119,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | developer-prototype | `source/OpenTPW/World/Level.cs:720` | [EXT:developer-prototype] the original window had no developer prototype to list; the Totem joins the placed rides as one more row |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:472` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
+| explicit-world-seed | `source/OpenTPW/World/WorldSeed.cs:9` | [EXT:explicit-world-seed] runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds; no original seed is "the" seed, so this is OpenTPW's replay policy (DET-002 reclassified) |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | frame-cap | `source/OpenTPW/Client/FrameLimiter.cs:4` | The frame cap of &lt;see cref="DisplaySettings.FrameCap"/&gt; ([EXT:frame-cap], docs/BROWSER-PERFORMANCE.md): decides whether a frame is |
 | frame-cap | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:503` | [EXT:frame-cap] draws at most this many frames a second (FrameLimiter); the simulation clock is not capped |
@@ -2219,6 +2217,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPW-EXE:0x5516b0 script speed word | `source/OpenTPW/Audio/GameAudio.cs:434` | [BIN:TPW-EXE:0x5516b0 script speed word] the speed word is the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; default 50 at 0x558c3c), the same short the script loop pushes to the ride every pass |
 | TPW-EXE:0x551769 script speed | `source/OpenTPW/VM/RideVM.cs:495` | [BIN:TPW-EXE:0x551769 script speed] speed = 0.5 + bias / 100; the bias is the ride's SPEED: ride init 0x4db51c..0x4db54c, children copy the parent's (0x551888), creation default 50 (0x558c3c), setter 0x55a300. |
 | TPW-EXE:0x5535c7 TRIGWAITANIM compare | `source/OpenTPW/VM/Handlers/Animation.cs:179` | [BIN:TPW-EXE:0x5535c7 TRIGWAITANIM compare] Without an object both wait handlers (0x5535c7..0x5535d4 and 0x552cd3) compare the out operand's raw code word + 1 with the token. The loader 0x5587f0 stores code raw and operands decode as variable when (word & 0xff000000) == 0x40000000, else as the sign-extended low 16 bits: a literal word 0x0000vvvv resumes once v equals the triggered AnimID, a variable word never matches (the Mac rule's tag 0xC0 is the same never-equal case). |
+| TPW-EXE:0x553eb9 MULT | `source/OpenTPW/VM/Handlers/Math.cs:59` | [BIN:TPW-EXE:0x553eb9 MULT] interpreter case 48 (RSSE jump table 0x5567d8 + 48 × 4): the destination word first, then operands a and b (a variable when the top byte is 0x40, else the sign-extended low 16 bits), result = a × b by imul (32-bit wrap), written to the flag word +0x48 and, through the shared tail 0x555b48, to the destination when it is a variable (a literal destination keeps only the flags) |
 | TPW-EXE:0x558c3c script creation | `source/OpenTPW/VM/RideVM.cs:484` | &lt;summary&gt;The creation value of &lt;see cref="SpeedBias"/&gt; ([BIN:TPW-EXE:0x558c3c script creation]).&lt;/summary&gt; |
 | TPW-EXE:0x57F1F0-0x57F380 | `source/OpenTPW/World/Weather/WeatherVisualState.cs:80` | [BIN:TPW-EXE:0x57F1F0-0x57F380] the Windows executable's CRain::Draw agrees with the Mac engine on the field, the colour ramp and the streak |
 | TPW-EXE:0x5D96C0 | `source/OpenTPW/World/Lobby/LobbyEffects.cs:192` | [BIN:STP-PPC:0x1008FAA0 lobby sky] the current colour eases 1/16 toward the target each frame and fills the engine sky's whole colour ramp, so the sky is one flat colour; [BIN:TPW-EXE:0x5D96C0] the same |

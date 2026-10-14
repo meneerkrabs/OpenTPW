@@ -35,6 +35,7 @@ public sealed class RideScriptWorld
 		RandomState = seed;
 		Coasters = new CoasterWorld( seed );
 		Bumpers = new BumpWorld();
+		Tours = new TourWorld();
 		civilTime = GameEditions.Current == GameEdition.ThemeParkWorld ? clock ?? (() => DateTime.Now) : null;
 	}
 
@@ -53,6 +54,9 @@ public sealed class RideScriptWorld
 
 	/// <summary>The park's kart and water ride controllers (the bump-ride module) and their cosmetic generator.</summary>
 	public BumpWorld Bumpers { get; }
+
+	/// <summary>The park's tour-ride controllers (the flying-car module).</summary>
+	public TourWorld Tours { get; }
 
 	/// <summary>A draw of the world generator for the bump rides' aiming jitter (the original's 0x516330), from the park's seeded stream.</summary>
 	internal uint NextWorldDraw() => (uint)NextScriptSeed();

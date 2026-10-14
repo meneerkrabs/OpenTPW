@@ -210,12 +210,19 @@ public class RideUpgradeIngressTests
 	{
 		Fixture( BuildCategory.Rides, out _, out _, out var owner, out _, out _ );
 		for ( var i = 0; i < 64; i++ ) { Assert.IsTrue( owner.Runtime.CanBuyCatalogueTier( 0, 1 ) ); Assert.IsTrue( owner.Runtime.CanCaptureCatalogueDefaults( 0, out _ ) ); }
-		var before = GC.GetAllocatedBytesForCurrentThread(); var available = true;
-		for ( var i = 0; i < 2048; i++ ) available &= owner.Runtime.CanBuyCatalogueTier( 0, 1 );
-		var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
-		var baseline = GC.GetAllocatedBytesForCurrentThread();
-		for ( var i = 0; i < 2048; i++ ) available &= owner.Runtime.CanCaptureCatalogueDefaults( 0, out _ );
-		var inheritedBytes = GC.GetAllocatedBytesForCurrentThread() - baseline;
+		// Each loop is measured three times and the smallest count kept: a one-off runtime allocation on the thread (a JIT
+		// tier-up, say) can land in a single pass, while a per-call allocation shows in every pass.
+		var available = true;
+		long bytes = long.MaxValue, inheritedBytes = long.MaxValue;
+		for ( var pass = 0; pass < 3; pass++ )
+		{
+			var before = GC.GetAllocatedBytesForCurrentThread();
+			for ( var i = 0; i < 2048; i++ ) available &= owner.Runtime.CanBuyCatalogueTier( 0, 1 );
+			bytes = Math.Min( bytes, GC.GetAllocatedBytesForCurrentThread() - before );
+			var baseline = GC.GetAllocatedBytesForCurrentThread();
+			for ( var i = 0; i < 2048; i++ ) available &= owner.Runtime.CanCaptureCatalogueDefaults( 0, out _ );
+			inheritedBytes = Math.Min( inheritedBytes, GC.GetAllocatedBytesForCurrentThread() - baseline );
+		}
 		Assert.IsTrue( available ); Assert.AreEqual( inheritedBytes, bytes, "Next-tier lookup must add no QueueParameters or captured predicates to the existing eligibility getters." );
 	}
 

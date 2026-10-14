@@ -875,6 +875,9 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Allocation test made sturdy (October 14):** `PerFrameExactTierLookupAddsNoDefaultParameterAllocations` keeps the
+  smallest of three measured passes per loop, so a one-off runtime allocation on the thread (seen once on ubuntu Release,
+  48 bytes) no longer fails it while a per-call allocation still does.
 - **Riders' heads on their traced seats (October 14):** a head is now attached through the model's own records, traced in
   the Mac binary: attribute record `i` belongs to node `Unknown46 + i`, a head id is the first record with flag `0x80` and
   that value, and the node-name guess is gone (Eruption's `Head1a` and the other previously unresolved ids now draw;

@@ -245,15 +245,49 @@ public class ObjectAnimatorChannelTests
 		Assert.IsTrue( listed.IsNodeHidden( 0 ) );
 	}
 
+	/// <summary>
+	/// RIDES-041: the PC sampler replaces vertex i by entry index[i] of pose trunc(time) of the 12-byte block, with no blending
+	/// (0x4718f7; the blend multiplies one address by t and 1 - t).
+	/// </summary>
 	[TestMethod]
-	public void TwelveByteBlockShowsTheStoredMesh()
+	public void TwelveByteBlockReplacesTheVerticesWithTheStoredPoseOfTheCurrentTick()
 	{
-		var clip = Clip( TwelveByte( Md2VertexAnimationTests.CreateAnimation( 0, 30 ) ) );
-		Assert.IsNotNull( clip.Tracks[0].VertexPose );
+		var clip = Clip( TwelveByte( Md2VertexAnimationTests.CreateAnimation( 0, 5 ), frames: 6 ) );
+		var pose = clip.Tracks[0].VertexPose!;
+		Assert.AreEqual( (4, 6), (pose.Count, pose.FrameCount) );
+		var animator = new ObjectAnimator( Geometry() );
+		animator.Play( 0, clip, "pose", loop: false );
+		Assert.AreEqual( 0, animator.VertexLimitations.Count );
+		NVector3 Stored( int frame, int vertex ) => new( frame * 100 + vertex, frame * 100 + vertex + 0.5f, -(frame * 100 + vertex) );
+		// The index table is reversed: vertex i shows entry 3 - i.
+		for ( var vertex = 0; vertex < 4; vertex++ )
+			Assert.AreEqual( Stored( 0, 3 - vertex ), animator.GetVertexPositions( 0 )![vertex] );
+		// Tick 1 and a fraction past it (1.5 ticks) both show pose 1: the frame is the truncated time and nothing is blended.
+		animator.Advance( 0.034 );
+		Assert.IsTrue( animator.GetTick( 0 ) is >= 1f and < 1.1f );
+		for ( var vertex = 0; vertex < 4; vertex++ )
+			Assert.AreEqual( Stored( 1, 3 - vertex ), animator.GetVertexPositions( 0 )![vertex] );
+		animator.Advance( 0.017 );
+		Assert.IsTrue( animator.GetTick( 0 ) is >= 1.5f and < 2f );
+		for ( var vertex = 0; vertex < 4; vertex++ )
+			Assert.AreEqual( Stored( 1, 3 - vertex ), animator.GetVertexPositions( 0 )![vertex] );
+		// The clip's last tick holds the last pose.
+		animator.Advance( 1.0 );
+		for ( var vertex = 0; vertex < 4; vertex++ )
+			Assert.AreEqual( Stored( 5, 3 - vertex ), animator.GetVertexPositions( 0 )![vertex] );
+	}
+
+	/// <summary>A pose table too short for duration + 1 poses is read as far as it fits (OpenTPW guard, not in the corpus).</summary>
+	[TestMethod]
+	public void TwelveByteBlockWithFewerPosesThanTicksHoldsItsLastPose()
+	{
+		var clip = Clip( TwelveByte( Md2VertexAnimationTests.CreateAnimation( 0, 30 ), frames: 1 ) );
+		Assert.AreEqual( 1, clip.Tracks[0].VertexPose!.FrameCount );
 		var animator = new ObjectAnimator( Geometry() );
 		animator.Play( 0, clip, "pose", loop: true );
-		Assert.IsNull( animator.GetVertexPositions( 0 ) );
-		StringAssert.Contains( animator.VertexLimitations.Single(), "12-byte block" );
+		animator.Advance( 0.5 );
+		Assert.AreEqual( 0, animator.VertexLimitations.Count );
+		Assert.AreEqual( new NVector3( 3, 3.5f, -3 ), animator.GetVertexPositions( 0 )![0] );
 	}
 
 	/// <summary>The default ride load path strips header flag 0x4, so relative-animation models play their vertex tracks in set mode (RIDES-043).</summary>
@@ -301,20 +335,35 @@ public class ObjectAnimatorChannelTests
 		Assert.AreNotEqual( Hash( first ), Hash( second ) );
 	}
 
-	/// <summary>Turns the synthetic vertex record into a 12-byte block record (flag 0x5000) with a four-position pose.</summary>
-	private static byte[] TwelveByte( byte[] data )
+	/// <summary>
+	/// Turns the synthetic vertex record into a 12-byte block record (flag 0x5000) with a four-position pose per frame: the index table
+	/// is reversed and entry v of frame f holds (100f + v, 100f + v + 0.5, -(100f + v)).
+	/// </summary>
+	private static byte[] TwelveByte( byte[] data, int frames )
 	{
 		var trailer = data.Length - 72;
-		var grown = new byte[data.Length + 12 + 16 + 48];
+		var floatBytes = 48 * frames;
+		var grown = new byte[data.Length + 12 + 16 + floatBytes];
 		data.AsSpan( 0, trailer ).CopyTo( grown );
-		data.AsSpan( trailer ).CopyTo( grown.AsSpan( trailer + 76 ) );
-		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( 0x98 ), (uint)(trailer + 76) );
+		data.AsSpan( trailer ).CopyTo( grown.AsSpan( trailer + 28 + floatBytes ) );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( 0x98 ), (uint)(trailer + 28 + floatBytes) );
 		var block = trailer;
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( block ), (uint)(block + 12) );
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( block + 4 ), 4 );
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( block + 8 ), (uint)(block + 28) );
 		for ( var index = 0; index < 4; index++ )
-			System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( block + 12 + index * 4 ), (uint)index );
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( block + 12 + index * 4 ), (uint)(3 - index) );
+		for ( var frame = 0; frame < frames; frame++ )
+		{
+			for ( var vertex = 0; vertex < 4; vertex++ )
+			{
+				var at = block + 28 + (frame * 4 + vertex) * 12;
+				var value = frame * 100 + vertex;
+				System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian( grown.AsSpan( at ), value );
+				System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian( grown.AsSpan( at + 4 ), value + 0.5f );
+				System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian( grown.AsSpan( at + 8 ), -value );
+			}
+		}
 		const int records = 0x188;
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( records + 4 ), 0x5000 );
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( grown.AsSpan( records + 40 ), (uint)block );

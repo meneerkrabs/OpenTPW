@@ -10,6 +10,7 @@ public partial class Level
 		var lane = Guests.Settings.ArrivalLaneA ?? Guests.Settings.ArrivalLaneB;
 		StaffWorld = new StaffWorldSimulation( Guests.Grid, () => Park.Economy.Staff.Members, StaffJobAccess,
 			lane is { Length: > 0 } ? lane[^1] : null );
+		Park.Economy.MechanicJobWorld = StaffWorld;
 	}
 
 	private (int X, int Y)? StaffJobAccess( int instance )

@@ -182,6 +182,9 @@ public static class ParkSaveFile
 		/// <summary>The job time of earlier saves, in tenths of a park hour; read only when <see cref="BusyTurns"/> is absent and converted by <see cref="BusyTurnsOf"/>. Never written.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public long? BusyTicks { get; init; }
+		/// <summary>New host mechanic work has not started; absent/false preserves legacy already-started jobs.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool AwaitingJobArrival { get; init; }
 		public required int AssignedInstanceId { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public float? CellX { get; init; }
@@ -216,6 +219,8 @@ public static class ParkSaveFile
 	public static Data Capture( ParkEconomy park, WorldRandomState? world = null )
 	{
 		ArgumentNullException.ThrowIfNull( park );
+		foreach ( var member in park.Staff.Members.Where( member => member.AwaitingJobArrival ) )
+			if ( !park.OwnsMechanicJob( member ) ) throw new InvalidDataException( $"Staff {member.Id} cannot capture its awaiting mechanic job." );
 		return new Data
 		{
 			Format = FormatName,
@@ -302,6 +307,7 @@ public static class ParkSaveFile
 					Energy = member.Energy,
 					State = member.State,
 					BusyTurns = member.BusyTicks,
+					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
 					CellX = member.CellX,
 					CellY = member.CellY,
@@ -408,6 +414,15 @@ public static class ParkSaveFile
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
+			if ( member.AwaitingJobArrival )
+			{
+				var job = data.Objects.FirstOrDefault( item => item.Id == member.AssignedInstanceId );
+				Require( member.Type == StaffType.Mechanic && BusyTurnsOf( member ) > 0 && Enum.IsDefined( member.State )
+					&& job is { Kind: ParkObjectKind.Ride } && job.MechanicId == member.Id
+					&& (job.IsBrokenDown ? RideBreakdownRules.GaugeByte( (float)(job.LifeGauge ?? 100) ) != 0 : job.PendingLevel > job.Level || job.StateOfRepair < ParkEconomy.WornStateOfRepair),
+					$"staff {member.Id} awaiting arrival job ownership" );
+			}
+
 			Require( member.CellX.HasValue == member.CellY.HasValue && (!member.CellX.HasValue || (float.IsFinite( member.CellX.Value ) && float.IsFinite( member.CellY!.Value ))) && double.IsFinite( member.TravelSeconds ) && member.TravelSeconds >= 0 && member.TravelSeconds < StaffWorldSimulation.SecondsPerCell, $"staff {member.Id} position" );
 		}
 		foreach ( var candidate in data.Staff.Candidates )
@@ -476,11 +491,15 @@ public static class ParkSaveFile
 			Energy = member.Energy,
 			State = member.State,
 			BusyTicks = BusyTurnsOf( member ),
+			AwaitingJobArrival = member.AwaitingJobArrival,
 			AssignedInstanceId = member.AssignedInstanceId,
 			CellX = member.CellX,
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		foreach ( var member in park.Staff.Members.Where( member => member.AwaitingJobArrival ) )
+			if ( !park.OwnsMechanicJob( member ) ) throw new InvalidDataException( $"Staff {member.Id} cannot await its restored mechanic job." );
+
 		if ( data.Staff.Strikes is { } strikes )
 			park.Staff.Strikes.Restore( strikes.Levels, strikes.Active, strikes.LastConsidered );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),

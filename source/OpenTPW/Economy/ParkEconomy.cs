@@ -139,6 +139,8 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Ride scripts' running state, riders and speed for the wear step; none by default (nothing wears).</summary>
 	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
+	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
+	public IMechanicJobWorld? MechanicJobWorld { get; set; }
 	// A mechanic's BusyTicks is the number of park turns (staff updates) until its job completes.
 
 	public long Turn => ParkCalendar.Turn( Tick );
@@ -151,6 +153,13 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			if ( member.BusyTicks == 0 )
 				continue;
+			if ( member.AwaitingJobArrival )
+			{
+				if ( OwnsMechanicJob( member ) && MechanicJobWorld?.HasArrived( member ) == true )
+					member.AwaitingJobArrival = false;
+				// Host policy: the arrival-observation update starts work; following updates consume the reserved timer.
+				continue;
+			}
 			member.BusyTicks--;
 			if ( member.BusyTicks == 0 )
 			{
@@ -373,6 +382,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void FinishJob( StaffMember member )
 	{
+		member.AwaitingJobArrival = false;
 		member.State = StaffState.Patrolling;
 		if ( !objects.TryGetValue( member.AssignedInstanceId, out var item ) )
 		{
@@ -425,7 +435,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>
 	/// Assigns free mechanics: broken rides first, then paid upgrades, then worn rides. A job takes
 	/// <see cref="RepairTimer"/> park turns (one more for the update that completes it); the walk to the ride is
-	/// not modelled (<b>approximation</b>).
+	/// supplied by an optional host world (otherwise immediate).
 	/// </summary>
 	private void DispatchMechanics()
 	{
@@ -440,16 +450,22 @@ public sealed class ParkEconomy : IParkEconomy
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
-			// [APPROX:ECON-021] the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically) — evidence needed: capture of a repair from arrival to completion
+			// [APPROX:ECON-021] live jobs await reachable host arrival, then consume the dispatch-computed timer after one arrival-observation update; headless jobs start at once — evidence needed: original movement, timer sampling and arrival-to-completion ordering
 			int? upgradeDuration = ObjectState( job ) == RideObjectStates.Upgrading && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
 				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
 			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
 			mechanic.BusyTicks = RepairTimer( role.WorkDuration[mechanic.Grade], job.Repair, upgradeDuration ) + 1;
+			mechanic.AwaitingJobArrival = MechanicJobWorld != null;
 			mechanic.AssignedInstanceId = job.Id;
 			mechanic.State = StaffState.Working;
 			job.MechanicId = mechanic.Id;
 		}
 	}
+
+	internal bool OwnsMechanicJob( StaffMember member ) => member.Type == StaffType.Mechanic && member.BusyTicks > 0 && Enum.IsDefined( member.State )
+		&& objects.TryGetValue( member.AssignedInstanceId, out var item ) && item.Kind == ParkObjectKind.Ride
+		&& Catalog.TryGet( item.InfoId, out var info ) && info.Kind == ParkObjectKind.Ride
+		&& item.MechanicId == member.Id && JobRank( item ) >= 0;
 
 	/// <summary>
 	/// The mechanic's job for an object, as a dispatch rank (lower first), or -1 for none: an object the economy has broken down, then a purchased
@@ -889,6 +905,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			member.AssignedInstanceId = 0;
 			member.BusyTicks = 0;
+			member.AwaitingJobArrival = false;
 			member.State = StaffState.Patrolling;
 		}
 		Post( LedgerCategory.OtherIncome, value );
@@ -905,6 +922,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			member.AssignedInstanceId = 0;
 			member.BusyTicks = 0;
+			member.AwaitingJobArrival = false;
 			member.State = StaffState.Patrolling;
 		}
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
@@ -1097,7 +1115,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public void Fire( int staffId )
 	{
 		var member = Staff.Fire( staffId );
-		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) )
+		member.AwaitingJobArrival = false;
+		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) && item.MechanicId == member.Id )
 			item.MechanicId = 0;
 		var wage = Staff.MonthlyWage( member );
 		if ( wage > 0 )

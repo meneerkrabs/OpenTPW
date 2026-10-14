@@ -137,12 +137,12 @@ fields, so a resumed park continues the same streams this page describes.
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 12 (version 1 also hashed the sound seed; versions 3 and 4 added the
+version 14 (version 1 also hashed the sound seed; versions 3 and 4 added the
 queue state, version 5 the cell map, version 6 the bounce slots' start time on one
 branch, the guests' walk state on another and the coasters on a third, version 7
 the first two on one branch and the scheduler clock and per-script clock origins
 on another, version 8 all of those but the coasters, version 9 everything, version 10 the guest
-arrival timer's start turn and group flag instead of its countdown, version 11 the economy objects' use counts, version 12 the guests' used and temporary attraction histories and an integer exit counter, see Tests):
+arrival timer's start turn and group flag instead of its countdown, version 11 the economy objects' use counts, version 12 the guests' used and temporary attraction histories and an integer exit counter, version 13 their state-6 activity, version 14 the pending mechanic-arrival phase, see Tests):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -227,7 +227,11 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x05DD3EC845B5F51C`, schema 13: a guest's seconds-based decision timer leaves the hash and its state-6 activity joins it, so the schema is bumped,
+  (`0x9EA19826749C30F7`, schema 14: optional awaiting-mechanic-arrival is gameplay state
+  in the canonical economy snapshot. Missing/false is omitted for legacy jobs; true
+  waiting and started work must hash differently. The fixed headless run itself
+  remains unchanged; only its schema word changes. Before that:
+  `0x05DD3EC845B5F51C`, schema 13: a guest's seconds-based decision timer leaves the hash and its state-6 activity joins it, so the schema is bumped,
   and the run changes: a guest in the park follows the original's state 6 (one decision per park turn, the major choice at most every 30 turns) and state 7 (a walk of
   one to five cells to a wander destination) instead of deciding every 3 s and wandering one cell at a time (docs/reverse/WANDER-plan.md, GUEST-010). Before that:
   `0xB7F84A5A989B61F7`, schema 12: the hashed fields are unchanged, but guests now step off the bus one per park turn instead of every 0.4 s (tp.exe `0x4cf3e0`, ARRIVAL-001), so the run changes. Before that:

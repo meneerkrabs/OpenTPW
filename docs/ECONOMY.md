@@ -354,7 +354,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-017 | `Economy/ParkResearch.cs:149` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
 | ECON-018 | `Economy/ParkResearch.cs:49` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale adds LitterEffect/100 litter items to a park-wide store; the original adds LitterEffect to the buying guest's 0..100 litter meter, which drops one litter event at 90 (ORACLE F18) | a guest litter meter with the drop-at-90 and bin rules, and the park's litter count |
-| ECON-021 | `Economy/ParkEconomy.cs:435` | the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically); the timer itself, WorkDuration x (100 - state of repair) / 100 or x DurationOfUpgrade, is the original's (executed, ORACLE F19) | capture of a repair from arrival to completion |
+| ECON-021 | `Economy/ParkEconomy.cs:453` | live mechanics wait for reachable host arrival, then consume a dispatch-computed timer after one observation update; headless work starts immediately. The timer formula is traced/executed (ORACLE F19), but movement, sampling moment and arrival update ordering remain host policy | capture of a repair from arrival to completion |
 | ECON-022 | `Economy/ParkEconomy.cs:466` | a handyman removes one litter item per WorkDuration game minutes, park-wide, and takes dirty toilets dirtiest first; handymen have no position, so their walks, the litter-first rule and the nearest-toilet choice are not modelled | capture of cleaning speed, and the writer of mRequestedService |
 | ECON-023 | `Economy/ParkEconomy.cs:313` | the wear step and the breakdown check do not know relief objects (toilets are not simulated, +0x2E bit 0), and the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does | the callers that set state 2 for an upgrade, what feeds toilets' wear and the script side of VAR_BREAKSTAT |
 | ECON-026 | `Economy/ParkEconomy.cs:606` | the map's cell points are not added: the cell map has no ownership flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, and the scrap values are no longer part of it | the ownership of the starting park's cells and the original cell types |
@@ -390,3 +390,33 @@ The selected ordinary TPW ride detail offers **Buy upgrades** when its factory-o
 Open and confirm recheck unique object/economy ownership, the current tier, factory parameter identity and current cost. Sparse/custom/stopped/faulted runtimes, coasters, prototypes, TPI, read-only visits and missing economies refuse before charging. Captured mouse gestures cannot open or confirm on a later held release. UI-935 qualifies this host confirmation and placement; native upgrade-window geometry is not established. Completion applies only the existing minimum catalogue-default contract: live CAP/DUR remain authored, with no native reset or full performance claim. Synthetic HUD, ledger, queued-no-mechanic and completion controls do not qualify original assets or rendering.
 
 Independent synthetic actual-HUD controls verify the exact localized next-tier cost preview, refuse a cost or economy change during confirmation without charging, and require a fresh confirmation at the new cost. Authored CAP9/DUR77, an active WAIT deadline and occupied rider/head slots survive HUD purchase and mechanic completion; the other instance remains at its prior fallback capacity. These are host integration controls, not native upgrade performance or seat-count qualification.
+
+
+### Mechanic arrival and own-save work phase
+
+New TPW mechanic jobs in a live staff world reserve the existing dispatch-computed
+`RepairTimer+1` amount and exact object/employee identity, then await a reachable
+arrival at the existing job-access path cell. The observation update clears
+`AwaitingJobArrival`; subsequent staff updates consume the unchanged timer and
+raise the existing repair/upgrade event. Level still advances the economy before
+staff movement. This dispatch-time amount, one observation update and cell-based
+arrival are host policies, not native movement/timer-sampling qualification.
+
+The optional `IMechanicJobWorld` binding applies only to new mechanic jobs;
+headless dispatch keeps immediate work and handymen retain their existing policy.
+The separate phase leaves staff display/vitals/strike/rest state rules intact.
+Sale/removal/fire clear the matching phase; no new refund or cancellation API is
+introduced. A pending job cannot start through a foreign same-ID actor/world or a
+nonreciprocal object owner. Existing job priority and upgrade costs are unchanged.
+
+Own saves omit the false phase. Missing phase therefore preserves old
+Working/BusyTurns as already-started work; true preserves pending job, actor
+position and travel fraction. Capture and load validate role, positive reserved
+timer, reciprocal owner and eligible ride. Restored true without a world binding
+stays frozen until the matching actor/path/object mapping is rebound. The provider
+itself is neither serialized nor hashed; replay needs that same host binding.
+The phase is gameplay state and joins canonical schema14; save-format versions
+stay unchanged. Actual synthetic economy/path/clock/save controls cover travel,
+disconnection/reconnect, exact completion, legacy/headless behavior and owner
+isolation. Original assets, native positions/order and platform gameplay remain
+unqualified.

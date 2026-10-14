@@ -11,6 +11,14 @@ public partial class Level
 		StaffWorld = new StaffWorldSimulation( Guests.Grid, () => Park.Economy.Staff.Members, StaffJobAccess,
 			lane is { Length: > 0 } ? lane[^1] : null );
 		StaffWorld.Toilets = ToiletSites;
+		// the guards' pranksters and the entertainers' audience; a prank reaches the staff HQ's guard choice at once (StaffWorldSimulation.ReportPrank)
+		StaffWorld.Guests = Guests;
+		Guests.IsEscorted = StaffWorld.IsEscorting;
+		Guests.Pranked += ( guest, _ ) =>
+		{
+			if ( Park != null )
+				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
+		};
 		AttachStaffWorld();
 	}
 
@@ -20,7 +28,7 @@ public partial class Level
 		if ( Park == null || StaffWorld == null )
 			return;
 		Park.Economy.MechanicJobWorld = StaffWorld;
-		Park.Economy.HandymanWorld = StaffWorld;
+		Park.Economy.StaffWorld = StaffWorld;
 	}
 
 	/// <summary>The toilets for the handymen: relief objects with an economy instance, their cell and the path cell in front of them.</summary>
@@ -32,7 +40,7 @@ public partial class Level
 			if ( item.IsDeleted || !item.Runtime.Visitors.ProvidesRelief || !item.Runtime.Visitors.HasCells )
 				continue;
 			var access = item.Runtime.Visitors.JoinCell ?? item.Runtime.Visitors.EntranceCell;
-			// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateHandymen): a toilet's access cell (thing +0x36) is its queue's join cell or the path cell in front of its entrance, as for the mechanics' arrival
+			// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): a toilet's access cell (thing +0x36) is its queue's join cell or the path cell in front of its entrance, as for the mechanics' arrival
 			if ( Guests!.Grid.IsWalkable( access.X, access.Y ) )
 				sites.Add( new ToiletSite( instance, (item.Placement.X, item.Placement.Y), access ) );
 		}

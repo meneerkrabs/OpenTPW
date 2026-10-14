@@ -195,9 +195,12 @@ public static class ParkSaveFile
 		/// <summary>The littered cell a handyman sweeps (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? LitterCell { get; init; }
-		/// <summary>A handyman's state machine in a world (absent: none yet).</summary>
+		/// <summary>A handyman's, entertainer's or guard's state machine in a world (absent: none yet).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
-		public HandymanData? Handyman { get; init; }
+		public StaffWorldData? WorldState { get; init; }
+		/// <summary>Legacy: saves written before the entertainers and guards walked named the handyman's record so; it is read into <see cref="WorldState"/>.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public StaffWorldData? Handyman { get => null; init => WorldState ??= value; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public float? CellX { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
@@ -206,10 +209,13 @@ public static class ParkSaveFile
 		public double TravelSeconds { get; init; }
 	}
 
-	/// <summary>A handyman's state machine (docs/reverse/WANDER-plan.md §4): its state, stamps, toilet, patrol rectangle, speed and walk.</summary>
-	public sealed class HandymanData
+	/// <summary>
+	/// A world-driven member's state machine (docs/reverse/WANDER-plan.md §4): its state, stamps, toilet, patrol rectangle, speed and walk, a guard's
+	/// target and the cell where an entertainer's or a guard's <c>RegionFX</c> row lies.
+	/// </summary>
+	public sealed class StaffWorldData
 	{
-		public required HandymanJob Job { get; init; }
+		public required StaffJob Job { get; init; }
 		public long IdleStamp { get; init; }
 		public long JobStamp { get; init; }
 		public int ToiletId { get; init; }
@@ -221,8 +227,14 @@ public static class ParkSaveFile
 		/// <summary>The steering state, null before a world placed him.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public NavigationData? Navigation { get; init; }
+		/// <summary>The guest a guard chases or escorts (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int TargetGuestId { get; init; }
+		/// <summary>The cell of the member's <c>RegionFX</c> row (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? EffectCell { get; init; }
 
-		internal static HandymanData Capture( StaffMember member ) => new()
+		internal static StaffWorldData Capture( StaffMember member ) => new()
 		{
 			Job = member.Job,
 			IdleStamp = member.IdleStamp,
@@ -232,7 +244,9 @@ public static class ParkSaveFile
 			BaseSpeed = member.BaseSpeed,
 			SpeedBonus = member.SpeedBonus,
 			SmoothedSpeed = member.SmoothedSpeed,
-			Navigation = member.Navigation is { } navigation ? NavigationData.Capture( navigation ) : null
+			Navigation = member.Navigation is { } navigation ? NavigationData.Capture( navigation ) : null,
+			TargetGuestId = member.TargetGuestId,
+			EffectCell = member.EffectCell is { } cell ? new[] { cell.X, cell.Y } : null
 		};
 
 		internal void Apply( StaffMember member )
@@ -246,7 +260,18 @@ public static class ParkSaveFile
 			member.SpeedBonus = SpeedBonus;
 			member.SmoothedSpeed = SmoothedSpeed;
 			member.Navigation = Navigation?.Restore();
+			member.TargetGuestId = TargetGuestId;
+			member.EffectCell = EffectCell is [var x, var y] ? (x, y) : null;
 		}
+
+		/// <summary>The states a role's state machine takes: the shared 0–7 and the role's own.</summary>
+		internal static bool Fits( StaffType type, StaffJob job ) => Enum.IsDefined( job ) && (job <= StaffJob.PickedUp || type switch
+		{
+			StaffType.Handyman => job is >= StaffJob.ToLitter and <= StaffJob.Cleaning,
+			StaffType.Entertainer => job == StaffJob.Performing,
+			StaffType.Guard => job is StaffJob.Chasing or StaffJob.Escorting or StaffJob.ReturningFromEscort,
+			_ => false
+		});
 	}
 
 	/// <summary>A <see cref="GuestNavigation"/> as saved: every field the next step reads; cell lists as x, y pairs.</summary>
@@ -434,7 +459,8 @@ public static class ParkSaveFile
 					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
 					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
-					Handyman = member.Type == StaffType.Handyman && (member.Navigation != null || member.Job != HandymanJob.Idle) ? HandymanData.Capture( member ) : null,
+					WorldState = member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard
+						&& (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null) ? StaffWorldData.Capture( member ) : null,
 					CellX = member.CellX,
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
@@ -529,7 +555,7 @@ public static class ParkSaveFile
 		// must be sweeping it, or nothing would end the claim.
 		foreach ( var cell in data.Litter.Where( cell => cell.Collector != 0 ) )
 			Require( data.Staff.Members.Any( member => member.Id == cell.Collector && member.Type == StaffType.Handyman
-				&& (member.Handyman != null || member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y) ),
+				&& (member.WorldState != null || member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y) ),
 				$"litter at ({cell.X}, {cell.Y}) claimed by staff {cell.Collector}, who does not sweep it" );
 		Require( data.Ledger.MonthIndex == ParkCalendar.MonthIndex( data.Tick ), "ledger month matches the clock" );
 		Require( data.Ledger.History.Count <= ParkLedger.MaximumHistoryMonths && data.MonthlyAdmissions.Count <= ParkLedger.MaximumHistoryMonths, "history length" );
@@ -550,13 +576,15 @@ public static class ParkSaveFile
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
-			Require( member.Handyman is null || (member.Type == StaffType.Handyman && Enum.IsDefined( member.Handyman.Job ) && member.Handyman.PatrolArea is { Length: 4 } area
+			Require( member.WorldState is not { } world || (StaffWorldData.Fits( member.Type, world.Job ) && world.PatrolArea is { Length: 4 } area
 				&& area[0] is >= 0 and < ParkLitter.MapSize && area[2] >= area[0] && area[2] < ParkLitter.MapSize && area[1] is >= 0 and < ParkLitter.MapSize
-				&& area[3] >= area[1] && area[3] < ParkLitter.MapSize && member.Handyman.BaseSpeed is >= 0 and <= 255 && member.Handyman.SpeedBonus is >= 0 and <= 255
-				&& float.IsFinite( member.Handyman.SmoothedSpeed ) && (member.Handyman.ToiletId == 0 || ids.Contains( member.Handyman.ToiletId ))
-				&& (member.Handyman.Navigation is null || member.Handyman.Navigation.IsValid)), $"staff {member.Id} handyman state" );
+				&& area[3] >= area[1] && area[3] < ParkLitter.MapSize && world.BaseSpeed is >= 0 and <= 255 && world.SpeedBonus is >= 0 and <= 255
+				&& float.IsFinite( world.SmoothedSpeed ) && (world.ToiletId == 0 || member.Type == StaffType.Handyman && ids.Contains( world.ToiletId ))
+				&& (world.TargetGuestId == 0 || member.Type == StaffType.Guard && world.TargetGuestId > 0)
+				&& (world.EffectCell is null || ParkEconomy.EffectRow( member.Type ) != null && world.EffectCell is [>= 0 and < ParkLitter.MapSize, >= 0 and < ParkLitter.MapSize])
+				&& (world.Navigation is null || world.Navigation.IsValid)), $"staff {member.Id} world state" );
 			Require( member.LitterCell is null || (member.Type == StaffType.Handyman && member.LitterCell.Length == 2 && member.AssignedInstanceId == 0
-				&& (member.Handyman is { Job: HandymanJob.ToLitter or HandymanJob.Sweeping } || member.Handyman is null && BusyTurnsOf( member ) > 0)
+				&& (member.WorldState is { Job: StaffJob.ToLitter or StaffJob.Sweeping } || member.WorldState is null && BusyTurnsOf( member ) > 0)
 				&& data.Litter.Any( cell => cell.X == member.LitterCell[0] && cell.Y == member.LitterCell[1] && cell.Collector == member.Id )), $"staff {member.Id} litter job" );
 			if ( member.AwaitingJobArrival )
 			{
@@ -645,8 +673,9 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
-		foreach ( var saved in data.Staff.Members.Where( member => member.Handyman != null ) )
-			saved.Handyman!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
+		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
+			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
+		park.ApplyStaffEffects();
 		foreach ( var member in park.Staff.Members.Where( member => member.AwaitingJobArrival ) )
 			if ( !park.OwnsMechanicJob( member ) ) throw new InvalidDataException( $"Staff {member.Id} cannot await its restored mechanic job." );
 

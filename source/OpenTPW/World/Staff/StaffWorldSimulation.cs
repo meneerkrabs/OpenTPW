@@ -10,7 +10,7 @@ public readonly record struct StaffWorldSnapshot( int Id, StaffType Type, float 
 /// finance, research or staff states. Exact native sub-cell positions survive import and load;
 /// off-path actors remain there rather than teleporting to a convenient job or path.
 /// </summary>
-public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IHandymanWorld
+public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorld
 {
 	public const double SecondsPerCell = 1;
 	private readonly GuestPathGrid grid;
@@ -68,9 +68,10 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IHandymanW
 	public IReadOnlyList<StaffWorldSnapshot> Snapshots => members().Where( member => member.CellX.HasValue && member.CellY.HasValue )
 		.Select( member =>
 		{
-			if ( member.Type == StaffType.Handyman && member.Navigation is { } navigation )
+			if ( member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard && member.Navigation is { } navigation )
 				return new StaffWorldSnapshot( member.Id, member.Type, member.CellX!.Value, member.CellY!.Value,
-					member.Job is HandymanJob.Patrol or HandymanJob.ToLitter or HandymanJob.ToToilet && !navigation.Arrived, true );
+					member.Job is StaffJob.Patrol or StaffJob.ToLitter or StaffJob.ToToilet or StaffJob.Chasing or StaffJob.Escorting or StaffJob.ReturningFromEscort
+						&& !navigation.Arrived, true );
 			var reachable = CanTravel( member, out var target, out var x, out var y );
 			return new StaffWorldSnapshot( member.Id, member.Type, member.CellX!.Value, member.CellY!.Value,
 				reachable && (x, y) != target, reachable );

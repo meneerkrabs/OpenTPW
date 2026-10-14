@@ -1,0 +1,236 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// The entertainers' and guards' state machines in a world (tp.exe <c>0x004D4810</c>, <c>0x004D6410</c>; docs/reverse/WANDER-plan.md §4): performances
+/// for nearby guests, the moving <c>RegionFX</c> rows, and a prank's chase, catch and escort.
+/// </summary>
+[TestClass]
+public class GuardEntertainerTests
+{
+	private sealed class Fixture
+	{
+		public readonly GuestPathGrid Grid = new( 20, 20 );
+		public readonly ParkEconomy Park = EconomyTestData.Park();
+		public readonly GuestSimulation Guests;
+		public readonly StaffWorldSimulation World;
+		public readonly List<StaffVoice> Sounds = new();
+
+		public Fixture()
+		{
+			for ( var x = 0; x < 16; x++ )
+				Grid.SetPath( x, 5, true );
+			for ( var y = 0; y < 11; y++ )
+				Grid.SetPath( 10, y, true );
+			Park.OpenPark();
+			Park.Litter.Cells = Grid.Cells;
+			Park.Litter.Environment.Effects = new RegionEffect[RegionEffect.Count];
+			Park.Litter.Environment.Effects[RegionEffect.Entertainer] = new RegionEffect( 3, 2, 0, 0, 0, 0 );
+			Park.Litter.Environment.Effects[RegionEffect.Guard] = new RegionEffect( 3, 0, 0, 0, 10, 0 );
+			var settings = GuestTests.CreateSettings();
+			settings.ExitLevelSeconds = 10_000;
+			Guests = new GuestSimulation( Grid, settings, 5 ) { ArrivalsEnabled = false, Litter = Park.Litter };
+			World = new StaffWorldSimulation( Grid, () => Park.Staff.Members, _ => null, (0, 5) ) { Guests = Guests };
+			Guests.IsEscorted = World.IsEscorting;
+			Park.StaffWorld = World;
+		}
+
+		public StaffMember Hire( StaffType type )
+		{
+			var member = EconomyTestData.HireBest( Park, type );
+			World.Synchronize();
+			return member;
+		}
+
+		/// <summary>One park turn: the guests' ticks of the turn, then the economy's turn (which runs the staff).</summary>
+		public void Turns( int turns, Action? each = null )
+		{
+			for ( var turn = 0; turn < turns; turn++ )
+			{
+				var next = Park.Turn + 1;
+				while ( ParkCalendar.Turn( Guests.TickCount ) < next )
+					Guests.Tick( GuestSnapshotTests.Tick );
+				EconomyTestData.AdvanceToTurn( Park, next );
+				Sounds.AddRange( World.TakeVoices() );
+				each?.Invoke();
+			}
+		}
+
+		/// <summary>Stands a member on a cell, idle for a long while (so tests choose who moves).</summary>
+		public void Stand( StaffMember member, int x, int y )
+		{
+			Turns( 1 );
+			var navigation = member.Navigation!;
+			(navigation.X, navigation.Y) = GuestNavigation.BytePoint( (x, y), 128, 128 );
+			navigation.SetDestination( navigation.X, navigation.Y, [] );
+			(member.CellX, member.CellY) = (x + 0.5f, y + 0.5f);
+			member.Job = StaffJob.Idle;
+			member.State = StaffState.Idle;
+			member.IdleStamp = Park.Turn + 100_000;
+			Park.MoveStaffEffect( member, (x, y) );
+		}
+
+		public (int X, int Y) Cell( StaffMember member ) => member.Navigation!.Cell;
+	}
+
+	[TestMethod]
+	public void AnEntertainerPerformsForNearbyGuestsForWorkDurationTurns()
+	{
+		var f = new Fixture();
+		var entertainer = f.Hire( StaffType.Entertainer );
+		var guest = f.Guests.SpawnInPark( 2, 5 );
+		long started = -1, ended = -1;
+		f.Turns( 400, () =>
+		{
+			if ( started < 0 && entertainer.Job == StaffJob.Performing )
+				started = f.Park.Turn;
+			else if ( started > 0 && ended < 0 && entertainer.Job != StaffJob.Performing )
+				ended = f.Park.Turn;
+		} );
+		Assert.IsTrue( started > 0, "he performed" );
+		var work = f.Park.Settings[StaffType.Entertainer].WorkDuration[entertainer.Grade];
+		Assert.AreEqual( started + work + 1, ended, "the performance ends when the turn passes its start + WorkDuration" );
+		Assert.IsTrue( f.Sounds.Any( sound => sound.Event == StaffWorldSimulation.PerformanceEndEvent && !sound.Kids ), "cat_staff 135 at its end" );
+	}
+
+	[TestMethod]
+	public void WithoutGuestsAnEntertainerPatrolsAndNeverPerforms()
+	{
+		var f = new Fixture();
+		var entertainer = f.Hire( StaffType.Entertainer );
+		var cells = new HashSet<(int, int)>();
+		f.Turns( 300, () =>
+		{
+			cells.Add( f.Cell( entertainer ) );
+			Assert.AreNotEqual( StaffJob.Performing, entertainer.Job );
+		} );
+		Assert.IsTrue( cells.Count > 3, $"he walked over {cells.Count} cells" );
+		Assert.IsTrue( f.Sounds.Any( sound => sound.Event == 0 && sound.Type == StaffType.Entertainer ), "his walking or idle voices" );
+	}
+
+	[TestMethod]
+	public void AnEntertainersRegionRowFollowsHimAndGoesWithHim()
+	{
+		var f = new Fixture();
+		var entertainer = f.Hire( StaffType.Entertainer );
+		f.Turns( 60 );
+		var cell = f.Cell( entertainer );
+		Assert.AreEqual( cell, entertainer.EffectCell );
+		Assert.AreEqual( 2, f.Park.Litter.Environment.At( cell.X, cell.Y ).Happiness, "row 0 on his cell" );
+		Assert.AreEqual( 1, f.Park.Litter.Environment.At( cell.X + 1, cell.Y ).Happiness, "2 / 2 beside him" );
+		Assert.AreEqual( 0, f.Park.Litter.Environment.At( cell.X + 2, cell.Y ).Happiness, "2 / 3 truncates to 0" );
+
+		var json = ParkSaveFile.Serialize( f.Park );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog );
+		restored.Litter.Environment.Effects = f.Park.Litter.Environment.Effects;
+		restored.ApplyStaffEffects();
+		Assert.AreEqual( f.Park.Litter.Environment.At( cell.X, cell.Y ), restored.Litter.Environment.At( cell.X, cell.Y ), "a load puts the row back" );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
+
+		f.Park.Fire( entertainer.Id );
+		Assert.AreEqual( default, f.Park.Litter.Environment.At( cell.X, cell.Y ), "dismissed, the row goes" );
+	}
+
+	[TestMethod]
+	public void APrankOnASecureCellSendsTheFreeGuardNearestTheStaffHq()
+	{
+		var f = new Fixture();
+		var near = f.Hire( StaffType.Guard );
+		var far = f.Hire( StaffType.Guard );
+		f.Stand( far, 14, 5 );
+		f.Stand( near, 10, 5 );
+		var unwatched = f.Guests.SpawnInPark( 10, 0 );
+		f.World.ReportPrank( f.Park, unwatched.Id );
+		Assert.AreEqual( 0, f.Park.Litter.Environment.At( 10, 0 ).Security, "five cells from both guards: no security" );
+		Assert.AreEqual( (StaffJob.Idle, StaffJob.Idle), (near.Job, far.Job), "no security, no chase" );
+
+		var prankster = f.Guests.SpawnInPark( 12, 5 );
+		Assert.AreEqual( 10 / 3 + 10 / 3, f.Park.Litter.Environment.At( 12, 5 ).Security, "both guards' rows" );
+		f.World.ReportPrank( f.Park, prankster.Id );
+		Assert.AreEqual( StaffJob.Chasing, near.Job, "10² + 5² beats 14² + 5², however far from the prankster" );
+		Assert.AreEqual( prankster.Id, near.TargetGuestId );
+		Assert.AreEqual( StaffJob.Idle, far.Job );
+		Assert.AreEqual( f.Park.Settings[StaffType.Guard].WorkDuration[near.Grade], near.JobStamp, "the chase timer" );
+		Assert.IsTrue( f.World.TakeVoices().Any( sound => sound.Event == StaffWorldSimulation.ChaseEvent ), "cat_staff 136" );
+	}
+
+	[TestMethod]
+	public void AGuardCatchesThePranksterCarriesItAndSetsItDownToLeave()
+	{
+		var f = new Fixture();
+		var guard = f.Hire( StaffType.Guard );
+		f.Stand( guard, 10, 5 );
+		var prankster = f.Guests.SpawnInPark( 12, 5 );
+		f.World.ReportPrank( f.Park, prankster.Id );
+		var seen = new List<StaffJob>();
+		var held = false;
+		f.Turns( 200, () =>
+		{
+			if ( seen.Count == 0 || seen[^1] != guard.Job )
+				seen.Add( guard.Job );
+			held |= prankster.State == GuestState.HeldByGuard && !prankster.IsVisible;
+		} );
+		Assert.IsTrue( held, "caught and carried out of sight" );
+		CollectionAssert.IsSubsetOf( new[] { StaffJob.Chasing, StaffJob.Escorting, StaffJob.ReturningFromEscort }, seen, string.Join( ", ", seen ) );
+		Assert.IsTrue( seen.IndexOf( StaffJob.Chasing ) < seen.IndexOf( StaffJob.Escorting ) && seen.IndexOf( StaffJob.Escorting ) < seen.IndexOf( StaffJob.ReturningFromEscort ) );
+		Assert.IsTrue( prankster.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome || f.Guests.Find( prankster.Id ) == null,
+			$"set down, it leaves ({prankster.State})" );
+		Assert.IsTrue( f.Sounds.Any( sound => sound.Event == StaffWorldSimulation.CatchEvent && !sound.Kids ), "cat_staff 137" );
+		Assert.IsTrue( f.Sounds.Any( sound => sound.Event == StaffWorldSimulation.SetDownEvent && sound.Kids ), "cat_kids 128" );
+	}
+
+	[TestMethod]
+	public void AHeldGuestWithoutItsGuardLeavesThePark()
+	{
+		var f = new Fixture();
+		var guard = f.Hire( StaffType.Guard );
+		f.Stand( guard, 10, 5 );
+		var prankster = f.Guests.SpawnInPark( 11, 5 );
+		f.World.ReportPrank( f.Park, prankster.Id );
+		for ( var turn = 0; turn < 100 && guard.Job != StaffJob.Escorting; turn++ )
+			f.Turns( 1 );
+		Assert.AreEqual( StaffJob.Escorting, guard.Job );
+		Assert.AreEqual( GuestState.HeldByGuard, prankster.State );
+		f.Park.Fire( guard.Id );
+		f.Turns( 1 );
+		Assert.IsNull( f.Guests.Find( prankster.Id ), "no guard escorts it: the original destroys it (0x0050B780)" );
+	}
+
+	[TestMethod]
+	public void AGuardPickedUpWhileEscortingSetsTheGuestDown()
+	{
+		var f = new Fixture();
+		var guard = f.Hire( StaffType.Guard );
+		f.Stand( guard, 10, 5 );
+		var prankster = f.Guests.SpawnInPark( 11, 5 );
+		f.World.ReportPrank( f.Park, prankster.Id );
+		for ( var turn = 0; turn < 100 && guard.Job != StaffJob.Escorting; turn++ )
+			f.Turns( 1 );
+		guard.State = StaffState.PickedUp;
+		f.Turns( 1 );
+		Assert.AreEqual( StaffJob.PickedUp, guard.Job );
+		Assert.AreEqual( 0, guard.TargetGuestId );
+		Assert.AreNotEqual( GuestState.HeldByGuard, prankster.State, "set down on his cell" );
+	}
+
+	[TestMethod]
+	public void AGuardsWorldStateSurvivesASave()
+	{
+		var f = new Fixture();
+		var guard = f.Hire( StaffType.Guard );
+		var entertainer = f.Hire( StaffType.Entertainer );
+		f.Turns( 40 );
+		var json = ParkSaveFile.Serialize( f.Park );
+		StringAssert.Contains( json, "\"WorldState\"" );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
+		var legacy = json.Replace( "\"WorldState\"", "\"Handyman\"" );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( legacy ) ), f.Park.Settings, f.Park.Catalog ) ),
+			"the record's earlier name still loads" );
+	}
+}

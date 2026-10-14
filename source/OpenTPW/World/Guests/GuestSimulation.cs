@@ -40,7 +40,7 @@ public readonly record struct GuestStatistics( int InPark, int Walking, int Queu
 /// Rates and thresholds without an original source are labelled approximations in
 /// <see cref="GuestSettings"/> and docs/GUESTS.md.
 /// </summary>
-public sealed class GuestSimulation : IRideVisitorHost
+public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 {
 	/// <summary>Move-up delay factor: entering state 11 sets the delay to trunc(1.2 × position) park turns.</summary>
 	// [BIN:STP-PPC:0x100EF868 state 11 entry] +508 = turn, +500 = trunc(1.2f × +497) (float data 0x55a0)
@@ -429,7 +429,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
 	/// enters the temporary history.
 	/// </summary>
-	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger) has only the sources OpenTPW models (vomit and stinkbombs, ParkEnvironment): the entertainers, the clean and dirty toilets, guards, cameras and fireworks add nothing yet; neither are the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function — evidence needed: the RegionFX writers of the other sources and the thought selection 0xe8c58
+	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger) has only the sources OpenTPW models (vomit, stinkbombs, the entertainers' and the guards' rows, ParkEnvironment): the clean and dirty toilets, cameras and fireworks add nothing yet; neither are the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function — evidence needed: the RegionFX writers of the other sources and the thought selection 0xe8c58
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -519,8 +519,72 @@ public sealed class GuestSimulation : IRideVisitorHost
 				if ( guest.StateTimer <= 0 )
 					guest.State = GuestState.DoingNothing;
 				break;
+			case GuestState.HeldByGuard:
+				// [BIN:TPW-EXE:0x00501C94 state 17] a held guest waits while a guard in state 18 (0x004D6350) has it as its target (+0x212); otherwise it is destroyed (0x0050B780)
+				if ( turnStarted && IsEscorted?.Invoke( guest.Id ) != true )
+					guest.State = GuestState.Gone;
+				break;
 		}
 	}
+
+	/// <summary>Whether a guard is escorting the guest with this id (a held guest without one leaves the simulation); null: nobody escorts.</summary>
+	public Func<int, bool>? IsEscorted { get; set; }
+
+	(int X, int Y)? IGuardGuests.CellOf( int guestId ) => Find( guestId ) is { State: not GuestState.Gone } guest ? guest.Cell : null;
+
+	// [BIN:TPW-EXE:0x004FEC10 catchable] states 6, 7, 8, 9 and 10 (deciding, wandering, the activity state, throwing litter away, going to a ride)
+	bool IGuardGuests.IsCatchable( int guestId ) => Find( guestId )?.State is GuestState.DoingNothing or GuestState.WalkingAround or GuestState.ThrowingAwayLitter or GuestState.GoingToRide;
+
+	/// <summary>A guard caught the guest (tp.exe <c>0x004FEB10</c>): its balloon goes, its model is taken off the map, and it is held (state 17).</summary>
+	void IGuardGuests.Hold( int guestId )
+	{
+		if ( Find( guestId ) is not { } guest )
+			return;
+		var navigation = guest.Navigation;
+		navigation.SetDestination( navigation.X, navigation.Y, [] );
+		guest.HasWaypoint = false;
+		guest.IsMoving = false;
+		guest.AttractionId = 0;
+		guest.BinId = 0;
+		guest.State = GuestState.HeldByGuard;
+	}
+
+	/// <summary>
+	/// The guard sets the guest down on <paramref name="cell"/> (tp.exe <c>0x004FEB50</c>): the guest leaves the park (state 18) when a way out is in
+	/// reach; otherwise it is removed. True when it walks out.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FEB50 guard sets a guest down] the guest at the cell's centre (0x004FA930), its model back (0x004D4140), cat_kids 128 at it, +0x188 = 1, a route to one of the two gate cells by a world draw's bit 0 (0x004D86D0): state 18 ("<Humph>"); no route destroys it (0x0050B780)
+	// Approximation (GUEST-007, registered at Prank): the guest stands at its own offset in the cell rather than the centre and walks to the nearer arrival lane like any leaving guest, where the original routes to the gate cell its draw picked
+	bool IGuardGuests.Release( int guestId, (int X, int Y) cell )
+	{
+		if ( Find( guestId ) is not { } guest )
+			return false;
+		if ( !Grid.IsWalkable( cell.X, cell.Y ) )
+			cell = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
+		PlaceOnGrid( guest, cell.X, cell.Y );
+		var reachable = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) }
+			.Any( lane => lane != null && Grid.Distance( cell.X, cell.Y, lane[^1].X, lane[^1].Y ) >= 0 );
+		guest.State = reachable ? GuestState.LeavingPark : GuestState.Gone;
+		return reachable;
+	}
+
+	/// <summary>Whether a guest stands on the map within <paramref name="radius"/> cells of <paramref name="cell"/> (a square; tp.exe <c>0x004C8D30</c> for things of type 1).</summary>
+	// [BIN:TPW-EXE:0x004C8D30 things in a square] the cells x ± r, y ± r clipped to 0..127, each cell's thing list (+0x24 of the cell record, next at +0xA); any thing whose type byte +2 is 1 (a guest) answers yes
+	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): a guest on the map is one in the park that is not riding, held or gone (the original's cell lists hold the guests whose things stand on a cell)
+	bool IGuardGuests.AnyGuestWithin( (int X, int Y) cell, int radius )
+	{
+		var x0 = Math.Max( 0, cell.X - radius );
+		var x1 = Math.Min( ParkLitter.MapSize - 1, cell.X + radius );
+		var y0 = Math.Max( 0, cell.Y - radius );
+		var y1 = Math.Min( ParkLitter.MapSize - 1, cell.Y + radius );
+		foreach ( var guest in guests )
+			if ( InPark( guest ) && guest.OnGrid && guest.State is not (GuestState.Using or GuestState.HeldByGuard) && guest.CellX >= x0 && guest.CellX <= x1
+				&& guest.CellY >= y0 && guest.CellY <= y1 )
+				return true;
+		return false;
+	}
+
+	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
 
 	// [APPROX:GUEST-008] OpenTPW's energy meter (drained while walking, restored while resting) has no original counterpart: the original has no energy field and nothing reads this one; its rates are invented — evidence needed: none (a field the original lacks)
 	private void UpdateNeeds( Guest guest, float dt )
@@ -594,7 +658,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 					continue;
 				foreach ( var other in list )
 				{
-					if ( other.State is not (GuestState.Using or GuestState.Gone) )
+					if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
 						neighbours.Add( other.Navigation );
 				}
 			}
@@ -920,7 +984,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] OpenTPW's guests carry no balloons, so a balloon prankster (flag 102) never finds a victim, as in a park whose shops sell none; the prank message reaches no advisor line (0x7D..0x7F) and no guard (0x00508A30: the security word of the prankster's cell, then the nearest free guard chases and escorts it out), and the guest event 15 is not recorded — evidence needed: none (read); waits for balloons, the advisor's prank lines and the guards
+	// [APPROX:GUEST-007] PRANKS: pranksters prank as in tp.exe (0x4FF0F5, x86 X18) and a prank on a cell with security sends a guard (0x508A30), but no guest carries a balloon, so a balloon prankster never finds a victim; the prank message reaches no advisor line and the guest event 15 is not recorded; a guest the guard sets down stands at its own offset and walks to the nearer arrival lane rather than the gate cell its draw picked — evidence needed: none (read); waits for balloons and the advisor's prank lines
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )

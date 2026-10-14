@@ -324,6 +324,12 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Entertainers and guards now walk the park as in the original (tp.exe `0x4d4810`, `0x4d6410`, `0x508a30`; ECON-022, GUEST-006, GUEST-007;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). An entertainer patrols and, when guests stand within his `ActivationDistance` (3 to 5
+  cells), performs for `WorkDuration` turns (cat_staff 135 at the end); wherever he stands he cheers the cells around him (`RegionFX[0]`).
+  A guard spreads security (`RegionFX[3]`) around him; a prank within three cells of a guard sends the free guard nearest the staff HQ
+  (map cell (0, 0)), who chases the prankster (136), catches it (137), carries it to the gate and sets it down to leave (cat_kids 128).
+  Their idle and walking voices come from their state machines (AUDIO-024 narrowed); the park save keeps their state, target and rows.
 - A guest's litter going into a bin now fires the bin's script trigger (variable 0, `VAR_TRIGGER` in every theme; tp.exe `0x4fff20`,
   `0x55a0b0`), so the bin plays its own sound, and a stinkbomb plays `cat_kids` 207 at the prankster (`0x4ff289`).
 - Handymen now walk and search as in the original (tp.exe `0x4d73c0`, `0x4d7100`, `0x4c8ed0`; ORACLE.md 7.17, X23; ECON-022;

@@ -544,8 +544,11 @@ internal static class Game
 		ResolveDesktopGameFolder( args, commandLinePath, SetupWizard.Run );
 
 	/// <summary>Uses the real starter by default; the callback boundary permits CPU-only startup/cancellation controls.</summary>
-	internal static string[]? ResolveDesktopGameFolder( string[] args, string? commandLinePath, Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?> runWizard )
+	internal static string[]? ResolveDesktopGameFolder( string[] args, string? commandLinePath, Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?> runWizard,
+		Func<InstallationDiscoveryResult>? searchOverride = null )
 	{
+		if ( args.Contains( "--setup" ) && DesktopSetupSelection.HasHeadlessGate( args ) )
+			throw new ArgumentException( "Choose --setup or a headless --m3-gate/--m4-gate command; setup cannot replace an explicit tool start." );
 		var setupPath = SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( setupPath );
 		InstallationDiscoveryResult? discovery = null;
@@ -591,14 +594,14 @@ internal static class Game
 			}
 			if ( resolved == null )
 			{
-				discovery = InstallationDiscovery.SearchAsync().GetAwaiter().GetResult();
+				discovery = searchOverride?.Invoke() ?? InstallationDiscovery.SearchAsync().GetAwaiter().GetResult();
 				if ( discovery.Reports.FirstOrDefault() is { IsUsable: true } report )
 					resolved = (report.Path, GamePathSource.Detected);
 			}
 		}
 		if ( resolved == null )
 		{
-			if ( !GamePathResolution.IsInteractive( args ) )
+			if ( !GamePathResolution.IsInteractive( args ) || DesktopSetupSelection.HasHeadlessGate( args ) )
 				throw new DirectoryNotFoundException( "Theme Park World data not found. Use --game-path or OPENTPW_GAME_PATH, or start OpenTPW without arguments to choose the folder in the setup window." );
 			var chosen = runWizard( saved, discovery );
 			if ( chosen == null )

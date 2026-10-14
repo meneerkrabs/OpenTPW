@@ -46,15 +46,18 @@ internal sealed class DesktopSetupSelection( SetupSettings saved )
 
 	private static bool HasExplicitMode( string[] args ) => args.Any( argument => argument is
 		"--sandbox" or "--front-end" or "--load-original-level" or "--play-movie" or "--park-resume-smoke"
+		or "--m3-gate" or "--m4-gate"
 		or "--advisor-say" or "--advisor-response" or "--visit-park" or "--park-resume-file" or "--park-resume-evidence"
 		or "--tpi-smoke-test" or "--capture-camera" or "--capture-interface" or "--capture-sequence" );
+
+	internal static bool HasHeadlessGate( string[] args ) => args.Any( argument => argument is "--m3-gate" or "--m4-gate" );
 
 	public static bool CanUseRememberedEdition( string[] args, string? commandLine, string? environment ) =>
 		GamePathResolution.IsInteractive( args ) && string.IsNullOrWhiteSpace( commandLine ) && string.IsNullOrWhiteSpace( environment )
 		&& !HasExplicitMode( args );
 
 	public static bool ShouldShowStarter( string[] args, string? commandLine, string? environment, SetupSettings saved ) =>
-		GamePathResolution.IsInteractive( args ) && (args.Contains( "--setup" ) ||
+		GamePathResolution.IsInteractive( args ) && !HasHeadlessGate( args ) && (args.Contains( "--setup" ) ||
 			string.IsNullOrWhiteSpace( commandLine ) && string.IsNullOrWhiteSpace( environment ) && saved.ShowAutorun
 			&& !AutorunLauncher.IsDisabled( args, saved ) && !HasExplicitMode( args ));
 }

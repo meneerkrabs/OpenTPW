@@ -230,6 +230,52 @@ public partial class Level
 		return result;
 	}
 
+	/// <summary>Where a cell's sounds play: the original submits them at (x·10, 0, y·10), the cell centre at height 0.</summary>
+	internal Vector3 CellSoundPosition( int x, int y )
+	{
+		if ( OriginalPark == null )
+			return new Vector3( x * 10, y * 10, 0 );
+		var centre = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, x, y );
+		return new Vector3( centre.X, centre.Y, 0 );
+	}
+
+	/// <summary>
+	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
+	/// backtrack sound, then removes that cell the forced way; the sound plays even when the cell stays (a fixed cell). False
+	/// when the cell under the cursor is not a path cell, so the key does nothing there.
+	/// </summary>
+	public bool BacktrackAt( int x, int y )
+	{
+		if ( IsReadOnlyVisit || Paths == null || Paths.Cells.TypeAt( x, y ) != ParkCellType.Path )
+			return false;
+		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+		RemovePathCell( x, y );
+		return true;
+	}
+
+	/// <summary>
+	/// Before a queue tool click: the cell where the queue line will end, when it lies on a path cell and the park's money is
+	/// on (<see cref="GameAudio.QueueJoinEvent"/> then plays there after the click). The tool's preview for the cursor is the
+	/// line the click commits; the ending click (on the start) previews the start, which repeats the last commit's test.
+	/// Read before the commit, since the queue may be written over that cell.
+	/// </summary>
+	public (int X, int Y)? QueueJoinCell( CellBuildTool tool ) => Paths == null ? null : QueueJoinCell( tool, Paths.Cells, moneyOn: Park != null );
+
+	/// <summary><see cref="QueueJoinCell(CellBuildTool)"/> over a cell map; <paramref name="moneyOn"/> is the original's money flag (here: a park economy runs).</summary>
+	internal static (int X, int Y)? QueueJoinCell( CellBuildTool tool, ParkCellMap cells, bool moneyOn )
+	{
+		if ( tool.Mode != CellToolMode.Queue || !moneyOn || tool.Ghost?.SnappedEnd is not { } end )
+			return null;
+		return cells.TypeAt( end.X, end.Y ) == ParkCellType.Path ? end : null;
+	}
+
+	/// <summary>Plays <see cref="GameAudio.QueueJoinEvent"/> at the cell <see cref="QueueJoinCell"/> found before the click.</summary>
+	public void PlayQueueJoin( (int X, int Y)? cell )
+	{
+		if ( cell is { } end )
+			GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, CellSoundPosition( end.X, end.Y ) );
+	}
+
 	/// <summary>Removes the path cell at (x, y) (forced, no refund; fixed InitialPath cells stay).</summary>
 	public CellBuildResult RemovePathCell( int x, int y )
 	{

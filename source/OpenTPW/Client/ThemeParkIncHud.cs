@@ -430,6 +430,9 @@ public sealed class ThemeParkIncHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
+			// Backspace over a path cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent).
+			if ( inPark && input.Backspaces > 0 && level.BacktrackAt( cursorX, cursorY ) )
+				return true;
 			if ( !inPark || !input.LeftPressed || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;
 			// A left click on a queue cell edits that ride's queue (help 444); on an empty owned cell or a path cell it starts the path tool (441/442).
@@ -457,7 +460,9 @@ public sealed class ThemeParkIncHud
 		if ( !input.LeftPressed )
 			return false;
 		// The commit click; Level skips it because this frame's pointer is reported as captured.
+		var queueJoin = level.QueueJoinCell( tool );
 		var result = tool.Click( (cursorX, cursorY) );
+		level.PlayQueueJoin( queueJoin );
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )

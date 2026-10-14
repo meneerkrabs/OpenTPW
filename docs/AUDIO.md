@@ -450,3 +450,20 @@ selection, damaged/truncated and unsupported input, early payload bounds and
 output integrity. Original assets, devices, GPU/browser execution and native
 audio parity are unqualified. This desktop-only helper is excluded from the
 browser compile; the shared reader and decoder remain available there.
+
+
+Runtime size preflight preserves the source-error boundary. The additive
+`SoundBank.GetMpeg(number, maximumBytes, out rejectedPayloadBytes)` reports only a
+validated oversized payload as null plus a positive size, before allocation.
+Zero means no size refusal (including missing/damaged entries); source open/read
+exceptions still propagate. Existing bounded/unbounded wrappers keep their old
+return behavior and oversized `InvalidDataException` message. Metadata is read
+once; the existing per-read captured-bank-length checks remain in force.
+
+Both runtime decode paths perform the typed bank read outside the codec catch.
+Only the explicit positive size refusal joins the existing logged-null/cache
+path; source `InvalidDataException`, `NotSupportedException`, `IOException` and
+cancellation remain retryable. Tests pin real source-factory propagation/retry,
+worker/cooperative bounds, exact-limit reads, valid PCM/cache/Forget, cancellation
+and public wrapper compatibility. This correction changes no decoder limit,
+format, ownership, playback or original/native qualification.

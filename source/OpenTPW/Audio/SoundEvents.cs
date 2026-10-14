@@ -287,9 +287,12 @@ public sealed class SoundEventSystem
 			return cached;
 		Mp2Audio? audio = null;
 		var bank = category.GetBank( sample.BankNumber );
+		var rejectedPayloadBytes = 0;
+		var mpeg = bank?.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes, out rejectedPayloadBytes );
 		try
 		{
-			var mpeg = bank?.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes );
+			if ( rejectedPayloadBytes > 0 )
+				throw new InvalidDataException( $"Selected sound entry contains {rejectedPayloadBytes} bytes, exceeding the caller's {Mp2Decoder.MaximumInputBytes}-byte input bound." );
 			if ( mpeg != null ) audio = Mp2Decoder.Decode( mpeg );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
@@ -312,9 +315,12 @@ public sealed class SoundEventSystem
 	{
 		Mp2Audio? audio = null;
 		var bank = category.GetBank( sample.BankNumber );
+		var rejectedPayloadBytes = 0;
+		var mpeg = bank?.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes, out rejectedPayloadBytes );
 		try
 		{
-			var mpeg = bank?.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes );
+			if ( rejectedPayloadBytes > 0 )
+				throw new InvalidDataException( $"Selected sound entry contains {rejectedPayloadBytes} bytes, exceeding the caller's {Mp2Decoder.MaximumInputBytes}-byte input bound." );
 			if ( mpeg != null ) audio = await Mp2Decoder.DecodeCooperativelyAsync( mpeg, yieldBatch: yieldBatch );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )

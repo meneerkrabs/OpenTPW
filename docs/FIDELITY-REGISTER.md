@@ -558,7 +558,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-011 | `source/OpenTPW.Tests/AudioTriggerTests.cs:279` | [APPROX:AUDIO-011] a level category falls back to the global one of the same name (incagod.RSE's EVENT 3 id 43 is only in the global cat_rides) |
 | AUDIO-011 | `source/OpenTPW/Audio/GameAudio.cs:535` | [APPROX:AUDIO-011] the level-to-global category fallback mirrors the bank fallback (AUDIO-002); the sound library's own fallback rule is not traced |
 | AUDIO-012 | `source/OpenTPW/UI/Original/UiWidgets.cs:430` | [APPROX:AUDIO-012] every activated button plays it, front end included; the traced witness is the park view's handler |
-| AUDIO-013 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:346` | [APPROX:AUDIO-013] the standards specify only the analogue de-emphasis characteristic; this realization is the |
+| AUDIO-013 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:356` | [APPROX:AUDIO-013] the standards specify only the analogue de-emphasis characteristic; this realization is the |
 | AUDIO-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:149` | [APPROX:AUDIO-014] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only |
 | AUDIO-015 | `source/OpenTPW/Audio/GameAudio.cs:333` | [APPROX:AUDIO-015] only the level-driven rain voice is built; the weather thing's own +0x54 voice (0x10103C4C mode 0) is not — whether the original's second voice is audible is not established |
 | AUDIO-016 | `source/OpenTPW/Audio/GameAudio.cs:380` | [APPROX:AUDIO-016] OpenTPW has no per-script speed word; the loader's default 50 stands — evidence needed: the RSE loader's speed field beside RideVM's timing |

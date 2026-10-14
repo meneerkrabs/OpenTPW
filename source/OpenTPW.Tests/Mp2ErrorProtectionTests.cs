@@ -95,7 +95,7 @@ public class Mp2ErrorProtectionTests
 					if ( subband == 0 )
 						writer.Write( 26, 5 ); // grouped code: three samples of +2/3 units
 		var frame = writer.Finish( 144 * 48000 / 22050 );
-		PatchFrameCrc( frame, 135 * channels );
+		PatchFrameCrc( frame, 77 * channels ); // 75 allocation bits + two scfsi bits for the one allocated band per channel
 		return frame;
 	}
 
@@ -144,14 +144,14 @@ public class Mp2ErrorProtectionTests
 	}
 
 	[TestMethod]
-	public void LayerTwoCrcWordCoversAllocationAndMaximumScfsi()
+	public void LayerTwoCrcWordCoversAllocationAndTransmittedScfsi()
 	{
-		// Single channel: 75 allocation bits + 2 × 30 maximum scfsi bits = 135.
+		// Single channel: 75 allocation bits + two transmitted scfsi bits = 77.
 		var mono = LayerTwoCrcFrame();
 		var audio = Mp2Decoder.Decode( mono );
 		Assert.AreEqual( 1, audio.CrcChecks );
 		Assert.AreEqual( 0, audio.CrcFailures );
-		// Other modes: 270 protected bits for two channels.
+		// Two channels: 150 allocation bits + four transmitted scfsi bits = 154.
 		var stereo = LayerTwoCrcFrame( mode: 0 );
 		audio = Mp2Decoder.Decode( stereo );
 		Assert.AreEqual( 1, audio.CrcChecks );
@@ -375,7 +375,22 @@ public class Mp2ErrorProtectionTests
 				{
 					@protected++;
 					var frame = data[offset..(offset + frameBytes)];
-					if ( ChainCrc16( frame, 16, 16, 48, (layer == 3 ? 128 : 135) * channels ) != (frame[4] << 8 | frame[5]) )
+					var count = 128 * channels; // Preserve this inventory's existing Layer I policy.
+					if ( layer == 2 )
+					{
+						count = 75 * channels;
+						var cursor = 48;
+						for ( var band = 0; band < 30; band++ )
+							for ( var channel = 0; channel < channels; channel++ )
+							{
+								var width = band < 4 ? 4 : band < 11 ? 3 : 2;
+								var allocation = 0;
+								for ( var bit = 0; bit < width; bit++, cursor++ )
+									allocation = allocation * 2 + ((frame[cursor / 8] >> (7 - cursor % 8)) & 1);
+								if ( allocation != 0 ) count += 2;
+							}
+					}
+					if ( ChainCrc16( frame, 16, 16, 48, count ) != (frame[4] << 8 | frame[5]) )
 						failures++;
 				}
 				offset += frameBytes;

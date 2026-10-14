@@ -428,8 +428,15 @@ decoded samples and does not qualify original audio or native playback semantics
 The export-only policy refuses missing/damaged entries, zero complete frames,
 failed CRCs and unconsumed MPEG tails other than the known single zero SDT pad.
 The existing 16 MiB decoder input bound is checked before allocating the selected
-payload through an additive caller-limited `GetMpeg` overload; existing callers
-retain their previous behavior. No new codec or arbitrary valid-output memory
+payload through the caller-limited `GetMpeg` overload. Runtime synchronous and
+cooperative sample decodes now pass the same existing bound before payload reads;
+oversized entries retain the decoder's null/trace/failed-cache behavior without
+allocating the refused payload. Bank loading remains outside the content-error
+catch; source-length I/O errors and scheduler cancellation still propagate.
+The default unrestricted `GetMpeg` API and codec/playback/loop ownership remain
+unchanged. `RuntimeSoundInputPreflightTests` exercises sparse synthetic oversized
+records, the exact boundary, valid PCM/cache, changed-source and cancellation
+controls; original assets and native/device timing were not exercised. No new codec or arbitrary valid-output memory
 or storage-quota guarantee is claimed. Large valid decoded clips still require
 the existing decoder's complete PCM buffer.
 
@@ -443,3 +450,26 @@ selection, damaged/truncated and unsupported input, early payload bounds and
 output integrity. Original assets, devices, GPU/browser execution and native
 audio parity are unqualified. This desktop-only helper is excluded from the
 browser compile; the shared reader and decoder remain available there.
+
+
+Runtime size preflight preserves the source-error boundary. The additive
+`SoundBank.GetMpeg(number, maximumBytes, out rejectedPayloadBytes)` reports only a
+validated oversized payload as null plus a positive size, before allocation.
+Zero means no size refusal (including missing/damaged entries); source open/read
+exceptions still propagate. Existing bounded/unbounded wrappers keep their old
+return behavior and oversized `InvalidDataException` message. Metadata is read
+once; the existing per-read captured-bank-length checks remain in force.
+
+Both runtime decode paths perform the typed bank read outside the codec catch.
+Only the explicit positive size refusal joins the existing logged-null/cache
+path; source `InvalidDataException`, `NotSupportedException`, `IOException` and
+cancellation remain retryable. Tests pin real source-factory propagation/retry,
+worker/cooperative bounds, exact-limit reads, valid PCM/cache/Forget, cancellation
+and public wrapper compatibility. This correction changes no decoder limit,
+format, ownership, playback or original/native qualification.
+
+Independent corrected-group controls also preserve the exact source exception
+instance when its message mimics an oversized-entry refusal, at either metadata
+or payload open, across synchronous, worker and cooperative decoding. A changed
+source length refuses before reporting size; Forget clears cached size refusals
+and retired categories do not retain them again. These are synthetic CPU tests.

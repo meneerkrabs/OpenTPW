@@ -911,7 +911,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TRACK-025 | `source/OpenTPW/World/Tracks/BumpController.cs:1013` | [APPROX:TRACK-025] a broken kart smokes (particle 2 on its sparks node) every 32nd tick; the original's emitter and its cadence are not located (the script's own ADDOBJ smoke is separate) |
 | TRACK-025 | `source/OpenTPW/World/Tracks/BumpController.cs:1029` | [APPROX:TRACK-025] the global cat_rides ids 12 and 24 and the EventMap slots are submitted as the executable names them; which sound each id is in the shipped catalogue is not mapped (the cat_rides catalogue format is unread) |
 | TRACK-026 | `source/OpenTPW/World/Tracks/TrackRenderer.cs:224` | [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer; the original's draw internals and the riders' seat order are not traced |
-| TRACK-027 | `source/OpenTPW/World/Level.Tracks.cs:289` | [APPROX:TRACK-027] a save from before the go-kart controllers (park-resume version 1 without a kart controller) restores its kart rides as freshly placed ones: station tiles, no track, a closed controller |
+| TRACK-027 | `source/OpenTPW/World/Level.Tracks.cs:286` | [APPROX:TRACK-027] a save from before the go-kart controllers (park-resume version 1 without a kart controller) restores its kart rides as freshly placed ones: station tiles, no track, a closed controller |
 | TRACK-028 | `source/OpenTPW/World/Tracks/BumpController.cs:378` | [APPROX:TRACK-028] a kart is refused while the race is over, where the original creates a kart that never moves |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:61` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
@@ -1109,7 +1109,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | debug-forecast | `source/OpenTPW/Client/Game.cs:362` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
 | debug-forecast | `source/OpenTPW/World/ParkWeather.cs:132` | Smoke-only (&lt;c&gt;[EXT:debug-forecast]&lt;/c&gt;): posts a forecast of &lt;paramref name="quality"/&gt; the warning |
 | debug-water-track | `source/OpenTPW/Client/Game.cs:327` | [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the |
-| debug-water-track | `source/OpenTPW/World/Level.Tracks.cs:184` | [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the track tool for the player |
+| debug-water-track | `source/OpenTPW/World/Level.Tracks.cs:181` | [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the track tool for the player |
 | debug-weather | `source/OpenTPW/Client/Game.cs:343` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:63` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:43` | [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge |

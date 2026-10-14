@@ -145,7 +145,7 @@ public class KartControllerTests
 		{
 			var grid = c.Buoys[vehicle.Slot];
 			Assert.IsTrue( (vehicle.Flags & BumpVehicle.Slowed) != 0, $"slot {vehicle.Slot} parked (flag 0x80000)" );
-			Assert.IsTrue( BumpMath.Distance( vehicle.X - grid.X, vehicle.Y - grid.Y ) <= c.Template.BuoyRadius / 4 + 200, $"slot {vehicle.Slot} sits on its grid buoy" );
+			Assert.IsTrue( BumpMath.Distance( vehicle.X - grid.X, vehicle.Y - grid.Y ) <= c.Template.BuoyRadius, $"slot {vehicle.Slot} sits in its grid buoy's capture radius (the karts start at heading 0 and shove each other off their slots while they park, TRACK-012)" );
 			Assert.AreEqual( c.FirstAfterFinish!.Index, vehicle.TargetBuoy, "a parked kart's target becomes the buoy after the finish" );
 			Assert.IsTrue( vehicle.Speed < 40, "parked karts stand still" );
 		}
@@ -435,8 +435,11 @@ public class KartControllerTests
 		water.Command( 4, 0 );
 		water.Command( 1, 2 );
 		water.Command( 4, 0 );
+		var boatEffects = new List<BumpEffect>();
+		water.Effect += boatEffects.Add;
 		water.Tick();
-		Assert.AreEqual( 0, raised, "boats raise no effects" );
+		Assert.AreEqual( 0, boatEffects.Count, "a boat's tick raises no crash, horn or smoke effect (the water types are absent from 0x546C80's switch)" );
+		Assert.AreEqual( 2, raised, "the only effects of the two launches are their engine voices ([BIN:TPW-EXE:0x54A040], TRACK-016)" );
 	}
 
 	[TestMethod]
@@ -516,11 +519,11 @@ public class KartControllerTests
 		var bobbed = TrackSurface.KartPose( 50, 50, 0, 3, true, false, 21, 0, ( x, y ) => 3f );
 		Assert.AreEqual( 3f + TrackSurface.HoverHeight + BumpMath.Sin( 126 ) * 0.0016666667f, bobbed.Height, 1e-5f );
 		Assert.IsTrue( Math.Abs( BumpMath.Sin( 126 ) * 0.0016666667f ) <= 0.43f );
-		// banking into a right turn (positive yaw): the right side goes down, clamped at 0.6 radians
+		// banking into a right turn (positive yaw): the right side goes down; the original's term has no clamp (0x5469C3..0x5469ED, TRACK-024)
 		var bank = TrackSurface.KartPose( 50, 50, 0, 3, true, true, 0, 4, ( x, y ) => 3f );
 		Assert.AreEqual( -4 / 13f * MathF.PI / 2, bank.Roll, 1e-5f );
 		var hard = TrackSurface.KartPose( 50, 50, 0, 3, true, true, 0, 90, ( x, y ) => 3f );
-		Assert.AreEqual( -0.6f, hard.Roll, 1e-6f );
+		Assert.AreEqual( -90 / 13f * MathF.PI / 2, hard.Roll, 1e-4f, "a hard yaw banks past a quarter turn: the original does not clamp" );
 	}
 
 	[TestMethod]

@@ -204,6 +204,16 @@ snapshots restore at the creation value). No pinned hash moved. The scripted-obj
 waits (`out / script speed`) and its WAITs (`operand / script speed`, STP-PPC 0xb0658) are now shorter, which moves
 every later timestamp of its 30 s trace by up to about 1.2 s.
 
+Track register round (October 14): the kart and water controllers tick every 31 ms (`BumpController.TickSeconds = 0.031`, was 1/30 s) and a
+launched boat or kart starts at heading 0 (was the station's flow), so every park with a track controller runs a different
+trajectory than before: the golden boat run of `BumpControllerTests` (positions, velocities and headings from tick 1, the
+unload at tick 618 instead of 610) and the kart grid test were re-pinned deliberately, and the park-resume continuation hashes
+of a park with a boat, kart or bumper car move with them. No `SchemaVersion` bump: the hashed fields are the same ones and the
+track layer and the controllers still join the hash only while one exists (the conditional extension above), so no park without
+a controller changes and the pinned fixed run (`0x776A2A9E9A53BF25`, schema 17) is untouched. The new per-car `Smoke` and the
+boats' `Engine` flag are presentation state: saved (trailing optional fields, so older saves restore) but not hashed. A save from
+before the tick change may carry a tick clock up to 1/30 s and still restores (`BumpController.MaximumSavedRemainder`).
+
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the
 same process.

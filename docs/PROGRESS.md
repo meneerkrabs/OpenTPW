@@ -1048,6 +1048,18 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   a second; placed rides never take the idle restart); RIDES-022, 032, 036, 038, 043 and 044 are rewritten around what the
   PC shows. WAIT is divided by the script speed as well (`0xb0658`), screams use the script's speed word (AUDIO-016
   retired), and the M3 gate's boarding period follows the scaled WAIT (Belly Bounce: P 3, H 55).
+- **Track register round (October 14):** the kart and water register is read against tp.exe. The controller ticks once per
+  31 ms world substep (`0x54F4C4`, the bump module tick called at `0x54F55F`; the BUMP 13 duration unit stays 30), boats and
+  karts start at heading 0 (only bumper cars draw a random one), a water crossing's centre circle carries the 0x80 flag so
+  boats pass through each other there, and the kart bank has no clamp. The track line snaps X only when |dx| > |dy| and ends at
+  `start + 2 * floor((cursor - start) / 2)` (a tie goes to Y, the − direction rounds away from the start). Boats raise the spray
+  as particle 96, start an engine voice at the first launch and play BeamUpCar with a silent voice stop at the unload; the break
+  smoke is a persistent particle-2 emitter per carrying car, made by BUMP 8 and removed by the fix or the unload (it follows the
+  car every tick; the flag is saved, not hashed). The bumper chase was already ported as traced (TRACK-029 retired). Register:
+  TRACK-009, 011, 012, 013, 016, 017, 023, 024 and 029 retired; TRACK-020, 021, 027 and 028 become OpenTPW decisions
+  (`[EXT:...]`); TRACK-002, 005, 019, 025, 026, 030 and 031 narrowed (the station table of `0x52A1A0`, the arena formula of
+  `0x529E10`). The tick and heading changes move the boat, kart and bumper goldens and the track resume hashes; the pinned fixed
+  run and the hash schema are unchanged (DETERMINISM.md).
 - **Riders' heads on their traced seats (October 14):** a head is now attached through the model's own records, traced in
   the Mac binary: attribute record `i` belongs to node `Unknown46 + i`, a head id is the first record with flag `0x80` and
   that value, and the node-name guess is gone (Eruption's `Head1a` and the other previously unresolved ids now draw;

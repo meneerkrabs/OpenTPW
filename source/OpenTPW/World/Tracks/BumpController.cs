@@ -2,20 +2,23 @@ namespace OpenTPW;
 
 /// <summary>
 /// The bump-ride controller of one kart or water ride (original: 0xD0 bytes, up to 64 in a module-wide table): the circuit's sections,
-/// collision objects and buoys, the guests waiting to board and to leave, and the vehicles. It runs the module's integer physics at 30
-/// ticks per second and answers the ride script's <c>BUMP</c> commands. It runs water boats (types −5, −8, −12, −13), go-karts (types −4,
+/// collision objects and buoys, the guests waiting to board and to leave, and the vehicles. It runs the module's integer physics once per 31 ms
+/// world substep (about 32.26 per second) and answers the ride script's <c>BUMP</c> commands. It runs water boats (types −5, −8, −12, −13), go-karts (types −4,
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
 /// and hand their riders over when the session's countdown ends); the add-on handler 0x00548E80 (jumps, tunnels) is TRACK-008.
 /// </summary>
-// [APPROX:TRACK-019] the controller's collision objects, buoys and boats are its own: the original's pools (2048 objects, 1024 buoys, 256 boats) are module-wide, so boats of two rides could meet and one ride's object search could find another's; separate rides sit on separate cells, so this only differs for overlapping circuits — evidence needed: whether the module-wide object scan crosses controllers
+// [APPROX:TRACK-019] the original's vehicle pass, object searches and pool limits (2048 objects, 1024 buoys, 256 boats) are module-wide and its 32-tick gates use one module frame counter (0x877B5C, [BIN:TPW-EXE:0x546C80]); OpenTPW runs them per controller, so vehicles of different rides never collide (reachable for the karts of adjacent circuits), the gates' phase depends on the controller's creation and the pool limits count per ride — evidence needed: a BumpWorld-level tick that steps every controller's vehicles in one pool
 
 public sealed class BumpController
 {
-	/// <summary>Physics ticks per second: the controller's duration unit is 30 ticks per second (BUMP 13 stores seconds × 30).</summary>
-	// [BIN:TPW-EXE:0x00554980 BUMP 13] BUMP 13 stores parameter × 30 and BUMP 14 −parameter into controller +4 through the duration setter 0x00545100, so durations count 30 ticks per second
-	// [APPROX:TRACK-011] the controller ticks at 30 Hz, every second fixed step; the module tick (0x0054E360) and its caller's rate are not traced — evidence needed: the update loop that calls 0x00546C80 and its timestep
+	/// <summary>The controller's duration unit: BUMP 13 stores seconds × 30. It is not the tick rate (<see cref="TickSeconds"/>).</summary>
+	// [BIN:TPW-EXE:0x00554980 BUMP 13] BUMP 13 stores parameter × 30 and BUMP 14 −parameter into controller +4 through the duration setter 0x00545100; the unit 30 is the original's constant
 	public const int TicksPerSecond = 30;
-	public const double TickSeconds = 1.0 / TicksPerSecond;
+	/// <summary>The controller's tick: one per 31 ms world substep, so a duration of 30 units lasts 0.93 s.</summary>
+	// [BIN:TPW-EXE:0x0054F4C4 world substep] the game loop 0x54F4BF..0x54F8DA runs fixed substeps (next += 0x1F, a backlog over 2000 ms is dropped at 0x54F493) and every substep calls the bump module tick 0x546C80 (call at 0x54F55F), 0x520130 and the RSSE tick 0x5516B0; the substep is skipped while paused. The shared-substep catch-up rules are ECON-001's
+	public const double TickSeconds = 0.031;
+	/// <summary>The largest tick clock a save may carry: saves from before the 31 ms tick (1/30 s) hold up to this and run it off on the next advance.</summary>
+	public const double MaximumSavedRemainder = 1.0 / 30;
 	public const int MaximumVehicles = 64;
 	public const int VehiclePool = 256;
 	/// <summary>Bound on the guests that wait in one pending or leaving list (the original's free peep list is shared by all rides).</summary>
@@ -193,7 +196,7 @@ public sealed class BumpController
 
 	private void RebuildStationOnly()
 	{
-		var result = TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation() );
+		var result = TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater );
 		Adopt( result );
 	}
 
@@ -217,13 +220,13 @@ public sealed class BumpController
 		ArgumentNullException.ThrowIfNull( circuit );
 		EjectAll();
 		Close();
-		var result = TrackSections.Build( circuit.IsValid ? circuit.Steps : Array.Empty<TrackStep>(), Template.Slack, CloneStation() );
-		// [APPROX:TRACK-020] a circuit that overflows the section, collision-object or buoy pool is not a ride: the walk's verdict is overridden to invalid and the geometry is dropped, so no boat runs on a partial track — evidence needed: what the original does at the pool limits (0x0054B2F0 refuses duplicates, its overflow path is untraced)
+		var result = TrackSections.Build( circuit.IsValid ? circuit.Steps : Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater );
+		// [EXT:track-pool-overflow-refused] a circuit that overflows the section, collision-object or buoy pool is not a ride: the walk's verdict is overridden to invalid and the geometry is dropped, so no boat runs on a partial track; the original skips sections silently when the section pool is full, crashes on a collision-object overflow (it logs "Out of Collision Objects" and writes the flags through a null pointer, [BIN:TPW-EXE:0x0054B1E0]) and drops buoys ("Out of Buoys")
 		if ( result.Truncated )
 		{
 			Log?.Warning( $"A track circuit of {circuit.Steps.Count} tiles overflows the section pools; the ride is invalid." );
 			IsTrackValid = false;
-			Adopt( TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation() ) );
+			Adopt( TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater ) );
 		}
 		else
 		{
@@ -304,14 +307,20 @@ public sealed class BumpController
 			case 8:
 				// [BIN:TPW-EXE:0x00554850 BUMP 8] a nonzero parameter breaks the ride (state 2), zero fixes it (state 0)
 				if ( parameter != 0 )
+				{
 					State = StateBroken;
+					StartSmoke();
+				}
 				else
+				{
 					State = StateFine;
+					StopAllSmoke();
+				}
 				// the routine has no return value, and the script's accumulator stays what it was (Visitors.cs: PreserveInput)
 				return 0;
 			case 9:
 				// [BIN:TPW-EXE:0x00554895 BUMP 9] a nonzero parameter marks the ride worn out (state 1), zero fixes it (state 0)
-				// [APPROX:TRACK-013] BUMP 9 with a nonzero parameter sets the worn state even over a break, as the traced routine does; what the worn state changes for water boats is not traced (the integration reads it for kart sounds only) — evidence needed: the readers of controller +0x54 equal to 1
+				// [BIN:TPW-EXE:0x00544C61 BUMP 9] the only writer of controller +0x54 = 1 is unconditional (it also overwrites a break); the only reader of +0x54 == 1 is the kart exhaust branch of 0x547F50 (0x5486FC), so the worn state changes nothing for boats or bumper cars (+0x54 == 2 is read at 0x547DC4, 0x547E2C and 0x547F8E)
 				State = parameter != 0 ? StateWorn : StateFine;
 				return 0;
 			case 10:
@@ -337,6 +346,38 @@ public sealed class BumpController
 			default:
 				return 0;
 		}
+	}
+
+	/// <summary>
+	/// The break smoke: BUMP 8 gives every car that carries guests (flag 0x4000), has a sparks node and no emitter yet a particle-2 emitter that follows it
+	/// (cars created later get none); the fix and the unload remove it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00544C80 BUMP 8 break] for every vehicle of the controller with flag 0x4000, a sparks node (+0x24 not −1) and no emitter (+0x2C) the routine creates 0x521E60(2, …) (Smoke) and stores it in +0x2C; 0x547F50 moves it to the node every tick (0x51FE30); the fix 0x544E50 and the unload 0x54AE50 destroy it (0x51FEB0); water boats have no sparks node
+	private void StartSmoke()
+	{
+		if ( IsWater || !HasSparksNode )
+			return;
+		foreach ( var vehicle in vehicles )
+		{
+			if ( !vehicle.IsLive || vehicle.Smoke || (vehicle.Flags & BumpVehicle.Steerable) == 0 )
+				continue;
+			vehicle.Smoke = true;
+			Raise( BumpEffectKind.EmitterStart, vehicle, BumpEffects.ParticleSmoke );
+		}
+	}
+
+	private void StopAllSmoke()
+	{
+		foreach ( var vehicle in vehicles )
+			StopSmoke( vehicle );
+	}
+
+	private void StopSmoke( BumpVehicle vehicle )
+	{
+		if ( !vehicle.Smoke )
+			return;
+		vehicle.Smoke = false;
+		Raise( BumpEffectKind.EmitterStop, vehicle, BumpEffects.ParticleSmoke );
 	}
 
 	/// <summary>BUMP 1: adds a guest to the next boat; refused while the ride is closed or the list is full.</summary>
@@ -440,7 +481,7 @@ public sealed class BumpController
 		if ( VehicleCount >= Template.MaxVehicles || VehicleCount >= MaximumVehicles || Phase == PhaseClosed )
 			return false;
 		// [BIN:TPW-EXE:0x0054A040 relaunch kart] the original accepts BUMP 4 in phase 3 but its relaunch gives such a kart no movement flags, so it would stand on the station for ever (no shipped script creates a kart after the start)
-		// [APPROX:TRACK-028] a kart is refused while the race is over, where the original creates a kart that never moves
+		// [EXT:late-kart-guard] a kart is refused while the race is over, where the original creates a kart that never moves and keeps the controller's count above 0 (its race never resets: a deadlock no shipped script reaches); OpenTPW does not reproduce the frozen kart
 		if ( Template.IsKart && Phase == PhaseOver )
 			return false;
 		var slot = FreeSlot();
@@ -457,14 +498,19 @@ public sealed class BumpController
 		Pending.Clear();
 		vehicle.Flags |= BumpVehicle.FirstLaunch;
 		vehicle.Variant = VehicleCount % Template.ModelCount + Template.ModelBase;
-		// [APPROX:TRACK-012] a boat starts heading along the station's flow; the original's launch leaves the heading at 0 (+Y) for water and the first steering turns it — evidence needed: the heading a launched boat shows before its first turn
-		vehicle.Heading = HeadingOfStation();
-		if ( !IsWater )
+		// [BIN:TPW-EXE:0x00549DB0 create vehicle] the 0xAC-byte record is zeroed (rep stosd, 0x2B dwords) and neither 0x549DB0, 0x549C60 nor the water and kart cases of 0x54A040 write the steering heading +0x50 or the drawn heading +0x54: a boat or kart starts at heading 0 (+Y) and its first steering turns it; only a bumper car takes a random heading at its first launch (RelaunchBumper)
+		vehicle.Heading = 0;
+		vehicle.VisualHeading = 0;
+		if ( IsWater )
+		{
+			// [BIN:TPW-EXE:0x0054A040 water first launch] the first launch (0x54A909) starts an engine voice from the ride's EventMap slot 0, kept until the boat unloads (0x51C300 stops it silently)
+			vehicle.Engine = true;
+			Raise( BumpEffectKind.EngineStart, vehicle, BumpEffects.SlotEngine );
+		}
+		else
 		{
 			// [BIN:TPW-EXE:0x00549DB0 create vehicle] a kart or bumper car plays animation 12 from its creation; the controller's first vehicle carries flag 0x400000 until it unloads
-			// [APPROX:TRACK-012] the drawn heading starts along the station's flow, where the original's zeroed record starts it at 0 (a bumper car takes a random one at its first launch)
 			vehicle.Animation = 12;
-			vehicle.VisualHeading = vehicle.Heading;
 			if ( !vehicles.Any( other => (other.Flags & BumpVehicle.First) != 0 ) )
 				vehicle.Flags |= BumpVehicle.First;
 			if ( Template.IsKart )
@@ -486,14 +532,6 @@ public sealed class BumpController
 		else
 			vehicles.Insert( index, vehicle );
 	}
-
-	private int HeadingOfStation() => StationHeading switch
-	{
-		TrackHeading.PosY => 0,
-		TrackHeading.PosX => 128,
-		TrackHeading.NegY => 256,
-		_ => 384
-	};
 
 	/// <summary>BUMP 12: puts the waiting guests into the first boat that has none, then relaunches it.</summary>
 	// [BIN:TPW-EXE:0x00549B80 load vehicle] the first live vehicle of the controller without riders takes the pending guests, gets flags 0x84000 and the controller's laps, and is relaunched
@@ -542,13 +580,20 @@ public sealed class BumpController
 			RiderCount--;
 		}
 		vehicle.Riders.Clear();
-		if ( Template.IsKart )
+		StopSmoke( vehicle );
+		if ( IsWater )
+		{
+			// [BIN:TPW-EXE:0x0054AE50 retire vehicle] the beam-up particle 15 plays for every type, and a non-kart voice is stopped silently (0x51C300): the boat's engine voice ends without a stop sound
+			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUpCar );
+			StopEngine( vehicle );
+		}
+		else if ( Template.IsKart )
 		{
 			// [BIN:TPW-EXE:0x0054AE50 retire vehicle] the beam-up particle 15 (not in state 4), then the engine voice is replaced by EventMap slot 1
 			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUpCar );
 			Raise( BumpEffectKind.EngineStop, vehicle, BumpEffects.SlotStop );
 		}
-		else if ( Template.IsBumper )
+		if ( Template.IsBumper )
 		{
 			// [BIN:TPW-EXE:0x0054AE50 retire vehicle] a bumper car also gets the beam-up particle, but its engine voice (the first car's) only stops: the EventMap stop sound is the kart types' case
 			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUpCar );
@@ -810,7 +855,7 @@ public sealed class BumpController
 
 	// ---- Time --------------------------------------------------------------------------------------
 
-	/// <summary>Advances the controller by <paramref name="deltaSeconds"/>: whole 1/30 s ticks run, the rest carries over.</summary>
+	/// <summary>Advances the controller by <paramref name="deltaSeconds"/>: whole 31 ms ticks run, the rest carries over.</summary>
 	public void Advance( double deltaSeconds )
 	{
 		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds <= 0 )
@@ -1218,12 +1263,20 @@ public sealed class BumpController
 			vehicle.Spin = (int)(vehicle.Spin * 99.80000305175781 * 0.009999999776482582);
 		var roll = (vehicle.Spin + ((vehicle.Spin >> 31) & 0x7F)) >> 7;
 		vehicle.Roll = Math.Clamp( roll, -16, 16 );
-		// [APPROX:TRACK-016] the boats' spray, the smoke, horn and crash cues and the boat model variants draw nothing: the cosmetic generator and a spray counter keep the original's cadence, no particle, sound or mesh is made — evidence needed: the particle and sound events of 0x00547F50 and 0x00547170
+		// [BIN:TPW-EXE:0x005480B7 boat spray] the water branch of 0x547F50: in phase 2 on every 32nd module tick the cosmetic LCG gives (s >> 16) &amp; 7 == 2 and 0x521E60(0x60, …) raises particle 96 (P_EFFECT_SmallSplash) at the boat model's world position (0x5480B7..0x5480FC); the water types have no crash cue (absent from 0x546C80's switch), no horn and no smoke (node +0x24 stays −1), and their templates hold one model (base 0, count 1)
 		if ( Phase == PhaseRunning && (TickCount & 0x1F) == 0 && (world?.NextCosmetic() ?? 0) is var draw && ((draw >> 16) & 7) == 2 )
 		{
 			vehicle.Sprays++;
 			Sprays++;
+			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleSmallSplash );
 		}
+	}
+
+	/// <summary>The break smoke's emitter follows its car every tick (0x547F50 moves it to the sparks node, 0x51FE30).</summary>
+	private void FollowSmoke( BumpVehicle vehicle )
+	{
+		if ( vehicle.Smoke )
+			Raise( BumpEffectKind.EmitterMove, vehicle, BumpEffects.ParticleSmoke );
 	}
 
 	/// <summary>
@@ -1231,7 +1284,6 @@ public sealed class BumpController
 	/// the speed threshold; the engine voice gets its pitch every tick.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00547F50 integrate kart] the velocity angle a (512ths) moves the drawn heading +0x54 by ((a − h) mod 512, wrapped to ±256) × speed / 1000 per tick (+0x5C, with its change +0x60); racing (phase 2) on every 32nd tick above speed 230 with no pending effect asks for effect 2 (horn); worn (+0x54 = 1) above speed 80 with a sparks node a draw r = (lcg >> 16) &amp; 7 gives sparks (r &lt; 2) or an exhaust puff and effect 1 (r = 2); speed ≤ 40 sets animation 12 (not for the hovering karts, flag 0x400), above sets 5; the engine voice's parameter 10 is speed / 3
-	// [APPROX:TRACK-023] the drawn heading starts equal to the steering heading, and the unload and the break smoke cadences are OpenTPW's (see the register)
 	private void IntegrateKart( BumpVehicle vehicle )
 	{
 		var speed = vehicle.Speed;
@@ -1261,9 +1313,7 @@ public sealed class BumpController
 				vehicle.EffectRequest = BumpEffects.RequestExhaust;
 			}
 		}
-		// [APPROX:TRACK-025] a broken kart smokes (particle 2 on its sparks node) every 32nd tick; the original's emitter and its cadence are not located (the script's own ADDOBJ smoke is separate)
-		if ( Phase == PhaseRunning && State == StateBroken && (TickCount & 0x1F) == 0 && HasSparksNode )
-			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleSmoke );
+		FollowSmoke( vehicle );
 		Raise( BumpEffectKind.EngineParameter, vehicle, BumpEffects.SlotEngine, speed / 3 );
 		var heading = BumpMath.HeadingOf( vehicle.VX, vehicle.VY );
 		var difference = (heading - vehicle.VisualHeading) & 0x1FF;
@@ -1280,7 +1330,6 @@ public sealed class BumpController
 	/// by (angle difference × speed / 1000) per tick while the ride runs; carrying cars of the non-jungle types throw sparks now and then; the engine voice gets its pitch.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00547F50 integrate bumper] phase 2: +0x58 = the steering heading +0x50 (type −1) or the velocity angle, +0x5C = ((+0x58 − +0x54) mod 512, wrapped to ±256) × speed / 1000, else 0; +0x54 += +0x5C at the end of every step; phase 2, carrying (0x4000), every 32nd tick, a sparks node, a cosmetic draw with (lcg &gt;&gt; 16) &amp; 3 = 2, not type −1 and no pending effect: particle 1 and effect 1 (cat_rides 24); the engine voice's parameter 10 is speed / 3
-	// [APPROX:TRACK-023] the drawn heading starts equal to the steering heading, and the unload and the break smoke cadences are OpenTPW's (see the register)
 	private void IntegrateBumper( BumpVehicle vehicle )
 	{
 		var speed = vehicle.Speed;
@@ -1302,12 +1351,13 @@ public sealed class BumpController
 		}
 		if ( vehicle.Engine )
 			Raise( BumpEffectKind.EngineParameter, vehicle, BumpEffects.SlotEngine, speed / 3 );
+		FollowSmoke( vehicle );
 		vehicle.VisualHeading = (vehicle.VisualHeading + vehicle.YawRate) & 0x1FF;
 	}
 
 	/// <summary>The effect player of a vehicle (the end of its tick): the request is latched at the higher code, a latched effect plays once.</summary>
 	// [BIN:TPW-EXE:0x00547170 effect player] request (+0x14) is taken into the latch (+0x18) when higher and cleared; 1 plays global cat_rides 24, 2 draws the module LCG and plays EventMap slot 3 (TOOT) when (lcg &amp; 0x70000) == 0, else stays latched for the next tick, 3 plays global cat_rides 12 (CRUNCH); a played effect clears the latch
-	// [APPROX:TRACK-025] the global cat_rides ids 12 and 24 and the EventMap slots are submitted as the executable names them; which sound each id is in the shipped catalogue is not mapped (the cat_rides catalogue format is unread)
+	// [BIN:TPW-EXE:0x00547170 effect player] code 1 plays cat_rides 0x18 (24), 3 and 5 play 0x0C (12), 2 EventMap slot 3 (TOOT), 4 slot 4; DAT_00803A28 is the cat_rides category (0x51EBC4) and cat_ridesSFX.map holds events 12 and 24 (one-shots, one sound each); the global route resolves the same category by id
 	private void PlayEffect( BumpVehicle vehicle )
 	{
 		var request = vehicle.EffectRequest;
@@ -1616,7 +1666,7 @@ public sealed class BumpController
 			if ( saved.TargetBuoy >= buoys.Count || saved.ObjectIndex >= objects.Count || saved.Slot is < 0 or >= VehiclePool )
 				throw new InvalidDataException( $"A saved boat aims at buoy {saved.TargetBuoy} or sits in object {saved.ObjectIndex}, but the walked circuit has {buoys.Count} buoys and {objects.Count} objects." );
 		}
-		if ( !double.IsFinite( data.TickRemainder ) || data.TickRemainder < 0 || data.TickRemainder >= TickSeconds )
+		if ( !double.IsFinite( data.TickRemainder ) || data.TickRemainder < 0 || data.TickRemainder >= MaximumSavedRemainder )
 			throw new InvalidDataException( "A saved controller's tick remainder is outside one tick." );
 		Laps = data.Laps;
 		SetPerformance( data.Performance );
@@ -1642,7 +1692,7 @@ public sealed class BumpController
 				TargetX = saved.TargetX, TargetY = saved.TargetY, JitterX = saved.JitterX, JitterY = saved.JitterY, TargetBuoy = saved.TargetBuoy, Laps = saved.Laps,
 				BuoyCountdown = saved.BuoyCountdown, Age = saved.Age, ObjectIndex = saved.ObjectIndex, WallHits = saved.WallHits, WallWindow = saved.WallWindow, Sprays = saved.Sprays,
 				VisualHeading = saved.VisualHeading, YawRate = saved.YawRate, YawDelta = saved.YawDelta, Animation = saved.Animation, EffectRequest = saved.EffectRequest,
-				EffectLatch = saved.EffectLatch, Height = float.IsFinite( saved.Height ) ? saved.Height : 0f, ChaseTarget = saved.ChaseTarget, Engine = saved.Engine
+				EffectLatch = saved.EffectLatch, Height = float.IsFinite( saved.Height ) ? saved.Height : 0f, ChaseTarget = saved.ChaseTarget, Engine = saved.Engine, Smoke = saved.Smoke
 			};
 			vehicle.Riders.AddRange( saved.Riders );
 			slots[vehicle.Slot] = vehicle;

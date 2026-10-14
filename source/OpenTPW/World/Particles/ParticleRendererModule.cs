@@ -14,12 +14,18 @@ internal static class ParticleRendererModule
 	[ModuleInitializer]
 	internal static void Attach() => OriginalObjectRuntime.ParticleRequested += Start;
 
+	private static ParticleRenderer? RendererFor( out Level level )
+	{
+		level = null!;
+		if ( global::Global.Render == null || Level.Current is not { } current )
+			return null;
+		level = current;
+		return ParticleRenderer.Current is { } existing && ReferenceEquals( existing.Level, current ) ? existing : Create( current );
+	}
+
 	private static void Start( ParticleEventRequest request )
 	{
-		if ( global::Global.Render == null || Level.Current is not { } level )
-			return;
-		var renderer = ParticleRenderer.Current is { } current && ReferenceEquals( current.Level, level ) ? current : Create( level );
-		if ( renderer == null )
+		if ( RendererFor( out var level ) is not { } renderer )
 			return;
 		var position = ToNative( level, request.EnginePosition );
 		// the resolver's control (1000) is the template's own draw scale, which the constructor already copies
@@ -27,6 +33,26 @@ internal static class ParticleRendererModule
 			renderer.Particles.CreateDirected( request.EffectId, position, ToNativeDirection( direction ) );
 		else
 			renderer.Particles.Create( request.EffectId, position );
+	}
+
+	/// <summary>Starts an emitter that the caller keeps (the bump rides' break smoke) and returns its handle, or -1 when there is no renderer or the pool refuses.</summary>
+	internal static int StartEmitter( int effectId, SVector3 engine )
+	{
+		if ( RendererFor( out var level ) is not { } renderer )
+			return -1;
+		return renderer.Particles.Create( effectId, ToNative( level, engine ) );
+	}
+
+	internal static void MoveEmitter( int handle, SVector3 engine )
+	{
+		if ( handle >= 0 && RendererFor( out var level ) is { } renderer )
+			renderer.Particles.Move( handle, ToNative( level, engine ) );
+	}
+
+	internal static void KillEmitter( int handle )
+	{
+		if ( handle >= 0 && ParticleRenderer.Current is { } renderer )
+			renderer.Particles.Kill( handle );
 	}
 
 	private static ParticleRenderer? Create( Level level )

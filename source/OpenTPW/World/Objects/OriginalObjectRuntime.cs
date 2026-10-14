@@ -207,7 +207,7 @@ public sealed partial class OriginalObjectRuntime
 	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
 	{
 		if (effects.HasLiveEventLoops)
-			throw new NotSupportedException("An attraction is still playing a looping EVENT sound. Live audio cannot be saved; stop the owning object or sound first.");
+			throw new NotSupportedException("An attraction is still playing a looping EVENT or repair-hide sound. Live audio cannot be saved; stop the owning object or sound first.");
 		return new OriginalObjectRuntimeSnapshot
 		{
 			AttractionId = AttractionId,
@@ -447,6 +447,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	/// <summary>The ride script's held scream (the original's handle, refused while one is held).</summary>
 	private SoundChain? screamChain;
 	private readonly List<SoundChain> ownedScreams = new();
+	// Positioned EVENT and repair-hide flag-0x8 voices share the existing exact-runtime cleanup ledger.
 	private readonly List<AudioVoice> ownedEventLoops = new();
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
@@ -518,7 +519,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			return ride.Coaster.Perform( call );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
-		// Routed EVENT sounds can use the placed origin; scream/repair placement and reverb remain unimplemented.
+		// Routed EVENT and repair-hide sounds can use the placed origin; scream/show placement and reverb remain unimplemented.
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
@@ -552,7 +553,15 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		if ( call.Opcode == Opcode.REPAIREFFECT )
 		{
 			// [BIN:STP-PPC:0x100B1E34 REPAIREFFECT] showing (value 1) starts a cat_kids repair sound (0x100ACC24, event 75 for the traced call); hiding (value 0) plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
-			GameAudio.PlayRepairEffect( call.Argument( 0 ) );
+			var show = call.Argument( 0 );
+			if ( show != 0 ) GameAudio.PlayRepairEffect( show );
+			else
+			{
+				var voices = GameAudio.PlayRepairEffect( show, ride.ReadEventOrigin() );
+				ownedEventLoops.RemoveAll( loop => loop.IsFinished );
+				if ( voices.First is { Loops: true } ) ownedEventLoops.Add( voices.First );
+				if ( voices.Second is { Loops: true } ) ownedEventLoops.Add( voices.Second );
+			}
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		return UnimplementedRideScriptEffects.Instance.Perform( call );

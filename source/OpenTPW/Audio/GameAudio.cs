@@ -567,16 +567,27 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x100B1F78 REPAIREFFECT show] the repair-start path calls the cat_kids submit family (0x100ACC24; the traced call selects event 75, families up to 90 by the object's repair level)
 	// [BIN:STP-PPC:0x100B1E60 REPAIREFFECT hide] hiding plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
 	// [APPROX:AUDIO-008] the repair-start event stays 75 (family 1, index 0); the original picks among 75–90 by the object's repair-level field (+20) and two float operands — evidence needed: the repair-level field's source in the object runtime
-	public static void PlayRepairEffect( int show )
+	public static void PlayRepairEffect( int show ) => PlayRepairEffect( show, null );
+
+	/// <summary>Existing show path, or the hide pair at a validated sound-space origin; returns submitted voices for owner cleanup.</summary>
+	internal static (AudioVoice? First, AudioVoice? Second) PlayRepairEffect( int show, Vector3? position )
 	{
 		if ( events == null )
-			return;
+			return (null, null);
 		if ( show != 0 )
-			events.Play( Kids, RepairStartEvent, AudioChannel.Effects );
-		else
+			return (events.Play( Kids, RepairStartEvent, AudioChannel.Effects ), null);
+		var first = position == null ? events.Play( Rides, RepairStopEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairStopEvent, AudioChannel.Effects, position.Value );
+		try
 		{
-			events.Play( Rides, RepairStopEvent, AudioChannel.Effects );
-			events.Play( Rides, RepairStopSecondEvent, AudioChannel.Effects );
+			var second = position == null ? events.Play( Rides, RepairStopSecondEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairStopSecondEvent, AudioChannel.Effects, position.Value );
+			return (first, second);
+		}
+		catch
+		{
+			// The pair cannot return this handle for ownership if its second submission fails.
+			// Preserve one-shot/flat lifetimes; only a partially started owned loop needs cleanup.
+			if ( first is { Loops: true } ) first.Stop();
+			throw;
 		}
 	}
 

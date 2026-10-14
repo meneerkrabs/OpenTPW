@@ -127,6 +127,46 @@ public class ParkWeatherTests
 		Assert.AreEqual( 1, rang, "the first strike's thunder comes ten or eleven weather steps later" );
 	}
 
+	private static SamSettings Storm( int thunderStarts ) => Keys(
+		"WeatherEffects.QualityForSnowLow\t-1\n" +
+		"WeatherEffects.QualityForSnowHigh\t-1\n" +
+		"WeatherEffects.QualityForRainLow\t0\n" +
+		"WeatherEffects.QualityForRainHigh\t40\n" +
+		"WeatherEffects.QualityForLightningLow\t0\n" +
+		"WeatherEffects.QualityForLightningHigh\t15\n" +
+		"WeatherEffects.LightningCountdownSpeed\t1\n" +
+		"WeatherEffects.LightningCountdownFrom\t1\n" +
+		$"WeatherEffects.ThunderStartsThisFarAway\t{thunderStarts}\n" +
+		"WeatherEffects.ThunderRandomiser\t1\n" );
+
+	[TestMethod]
+	public void ACountdownOfOneRingsOnTheStrikeStepAndAComputedZeroNeverRings()
+	{
+		// 0x101033CC..0x10103528: a countdown of 0 - 1 strikes every step; the first strike arms max(0, 1 - 0) + 0 = 1, which
+		// the step's own decrement takes to 0 (thunder); later strikes arm max(0, 1 - bolts) = 0, which never rings.
+		var weather = new ParkWeather( Storm( 1 ), 5, 10, 10 );
+		weather.AdvanceTo( 0 );
+		weather.ApplyQuality( 5 );
+		var rang = new System.Collections.Generic.List<int>();
+		for ( var step = 0; step < 6; step++ )
+		{
+			weather.Step( 0 );
+			rang.Add( weather.TakeThunder().Count );
+		}
+		CollectionAssert.AreEqual( new[] { 1, 0, 0, 0, 0, 0 }, rang );
+
+		var silent = new ParkWeather( Storm( 0 ), 5, 10, 10 );
+		silent.AdvanceTo( 0 );
+		silent.ApplyQuality( 5 );
+		var total = 0;
+		for ( var step = 0; step < 6; step++ )
+		{
+			silent.Step( 0 );
+			total += silent.TakeThunder().Count;
+		}
+		Assert.AreEqual( 0, total, "a computed countdown of 0 never rings: the original's decrement takes it below 0" );
+	}
+
 	// ---- original data (OPENTPW_GAME_PATH) ----
 
 	private static string? DataDirectory()

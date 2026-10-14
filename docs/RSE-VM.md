@@ -173,9 +173,10 @@ matching the first-encounter-yield plus `now ≥ deadline` resume.
 `dest = a × b`, destination first, 32-bit wrap, flags set — the sole corpus use
 `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` (immediately consumed by `SETTIMER`)
 matches that shape, and the upstream docs give the same three-operand signature.
-No original dispatch of interpreter case 48 is traced on any build, so the
-order, wrap and flags are family inference, not static evidence
-([APPROX:VM-900]). Tests: `RideVMTests` (signed/literal/variable operands,
+tp.exe confirms it: interpreter case 48 (`0x553eb9`, jump table `0x5567d8`) reads the
+destination word first, multiplies the two operand values with `imul` (32-bit wrap), stores
+the product in the flag word and, through the shared tail `0x555b48`, in a variable
+destination. Tests: `RideVMTests` (signed/literal/variable operands,
 wrap, flags-only literal destination, WAITABS timing/yield/variable
 operand/shared wake field/snapshot restore) and `RideVMTpiCorpusTests`
 (original-corpus execution of both, gated on `OPENTPW_TPI_PATH`).
@@ -476,7 +477,7 @@ handler attributes diverge.
 | 45 | `WAITABS` | 0 | implemented | STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901) |
 | 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |
-| 48 | `MULT` | 0 | implemented | upstream signature (3 operands); Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` dest-first like SUB/DIV/MOD, then SETTIMER consumes it; product wraps like ADD/SUB and sets flags (VM-900) |
+| 48 | `MULT` | 0 | implemented | TPW-EXE 0x553eb9: dest-first, a × b by imul (32-bit wrap), result in the flag word and a variable destination; Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` |
 | 49 | `DIV` | 4 | implemented | corpus: `DIV dest a b`; Mac-static: signed truncation, zero divisor returns 0; signed overflow retains VM wrap policy |
 | 50 | `MOD` | 5 | implemented | corpus: `MOD dest a b`; Mac-static: signed remainder, zero divisor returns 0; signed overflow retains VM zero policy |
 | 51 | `TURBO` | 20 | hooked | docs (`value` 0..1, meaning unknown) |

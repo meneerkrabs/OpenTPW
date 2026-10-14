@@ -341,6 +341,24 @@ public class GuestAssetTests
 		}
 	}
 
+	/// <summary>The thought bubbles (GUEST-006): <c>SPR_TB</c> with one frame per slot for the guests' sixteen, then <c>SPR_TC</c> with the staff's.</summary>
+	[TestMethod]
+	public void ThoughtBubblesLoadInCategoryOrder()
+	{
+		var banks = GuestSpriteAtlas.LoadThoughts();
+		CollectionAssert.AreEqual( new[] { "SPR_TB", "SPR_TC" }, banks.Select( bank => bank.Name ).ToArray() );
+		Assert.AreEqual( 16, banks[0].Frames.Length );
+		Assert.AreEqual( 10, banks[1].Frames.Length );
+		for ( var thought = 1; thought <= 22; thought++ )
+		{
+			var slot = ThoughtRenderer.Slot( thought );
+			var bank = banks[slot < ThoughtRenderer.FirstBankSlots ? 0 : 1];
+			Assert.IsFalse( bank.Animations.Animations[slot % ThoughtRenderer.FirstBankSlots].IsEmpty, $"thought {thought} slot {slot}" );
+		}
+		Assert.AreEqual( 8, banks[1].GetFrame( ThoughtRenderer.Slot( 20 ) - 16, 0, 0 ), "the tired staff's sleeping bubble is SPR_TC frame 8" );
+		Assert.AreEqual( 2, banks[1].GetFrame( ThoughtRenderer.Slot( 5 ) - 16, 0, 0 ), "Pleased: the thumb up, SPR_TC frame 2" );
+	}
+
 	/// <summary>
 	/// Every theme's shops: only the balloon shops (ShopType 6) carry <c>UsageInfo.AppearanceEffect</c> 1 and only the costume shops (ShopType 5) carry 2
 	/// (ECON-044, tp.exe <c>0x004FE1E0</c>).

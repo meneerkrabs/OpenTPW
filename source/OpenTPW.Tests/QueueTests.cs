@@ -745,7 +745,10 @@ public class QueueTests
 		Assert.AreEqual( 3, QueuePaths.RemoveFrom( rig.Grid, rig.Ride, 2, 3 ) );
 		rig.RunTurns( 1 );
 		Assert.IsTrue( guests.Take( 8 ).All( guest => guest.IsInQueue ) );
-		Assert.IsTrue( guests.Skip( 8 ).All( guest => !guest.IsInQueue && guest.Thought == GuestThought.QueueTooLong ) );
+		Assert.IsTrue( guests.Skip( 8 ).All( guest => !guest.IsInQueue ) );
+		// one guest in three (id % 3 == 0) leaves angry, the others think nothing new (tp.exe 0x00501496)
+		Assert.IsTrue( guests.Skip( 8 ).All( guest => guest.Thought == (guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None) ),
+			string.Join( ", ", guests.Skip( 8 ).Select( guest => $"{guest.Id}: {guest.Thought}" ) ) );
 		Assert.AreEqual( 8, rig.Ride.QueueLength );
 		Assert.IsNull( rig.Ride.JoinCell, "the shortened queue no longer touches the path" );
 

@@ -16,6 +16,12 @@ public interface IGuestPayments
 	bool ParkClosed => false;
 	/// <summary>Charges a shop or sideshow visit (0 for rides, which only count the use).</summary>
 	bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid );
+	/// <summary>The same, with a sideshow's result (<paramref name="won"/>, null when the payer does not play sideshows out).</summary>
+	bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid, out bool? won )
+	{
+		won = null;
+		return TryPayVisit( attraction, guestMoney, out pricePaid );
+	}
 	/// <summary>A guest has left the attraction (the original's use counter, +412, rises on release).</summary>
 	void VisitFinished( IRideVisitorBridge attraction ) { }
 	/// <summary>A guest used a relief object with this toilet meter (as a byte): the toilet's gauge wears (tp.exe 0x004E2440).</summary>

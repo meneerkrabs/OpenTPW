@@ -11,7 +11,7 @@ public static class QueueApproximations
 	{
 		("QUEUE-003", "guests join the back of the queue from an adjacent walkable cell; the original takes the first connected path neighbour (1, 4, 16, 64), and OpenTPW keeps no connection bits for queue cells"),
 		("QUEUE-004", "the join excitement of a ride whose thing behind ride +36 is none of the water and kart controllers (OpenTPW holds no other thing there) is not modelled; water and kart rides take the controller's base (60 % of the level plus up to 40 from the circuit's corners, longest straight run and crossings, docs/TRACKS.md); the gate, the clamped difference and the live excitement (sideshow, speed and duration ratios, coaster) follow the original (ORACLE.md F16)"),
-		("QUEUE-005", "after a queue edit, a guest whose cell left the queue leaves (Confused) and the others re-walk, where the original only sends away guests beyond the room; a leaving guest plays no animation"),
+		("QUEUE-005", "after a queue edit, a guest whose cell left the queue leaves (Confused) and the others re-walk, where the original only sends away guests beyond the room; a guest sent away thinks Angry by OpenTPW's guest id modulo 3 rather than its thing id, and its dismissal records no ride event and plays no sound"),
 		("QUEUE-006", "queue places follow the original's axis per link; the back cell's fourth place takes its axis from OpenTPW's join cell"),
 		("QUEUE-008", "toilets wear by use and handymen clean them, but the online branch of the wear step and the dirty-toilet message handlers are not modelled"),
 		("QUEUE-009", "the queue facing change's sign comes from the 1-in-10 draw"),

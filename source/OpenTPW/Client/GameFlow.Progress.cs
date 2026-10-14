@@ -1,0 +1,182 @@
+using OpenTPW.FrontEnd;
+using OpenTPW.UI.Original;
+
+namespace OpenTPW;
+
+internal sealed partial class GameFlow
+{
+	private PlayerProgressRuntimeOwner? progressOwner;
+	private string? progressNotice;
+	private string? shownProgressNotice;
+	private string? displayedProgressDetail;
+	internal Func<bool>? ProgressCaptureOverride { get; set; }
+	// Candidate-only seam: the normal implementation always uses the existing isolated park builder.
+	internal Action<string, ParkStartKind, Action>? ProgressBuildOverride { get; set; }
+	private string ProgressPath => SaveFileSystem.GetAbsolutePath( PlayerTicketFile.FileName );
+
+	private bool ProgressCaptured()
+	{
+		if ( ProgressCaptureOverride != null ) return ProgressCaptureOverride();
+		if ( Input.TextEntryActive ) return true;
+		if ( ImGuiNET.ImGui.GetCurrentContext() == IntPtr.Zero ) return false;
+		var io = ImGuiNET.ImGui.GetIO();
+		return io.WantCaptureMouse || io.WantCaptureKeyboard || io.WantTextInput;
+	}
+
+	internal static int TrustedThemeEntryCost( string theme )
+	{
+		if ( !ObjectCatalog.Themes.Contains( theme, StringComparer.Ordinal ) ) throw new InvalidDataException( "Unknown Theme Park World theme." );
+		var path = $"/levels/{theme}/global.sam";
+		var settings = new SamSettings( new[] { SamDocument.Parse( FileSystem.ReadAllText( path ), path ) } );
+		try
+		{
+			var cost = settings.GetInt( "Keys.CostToEnter" );
+			if ( cost < 0 ) throw new InvalidDataException( "The theme entry cost must be nonnegative." );
+			return cost;
+		}
+		catch ( Exception error ) when ( error is KeyNotFoundException or FormatException or OverflowException )
+		{ throw new InvalidDataException( "The theme has no valid entry cost.", error ); }
+	}
+
+	internal void RequestParkStart( string theme, GameMode mode, FrontEndMenu? owner = null )
+	{
+		if ( BuildingPark || ProgressCaptured() || owner != null && !ReferenceEquals( owner, Menu ) ) return;
+		var screen = owner?.Stack.Top;
+		var currentLevel = Level;
+		bool Owns( UiScreen? lease ) => ReferenceEquals( Level, currentLevel ) && (owner == null ||
+			ReferenceEquals( Menu, owner ) && owner.Selected.Level == theme && lease != null && !lease.IsRemoved && ReferenceEquals( owner.Stack.Top, lease ));
+		try
+		{
+			RequireProgressSaved( newPark: true );
+			// Instant Action keeps no progress, so it starts in every edition as before; only Full Simulation needs Theme Park World's progression
+			if ( mode == GameMode.InstantAction )
+			{
+				QueueLevel( theme, () => { if ( Owns( screen ) ) StartInstantPark( theme ); }, prepareBuyWindow: true );
+				return;
+			}
+			if ( !GameEditions.Capabilities.Economy || GameEditions.IsThemeParkInc || !ObjectCatalog.Themes.Contains( theme, StringComparer.Ordinal ) )
+				throw new NotSupportedException( "Application-owned progression is available only for Theme Park World." );
+			if ( mode != GameMode.FullSimulation ) throw new InvalidDataException( "Unknown park mode." );
+			var state = PlayerTicketFile.ReadIfPresent( ProgressPath );
+			var offeredCost = FileSystem.FileExists( $"/levels/{theme}/global.sam" ) ? TrustedThemeEntryCost( theme ) : (int?)null;
+			void Admit( UiScreen? lease )
+			{
+				if ( ProgressCaptured() || !Owns( lease ) ) return;
+				try
+				{
+					RequireProgressSaved( newPark: true );
+					var admission = new PlayerProgressAdmission( ProgressPath, theme, state, offeredCost, () => TrustedThemeEntryCost( theme ),
+						() => Owns( lease ), () => RequireProgressSaved( newPark: true ) );
+					if ( offeredCost.HasValue ) admission.Validate();
+					QueueLevel( theme, () => TryBeginProgressPark( admission ), prepareBuyWindow: true );
+				}
+				catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
+			}
+			if ( state != null ) { Admit( screen ); return; }
+			if ( owner == null || screen == null ) throw new InvalidOperationException( "Choose New Full Simulation in the lobby to confirm new OpenTPW progress." );
+			// A theme that costs more than the one starter key (Fantasy 3, Space 5 in the shipped global.sam) is refused before the consent, which could not admit it
+			if ( offeredCost is int cost && cost > PlayerProgressAdmission.StarterKeys )
+				throw new PlayerProgressKeysException( cost, PlayerProgressAdmission.StarterKeys );
+			ProgressChoiceScreen? confirmation = null;
+			confirmation = ProgressChoiceScreen.Message( "newProgress", () => Strings.Extra( OpenTpwText.NewProgressConsent ),
+				(() => Strings.Extra( OpenTpwText.StartNewProgress ), () => { if ( confirmation!.TryActivate( owner.Stack ) ) Admit( confirmation ); }
+			),
+				(() => Strings.Extra( OpenTpwText.Back ), () => { if ( !confirmation!.IsRemoved && ReferenceEquals( owner.Stack.Top, confirmation ) ) owner.Stack.Pop(); }
+			) );
+			owner.Stack.Push( confirmation );
+		}
+		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
+	}
+
+	internal bool TryBeginProgressPark( PlayerProgressAdmission admission )
+	{
+		if ( !admission.IsActive ) return false;
+		try
+		{
+			RequireProgressSaved( newPark: true );
+			admission.Validate(); // Before scene, level, objects, guests or VM construction.
+			if ( ProgressBuildOverride != null ) ProgressBuildOverride( admission.Theme, ParkStartKind.FullSimulation, admission.BeforeRetirement );
+			else StartLevel( admission.Theme, original: true, developerPanels: false, overFrames: true, start: ParkStartKind.FullSimulation,
+				beforeEnter: _ => admission.BeforeRetirement() );
+			return true;
+		}
+		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); return false; }
+	}
+
+	private void StartInstantPark( string theme, bool overFrames = true )
+	{
+		try
+		{
+			RequireProgressSaved();
+			if ( ProgressBuildOverride != null ) ProgressBuildOverride( theme, ParkStartKind.InstantAction, () => RequireProgressSaved() );
+			else StartLevel( theme, original: true, developerPanels: false, overFrames: overFrames, start: ParkStartKind.InstantAction );
+		}
+		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
+	}
+
+	private static bool ProgressFailure( Exception error ) => error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or NotSupportedException;
+	private void ShowProgressFailure( Exception error ) => ShowProgressFailure( error.Message,
+		error is PlayerProgressKeysException keys ? string.Format( Strings.Extra( OpenTpwText.ProgressKeysNeeded ), keys.Required, keys.Available ) :
+		error is PlayerProgressModeException ? Strings.Extra( OpenTpwText.ProgressModeKept ) : null );
+	private void ShowProgressFailure( string detail, string? message = null )
+	{
+		Log.Warning( $"OpenTPW progress: {detail}" );
+		if ( progressNotice == detail ) shownProgressNotice = detail;
+		var stack = Hud?.Stack ?? Menu?.Stack;
+		if ( stack == null ) return;
+		if ( stack.Top?.Name == "progressFailed" && displayedProgressDetail == detail ) return;
+		displayedProgressDetail = detail;
+		UiScreen? screen = null;
+		screen = UiDialogs.Message( "progressFailed", () => message ?? Strings.Extra( progressOwner?.Dirty == true ? OpenTpwText.ProgressUnsaved : OpenTpwText.ProgressActionFailed ), (() => Strings.Extra( OpenTpwText.Back ), () => { if ( !screen!.IsRemoved && ReferenceEquals( stack.Top, screen ) ) { stack.Pop(); displayedProgressDetail = null; } }) );
+		stack.Push( screen );
+	}
+
+	private void RequireProgressSaved( bool newPark = false )
+	{
+		if ( progressOwner?.TryFlush( requireUnchangedWhenClean: newPark ) == false )
+			throw new PlayerProgressSaveException( progressOwner.Error ?? "OpenTPW progress could not be saved. The running park is kept." );
+	}
+
+	private void QueueProgressTransition( Action transition )
+	{
+		try { RequireProgressSaved(); Queue( () => { try { RequireProgressSaved(); transition(); } catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); } } ); }
+		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
+	}
+
+	private void QueueProgressLevel( string theme, Action transition )
+	{
+		try { RequireProgressSaved(); QueueLevel( theme, () => { try { RequireProgressSaved(); transition(); } catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); } }, prepareBuyWindow: true ); }
+		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
+	}
+
+	private void RequestProgressQuit()
+	{
+		try { RequireProgressSaved(); Quit(); }
+		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
+	}
+
+	internal void AttachProgress( Level level )
+	{
+		DetachProgress();
+		if ( !ReferenceEquals( Level, level ) || level.IsReadOnlyVisit || level.IsThemeParkIncSlice || !GameEditions.Capabilities.Economy || !ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal ) ||
+			level.Park is not { Start.Kind: ParkStartKind.FullSimulation } runtime || runtime.Economy.Mode != ParkGameMode.FullSimulation ) return;
+		try
+		{
+			var state = PlayerTicketFile.ReadIfPresent( ProgressPath );
+			if ( state?.Ledger.Mode != ParkGameMode.FullSimulation ) { progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); return; }
+			progressOwner = new( ProgressPath, level.LevelName, state, runtime,
+				() => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, runtime ) && !level.IsReadOnlyVisit,
+				message => { progressNotice = message; shownProgressNotice = null; } );
+		}
+		catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"OpenTPW tracking unavailable: {error.Message}" ); progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); }
+	}
+
+	private void DetachProgress() { progressOwner?.Dispose(); progressOwner = null; progressNotice = null; shownProgressNotice = null; displayedProgressDetail = null; }
+	private void PumpProgress()
+	{
+		progressOwner?.Pump();
+		if ( progressNotice == null || progressNotice == shownProgressNotice ) return;
+		shownProgressNotice = progressNotice;
+		ShowProgressFailure( progressNotice, progressOwner == null ? progressNotice : null );
+	}
+}

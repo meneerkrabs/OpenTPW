@@ -67,6 +67,8 @@ public partial class Level : IDisposable
 	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
 	/// <summary>Draws the guests' balloons.</summary>
 	public BalloonRenderer? BalloonRenderer { get; private set; }
+	/// <summary>Draws the guests' and the staff's thought bubbles.</summary>
+	public ThoughtRenderer? ThoughtRenderer { get; private set; }
 	/// <summary>The default world seed (<see cref="WorldSeed.DefaultValue"/>); with it the guest stream keeps its old seed.</summary>
 	public const ulong GuestSeed = WorldSeed.DefaultValue;
 	/// <summary>The one seed every simulation random stream of this level derives from (docs/DETERMINISM.md).</summary>
@@ -380,12 +382,17 @@ public partial class Level : IDisposable
 			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume };
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
+		AddCoasterHeads( RideHeadRenderer );
 		if ( costumeHeads.Count > 0 )
 		{
 			CostumeHeadRenderer = new RideHeadRenderer( Guests, costumeHeads, Objects ) { Draws = guest => guest.InCostume };
 			CostumeHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
+			AddCoasterHeads( CostumeHeadRenderer );
 		}
 		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadBalloons() );
+		ThoughtRenderer = new ThoughtRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadThoughts(),
+			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
+			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 

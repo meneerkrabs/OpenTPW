@@ -51,6 +51,9 @@ public sealed partial class StaffWorldSimulation
 				continue;
 			// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
 			economy.MoveStaffEffect( member, Cell( member ) );
+			// [BIN:TPW-EXE:0x00505490 staff pre-update] on the member's phase ((id & 3) == (turn & 3)) the thought object's update 0x0050BE40 takes an old bubble away
+			if ( member.BubbleThought != 0 && NeedsUpdate.IsPhase( (uint)turn, member.Id ) && (ulong)(member.BubbleTurn + GuestThoughts.BubbleTurns) < (ulong)turn )
+				member.BubbleThought = 0;
 			switch ( member.State )
 			{
 				case StaffState.PickedUp:
@@ -361,7 +364,19 @@ public sealed partial class StaffWorldSimulation
 			if ( grid.IsWalkable( x, y ) && Route( member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
 				return true;
 		}
+		Think( member, StaffThoughts.NoDestination, economy.Turn );
 		return false;
+	}
+
+	/// <summary>The member thinks <paramref name="thought"/> (tp.exe <c>0x0050BE80</c> on its thought object): stored, with a bubble when the last one is old enough.</summary>
+	private static void Think( StaffMember member, int thought, long turn )
+	{
+		member.Thought = thought;
+		member.BubbleThought = 0;
+		if ( !GuestThoughts.TakesBubble( thought, turn, member.BubbleTurn ) )
+			return;
+		member.BubbleThought = thought;
+		member.BubbleTurn = turn;
 	}
 
 	/// <summary>Sets the member's walk to a point of <paramref name="cell"/> along the shortest route; false when none reaches it.</summary>
@@ -450,6 +465,10 @@ public sealed partial class StaffWorldSimulation
 				break;
 			case StaffJob.Striking:
 				member.SpeedBonus = 0;
+				break;
+			// states 3 (resting) and 7 (picked up) take the thought bubble away (0x0050C0D0)
+			case StaffJob.Resting or StaffJob.PickedUp:
+				member.BubbleThought = 0;
 				break;
 		}
 		member.Job = job;

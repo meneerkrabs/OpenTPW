@@ -21,6 +21,8 @@ public sealed class FrontEndActions
 	/// <summary>Lightweight own-save availability for the selected theme; assets are checked only on actual resume.</summary>
 	public Func<string, ParkContinueEntry?> ContinueEntry { get; init; } = _ => null;
 	public Action<ParkContinueEntry>? ContinuePark { get; init; }
+	internal Func<string, AutomaticParkContinueEntry?> AutomaticEntry { get; init; } = _ => null;
+	internal Action<AutomaticParkContinueEntry>? ContinueAutomatic { get; init; }
 	public Action Quit { get; init; } = () => { };
 	public Func<UiScreenStack, Action, UiScreen>? CreateOptions { get; init; }
 	/// <summary>Called when the selected island changes (moves the lobby camera).</summary>
@@ -130,7 +132,7 @@ public sealed partial class FrontEndMenu
 	// [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow
 	public void ShowGameMode()
 	{
-		var screen = new UiScreen( "gameMode" );
+		var screen = new ProgressChoiceScreen( "gameMode" );
 		var window = UiDialogs.CenteredWindow( 1100, 760 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.GameMode] );
 		screen.Add( new UiLabel { Id = "park", Text = () => SelectedName, Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Center, Bounds = new UiRect( window.X + 80, window.Y + 140, window.Width - 300, 70 ), Anchor = UiAnchor.Center } );
@@ -147,7 +149,7 @@ public sealed partial class FrontEndMenu
 				Id = entry.Id,
 				Text = () => strings[entry.Label],
 				Help = strings.Help( entry.Help ),
-				Clicked = () => actions.StartPark( Selected, entry.Mode ),
+				Clicked = () => { if ( screen.TryActivate( Stack ) ) actions.StartPark( Selected, entry.Mode ); },
 				Bounds = new UiRect( window.X + 150, window.Y + 240 + index * 150, window.Width - 450, 120 ),
 				Anchor = UiAnchor.Center
 			} );
@@ -157,11 +159,11 @@ public sealed partial class FrontEndMenu
 			Id = "back",
 			Text = () => strings.Extra( OpenTpwText.Back ),
 			Help = strings.Help( 2 ),
-			Clicked = Stack.Pop,
+			Clicked = () => { if ( !screen.IsRemoved && ReferenceEquals( Stack.Top, screen ) ) Stack.Pop(); },
 			Bounds = new UiRect( window.X + 150, window.Bottom - 190, 420, 104 ),
 			Anchor = UiAnchor.Center
 		} );
-		screen.Back = Stack.Pop;
+		screen.Back = () => { if ( !screen.IsRemoved && ReferenceEquals( Stack.Top, screen ) ) Stack.Pop(); };
 		screen.Focus( screen.FocusableElements.First() );
 		Stack.Push( screen );
 	}

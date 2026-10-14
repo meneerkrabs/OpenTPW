@@ -875,6 +875,9 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Allocation test made sturdy (October 14):** `PerFrameExactTierLookupAddsNoDefaultParameterAllocations` keeps the
+  smallest of three measured passes per loop, so a one-off runtime allocation on the thread (seen once on ubuntu Release,
+  48 bytes) no longer fails it while a per-call allocation still does.
 - **Rides register round (October 14):** the rides register is read against the decrypted Windows tp.exe. Ride init writes
   `InitDuration` only when above 0, as its low byte clamped to `UsageInfo.MinDuration..MaxDuration` (also the tier seed;
   RIDES-016 retired), and the script speed is now `0.5 + bias / 100` with the bias from the ride's `Upgrades[0].InitSpeed`

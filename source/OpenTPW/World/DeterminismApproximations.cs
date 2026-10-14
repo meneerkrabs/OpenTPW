@@ -8,7 +8,6 @@ public static class DeterminismApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Assumption, string EvidenceNeeded)> All = new[]
 	{
-		("DET-002", "runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds", "none possible; explicit seeding is an OpenTPW replay policy"),
 		("DET-013", "scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator", "none (traced at 0x100B07E4 and 0x100B1B8C); implementation waits for the DET-I2 port of the shared world generator"),
 		("DET-014", "guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id", "DET-I2 port of WorldRng"),
 		("DET-015", "the economy draws from its own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG", "DET-I2 port of WorldRng"),

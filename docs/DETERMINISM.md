@@ -54,7 +54,7 @@ The stream keys are chosen so that the default seed reproduces the seeds each
 system used before world seeds existed: guests `Level.GuestSeed`, economy 1,
 placed objects 1, 2, 3, … As a result, existing balance results and the M3
 gate baseline stay the same. The original seeds its world generator from
-`time(NULL)`, so no seed is "the original one" (DET-002).
+`time(NULL)`, so no seed is "the original one"; the explicit seed is OpenTPW's replay policy (`[EXT:explicit-world-seed]`, formerly DET-002).
 
 ## Global and unseeded sources
 
@@ -323,7 +323,6 @@ itself needs a renderer and is not constructed by tests.
 
 | ID | Rule |
 | --- | --- |
-| DET-002 | explicit world seed instead of the original's time-based seeds |
 | DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world LCG |
 | DET-014 | guests use their own SplitMix64 stream, not the world LCG reseeded per guest id |
 | DET-015 | the economy uses its own SplitMix64 stream, not the world LCG |

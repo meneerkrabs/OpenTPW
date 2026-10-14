@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// The original seeds its world generator from <c>time(NULL)</c> (docs/reverse/DET-plan.md §2.3), so no
 /// seed value is "the original one".
 /// </summary>
-// [APPROX:DET-002] runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds — evidence needed: none possible; explicit seeding is an OpenTPW replay policy
+// [EXT:explicit-world-seed] runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds; no original seed is "the" seed, so this is OpenTPW's replay policy (DET-002 reclassified)
 public readonly record struct WorldSeed( ulong Value )
 {
 	/// <summary>The seed every level used before world seeds existed (<c>Level.GuestSeed</c>, ASCII "TPWGuest").</summary>

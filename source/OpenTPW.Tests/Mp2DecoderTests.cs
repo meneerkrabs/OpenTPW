@@ -45,7 +45,7 @@ public class Mp2DecoderTests
 
 	private const int FrameBytes48k = 313; // 144 * 48000 / 22050
 
-	private static byte[] SilentFrame( int bitrateIndex = 6, int mode = 3, int layerBits = 2, int versionBits = 2 )
+	internal static byte[] SilentFrame( int bitrateIndex = 6, int mode = 3, int layerBits = 2, int versionBits = 2 )
 	{
 		var writer = new BitWriter();
 		WriteHeader( writer, bitrateIndex, mode, layerBits, versionBits );
@@ -53,7 +53,7 @@ public class Mp2DecoderTests
 	}
 
 	// Mono frame with only subband 0 allocated to the 3-level class and one scalefactor.
-	private static byte[] ToneFrame( int groupedCode = 26, int scaleFactor = 3 )
+	internal static byte[] ToneFrame( int groupedCode = 26, int scaleFactor = 3 )
 	{
 		var writer = new BitWriter();
 		WriteHeader( writer );
@@ -279,7 +279,7 @@ public class Mp2DecoderTests
 
 	// Deterministic stereo MPEG-1 Layer I stream that exercises every allocation width and
 	// both channels with pseudo-random scalefactors and samples (fixed LCG, no System.Random).
-	internal static byte[] LayerOneReferenceStream()
+	internal static byte[] LayerOneReferenceStream( bool includeCrc = true )
 	{
 		var state = 12345u;
 		int Next( int bound )
@@ -291,7 +291,7 @@ public class Mp2DecoderTests
 		for ( var frame = 0; frame < 8; frame++ )
 		{
 			var writer = new BitWriter();
-			WriteLayerOneHeader( writer, 3, 14, 2, crc: frame % 2 == 1 );
+			WriteLayerOneHeader( writer, 3, 14, 2, crc: includeCrc && frame % 2 == 1 );
 			var allocation = new int[2, 32];
 			for ( var subband = 0; subband < 32; subband++ )
 				for ( var channel = 0; channel < 2; channel++ )

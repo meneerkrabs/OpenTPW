@@ -14,6 +14,33 @@ public partial class Level
 		tours.CellHeight = ( x, y ) => field.GetCornerHeight( Math.Clamp( x, 0, field.CellCountX ), Math.Clamp( y, 0, field.CellCountZ ) );
 	}
 
+	private TourRenderer? tourRenderer;
+	private bool tourRenderFailed;
+
+	/// <summary>Car instances the tour renderer holds (0 before the first car is drawn).</summary>
+	public int TourCarInstances => tourRenderer?.CarCount ?? 0;
+
+	/// <summary>Moves the tour renderer's car instances to the controllers' cars (once per simulation step).</summary>
+	private void UpdateTourRendering()
+	{
+		if ( tourRenderFailed )
+			return;
+		var tours = Objects.ScriptWorld.Tours;
+		if ( tours.Controllers.Count == 0 && tourRenderer == null )
+			return;
+		try
+		{
+			tourRenderer ??= new TourRenderer( controller => Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Runtime.AttractionId == controller.AttractionId )?.Entry,
+				() => Objects.Grid.Origin );
+			tourRenderer.Update( tours.Controllers );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
+		{
+			tourRenderFailed = true;
+			Log.Warning( $"The tour renderer was disabled: {exception.Message}" );
+		}
+	}
+
 	/// <summary>The placed rides that carry a live tour controller: the one rule the capture and the restore share.</summary>
 	private IEnumerable<OriginalObject> LiveTourRides() => Objects.Objects.Where( item => !item.IsDeleted && item.Runtime.LiveTour != null );
 

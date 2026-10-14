@@ -5,7 +5,6 @@ namespace OpenTPW;
 /// in the module's units: 3000 per map cell, 300 per model unit, the second horizontal axis called Z as in the original, Y up. Angles are 4096 per turn.
 /// </summary>
 // [BIN:TPW-EXE:0x0055A720 car creation] the record's dword fields: +4 x, +8 height, +0xC z, +0x10 heading, +0x14 pitch, +0x18 roll, +0x4C/+0x50/+0x54 target, +0x58/+0x5C/+0x60 previous target, +0x70 turn rate, +0x74 vertical velocity, +0x78 speed, +0x7C thrust, +0x80 state, +0x84 timer, +0x88 patrol corner, +0x8C rider count, +0x90.. riders, +0xB4 leaving flag, +0xB8 broken flag, +0xBC approach heading, +0xD8 random, +0xDC head-node count
-// [APPROX:TOUR-008] the flying cars are not drawn yet
 public sealed class TourCar
 {
 	/// <summary>Riders a car carries: the head nodes of the car mesh are numbered from 1 and the script's INCAR is 8 or 9.</summary>

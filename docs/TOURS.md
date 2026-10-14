@@ -59,4 +59,8 @@ save without the part restores each live tour ride with a fresh controller (TOUR
 
 ## Not done
 
-Sounds and effects (TOUR-004), drawing of the cars (TOUR-008), building-top ground (TOUR-005), exact pad orientation (TOUR-003); see the register.
+Sounds and effects (TOUR-004), the car animations and the exact mesh orientation (TOUR-008), building-top ground (TOUR-005), exact pad orientation (TOUR-003); see the register.
+
+## Drawing
+
+`TourRenderer` draws every live car as the ride's supplemental mesh 0 (`Bird.md2`, balloon, craft, kite) at the car's pose, and the riders hang from the mesh's head dummies through the ride-head renderer, like the go-karts' riders.

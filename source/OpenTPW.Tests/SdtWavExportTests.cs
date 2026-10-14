@@ -221,7 +221,12 @@ public class SdtWavExportTests
 		Directory.CreateDirectory( output );
 		File.WriteAllText( Path.Combine( output, "foreign" ), "keep" );
 		File.WriteAllText( output + ".foreign.tmp", "keep temporary" );
-		Assert.ThrowsException<IOException>( () => Export( input, 2, output ) );
+		try
+		{
+			Export( input, 2, output );
+			Assert.Fail( "A destination directory must refuse the final move." );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException ) { }
 		Assert.AreEqual( "keep", File.ReadAllText( Path.Combine( output, "foreign" ) ) );
 		CollectionAssert.AreEqual( new[] { output + ".foreign.tmp" }, Directory.GetFiles( root, "*.tmp" ) );
 	}

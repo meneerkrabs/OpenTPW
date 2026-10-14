@@ -81,6 +81,8 @@ public sealed class BalanceSettings
 		// [DATA:levels/Standard.sam:PerGradeStaffConsts[g].IdleDuration, HandymanConstsPerGrade[g].DetectionRange] the idle spell (0x00785330 + 16 × grade) and the handyman's search range (0x007853F0 + 12 × grade)
 		IdleDuration = Grades( grade => standard.GetInt( $"PerGradeStaffConsts[{grade}].IdleDuration", 0, optional: true ) );
 		HandymanDetectionRange = Grades( grade => standard.GetInt( $"HandymanConstsPerGrade[{grade}].DetectionRange", 0, optional: true ) );
+		// [DATA:levels/Standard.sam:EntertainerConstsPerGrade[g].ActivationDistance] the square an entertainer looks around for guests before he performs (0x007853A0 + 16 × grade)
+		EntertainerActivationDistance = Grades( grade => standard.GetInt( $"EntertainerConstsPerGrade[{grade}].ActivationDistance", 0, optional: true ) );
 		HappinessRecuperationRate = Grades( grade => (float)standard.GetDouble( $"PerGradeStaffConsts[{grade}].HappinessRecuperationRate" ) );
 		RestLevel = standard.GetInt( "AllStaffConstants.RestLevel" );
 		HappyHitCosNoRestArea = standard.GetInt( "AllStaffConstants.HappyHitCosNoRestArea" );
@@ -159,6 +161,8 @@ public sealed class BalanceSettings
 	public IReadOnlyList<int> IdleDuration { get; }
 	/// <summary>The cells a handyman looks around for litter and dirty toilets, by grade (<c>HandymanConstsPerGrade[g].DetectionRange</c>).</summary>
 	public IReadOnlyList<int> HandymanDetectionRange { get; }
+	/// <summary>The cells an entertainer looks around for guests before he performs, by grade (<c>EntertainerConstsPerGrade[g].ActivationDistance</c>).</summary>
+	public IReadOnlyList<int> EntertainerActivationDistance { get; }
 	/// <summary><c>AllStaffConstants.RestLevel</c>: a staff member whose truncated energy byte is at most this seeks a rest area.</summary>
 	public int RestLevel { get; }
 	/// <summary><c>AllStaffConstants.HappyHitCosNoRestArea</c>: the happiness a tired staff member without a rest area to go to loses (one draw in sixteen).</summary>

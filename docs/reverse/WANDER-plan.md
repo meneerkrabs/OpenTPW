@@ -137,6 +137,33 @@ Read in full for the handyman (2026-10-14):
   state 0. State 11 cleans until the turn passes the stamp + WorkDuration.
 - **The rest.** A fresh handyman runs the job search in his constructor.
 
+Read in full for the entertainer and the guard (2026-10-14). Every staff thing is updated in list order by `0x50b360`: the type's pre-update,
+then its state handler. States 2, 3 and 4–13 are the generic staff handlers (`0x505fe0` walk to rest, `0x5061d0` resting, `0x5056e0`).
+The per-grade tables follow `PerGradeStaffConsts` (`0x785330`, 16 bytes a grade), each followed by four spare bytes:
+`EntertainerConstsPerGrade` at `0x785398` (WorkDuration, HappinessEffectOnCell, ActivationDistance, Pounds; 16 bytes),
+`HandymanConstsPerGrade` at `0x7853ec` (12), `MechanicConstsPerGrade` at `0x78542c` (8), `ResearcherConstsPerGrade` at `0x785458` (12),
+`GuardConstsPerGrade` at `0x785498` (WorkDuration, Pounds; 8). The speed bonus words at `0x75c7f0` are 0, 25 and 50.
+- **The entertainer.** The pre-update `0x4d4660` moves his `RegionFX[0]` (radius 3, happiness 2) from his last cell `+0xcc` to his cell
+  when it changed (`0x4d8460`, `0x4d8440`; the constructor puts it down, the destructor takes it up), then the speed step. The handler
+  `0x4d4810`: 0 idles (voice 165) until the turn passes IdleDuration + `+0x200`; 1 patrols (voice 164, the walk drain); 14 performs (the
+  work drain) until the turn passes `+0x214` + WorkDuration, then plays cat_staff 135 at him. Each end runs the search `0x4d46d0`: the strike
+  and rest gate; unless too tired, a draw divisible by 3 and a guest (any thing of type 1, `0x4c8d30`) within the square of
+  ActivationDistance start a performance (a draw picks its animation; state 14, `+0x214` = the turn); otherwise on a turn divisible by
+  4 a draw and idle, else a wander and, when one is found, a draw and patrol. HappinessEffectOnCell is not read here.
+- **The guard.** The pre-update `0x4d6360` moves his `RegionFX[3]` (radius 3, security 10) the same way. The handler `0x4d6410`: 0 idles
+  (voice 167), 1 patrols (voice 166); both then run the strike and rest gate and, on a turn whose low two bits are not both 0, the wander
+  (state 1), else state 0. A prank's bus message reaches the staff HQ (thing type 9, always at cell (0, 0) in the shipped and played saves),
+  whose handler `0x508a30` reads the prankster's cell's security word (`0x4d8410`, word +6): below 1 nothing happens. Otherwise
+  `0x5099c0` takes the guard in state 0 or 1 nearest **the HQ** (squared distance, the first on a tie) and `0x4d6260` starts him: too
+  tired, nothing; else cat_staff 136, his target `+0x212`, a route to the prankster's cell and state 16 (bonus 25, the chase timer `+0x214`
+  = GuardConstsPerGrade.WorkDuration). The chase `0x4d6790` drains as work, counts the timer down (0 abandons), re-routes when he arrives
+  where the prankster no longer is, abandons when held, and on its cell catches it if its state is 6–10 (`0x4fec10`): bonus 0,
+  cat_staff 137, the guest held (`0x4feb10`: balloon and model gone, state 17) and a route to the ticket booth (`0x4d8610`, lane by the
+  turn's bit 0) for state 18; without one he sets it down and abandons (bonus 0, state 0, target cleared). The escort `0x4d6a50` sets it
+  down on arrival (`0x4feb50`: cat_kids 128, a draw for the gate, a route out and state 18, else the guest is destroyed) and routes to
+  the park entrance (`0x4d8690`) for state 19, which walks there and patrols. A held guest (state 17, `0x501c94`) waits while a guard in
+  state 18 has it as his target and is destroyed otherwise (`0x50b780`). Guards never spot pranksters themselves.
+
 ## 5. Plan
 
 - **Phase 2 (GUEST-010), done.** `GuestSimulation` runs the guest states 6 and 7 per park turn as above (`GuestDecision`,
@@ -153,7 +180,10 @@ Read in full for the handyman (2026-10-14):
   state 9, vomit on the cell, the handymen's sweep by cell (still without positions) and their litter grievance (ORACLE.md X20, X21).
 - **Phase 3b (ECON-022), done for the handymen.** In a level the handymen run their state machine (§4, `StaffWorldSimulation`): they
   patrol with the guests' destination routine inside their rectangle, search for litter and dirty toilets from their position, and time
-  a sweep or a clean from their arrival (ORACLE.md X23). Their rest and strike stay the economy's; the other roles follow.
+  a sweep or a clean from their arrival (ORACLE.md X23). Their rest and strike stay the economy's.
+- **Phase 5 (ECON-022, GUEST-006, GUEST-007), done for entertainers and guards.** Entertainers patrol and perform for nearby guests
+  and carry their RegionFX row; guards carry their security row and answer a prank with the chase, the catch and the escort (§4).
+  The researchers, the mechanics' walk and the generic rest and strike walks follow.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

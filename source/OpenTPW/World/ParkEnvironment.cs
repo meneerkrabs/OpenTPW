@@ -5,7 +5,9 @@ public readonly record struct RegionEffect( int Radius, short Happiness, short I
 {
 	/// <summary>The rows the original indexes: entertainer, clean toilet, vomit, guard, camera, stinkbomb, dirty toilet, fireworks.</summary>
 	public const int Count = 8;
+	public const int Entertainer = 0;
 	public const int Vomit = 2;
+	public const int Guard = 3;
 	public const int Stinkbomb = 5;
 
 	/// <summary>The table from the balance settings (rows the file lacks spread nothing).</summary>

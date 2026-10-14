@@ -23,6 +23,8 @@ public enum GuestState : byte
 	WaitingToBoard = 14,
 	ExitingRide = 15,
 	Using = 16,
+	/// <summary>Caught by a guard: carried, out of sight, until the guard sets it down (original state 17, set by 0x004FEB10).</summary>
+	HeldByGuard = 17,
 	LeavingPark = 18,
 	CrossingRoadHome = 19,
 	WaitingToGoHome = 21,
@@ -81,7 +83,7 @@ public sealed class Guest
 	public float DistanceWalked { get; internal set; }
 	/// <summary>Presentation counterpart of <see cref="DistanceWalked"/>, interpolated like <see cref="DrawX"/>.</summary>
 	public float DrawDistanceWalked { get; internal set; }
-	public bool IsVisible => State is not (GuestState.Using or GuestState.Gone);
+	public bool IsVisible => State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone);
 
 	public float Hunger { get; internal set; }
 	public float Thirst { get; internal set; }

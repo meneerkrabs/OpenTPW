@@ -324,6 +324,17 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- The player can call a mechanic and draw patrol areas, as in the original (tp.exe `0x4dfe30`, `0x4b5b50`, `0x524960`, `0x506f30`;
+  ECON-049, ECON-022; [WANDER-plan.md](reverse/WANDER-plan.md) §4). The ride panel shows the original call button (`b_callmech`, or
+  `b_callhandy` on a toilet): a call closes the ride and the nearest free mechanic comes even when nothing is broken (a toilet's call brings a
+  handyman from anywhere); the repair reopens it, and a second click cancels the call (greyed with no mechanics or on strike, UIHELPTEXT
+  574/575). The employee view of the staff window has "Patrol area" and "Whole park" buttons (UIHELPTEXT 86/87): two clicks on the map
+  set the rectangle, and staff then keep to it, walking into it first when they stand outside.
+- Mechanics now walk to their rides as in the original (tp.exe `0x4da490`, `0x4da5b0`, `0x4daa90`; ECON-021, ECON-022;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level a mechanic idles or patrols and, from where he stands, takes the nearest ride
+  that is broken down or being upgraded (not the park's worst one), walks there and starts the repair (`(100 − state of repair) ×
+  WorkDuration / 100` turns) or the upgrade only when he arrives. Rides merely worn are no longer serviced before they break, as in the
+  original. Every staff role in a level now runs its own state machine.
 - Researchers now wander and research as in the original (tp.exe `0x5029f0`; ECON-022): a spell of `WorkDuration` turns where they stand
   (cat_staff 138 now and then), then they wander on; their points still come every 20th turn. Every staff role a level drives now walks
   to rest and to strike (`0x506a40`, `0x505fe0`, `0x5061d0`, `0x506300`; [WANDER-plan.md](reverse/WANDER-plan.md) §4): a tired member
@@ -907,6 +918,18 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
+  applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
+  places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a
+  Pick up button (refused on strike, in hand, escorting or on an unsuitable cell) that starts the Carry tool; a valid click drops the member on the cell
+  centre, idle, with no steering state, litter or toilet claim, and a mechanic loses its ride so the dispatch runs again; the patrol rectangle is never
+  touched, cancelling drops it back where it was, a new pick-up first drops the previous member, and a save drops a carried member on its old cell.
+  Staff are drawn as camera-facing sprites of `esprites.wad` through `StaffRenderer` (folder by role and theme, bank from the member, clip by job:
+  stand, walk at full or half rate, sweep, repair, research, strike, guard carry), resting members are hidden, and the tool shows the slot 6 dangling
+  sprite over the hovered cell and a red ground marker on invalid cells. The only change in `StaffWorldSimulation` is the `Synchronize` condition that
+  leaves a member in hand without a position alone. New register IDs ECON-052/053, GUEST-013..016 and UI-097..100; tests `StaffPlacementTests`,
+  `StaffSpriteTests`, `StaffSpriteAssetTests`; the native jungle smoke hires, places, draws (GPU readback), picks up and drops a handyman
+  ([STAFF-PLACEMENT.md](STAFF-PLACEMENT.md)).
 - **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
   with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
   live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still

@@ -154,6 +154,25 @@ public class RideUpgradeIngressTests
 	}
 
 	[TestMethod]
+	public void TheCallButtonCallsAMechanicClosingTheRideAndCancelsTheCall()
+	{
+		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var first, out _, out _ ); var context = Context();
+		void Frame() => hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		Frame();
+		var button = (UiButton)hud.Screen.Find( "callStaff" )!;
+		Assert.IsTrue( button.Visible ); Assert.AreEqual( "b_callmech", button.Model );
+		Assert.IsFalse( button.Enabled, "no mechanic hired (UIHELPTEXT 574)" );
+		EconomyTestData.HireBest( economy, StaffType.Mechanic ); Frame();
+		Assert.IsTrue( button.Enabled );
+		Assert.IsTrue( economy.TryGetObject( level.GetEconomyInstance( first )!.Value, out var state ) );
+		Assert.IsTrue( first.IsOpen );
+		button.Activate(); Frame();
+		Assert.IsTrue( state.MaintenanceRequested ); Assert.IsFalse( first.IsOpen, "the call closes the ride (0x004DFE30)" ); Assert.IsTrue( button.Selected!() );
+		button.Activate(); Frame();
+		Assert.IsFalse( state.MaintenanceRequested ); Assert.IsTrue( first.IsOpen, "cancelled, it reopens" );
+	}
+
+	[TestMethod]
 	public void SimultaneousMouseApplyAndAcceptPostsOnlyOneUpgrade()
 	{
 		var hud = Fixture( BuildCategory.Rides, out _, out var economy, out _, out _, out _ ); var context = Context(); Research( economy ); var cash = economy.Balance; Open( hud, context );

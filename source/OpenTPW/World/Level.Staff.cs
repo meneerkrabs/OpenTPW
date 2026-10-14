@@ -3,6 +3,12 @@ namespace OpenTPW;
 public partial class Level
 {
 	public StaffWorldSimulation? StaffWorld { get; private set; }
+	/// <summary>The hire and pick-up tools of the staff (docs/STAFF-PLACEMENT.md); null without a park economy.</summary>
+	public StaffPlacement? StaffPlacement { get; private set; }
+	/// <summary>The patrol area tool of the employee view (tp.exe mouse mode 0x36); null without a park economy.</summary>
+	public PatrolAreaTool? PatrolTool { get; private set; }
+	/// <summary>Draws the placed staff and the tool's dangling sprite.</summary>
+	public StaffRenderer? StaffRenderer { get; private set; }
 
 	private void SetupStaff()
 	{
@@ -17,6 +23,9 @@ public partial class Level
 		StaffWorld.RestAreas = RestSites;
 		StaffWorld.GatesOpen = () => Gate?.GateStatusIsOpen == true;
 		StaffWorld.RestingStaff = SetRestingStaff;
+		// the mechanics' nearest-ride test measures to the ride's own cell (its thing's position)
+		StaffWorld.RideCells = instance => economyInstances.FirstOrDefault( pair => pair.Value == instance && !pair.Key.IsDeleted ).Key is { } ride
+			? (ride.Placement.X, ride.Placement.Y) : null;
 		Guests.IsEscorted = StaffWorld.IsEscorting;
 		Guests.Pranked += ( guest, _ ) =>
 		{
@@ -24,6 +33,26 @@ public partial class Level
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
 		AttachStaffWorld();
+		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsPathBlocked );
+		PatrolTool = new PatrolAreaTool( () => Park?.Economy );
+		if ( OriginalPark != null )
+		{
+			StaffSpriteSet sprites;
+			using ( LoadProfile.Measure( "staff-sprites" ) )
+				sprites = StaffSpriteSet.Load( LevelName );
+			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement );
+		}
+	}
+
+	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
+	public void EndBuildTools()
+	{
+		PatrolTool?.Cancel();
+		CellTool.Cancel();
+		ExitCoasterTool();
+		BuildEntry = null;
+		IsPlacing = false;
+		IsRemovingObjects = false;
 	}
 
 	/// <summary>The economy's staff worlds; a park load replaces the economy, so it runs again then.</summary>

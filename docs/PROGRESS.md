@@ -1095,6 +1095,13 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
   mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
   narrowed to what remains. No determinism or coaster pin moved.
+- **Coaster register round 2 (October 14):** the COAST findings read against the Windows tp.exe. Trains never stop: arriving trains
+  unload in any state, guests board only while the ride is open as cars roll through the station window (admission ring filled by
+  COAST 1), headway comes from the halved winch floor and the collision exchange, closed trains circulate empty. The track's
+  self-intersections are counted (`0x439ab0`) and guests refuse a coaster with a nonzero count. Pylon heights come from the
+  model's track dummy, with the stack offset and loop pylons placed as a pair. The swing uses the PC sine table, textures scroll
+  by the power factor, and the end node keeps the PC flags. COAST-007, 016, 018 retired; 025, 027, 031 and the completion click
+  are extensions; the rest narrowed; COAST-019 and the three-node station (COAST-029) stay open. Old coaster saves migrate.
 - **Ride particles (October 14):** RSE EVENT types 1 and 2 now create, simulate and draw particles of the original system
   (docs/PARTICLES.md). `Data/Particle/Tp2.plb` (105 templates, 20 effectors) is read by `ParticleTemplateFile`; `ParticleSystem`
   mirrors the traced pool (120 emitter slots, 2048 particles, private LCG seeded 1, 31 ms ticks, bursts, per-quarter rates,

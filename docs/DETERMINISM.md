@@ -47,7 +47,7 @@ derives every simulation stream from it:
 | Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `System.Random(seed)` (DET-013) | `ParkObjects` |
 | Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `System.Random(seed)` (DET-013) | `RideScriptWorld` |
 | Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `System.Random(seed)` | parent `RideVM` |
-| Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (COAST-027) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
+| Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (`[EXT:coaster-rng-seed]`, formerly COAST-027) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
 | Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG; draws do not store the successor (sound_shared `0x100118C8`) | `SoundEventSystem` |
 
 The stream keys are chosen so that the default seed reproduces the seeds each
@@ -122,7 +122,7 @@ state and needs no renderer, so tests run the same save, load and hash code. Sav
 (older files and economy-only callers) still load, but those streams are not
 restored. This legacy file does not hold guests, queues or object script state, so a
 `LoadPark` keeps the running guests and scripts (DET-016). Coaster tracks, trains and
-the coaster generator are not saved by it either (COAST-025).
+the coaster generator are not saved by it either (the own-format park save holds them, `[EXT:coaster-own-save]`).
 
 The park-resume world save (docs/PARK-SAVES.md) is separate: its
 `opentpw-world` envelope captures the whole running park — layout, guests,
@@ -153,7 +153,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `manager_pass_counter` | no RSE manager pass; per-VM `SliceCount` is in the script digest | **missing** |
 | `park_turn` | `ParkEconomy.Turn` | yes |
 | `world_rng_state` | economy, guest and script-world stream states | substitute (three streams) |
-| `coaster_rng_state` | `CoasterWorld.Random` (the original's `s·214013 + 2531011` LCG, started from the world seed, COAST-027) | yes (after the script digest, with the coasters) |
+| `coaster_rng_state` | `CoasterWorld.Random` (the original's `s·214013 + 2531011` LCG, started from the world seed, `[EXT:coaster-rng-seed]`) | yes (after the script digest, with the coasters) |
 | `clib_rng_state` | no C-library generator | **missing** |
 | `sound_seed` | `SoundEventSystem.Seed` | **not hashed** (saved; see below) |
 | `scale` | `ParkEconomy.Speed` | yes |
@@ -165,7 +165,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's walk speed and steering state and its queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists (each bounce slot with its deadline and start) | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
-| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank), controller state (initialised, closed, ride mode, speed setting, seats, speed cap, net track money, time, last departure, braking start), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, state, boarding time, riders per car) and riders waiting to leave | yes (extra, after the script digest) |
+| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate), controller state (initialised, closed, ride mode, speed setting, seats, speed cap, net track money, time, braking start, platform start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
 | (tracks) | the track layer after the cell map (every track cell: type, mask, link, flags, piece, parent, rotation, overlap, segment) and `RideScriptWorld.Bumpers`: the cosmetic LCG, then every controller (type, laps, performance, phase, state, validity, tick count and clock, station, sections, waiting and leaving guests, every boat's slot, flags, position, velocity, heading, spin, target buoy, laps and rider count) — both only while a track or controller exists, so every park without one keeps its earlier digests and the schema stays 14 (TRACKS.md); bumper cars add the chase target and the drawn heading and yaw to their boats' fields (the same conditional extension: only while a controller exists, no schema bump, as for the water and kart fields); boats draw their aiming jitter from the script stream (`RideScriptWorld.NextWorldDraw`, DET-013) | yes (extra, after the coasters) |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -203,6 +203,14 @@ snapshots restore at the creation value). No pinned hash moved. The scripted-obj
 (`TotemScriptTraceWithItsObjectIsPinned`) was re-pinned deliberately: Totem's `InitSpeed` is above 50, so its animation
 waits (`out / script speed`) and its WAITs (`operand / script speed`, STP-PPC 0xb0658) are now shorter, which moves
 every later timestamp of its 30 s trace by up to about 1.2 s.
+
+Coaster register round 2 (October 14): the coaster hash content changed shape (the trains drop the stop-and-dispatch state, last
+departure and boarding clock; they gain the train flags, the boarding span, the seated-at-the-station lists, the admission
+ring, the platform start, the station window, the intersection count and each node's loop rotate). No pinned golden or
+resume hash in the suite depended on a running coaster's content, so none had to be re-pinned; the coaster tests assert
+relations (boarded equals released, hash round trips, an old save migrates and loads). The shape of the
+save moved with it, so a save of the earlier shape is migrated on load (stop-and-dispatch states, no ring, end node `0x144`,
+no loop rotate) and its hash is recomputed in the new shape.
 
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the

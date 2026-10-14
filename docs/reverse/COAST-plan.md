@@ -910,3 +910,38 @@ rate fallback (4.4), the straight tangent case and the Y zeroing (13.3), the aut
   (`0x36fb4/b8`, `0x36fe4/e8`) and the derivative `0x41c0c` is
   `c1 + fmadds(t, t·(3·c3), t·(2·c2))` with the Bézier's fused coefficients.
 - The LoopPylon `fMaxLoopHeightDifference` default is the raw 25.0 (`0x2d5d4`).
+
+## 21. Corrections from the PC register round 2 (October 14, COAST-REPORT-2)
+
+The Windows executable `tp.exe` (TPW-EXE) was read for the COAST items; where it differs from the Mac readings above, OpenTPW
+follows the PC instructions (docs/COASTERS.md "Running", `CoasterRide`, `CoasterCollision`).
+
+- 5.3, 5.4, 9.7 item 8 (stop and dispatch): the PC never stops a train. The motion tick `0x43ce20` has no zero-speed branch, the
+  controller tick `0x435a30` runs it in states 2, 4 and 8 and the station step `0x43b8b0` in states 4 and 8 outside mode 64;
+  arrival unloads in any state, state 4 seats guests from the admission ring into the cars inside the window `[ctl+0xf8, ctl+0xfc]`,
+  departure swaps the two rider lists of each car. `COAST 2` is the capacity minus the admission ring (`0x43b1f0`), closing moves the
+  ring into the leaving ring (`0x43b390`). The round-2 report said trains do not collide: `0x43cd60` (called after every hop of
+  `0x43ce20`) exchanges speed with the train ahead when it is overtaken and flags it `0x40`; the headway test at the end of
+  `0x43ce20` multiplies the sample count between two trains by spacing over the speed of the sample numbered by the *train's own
+  index* (a loop counter reused as a sample index, `0x43d85f`).
+- 5.4: controller `+0x140` is the **self-intersection count** on the PC (writers `0x439c40`, `0x43ad50` only), not riders on board;
+  the PC keeps riders per train (`+0x10`). The guest predicate `0x441970` tests it.
+- 3.2 (pylon mesh heights): `0x430590` takes h0, h1 and the stack offset from the model's dummies. The attribute records of the
+  model give the dummy number (counted from 1 over the dummy nodes): the track dummy is the one of the first record with bit
+  `0x800000`, the stack dummy of the first with `0x100000`; the loft clip fractions are `clamp(Add, StartCap, EndCap)` and
+  `clamp(Multiplier + Add, StartCap, EndCap)` (`fLoftAnim*`, copied when nonzero at `0x42ef05`). fMinHeight becomes `max(fMinHeight, h0)`.
+  A stacked node's height adds each lower pylon's `h0 + t(h1 − h0)` and the stack offset (`0x433280`).
+- 15 (end node): the call `0x435570` passes the creation parameters `0x144`; the node constructor `0x434060` maps parameter bits to
+  node flags (`0x40` → `0x80000`, `0x100` → `0x100000`, `0x4` → `0x433bd0`, bit 0 clear → `0x200000`), so the end node is not a loop
+  node and carries no `0x4` or `0x100`. The Mac site `0x37e34` could not be compared (no Mac binary in the register round).
+- 13.9 (loops): a loop pylon comes in pairs. Loop mode sets the counter `0x79c664` to 2 (`0x442cd0`), `0x435020` decrements it; the node
+  constructor gives the first node flags `0xe0` and loop rotate 0, the second `0x60` and 0.5 (`0x434153`).
+- 13.6 and 17.3 (frames): the original's sample list starts at the platform start (its end node stands on the first station node and
+  the closing pair is the platform's one-sample stub), the braking zone `[ctl+0x134, count)` lies before the platform and the window
+  `[ctl+0xf8, ctl+0xfc]` between the sample coordinates of the first and third station node narrowed by `fEntranceSizeInterval`
+  (`0x43b750`). OpenTPW's station has two nodes, so the same frame is built from the end node's knot (`CoasterRide.PlatformStart`).
+- 13.7: the PC runtime sine table is `T[k] = f32(fsin(k/4096 · f32(2π)))` with scale `f32(4096 · f32(1/2π))` (`0x4708d0`); lookups round the
+  index to nearest (`fistp`), except inside the self-intersection pass, which sets the truncating control word (`0x439ac4`).
+- Collision (COAST-004): the track is tested against itself (`0x439ab0` → `0x439c40` → `0x43a2b0`), with the five default collision points
+  `(4, 8), (4, 0), (0, −3), (−4, −1), (−4, 8)`; there is no terrain or scenery collision.
+- Render (COAST-026): the textures scroll by `P · Δt` per frame with P the power factor (`0x435adf`); `fScrollRate` is not read there.

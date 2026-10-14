@@ -607,14 +607,15 @@ public sealed class CoasterRide
 			{
 				var first = train.FirstBoardingCar;
 				var last = train.LastBoardingCar;
+				// The original reads the first and last car index 0x43b7e0 returns even when no car is inside; OpenTPW's cars have no extents, so a train that overlaps the window can have none, and then nothing is seated this step.
 				if ( CarsInWindow( train, out var newFirst, out var newLast ) )
 				{
 					first = Math.Min( newFirst, first );
 					last = Math.Max( newLast, last );
+					SeatGuests( train, first, last - first + 1 );
+					train.FirstBoardingCar = first;
+					train.LastBoardingCar = last;
 				}
-				SeatGuests( train, first, last - first + 1 );
-				train.FirstBoardingCar = first;
-				train.LastBoardingCar = last;
 			}
 			train.Flags |= CoasterTrainFlags.InStation;
 		}

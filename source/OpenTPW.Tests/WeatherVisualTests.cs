@@ -241,6 +241,46 @@ public class WeatherVisualTests
 	}
 
 	[TestMethod]
+	public void NoBoltPassesTheSegmentCapWhateverTheSeed()
+	{
+		var most = 0;
+		for ( ulong seed = 1; seed <= 3000; seed++ )
+		{
+			var count = WeatherVisualState.BuildBolt( new NVector3( 0, 300, 0 ), new NVector3( 0, 0, 0 ), seed ).Count;
+			Assert.IsTrue( count <= WeatherVisualState.MaximumBoltSegments, $"seed {seed} made {count} segments" );
+			most = Math.Max( most, count );
+		}
+		Assert.IsTrue( most > 100, "ordinary bolts still reach their natural length" );
+		var capped = WeatherVisualState.BuildBolt( new NVector3( 0, 300, 0 ), new NVector3( 0, 0, 0 ), 576 );
+		Assert.IsTrue( capped.Count <= WeatherVisualState.MaximumBoltSegments );
+		Assert.AreEqual( new NVector3( 0, 0, 0 ), capped.Where( segment => segment.Depth == 0 ).Last().B, "a capped bolt still reaches the ground" );
+	}
+
+	[TestMethod]
+	public void TheWeatherImagesResolveInAnyLetterCaseThroughTheGameFileSystem()
+	{
+		var root = System.IO.Path.Combine( System.IO.Path.GetTempPath(), $"opentpw-weather-{Guid.NewGuid():N}" );
+		try
+		{
+			var folder = System.IO.Path.Combine( root, "Generic", "Weather" );
+			System.IO.Directory.CreateDirectory( folder );
+			foreach ( var name in new[] { "Raindrop.tga", "SNOW.TGA", "lightning.tga" } )
+				System.IO.File.WriteAllBytes( System.IO.Path.Combine( folder, name ), new byte[] { 1, 2, 3 } );
+			var files = new BaseFileSystem( root );
+			Assert.AreEqual( 3, WeatherRenderer.ImagePaths.Length );
+			foreach ( var path in WeatherRenderer.ImagePaths )
+			{
+				Assert.IsTrue( files.FileExists( path ), $"{path} is found" );
+				CollectionAssert.AreEqual( new byte[] { 1, 2, 3 }, files.ReadAllBytes( path ), path );
+			}
+		}
+		finally
+		{
+			System.IO.Directory.Delete( root, recursive: true );
+		}
+	}
+
+	[TestMethod]
 	public void BranchesAppearAndDeeperOnesAreNarrower()
 	{
 		var branched = Enumerable.Range( 1, 40 )

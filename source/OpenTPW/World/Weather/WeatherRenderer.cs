@@ -19,7 +19,8 @@ namespace OpenTPW;
 // [APPROX:AUDIO-904] the rain field lives within +-4 original units (0.8 engine units) of the eye, so the camera's 0.1 near plane clips the nearest drops (those within 0.5 original units of the eye plane) instead of the original's near clip, which is not traced; the vertex buffer is sized once for 1024 drops plus 16 bolts of 512 segments, so a browser session allocates no further per-frame GPU memory
 public sealed class WeatherRenderer : Entity
 {
-	private const string ImageFolder = "/data/generic/weather/";
+	/// <summary>The weather images relative to the game's data root, as the game file system reads them: any letter case, on any mount (the desktop's Data folder, the browser's /game/Data).</summary>
+	internal static readonly string[] ImagePaths = { "/generic/weather/raindrop.tga", "/generic/weather/snow.tga", "/generic/weather/lightning.tga" };
 
 	private const int VerticesPerQuad = 6;
 	/// <summary>Worst-case vertex count: the drop field (rain or snow, one at a time) plus every bolt, allocated once.</summary>
@@ -53,9 +54,9 @@ public sealed class WeatherRenderer : Entity
 		Name = "Weather";
 		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
 		// first simulation step — so no gameplay frame pays the shader compile and pipeline build mid-rain.
-		rainMaterial = Prepare( "raindrop.tga", MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
-		snowMaterial = Prepare( "snow.tga", MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
-		boltMaterial = Prepare( "lightning.tga", MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
+		rainMaterial = Prepare( ImagePaths[0], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
+		snowMaterial = Prepare( ImagePaths[1], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
+		boltMaterial = Prepare( ImagePaths[2], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
 	}
 
 	/// <summary>A material textured with one weather image from the game data, or null when the game folder lacks it (nothing of that kind is drawn then).</summary>
@@ -64,7 +65,7 @@ public sealed class WeatherRenderer : Entity
 		Texture texture;
 		try
 		{
-			texture = new Texture( GameDir.GetPath( ImageFolder + image ) );
+			texture = new Texture( image );
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException )
 		{
@@ -208,11 +209,20 @@ public sealed class WeatherRenderer : Entity
 /// <summary>The park's weather as the renderer reads it: the simulated drops, kind and bolt tops, with the bolt lifetime from the settings.</summary>
 internal sealed class ParkWeatherVisualSource( ParkWeather weather ) : IWeatherVisualSource
 {
+	private readonly List<SVector3> tops = new();
+
 	// [BIN:STP-PPC:engine_shared 0x1001FCE4 drawn count] the drawn count is min(CurrentDrops, MaxRaindrops) of the field's 1024 points
 	public int DropCount => Math.Min( weather.CurrentDrops, weather.MaxRaindrops );
 	public bool Snow => weather.Snow;
 	public float BoltLifetimeSeconds => weather.LightningTimeMilliseconds / 1000f;
-	public IReadOnlyList<SVector3> TakeBoltTops() => weather.TakeBoltTops().Select( top => top.GetSystemVector3() ).ToList();
+
+	/// <summary>The tops struck since the last call, in reusable storage valid until the next call, so a frame without strikes allocates nothing.</summary>
+	public IReadOnlyList<SVector3> TakeBoltTops()
+	{
+		tops.Clear();
+		weather.DrainBoltTops( tops );
+		return tops;
+	}
 }
 
 /// <summary>Creates the weather's renderer with the weather itself: the park's simulation stays free of render concerns.</summary>

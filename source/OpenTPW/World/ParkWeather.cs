@@ -160,6 +160,13 @@ public sealed class ParkWeather
 		return struck;
 	}
 
+	/// <summary>Moves the bolt tops struck since the last call into <paramref name="into"/> as System.Numerics vectors, allocating nothing.</summary>
+	internal void DrainBoltTops( List<System.Numerics.Vector3> into )
+	{
+		while ( boltTops.Count > 0 )
+			into.Add( boltTops.Dequeue().GetSystemVector3() );
+	}
+
 	/// <summary>Bound for the pending bolt tops: strikes come at most once a park turn, and hosts drain them per frame.</summary>
 	public const int MaximumPendingBoltTops = 64;
 

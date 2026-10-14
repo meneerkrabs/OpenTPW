@@ -224,11 +224,13 @@ public sealed class WeatherVisualState
 		var rng = new DeterministicRandom( seed );
 		var segments = new List<WeatherBoltSegment>();
 		float U() => rng.Next( 1 << 20 ) / (float)(1 << 19) - 1f;
+		// Every piece still to be split or already final counts once, so the leaves can never pass the bound however the recursion unwinds.
+		var pieces = 1;
 
 		void Split( NVector3 a, NVector3 b, int depth )
 		{
 			var lengthSquared = (b - a).LengthSquared();
-			if ( lengthSquared < 6f + 2f * U() || segments.Count >= MaximumBoltSegments - 1 )
+			if ( lengthSquared < 6f + 2f * U() || pieces + 1 > MaximumBoltSegments )
 			{
 				segments.Add( new WeatherBoltSegment( a, b, depth ) );
 				return;
@@ -240,8 +242,11 @@ public sealed class WeatherVisualState
 			var lift = NVector3.Cross( direction, side );
 			var middle = (a + b) * 0.5f + (side * U() + lift * U()) * (BoltRoughness * length * 0.25f);
 
-			if ( depth < MaximumBranchDepth && rng.Next( 512 ) < 9 )
+			pieces++;
+
+			if ( depth < MaximumBranchDepth && pieces + 1 <= MaximumBoltSegments && rng.Next( 512 ) < 9 )
 			{
+				pieces++;
 				var branchDepth = depth + 1;
 				var branchLength = 2.5f * (512 + rng.Next( 1024 )) / (96f * branchDepth);
 				var heading = NVector3.Normalize( direction * 0.5f + new NVector3( U(), 0, U() ) * 0.5f + new NVector3( 0, -0.6f, 0 ) );

@@ -231,7 +231,7 @@ FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) return the AnimID, or
 effect) the script has no object, and every trigger uses 0 ms as the original's
 null-object path does (`li r3,0` at 0xafb1c, 0xafc74, 0xafe88, 0xb0078, 0xb01d4,
 0xb032c, 0xb0510): the triggers write 300, WAITANIM waits `INT32_MAX` ms, and
-TRIGWAITANIM never resumes (RIDES-037 for a literal out operand). Game objects
+TRIGWAITANIM never resumes for a variable out operand; a literal out operand word 0x0000vvvv resumes once v equals the triggered AnimID (PC 0x5535c7, 0x552cd3: both compare the raw word + 1 with the token). Game objects
 always have a host (`OriginalObjectEffects`); only headless VMs reach this.
 TOUR/BUMP/COAST use the independently reviewed command
 contracts from [PPC-rides](reverse/PPC-rides.md) (`15313d2`): mutators preserve
@@ -263,7 +263,7 @@ Supported admission/query values still come exclusively from the effect
 implementation. It does not create visitors, vehicles, capacities, queues,
 or success responses. Original controller systems remain unimplemented.
 
-The head table binding is qualified separately: the Mac ADDHEAD/DELHEAD handler reads the calling script table. OpenTPW shares an attraction table with resolved child/sound VMs (HEADS-005); none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode. See the full inventory and pixel proof in GUESTS.md.
+Every script has its own head table (the Mac script init 0x100B2BA0 also runs for SPAWNCHILD and SPAWNSOUND), and OpenTPW gives resolved child/sound VMs their own tables; whether a child takes its parent's thing id is untraced (HEADS-005); none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode. See the full inventory and pixel proof in GUESTS.md.
 
 ## Corpus run (`RideVMCorpusTests`)
 
@@ -305,9 +305,10 @@ unknown-command safety faults.
 `TotemScriptTraceWithItsObjectIsPinned` pins 30 s of Totem.RSE run as the placed
 original object (`OriginalObjectRuntime`, seed 1234, capacity 6, no visitors), so
 the animation opcodes have their real host: WAITANIM 0 at 16 ms plays AnimID 0 and
-waits its length less 300 ms (to 4,516 ms), then the 10 s passenger time-out,
-WAIT 700, VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 15,216 ms,
-TRIGANIM 5 at 15,733 ms, the sound/object timeline to 27,783 ms, then WAIT4ANIM
+waits its length less 300 ms divided by the script speed (Totem's `InitSpeed` 60 gives
+1.1), then the 10 s passenger time-out, WAIT 700 (also divided by the speed),
+VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 14,749 ms, TRIGANIM 5 at
+15,216 ms, the sound/object timeline to 26,216 ms, then WAIT4ANIM
 and VAR_RUNNING = 0 because nobody boarded. All five clip requests resolve.
 `TotemWithoutAnObjectWaitsOnItsFirstWaitAnim` pins the same script with no host:
 like the original's null-object path its first WAITANIM gets 0 ms and waits
@@ -471,7 +472,7 @@ handler attributes diverge.
 | 41 | `POP` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 42 | `HUSH` | 39 | hooked | unknown upstream; corpus input (`HUSH VAR_LETMEON` before boarding) |
 | 43 | `HOP` | 39 | hooked | unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
-| 44 | `WAIT` | 458 | implemented | docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`) |
+| 44 | `WAIT` | 458 | implemented | STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`) |
 | 45 | `WAITABS` | 0 | implemented | STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901) |
 | 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |

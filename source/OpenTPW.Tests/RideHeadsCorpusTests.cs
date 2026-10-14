@@ -88,20 +88,99 @@ public class RideHeadsCorpusTests
 	}
 
 	/// <summary>
-	/// A head that a jungle ride script places hangs from a model node: the nodes named after the head ids. Eruption names
-	/// no node for its head 1 (its node is called Head1a), so that head is not drawn.
+	/// A head that a ride script places hangs from the node of its record (header+0x46 + record index): every id of
+	/// the run resolves to a node, including Eruption's head 1 whose node is called Head1a.
 	/// </summary>
 	[TestMethod]
-	public void JungleHeadsHangFromNamedNodes()
+	public void JungleHeadsResolveThroughTheirRecords()
 	{
-		var drawable = Scripted().Where( x => x.Theme == "jungle" && x.Adds > 0 )
-			.ToDictionary( x => x.Entry.DisplayName, x => x.Space!.Count == 0 ? 0 : Enumerable.Range( 0, x.Space.Count ).Count( slot => x.Space.NodeAt( slot ) >= 0 ) );
+		var drawable = Scripted().Where( x => x.Theme == "jungle" && x.Adds > 0 && x.Space != null )
+			.ToDictionary( x => x.Entry.DisplayName, x => Enumerable.Range( 0, x.Space!.Count ).Count( slot => x.Space.NodeAt( slot ) >= 0 ) );
 		Assert.AreEqual( 32, drawable["Sun God"] );
 		Assert.AreEqual( 16, drawable["Crazy Ape"] );
 		Assert.AreEqual( 5, drawable["Mumbo"] );
 		Assert.AreEqual( 8, drawable["Rocky Racers"] );
 		Assert.AreEqual( 40, drawable["Tom Tom Twister"] );
-		Assert.AreEqual( 15, drawable["Eruption"] );
+		Assert.AreEqual( 16, drawable["Eruption"] );
+	}
+
+	/// <summary>Every head record of every ride and car model has the matrix flag 0x30 and a node inside the model, and the first record of an id wins.</summary>
+	[TestMethod]
+	public void EveryHeadRecordHasAMatrixAndAValidNode()
+	{
+		var checkedRecords = 0;
+		foreach ( var (theme, entry, _, _, _, model) in Scripted() )
+		{
+			for ( var index = 0; index < model.DummyAttributes.Count; index++ )
+			{
+				var attribute = model.DummyAttributes[index];
+				if ( (attribute.Type & RideHeadSpace.HeadFlag) == 0 )
+					continue;
+				checkedRecords++;
+				Assert.AreNotEqual( 0u, attribute.Type & 0x30, $"{theme}/{entry.DisplayName} record {index} type {attribute.Type:x}" );
+				var node = model.Counts.Unknown46 + index;
+				Assert.IsTrue( node < model.Nodes.Count, $"{theme}/{entry.DisplayName} record {index} node {node}" );
+			}
+		}
+		Assert.IsTrue( checkedRecords > 100 );
+		foreach ( var wad in CarWads() )
+		{
+			foreach ( var (name, model) in CarModels( wad ) )
+				for ( var index = 0; index < model.DummyAttributes.Count; index++ )
+				{
+					var attribute = model.DummyAttributes[index];
+					if ( (attribute.Type & RideHeadSpace.HeadFlag) == 0 )
+						continue;
+					Assert.AreNotEqual( 0u, attribute.Type & 0x30, $"{name} record {index}" );
+					Assert.IsTrue( model.Counts.Unknown46 + index < model.Nodes.Count, $"{name} record {index}" );
+				}
+		}
+	}
+
+	private static string[] CarWads()
+	{
+		var dataPath = OriginalParkImportTests.OriginalDataPath();
+		return new[] { "coaster1.wad", "coaster3.wad", "minecart.wad", "tourride.wad", "monkey.wad" }
+			.SelectMany( name => new[] { "jungle", "hallow" }.Select( theme => Path.Combine( dataPath, "levels", theme, "rides", name ) ) )
+			.Where( File.Exists ).ToArray();
+	}
+
+	private static IEnumerable<(string Name, ModelFile Model)> CarModels( string wad )
+	{
+		using var archive = new WadArchive( wad );
+		foreach ( var member in archive.Root.Children.OfType<ArchiveFile>().Where( x => x.Name!.EndsWith( ".MD2", StringComparison.OrdinalIgnoreCase ) ) )
+			yield return ($"{Path.GetFileName( wad )}/{member.Name}", new ModelFile( new MemoryStream( member.GetData() ) ));
+	}
+
+	/// <summary>The traced record-to-node mapping on the known models: monkey.MD2 id 3 is node 10 Head02 and id 5 Head06; Bird.MD2 id 9 is node 2 Head03.</summary>
+	[TestMethod]
+	public void KnownModelsMapHeadIdsToTheirTracedNodes()
+	{
+		var all = CarWads().SelectMany( CarModels ).ToArray();
+		ModelFile Find( string name ) => all.First( x => x.Name.EndsWith( "/" + name, StringComparison.OrdinalIgnoreCase ) ).Model;
+		var monkey = Find( "monkey.MD2" );
+		Assert.AreEqual( 10, RideHeadSpace.NodeForHead( monkey, 3 ) );
+		Assert.AreEqual( "Head02", monkey.Nodes[10].Name.Trim() );
+		var five = RideHeadSpace.NodeForHead( monkey, 5 );
+		Assert.AreEqual( "Head06", monkey.Nodes[five].Name.Trim() );
+		var bird = Find( "Bird.MD2" );
+		Assert.AreEqual( 2, RideHeadSpace.NodeForHead( bird, 9 ) );
+		Assert.AreEqual( "Head03", bird.Nodes[2].Name.Trim() );
+		Assert.AreEqual( RideHeadSpace.NoRecord, RideHeadSpace.NodeForHead( bird, 10 ) );
+	}
+
+	/// <summary>The head sprite sets are 7 direction rows of 8 frames: the 56-frame binning of the presentation lines up with the ESP slot 0.</summary>
+	[TestMethod]
+	public void HeadArtIsSevenRowsOfEightFrames()
+	{
+		foreach ( var atlas in GuestSpriteAtlas.LoadKidHeads() )
+		{
+			var slot = atlas.Animations.Animations[GuestSpriteAtlas.StandSlot];
+			Assert.AreEqual( 0, slot.FirstFrame, atlas.Name );
+			Assert.AreEqual( HeadPresentation.Columns, slot.FramesPerDirection, atlas.Name );
+			Assert.AreEqual( HeadPresentation.Rows, slot.Directions, atlas.Name );
+			Assert.IsTrue( atlas.Frames.Length >= HeadPresentation.Rows * HeadPresentation.Columns - 1, atlas.Name );
+		}
 	}
 
 	/// <summary>Head space of the tube and Space Balls' models: Tubes Of Zob runs ADDHEAD but its model has no head id 1, so its table is null.</summary>

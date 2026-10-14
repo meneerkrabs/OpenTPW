@@ -870,8 +870,8 @@ public class ParkEconomyTests
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1180, out var minecart ) );
 		var balance = park.Balance;
 		park.AdvanceDays( 1 );
-		Assert.AreEqual( balance + 7500, park.Balance );
-		Assert.AreEqual( 7, events.Single( item => item.Kind == ParkEventKind.ChallengeCompleted ).InfoId );
+		Assert.AreEqual( balance, park.Balance, "a part with a follow-up pays no prize (0x4d2fb0)" );
+		Assert.AreEqual( (7, 0L), events.Single( item => item.Kind == ParkEventKind.ChallengeCompleted ) is var won ? (won.InfoId, won.Amount) : default );
 		Assert.AreEqual( 8, park.Objectives.Current!.DefinitionIndex, "follow-up type 20 for the same ride" );
 		park.AcceptChallenge();
 		park.RecordRideUse( minecart!.Id );
@@ -880,7 +880,7 @@ public class ParkEconomyTests
 		park.RecordRideUse( minecart.Id );
 		park.AdvanceDays( 1 );
 		Assert.IsNull( park.Objectives.Current );
-		Assert.AreEqual( 37500, park.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome ) + park.Ledger.History.Sum( month => month[LedgerCategory.OtherIncome] ) );
+		Assert.AreEqual( 30000, park.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome ) + park.Ledger.History.Sum( month => month[LedgerCategory.OtherIncome] ), "only the chain's last part pays" );
 		park.AdvanceDays( 270 );
 		Assert.AreEqual( 1, park.Objectives.Current!.DefinitionIndex );
 		park.DeclineChallenge();
@@ -891,9 +891,21 @@ public class ParkEconomyTests
 		var failing = EconomyTestData.Park();
 		failing.AdvanceDays( 540 );
 		failing.AcceptChallenge();
+		var failed = new List<ParkEvent>();
+		failing.EventRaised += failed.Add;
 		failing.AdvanceDays( 60 );
 		Assert.IsNull( failing.Objectives.Current );
-		Assert.IsTrue( failing.Objectives.Finished.Contains( 1 ) );
+		Assert.AreEqual( 1, failed.Single( item => item.Kind == ParkEventKind.ChallengeFailed ).InfoId );
+		Assert.IsFalse( failing.Objectives.Finished.Contains( 1 ), "a lost challenge is not completed (0x4d3140)" );
+		Assert.AreEqual( 600 + 270, failing.Objectives.NextOfferDay );
+		failing.AdvanceDays( 270 );
+		Assert.IsNotNull( failing.Objectives.Current, "the next offer comes 270 days later" );
+		for ( var offer = 0; offer < 20 && failing.Objectives.Current?.DefinitionIndex != 1; offer++ )
+		{
+			failing.DeclineChallenge();
+			failing.AdvanceDays( 270 );
+		}
+		Assert.AreEqual( 1, failing.Objectives.Current?.DefinitionIndex, "the lost challenge is offered again" );
 	}
 
 	[TestMethod]

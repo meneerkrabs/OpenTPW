@@ -112,7 +112,8 @@ public sealed class ParkObjectives
 			var members = staff.OfType( type ).ToList();
 			return members.Count == 0 ? 0 : (long)members.Average( member => ParkStaff.StaffSkill( member ) );
 		}
-		// [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type
+		// [BIN:TPW-EXE:0x4d1660 challenge check] types 1-8, 11-13, 16, 17, 20 and 22 compare an accumulated value (the system's +0x3dc) with TargetVal; types 9 and 10 are 100 × the guests with a balloon or a costume (0x4c9530 / 0x4c95d0) / the census (0x4c9130)
+		// [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: the writers of the challenge value (+0x3dc) per type
 		return definition.Type switch
 		{
 			1 => Sold( 2, 2 ),   // fries: food shop with salt
@@ -157,7 +158,8 @@ public sealed class ParkObjectives
 	public static long Target( ChallengeDefinition definition ) => definition.Type is >= 30 and <= 33 ? 1 : definition.Type == 18 ? Math.Max( 1, definition.TargetValue ) : definition.TargetValue;
 
 	/// <summary>Daily challenge processing; returns the events to publish and the prize won (0 when none).</summary>
-	// [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures
+	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win
+	// [APPROX:ECON-035] offers wait for accept/decline (the offer dialog 0x4d2c50 keeps +0x3da set until it is answered); a won challenge is marked finished, where 0x4d2fb0 marks the slot at the current index, which the follow-up offer has already moved on — evidence needed: challenge flow captures
 	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure )
 	{
 		if ( Current == null )
@@ -188,23 +190,29 @@ public sealed class ParkObjectives
 					yield return result;
 				yield break;
 			}
-			finished.Add( Current.DefinitionIndex );
 			Current = null;
 			NextOfferDay = day + settings.ChallengeTiming.DaysAfterCompletedChallenge;
 			yield return (ParkEventKind.ChallengeFailed, definition.Index, value, Describe( definition ));
 		}
 	}
 
+	/// <summary>
+	/// A won challenge: the prize is paid only by a challenge without a follow-up type, so a chain pays the prize of its last part;
+	/// a part whose follow-up type finds no follow-up pays nothing.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4d2fb0 challenge won] FollowupType (+0x18) 0: the prize (+0x14) is credited (0x4d0190); otherwise the follow-up is offered at once (0x4d2b60: the first slot of that type not completed and below the forfeit count) and no prize is paid
 	private IEnumerable<(ParkEventKind, int, long, string)> Complete( long day, ChallengeDefinition definition )
 	{
 		finished.Add( definition.Index );
 		Current = null;
 		NextOfferDay = day + settings.ChallengeTiming.DaysAfterCompletedChallenge;
-		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.Prize, Describe( definition ));
+		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.FollowupType == 0 ? definition.Prize : 0, Describe( definition ));
 		if ( definition.FollowupType != 0 )
 		{
-			var followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
-				.FirstOrDefault( item => item.Type == definition.FollowupType && item.TargetObject == definition.TargetObject && !finished.Contains( item.Index ) );
+			// [APPROX:ECON-055] a follow-up of the same object is preferred, else the first open one of the type as in 0x4d2b60; the original carries the satisfying object (+0x2e, set by types 14, 15 and 18) into the follow-up slot instead — evidence needed: how the follow-up types read the carried object
+			var open = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
+				.Where( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) ).ToList();
+			var followup = open.FirstOrDefault( item => item.TargetObject == definition.TargetObject ) ?? open.FirstOrDefault();
 			if ( followup != null )
 			{
 				Current = new ActiveChallenge( followup.Index, day, false, 0, 0, 0 );

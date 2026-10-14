@@ -6,6 +6,16 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Challenge chains, training and speed keys from tp.exe (October 14, 2026)
+
+A won challenge with a follow-up type no longer pays its prize: the original (`0x4d2fb0`) credits the prize only when the challenge
+has no follow-up, so a chain pays the prize of its last part (jungle's chain 7 → 8 now pays 30,000 instead of 37,500). A lost
+challenge is no longer marked finished (`0x4d3140` only counts the loss), so it can be offered again. The challenge check
+`0x4d1660` confirms the accumulated types and the balloon and costume census percentages (ECON-034 narrowed); the follow-up's
+same-object rule is registered as ECON-055. Training's 100 points per grade is read in `0x505a10` (ECON-008 retired; the
+Standard.sam comment's 1000 does not match the code). The clock's 31 ms substeps and three-turns-per-frame limit (`0x54e360`) and
+the speed keys (numpad +, − and *: × 1.25, × 0.8 within 0.25..2, reset) narrow ECON-001 and ECON-004.
+
 ## Bank rules from tp.exe: bankruptcy timing and the withdrawals flag (October 14, 2026)
 
 The park's bankruptcy now follows the bank's month routine (`0x4d0370`) instead of counting month ends in the red. A debit that

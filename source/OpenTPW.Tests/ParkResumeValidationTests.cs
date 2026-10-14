@@ -192,6 +192,31 @@ public class ParkResumeValidationTests
 		ParkResumeSaveFile.ValidateShape( snapshot with { Weather = Weather( started: true, quality: 50 ) } ); // a started, honest forecast is accepted
 	}
 
+	[TestMethod]
+	public void TheParticlePartIsOptionalCodecSafeAndValidated()
+	{
+		// the original's PART/PTCL block: emitters, effectors and the generator, no particles (docs/PARTICLES.md); never part of the hash
+		var template = new byte[ParticleTemplate.Size]; template[0x26] = 1; template.AsSpan( 0xB4, 4 ).Fill( 0xFF ); template.AsSpan( 0x98, 4 ).Fill( 0xFF ); template.AsSpan( 0x10, 2 ).Fill( 0xFF );
+		var pool = Enumerable.Range( 0, 105 ).Select( _ => new ParticleTemplate( template ) ).ToList();
+		var particles = new ParticleSystem( pool );
+		particles.Create( 2, (1024, 2048, 3072) );
+		particles.Tick(); particles.Tick();
+		var state = particles.Capture()!;
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		Assert.IsNull( snapshot.Particles, "a park without a live pool carries no part" );
+		var withParticles = snapshot with { Particles = state };
+		ParkResumeSaveFile.ValidateShape( withParticles );
+		var bytes = ParkResumeSaveFile.Serialize( withParticles );
+		var restored = ParkResumeSaveFile.Deserialize( bytes );
+		Assert.IsTrue( ParkResumeSaveFile.Serialize( restored ).SequenceEqual( bytes ), "the part survives the codec byte for byte" );
+		Assert.IsNull( ParticleSystem.ValidateState( restored.Particles ) );
+		Assert.AreEqual( state.Random, restored.Particles!.Random );
+		Assert.AreEqual( 1, restored.Particles.Emitters.Count );
+		Assert.IsNull( ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( snapshot ) ).Particles );
+		Rejects( withParticles with { Particles = state with { FreeEmitters = state.FreeEmitters.Skip( 1 ).ToArray() } }, "free emitter slots" );
+		Rejects( withParticles with { Particles = state with { EffectorGenerationCounter = 70000 } }, "counters are out of range" );
+	}
+
 	private static AutomaticAdvisor.AutomaticAdvisorSnapshot Advisor( bool speechWasActive ) => new(
 		new AdvisorController.AdvisorControllerSnapshot( new AdvisorQueueSnapshot(
 			new AdvisorPendingAdviceSnapshot?[ParkScoreQueueCapacity()], new Dictionary<int, AdvisorHistorySnapshot>(), 0, 0 ) ),

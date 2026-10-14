@@ -4,16 +4,16 @@ namespace OpenTPW;
 /// One loaded sound category (<c>cat_&lt;name&gt;SFX.map</c> with its <c>cat_&lt;name&gt;BANK.map</c>), as the
 /// original registers them (for example <c>cat_ui</c> from <c>global/sound</c>, <c>cat_music</c> from a
 /// level's <c>Music</c> folder). Bank names such as <c>Sound\UI</c> are resolved below the folder that
-/// holds the map's folder, with the <c>HD</c> quality suffix of the shipped banks, and fall back to <c>global</c>.
+/// holds the map's folder, with the <c>HD</c> quality suffix of the shipped banks; a bank whose map record carries the Global flag (0x20) lives under <c>global</c> instead, and there is no fallback between the two.
 /// </summary>
 public sealed class SoundCategory
 {
 	private readonly BaseFileSystem fileSystem;
 	private readonly string root;
-	private readonly IReadOnlyList<string> bankNames;
+	private readonly IReadOnlyList<SoundBankName> bankNames;
 	private readonly Dictionary<int, SoundBank?> banks = new();
 
-	private SoundCategory( BaseFileSystem fileSystem, string name, string root, SoundCatalog catalog, IReadOnlyList<string> bankNames )
+	private SoundCategory( BaseFileSystem fileSystem, string name, string root, SoundCatalog catalog, IReadOnlyList<SoundBankName> bankNames )
 	{
 		this.fileSystem = fileSystem;
 		Name = name;
@@ -24,7 +24,7 @@ public sealed class SoundCategory
 
 	public string Name { get; }
 	public SoundCatalog Catalog { get; }
-	public IReadOnlyList<string> BankNames => bankNames;
+	public IReadOnlyList<string> BankNames => bankNames.Select( bank => bank.Name ).ToList();
 
 	/// <summary>Loads <c>&lt;directory&gt;/&lt;name&gt;SFX.map</c> and <c>…BANK.map</c>; returns null (with a log line) when either is missing or damaged.</summary>
 	public static SoundCategory? TryLoad( BaseFileSystem fileSystem, string directory, string name )
@@ -39,7 +39,7 @@ public sealed class SoundCategory
 				return null;
 			}
 			var root = directory.Contains( '/' ) ? directory[..directory.LastIndexOf( '/' )] : "";
-			return new SoundCategory( fileSystem, name, root, new SoundCatalog( fileSystem.ReadAllBytes( sfx ) ), SoundCatalog.ReadBankNames( fileSystem.ReadAllBytes( bank ) ) );
+			return new SoundCategory( fileSystem, name, root, new SoundCatalog( fileSystem.ReadAllBytes( sfx ) ), SoundCatalog.ReadBankMap( fileSystem.ReadAllBytes( bank ) ) );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 		{
@@ -62,17 +62,16 @@ public sealed class SoundCategory
 		SoundBank? bank = null;
 		if ( bankNumber >= 1 && bankNumber <= bankNames.Count )
 		{
-			var relative = bankNames[bankNumber - 1].Replace( '\\', '/' );
-			// [APPROX:AUDIO-002] banks resolve to <map folder's parent>/<name>HD.sdt, then to global/<name>HD.sdt; the suffix rule is settled (tp.exe 0x6C58F0: <name>HW.sdt first, HD.sdt as fallback, reversed when the manager's flags +0x28 have bits 0 and 1; only HD files ship), the folder order is not traced (TbMapStreamer::BankDoesNotExist 0x10015234) — the suffix rule
-			foreach ( var candidate in new[] { $"{root}/{relative}HD.sdt", $"/global/{relative}HD.sdt" } )
+			var entry = bankNames[bankNumber - 1];
+			var relative = entry.Name.Replace( '\\', '/' );
+			// [BIN:TPW-EXE:0x6bff14] a bank record's flag 0x20 selects the data root's Global folder, every other bank is under the category's own folder (the map folder's parent); there is no second folder to try: the open at 0x6b9310 makes one existence test (0x6c5a00) and returns 0 when it fails
+			// [BIN:TPW-EXE:0x6c58f0] the quality suffix: <name>HW.sdt first, HD.sdt as fallback, reversed when the manager's flags +0x28 have bits 0 and 1; only HD files ship
+			// [DATA:global/sound,levels/*/Sound cat_*BANK.map] no shipped bank record carries 0x20 (flags 1, 2, 4, 0x41, 0x42), and every shipped name resolves under the map folder's parent
+			var candidate = entry.Global ? $"/global/{relative}HD.sdt" : $"{root}/{relative}HD.sdt";
+			if ( fileSystem.FileExists( candidate ) )
 			{
-				if ( fileSystem.FileExists( candidate ) )
-				{
-					// Read entry by entry from the file, not held whole (a bank is tens of megabytes).
-					var path = candidate;
-					bank = new SoundBank( () => fileSystem.OpenRead( path ), fileSystem.GetSize( path ) );
-					break;
-				}
+				// Read entry by entry from the file, not held whole (a bank is tens of megabytes).
+				bank = new SoundBank( () => fileSystem.OpenRead( candidate ), fileSystem.GetSize( candidate ) );
 			}
 			if ( bank == null )
 				Log.Trace( $"Sound category {Name}: bank {relative} not found." );
@@ -84,8 +83,8 @@ public sealed class SoundCategory
 
 /// <summary>
 /// Plays catalogue events the way the original's placeholders do: by default a sound is chosen among the event's
-/// sounds and a sample among the sound's samples by cumulative weight, using the top 16 bits of the
-/// library's linear congruential generator; the volume is a random percentage in the sound's range.
+/// sounds and a sample among the sound's samples by cumulative weight, using the top 16 bits of the rotated state of the
+/// library's one shared, advancing linear congruential generator; the volume is a random percentage in the sound's range.
 /// One-shot events play once; sentence events chain samples, and branching sentences (music) follow
 /// the sound's links whose parameter range holds the current parameter.
 /// </summary>
@@ -147,9 +146,28 @@ public sealed class SoundEventSystem
 	/// <summary>Restarts the chooser from <paramref name="value"/> (a park's <see cref="WorldSeed.SoundStream"/> or a saved seed).</summary>
 	public void Reseed( uint value ) => seed = value;
 
-	// [BIN:STP-PPC:sound_shared 0x1000FCB4 ChooseRandomSample] draw = (seed × 0x19660D + 0x3C6EF35F) >> 16 (32-bit); the first sample whose cumulative weight is >= draw wins
-	// [BIN:STP-PPC:sound_shared 0x100118C8 seed store] the successor is never stored: the only store to CAudioPlaceHolder::mRandomSeed (TOC+0x42E4) is the library init (0x100118B4, from LbTime_GetClock); the eight LCG sites only load it and no library imports the symbol, so every draw is the same until the seed is set again
-	internal uint Draw() => unchecked(seed * 0x19660D + 0x3C6EF35F) >> 16;
+	// [BIN:TPW-EXE:0x6bc6ce] one shared chooser for every catalogue draw: s = s * 0x19660D + 0x3C6EF35F, stored back into the shared state (0xfb1f20) on every draw, and the draw is ror(s, 13), then >> 16 (weights: sound 0x6bc810, sample 0x6bc680) or % (max - min) (ranges: volume 0x6bc090, pitch 0x6bc170, delay 0x6bc343); the same state serves the sentence link choices (0x6be450, 0x6c3e00)
+	// [BIN:TPW-EXE:0x72e09c] the state is seeded once at static initialisation (0x6bb930 -> 0x5f5f10, QueryPerformanceCounter) and is never saved
+	// [APPROX:AUDIO-037] OpenTPW seeds the chooser from the clock when the sound service starts (as the original) but reseeds it from the park's world seed at park entry (GameAudio.EnterPark) and saves it with the park, so headless runs and tests start from a known state; with sound on, the draws follow wall-clock events (mixer-timed sentence segments, UI clicks), so the state is not a replay guarantee; the original's chooser is clock-seeded and unsaved
+	// [EXT:audio-chooser-mac-reading] the Mac reading of this chooser (the seed is never stored and the draw takes the top 16 bits without the rotate, STP-PPC sound_shared 0x1000FCB4 / 0x100118C8) contradicts the PC instructions; the PC reading is used and the Mac reading is to be rechecked (docs/AUDIO.md)
+	private uint Advance()
+	{
+		seed = unchecked(seed * 0x19660D + 0x3C6EF35F);
+		return System.Numerics.BitOperations.RotateRight( seed, 13 );
+	}
+
+	/// <summary>A 16-bit weight draw: <c>ror(s, 13) &gt;&gt; 16</c> of the advanced state (0..65535).</summary>
+	internal uint Draw() => Advance() >> 16;
+
+	/// <summary>A range draw: <c>ror(s, 13) % range</c> of the advanced state (the range's maximum is never drawn).</summary>
+	internal uint DrawBelow( uint range ) => Advance() % range;
+
+	/// <summary>The sound an event plays: the only sound draws nothing (0x6bc822), otherwise the weight draw picks it.</summary>
+	internal int PickSound( IReadOnlyList<SoundEntry> sounds ) => sounds.Count <= 1 ? sounds.Count - 1 : ChooseSound( sounds, Draw() );
+
+	/// <summary>The sample of a sound: the only sample draws nothing (0x6bc69d), otherwise the weight draw (<paramref name="draw"/> or the shared chooser) picks it.</summary>
+	internal int PickSample( IReadOnlyList<SoundSample> samples, int lastIndex, bool avoidRepeat, Func<uint>? draw = null )
+		=> samples.Count <= 1 ? samples.Count - 1 : ChooseSample( samples, draw != null ? draw() : Draw(), lastIndex, avoidRepeat );
 
 	internal static int ChooseSample( IReadOnlyList<SoundSample> samples, uint draw, int lastIndex, bool avoidRepeat )
 	{
@@ -198,7 +216,8 @@ public sealed class SoundEventSystem
 		// [BIN:STP-PPC:sound_shared 0x1000F3C8–0x1000F3F4 GetRandomVolume] a matching parameter yields low + floor((high-low) * byte value / 100), including the high endpoint at 100
 		if ( parameterCode != null && volumeCode == parameterCode )
 			return low + range * unchecked((byte)parameter) / 100;
-		return range == 0 ? low : (int)(low + unchecked(seed * 0x19660D + 0x3C6EF35F) % (uint)range);
+		// [BIN:TPW-EXE:0x6bc090] volume = min + ror13(chooser) % (max - min); an empty range draws nothing (0x6bc11b)
+		return range == 0 ? low : (int)(low + DrawBelow( (uint)range ));
 	}
 
 	private bool TryDecoded( SoundCategory category, SoundSample sample, out Mp2Audio? audio )
@@ -336,12 +355,16 @@ public sealed class SoundEventSystem
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
-		var sound = soundEvent.Sounds[Math.Max( 0, ChooseSound( soundEvent.Sounds, Draw() ) )];
-		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
+		var sound = soundEvent.Sounds[Math.Max( 0, PickSound( soundEvent.Sounds ) )];
+		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] pitch, delay and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update
-		return mixer.Play( audio, channel, Volume( sound ) / 100f );
+		// [APPROX:AUDIO-003] pitch (1/8-semitone steps, ratio 2^(sign * (|p| + 1) / 96), drawn min + r % (max - min), tp.exe 0x6bc170 / 0x6d2820), the delay (u16 + r % range, 0x6bc343, unit not read) and reverb (SndReverb.map) are not applied
+		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
+		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 that skips starting in some cases is not read
+		var voice = mixer.Play( audio, channel, Volume( sound ) / 100f );
+		voice.Loops = (soundEvent.Flags & 0x8) != 0;
+		return voice;
 	}
 
 	/// <summary>
@@ -354,13 +377,13 @@ public sealed class SoundEventSystem
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
-		var sound = soundEvent.Sounds[Math.Max( 0, ChooseSound( soundEvent.Sounds, Draw() ) )];
-		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
+		var sound = soundEvent.Sounds[Math.Max( 0, PickSound( soundEvent.Sounds ) )];
+		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
 		// [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8
 		// [LEAD:maexah/OpenTPW docs/exe/audio.md "A voice's range" table: bit 0x8 loops the sample, the voice lives on] PC addresses unverifiable (packed exe)
-		// [APPROX:AUDIO-019] the loop is applied to positioned one-shots only; on the Mac the event flag 0x8 sets placeholder bits 4 and 2 (CAudioPlaceHolder::SetFlagsFromEvent 0x1000EE34) and FillSampleInfo (0x1000FC1C, 0x100186A0) sets the loop count 9999 after both the positioned and the fixed-position branches, so flat one-shots likely loop too — not yet verified that flat plays pass through FillSampleInfo
+		// [BIN:TPW-EXE:0x6bc621 loop test] flag 0x8 loops the sample after both the positioned and the fixed branch (see Play)
 		var voice = mixer.Play( audio, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
 		return voice;
@@ -377,11 +400,11 @@ public sealed class SoundEventSystem
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
-		var sound = soundEvent.Sounds[Math.Max( 0, ChooseSound( soundEvent.Sounds, Draw() ) )];
-		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
+		var sound = soundEvent.Sounds[Math.Max( 0, PickSound( soundEvent.Sounds ) )];
+		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 )
 			return null;
-		// [APPROX:AUDIO-019] as in PlayAt: the loop flag 0x8 applies to positioned one-shots
+		// [BIN:TPW-EXE:0x6bc621 loop test] as in PlayAt: the loop flag 0x8 applies
 		var placed = new PlacedSound( mixer, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
 			DecodeSentenceAsync( category, sound.Samples[index] ) );
 		if ( !placed.Pump() )
@@ -391,12 +414,18 @@ public sealed class SoundEventSystem
 
 	/// <summary>Starts a sentence event; an optional chooser replaces only its sample draws. Null when the event is missing.</summary>
 	/// <param name="sampleDraw">Optional 16-bit sample chooser; does not alter sound selection, branch links or volume parameters.</param>
-	public SoundSentence? StartSentence( SoundCategory? category, uint eventId, AudioChannel channel, Func<uint>? sampleDraw = null )
+	/// <param name="position">Optional sound-space place: a positioned sentence plays every segment there (a scape.omp placed sentence), turned down over its distance from the listener.</param>
+	/// <param name="range">The positioned sentence's range; the first sound's own range when null.</param>
+	public SoundSentence? StartSentence( SoundCategory? category, uint eventId, AudioChannel channel, Func<uint>? sampleDraw = null, Vector3? position = null, float? range = null )
 	{
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
-		var sentence = new SoundSentence( this, category, soundEvent, channel, sampleDraw );
+		if ( position is { } place )
+			AudioListener.ValidatePosition( place, nameof( position ) );
+		if ( range is { } far && (!float.IsFinite( far ) || far < 0) )
+			throw new ArgumentOutOfRangeException( nameof( range ) );
+		var sentence = new SoundSentence( this, category, soundEvent, channel, sampleDraw ) { Position = position, Range = range ?? soundEvent.Sounds[0].Rolloff };
 		sentences.Add( sentence );
 		sentence.Start();
 		return sentence;
@@ -514,6 +543,10 @@ public sealed class SoundSentence
 		this.sampleDraw = sampleDraw ?? system.Draw;
 	}
 
+	/// <summary>The place a positioned sentence plays at (null: flat).</summary>
+	public Vector3? Position { get; init; }
+	/// <summary>The range of a positioned sentence.</summary>
+	public float Range { get; init; }
 	/// <summary>The value branching links are matched against (the original's parameter 4; for park music the guest count / 2, capped).</summary>
 	public int Parameter { get; set; }
 	/// <summary>The known native code of <see cref="Parameter"/>; only the crowd's code 7 is currently wired.</summary>
@@ -527,7 +560,7 @@ public sealed class SoundSentence
 	internal void Start()
 	{
 		// [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] a branching sentence starts on the event's first sound
-		var first = soundEvent.Player == SoundEventPlayer.BranchingSentence ? 0 : Math.Max( 0, SoundEventSystem.ChooseSound( soundEvent.Sounds, system.Draw() ) );
+		var first = soundEvent.Player == SoundEventPlayer.BranchingSentence ? 0 : Math.Max( 0, system.PickSound( soundEvent.Sounds ) );
 		Prefetch( first );
 		waiting = true;
 	}
@@ -565,7 +598,7 @@ public sealed class SoundSentence
 	private void Prefetch( int sound )
 	{
 		var samples = soundEvent.Sounds[sound].Samples;
-		var sample = SoundEventSystem.ChooseSample( samples, sampleDraw(), sound == soundIndex ? lastSample : -1, avoidRepeat: sound == soundIndex && lastSample >= 0 );
+		var sample = system.PickSample( samples, sound == soundIndex ? lastSample : -1, sound == soundIndex && lastSample >= 0, sampleDraw );
 		next = sample < 0 ? null : DecodeNext( sound, sample );
 	}
 
@@ -588,10 +621,12 @@ public sealed class SoundSentence
 			return true;
 		soundIndex = sound;
 		lastSample = sample;
-		// [APPROX:AUDIO-036] density-controlled crowd gain is evaluated when a segment starts; native parameter propagation into an already-playing sentence child is unverified
-		voice = system.Mixer.Play( audio, channel, system.Volume( soundEvent.Sounds[sound], ParameterCode, Parameter ) / 100f );
+		// [BIN:TPW-EXE:0x6bbb80 SetParameter] the original updates the matching slot and, for a slot index >= 1 with placeholder flag 0x4000 clear, calls vf+0x34 (0x6bbbe0), which re-evaluates the playing sample's volume (0x6bc090) and pitch (0x6bc170)
+		// [APPROX:AUDIO-036] OpenTPW evaluates density-controlled crowd gain when a segment starts, not on a parameter change inside a playing segment; which slot carries the crowd's parameter 7 is not read
+		var gain = system.Volume( soundEvent.Sounds[sound], ParameterCode, Parameter ) / 100f;
+		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
 		voice.Completed += _ => OnCompleted();
-		// [APPROX:AUDIO-005] the original chooses the next segment when the current one's data runs out, inside a mix-buffer fill, and keeps filling the same buffer (sound_shared GetDataChunk 0x10008CC4 → GetNextSample 0x10008E60 → CPlaceHolderSentence::SoundCallback 0x1001A1F0); OpenTPW chooses it when the current one starts, to decode in time, so the draw and the parameter are taken one segment early
+		// [EXT:sentence-prefetch] a sentence's next segment is chosen and decoded ahead when the current one starts, so the draw and the parameter are taken one segment early; the original chooses when the current segment's data runs out (sound_shared GetDataChunk 0x10008CC4 -> 0x1001A1F0), but its chooser is the shared clock-seeded one (see Advance), so the draw's timing has no observable rule to match
 		var successor = Successor();
 		if ( successor >= 0 )
 			Prefetch( successor );

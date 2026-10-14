@@ -1015,6 +1015,24 @@ research batch was included in this merge.
   -017, -022, COMPAT-019 (`dlake` is the drained lake obstacle 1704 of Theme Park Inc), HEADS-001 and BLUEPRINT-003. The PC world generator `0x516330` rotates its state right by 13: DET-plan §4.3,
   DETERMINISM.md and the HEADS-001 text say so, and DET-013 to DET-015 now carry the port requirements (eight reseed sites, the saved `mRandomSeed`, the update order); the port itself is not started.
   This round took 16 IDs out of the register (VM-901 stays, narrowed) and added ADVISOR-025.
+- **Audio register round 2 (October 14):** the second static round over tp.exe settled the open sound items
+  ([AUDIO.md](AUDIO.md) "Register round 2"). Behaviour changes, each with a test: a bank lives under `Global` when its map record has
+  flag 0x20 and otherwise in its own folder, with no second try (AUDIO-002; every shipped bank still resolves); **one shared, advancing
+  sound chooser** (`s·0x19660D + 0x3C6EF35F` stored on every draw, `ror(s, 13)` then `>> 16` or `% range`, a lone sound, sample or empty
+  range draws nothing) replaces the frozen Mac reading, the crowd's separate stream and the fixed volume draw (AUDIO-035 retired; the
+  Mac-versus-PC contradiction is documented in AUDIO.md and DETERMINISM.md, the park still reseeds and saves the chooser, AUDIO-037); the
+  drawer plays 0x1C when it starts to close as well as 0xC2 at its end; flat one-shots with flag 0x8 loop like positioned ones (AUDIO-019);
+  a placed scape sentence plays as a positioned sentence for the park's life (AUDIO-020); the listener helper takes the eye in the
+  camera modes `0x790ab0 & 0x16` and the midpoint otherwise (AUDIO-021); the weather's constructed quality is never applied and the first
+  update rolls a forecast at once, with the schedule on game-clock timestamps instead of day indices and the apply falling through to the
+  roll test (AUDIO-026/027; the snapshot's schedule fields now hold game seconds, older day-index saves are migrated on restore); screams, the repair sound and EVENT sounds are
+  positioned at the ride's footprint middle, the object and the key's model node (selector 0x200), and an unknown EVENT key plays nothing
+  (AUDIO-032/008/908); the refused path click plays at the clicked cell (also fixing `Level.CellSoundPosition`, which returned a
+  height/ground mix); `cat_ui` 0xD2 plays once at start-up; every front-end list line and row clicks like a button (AUDIO-012); the
+  weather thing's own flat 0x21 rain voice sounds beside the level-driven one while it rains, which keeps following the drops in snow
+  (AUDIO-015). Retired: 002, 006, 007, 010, 012, 019, 020, 021, 027, 032, 035. Reclassified as `[EXT:...]` decisions: 005, 013, 014, 024, 030,
+  031, 905-907 and the drawer window. Narrowed: 003, 004, 008, 009, 011, 015, 022, 025, 026, 034, 036, 900, 908. New: AUDIO-037. No canonical
+  hash pin moved (the weather and the sound chooser are outside the hash, [DETERMINISM.md](DETERMINISM.md)).
 - **Tour rides take and release riders (October 14):** the four original tour rides (Jurassic, Flightmare, Star and Tweety Tours) no longer
   leave guests in the queue. Their scripts' `TOUR` commands, traced from tp.exe (the flying-car module `FLY_`), drive a controller of up to 20 free-flying
   cars with no track: a car lifts off from the ride's launch pad, flies a terrain-avoiding lattice walk for the ride's duration, returns, circles until the landing slot is
@@ -1135,6 +1153,21 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
   mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
   narrowed to what remains. No determinism or coaster pin moved.
+- **Particle register round (October 14):** `ParticleSystem` is now ported from the traced `tp.exe` instructions
+  (docs/PARTICLES.md): density as `(rate * density) >> 10` clamped to 127 (negative rates scaled too, default PARTICLEDENSITY
+  500), the pool init (flat-zero ground stub, 0x800 particles), the signed and unsigned random forms (a jitter of -1 still
+  draws three times), LIFO emitter slots with a global generation, the rate quarter taken from the remaining life
+  (immortal emitters stay on the first rate), a burst that ignores the cap and one cap check per tick, the horizontal
+  disc, ring and box volumes with the Y rotation, the horizontal radial burst that replaces the base velocity, colour
+  flicker, the frame, size and spin formulas, physics on the spawn tick, dead emitters and the child rules (+0xBC, +0xAA,
+  the child offset), the effectors and the spiral; `ParticleEffectorTemplate` names the effector record. PTCL-902, 903 and
+  907 are retired (the save is an optional `Particles` part of the park-resume envelope: emitters, effectors and the
+  generator, no particles, screen-space emitters killed on load, outside the world hash). PTCL-900, 904, 905, 906 and 908
+  are narrowed: a key entry without a matrix starts at the world origin, the quad's half-height is size / 1024, the
+  render flags decide the blend of untextured particles too, positions truncate like `_ftol`, and RSE ADDOBJ types 1
+  and 2 start effects whose handle `KILLOBJ` ends. Where the research report and the instructions disagreed the
+  instructions won: byte +0xC2 != 0 is the box and 0 the disc, the ring flag is word +0xA8, the gravity word +0x28 and the
+  jitter word +0x50 are words, and a non-immortal child never sees its life -1.
 - **Ride particles (October 14):** RSE EVENT types 1 and 2 now create, simulate and draw particles of the original system
   (docs/PARTICLES.md). `Data/Particle/Tp2.plb` (105 templates, 20 effectors) is read by `ParticleTemplateFile`; `ParticleSystem`
   mirrors the traced pool (120 emitter slots, 2048 particles, private LCG seeded 1, 31 ms ticks, bursts, per-quarter rates,

@@ -233,7 +233,8 @@ reach my patrol area"); inside, the steps that leave it are removed, and with no
   area with two clicks; the wander keeps staff inside it (§4).
 - **Phase 9 (ECON-044, GUEST-007), done in the simulation.** Balloon and costume shops give guests a balloon with a life or a costume
   (`0x4fe1e0`); a ride puts the balloon away and gives it back, the life runs out on the needs phase, and balloon pranksters burst other
-  guests' balloons (docs/GUESTS.md "Balloons and costumes"). Drawing balloons and costumes is the next step.
+  guests' balloons (docs/GUESTS.md "Balloons and costumes"). Guests in costume are drawn with the theme's costume set, and
+  balloons trail and bob over their guests and burst (`0x4fa030`, docs/GUESTS.md "Rendering").
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

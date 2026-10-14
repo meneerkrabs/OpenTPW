@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -166,5 +167,36 @@ public class BalloonCostumeTests
 		guests[1].InCostume = true;
 		guests[2].InCostume = true;
 		Assert.AreEqual( (33, 66), (economy.KidsWithBalloonsPercent, economy.KidsWithCostumesPercent), "100 × count / in-park guests, truncated" );
+	}
+
+	[TestMethod]
+	public void ABalloonFloatsOverAStandingGuestAndDipsBehindAWalkingOne()
+	{
+		Assert.AreEqual( 1f, BalloonRenderer.Lift( 5f, 5f, 5f, 5f, 0, 0 ), 1e-6f, "standing, bob entry 0" );
+		Assert.AreEqual( 1f + 0.2f * 1.5f, BalloonRenderer.Lift( 5f, 5f, 5f, 5f, 7, 3 ), 1e-6f, "entry (7 + 3) % 20 = 10, the top of the bob" );
+		Assert.AreEqual( 1f + 0.02f * 1.5f, BalloonRenderer.Lift( 5f, 5f, 5f, 5f, 20, 1 ), 1e-6f, "the entry wraps at 20" );
+		// A trail 0.05 cells behind on x and 0.05 on y: (0.5 + 0.5) units / 0.5 lower it by 2.
+		Assert.AreEqual( -1f, BalloonRenderer.Lift( 5f, 5f, 5.05f, 4.95f, 0, 0 ), 1e-5f );
+	}
+
+	[TestMethod]
+	public void TheTrailingPointLagsBehindTheDrawnGuest()
+	{
+		var rig = new Rig();
+		var guest = rig.Simulation.SpawnInPark( 2, 5 );
+		Assert.AreEqual( (guest.X, guest.Y), rig.Simulation.DrawPositionBefore( guest, BalloonRenderer.TrailTurns ), "before any step, the guest's own point" );
+		for ( var tick = 0; tick < 60 * 60; tick++ )
+		{
+			rig.Simulation.Tick( GuestSnapshotTests.Tick );
+			if ( guest.IsMoving && MathF.Abs( guest.X - guest.StepFromX ) + MathF.Abs( guest.Y - guest.StepFromY ) > 1e-3f )
+				break;
+		}
+		Assert.IsTrue( guest.IsMoving, "the guest walks" );
+		var now = rig.Simulation.DrawPositionBefore( guest, 0f );
+		Assert.AreEqual( (guest.DrawX, guest.DrawY), now, "no lag: the drawn point" );
+		var (trailX, trailY) = rig.Simulation.DrawPositionBefore( guest, BalloonRenderer.TrailTurns );
+		var step = (X: guest.X - guest.StepFromX, Y: guest.Y - guest.StepFromY);
+		Assert.AreEqual( now.X - step.X * BalloonRenderer.TrailTurns, trailX, 1e-4f, "0.35 of the step behind" );
+		Assert.AreEqual( now.Y - step.Y * BalloonRenderer.TrailTurns, trailY, 1e-4f );
 	}
 }

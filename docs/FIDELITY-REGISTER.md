@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **392 unresolved unique APPROX IDs**, 466 APPROX occurrences, 158 EXT occurrences, 170 DATA occurrences and 505 BIN occurrences.
+Current inventory: **392 unresolved unique APPROX IDs**, 466 APPROX occurrences, 159 EXT occurrences, 170 DATA occurrences and 505 BIN occurrences.
 
 Of these, 368 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -544,10 +544,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ARRIVAL-005 | `source/OpenTPW/Economy/ParkEconomy.cs:876` | [APPROX:ARRIVAL-005] an object imported from an original save or placed as a fixed item also sets the first-purchase turn to the current turn; the original restores park record +28 from the save (0x100D1E8C) — evidence needed: park record +28 in an original save |
 | AUDIO-001 | `source/OpenTPW/Audio/AudioMixer.cs:236` | [APPROX:AUDIO-001] the second user volume the original ducks is the effects channel — evidence needed: the names of the TbSysCommand volume commands at 0x100BB18C |
 | AUDIO-002 | `source/OpenTPW/Audio/SoundEvents.cs:66` | [APPROX:AUDIO-002] banks resolve to &lt;map folder's parent&gt;/&lt;name&gt;HD.sdt, then to global/&lt;name&gt;HD.sdt — evidence needed: TbMapStreamer::BankDoesNotExist (0x10015234) and the quality suffix rule |
-| AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:341` | [APPROX:AUDIO-003] pitch, delay and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
+| AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:343` | [APPROX:AUDIO-003] pitch, delay and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
 | AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:627` | [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control, so the view always plays 0x1F — evidence needed: the meaning of the flag bits in the control's +0x44 word |
 | AUDIO-004 | `source/OpenTPW/UI/Original/UiWidgets.cs:429` | [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control — evidence needed: the meaning of the flag bits in control+0x44 |
-| AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:592` | [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample |
+| AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:594` | [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample |
 | AUDIO-006 | `source/OpenTPW/Client/GameFlow.cs:354` | [APPROX:AUDIO-006] cells are counted by rectangle (Chebyshev distance); the original's area shape inside the radius is not traced |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:52` | [APPROX:AUDIO-007] the sound plays when the map window opens; the original slides a drawer out of the main panel |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:65` | [APPROX:AUDIO-007] the sound plays when the map window closes; the original slides a drawer back into the main panel |
@@ -567,8 +567,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-017 | `source/OpenTPW/Audio/GameAudio.cs:275` | [APPROX:AUDIO-017] the one-shot timer's distribution is not traced; a uniform gap of 5-15 s stands — evidence needed: the timers armed at 0x100953F8 |
 | AUDIO-018 | `source/OpenTPW/Audio/AudioMixer.cs:67` | [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — the original's pan law (QSound's processing) is not read |
 | AUDIO-019 | `source/OpenTPW/Audio/AudioMixer.cs:66` | [APPROX:AUDIO-019] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event |
-| AUDIO-019 | `source/OpenTPW/Audio/SoundEvents.cs:361` | [APPROX:AUDIO-019] the loop is applied to positioned one-shots only; a flat one-shot with 0x8 still plays once — evidence needed: the Mac flat path's flag test beside 0x0051C130 |
-| AUDIO-019 | `source/OpenTPW/Audio/SoundEvents.cs:382` | [APPROX:AUDIO-019] as in PlayAt: the loop flag 0x8 applies to positioned one-shots |
+| AUDIO-019 | `source/OpenTPW/Audio/SoundEvents.cs:363` | [APPROX:AUDIO-019] the loop is applied to positioned one-shots only; a flat one-shot with 0x8 still plays once — evidence needed: the Mac flat path's flag test beside 0x0051C130 |
+| AUDIO-019 | `source/OpenTPW/Audio/SoundEvents.cs:384` | [APPROX:AUDIO-019] as in PlayAt: the loop flag 0x8 applies to positioned one-shots |
 | AUDIO-020 | `source/OpenTPW/Audio/GameAudio.cs:185` | [APPROX:AUDIO-020] a placed effect that is a sentence (not a one-shot) plays its first sound once — evidence needed: the placed sentence's player on the Mac |
 | AUDIO-021 | `source/OpenTPW/Audio/GameAudio.cs:184` | [APPROX:AUDIO-021] the record's place is in park units and the listener's place in the same sound units — evidence needed: the Mac listener and placement units traced together |
 | AUDIO-021 | `source/OpenTPW/Audio/GameAudio.cs:619` | [APPROX:AUDIO-021] the camera midpoint follows the fork's listener lead; the Mac listener's exact position and placement units are not traced together |
@@ -587,7 +587,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-033 | `source/OpenTPW/Audio/AudioListener.cs:14` | [APPROX:AUDIO-033] the fork's QMixer minimum 2 and exponent 0.8 are used without local binary verification — evidence needed: the original mixer mapping and distance law |
 | AUDIO-034 | `source/OpenTPW/Audio/SoundChain.cs:14` | [APPROX:AUDIO-034] held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads — evidence needed: the Mac held-voice tick, variation and stop routines |
 | AUDIO-035 | `source/OpenTPW/Audio/GameAudio.cs:146` | [APPROX:AUDIO-035] crowd sample choices advance an independent host stream seeded from the sound seed XOR ASCII CROW; the original source of variation is unverified, and this presentation stream is not persisted |
-| AUDIO-036 | `source/OpenTPW/Audio/SoundEvents.cs:589` | [APPROX:AUDIO-036] density-controlled crowd gain is evaluated when a segment starts; native parameter propagation into an already-playing sentence child is unverified |
+| AUDIO-036 | `source/OpenTPW/Audio/SoundEvents.cs:591` | [APPROX:AUDIO-036] density-controlled crowd gain is evaluated when a segment starts; native parameter propagation into an already-playing sentence child is unverified |
 | AUDIO-900 | `source/OpenTPW/World/Weather/WeatherVisualState.cs:10` | [APPROX:AUDIO-900] the drops are drawn around the view target in a wrapping box and fall straight down at a fixed speed; the original's drop volume, speed and streak shape are not traced (FUN_0057d300) |
 | AUDIO-901 | `source/OpenTPW/World/Weather/WeatherVisualState.cs:11` | [APPROX:AUDIO-901] snow reuses the rain's drop count but falls slower with a sinusoidal sway; the original's snow motion is not traced |
 | AUDIO-902 | `source/OpenTPW/World/Weather/WeatherVisualState.cs:120` | [APPROX:AUDIO-902] the bolt is a jittered polyline between the strike's top (height 300, FUN_00512c50) and the terrain, shown for a fixed flash time; the original's bolt shape, segmenting and flash timing are not traced |
@@ -1051,11 +1051,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:294` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:303` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
-| debug-forecast | `source/OpenTPW/Client/Game.cs:337` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
+| debug-forecast | `source/OpenTPW/Client/Game.cs:346` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
 | debug-forecast | `source/OpenTPW/World/ParkWeather.cs:128` | Smoke-only (&lt;c&gt;[EXT:debug-forecast]&lt;/c&gt;): posts a forecast of &lt;paramref name="quality"/&gt; the warning |
-| debug-weather | `source/OpenTPW/Client/Game.cs:318` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
+| debug-weather | `source/OpenTPW/Client/Game.cs:327` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:62` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:44` | [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:471` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
@@ -1106,7 +1106,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | sdt-wav-export | `source/OpenTPW/Client/SdtWavExport.cs:7` | [EXT:sdt-wav-export] application-owned export of current decoded PCM, without event mixing or native audio parity claims |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:132` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
-| texture-pack | `source/OpenTPW/Client/Game.cs:274` | [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options. |
+| texture-pack | `source/OpenTPW/Client/Game.cs:283` | [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options. |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:423` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:767` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default); |
@@ -1130,12 +1130,13 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:177` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:57` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:101` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
+| tgq-frame-export | `source/OpenTPW/Client/TgqPngExport.cs:6` | [EXT:tgq-frame-export] current opaque RGBA conversion at encoded size, not native IDCT/colour/display-aspect parity |
 | tp2m-writer | `source/OpenTPW.Files/Public/MapFile.cs:65` | [EXT:tp2m-writer] reader-contract serialization, not native writer or save interoperability parity |
 | tpi-viewer | `source/OpenTPW.Web/Program.cs:104` | [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:99` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:137` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:289` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:657` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:108` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:146` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:298` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:666` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:297` | [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world, |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:106` | [EXT:tpi-viewer] Theme Park Inc runs an experimental slice (docs/THEME-PARK-INC.md), not the supported game |
@@ -1289,7 +1290,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | global/Speech/lips.wad:members sp_001–sp_637 | `source/OpenTPW/World/Advisor.cs:28` | [DATA:global/Speech/lips.wad:members sp_001–sp_637] |
 | global/Speech/speechHD.SDT | `source/OpenTPW/World/Advisor.cs:21` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/advisor.wad:Advisor.MD2 | `source/OpenTPW/World/Advisor.cs:19` | [DATA:global/advisor.wad:Advisor.MD2] |
-| global/sound/cat_ambientSFX.map | `source/OpenTPW/Audio/SoundEvents.cs:359` | [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8 |
+| global/sound/cat_ambientSFX.map | `source/OpenTPW/Audio/SoundEvents.cs:361` | [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8 |
 | jungle Bouncy.sam + Rides.sam | `source/OpenTPW.Tests/GuestAssetTests.cs:329` | [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9). |
 | levels/*/scape.omp | `source/OpenTPW/Audio/GameAudio.cs:182` | [DATA:levels/*/scape.omp] type 1 records: word 1 the category (nought: global cat_ambient), word 2 the effect, words 3-5 the place, word 6 the range (x2/1024) |
 | levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:63` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
@@ -1789,8 +1790,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:sound_shared 0x1000FF40 ChooseRandomSound | `source/OpenTPW/Audio/SoundEvents.cs:169` | [BIN:STP-PPC:sound_shared 0x1000FF40 ChooseRandomSound] sounds are chosen by the running sum of their weights (+0x1E) against the same 16-bit draw |
 | STP-PPC:sound_shared 0x100118C8 seed store | `source/OpenTPW/Audio/SoundEvents.cs:151` | [BIN:STP-PPC:sound_shared 0x100118C8 seed store] the successor is never stored: the only store to CAudioPlaceHolder::mRandomSeed (TOC+0x42E4) is the library init (0x100118B4, from LbTime_GetClock); the eight LCG sites only load it and no library imports the symbol, so every draw is the same until the seed is set again |
 | STP-PPC:sound_shared 0x10011F20 CreatePlaceHolder | `source/OpenTPW/Audio/SoundChain.cs:12` | [BIN:STP-PPC:sound_shared 0x10011F20 CreatePlaceHolder] the event flags 0x404 (cat_kids 71-74, the screams) make a voice that chains one-shot children |
-| STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch | `source/OpenTPW/Audio/SoundEvents.cs:527` | [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] a branching sentence starts on the event's first sound |
-| STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch | `source/OpenTPW/Audio/SoundEvents.cs:541` | [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] links whose [byte 6, byte 7] range holds the parameter are candidates, chosen by their target sound's weight; with none the sentence waits |
+| STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch | `source/OpenTPW/Audio/SoundEvents.cs:529` | [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] a branching sentence starts on the event's first sound |
+| STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch | `source/OpenTPW/Audio/SoundEvents.cs:543` | [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] links whose [byte 6, byte 7] range holds the parameter are candidates, chosen by their target sound's weight; with none the sentence waits |
 | TPI-EXE:0x00745720 GMI refresh snapshot | `source/OpenTPW.Files/Formats/Save/ThemeParkIncGlobalSave.cs:42` | [BIN:TPI-EXE:0x00745720 GMI refresh snapshot] the save routine writes .GMI instead of .GMS (and .TPWI instead of .TPWS) when its flag is set; both go through the writer 0x0074C8F0, which keeps the flag at +0x14EC and writes the same version-12 body |
 | TPI-EXE:0x0074D840 global save body | `source/OpenTPW.Files/Formats/Save/ThemeParkIncGlobalSave.cs:71` | [BIN:TPI-EXE:0x0074D840 global save body] the loader 0x0074D110 reads the world and version words, then this body and its sub-serializers (0x0074B1F0 card, 0x0074FEF0 park, 0x0045A130 options, 0x00592720, 0x00620E30 shares, 0x00622D70, 0x005BF470 ambient tags) and rejects the file when a marker (TATS, AMTA, MEHT, DTOT, RAHS, MAPS) differs |
 | TPW-EXE:0x00429BA0 advisor setup | `source/OpenTPW/World/Advisor.cs:65` | [BIN:TPW-EXE:0x00429BA0 advisor setup] model matrix = identity with translation (0.6, -0.6, 0.2); the root node is |

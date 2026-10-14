@@ -231,6 +231,17 @@ public sealed class SoundBank
 	/// <summary>Reads a selected entry within a caller's payload bound, checked before allocating its bytes.</summary>
 	public byte[]? GetMpeg( uint number, int maximumBytes )
 	{
+		var result = GetMpeg( number, maximumBytes, out var rejectedPayloadBytes );
+		if ( rejectedPayloadBytes > 0 )
+			throw new InvalidDataException( $"Selected sound entry contains {rejectedPayloadBytes} bytes, exceeding the caller's {maximumBytes}-byte input bound." );
+		return result;
+	}
+
+	/// <summary>Reads a selected entry, or returns null and its positive payload size when the caller's bound refuses it.</summary>
+	/// <param name="rejectedPayloadBytes">Zero unless validated entry metadata exceeds the bound. Source errors still propagate.</param>
+	public byte[]? GetMpeg( uint number, int maximumBytes, out int rejectedPayloadBytes )
+	{
+		rejectedPayloadBytes = 0;
 		ArgumentOutOfRangeException.ThrowIfNegative( maximumBytes );
 		if ( number == 0 || number > count )
 			return null;
@@ -243,7 +254,10 @@ public sealed class SoundBank
 		if ( header < SdtArchive.MinimumEntryHeaderBytes || size < 0 || (long)offset + header + size > length )
 			return null;
 		if ( size > maximumBytes )
-			throw new InvalidDataException( $"Selected sound entry contains {size} bytes, exceeding the caller's {maximumBytes}-byte input bound." );
+		{
+			rejectedPayloadBytes = size;
+			return null;
+		}
 		return Read( (long)offset + header, size );
 	}
 

@@ -18,8 +18,15 @@ public interface IWeatherVisualSource
 	/// <summary>How long a bolt stays alive, in seconds (<c>WeatherEffects.LightningTime</c> / 1000).</summary>
 	float BoltLifetimeSeconds { get; }
 
-	/// <summary>The bolt tops (original units, Y up) struck since the last call.</summary>
-	IReadOnlyList<NVector3> TakeBoltTops();
+	/// <summary>The strikes since the last call: each bolt's top and bottom (original units, Y up).</summary>
+	IReadOnlyList<WeatherStrike> TakeStrikes();
+}
+
+/// <summary>One strike handed to the renderer: <c>AddLightning(bottom, top, …)</c>'s two points, in original units with Y up.</summary>
+public readonly record struct WeatherStrike( NVector3 Top, NVector3 Bottom )
+{
+	/// <summary>The park's strike: the ground point at y = 0 straight below the top (the original's float ground draw is not traced).</summary>
+	public static WeatherStrike Below( NVector3 top ) => new( top, new NVector3( top.X, WeatherVisualState.BoltGroundHeight, top.Z ) );
 }
 
 /// <summary>
@@ -200,8 +207,8 @@ public sealed class WeatherVisualState
 				bolt.Flicker = random.Next( 64 );
 		}
 
-		foreach ( var top in source.TakeBoltTops() )
-			AddBolt( top, source.BoltLifetimeSeconds );
+		foreach ( var strike in source.TakeStrikes() )
+			AddBolt( strike.Top, strike.Bottom, source.BoltLifetimeSeconds );
 	}
 
 	/// <summary>Starts a bolt from <paramref name="top"/> (original units) down to y = 0 directly below it.</summary>
@@ -209,9 +216,12 @@ public sealed class WeatherVisualState
 	// [BIN:STP-PPC:engine_shared 0x10020150 bolt ground] the ground point is at original y = 0, not on the terrain: the bolt keeps the top's x and z (the original's ground point is a uniform float draw whose range is not traced)
 	// [BIN:STP-PPC:engine_shared 0x1001EA18 bolt shape] recursive midpoint displacement with roughness 0.6; a segment stops splitting when its squared length is under 6 + 2u (u in [-1,1)), so segments run about 2 to 2.8 units; each split has a 9/512 chance to branch, up to depth 4, a branch being 2.5 x (512..1535) / (96 x depth) long and bent downward; the shape is fixed per bolt from a seeded generator (the PC behaviour)
 	// [APPROX:AUDIO-902] the displacement per split is OpenTPW's: roughness x segment length x 0.25 x u along both axes perpendicular to the segment, the branch direction is half the parent's plus a random sideways term and a downward bias; only the roughness, the stop test, the branch odds, depth and length are traced
-	public WeatherBolt AddBolt( NVector3 top, float lifetimeSeconds )
+	public WeatherBolt AddBolt( NVector3 top, float lifetimeSeconds ) => AddBolt( top, WeatherStrike.Below( top ).Bottom, lifetimeSeconds );
+
+	/// <summary>Starts a bolt between <paramref name="top"/> and <paramref name="bottom"/> (original units): the lobby hands both.</summary>
+	public WeatherBolt AddBolt( NVector3 top, NVector3 bottom, float lifetimeSeconds )
 	{
-		var bolt = new WeatherBolt( BuildBolt( top, new NVector3( top.X, BoltGroundHeight, top.Z ), random.NextUInt64() ), lifetimeSeconds );
+		var bolt = new WeatherBolt( BuildBolt( top, bottom, random.NextUInt64() ), lifetimeSeconds );
 		if ( bolts.Count >= MaximumBolts )
 			bolts.RemoveAt( 0 );
 		bolts.Add( bolt );

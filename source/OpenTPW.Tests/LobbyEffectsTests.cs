@@ -65,6 +65,24 @@ public class LobbyEffectsTests
 	}
 
 	[TestMethod]
+	public void TheWeatherRendererReadsTheLobbyStrikesInOriginalAxes()
+	{
+		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (unchecked(value * 0x19660Du + 0x3C6EF35Fu) & 63) == 1 );
+		var effects = new LobbyEffects( seed );
+		var source = new LobbyWeatherSource( effects );
+		var hallow = new LobbyEffects.Island( Island( "hallow", (4, 44, 12), rainy: true, lightning: 63 ), 400, 300 );
+		effects.Step( LobbyEffects.TickSeconds, new[] { hallow }, 400, 370 );
+		Assert.AreEqual( effects.RainDrops, source.DropCount );
+		Assert.IsFalse( source.Snow );
+		Assert.AreEqual( 0.5f, source.BoltLifetimeSeconds );
+		var bolt = effects.Bolts.Single();
+		var strike = source.TakeStrikes().Single();
+		Assert.AreEqual( new System.Numerics.Vector3( bolt.Top.X, 500, bolt.Top.Y ), strike.Top, "the lobby's height is the original's Y" );
+		Assert.AreEqual( new System.Numerics.Vector3( bolt.Bottom.X, 0, bolt.Bottom.Y ), strike.Bottom );
+		Assert.AreEqual( 0, source.TakeStrikes().Count, "each strike is handed over once" );
+	}
+
+	[TestMethod]
 	public void IslandOneShotsAreEventsThreeToFiveAboutOneTickInSixteen()
 	{
 		var effects = new LobbyEffects( 12345 );

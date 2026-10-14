@@ -1012,6 +1012,7 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Particle allocation test (October 14):** `ParticleSystemPortTests.TickAllocatesNothing` measures windows of 100 ticks until one is clean, so tiered-compilation allocations in a busy full run no longer fail it; a real per-tick allocation still never gives a clean window.
 - **Advisor, compatibility and VM register round 2 (October 14):** the advisor's fixed sequences are imported: the ten rows in use of table `0x76DC18` (`AdvisorFixedSequences`), a
   span of the clip sum + 1000 + clip 15, a row that sums to 0 (sequence 28, or clips missing from the archives) generated instead, the immediate start derived from
   "first clip is not 14", and the timer entries' effect (particle `0x521E60`, sound `0xC6`, `0x4B9340`) registered as ADVISOR-025; ADVISOR-016 is retired. ADVISOR-018 is settled at the

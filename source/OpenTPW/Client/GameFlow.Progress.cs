@@ -75,8 +75,10 @@ internal sealed partial class GameFlow
 			if ( owner == null || screen == null ) throw new InvalidOperationException( "Choose New Full Simulation in the lobby to confirm new OpenTPW progress." );
 			ProgressChoiceScreen? confirmation = null;
 			confirmation = ProgressChoiceScreen.Message( "newProgress", () => Strings.Extra( OpenTpwText.NewProgressConsent ),
-				(() => Strings.Extra( OpenTpwText.StartNewProgress ), () => { if ( confirmation!.TryActivate( owner.Stack ) ) Admit( confirmation ); }),
-				(() => Strings.Extra( OpenTpwText.Back ), () => { if ( !confirmation!.IsRemoved && ReferenceEquals( owner.Stack.Top, confirmation ) ) owner.Stack.Pop(); }) );
+				(() => Strings.Extra( OpenTpwText.StartNewProgress ), () => { if ( confirmation!.TryActivate( owner.Stack ) ) Admit( confirmation ); }
+			),
+				(() => Strings.Extra( OpenTpwText.Back ), () => { if ( !confirmation!.IsRemoved && ReferenceEquals( owner.Stack.Top, confirmation ) ) owner.Stack.Pop(); }
+			) );
 			owner.Stack.Push( confirmation );
 		}
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }

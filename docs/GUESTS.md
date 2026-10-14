@@ -355,15 +355,23 @@ object `0x50be80`, which 22 places call:
   path cells in the guest's 4 × 4 block → "Too messy"; else happiness above 99 → "Happy!", below 10 → "Unhappy"; else the thought stays.
 - **Events:** a queue join refused as too exciting ("Scared"), not exciting enough ("Bored") or too long; leaving a queue for the toilet,
   illness, unhappiness or boredom; a price refusal at the queue's head or the booth ("Dissatisfied"); navigation failures ("Confused"); a
-  sideshow won ("Pleased") or lost ("Dissatisfied"). A ride or shop visit sets no thought.
+  sideshow won ("Pleased") or lost ("Dissatisfied"); sent away by a queue edit ("Angry", one guest in three, `0x501496`). A ride or shop
+  visit sets no thought.
+- **The staff** think through the same object (`0x506a40`, `0x5056e0`, `0x506f30`): 19 when unhappy (happiness byte 10 or less), 18 when
+  very happy (above 97, one gate pass in sixteen), 20 when tired and off to rest, 21 while walking out to strike, 22 when no cell of the
+  patrol area can be reached. Their bubbles go on the member's phase (`0x505490`), and when it rests or is picked up.
 - **The bubble:** each thought replaces the bubble, and a new one shows when the last appeared at least 20 × the thought's priority turns
   ago (0 for event thoughts, 1 for needs and "Too messy", 3 for the happiness thoughts); it goes on the first needs phase more than 12
   turns after it appeared, and when the guest boards a ride or is caught. Ids 18-22 are the staff's own (tiredness, walking pace, no
   destination).
 
 The thresholds OpenTPW used before (`NeedThoughtLevel` 70, happiness bands 90/70/30, "Super happy" and "Okay") have no source in tp.exe and
-are gone; the original never thinks those two. Not yet: "Angry" for a failing coaster and for a shortened queue (one guest in three), the
-staff's thoughts and drawing the bubbles.
+are gone; the original never thinks those two. Not yet: "Angry" for a failing coaster (`0x500650`).
+
+**Bubbles** are drawn by `ThoughtRenderer` from `Generic/Thoughts`: `SPR_TB`'s sixteen guest bubbles (a smile, a frown, a burger, a drink,
+the toilet, litter, a question mark, ...) and `SPR_TC`'s ten (a thumb up for "Pleased" and the staff's own: a pink smile and frown, a
+sleeping face for "tired", a protest sign for "strike", a question mark). Each thought's bubble script picks its slot (`0x74f190` on); the
+bubble hangs 2.5 units above its thinker (`0x4fa030`) with the sprite's own offset, up and to the right of the head.
 
 ### The environment grid
 

@@ -377,6 +377,21 @@ public class ParticleSystemPortTests
 		CollectionAssert.DoesNotContain( seen.ToArray(), 3, "tick order is newest first, so the child ticked before the parent set -1" );
 	}
 
+	[TestMethod]
+	public void MoveRelocatesAnEmitterAndItsFollowingChildForTheBumpSmoke()
+	{
+		var parent = Template( Life( 0 ), Immortal(), Cap( 10 ), Rates( 1, 1, 1, 1 ), ParticleLife( 3 ), (0xB4, 4, 2), (0xB8, 2, 1) );
+		var child = Template( Life( 0 ), Immortal(), Cap( 10 ), Rates( 1, 1, 1, 1 ), ParticleLife( 3 ) );
+		var system = New( Pool( (1, parent), (2, child) ) );
+		var handle = system.Create( 1, Origin );
+		Assert.IsTrue( system.Move( handle, (10 * 1024, 0, 0) ) );
+		Run( system, 3 );
+		Assert.IsTrue( Sprites( system ).All( sprite => sprite.X == 640 ), "both emitters spawn at the moved position" );
+		Assert.IsTrue( system.Kill( handle ) );
+		Run( system, 10 );
+		Assert.IsFalse( system.Move( handle, Origin ), "a dead handle is not moved" );
+	}
+
 	// ---- effectors ----
 
 	[TestMethod]

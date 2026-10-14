@@ -34,6 +34,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private int tail;
 	private readonly List<int> onRide = new();          // boarded, in boarding order
 	private readonly Queue<int> walkingOff = new();     // WALKOFF done, waiting for WALKGET
+	private readonly Queue<double> walkingOffReady = new(); // the script time at which WALKGET may hand the guest out (parallel to walkingOff)
 	private readonly HashSet<int> hopped = new();
 	private readonly List<(int Guest, double Until)> limbo = new();
 	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slot table in index order: visitor (0 = free), deadline, start; trailing free slots are trimmed
@@ -285,6 +286,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		AddList( Queue );
 		AddList( onRide );
 		AddList( walkingOff );
+		if ( WalkOffMilliseconds > 0 )
+		{
+			hash.Add( WalkOffMilliseconds );
+			foreach ( var ready in walkingOffReady )
+				hash.Add( ready );
+		}
 		AddList( hopped.Order().ToArray() );
 		AddTimed( limbo );
 		hash.Add( bouncing.Count );
@@ -329,6 +336,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		Queue = Queue.ToArray(),
 		OnRide = onRide.ToArray(),
 		WalkingOff = walkingOff.ToArray(),
+		WalkingOffReady = WalkOffMilliseconds > 0 ? walkingOffReady.ToArray() : null,
 		Hopped = hopped.Order().ToArray(),
 		Limbo = limbo.ToArray(),
 		Bounce = bouncing.ToArray(),
@@ -405,6 +413,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				Error( $"walking-off guest {guestId} is not aboard." );
 		if ( snapshot.WalkingOff.Distinct().Count() != snapshot.WalkingOff.Length )
 			Error( "the walking-off list repeats a guest." );
+		if ( snapshot.WalkingOffReady != null && (snapshot.WalkingOffReady.Length != snapshot.WalkingOff.Length || snapshot.WalkingOffReady.Any( ready => !double.IsFinite( ready ) )) )
+			Error( "the walking-off times do not match the walking-off list." );
 		foreach ( var guestId in snapshot.Hopped )
 			if ( !riders.Contains( guestId ) )
 				Error( $"hopped guest {guestId} is not aboard." );
@@ -482,8 +492,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		onRide.Clear();
 		onRide.AddRange( snapshot.OnRide );
 		walkingOff.Clear();
-		foreach ( var guestId in snapshot.WalkingOff )
-			walkingOff.Enqueue( guestId );
+		walkingOffReady.Clear();
+		for ( var index = 0; index < snapshot.WalkingOff.Length; index++ )
+		{
+			walkingOff.Enqueue( snapshot.WalkingOff[index] );
+			walkingOffReady.Enqueue( snapshot.WalkingOffReady?[index] ?? 0 );
+		}
 		hopped.Clear();
 		hopped.UnionWith( snapshot.Hopped );
 		limbo.Clear();
@@ -993,7 +1007,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		foreach ( var guest in onRide.ToArray() )
 			Release( guest );
 		walkingOff.Clear();
+		walkingOffReady.Clear();
 	}
+
+	/// <summary>
+	/// How long a guest takes to walk off after WALKOFF before WALKGET hands it out, in script milliseconds; 0 (the default) completes at once. The tour rides set
+	/// it: their unload loops count walkers and leave the loop when WALKGET returns the walker immediately (docs/TOURS.md, TOUR-007).
+	/// </summary>
+	public int WalkOffMilliseconds { get; set; }
 
 	/// <summary>Performs a visitor opcode; false for opcodes the bridge does not own.</summary>
 	public bool TryPerform( RideEffectCall call, out int result )
@@ -1020,11 +1041,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				{
 					hopped.Add( guest );
 					walkingOff.Enqueue( guest );
+					walkingOffReady.Enqueue( now + WalkOffMilliseconds );
 				}
 				return true;
 			}
 			case Opcode.WALKGET:
-				result = walkingOff.Count > 0 ? walkingOff.Dequeue() : 0;
+				if ( walkingOff.Count > 0 && walkingOffReady.Peek() <= now )
+				{
+					result = walkingOff.Dequeue();
+					walkingOffReady.Dequeue();
+				}
 				return true;
 			case Opcode.LIMBO:
 			{

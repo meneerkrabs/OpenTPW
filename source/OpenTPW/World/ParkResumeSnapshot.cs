@@ -88,6 +88,11 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	public TrackWorldSaveData? Tracks { get; init; }
 	/// <summary>
+	/// The park's tour rides, or null when no ride held a tour controller: every live tour ride's flying-car controller with its cars and riders, joined by attraction
+	/// id (the part joined the envelope with the tour slice, docs/TOURS.md; earlier saves carry none and their tour rides get fresh controllers).
+	/// </summary>
+	public TourWorldSaveData? Tours { get; init; }
+	/// <summary>
 	/// The developer prototype Totem, or null when the park had none: where it stands, its runtime and script state
 	/// and its economy association, joined by attraction id (the part joined the envelope with the prototype slice;
 	/// saves from before it carry no part and hold no prototype).

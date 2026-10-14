@@ -263,6 +263,20 @@ public sealed partial class ParticleSystem
 		return effector.Generation == (int)((uint)handle >> 16) ? effector : null;
 	}
 
+	/// <summary>Moves a live emitter to a native position (1/1024 original unit, Y up), and its following child with it; false for a dead handle.</summary>
+	// [BIN:TPW-EXE:0x51FE30 emitter move] the bump module moves a vehicle's smoke emitter to its sparks node every tick; the position is stored like the constructor's (>> 4)
+	public bool Move( int handle, (int X, int Y, int Z) nativePosition )
+	{
+		if ( Resolve( handle ) is not { } emitter )
+			return false;
+		emitter.X = nativePosition.X >> 4;
+		emitter.Y = nativePosition.Y >> 4;
+		emitter.Z = nativePosition.Z >> 4;
+		if ( emitter.Child >= 0 && emitter.Template.ChildFollows )
+			Move( emitter.Child, nativePosition );
+		return true;
+	}
+
 	public bool IsAlive( int handle ) => Resolve( handle ) != null;
 
 	/// <summary>The template id of every live emitter, in slot order (diagnostics and tests).</summary>

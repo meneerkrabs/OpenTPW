@@ -9,7 +9,7 @@ public enum BumpEffectKind
 	GlobalSound,
 	/// <summary>A sound of the ride's EventMap: <see cref="BumpEffect.Id"/> is the slot (0 engine, 1 stop, 3 horn).</summary>
 	EventSound,
-	/// <summary>The engine voice of a kart starts (EventMap slot 0).</summary>
+	/// <summary>The engine voice of a kart or boat starts (EventMap slot 0).</summary>
 	EngineStart,
 	/// <summary>The engine voice's pitch parameter (EventMap VAR_PAR0): <see cref="BumpEffect.Value"/> is speed / 3.</summary>
 	EngineParameter,
@@ -17,6 +17,12 @@ public enum BumpEffectKind
 	EngineStop,
 	/// <summary>The engine voice stops without the stop sound (the bumper cars: the retire routine only stops the voice).</summary>
 	EngineHalt,
+	/// <summary>A persistent particle emitter (<see cref="BumpEffect.Id"/> is the library id) starts on the vehicle: the break smoke.</summary>
+	EmitterStart,
+	/// <summary>The vehicle's emitter moves to the vehicle's position (every tick while it lives).</summary>
+	EmitterMove,
+	/// <summary>The vehicle's emitter is destroyed (the fix or the unload).</summary>
+	EmitterStop,
 	/// <summary>The kart's animation clip changed (<see cref="BumpEffect.Id"/> 5 or 12).</summary>
 	Animation
 }
@@ -27,14 +33,16 @@ public enum BumpEffectKind
 /// <param name="Height">The vehicle's presentation height in model units (the pose probes' last result; 0 in a headless host).</param>
 public readonly record struct BumpEffect( BumpEffectKind Kind, int Slot, int Id, int Value, int X, int Y, float Height = 0f );
 
-/// <summary>The effect ids of the kart code (traced from the executable; the cat_rides ids are not mapped to sounds, TRACK-025).</summary>
+/// <summary>The effect ids of the kart code (traced from the executable; the cat_rides ids are not mapped to sounds).</summary>
 public static class BumpEffects
 {
-	/// <summary>Particle library ids (Data/Particle/par_lib.h): 1 Sparks, 2 Smoke, 10 ExhaustPuff, 15 BeamUpCar.</summary>
+	/// <summary>Particle library ids (Data/Particle/par_lib.h): 1 Sparks, 2 Smoke, 10 ExhaustPuff, 15 BeamUpCar, 96 SmallSplash.</summary>
 	public const int ParticleSparks = 1;
 	public const int ParticleSmoke = 2;
 	public const int ParticleExhaustPuff = 10;
 	public const int ParticleBeamUpCar = 15;
+	/// <summary>The boats' spray: library id 96, P_EFFECT_SmallSplash.</summary>
+	public const int ParticleSmallSplash = 96;
 	/// <summary>Global <c>cat_rides</c> sounds the effect player submits: 12 for a crash, 24 for the exhaust puff.</summary>
 	public const int SoundCrunch = 12;
 	public const int SoundExhaust = 24;

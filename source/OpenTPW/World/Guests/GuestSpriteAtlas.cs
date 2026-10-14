@@ -115,6 +115,10 @@ public sealed class GuestSpriteAtlas
 	// [DATA:esprites.wad/Generic/Balloons/SPR_BL.ESP+TPC] 8 frames: four colours (slots 0 red, 1 green, 2 blue, 3 yellow), each the whole balloon then its burst; no directions
 	public static List<GuestSpriteAtlas> LoadBalloons() => LoadSets( "/esprites/Generic/Balloons", ".TPC", "balloons" );
 
+	/// <summary>Loads the thought bubbles (<c>esprites/Generic/Thoughts</c>: <c>SPR_TB</c> then <c>SPR_TC</c>, sprite category 9), or none.</summary>
+	// [DATA:esprites.wad/Generic/Thoughts/SPR_TB.ESP+TPC,SPR_TC.ESP+TPC] TB: 16 bubbles, slot n is frame n; TC: 10 frames, its slots 0-9 show frames 0, 1, 8, 9, 7, 2, 3, 4, 5, 6 (the staff's bubbles, a thumb up and four arrows)
+	public static List<GuestSpriteAtlas> LoadThoughts() => LoadSets( "/esprites/Generic/Thoughts", ".TPC", "thoughts" );
+
 	internal static List<GuestSpriteAtlas> LoadSets( string directory, string bankExtension, string packFolder, string packRoot = "generic" )
 	{
 		var sets = new List<GuestSpriteAtlas>();

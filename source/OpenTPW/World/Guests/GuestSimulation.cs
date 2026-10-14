@@ -433,7 +433,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
 	/// enters the temporary history.
 	/// </summary>
-	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger) has the original's sources: vomit and stinkbombs, the entertainers' row 0 and the guards' row 3 (security) as they move, and the toilets' clean or dirty row, the cameras' row 4 and the fireworks' row 7 where they stand (ParkEnvironment, tp.exe 0x004DB090); a load puts back the row the object's saved state implies, and a show loses its row when its script's VAR_STATUS reaches 1, which only the script writes in OpenTPW; the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function are not modelled — evidence needed: the thought pick 0x004FC8A0 and the bubble timer 0x0050BE40 (read); who sets a show's VAR_STATUS in the original
+	// [APPROX:GUEST-006] the guest's cell environment record has all the original's sources (vomit, stinkbombs, entertainers, guards, toilets, cameras, fireworks; ParkEnvironment) and the thoughts follow tp.exe (the pick 0x4FC8A0 on one needs phase in ten, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority), but a load puts back the row an object's saved state implies, a show loses its row when its script's VAR_STATUS reaches 1, which only the script writes in OpenTPW, the pick's one-in-ten draw is a hash of the guest and the turn rather than a draw of the world generator, and bubbles are always on where the original skips them online and while bits 0x16 of the flag word 0x790AB0 are set — evidence needed: who sets a show's VAR_STATUS and what bits 0x16 of 0x790AB0 mean
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -445,10 +445,21 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( result.ToiletSpeedTerm is { } term )
 			guest.ToiletBonus = term;
 		NeedsUpdate.DecayHistory( guest.TemporaryHistory, turn );
-		// [BIN:TPW-EXE:0x00501932 balloon life] on the needs phase, outside states 16 and 17 and on a park cell (0x004FA990): +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
-		if ( NeedsUpdate.IsPhase( turn, guest.Id ) && guest.BalloonLife > 0 && guest.State is not (GuestState.Using or GuestState.HeldByGuard) && IsOnParkCell( guest )
-			&& --guest.BalloonLife == 0 )
-			guest.HasBalloon = false;
+		if ( !NeedsUpdate.IsPhase( turn, guest.Id ) )
+			return;
+		if ( guest.State is not (GuestState.Using or GuestState.HeldByGuard) && IsOnParkCell( guest ) )
+		{
+			// [BIN:TPW-EXE:0x00501919 thought pick] outside states 16 and 17 and on a park cell (0x004FA990), a world draw modulo 10 of 0 runs the pick 0x004FC8A0
+			if ( GuestThoughts.PickDraw( guest.Id, turn ) % GuestThoughts.PickOdds == 0
+				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, MessyShare( guest ) ) is { } thought )
+				Think( guest, thought );
+			// [BIN:TPW-EXE:0x00501932 balloon life] then +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
+			if ( guest.BalloonLife > 0 && --guest.BalloonLife == 0 )
+				guest.HasBalloon = false;
+		}
+		// [BIN:TPW-EXE:0x0050BE40 bubble timer] the needs phase ends with the thought object's update: a bubble whose stamp + 12 the turn has passed goes
+		if ( guest.BubbleThought != GuestThought.None && (ulong)(guest.BubbleTurn + GuestThoughts.BubbleTurns) < turn )
+			guest.BubbleThought = GuestThought.None;
 	}
 
 	/// <summary>
@@ -570,8 +581,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// a guest caught in its activity (the original's state 8) leaves it: state 17 replaces state 8
 		guest.Activity = GuestActivity.None;
 		guest.State = GuestState.HeldByGuard;
-		// [BIN:TPW-EXE:0x005022DA state 17 entry] a held guest's balloon bursts (0x004FE950); its life stays
+		// [BIN:TPW-EXE:0x005022DA state 17 entry] a held guest's balloon bursts (0x004FE950); its life stays; the thought bubble goes (0x0050C0D0)
 		guest.HasBalloon = false;
+		guest.BubbleThought = GuestThought.None;
 	}
 
 	/// <summary>
@@ -799,8 +811,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		int fee;
 		if ( Payments != null ? !Payments.TryPayAdmission( guest.Money, out fee ) : guest.Money < (fee = AdmissionFee) )
 		{
-			// Closed park or too expensive: the guest turns back at the booth.
-			guest.Thought = GuestThought.Angry;
+			// Closed park or too expensive: the guest turns back at the booth, thinking 6 as the original's two price refusals do (0x004FFA44, 0x004FFA7D).
+			// [APPROX:ARRIVAL-006] ADMISSION DECISION: the original's booth weighs the entrance fee against the park (0x004FF5B0: far too expensive, on the expensive side with a wait of 50 + R % 50 updates, on the cheap side, fair; 0x004FF9D0) and turns a guest away by that verdict; OpenTPW admits any guest who has the fee while the park is open and turns the others back with the same thought — evidence needed: the verdict 0x004FF5B0 (its inputs and bands)
+			Think( guest, GuestThought.Dissatisfied );
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
 			return;
 		}
@@ -1092,28 +1105,49 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return true;
 	}
 
-	// [APPROX:GUEST-009] the thought thresholds (a need from NeedThoughtLevel 70, toilet scaled by ToiletDesparate) and the boredom loss of SmallHappinessChange per decision after BoredomThreshold seconds have no original source; the original's thoughts (0xe8c58: hunger and thirst both above 90, a single need above 99, happiness above 99 or below 10, litter) come from a draw each needs phase and its happiness costs are the exact-100 penalties of the needs update (NeedsUpdate) — evidence needed: the thought selection and the boredom rule behind PeepTypes BoredomThreshold
+	// [APPROX:GUEST-009] BOREDOM: a guest whose last ride lies more than its type's BoredomThreshold seconds back loses SmallHappinessChange at each major decision; tp.exe loads BoredomThreshold as field 6 of the PeepTypes record, but its reader is not located — evidence needed: the reader of the peep type's BoredomThreshold
 	private void UpdateMood( Guest guest )
 	{
 		var small = Settings.SmallHappinessChange;
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-		var bored = guest.SecondsSinceRide > type.BoredomThreshold;
-		if ( bored )
+		if ( guest.SecondsSinceRide > type.BoredomThreshold )
 			guest.Happiness -= small;
 		guest.Happiness = Math.Clamp( guest.Happiness, 0, 100 );
+	}
 
-		var hungry = guest.Hunger >= Settings.NeedThoughtLevel;
-		var thirsty = guest.Thirst >= Settings.NeedThoughtLevel;
-		guest.Thought = guest.Happiness <= 10 ? GuestThought.Angry
-			: guest.Toilet >= Settings.ToiletDesperate * Settings.NeedThoughtLevel / 100 ? GuestThought.NeedToilet
-			: hungry && thirsty ? GuestThought.HungryAndThirsty
-			: hungry ? GuestThought.Hungry
-			: thirsty ? GuestThought.Thirsty
-			: bored ? GuestThought.Bored
-			: guest.Happiness >= 90 ? GuestThought.SuperHappy
-			: guest.Happiness >= 70 ? GuestThought.Happy
-			: guest.Happiness >= 30 ? GuestThought.Okay
-			: GuestThought.Unhappy;
+	/// <summary>
+	/// The guest thinks <paramref name="thought"/> (tp.exe <c>0x0050BE80</c>): the thought is stored, and a bubble shows it when the last one is old enough
+	/// for the new thought's priority (<see cref="GuestThoughts.TakesBubble"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050BE80 thought] +0 = the thought; with bubbles on, the old bubble goes (0x00475550) and, when the turn has reached +0x8C + 20 × priority, a new one starts and +0x8C is stamped
+	// Approximation (GUEST-006, registered at UpdateNeedsTurn): bubbles are always on; the original skips them in an online game (GameType 1) and while bits 0x16 of the flag word 0x00790AB0 are set, whose meaning is untraced
+	private void Think( Guest guest, GuestThought thought )
+	{
+		guest.Thought = thought;
+		guest.BubbleThought = GuestThought.None;
+		if ( !GuestThoughts.TakesBubble( (int)thought, ParkTurn, guest.BubbleTurn ) )
+			return;
+		guest.BubbleThought = thought;
+		guest.BubbleTurn = ParkTurn;
+	}
+
+	/// <summary>The share of littered path cells in the guest's 4 × 4 analyser block (tp.exe <c>0x004C8BA0</c> over <c>0x004C8AE0</c>).</summary>
+	// [BIN:TPW-EXE:0x004C8AE0 block census] the block of the guest's cell (0x004C7B70: 32 × 32 blocks of 4 × 4 cells) counts its littered cells and its cells of type 1, 3 or 9 (0x00536310, 0x00536320); the ratio is a single division
+	// Approximation (ECON-020, registered at ParkLitter.Drop): the counts are live where the analyser caches them for a few turns
+	private float MessyShare( Guest guest )
+	{
+		if ( Litter is not { } litter || Grid.Cells is not { } cells )
+			return 0f;
+		int x0 = guest.CellX & ~3, y0 = guest.CellY & ~3, littered = 0, paths = 0;
+		for ( var x = x0; x < x0 + 4; x++ )
+			for ( var y = y0; y < y0 + 4; y++ )
+			{
+				if ( litter.TypeAt( x, y ) != LitterType.None )
+					littered++;
+				if ( cells.RawTypeAt( x, y ) is 1 or 3 or 9 )
+					paths++;
+			}
+		return paths == 0 ? (littered == 0 ? 0f : float.PositiveInfinity) : (float)littered / paths;
 	}
 
 	/// <summary>
@@ -1192,7 +1226,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		if ( attraction.JoinCell is not { } join )
 		{
-			guest.Thought = GuestThought.Confused;
+			Think( guest, GuestThought.Confused );
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
 			return;
@@ -1207,12 +1241,13 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				BeginQueue( guest, attraction );
 				return;
 			}
-			guest.Thought = result switch
+			// [BIN:TPW-EXE:0x004FFCD7 join refusal] too exciting: 15, not exciting enough: 12, a queue too long: 16 (0x004FFD7E)
+			Think( guest, result switch
 			{
 				QueueJoinResult.TooExciting => GuestThought.Scared,
 				QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
 				_ => GuestThought.QueueTooLong
-			};
+			} );
 			if ( result is QueueJoinResult.NoRoom or QueueJoinResult.QueueTooLong )
 				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.SmallHappinessChange );
 			// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
@@ -1231,7 +1266,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			SetCellWaypoint( guest, nx, ny );
 		else
 		{
-			guest.Thought = GuestThought.Confused;
+			Think( guest, GuestThought.Confused );
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
 		}
@@ -1278,14 +1313,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				// the dismissal 0x005012F0 lowers happiness by the medium step (0x004FEA70 with 1)
 				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
-				LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
+				LeaveQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
 			if ( guest.State == GuestState.Boarding )
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest plays no animation and gets the QueueTooLong thought, where the original plays animation 13 for one guest in three (id % 3 = 0, 0x0050BE80) and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what animation 13 and the event-6 record are
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest thinks Angry for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id, and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight, which OpenTPW does not (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what the event-6 record feeds
 			if ( index < 0 && !onJoinCell )
 			{
 				LeaveQueue( guest, attraction, GuestThought.Confused );
@@ -1504,7 +1540,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void RefusePrice( Guest guest, IRideVisitorBridge attraction )
 	{
 		guest.Happiness = Math.Max( 0, guest.Happiness - 2 * Settings.MediumHappinessChange );
-		LeaveQueue( guest, attraction, guest.Thought );
+		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6
+		LeaveQueue( guest, attraction, GuestThought.Dissatisfied );
 	}
 
 	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
@@ -1671,7 +1708,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		attraction.LeaveQueue( guest.Id );
 		ClearQueueState( guest );
-		guest.Thought = thought;
+		if ( thought != GuestThought.None )
+			Think( guest, thought );
 		guest.LastAttractionId = attraction.AttractionId;
 		ReturnToPath( guest, JoinCellOf( attraction ) );
 	}
@@ -1756,13 +1794,19 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		ClearQueueState( guest );
 		guest.State = GuestState.Using;
-		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays
+		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays; the thought bubble goes (0x0050C0D0)
 		guest.HasBalloon = false;
+		guest.BubbleThought = GuestThought.None;
 		guest.AttractionId = ride.AttractionId;
 		guest.HasWaypoint = false;
 		var price = 0;
+		guest.SideshowWon = null;
 		if ( Payments != null )
-			Payments.TryPayVisit( ride, guest.Money, out price );
+		{
+			// [BIN:TPW-EXE:0x00501F3C state 14 entry] a sideshow's play is decided as it starts (+0x1F1 from 0x004E2670) and read when the visit ends (0x004FD970)
+			Payments.TryPayVisit( ride, guest.Money, out price, out var won );
+			guest.SideshowWon = ride.Kind == RideVisitorKind.Sideshow ? won : null;
+		}
 		else if ( ride.Price > 0 && guest.Money >= ride.Price )
 			price = ride.Price;
 		if ( price > 0 )
@@ -1810,7 +1854,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Find( guestId ) is not { } guest )
 			return;
 		ClearQueueState( guest );
-		guest.Thought = GuestThought.Dissatisfied;
+		Think( guest, GuestThought.Dissatisfied );
 		ReturnToPath( guest, JoinCellOf( ride ) );
 	}
 
@@ -1828,11 +1872,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var before = guest.Happiness;
 		(guest.Happiness, guest.Nausea) = RideOutcome.Apply( guest.Happiness, guest.Hunger, guest.Nausea, type.PreferredExcitement, ride.LiveExcitement,
 			Settings.PerfectRide, Settings.GoodRide, Settings.OkRide, Settings.RideVomitDivisor );
-		if ( (ride.LiveExcitement & 0xFF) != 0 )
-		{
-			var change = guest.Happiness - before;
-			guest.Thought = change > 0 ? GuestThought.Pleased : GuestThought.Dissatisfied;
-		}
+		// [BIN:TPW-EXE:0x004FDB66 sideshow thought] only a sideshow (thing kind 2) sets a thought at the end of a use: 5 after a win, 6 after a loss (0x004FDC25); rides and shops set none
+		if ( ride.Kind == RideVisitorKind.Sideshow )
+			Think( guest, (guest.SideshowWon ?? guest.Happiness - before > 0) ? GuestThought.Pleased : GuestThought.Dissatisfied );
+		guest.SideshowWon = null;
 		// the type's own effects follow the outcome in the original's use routine (0xeaaf8: 0xea318, then the effects fragment 0xeabb8)
 		var effects = UseEffects.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ),
 			ride.ThirstEffect, ride.HungerEffect, ride.VomitEffect, ride.HappinessEffect );
@@ -1987,6 +2030,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			SecondsSinceRide = guest.SecondsSinceRide,
 			RidesTaken = guest.RidesTaken,
 			Thought = guest.Thought,
+			BubbleThought = guest.BubbleThought,
+			BubbleTurn = guest.BubbleTurn,
+			SideshowWon = guest.SideshowWon,
 			AttractionId = guest.AttractionId,
 			LastAttractionId = guest.LastAttractionId,
 			UsedHistory = (int[])guest.UsedHistory.Clone(),
@@ -2223,6 +2269,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} is already gone; gone guests are removed at the end of their tick." );
 			if ( !Enum.IsDefined( guest.Thought ) )
 				Error( $"Guest {guest.Id} thought {(int)guest.Thought} is not a guest thought." );
+			if ( !Enum.IsDefined( guest.BubbleThought ) || guest.BubbleTurn < 0 || guest.BubbleTurn > ParkCalendar.Turn( snapshot.TickCount ) )
+				Error( $"Guest {guest.Id} bubble {(int)guest.BubbleThought} at turn {guest.BubbleTurn} is not a thought bubble." );
 			if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
 			// Schema 1 grew hunger, thirst and toilet to the old model's 150 cap; the meter model (schema 2 on) holds 0..100.
@@ -2529,7 +2577,16 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.TimeInParkSeconds = snapshot.TimeInParkSeconds;
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
-		guest.Thought = snapshot.Thought;
+		// Saves before schema 7 hold OpenTPW's former thoughts: "Super happy" and "Okay", which the original never thinks, become "Happy!" and no thought.
+		guest.Thought = schemaVersion < 7 ? snapshot.Thought switch
+		{
+			GuestThought.SuperHappy => GuestThought.Happy,
+			GuestThought.Okay => GuestThought.None,
+			var thought => thought
+		} : snapshot.Thought;
+		guest.SideshowWon = snapshot.SideshowWon;
+		guest.BubbleThought = snapshot.BubbleThought;
+		guest.BubbleTurn = snapshot.BubbleTurn;
 		guest.AttractionId = snapshot.AttractionId;
 		guest.LastAttractionId = snapshot.LastAttractionId;
 		snapshot.UsedHistory?.CopyTo( guest.UsedHistory, 0 );

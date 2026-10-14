@@ -1365,7 +1365,7 @@ for each such need. A thirsty guest at 90 who reaches a drinks shop with a thirs
 penalty. First counterexamples: `guest-needs-turn`, id 4 on turn 0, needs 10 and counter 120: original thirst 12, hunger 12, toilet 11, counter 119, the former rule thirst 10.11 and counter 119.752;
 `guest-constructor`, world state 0: type 2, money 528, thirst 12, hunger 47, toilet 4, counter 109 and happiness 50, against type 7, money 522, needs 0, counter 122 and happiness 60.
 
-*Not changed / open.* The environment words of the cells (GUEST-006), the thought pick and its thresholds (GUEST-009: the original's `0xe8c58` takes hunger and thirst both above 90, a single need above 99 or happiness above 99
+*Not changed / open.* The environment words of the cells (GUEST-006), the thought pick and its thresholds (since modelled from tp.exe `0x4fc8a0`, GUEST-006; the Mac `0xe8c58` takes hunger and thirst both above 90, a single need above 99 or happiness above 99
 or below 10), the prankery byte (GUEST-007), the energy meter (OpenTPW only, GUEST-008), the guest's thing id against OpenTPW's guest id for the phase (WALK-010), the litter meter and the toilet branch of the use routine
 (GUEST-005). The Windows executables were not compared (the x86 oracle was not run for this finding).
 

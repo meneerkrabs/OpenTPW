@@ -348,6 +348,24 @@ internal static class Game
 					Log.Warning( "--debug-water-track / --debug-kart-track: no site with room for a track ride and its circuit." );
 			}
 		}
+		// [EXT:debug-coaster] smoke-only (Debug builds): once the original level is up, builds a small coaster ("built" or "open", optionally with a coaster
+		// Info.Id from --debug-coaster-id) and points the camera at it, so captures show the track, pylons and cars (docs/COASTERS.md).
+		var debugCoaster = GetOption( args, "--debug-coaster", "built or open for a coaster capture" );
+		if ( debugCoaster != null )
+		{
+			var coasterFrames = 0;
+			var coasterId = GetOption( args, "--debug-coaster-id", "a coaster Info.Id" ) is { } idText && int.TryParse( idText, out var parsedId ) ? parsedId : (int?)null;
+			var coasterHeight = GetOption( args, "--debug-coaster-height", "a pylon height" ) is { } heightText && int.TryParse( heightText, out var parsedHeight ) ? parsedHeight : 40;
+			Render.PostUpdate += BuildCoasterDemo;
+			void BuildCoasterDemo()
+			{
+				if ( flow.Level is not { OriginalPark: not null } demoLevel || ++coasterFrames < 30 )
+					return;
+				Render.PostUpdate -= BuildCoasterDemo;
+				if ( demoLevel.BuildDemoCoaster( debugCoaster == "built", coasterId, coasterHeight ) == null )
+					Log.Warning( "--debug-coaster: no site with room for a coaster and its circuit." );
+			}
+		}
 		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
 		// converter as soon as the park's weather exists, so captures can show rain/snow/lightning without waiting
 		// for the season's rolls. The drops, bolts and thunder still come from ParkWeather's normal machinery;
@@ -390,7 +408,8 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes
-		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once.
+		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once, and every
+		// fourth shows a thought bubble again whenever its last one went.
 		// The balloon still runs down, rides still put it away and the renderers draw them as for a bought one.
 		if ( args.Contains( "--debug-guest-looks" ) )
 		{
@@ -409,6 +428,9 @@ internal static class Game
 				dressed.IntersectWith( guests.Guests );
 				foreach ( var guest in guests.Guests )
 				{
+					// every fourth guest keeps a thought bubble up, cycling through the seventeen guest thoughts, so captures show them
+					if ( guest.Id % 4 == 0 && guest.BubbleThought == GuestThought.None )
+						(guest.BubbleThought, guest.BubbleTurn) = ((GuestThought)(1 + guest.Id / 4 % 17), guests.ParkTurn);
 					if ( !dressed.Add( guest ) )
 						continue;
 					if ( guest.Id % 2 == 0 )
@@ -615,19 +637,55 @@ internal static class Game
 	/// Finds the game folder (and the saved CD), or asks for it in the setup wizard (docs/SETUP.md).
 	/// Null when the player closes the wizard without choosing one.
 	/// </summary>
-	private static string[]? ResolveGameFolder( string[] args, string? commandLinePath )
+	private static string[]? ResolveGameFolder( string[] args, string? commandLinePath ) =>
+		ResolveDesktopGameFolder( args, commandLinePath, SetupWizard.Run );
+
+	/// <summary>Uses the real starter by default; the callback boundary permits CPU-only startup/cancellation controls.</summary>
+	internal static string[]? ResolveDesktopGameFolder( string[] args, string? commandLinePath, Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?> runWizard,
+		Func<InstallationDiscoveryResult>? searchOverride = null )
 	{
+		if ( args.Contains( "--setup" ) && DesktopSetupSelection.HasExplicitMode( args ) )
+			throw new ArgumentException( "Choose --setup or an explicit tool mode (such as --sandbox, --front-end, --load-original-level or --m3-gate); setup cannot replace an explicit tool start." );
 		var setupPath = SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( setupPath );
 		InstallationDiscoveryResult? discovery = null;
-		var resolved = args.Contains( "--setup" ) ? null
-			: GamePathResolution.Resolve( commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), new( null, null ), null, () => Array.Empty<string>() );
-		if ( resolved == null && !args.Contains( "--setup" ) )
+		var environmentPath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		// Only --setup opens the wizard on request; an ordinary start uses the saved choice (docs/SETUP.md).
+		if ( DesktopSetupSelection.ShouldShowStarter( args ) )
+			return RunStarter( args, saved, setupPath, null, runWizard );
+		var ordinary = DesktopSetupSelection.CanUseRememberedEdition( args, commandLinePath, environmentPath );
+		// [EXT:tpi-viewer] a saved experimental Theme Park Inc world starts directly; a stale folder or world opens the wizard.
+		if ( ordinary && saved.SelectedEdition == GameEdition.ThemeParkInc )
 		{
+			var selection = new DesktopSetupSelection( saved );
+			if ( !string.IsNullOrWhiteSpace( selection.Path ) )
+			{
+				var check = InstallationDiscovery.InspectAsync( selection.Path, GameEdition.ThemeParkInc ).GetAwaiter().GetResult();
+				if ( check.Reports.FirstOrDefault() is { } report && selection.AcceptInspection( selection.Revision, report ) && selection.CanStart )
+				{
+					args = selection.LaunchArguments( args );
+					Settings.Default.GamePath = selection.Path;
+					Log?.Trace( $"Game folder: {selection.Path} (saved Theme Park Inc world {selection.World})." );
+					return args;
+				}
+			}
+			Log?.Warning( "The saved Theme Park Inc folder or world is no longer available; opening setup." );
+			return RunStarter( args, saved, setupPath, null, runWizard );
+		}
+		if ( ordinary && !Enum.IsDefined( saved.SelectedEdition ) )
+		{
+			Log?.Warning( "The saved edition choice is unknown; opening setup." );
+			return RunStarter( args, saved, setupPath, null, runWizard );
+		}
+		var resolved = GamePathResolution.Resolve( commandLinePath, environmentPath, new( null, null ), null, () => Array.Empty<string>() );
+		if ( resolved == null )
+		{
+			// Saved, then legacy, then detected; the saved folder must still pass inspection.
 			foreach ( var (path, source) in new[] { (saved.GamePath, GamePathSource.Saved), (LegacySettings.GamePath, GamePathSource.Legacy) } )
 			{
 				if ( string.IsNullOrWhiteSpace( path ) ) continue;
-				var inspected = InstallationDiscovery.InspectAsync( path ).GetAwaiter().GetResult();
+				// As Theme Park World: a folder with Theme Park Inc data must not pass as TPW and then fail the edition check at start.
+				var inspected = InstallationDiscovery.InspectAsync( path, GameEdition.ThemeParkWorld ).GetAwaiter().GetResult();
 				if ( inspected.Reports.FirstOrDefault() is { IsUsable: true } report )
 				{
 					resolved = (report.Path, source);
@@ -636,38 +694,75 @@ internal static class Game
 			}
 			if ( resolved == null )
 			{
-				discovery = InstallationDiscovery.SearchAsync().GetAwaiter().GetResult();
+				discovery = searchOverride?.Invoke() ?? InstallationDiscovery.SearchAsync().GetAwaiter().GetResult();
 				if ( discovery.Reports.FirstOrDefault() is { IsUsable: true } report )
 					resolved = (report.Path, GamePathSource.Detected);
 			}
 		}
 		if ( resolved == null )
 		{
-			if ( !GamePathResolution.IsInteractive( args ) )
+			if ( !GamePathResolution.IsInteractive( args ) || DesktopSetupSelection.HasHeadlessGate( args ) )
 				throw new DirectoryNotFoundException( "Theme Park World data not found. Use --game-path or OPENTPW_GAME_PATH, or start OpenTPW without arguments to choose the folder in the setup window." );
-			var chosen = SetupWizard.Run( saved, discovery );
-			if ( chosen == null )
-			{
-				Log.Trace( "Setup closed without choosing a game folder." );
-				return null;
-			}
-			saved = saved with { GamePath = chosen.GamePath, CdPath = chosen.CdPath };
-			TrySave( saved, setupPath );
-			resolved = (chosen.GamePath, GamePathSource.Wizard);
+			return RunStarter( args, saved, setupPath, discovery, runWizard );
 		}
-		else if ( resolved.Value.Source is GamePathSource.Legacy or GamePathSource.Detected )
+		if ( resolved.Value.Source is GamePathSource.Legacy or GamePathSource.Detected )
 		{
 			saved = saved with { GamePath = resolved.Value.Path };
 			TrySave( saved, setupPath );
 		}
 		Settings.Default.GamePath = resolved.Value.Path;
-		Log.Trace( $"Game folder: {resolved.Value.Path} ({resolved.Value.Source})." );
+		Log?.Trace( $"Game folder: {resolved.Value.Path} ({resolved.Value.Source})." );
 
 		// The saved CD stands in for --cd-data, unless the folder came from a developer override or a CD is given.
-		if ( resolved.Value.Source is not (GamePathSource.CommandLine or GamePathSource.Environment) && saved.CdPath != null && InstallationDiscovery.InspectAsync( saved.CdPath ).GetAwaiter().GetResult().Reports.FirstOrDefault()?.DataDirectory != null
-			&& !args.Contains( "--cd-data" ) && string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ) ) )
-			args = [.. args, "--cd-data", saved.CdPath];
+		if ( resolved.Value.Source is not (GamePathSource.CommandLine or GamePathSource.Environment) )
+			args = WithSavedCd( args, saved );
 		return args;
+	}
+
+	private static string[] WithSavedCd( string[] args, SetupSettings saved ) =>
+		saved.CdPath != null && !args.Contains( "--cd-data" ) && string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ) )
+			&& InstallationDiscovery.InspectAsync( saved.CdPath ).GetAwaiter().GetResult().Reports.FirstOrDefault()?.DataDirectory != null
+			? [.. args, "--cd-data", saved.CdPath] : args;
+
+	/// <summary>
+	/// Asks in the setup wizard (<c>--setup</c>, a first start, or a saved folder/world that no longer works), re-inspects
+	/// the choice before using or remembering it, and returns the launch arguments. Null when the wizard is closed.
+	/// </summary>
+	private static string[]? RunStarter( string[] args, SetupSettings saved, string setupPath, InstallationDiscoveryResult? discovery,
+		Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?> runWizard )
+	{
+		var offered = saved;
+		while ( true )
+		{
+			var chosen = runWizard( offered, discovery );
+			if ( chosen == null )
+			{
+				Log?.Trace( "Setup closed without choosing a game folder." );
+				return null;
+			}
+			var selection = new DesktopSetupSelection( saved );
+			selection.Select( chosen.Edition, chosen.GamePath );
+			selection.World = chosen.World;
+			var check = InstallationDiscovery.InspectAsync( chosen.GamePath, chosen.Edition ).GetAwaiter().GetResult();
+			if ( check.Reports.FirstOrDefault() is not { } report || !selection.AcceptInspection( selection.Revision, report ) || !selection.CanStart )
+			{
+				// A timed-out or stale re-inspection keeps the player in the wizard, with the typed choice and a reason, rather than stopping the app.
+				var notice = check.TimedOut ? "Checking the selected folder took too long. Try again." : "The selected edition folder or world is no longer available.";
+				Log?.Warning( notice );
+				offered = chosen.Edition == GameEdition.ThemeParkInc
+					? saved with { SelectedEdition = chosen.Edition, ThemeParkIncPath = chosen.GamePath, ThemeParkIncWorld = chosen.World }
+					: saved with { SelectedEdition = chosen.Edition, GamePath = chosen.GamePath };
+				discovery = new InstallationDiscoveryResult( Array.Empty<InstallationReport>(), false, null ) { Notice = notice };
+				continue;
+			}
+			args = selection.LaunchArguments( args );
+			saved = selection.Remember( saved );
+			if ( chosen.Edition == GameEdition.ThemeParkWorld ) saved = saved with { CdPath = chosen.CdPath };
+			TrySave( saved, setupPath );
+			Settings.Default.GamePath = selection.Path;
+			Log?.Trace( $"Game folder: {selection.Path} ({GamePathSource.Wizard})." );
+			return chosen.Edition == GameEdition.ThemeParkWorld ? WithSavedCd( args, saved ) : args;
+		}
 	}
 
 	private static void TrySave( SetupSettings settings, string path )
@@ -725,7 +820,7 @@ internal static class Game
 			HeroDirectory = GetOption( args, "--texture-pack-hero-dir", "a directory of hand-made replacement PNGs" ) ?? "" };
 		// Guest sprites are assembled into atlases from the sprite banks; they join the build under their pack keys.
 		var sprites = subtree.Length == 0
-			? GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadBalloons() )
+			? GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadBalloons() ).Concat( GuestSpriteAtlas.LoadThoughts() )
 				.Concat( new[] { "jungle", "fantasy", "hallow", "space" }.SelectMany( theme => GuestSpriteAtlas.LoadCostumes( theme ).Concat( GuestSpriteAtlas.LoadCostumeHeads( theme ) ) ) ).ToList()
 			: new List<GuestSpriteAtlas>();
 		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}{(options.Merge ? " (merging)" : "")}." );

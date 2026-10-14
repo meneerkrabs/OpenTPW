@@ -468,7 +468,7 @@ public sealed partial class ParkHud
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
-			(UIStrings.ExitToLobby, host.ExitToLobby),
+			(UIStrings.ExitToLobby, () => { if ( !menu.IsRemoved && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
@@ -818,6 +818,7 @@ public sealed partial class ParkHud
 	private bool UpdateCoasterTool( UiInput input, bool inPark, bool paused )
 	{
 		CoasterGhost = null;
+		level.CoasterPreview = null;
 		if ( paused || !level.IsCoasterToolActive || level.CoasterTool is not { } builder )
 			return false;
 		if ( input.Wheel != 0 )
@@ -844,6 +845,9 @@ public sealed partial class ParkHud
 		var check = !onStation ? builder.Check( cursorX, cursorY )
 			: builder.Track.IsClosed ? builder.CheckComplete() : builder.Track.CheckClosure();
 		CoasterGhost = (cursorX, cursorY, check, onStation ? 0 : CoasterTrack.Truncate( builder.PreviewCost( cursorX, cursorY ) ));
+		// The renderer draws the track through a pylon at the cursor (a click on a station end closes instead and shows no ghost pylon).
+		if ( !onStation )
+			level.CoasterPreview = new CoasterPreview( cursorX, cursorY, check == CoasterPlaceResult.Ok, builder.Height, builder.LoopMode );
 		if ( !input.LeftPressed )
 			return false;
 		ReportCoasterResult( level.CoasterClick( cursorX, cursorY ) );

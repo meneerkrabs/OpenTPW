@@ -457,6 +457,25 @@ public class ParticleSystemPortTests
 		Assert.AreEqual( 0, system.LiveEffectors, "the dead parent's +0xBC sets the effector's life to -1" );
 	}
 
+	[TestMethod]
+	public void TickAllocatesNothing()
+	{
+		// emitters, effectors, children, death effects and a pool that fills and drains: after a warm-up a tick allocates no bytes
+		var effectors = new[] { Effector( (0x4, 4, -1), (0x4C, 4, 100000), (0x40, 4, 3), (0x34, 4, 20), (0x2C, 4, 50), (0x30, 4, 2) ) };
+		var pool = Pool( (1, Template( Life( 400 ), Burst( 20 ), Cap( 200 ), Rates( 6, 4, 2, -3 ), ParticleLife( 60 ), (0x44, 4, 80), (0x4C, 4, 80), (0x5C, 4, 20), (0x58, 4, 1), (0x6D, 1, 1), (0x84, 4, 3),
+			(0x98, 4, 2), (0xB4, 4, 3), (0xB8, 2, 1), (0xBC, 2, 1), (0xC4, 2, 30), (0xC8, 4, 100), (0x10, 2, 2) )),
+			(2, Template( Life( 5 ), Burst( 3 ), Cap( 20 ), ParticleLife( 8 ) )),
+			(3, Template( Life( 400 ), Cap( 100 ), Rates( 2, 2, 2, 2 ), ParticleLife( 30 ), (0x28, 4, 1), (0x2C, 4, 3) )) );
+		var system = New( pool, effectors: effectors );
+		system.Create( 1, (1024, 1024, 1024) );
+		system.CreateEffector( 0, (1024, 1024, 1024) );
+		Run( system, 50 );
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		Run( system, 200 );
+		Assert.AreEqual( 0, GC.GetAllocatedBytesForCurrentThread() - before, "a tick allocates nothing" );
+		Assert.IsTrue( system.LiveParticles > 0 );
+	}
+
 	// ---- the corpus ----
 
 	private static ParticleTemplateFile? ShippedFile()

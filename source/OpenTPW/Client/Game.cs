@@ -367,6 +367,28 @@ internal static class Game
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
 			}
 		}
+		// [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position
+		// (--debug-particle-at x,y,z, Z up; default the park camera's target) through the same starter an ADDOBJ uses, so captures can show smoke or fireworks
+		// without waiting for a ride script to fire them (docs/PARTICLES.md).
+		var debugParticle = GetOption( args, "--debug-particle", "effect ids such as 3 or 2,3 for smoke captures" );
+		if ( debugParticle != null )
+		{
+			var debugIds = debugParticle.Split( ',' ).Select( int.Parse ).ToArray();
+			var atOption = GetOption( args, "--debug-particle-at", "an engine position x,y,z" );
+			var at = atOption?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+			var debugParticleFrames = 0;
+			Render.PostUpdate += StartDebugParticles;
+			void StartDebugParticles()
+			{
+				if ( flow.Level?.OriginalPark == null || ++debugParticleFrames < 30 )
+					return;
+				Render.PostUpdate -= StartDebugParticles;
+				var position = at != null ? new System.Numerics.Vector3( at[0], at[1], at[2] )
+					: Camera.Mode is ParkCameraMode park ? park.Target.GetSystemVector3() + new System.Numerics.Vector3( 0, 0, 0.5f ) : new System.Numerics.Vector3( 0, 0, 2 );
+				foreach ( var id in debugIds )
+					Log.Trace( $"--debug-particle: effect {id} at {position} -> handle {OriginalObjectRuntime.ParticleStarter?.Invoke( new ParticleEventRequest( 0, 0, 1, 0, id, 1000, position, null, -1, -1 ) )}." );
+			}
+		}
 		// [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes
 		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once.
 		// The balloon still runs down, rides still put it away and the renderers draw them as for a bought one.

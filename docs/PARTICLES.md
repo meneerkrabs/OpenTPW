@@ -247,4 +247,6 @@ colour flicker, frame, size and spin, the dead-emitter and child rules, the effe
 the truncating position conversion, the blend flags and the quad's size, plus the shipped corpus (which templates use
 which feature, every template running twice to the same state, the effector chains). `ParticleEventRequestTests` covers
 EVENT and ADDOBJ/KILLOBJ and the world-origin key; `ParkResumeValidationTests` the envelope part. A visual check draws
-effects in the native jungle smoke test (`--smoke-test --load-original-level jungle --capture-world`).
+effects in the native jungle run: `--load-original-level jungle --debug-particle 2,60,1 --capture-camera 1,-38,7,-135 --capture-world out.png --capture-frames 75`
+(`--debug-particle` starts template effects at the camera target through the ADDOBJ starter, `--debug-particle-at x,y,z` picks an
+engine position; the smoke puff of effect 2 is visible in the capture).

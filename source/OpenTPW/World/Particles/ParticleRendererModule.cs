@@ -70,8 +70,9 @@ internal static class ParticleRendererModule
 			var templates = new ParticleTemplateFile( "/Particle/Tp2.plb" );
 			var atlas = ParticleSpriteAtlas.Load();
 			if ( atlas != null )
+				// the entity takes Level.Current at construction; a resumed park's candidate is not necessarily current yet
 				return new ParticleRenderer( new ParticleSystem( templates.Templates, effectors: templates.EffectorTemplates ), atlas,
-					position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f) );
+					position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f) ) { Level = level };
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidDataException or NullReferenceException )
 		{

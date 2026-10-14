@@ -21,10 +21,9 @@ namespace OpenTPW;
 // [BIN:STP-PPC:0x101033cc-0x101034c4 lightning] while the lightning band holds, the countdown falls by LightningCountdownSpeed each turn and a strike resets it to rand % LightningCountdownFrom; the bolt count resets outside the band
 // [BIN:STP-PPC:0x10103438-0x1010346c thunder] a strike sets the thunder countdown to max(0, ThunderStartsThisFarAway − bolts) + rand % ThunderRandomiser when it is idle (bolts fired this period, before the strike)
 // [BIN:STP-PPC:0x101034c8-0x10103518 thunder at the top] the thunder plays at the last bolt's top (x, 300, z) when its countdown ends
-// [APPROX:AUDIO-025] the December row reads past the four-season table on the Mac; this follows the fork's reading (Avg 4, Tolerance DaysOfWarning, Chance DaysBetweenChanges) — evidence needed: the Mac's row address for index 4
+// [APPROX:AUDIO-025] December is row 4 of the season roll (0x101037D4, season = month / 3): its tolerance and chance are DaysOfWarning (+0x4B8) and DaysBetweenChanges (+0x4BC), confirmed; its average is the unnamed word at +0x4B4 between the Seasons array and DaysOfWarning, which only the .sam loader writes — 4 stands for it
 // [APPROX:AUDIO-026] the forecast's apply day is roll day + DaysOfWarning on the day index, and the roll is taken on the first turn of its day — evidence needed: the Mac's day comparison units ("now" against +0x20)
 // [APPROX:AUDIO-027] the first quality is rolled at park entry from the entry day's season and the drops start at 0 — evidence needed: the Mac's initial roll (not traced)
-// [APPROX:AUDIO-029] thunder with a computed countdown of 0 plays at once — evidence needed: the Mac's thunder countdown test beside 0x10103438
 // [APPROX:AUDIO-030] the random draws come from the park's weather stream, not the world LCG; the Mac's seed source is not traced
 public sealed class ParkWeather
 {
@@ -386,34 +385,34 @@ public sealed class ParkWeather
 			CurrentDrops = 0;
 	}
 
-	/// <summary>The lightning countdown, the bolts, and the thunder countdown of one step.</summary>
+	/// <summary>The lightning countdown, the bolts, and then the thunder countdown of one step.</summary>
+	// [BIN:STP-PPC:0x101033CC weather lightning] the lightning countdown drops by LightningCountdownSpeed and strikes only below 0 (bge skips at 0); a strike arms the thunder only while its countdown is at most 0, at max(0, ThunderStartsThisFarAway - bolts) + rand % ThunderRandomiser (+0x4E8/+0x4EC)
+	// [BIN:STP-PPC:0x101034D8 weather thunder] after the lightning, every step (also outside the lightning band) the thunder countdown drops by one and the thunder plays at the stored top only when it reaches exactly 0: a computed 0 never plays, a 1 plays on the strike's own step
 	private void Bolts()
 	{
+		if ( Lightning )
+		{
+			lightningCountdown -= settings.LightningCountdownSpeed;
+			if ( lightningCountdown < 0 )
+			{
+				var x = 1 + random.Next( groundX );
+				var z = 1 + random.Next( groundZ );
+				lastTop = new Vector3( x + random.Next( 101 ) - 50, BoltTopHeight, z + random.Next( 101 ) - 50 );
+				// The bolt shows at the strike itself; its thunder follows later through the strikes queue.
+				boltTops.Enqueue( lastTop );
+				while ( boltTops.Count > MaximumPendingBoltTops )
+					boltTops.Dequeue();
+				if ( thunderCountdown <= 0 )
+					thunderCountdown = Math.Max( 0, settings.ThunderStartsThisFarAway - bolts ) + random.Next( Math.Max( 1, settings.ThunderRandomiser ) );
+				bolts++;
+				lightningCountdown = random.Next( Math.Max( 1, settings.LightningCountdownFrom ) );
+			}
+		}
+		else
+			bolts = 0;
+		// A countdown already at 0 stays there: the original's decrement would take it below 0, where it never plays either.
 		if ( thunderCountdown > 0 && --thunderCountdown == 0 )
 			strikes.Enqueue( lastTop );
-		if ( !Lightning )
-		{
-			bolts = 0;
-			return;
-		}
-		lightningCountdown -= settings.LightningCountdownSpeed;
-		if ( lightningCountdown > 0 )
-			return;
-		var x = 1 + random.Next( groundX );
-		var z = 1 + random.Next( groundZ );
-		lastTop = new Vector3( x + random.Next( 101 ) - 50, BoltTopHeight, z + random.Next( 101 ) - 50 );
-		// The bolt shows at the strike itself; its thunder follows later through the strikes queue.
-		boltTops.Enqueue( lastTop );
-		while ( boltTops.Count > MaximumPendingBoltTops )
-			boltTops.Dequeue();
-		if ( thunderCountdown <= 0 )
-		{
-			thunderCountdown = Math.Max( 0, settings.ThunderStartsThisFarAway - bolts ) + random.Next( Math.Max( 1, settings.ThunderRandomiser ) );
-			if ( thunderCountdown == 0 )
-				strikes.Enqueue( lastTop );
-		}
-		bolts++;
-		lightningCountdown = random.Next( Math.Max( 1, settings.LightningCountdownFrom ) );
 	}
 
 	/// <summary>The weather keys the sim reads, with the shipped values where a layer does not set them.</summary>

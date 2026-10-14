@@ -324,6 +324,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Litter now lies on map cells, as in the original (tp.exe `0x4d93b0`, `0x500dc0`, `0x4fff20`; ORACLE.md 7.15, X20 and X21; ECON-020,
+  GUEST-005; [WANDER-plan.md](reverse/WANDER-plan.md) §6). A purchase fills the buyer's litter meter instead of a park-wide count; at 90
+  the guest walks to a litter bin less than 3 cells away or drops its litter on its cell, and vomit stays where the guest was sick. A
+  cell holds one item, and only handymen remove it: litter comes before toilets, and a free handyman sweeps the first unclaimed
+  littered cell for WorkDuration turns (still without a position, ECON-022). The handymen strike when more than a fifth of the path is
+  littered. Saves keep the littered cells and the guests' meters (guest schema 4; older saves load clean), the world hash schema
+  moves to 15, and the fixed-run, Jungle and cross-grid hashes moved.
 - Guests now decide and wander as the original does (tp.exe `0x4fec90` and `0x4f9490`, ORACLE.md 7.14, X18 and X19, GUEST-010;
   [WANDER-plan.md](reverse/WANDER-plan.md)). Once per park turn a guest standing on the paths (state 6) cheers, vomits, leaves, makes a
   major choice at most every 30 turns, or picks a wander destination one to five cells away and walks there (state 7); the 3-second

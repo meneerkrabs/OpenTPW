@@ -347,7 +347,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( 30, price );
 		Assert.AreEqual( 30, park.Ledger.CurrentTotals[LedgerCategory.ShopTakings] );
 		Assert.AreEqual( 650 + 20, park.Ledger.CurrentTotals[LedgerCategory.OtherCosts] );
-		Assert.AreEqual( 50, park.LitterScaled );
+		Assert.AreEqual( 0, park.LitterItems, "a sale fills the buyer's litter meter, not the park (tp.exe 0x004FE1E0)" );
 		Assert.AreEqual( 1, park.Counters[ParkCounters.Sold( 4, 3 )] );
 		Assert.AreEqual( 10, park.Counters[ParkCounters.ShopProfit] );
 		park.SetPrices( shop.Id, 45 );
@@ -705,26 +705,35 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void HandymenCleanLitter()
+	public void HandymenSweepLitterCellByCell()
 	{
 		var park = EconomyTestData.Park();
 		park.OpenPark();
-		park.TryBuild( 1203, out var shop );
-		for ( var sale = 0; sale < 100; sale++ )
-			park.TryBuy( shop!.Id, 100, out _ );
-		Assert.AreEqual( 50, park.LitterItems );
+		foreach ( var (x, y) in new[] { (5, 2), (3, 7), (3, 1) } )
+			Assert.IsTrue( park.Litter.Drop( x, y, (LitterType)1 ) );
+		Assert.IsFalse( park.Litter.Drop( 3, 7, LitterType.Stinkbomb ), "a cell holds one item" );
+		Assert.AreEqual( 3, park.LitterItems );
 		var rating = park.ParkRating;
 		park.AdvanceDays( 1 );
-		Assert.AreEqual( 50, park.LitterItems );
+		Assert.AreEqual( 3, park.LitterItems, "nothing but a handyman removes litter" );
 		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
-		var hourBefore = ParkCalendar.HourIndex( park.Tick );
-		park.AdvanceDays( 1 );
-		var hours = ParkCalendar.HourIndex( park.Tick ) - hourBefore;
-		Assert.IsTrue( hours is 23 or 24, hours.ToString() );
-		var perHour = 60 * ParkEconomy.LitterScale / park.Settings[StaffType.Handyman].WorkDuration[handyman.Grade];
-		Assert.AreEqual( Math.Max( 0, 50 * ParkEconomy.LitterScale - hours * perHour ), park.LitterScaled, "one cleaning step per park-clock hour" );
+		var work = park.Settings[StaffType.Handyman].WorkDuration[handyman.Grade];
+		AdvanceTurns( park, 1 );
+		Assert.AreEqual( (3, 1), handyman.LitterCell, "the first littered cell in the finder's order, x outer and y inner" );
+		Assert.AreEqual( handyman.Id, park.Litter.CollectorAt( 3, 1 ) );
+		Assert.AreEqual( StaffState.Working, handyman.State );
+		AdvanceTurns( park, work );
+		Assert.AreEqual( 3, park.LitterItems, "the sweep lasts WorkDuration turns and the update that ends it" );
+		AdvanceTurns( park, 1 );
+		Assert.AreEqual( 2, park.LitterItems );
+		Assert.AreEqual( LitterType.None, park.Litter.TypeAt( 3, 1 ) );
+		AdvanceTurns( park, 3 * (work + 2) );
+		Assert.AreEqual( 0, park.LitterItems );
 		Assert.IsTrue( park.ParkRating >= rating );
 	}
+
+	private static void AdvanceTurns( ParkEconomy park, int turns ) =>
+		park.Advance( ParkCalendar.TickOfTurn( park.Turn + turns ) - park.Tick );
 
 	[TestMethod]
 	public void ResearchProgressesByAbilityEffortAndGroups()

@@ -209,7 +209,7 @@ The decoder now accepts mono, stereo and dual-channel MPEG-1 Layer II at
 44.1/48/32 kHz, using the bitrate/mode combinations and A/B/C/D allocation tables
 from [ISO/IEC 11172-3](https://previewnorm.com/iso/ISO%20IEC%2011172-3-1993%20PDF.pdf)
 §2.4.2.3 and Annex B.2a-d. The table is selected per frame from per-channel bitrate
-and sample rate. Low-table code15 uses 32767 levels and 15 bits; no library/table
+and sample rate. Low-table code 15 uses 32767 levels and 15 bits; no library/table
 code was vendored. Header-derived SDT metadata and the existing selected WAV
 export inherit this support. MPEG-2 Layer II joint, free format, MPEG-2.5 and Layer III
 remain unsupported; Layer I and the existing LSF maps stay unchanged.
@@ -223,7 +223,7 @@ This does not establish original PPC/x86 audio behavior or full MPEG conformance
 `Mpeg1LayerTwoTests` checks every legal header, table/row endpoints, padding,
 ignored nonjoint mode extension, grouped/scalefactor errors, SCFSI/channel
 independence, per-frame table transitions, CRC, truncation and actual SDT metadata.
-Unclipped negative-quarter DC distinguishes low-table 15-bit code15 from an
+Unclipped negative-quarter DC distinguishes low-table 15-bit code 15 from an
 incorrect 16-bit mapping. `Mpeg1LayerTwoWavExportTests` uses the real exporter.
 Fifteen pinned independently generated reference excerpts add transient/channel
 and quantizer checks without a temporary directory or external decoder dependency.
@@ -538,8 +538,8 @@ scaled separately for left/right and fed to the unchanged synthesis/rounding pat
 CRC includes the actual shared allocation once and both nonzero channel SCFSI
 fields. MPEG-2 LSF joint remains unsupported; no Layer I coverage policy changed.
 
-This follows [ISO/IEC11172-3](https://previewnorm.com/iso/ISO%20IEC%2011172-3-1993%20PDF.pdf)
-§2.4.1.6/2.4.2.3/2.4.3.3 and AnnexB.5; the effective boundary clamp is corroborated
+This follows [ISO/IEC 11172-3](https://previewnorm.com/iso/ISO%20IEC%2011172-3-1993%20PDF.pdf)
+§2.4.1.6/2.4.2.3/2.4.3.3 and Annex B.5; the effective boundary clamp is corroborated
 by [official FFmpeg Layer II source](https://www.ffmpeg.org/doxygen/9.0/mpegaudiodec__template_8c_source.html).
 Only numeric and field-order facts are used, with no vendor implementation copied.
 
@@ -548,6 +548,9 @@ protected fields; mathematical silence and independently encoded ordinary-stereo
 packets protect all boundaries, tables, shared/independent channels, ordered
 triplets, SCFSI patterns and CRC spans. Actual SDT metadata/WAV readback, source
 identity, strict output refusal and cooperative cancellation are also tested.
-The nonjoint231-vector/1LSB measurement above does not establish a joint reference
-envelope. Independent nonzero joint reference proof is a separate publication
-gate; no original assets, native player or full MPEG conformance are qualified.
+The separate [independent joint reference measurement](MPEG1-JOINT-REFERENCES.md)
+measured a maximum 1 LSB difference across 172 original synthetic four-frame joint
+vectors plus 3 low-row endpoint vectors; 43 representative packets and independent
+PCM excerpts are permanent regressions. This joint envelope was measured separately
+from the nonjoint 231-vector result. No original assets, native player or full MPEG
+conformance are qualified.

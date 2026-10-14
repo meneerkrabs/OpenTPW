@@ -3,9 +3,8 @@ namespace OpenTPW;
 /// <summary>
 /// Explicit state of one <see cref="OriginalObjectRuntime"/> (park-resume slice): the entry identity the state
 /// belongs to, the animator, the head slot table, the lifecycle counters and flags, and the ride script's identity
-/// (its instruction state lives in the <see cref="RideScriptWorldSnapshot"/>). Sound chains are live audio and
-/// cannot survive a restart: <see cref="HeldScream"/>/<see cref="OwnedScreamCount"/> are captured so the restore
-/// reports them as gaps instead of silently dropping them.
+/// (its instruction state lives in the <see cref="RideScriptWorldSnapshot"/>). Sound chains are live audio: a held
+/// scream is saved by its STARTSCREAM operands and started again on restore; unreferenced chains are only counted.
 /// </summary>
 public sealed record OriginalObjectRuntimeSnapshot
 {
@@ -37,8 +36,12 @@ public sealed record OriginalObjectRuntimeSnapshot
 	public required int AnimationsPlayed { get; init; }
 	/// <summary>(animation, variant) requests without a matching member, as "a/v".</summary>
 	public required IReadOnlyList<string> UnresolvedAnimations { get; init; }
-	/// <summary>Whether the script's effects held a STARTSCREAM chain at capture (restorable only as a reported gap).</summary>
+	/// <summary>Whether the script's effects held a STARTSCREAM chain at capture (started again on restore).</summary>
 	public required bool HeldScream { get; init; }
+	/// <summary>The held scream's STARTSCREAM band, level and script speed word (0 in saves written before they were kept).</summary>
+	public int HeldScreamBand { get; init; }
+	public int HeldScreamLevel { get; init; }
+	public int HeldScreamSpeed { get; init; }
 	/// <summary>Chains the effects still owned at capture (screams play on; not restorable across a restart).</summary>
 	public required int OwnedScreamCount { get; init; }
 	/// <summary>

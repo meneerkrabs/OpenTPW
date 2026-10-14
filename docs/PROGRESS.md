@@ -907,6 +907,10 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
+  with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
+  live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
+  playing a scream" after the first ride cycle).
 - **Browser options no longer stop the game (October 14):** the browser has no .NET configuration system, so opening
   Options → Game files read the old `Settings.Default` and stopped the game with "Configuration system failed to
   initialize". The browser chooses its game folder on the page, so it no longer shows that button, and the old settings are

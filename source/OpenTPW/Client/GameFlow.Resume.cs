@@ -29,7 +29,6 @@ internal sealed partial class GameFlow
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, catalog, settings, economyCatalog, assets );
 		if ( snapshot.Gate == null || snapshot.Staff == null )
 			throw new InvalidDataException( "The saved writable park is missing its gate or staff-world state." );
-		foreach ( var runtime in snapshot.Runtimes ) global::OpenTPW.Level.RequireResumableAudio( runtime.State );
 		var economy = ParkSaveFile.Restore( snapshot.Economy, settings, economyCatalog );
 		AutomaticAdvisor? candidateAdvisor = null;
 		try

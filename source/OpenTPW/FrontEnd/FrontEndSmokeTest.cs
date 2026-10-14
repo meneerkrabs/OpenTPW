@@ -1361,6 +1361,13 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Level == null && flow.Menu?.Selected.Level == "jungle", "the visit exits to the jungle island" );
 			Click( flow.Menu!.Main, "enterPark" );
 		} );
+		Wait( "saved park offered", 3 );
+		Do( "a saved jungle park offers to continue it", () =>
+		{
+			// The pause-menu save earlier left an own jungle save: entering the island now offers it (FrontEndMenu.ShowThemeStart).
+			Require( flow.Menu!.Stack.Top?.Name == "themeStart", "entering an island with a saved park offers to continue it" );
+			Click( flow.Menu.Stack.Top!, "choice1" ); // New park
+		} );
 		Wait( "game mode again", 3 );
 		Do( "choose Instant Action", () =>
 		{

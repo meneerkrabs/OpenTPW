@@ -226,7 +226,12 @@ public sealed class SoundBank
 
 	/// <summary>The MPEG audio of 1-based entry <paramref name="number"/>, or null when the entry is missing or damaged.</summary>
 	public byte[]? GetMpeg( uint number )
+		=> GetMpeg( number, int.MaxValue );
+
+	/// <summary>Reads a selected entry within a caller's payload bound, checked before allocating its bytes.</summary>
+	public byte[]? GetMpeg( uint number, int maximumBytes )
 	{
+		ArgumentOutOfRangeException.ThrowIfNegative( maximumBytes );
 		if ( number == 0 || number > count )
 			return null;
 		var offset = offsets[number - 1];
@@ -237,6 +242,8 @@ public sealed class SoundBank
 		var size = BinaryPrimitives.ReadInt32LittleEndian( head.AsSpan( 4 ) );
 		if ( header < SdtArchive.MinimumEntryHeaderBytes || size < 0 || (long)offset + header + size > length )
 			return null;
+		if ( size > maximumBytes )
+			throw new InvalidDataException( $"Selected sound entry contains {size} bytes, exceeding the caller's {maximumBytes}-byte input bound." );
 		return Read( (long)offset + header, size );
 	}
 

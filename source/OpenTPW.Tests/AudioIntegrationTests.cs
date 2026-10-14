@@ -108,6 +108,48 @@ public class AudioIntegrationTests
 		Assert.IsTrue( MixUntilAudible(), "valid audio still reaches PCM after rejected starts" );
 	}
 
+	private static int Children( SoundChain chain ) =>
+		((System.Collections.ICollection)typeof( SoundChain ).GetField( "children", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( chain )!).Count;
+
+	private static void MakeDue( SoundChain chain ) =>
+		typeof( SoundChain ).GetField( "nextChildAt", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( chain, 0L );
+
+	[TestMethod]
+	public void TheVoicePoolKeyFallsWithTheGroundDistance()
+	{
+		AudioListener.Update( new Vector3( 10, 500, 20 ), new Vector3( 0, 0, 1 ) );
+		Assert.AreEqual( 0xFFFF, SoundEventSystem.PoolKey( null ), "flat" );
+		Assert.AreEqual( 0xFFFF, SoundEventSystem.PoolKey( new Vector3( 10, 0, 20 ) ), "at the listener: height does not count" );
+		Assert.AreEqual( 0xFFFF - 25, SoundEventSystem.PoolKey( new Vector3( 40, 0, 60 ) ), "d² 2500 / 100" );
+		Assert.AreEqual( 0, SoundEventSystem.PoolKey( new Vector3( 10_000, 0, 0 ) ), "past the scale" );
+		Assert.IsTrue( SoundEventSystem.Audible( new Vector3( 10, 400, 20 ), 95 ), "the range test is over the ground (0x6bca10): height does not count" );
+		Assert.IsFalse( SoundEventSystem.Audible( new Vector3( 110, 500, 20 ), 95 ) );
+		Assert.AreEqual( (2700u << 16) | (0xFFFF - 25), SoundEventSystem.PoolRank( 2700, new Vector3( 40, 0, 60 ) ) );
+		Assert.IsTrue( SoundEventSystem.PoolRank( 5300, new Vector3( 1000, 0, 0 ) ) > SoundEventSystem.PoolRank( 2700, new Vector3( 10, 0, 20 ) ), "priority decides, distance breaks ties" );
+	}
+
+	[TestMethod]
+	public void AChainOutOfRangeOrBeyondTheTwelveNearestStartsNoChild()
+	{
+		// tp.exe 0x6b62b0 ticks the 12 voices of its pool, admitted while audible (0x6bca10) and ranked by 0x6bb9f0; a scream's range is 95.
+		var near = Enumerable.Range( 0, SoundEventSystem.VoicePool + 1 ).Select( index => system.StartChain( GameAudio.Kids, 74, AudioChannel.Effects, 50, new Vector3( 5 * index, 0, 0 ) )! ).ToList();
+		var far = system.StartChain( GameAudio.Kids, 74, AudioChannel.Effects, 50, new Vector3( 500, 0, 0 ) )!;
+		var before = near.Select( Children ).ToList();
+		var farBefore = Children( far );
+		foreach ( var chain in near.Append( far ) )
+			MakeDue( chain );
+		system.Pump();
+		for ( var index = 0; index < SoundEventSystem.VoicePool; index++ )
+			Assert.AreEqual( before[index] + 1, Children( near[index] ), $"chain {index} is among the twelve nearest" );
+		Assert.AreEqual( before[^1], Children( near[^1] ), "the thirteenth nearest waits" );
+		Assert.AreEqual( farBefore, Children( far ), "out of range: no new child" );
+
+		AudioListener.Update( new Vector3( 500, 0, 0 ), new Vector3( 0, 0, 1 ) );
+		MakeDue( far );
+		system.Pump();
+		Assert.AreEqual( farBefore + 1, Children( far ), "in range again: the next child starts" );
+	}
+
 	[TestMethod]
 	public void AFailedChainStartStopsItsAlreadyCreatedChild()
 	{
@@ -115,9 +157,11 @@ public class AudioIntegrationTests
 		var original = sounds[0];
 		try
 		{
-			// Fail the link walk after the first decoded child has been created.
+			// Fail the link walk after the first decoded child has been created; the first child starts in the pooled tick (tp.exe 0x6bdb50).
 			sounds[0] = original with { Links = null! };
-			Assert.ThrowsException<ArgumentNullException>( () => system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null ) );
+			var failing = system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null )!;
+			Assert.ThrowsException<ArgumentNullException>( () => system.Pump() );
+			Assert.IsTrue( failing.IsStopped );
 			Assert.IsTrue( mixer!.Voices.Count > 0 );
 			Assert.IsTrue( mixer.Voices.All( voice => voice.IsFinished ), "startup failure stops its partially created children" );
 			system.Pump();

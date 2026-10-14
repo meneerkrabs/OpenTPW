@@ -30,6 +30,7 @@ REGISTERS = {
     "GUEST": "source/OpenTPW/World/Guests/GuestApproximations.cs",
     "VM": "source/OpenTPW/VM/VmApproximations.cs",
     "TRACK": "source/OpenTPW/World/Tracks/TrackApproximations.cs",
+    "TOUR": "source/OpenTPW/World/Tours/TourApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}
 EXTENSION_SCOPE = "OpenTPW online extension"

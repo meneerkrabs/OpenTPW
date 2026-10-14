@@ -121,6 +121,7 @@ public class OriginalObject : Entity
 						engine += new System.Numerics.Vector3( OriginalParkPlacement.GetOrigin( field ), 0 );
 					return GameAudio.SoundPosition( engine );
 				} );
+			Runtime.SetTourStation( ComputeTourStation );
 			BuildModels();
 			UpdateTransforms();
 		}
@@ -166,6 +167,32 @@ public class OriginalObject : Entity
 
 	/// <summary>Engine-space matrix of a model node (e.g. a seat dummy) for other systems.</summary>
 	public Matrix4x4 GetNodeTransform( int node ) => ObjectPlacement.SwapAxes( NodeTransforms[node] ) * Placement.ModelToEngine;
+
+	/// <summary>
+	/// The launch pad of a tour ride in the tour module's units (300 per model unit): the world position of the model's pad node (a dummy of class 0x800 and
+	/// number 99; the ride origin when it has none) with each coordinate truncated to whole model units first, as the original's creation command does, and the placement rotation.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005542FE TOUR 1] the node lookup 0x0044B220 (class 0x800, number 0x63), its world position 0x004386D0, each coordinate converted to an integer and multiplied by 300
+	// [APPROX:TOUR-003] the pad is read from the model's rest pose and the placement's rotation is taken as the original's angle word (degrees × 4096 / 360); the sign of that angle against OpenTPW's rotation direction is not confirmed on a placed ride
+	internal TourStation ComputeTourStation()
+	{
+		var model = Runtime.Model;
+		var point = Placement.ModelToEngine.Translation;
+		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
+		{
+			var attribute = model.DummyAttributes[index];
+			if ( (attribute.Type & 0x800) == 0 || attribute.Value != 99 )
+				continue;
+			var node = model.Counts.Unknown46 + index;
+			if ( node < model.Nodes.Count && node < NodeTransforms.Count )
+				point = GetNodeTransform( node ).Translation;
+			break;
+		}
+		var x = (point.X - Placement.GridOrigin.X) / ObjectPlacement.ModelScale;
+		var y = (point.Y - Placement.GridOrigin.Y) / ObjectPlacement.ModelScale;
+		var up = point.Z / ObjectPlacement.ModelScale;
+		return new TourStation( (int)MathF.Truncate( x ) * 300, (int)MathF.Truncate( up ) * 300, (int)MathF.Truncate( y ) * 300, Placement.Rotation );
+	}
 
 	/// <summary>One fixed simulation tick.</summary>
 	public void Simulate( double deltaSeconds )

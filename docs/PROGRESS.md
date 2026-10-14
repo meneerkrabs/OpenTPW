@@ -1015,6 +1015,11 @@ research batch was included in this merge.
   -017, -022, COMPAT-019 (`dlake` is the drained lake obstacle 1704 of Theme Park Inc), HEADS-001 and BLUEPRINT-003. The PC world generator `0x516330` rotates its state right by 13: DET-plan §4.3,
   DETERMINISM.md and the HEADS-001 text say so, and DET-013 to DET-015 now carry the port requirements (eight reseed sites, the saved `mRandomSeed`, the update order); the port itself is not started.
   This round took 16 IDs out of the register (VM-901 stays, narrowed) and added ADVISOR-025.
+- **Tour rides take and release riders (October 14):** the four original tour rides (Jurassic, Flightmare, Star and Tweety Tours) no longer
+  leave guests in the queue. Their scripts' `TOUR` commands, traced from tp.exe (the flying-car module `FLY_`), drive a controller of up to 20 free-flying
+  cars with no track: a car lifts off from the ride's launch pad, flies a terrain-avoiding lattice walk for the ride's duration, returns, circles until the landing slot is
+  free and lands, where the script unloads and loads the next riders. Real-script asset tests run each theme with 16 guests for ten minutes (boarded equals released,
+  nobody left Using); saves carry an optional `Tours` part, older saves restore with fresh controllers. See [tours](TOURS.md).
 - **Desktop setup chooses TPW or experimental TPI (October 14):** the setup window offers Theme Park World or the experimental Theme Park Inc / Sim Coaster
   (`[EXT:tpi-viewer]`, building and guests only, no economy or campaign) with an edition-aware inspection that refuses mixed or wrong-edition folders and
   needs an available world; the TPI choice is stored beside the TPW paths in `setup.json` and starts through `--load-original-level`. An ordinary desktop

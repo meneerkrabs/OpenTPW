@@ -19,5 +19,6 @@ public partial class Level
 		Gate?.Tick();
 		StaffWorld?.Tick( deltaTime );
 		UpdateTrackRendering();
+		UpdateTourRendering();
 	} );
 }

@@ -99,6 +99,9 @@ public static class WorldStateHash
 			// the kart and water ride controllers join the hash only while one exists (every other park keeps its pins)
 			if ( sources.Scripts.Bumpers.Controllers.Count > 0 )
 				sources.Scripts.Bumpers.AddCanonicalState( hash );
+			// likewise the tour rides' flying-car controllers
+			if ( sources.Scripts.Tours.Controllers.Count > 0 )
+				sources.Scripts.Tours.AddCanonicalState( hash );
 		}
 		// economy_digest: everything the park save stores, with object keys sorted.
 		if ( economy != null )

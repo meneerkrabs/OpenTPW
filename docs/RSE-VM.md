@@ -231,7 +231,7 @@ FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) return the AnimID, or
 effect) the script has no object, and every trigger uses 0 ms as the original's
 null-object path does (`li r3,0` at 0xafb1c, 0xafc74, 0xafe88, 0xb0078, 0xb01d4,
 0xb032c, 0xb0510): the triggers write 300, WAITANIM waits `INT32_MAX` ms, and
-TRIGWAITANIM never resumes (RIDES-037 for a literal out operand). Game objects
+TRIGWAITANIM never resumes for a variable out operand; a literal out operand word 0x0000vvvv resumes once v equals the triggered AnimID (PC 0x5535c7, 0x552cd3: both compare the raw word + 1 with the token). Game objects
 always have a host (`OriginalObjectEffects`); only headless VMs reach this.
 TOUR/BUMP/COAST use the independently reviewed command
 contracts from [PPC-rides](reverse/PPC-rides.md) (`15313d2`): mutators preserve
@@ -306,8 +306,8 @@ unknown-command safety faults.
 original object (`OriginalObjectRuntime`, seed 1234, capacity 6, no visitors), so
 the animation opcodes have their real host: WAITANIM 0 at 16 ms plays AnimID 0 and
 waits its length less 300 ms (to 4,516 ms), then the 10 s passenger time-out,
-WAIT 700, VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 15,216 ms,
-TRIGANIM 5 at 15,733 ms, the sound/object timeline to 27,783 ms, then WAIT4ANIM
+WAIT 700, VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 14,816 ms,
+TRIGANIM 5 at 15,333 ms, the sound/object timeline to 27,383 ms, then WAIT4ANIM
 and VAR_RUNNING = 0 because nobody boarded. All five clip requests resolve.
 `TotemWithoutAnObjectWaitsOnItsFirstWaitAnim` pins the same script with no host:
 like the original's null-object path its first WAITANIM gets 0 ms and waits

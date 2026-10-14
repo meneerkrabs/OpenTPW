@@ -105,6 +105,8 @@ public sealed record RideVMSnapshot
 	public required int LoopAnimationToken { get; init; }
 	/// <summary>TRIGWAITANIM wait token (script +188); 0 = none.</summary>
 	public required int TriggerWaitToken { get; init; }
+	/// <summary>Script speed bias (script +192); 50 at creation.</summary>
+	public int SpeedBias { get; init; } = RideVM.DefaultSpeedBias;
 	public required long ExecutedInstructions { get; init; }
 	public required long SliceCount { get; init; }
 	/// <summary>Hooked opcode → calls its effects implementation reported as unimplemented.</summary>

@@ -875,6 +875,15 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Rides register round (October 14):** the rides register is read against the decrypted Windows tp.exe. Ride init writes
+  `InitDuration` only when above 0, as its low byte clamped to `UsageInfo.MinDuration..MaxDuration` (also the tier seed;
+  RIDES-016 retired), and the script speed is now `0.5 + bias / 100` with the bias from the ride's `Upgrades[0].InitSpeed`
+  (children copy it; jungle Bouncy runs at 1.1, RIDES-033 narrowed to the settings/upgrade writers). A literal TRIGWAITANIM
+  out operand resumes a script without an object once its value equals the triggered AnimID (RIDES-037 retired). The member
+  letter table is the original's twelve (C D I L S M E U W B R O by AnimID), numbered clips load up to the first gap and the
+  unnumbered one only without number 1 (RIDES-008 retired). RIDES-001 and RIDES-034 are retired with PC citations (30 frames
+  a second; placed rides never take the idle restart); RIDES-022, 032, 036, 038, 043 and 044 are rewritten around what the
+  PC shows.
 - **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
   (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
   the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points

@@ -273,30 +273,30 @@ public class RideVMCorpusTests
 	// executed (WAIT4ANIM included), with operand values before the instruction runs.
 	private const string HostedTotemTrace =
 		"16 WAITANIM 0 0\n" +
-		"15216 TRIGANIM_CH 5 2 0 1\n" +
-		"15216 TRIGANIM_CH 5 5 0 2\n" +
-		"15216 TRIGANIM_CH 5 8 0 3\n" +
-		"15733 TRIGANIM 5 0 0\n" +
-		"15733 ADDOBJ 3 -1 73 5\n" +
-		"15733 ADDOBJ 3 -1 90 5\n" +
-		"15733 ADDOBJ 3 -1 74 2\n" +
-		"15733 ADDOBJ 3 -1 75 2\n" +
-		"21033 EVENT 3 -1 76\n" +
-		"21033 KILLOBJ 2\n" +
-		"22033 SETREVERB 3\n" +
-		"22033 KILLOBJ 5\n" +
-		"22033 EVENT 3 -1 77\n" +
-		"22283 SINGLESCREAM 0 100\n" +
-		"22283 EVENT 3 -1 78\n" +
-		"24283 ADDOBJ 3 -1 73 5\n" +
-		"24283 ADDOBJ 3 -1 90 5\n" +
-		"24283 ADDOBJ 3 -1 74 5\n" +
-		"24283 ADDOBJ 3 -1 75 5\n" +
-		"27783 SETREVERB 0\n" +
-		"27783 KILLOBJ 5\n" +
-		"27783 EVENT 3 -1 76\n" +
-		"27783 WAIT4ANIM\n" +
-		"29766 WAIT4ANIM\n";
+		"14816 TRIGANIM_CH 5 2 0 1\n" +
+		"14816 TRIGANIM_CH 5 5 0 2\n" +
+		"14816 TRIGANIM_CH 5 8 0 3\n" +
+		"15333 TRIGANIM 5 0 0\n" +
+		"15333 ADDOBJ 3 -1 73 5\n" +
+		"15333 ADDOBJ 3 -1 90 5\n" +
+		"15333 ADDOBJ 3 -1 74 2\n" +
+		"15333 ADDOBJ 3 -1 75 2\n" +
+		"20633 EVENT 3 -1 76\n" +
+		"20633 KILLOBJ 2\n" +
+		"21633 SETREVERB 3\n" +
+		"21633 KILLOBJ 5\n" +
+		"21633 EVENT 3 -1 77\n" +
+		"21883 SINGLESCREAM 0 100\n" +
+		"21883 EVENT 3 -1 78\n" +
+		"23883 ADDOBJ 3 -1 73 5\n" +
+		"23883 ADDOBJ 3 -1 90 5\n" +
+		"23883 ADDOBJ 3 -1 74 5\n" +
+		"23883 ADDOBJ 3 -1 75 5\n" +
+		"27383 SETREVERB 0\n" +
+		"27383 KILLOBJ 5\n" +
+		"27383 EVENT 3 -1 76\n" +
+		"27383 WAIT4ANIM\n" +
+		"28100 WAIT4ANIM\n";
 
 	[TestMethod]
 	public void TotemScriptTraceWithItsObjectIsPinned()

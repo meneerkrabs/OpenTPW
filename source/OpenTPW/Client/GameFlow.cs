@@ -502,7 +502,7 @@ internal sealed partial class GameFlow : IDisposable
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
-			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesHandymen == true );
+			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesStaff == true );
 			if ( Level.StaffWorld != null )
 				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );
 			GameAudio.SetRain( Level.Weather?.RainLevel ?? 0 );

@@ -10,7 +10,7 @@ public readonly record struct StaffWorldSnapshot( int Id, StaffType Type, float 
 /// finance, research or staff states. Exact native sub-cell positions survive import and load;
 /// off-path actors remain there rather than teleporting to a convenient job or path.
 /// </summary>
-public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IHandymanWorld
+public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorld
 {
 	public const double SecondsPerCell = 1;
 	private readonly GuestPathGrid grid;
@@ -33,7 +33,8 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IHandymanW
 	{
 		var spawn = gate is { } entry && grid.IsWalkable( entry.X, entry.Y ) ? gate : FirstPath();
 		foreach ( var member in members() )
-			if ( member.CellX == null && member.CellY == null && spawn is { } cell )
+			// a member in the player's hand without a position waits for the drop; the gate spawn is for the others (staff placement, docs/STAFF-PLACEMENT.md)
+			if ( member.CellX == null && member.CellY == null && member.State != StaffState.PickedUp && spawn is { } cell )
 			{
 				member.CellX = cell.X + 0.5f;
 				member.CellY = cell.Y + 0.5f;
@@ -61,6 +62,10 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IHandymanW
 		return grid.Distance( x, y, target.X, target.Y ) >= 0;
 	}
 
+	/// <summary>A positioned member must stand on a path cell to be given a job; an unpositioned one is placed first.</summary>
+	public bool CanStartJobs( StaffMember member ) =>
+		member.CellX is not { } x || member.CellY is not { } y || grid.IsWalkable( (int)MathF.Floor( x ), (int)MathF.Floor( y ) );
+
 	/// <summary>Only this world's current employee at its reachable assigned access cell has arrived.</summary>
 	public bool HasArrived( StaffMember member ) => members().Any( current => ReferenceEquals( current, member ) )
 		&& CanTravel( member, out var target, out var x, out var y ) && (x, y) == target;
@@ -68,9 +73,10 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IHandymanW
 	public IReadOnlyList<StaffWorldSnapshot> Snapshots => members().Where( member => member.CellX.HasValue && member.CellY.HasValue )
 		.Select( member =>
 		{
-			if ( member.Type == StaffType.Handyman && member.Navigation is { } navigation )
+			if ( member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard or StaffType.Researcher && member.Navigation is { } navigation )
 				return new StaffWorldSnapshot( member.Id, member.Type, member.CellX!.Value, member.CellY!.Value,
-					member.Job is HandymanJob.Patrol or HandymanJob.ToLitter or HandymanJob.ToToilet && !navigation.Arrived, true );
+					member.Job is StaffJob.Patrol or StaffJob.ToLitter or StaffJob.ToToilet or StaffJob.Chasing or StaffJob.Escorting or StaffJob.ReturningFromEscort
+						or StaffJob.ToRestArea or StaffJob.ToStrike && !navigation.Arrived, true );
 			var reachable = CanTravel( member, out var target, out var x, out var y );
 			return new StaffWorldSnapshot( member.Id, member.Type, member.CellX!.Value, member.CellY!.Value,
 				reachable && (x, y) != target, reachable );

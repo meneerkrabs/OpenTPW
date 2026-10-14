@@ -936,6 +936,10 @@ research batch was included in this merge.
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.
+- **A fairground setup screen (October 14):** the browser's start screen now looks like the original's front end: a night sky
+  with bunting and balloons, a yellow-outlined logo, a gold-rimmed panel and chunky gold buttons (Play leads once game files are
+  kept; choosing another folder turns blue). CSS and inline SVG only: no original art and no web fonts (the content security
+  policy allows none); it fits a phone and keeps still for reduced motion.
 - **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
   write's bytes can no longer end up under another's hash; writes to different files stay independent.
 - **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),

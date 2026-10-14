@@ -233,7 +233,13 @@ reach my patrol area"); inside, the steps that leave it are removed, and with no
   area with two clicks; the wander keeps staff inside it (§4).
 - **Phase 9 (ECON-044, GUEST-007), done in the simulation.** Balloon and costume shops give guests a balloon with a life or a costume
   (`0x4fe1e0`); a ride puts the balloon away and gives it back, the life runs out on the needs phase, and balloon pranksters burst other
-  guests' balloons (docs/GUESTS.md "Balloons and costumes"). Drawing balloons and costumes is the next step.
+  guests' balloons (docs/GUESTS.md "Balloons and costumes"). Guests in costume are drawn with the theme's costume set, and
+  balloons trail and bob over their guests and burst (`0x4fa030`, docs/GUESTS.md "Rendering").
+- **Phase 10a (GUEST-006, GUEST-001), done.** The placed objects' RegionFX rows: toilets (clean row 1, dirty row 6), cameras (row 4) and
+  fireworks (row 7 until the show runs), with the attraction word feeding the attraction score's distance match (docs/GUESTS.md).
+  Phase 10b is the thoughts (the pick 0x4fc8a0 and the 22 setters of 0x50be80) and their bubbles.
+- **Phase 10b (GUEST-006, GUEST-009), done in the simulation.** The pick on one needs phase in ten, the event thoughts and the bubble's timer
+  (docs/GUESTS.md "Thoughts"). Open: the coaster and queue-edit "Angry" thoughts, the staff's thoughts 18-22 and drawing the bubbles.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 
@@ -261,7 +267,7 @@ A map cell record (`[0x8023a0]`, 0x44 bytes) holds at most one item: `+0x2c` the
   route that fails leaves the claim in place (medium).
 - **What litter does.** Ordinary litter changes no meter. The analyser (32 × 32 blocks of 4 × 4 cells) counts littered cells
   (`0x4c8ba0`) and path, queue and type-9 cells (`0x4c8ae0`): the handymen strike when their ratio is above 0.2 (`0x509360`), the
-  thought "too messy" (THOUGHTS 7) fires when the guest's own block is above 0.2 (`0x4fc8a0`, GUEST-009), and an advisor scorer reads
+  thought "too messy" (THOUGHTS 7) fires when the guest's own block is above 0.2 (`0x4fc8a0`, GUEST-006), and an advisor scorer reads
   the park's litter percentage (`0x4ccdf0`). Vomit and stinkbombs act through the environment grid (phase 4).
 
 ## 7. Pranks (high unless marked)

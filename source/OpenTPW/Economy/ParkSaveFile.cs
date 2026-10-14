@@ -127,6 +127,9 @@ public static class ParkSaveFile
 		/// <summary>The player's call for a mechanic (<c>mRequestedService</c>); absent: none.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public bool MaintenanceRequested { get; init; }
+		/// <summary>A fireworks object whose show has run (its <c>RegionFX</c> row is gone); absent: not yet.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool FireworksSpent { get; init; }
 		/// <summary>Guests that have used the object; absent in older saves, which then use this and last month's customers.</summary>
 		public long? TimesUsed { get; init; }
 		public required long[] Statistics { get; init; }
@@ -447,6 +450,7 @@ public static class ParkSaveFile
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
 				MaintenanceRequested = item.MaintenanceRequested,
+				FireworksSpent = item.FireworksSpent,
 				TimesUsed = item.TimesUsed,
 				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit }
 			} ).ToList(),
@@ -667,6 +671,7 @@ public static class ParkSaveFile
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
 				MaintenanceRequested = item.MaintenanceRequested,
+				FireworksSpent = item.FireworksSpent,
 				TimesUsed = item.TimesUsed ?? item.Statistics[0] + item.Statistics[1],
 				CustomersThisMonth = item.Statistics[0],
 				CustomersLastMonth = item.Statistics[1],

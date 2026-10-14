@@ -26,6 +26,8 @@ back upstream or to join efforts in whatever way works best. Open an issue or a 
 
 For now our website is **[opentpw.io](https://opentpw.io/)**. Its [status page](https://opentpw.io/docs/status.html) is generated from this repository at every deploy (`tools/site_status.py`), and it has reading options (fonts, contrast, reduced motion).
 
+For Theme Park Inc / Sim Coaster, use the [static launch and installation guide](https://opentpw.io/theme-park-inc.html): current desktop/browser steps, upcoming edition chooser availability and experimental limits.
+
 ## What OpenTPW is
 
 OpenTPW runs Theme Park World on modern systems with a new engine. It reads the data of your own
@@ -160,7 +162,7 @@ certifies every variant or original-runtime parity.
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](https://opentpw.io/docs/MTR.html)). |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact (84–95 % identical samples against FFmpeg; the original PC transform and output rounding are traced, its quantiser-matrix builder and FPU precision are still open, and the Mac build holds no TQI decoder (its movies are Sorenson Video), see [movies](https://opentpw.io/docs/TGQ-MOVIES.html)). |
 | Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`) and the experimental native TPI slice draws them and supports building and visitors; campaign/economy/save support is absent, and opaque 24-bit palettes are an approximation ([FSH](https://opentpw.io/docs/FSH.html)). |
-| Theme Park Inc experimental native slice (`[EXT:tpi-viewer]`) | ⚠️ | `--load-original-level arabian\|science\|water` with Theme Park Inc data starts an experimental native build/guest route with its own HUD, terrain, paths, models and sound. Building is free and guest rules are shared with TPW; economy, staff, campaign, advisor, park saves and sharing remain disabled. Browser starts refuse TPI data. No original TPI gameplay/rendering parity is claimed ([slice](https://opentpw.io/docs/THEME-PARK-INC.html#theme-park-inc-playable-slice)). |
+| Theme Park Inc experimental native slice (`[EXT:tpi-viewer]`) | ⚠️ | `--load-original-level arabian\|science\|water` with Theme Park Inc data starts an experimental native build/guest route with its own HUD, terrain, paths, models and sound. Building is free and guest rules are shared with TPW; economy, staff, campaign, advisor, park saves and sharing remain disabled. The browser offers an explicit experimental TPI world start; the desktop edition chooser is a reviewed addition for a future release. No original TPI gameplay/rendering parity is claimed ([slice](https://opentpw.io/docs/THEME-PARK-INC.html#theme-park-inc-playable-slice)). |
 
 File format notes are also available on the [OpenTPW formats](https://opentpw.gu3.me/formats/)
 website, a work in progress from the original project.

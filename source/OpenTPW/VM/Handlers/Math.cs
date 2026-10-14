@@ -56,8 +56,8 @@ public static partial class OpcodeHandlers
 			vm.SetFlags( result );
 		}
 
-		// [APPROX:VM-900] MULT's native dispatch (interpreter case 48) is traced on no original build (the Mac jump table is data:0x3f2a4, unvisited for this case), so the destination order and the wrap/flags policy are family inference, not static evidence. Evidence needed: the case-48 handler in any original executable; the Theme Park Inc corpus only proves `MULT dest a b` shape and a SETTIMER consumer.
-		[OpcodeHandler( Opcode.MULT, RideOpcodeStatus.Implemented, "upstream signature (3 operands); Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` dest-first like SUB/DIV/MOD, then SETTIMER consumes it; product wraps like ADD/SUB and sets flags (VM-900)" )]
+		// [BIN:TPW-EXE:0x553eb9 MULT] interpreter case 48 (RSSE jump table 0x5567d8 + 48 × 4): the destination word first, then operands a and b (a variable when the top byte is 0x40, else the sign-extended low 16 bits), result = a × b by imul (32-bit wrap), written to the flag word +0x48 and, through the shared tail 0x555b48, to the destination when it is a variable (a literal destination keeps only the flags)
+		[OpcodeHandler( Opcode.MULT, RideOpcodeStatus.Implemented, "TPW-EXE 0x553eb9: dest-first, a × b by imul (32-bit wrap), result in the flag word and a variable destination; Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE`" )]
 		public static void Multiply( RideVM vm, Operand dest, Operand valueA, Operand valueB )
 		{
 			var result = unchecked(valueA.Value * valueB.Value);

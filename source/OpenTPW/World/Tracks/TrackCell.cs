@@ -5,7 +5,9 @@ public enum TrackFamily
 {
 	None = 0,
 	Kart = 3,
-	Water = 4
+	Water = 4,
+	/// <summary>The bumper cars: a render family only (the cars drive on the ground inside the ride's arena and no cell carries it).</summary>
+	Bumper = 5
 }
 
 /// <summary>

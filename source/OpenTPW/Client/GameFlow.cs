@@ -294,6 +294,12 @@ internal sealed partial class GameFlow : IDisposable
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
+		if ( level.Guests != null )
+			level.Guests.Pranked += ( guest, prank ) =>
+			{
+				if ( prank == GuestDecision.Prank.Stinkbomb )
+					GameAudio.PlayStinkbomb( new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+			};
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
 		// build and guest systems under the experimental HUD, without the reference game's economy, HUD or advisor.
 		if ( level.IsThemeParkIncSlice )

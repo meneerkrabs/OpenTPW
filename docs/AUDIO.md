@@ -291,6 +291,9 @@ Traced in the binary but not triggered yet:
   (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
   activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
   activation; it has no separate status panel (UI-910) and no map markers or strip yet.
+* A prankster's stinkbomb plays `cat_kids` 207 (0xCF) at the prankster (tp.exe `0x4FF289`, through the thing sound
+  `0x4FAA00`). A guest's litter going into a bin plays no sound of its own: it sets the bin script's variable 0
+  (`VAR_TRIGGER`) to 1 (`0x4FFF20`, `0x55A0B0`), and the bin's script does the rest.
 * Global lobby effects now play (see "Lobby effects" below): the thunder (`cat_globallobbysfx` 1) with the lobby's
   lightning, the globe's music and ambience (2, 3) and the enter-park sound (4).
 * The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and

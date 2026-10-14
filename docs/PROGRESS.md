@@ -324,6 +324,8 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- A guest's litter going into a bin now fires the bin's script trigger (variable 0, `VAR_TRIGGER` in every theme; tp.exe `0x4fff20`,
+  `0x55a0b0`), so the bin plays its own sound, and a stinkbomb plays `cat_kids` 207 at the prankster (`0x4ff289`).
 - Handymen now walk and search as in the original (tp.exe `0x4d73c0`, `0x4d7100`, `0x4c8ed0`; ORACLE.md 7.17, X23; ECON-022;
   [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level each handyman patrols the paths, looks for litter within his DetectionRange
   (2 to 5 cells by grade) and, only when there is none, for a dirty toilet in reach; he walks there, faster than on patrol, and sweeps or

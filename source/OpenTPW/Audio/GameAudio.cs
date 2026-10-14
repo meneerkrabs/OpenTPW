@@ -70,6 +70,9 @@ public static class GameAudio
 	/// <summary>The visitor click: <c>cat_kids</c> 129, flat, every time the visitor status panel is opened.</summary>
 	// [BIN:STP-PPC:0x1010B808 visitor status panel open] stores the visitor, builds its dialog, plays cat_kids 129 (mode 0, no position) unconditionally and shows the panel; called by a park-view click on a visitor, a roster row activation, the map's visitor markers and the selection strip; [BIN:TPW-EXE:0x4B79B0] the same
 	public const uint VisitorClickEvent = 129;
+	/// <summary>A prankster's stinkbomb: <c>cat_kids</c> 207 at the prankster.</summary>
+	// [BIN:TPW-EXE:0x004FF289 stinkbomb sound] after the stinkbomb's litter (0x004D93B0, type 8) the prank plays bank 0x00803A24 (cat_kids, loaded at 0x0051EBFE) event 0xCF through 0x004FAA00, which places it at the thing's model position (+0xC)
+	public const uint StinkbombEvent = 207;
 	private static SoundEventSystem? events;
 	private static SoundSentence? music;
 	private static SoundSentence? crowd;
@@ -563,6 +566,13 @@ public static class GameAudio
 	{
 		var voice = events?.PlayAt( Ui, eventId, AudioChannel.Effects, position );
 		Log.Trace( $"Sound: cat_ui {eventId} at a cell {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>A stinkbomb's sound (<see cref="StinkbombEvent"/>) at a park position.</summary>
+	public static void PlayStinkbomb( Vector3 position )
+	{
+		var voice = events?.PlayAt( Kids, StinkbombEvent, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: stinkbomb cat_kids {StinkbombEvent} {(voice == null ? "not available" : "played")}." );
 	}
 
 	/// <summary>The visitor click (<see cref="VisitorClickEvent"/>), played whenever a visitor's details are opened.</summary>

@@ -312,7 +312,8 @@ An activity (cheering, vomiting, can't decide) holds the guest for ten park turn
 Traced and executed (x86 findings X18, X20, X21, [ORACLE.md](reverse/ORACLE.md) section 7.15; [WANDER-plan.md](reverse/WANDER-plan.md) §6); implemented in `ParkLitter` and
 `GuestSimulation`. Every use of an attraction adds its `UsageInfo.LitterEffect` to the guest's litter meter (0..100; drinks and burgers 50, ice cream 25). In
 state 6 a guest whose meter byte is at least 90 looks for a litter bin (`UsageInfo.HoldsLitter`) less than 3 cells away (squared distance below 9) that a
-route reaches, the nearest first. It walks there (state 9) and throws its litter away; with no bin in reach it drops its litter on its own cell (one of five
+route reaches, the nearest first. It walks there (state 9) and throws its litter away, which sets the bin script's `VAR_TRIGGER` to 1
+(the bin's own sound and animation); with no bin in reach it drops its litter on its own cell (one of five
 kinds) and decides on. Either way the meter empties. Vomit lies on the cell where the guest was sick.
 
 A cell holds one item of litter: what falls on a littered cell is lost. Litter stays until a handyman sweeps it; it does not decay or spread. An online visit
@@ -326,7 +327,7 @@ from the left.
 Traced and executed (x86 findings X18 and X22, [ORACLE.md](reverse/ORACLE.md) section 7.16; [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PeepInfo.PrankeryLikelihood`
 guests in 100 (5 in the shipped balance) are pranksters, of one of three kinds by their id: stinkbombs, litter or balloons. In state 6 a prankster whose
 happiness byte is below 15 pranks when its flag beats a draw modulo 101: a stinkbomb on its cell (`StinkbombLikelihood` percent of the time, 25),
-litter on its cell, or another guest's balloon burst. Each prank cheers the prankster up by 1. OpenTPW's guests carry no balloons, so balloon
+litter on its cell, or another guest's balloon burst. A stinkbomb plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. OpenTPW's guests carry no balloons, so balloon
 pranksters never find a victim, and the advisor's prank lines and the guards who chase pranksters are not modelled yet (GUEST-007).
 
 Vomit and stinkbombs spread their `RegionFX` row around their cell while they lie: every cell within the row's square radius gets the row's

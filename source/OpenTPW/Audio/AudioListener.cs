@@ -11,7 +11,7 @@ public static class AudioListener
 	public const float MinimumDistance = 2f;
 
 	/// <summary>Host distance gain: 1 inside the minimum, 0 past the range, otherwise ((range − d) / (range − 2))^0.8.</summary>
-	// [APPROX:AUDIO-033] the fork's QMixer minimum 2 and exponent 0.8 are used without local binary verification — evidence needed: the original mixer mapping and distance law
+	// [APPROX:AUDIO-033] the minimum distance 2 is confirmed in both builds (PC 0x6C3B8A, Mac 0x1001858C: {2.0, max(range, 2.1 when range ≤ 2.0), rolloff}) and SetDistanceMapping(1.0) is sent (PC 0x51B6D3, Mac 0x100BA970); the gain curve itself is computed inside QMixer.dll / SoundSprocket, outside the analysable binaries: the exponent 0.8 (the fork's lead) and the missing 2.1 floor stand
 	public static float RangeGain( float range, float distance )
 	{
 		if ( !float.IsFinite( range ) || range < 0 )

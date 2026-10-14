@@ -950,6 +950,14 @@ research batch was included in this merge.
   of space and fantasy with a bob, a bank and a shadow instance), their riders as head sprites at the kart's head dummies, and the kart fields join the saves
   and the digest of kart parks only. `BUMP 8` returns nothing. TRACK-015 and 016 are narrowed (bumper cars; water spray), TRACK-023 to 026 added; QUEUE-004 now
   covers neither water nor kart rides. `--debug-kart-track` places the ride for captures.
+- **Bumper cars release their riders (October 14):** guests who rode the bumper cars of any theme (jungle Bumper Cars, Halloween, space, Bumble Bugs) never came
+  out: the four `bumper.RSE` scripts drive the ride with `BUMP` commands and the ride had no controller, so `BUMP 2` never returned a guest (a headless probe boarded 16
+  and released 0, all 16 stuck in `GuestState.Using`). The shared controller now runs the bumper types (−1, −6, −11, −14) from `tp.exe`: open sets phase 1, `BUMP 4` makes a car
+  that drops at a random free spot of the arena (one keep-in circle and a ring of eight buoys), `BUMP 12` seats a guest in the first empty car, `BUMP 3` starts the session
+  and every car counts down the duration the script set with `BUMP 13`; at 0 each car hands its riders to the leaving list, and with nobody left the ride goes back to loading
+  while the cars stay. Closing, breakdown and `BUMP 16` follow the traced routines. Cars wander between the buoys on the shared integer physics. The real script of all four
+  rides board, run and release 16 guests over several cycles in `BumperCarAssetTests`. A save from before the controller restores the ride freshly and hands its riders to
+  the leaving list. TRACK-015 narrowed; TRACK-029 (no chase yet), 030 (arena centre) and 031 (cars not drawn, no effects) added.
 - **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
   advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
   request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),

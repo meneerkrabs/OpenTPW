@@ -10,6 +10,8 @@ public enum GuestState : byte
 	EnteringPark = 5,
 	DoingNothing = 6,
 	WalkingAround = 7,
+	/// <summary>Walking to a litter bin with a full litter meter (original state 9).</summary>
+	ThrowingAwayLitter = 9,
 	GoingToRide = 10,
 	/// <summary>Standing in a queue (original state 11).</summary>
 	Queueing = 11,
@@ -87,6 +89,12 @@ public sealed class Guest
 	public float Energy { get; internal set; } = 100;
 	public float Nausea { get; internal set; }
 	public float Happiness { get; internal set; }
+	/// <summary>The litter meter (guest <c>+0x1b4</c>, 0..100): each use adds the type's <c>LitterEffect</c>; at a byte of 90 the guest bins or drops its litter.</summary>
+	public float Litter { get; internal set; }
+	/// <summary>The litter bin a guest in state 9 walks to (guest <c>+0x1dc</c>, the ride word's other use); 0 otherwise.</summary>
+	public int BinId { get; internal set; }
+	/// <summary>The prankery flag (guest <c>+0x1c0</c>, <c>mPrankeryIndex</c>): 0, or 100 (stinkbombs), 101 (litter) or 102 (balloons) for a prankster.</summary>
+	public int PrankFlag { get; internal set; }
 	public int Money { get; internal set; }
 	/// <summary>
 	/// The exit counter (guest <c>+444</c>, saved as <c>mExitLevel</c>): <c>PeepInfo.ExitLevel</c> plus a draw within ±<c>ExitLevelVar</c> at creation, one less on every

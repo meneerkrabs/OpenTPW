@@ -22,6 +22,10 @@ public sealed class GuestSettings
 	public int RideVomitDivisor { get; set; } = 10;
 	public int ToiletDesperate { get; set; } = 100;
 	public int VomitCapacity { get; set; } = 100;
+	/// <summary>Guests per 100 that are pranksters (the constructor's eighth draw; tp.exe settings word <c>0x007850DC</c>). 0 here: none.</summary>
+	public int PrankeryLikelihood { get; set; }
+	/// <summary>The percent of a stinkbomb prankster's pranks that drop a stinkbomb (tp.exe <c>0x007850E0</c>). 0 here: none.</summary>
+	public int StinkbombLikelihood { get; set; }
 	public int DecisionDistanceWeight { get; set; } = 1;
 	public int DecisionQueueWeight { get; set; } = 1;
 	public int DecisionExcitementWeight { get; set; } = 1;
@@ -106,6 +110,9 @@ public sealed class GuestSettings
 		settings.RideVomitDivisor = Math.Max( 1, Get( "PeepInfo.RideVomitDivisor", settings.RideVomitDivisor ) );
 		settings.ToiletDesperate = Get( "PeepInfo.ToiletDesparate", settings.ToiletDesperate );
 		settings.VomitCapacity = Get( "PeepInfo.VomitCapacity", settings.VomitCapacity );
+		// [DATA:levels/Standard.sam:PeepInfo.PrankeryLikelihood/StinkbombLikelihood] the key table's words 0x007850DC and 0x007850E0 (schema indices 36 and 37); the file's PrankHappinessThreshold and PrankLikelihood have no key in tp.exe (the code uses 15 and the flag against R % 101)
+		settings.PrankeryLikelihood = Get( "PeepInfo.PrankeryLikelihood", settings.PrankeryLikelihood );
+		settings.StinkbombLikelihood = Get( "PeepInfo.StinkbombLikelihood", settings.StinkbombLikelihood );
 		settings.DecisionDistanceWeight = Get( "PeepInfo.DecisionVarDistWeight", settings.DecisionDistanceWeight );
 		settings.DecisionQueueWeight = Get( "PeepInfo.DecisionVarQueueWeight", settings.DecisionQueueWeight );
 		settings.DecisionExcitementWeight = Get( "PeepInfo.DecisionVarExcitementWeight", settings.DecisionExcitementWeight );

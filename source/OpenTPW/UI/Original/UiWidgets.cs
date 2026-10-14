@@ -261,6 +261,8 @@ public sealed class UiLabel : UiElement
 	public Func<string> Text { get; set; } = () => "";
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
 	public RgbaByte Color { get; set; } = UiColors.Text;
+	/// <summary>When set, the text colour is read from here every frame instead of <see cref="Color"/>.</summary>
+	public Func<RgbaByte>? ColorSource { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Left;
 	public bool Wrap { get; set; }
 	/// <summary>Drop shadow under the text; the dark option labels have none.</summary>
@@ -277,22 +279,23 @@ public sealed class UiLabel : UiElement
 		var rect = ScreenRect( context.Canvas );
 		var font = Font( context.Fonts );
 		var text = Text();
+		var color = ColorSource?.Invoke() ?? Color;
 		if ( Group != null )
 		{
 			var (groupFont, scale) = context.ChooseUniform( Group, this );
-			context.DrawTextAt( groupFont, scale, text, rect, Color, Align, Shadow );
+			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow );
 			return;
 		}
 		if ( Fit && !Wrap )
 		{
-			context.DrawFittedText( font, text, rect, Color, Align, Shadow );
+			context.DrawFittedText( font, text, rect, color, Align, Shadow );
 			return;
 		}
 		// [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
-		context.DrawText( font, text, rect, Color, Align, Wrap, Shadow );
+		context.DrawText( font, text, rect, color, Align, Wrap, Shadow );
 	}
 }
 

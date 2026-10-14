@@ -12,7 +12,7 @@ public static class FontSmoothing
 	/// <summary>Largest smoothed atlas side; larger requests use a smaller factor (sampled linearly).</summary>
 	public const int MaximumSize = 4096;
 
-	// [APPROX:UI-043] text drawn above 1× is magnified per glyph (Catmull-Rom, contrast min(2, 0.8 × factor)) instead of doubling pixels — OpenTPW choice; the original only drew its fonts at 1×
+	// [EXT:hidpi-glyphs] text drawn above 1× is magnified per glyph (Catmull-Rom, contrast min(2, 0.8 × factor)) instead of doubling pixels; the original only drew its fonts at 1×, so this is an OpenTPW design decision
 	public static float Contrast( int factor ) => Math.Min( 2f, 0.8f * factor );
 
 	/// <summary>The factor the atlas is enlarged by for text drawn at <paramref name="scale"/> (1 = unchanged).</summary>

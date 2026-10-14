@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 /// the proven staff/buy window geometry; the window itself is an original feature (the key table's
 /// All Attractions key A, which the host camera's WASD pan currently owns).
 /// </summary>
-// [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry (no table is decoded for this window) — evidence needed: the original all-attractions window table
+// [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry; the decoded tables (attractions 0x7508e0, per-category lists 0x750ab8/0x750ba0/0x750ca0, list id 400 at [266,318,1825,876]) are not ported — evidence needed: porting them
 public sealed partial class ParkHud
 {
 	private static readonly UiRect AttractionContent = Rect( 1043, 441, 1729, 911 );
@@ -25,7 +25,7 @@ public sealed partial class ParkHud
 		(BuildCategory.Shops, "b_sshop", UIStrings.AllShops, Rect( 1521, 195, 1623, 297 )),
 		(BuildCategory.Features, "b_sfeature", UIStrings.AllMiscItems, Rect( 1640, 195, 1742, 297 )),
 	};
-	// [APPROX:UI-905] seven equal detail rows fill the stats frame's area (the sideshow category has
+	// [EXT:overview-detail-rows] seven equal detail rows fill the stats frame's area (the sideshow category has
 	// five original rows plus the two live queue rows) — evidence needed: the original detail layout.
 	private const int AttractionDetailRowCount = 7;
 
@@ -33,7 +33,6 @@ public sealed partial class ParkHud
 	private UiButton? deleteAttractionButton;
 	private BuildCategory attractionCategory = BuildCategory.Rides;
 	private bool attractionSortDescending;
-	private bool attractionSortWasChosen;
 	private int selectedAttractionId;
 	private int attractionFirstRow;
 
@@ -84,7 +83,7 @@ public sealed partial class ParkHud
 		return -1;
 	}
 
-	// [APPROX:UI-906] the projected live values of one placed attraction (wear, queue, riders, excitement) — evidence needed: the original window's value bindings
+	// [EXT:overview-detail-rows] the projected live values of one placed attraction (wear, queue, riders, excitement); the original window has no detail rows
 	private AttractionListRow AttractionRow( OriginalObject item ) => new( item.Runtime.AttractionId, EntryName( item.Entry ),
 		(BuildCategory)item.Entry.WhichUIType, item.IsOpen, item.Runtime.State.IsBroken,
 		item.Visitors.QueueLength, item.Runtime.State.OnRide, item.Visitors.WearGauge, item.Visitors.ExcitementLevel );
@@ -95,7 +94,6 @@ public sealed partial class ParkHud
 			return;
 		attractionCategory = BuildCategory.Rides;
 		attractionSortDescending = false;
-		attractionSortWasChosen = false;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
 		RefreshAttractionRows();
@@ -132,11 +130,11 @@ public sealed partial class ParkHud
 	public void ScrollAttractions( int rows ) => SetAttractionFirstRow( attractionFirstRow + rows );
 	public void SetAttractionFirstRow( int first ) => attractionFirstRow = Math.Clamp( first, 0, AttractionMaxFirstRow );
 
-	// [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded.
+	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends.
+	// [APPROX:UI-084] the initial column state of this list is assumed to be its single sortable column, ascending — evidence needed: the original list's initial state
 	public void SortAttractions()
 	{
-		attractionSortDescending = attractionSortWasChosen && !attractionSortDescending;
-		attractionSortWasChosen = true;
+		attractionSortDescending = !attractionSortDescending;
 		RefreshAttractionRows();
 		var index = AttractionRowIndex( selectedAttractionId );
 		EnsureAttractionSelection();
@@ -145,7 +143,7 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Row activation (Enter or a second click): selects the object in the park and leaves the list, as a park click does.</summary>
-	// [APPROX:UI-910] activation selects the attraction and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler
+	// [APPROX:UI-910] activation selects the attraction and closes the window; the original's message 0x402 centres the camera on the cell (0x4867b0) and closes, 0x400 opens the info panel and keeps the list — evidence needed: the gestures that produce them
 	public void SelectSelectedAttraction()
 	{
 		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == selectedAttractionId );

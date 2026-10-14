@@ -207,7 +207,7 @@ public sealed class CoasterRating
 	/// roll; returns the winch sections.
 	/// </summary>
 	// [BIN:STP-PPC:0x1003FC18 rating pass] start speed fWinchSpeed (+68), max speed and max height 0.0 (-13460(r2), 0x1003FCB8/BC); samples 1..n−2; trough coasters (flag 0x100) set sample flag 8 where the next segment climbs more than 0.01745 and clear it elsewhere (0x1003FDA4..0x1003FDC8); force a·(v/10) into sample +32..+40; speed into +28; the rating step reads the roll +24; lap += spacing / v; afterwards sample 0 gets speed fWinchSpeed and force 0, sample n−1 the speed and force of sample n−2 (0x1004001C..0x1004006C); then the suspended swing (flag 0x8), final (max Y, max speed) and the train count
-	public static (CoasterRatingResult Result, HashSet<int> WinchSections) RatePass( CoasterDefinition definition, CoasterSample[] samples, float spacing, float cap )
+	public static (CoasterRatingResult Result, HashSet<int> WinchSections) RatePass( CoasterDefinition definition, CoasterSample[] samples, float spacing, float cap, int? tailSection = null )
 	{
 		var rating = new CoasterRating( definition );
 		var winch = new HashSet<int>();
@@ -261,8 +261,8 @@ public sealed class CoasterRating
 			samples[^1].Speed = samples[^2].Speed;
 			samples[^1].Force = samples[^2].Force;
 		}
-		if ( definition.IsSuspended )
-			Swing( definition, samples );
+		if ( definition.IsSuspended && count > 0 )
+			Swing( definition, samples, CoasterRide.BrakingStartFor( count, samples[CoasterRide.BrakingSpeedSample( samples, tailSection ?? samples.Max( sample => sample.Section ) )].Speed, spacing ) );
 		var (sickness, excitement) = rating.Final();
 		var trains = TrainCount( lap, definition.TrainReleaseRate, definition.MaxTrains );
 		return (new CoasterRatingResult( sickness, excitement, 0, count * spacing, maxHeight, maxSpeed, lap, trains ), winch);
@@ -272,18 +272,51 @@ public sealed class CoasterRating
 	// [BIN:STP-PPC:0x1003FD5C vector length] fmul x·x (double), fmuls y·y and z·z, fadd, fadd, sqrt, frsp
 	public static float MixedLength( SVector3 v ) => (float)Math.Sqrt( ((double)v.X * v.X + (v.Y * v.Y)) + (v.Z * v.Z) );
 
-	/// <summary>The suspended cars' swing: each sample's roll from its lateral force.</summary>
-	// [APPROX:COAST-018] the suspended swing (definition flag 0x8, 0x100400D8..0x10040438: force plus gravity in the sample frame, an atan2 target approached at rate min(|F + g|·fForceMultiplier, 1), faded over the braking zone) is replaced by roll = lateral force × fForceMultiplier, clamped to ±π/2 — evidence needed: a restatement of 0x100400D8..0x10040438
-	private static void Swing( CoasterDefinition definition, CoasterSample[] samples )
+	/// <summary>The suspended cars' swing: each sample's roll follows the force plus gravity in the sample frame, fading over the braking zone.</summary>
+	// [BIN:TPW-EXE:0x43c76c suspended swing] (0x43c76c..0x43ca45, definition flag 0x8, sample stride 0x38) per sample with prev starting at π: F = sample force (+0x20..+0x28) + definition gravity (+0x60..+0x68); F is rotated into the sample frame by the angles −yaw (+0x10, X/Z), −pitch (+0x14, Y/Z) and −old roll (+0x18, X/Y) through the runtime sine table (0x7b0968, mask 0x7b0960, scale 0x7b095c); θ = atan2(−X, Y) (0x46f230); d = fmod(θ − prev + 3π, 2π) − π; rate = min(|F′|·definition +0x6C fForceMultiplier, 1); w = fmod(prev + d·rate + 3π, 2π) − π; roll = w − π (+2π when below −π); past the braking start (controller +0x134, computed just before from the tail node's sample) roll ×= 1 − clamp((i − b)/(n − b), 0, 1); prev = w. The Mac rule (0x100400D8..0x10040438) is the same restated; COAST-018 narrowed
+	// [APPROX:COAST-018] the sine table of the swing is libm (double sin/cos) instead of the runtime table (index = round(scale·angle) & mask, whose size and scale are initialised at run time and not traced), and the x87 intermediates (80-bit) are single or double rounded here — evidence needed: the table initialisation behind 0x7b095c/0x7b0960/0x7b0968 and an x87 capture; the rotation order and signs are read from the instructions
+	private static void Swing( CoasterDefinition definition, CoasterSample[] samples, float brakingStart )
 	{
+		var total = (float)samples.Length;
+		var previous = MathF.PI;
 		for ( var index = 0; index < samples.Length; index++ )
 		{
 			ref var sample = ref samples[index];
-			var right = new SVector3( -sample.Direction.Z, 0, sample.Direction.X );
-			if ( right.LengthSquared() == 0 )
-				continue;
-			right = SVector3.Normalize( right );
-			sample.Bank = Math.Clamp( SVector3.Dot( sample.Force, right ) * definition.ForceMultiplier, -HalfPi, HalfPi );
+			var x = sample.Force.X + definition.GravityX;
+			var y = sample.Force.Y + definition.GravityY;
+			var z = sample.Force.Z + definition.GravityZ;
+			var sin = Math.Sin( -(double)sample.Yaw );
+			var cos = Math.Cos( -(double)sample.Yaw );
+			(x, z) = ((float)(sin * z + cos * x), (float)(cos * z - sin * x));
+			sin = Math.Sin( -(double)sample.Pitch );
+			cos = Math.Cos( -(double)sample.Pitch );
+			(y, z) = ((float)(cos * y - sin * z), (float)(sin * y + cos * z));
+			sin = Math.Sin( -(double)sample.Bank );
+			cos = Math.Cos( -(double)sample.Bank );
+			(x, y) = ((float)(cos * x - sin * y), (float)(sin * x + cos * y));
+			var target = (float)Math.Atan2( -x, y );
+			var difference = (float)(((target - (double)previous + ThreePi) % TwoPiDouble) - MathF.PI);
+			var rate = (float)Math.Sqrt( (double)x * x + (double)y * y + (double)z * z ) * definition.ForceMultiplier;
+			if ( rate > 1f )
+				rate = 1f;
+			var swing = ((difference * (double)rate + previous + ThreePi) % TwoPiDouble) - MathF.PI;
+			var roll = -(MathF.PI - swing);
+			var stored = (float)(roll < -MathF.PI ? roll + TwoPiDouble : roll);
+			if ( index > brakingStart )
+			{
+				var fraction = (index - brakingStart) / (total - brakingStart);
+				if ( !(fraction < 1f) )
+					fraction = 1f;
+				if ( !(fraction > 0f) )
+					fraction = 0f;
+				stored *= 1f - fraction;
+			}
+			sample.Bank = stored;
+			previous = (float)swing;
 		}
 	}
+
+	/// <summary>The double constants 0x6fe048 (−3π, subtracted) and 0x6fe050 (2π): three and two times the single-precision π.</summary>
+	private const double ThreePi = 9.42477822303772;
+	private const double TwoPiDouble = 6.2831854820251465;
 }

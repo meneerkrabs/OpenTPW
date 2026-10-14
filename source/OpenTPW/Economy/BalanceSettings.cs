@@ -78,6 +78,9 @@ public sealed class BalanceSettings
 		BaseWage = Grades( grade => standard.GetInt( $"PerGradeStaffConsts[{grade}].BaseWage" ) );
 		// [DATA:levels/Standard.sam:PerGradeStaffConsts[g].RecuperationRate/HappinessRecuperationRate, AllStaffConstants.RestLevel/HappyHitCosNoRestArea] read as singles: the rest step 0x100F3D8C adds the two rates at settings +756/+760 + 16 g to a staff member's energy and happiness, RestLevel (+740) and the missing-rest-area happiness hit (+744) are the words 0x100F4900 compares and subtracts
 		RecuperationRate = Grades( grade => (float)standard.GetDouble( $"PerGradeStaffConsts[{grade}].RecuperationRate" ) );
+		// [DATA:levels/Standard.sam:PerGradeStaffConsts[g].IdleDuration, HandymanConstsPerGrade[g].DetectionRange] the idle spell (0x00785330 + 16 × grade) and the handyman's search range (0x007853F0 + 12 × grade)
+		IdleDuration = Grades( grade => standard.GetInt( $"PerGradeStaffConsts[{grade}].IdleDuration", 0, optional: true ) );
+		HandymanDetectionRange = Grades( grade => standard.GetInt( $"HandymanConstsPerGrade[{grade}].DetectionRange", 0, optional: true ) );
 		HappinessRecuperationRate = Grades( grade => (float)standard.GetDouble( $"PerGradeStaffConsts[{grade}].HappinessRecuperationRate" ) );
 		RestLevel = standard.GetInt( "AllStaffConstants.RestLevel" );
 		HappyHitCosNoRestArea = standard.GetInt( "AllStaffConstants.HappyHitCosNoRestArea" );
@@ -152,6 +155,10 @@ public sealed class BalanceSettings
 	public IReadOnlyList<float> RecuperationRate { get; }
 	/// <summary>Happiness a resting staff member regains per park turn, by grade (<c>PerGradeStaffConsts[g].HappinessRecuperationRate</c>).</summary>
 	public IReadOnlyList<float> HappinessRecuperationRate { get; }
+	/// <summary>Park turns a staff member idles before it searches again, by grade (<c>PerGradeStaffConsts[g].IdleDuration</c>).</summary>
+	public IReadOnlyList<int> IdleDuration { get; }
+	/// <summary>The cells a handyman looks around for litter and dirty toilets, by grade (<c>HandymanConstsPerGrade[g].DetectionRange</c>).</summary>
+	public IReadOnlyList<int> HandymanDetectionRange { get; }
 	/// <summary><c>AllStaffConstants.RestLevel</c>: a staff member whose truncated energy byte is at most this seeks a rest area.</summary>
 	public int RestLevel { get; }
 	/// <summary><c>AllStaffConstants.HappyHitCosNoRestArea</c>: the happiness a tired staff member without a rest area to go to loses (one draw in sixteen).</summary>

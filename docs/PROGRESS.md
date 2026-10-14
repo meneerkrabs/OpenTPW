@@ -901,6 +901,10 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
+  with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
+  live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
+  playing a scream" after the first ride cycle).
 - **Water ride tracks, phase 1 (October 14):** one water ride, Splish Splash on the Jungle level, works end to end on the traced original rules
   ([TRACKS.md](TRACKS.md)). The track layer mirrors the original's 40-byte cell record (origin type 16, three type-12 extension cells), the
   Q1 piece tables and adjustments, the 14 controller templates and the `.hmp` height profiles (`HmpFile`) are ported, and the water track tool lays

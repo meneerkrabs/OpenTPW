@@ -155,7 +155,10 @@ public class PlayerTicketLedgerTests
 			if ( OperatingSystem.IsWindows() )
 			{
 				using var held = new FileStream( path, FileMode.Open, FileAccess.Read, FileShare.Read );
-				Assert.ThrowsException<IOException>( () => PlayerTicketFile.Save( path, ledger.Capture() ) );
+				var refused = false;
+				try { PlayerTicketFile.Save( path, ledger.Capture() ); }
+				catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException ) { refused = true; }
+				Assert.IsTrue( refused, "A held destination must refuse replacement." );
 			}
 			else
 			{

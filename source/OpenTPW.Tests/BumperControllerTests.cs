@@ -214,6 +214,29 @@ public class BumperControllerTests
 	}
 
 	[TestMethod]
+	public void ChaseEndsWhenItsTargetIsRetired()
+	{
+		for ( uint seed = 1; seed <= 40; seed++ )
+		{
+			var controller = Create( -6, seed );
+			LoadAndStart( controller, 3, 60 );
+			for ( var tick = 0; tick < 600; tick++ )
+			{
+				controller.Tick();
+				var chaser = controller.Vehicles.FirstOrDefault( car => (car.Flags & BumpVehicle.Chasing) != 0 );
+				if ( chaser == null )
+					continue;
+				var target = controller.Vehicles.Single( car => car.Slot == chaser.ChaseTarget );
+				controller.Retire( target );
+				controller.Tick();
+				Assert.AreEqual( 0, chaser.Flags & BumpVehicle.Chasing, "a retired target ends the chase at the next step" );
+				return;
+			}
+		}
+		Assert.Fail( "no chase started in 40 seeds" );
+	}
+
+	[TestMethod]
 	public void CrashCodeFollowsTheType()
 	{
 		foreach ( var (type, expected) in new[] { (-6, BumpEffects.SoundCrunch), (-11, BumpEffects.SoundCrunch), (-14, BumpEffects.SoundCrunch), (-1, -1) } )
@@ -262,7 +285,7 @@ public class BumperControllerTests
 		var hashB = new StateHasher();
 		original.AddCanonicalState( hashA );
 		restored.AddCanonicalState( hashB );
-		Assert.AreEqual( hashA.ToString(), hashB.ToString(), "the restored controller hashes like the original" );
+		Assert.AreEqual( hashA.Value, hashB.Value, "the restored controller hashes like the original" );
 		// the generators are not part of the state, so the continuations differ in detail; the restored session still runs out and hands everybody back
 		Run( restored, 600 );
 		Assert.AreEqual( 0, restored.RiderCount );

@@ -717,6 +717,7 @@ public sealed class BumpController
 	/// when that point lies outside it, and steers there; the chase ends after 90 ticks or when the target is bumped or goes home.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005474B0 chase step] the countdown +0x8C falls each step; at 0, or when the target's flags &amp; 0x40021 are not exactly 1, the car relaunches; else lead = min(distance / own speed, 24) (own speed at least 1), aim = target position + velocity × lead; an aim outside the target's object and in no other keep-in object is moved onto the nearest object's rim (offset / 8 scaled to the radius over the offset's length + 0x20); the steering routine runs with that aim and clears flag 0x20000 within the buoy radius
+	// the target is named by slot, as in the original (+0x80 is an index into the vehicle pool): a retired target ends the chase (its live flag is gone), but a car created into the freed slot within the 90 ticks is followed like the original follows it
 	private void ChaseStep( BumpVehicle vehicle )
 	{
 		var target = vehicle.ChaseTarget >= 0 && vehicle.ChaseTarget < slots.Length ? slots[vehicle.ChaseTarget] : null;

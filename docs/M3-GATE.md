@@ -313,10 +313,10 @@ least one park-hour update, because a turn is 3,750 park-clock seconds and an ho
   1 + rides × max `WorkDuration` turns of the hired mechanics' grades. For the gate's
   grade-1 mechanic: 1 + 1 × 60 = **61 turns** (~15 s). An event whose window ends after
   the run is reported as pending.
-- **Litter.** `ParkEconomy.CleanLitter` runs at every hour update with every available
-  handyman. Litter present at the end of a tick must therefore be smaller (or zero)
-  after the next turn boundary. Sales add litter earlier in the same tick, so this can
-  misfire only if one tick's sales exceed an hour of cleaning.
+- **Litter.** Litter lies on cells (ORACLE.md 7.15). At each turn's dispatch a free handyman
+  claims the first unclaimed littered cell and sweeps it for `WorkDuration[grade]` turns. Litter
+  left unclaimed while a handyman is free on two turn boundaries in a row is a violation; drops
+  and sweeps are counted per change through `ParkLitter.Changed`.
 
 **Hashes.** `GuestSimulation.ComputeStateHash` (raw guest hash) includes guest
 attraction ids. Since the DET node these are allocated per park by its

@@ -375,18 +375,12 @@ static JsonNode? QueueJoinGate( JsonObject a )
 	return new JsonObject { ["outcome"] = outcome, ["difference"] = bridge.JoinDifference( pref ) };
 }
 
-// ParkEconomy.TryBuy (ECON-020, ORACLE F18): the change of the park's litter store (LitterScaled, 1/100 litter item) caused by one sale in
-// a shop whose UsageInfo.LitterEffect is the input. The store has no per-guest meter and no floor or ceiling.
+// GuestSimulation.ApplyVisit (ECON-020, ORACLE F18 and 7.15): the guest's litter meter after one use of an attraction whose UsageInfo.LitterEffect
+// is the input, MeterMath.Add (clamped to 0..100), as single-precision bits.
 static JsonNode? ShopSaleLitter( JsonObject a )
 {
-	var shop = new EconomyObjectInfo( 9001, "Shop", ParkObjectKind.Shop, ResearchCategory.Ride, 0,
-		new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, 30, 20, null, 2, 0, 0, 0, (int)a["effect"]!, 0, "synthetic.wad" );
-	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[] { shop } ), ParkGameMode.FullSimulation, 1 );
-	var item = park.RegisterExisting( 9001 );
-	var before = park.LitterScaled;
-	if ( !park.TryBuy( item.Id, 1000, out _ ) )
-		throw new InvalidOperationException( "the sale was refused" );
-	return JsonValue.Create( park.LitterScaled - before );
+	var meter = BitConverter.Int32BitsToSingle( (int)(uint)a["meter"]! );
+	return JsonValue.Create( (uint)BitConverter.SingleToInt32Bits( MeterMath.Add( meter, (int)a["effect"]! ) ) );
 }
 
 // ParkObjectives.CheckGoldenTickets (the local ticket check 0xd31d0, ORACLE F23) on a park whose bank holds the given year profit

@@ -471,13 +471,14 @@ flag word) is set, else state 9. State 4 continues to 5, which is the logo.
   linear 0…256 (QuickTime full volume). That routine runs from the early
   program start-up (`0x100002DC` → `0x10000D54` → `0x10125B7C`), before the
   start-up states (the order is **inferred** from the call chain). OpenTPW maps
-  its 0…10 Movie volume option linearly onto 0…1.
+  the Movie volume option (a percentage, 0…100, default 100) linearly onto 0…1.
 - **Picture box** (proven): the movie is placed at y = screen height × 64/480
   and sized to the screen width by screen height × 352/480, i.e. 640×352 in a
   640×480 screen, with black above and below. The `.tgq` frames are 320×352, so
   the original shows them horizontally doubled (non-square pixels); OpenTPW does
   the same inside a letterboxed window. (The original stretches to the
-  window width; OpenTPW keeps the 640:352 aspect, see APPROX UI-035.)
+  window width because it only ran fixed 4:3 modes; OpenTPW runs any window size and keeps the 640:352 aspect,
+  `[EXT:movie-letterbox]`, a design decision.)
 - Corroboration from `sound.sam` (`DefaultVolume.MOVIE 100`) and the options
   string "Movie volume:" in the data directory.
 
@@ -489,9 +490,12 @@ English `.str` tables were searched), which is why the executable was needed.
 ### Wired in OpenTPW
 
 `IntroPlaylist` / `IntroSequence`: every normal start plays `bf`, then the day
-trailer, then opens the front end. Esc, Space or a mouse button skips (input held
-when the window appears is ignored until released, APPROX UI-035; held input
-also skips the next movie as above). A missing or unreadable movie is skipped.
+trailer, then opens the front end. Esc, Space or a mouse button (left, right or
+middle) skips. Before each movie the PC waits until all of those are released
+(`0x54e360` states 5-8), so input held at launch or after skipping the logo
+delays the next movie rather than skipping it, and an input held during a movie
+stops it. The order and the trailer table were confirmed in the Windows `tp.exe`
+(UI-035 is retired). A missing or unreadable movie is skipped.
 `--no-intro` or `OPENTPW_NO_INTRO=1` goes straight to the front end; smoke
 tests never play it; `--mute` silences it.
 

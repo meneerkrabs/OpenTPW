@@ -130,6 +130,7 @@ public static partial class Input
 			Position = mousePos,
 			Left = inputSnapshot.IsMouseDown( MouseButton.Left ),
 			Right = inputSnapshot.IsMouseDown( MouseButton.Right ),
+			Middle = inputSnapshot.IsMouseDown( MouseButton.Middle ),
 			Wheel = inputSnapshot.WheelDelta
 		};
 

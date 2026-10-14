@@ -51,7 +51,7 @@ public sealed class UiInputSource
 			if ( keys.Contains( key ) && !previousKeys.Contains( key ) )
 				pressed |= value;
 		}
-		// [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str
+		// [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: tracing the original key groups (0x747f38-0x748378, init 0x40cb80) and KEYBOARD.str overrides (0x3fc) to this map
 		Map( Key.Up, UiKeys.Up );
 		Map( Key.Down, UiKeys.Down );
 		Map( Key.Left, UiKeys.Left );

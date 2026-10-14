@@ -324,6 +324,25 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- A guest's litter going into a bin now fires the bin's script trigger (variable 0, `VAR_TRIGGER` in every theme; tp.exe `0x4fff20`,
+  `0x55a0b0`), so the bin plays its own sound, and a stinkbomb plays `cat_kids` 207 at the prankster (`0x4ff289`).
+- Handymen now walk and search as in the original (tp.exe `0x4d73c0`, `0x4d7100`, `0x4c8ed0`; ORACLE.md 7.17, X23; ECON-022;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level each handyman patrols the paths, looks for litter within his DetectionRange
+  (2 to 5 cells by grade) and, only when there is none, for a dirty toilet in reach; he walks there, faster than on patrol, and sweeps or
+  cleans for WorkDuration turns from his arrival. An idle handyman looks again every IdleDuration turns. His idle and walking voices come
+  from his own state machine (AUDIO-024 narrowed). The park save keeps his state and walk. Rest and strike still need no walk.
+- Pranksters prank, as in the original (tp.exe `0x4fb114`, `0x4ff0f5`, `0x4d8480`; ORACLE.md 7.16, X18 and X22; GUEST-007, GUEST-006;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PrankeryLikelihood` guests in 100 (5 in the shipped balance) are pranksters for life; when
+  unhappy they drop stinkbombs or litter on their cell and cheer up a little. Vomit and stinkbombs now spread their `RegionFX` on the
+  cell environment grid: guests standing in a stinkbomb's cloud lose happiness and grow ill. Balloons, the advisor's prank lines and the
+  guards who chase pranksters are not modelled yet. Guest schema 5, world hash schema 16; the fixed-run, Jungle and cross-grid hashes moved.
+- Litter now lies on map cells, as in the original (tp.exe `0x4d93b0`, `0x500dc0`, `0x4fff20`; ORACLE.md 7.15, X20 and X21; ECON-020,
+  GUEST-005; [WANDER-plan.md](reverse/WANDER-plan.md) §6). A purchase fills the buyer's litter meter instead of a park-wide count; at 90
+  the guest walks to a litter bin less than 3 cells away or drops its litter on its cell, and vomit stays where the guest was sick. A
+  cell holds one item, and only handymen remove it: litter comes before toilets, and a free handyman sweeps the first unclaimed
+  littered cell for WorkDuration turns (still without a position, ECON-022). The handymen strike when more than a fifth of the path is
+  littered. Saves keep the littered cells and the guests' meters (guest schema 4; older saves load clean), the world hash schema
+  moves to 15, and the fixed-run, Jungle and cross-grid hashes moved.
 - Guests now decide and wander as the original does (tp.exe `0x4fec90` and `0x4f9490`, ORACLE.md 7.14, X18 and X19, GUEST-010;
   [WANDER-plan.md](reverse/WANDER-plan.md)). Once per park turn a guest standing on the paths (state 6) cheers, vomits, leaves, makes a
   major choice at most every 30 turns, or picks a wander destination one to five cells away and walks there (state 7); the 3-second
@@ -874,6 +893,48 @@ research batch was included in this merge.
   animation/deferred speech start, and listening/visual checks of the result.
 
 ## Browser build, official server and website (October 10, 2026)
+
+- **Water ride tracks, phase 1 (October 14):** one water ride, Splish Splash on the Jungle level, works end to end on the traced original rules
+  ([TRACKS.md](TRACKS.md)). The track layer mirrors the original's 40-byte cell record (origin type 16, three type-12 extension cells), the
+  Q1 piece tables and adjustments, the 14 controller templates and the `.hmp` height profiles (`HmpFile`) are ported, and the water track tool lays
+  two-click lines in two-cell tile steps, charged `Costs.WaterTrackCell` per tile, clearing paths and marking bridges. The circuit walk
+  (`0x52A970`) writes the attraction's validity word (the PC's +0x2C, which the park points read) and the segment numbers; the sections, collision
+  objects and buoys are built in the original's fixed-point units. `Wateride.RSE` drives a `BumpController` through `BUMP` 1-14, 16 and 17 (the PC
+  dispatch shows BUMP 5 is the validity read and BUMP 17 with 0 starts the water): integer steering, integration, walls, keep-out circles, boat
+  collisions, laps and unload at 30 ticks per second, the sine table regenerated from the start-up code. Pieces and boats are drawn from the ride's
+  meshes, and the cells, controller and boats are saved in the park-resume envelope. Kart controllers, jumps, tunnels and the water animation stay
+  open; TRACK-001 to 021 are registered, QUEUE-004 is narrowed to karts and ARRIVAL-003 applies the water ride's track word.
+  Review round: every tile records its ride (TRACK-021), so rides side by side never connect and a demolition removes only its own tiles; a circuit
+  that overflows the section, object or buoy pool is invalid (TRACK-020); the park-resume capture and restore share one live-controller rule; the
+  resume check bounds guests, positions, velocities and the tick clock and the restore checks boat indexes against the walked circuit; the canonical state
+  covers every restored boat field; the tick and the renderer no longer copy the boat list.
+- **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
+  advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
+  request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),
+  generated sequences are built by the original's rule (`AdvisorSequences`, clip lengths from the advisor clip trailers; the
+  clips themselves are still not drawn, ADVISOR-006 narrowed), the response span is the sequence sum + 1000 + clip 15 (counted
+  twice for generated sequences; fixed sequences keep the estimate, ADVISOR-016 narrowed), and the model stays shown until
+  "Kill advisor" (level exit), not until the speech ends (ADVISOR-018 narrowed). The advisor material draws both faces as the
+  original's device does (ADVISOR-007 narrowed). ADVISOR-014 (synthesis window equals the table at `0x70BD08`) and ADVISOR-019
+  (balance fields +0x18/+0x1C are never read) are retired; ADVISOR-011/017/020 are narrowed to the traced rules and ADVISOR-024 is
+  an extension. Sign text: the `.sgn` slot percent now scales each character's width (COMPAT-005 retired; the composed-sign
+  baseline hashes of 71 of 75 signs were re-pinned), object sign lines keep 32 characters and line 1 loses a trailing "--"
+  (COMPAT-017 narrowed), COMPAT-006 now names Uniscribe instead of GDI TextOut, COMPAT-008 and COMPAT-013 are extensions, COMPAT-011/012
+  are narrowed. 392 to 384 unresolved IDs.
+- **UI register round (October 14):** findings from the Windows `tp.exe` land. The hire window's control 9366 is the plain
+  cash label ("Cash $ N", UITEXT `0x1ca`/`0x1cb`); the applicant/employee toggle is now a labelled extension button
+  (UI-090 retired). The map zoom is 1.0–3.0 in half steps and a pan moves the centre one map cell whatever the zoom (UI-087
+  retired); each map category button toggles its own layer, not an exclusive filter (UI-086 keeps only the colours). A list
+  column press toggles that column's direction, a new column starts ascending and column 0 starts ascending, so the first
+  press on it descends (UI-084 keeps the per-list initial state). The HUD cash shows the bare balance in the original's
+  red-to-white colour steps (table `0x752e30`), without grouping or prefix (UI-021 keeps the control 47 placement). The
+  volume options are percentages (defaults 75/60/75/100) and old 0–10 options files migrate ×10 (UI-030 keeps the slider
+  step). Before each start-up movie the game waits until Esc, Space and all three mouse buttons are released (UI-035
+  retired; the letterbox is `[EXT:movie-letterbox]`). UI-019 and UI-062 are retired (the shipped lobby and `LOANNAMES.str` are
+  complete; data tests added) and UI-023 (test fixture). Widescreen anchors, HiDPI glyphs, the fixed options rows, the
+  autorun focus rectangle, the speed buttons and time keys, the sandbox map and the overview detail rows are now documented
+  `[EXT:...]` design decisions (UI-001, 038, 040, 043, 022, 902, 089, 906, 908 retired). The staff, locator, hire, dismissal,
+  overview, camera-button, slider, fluid and key-table items are narrowed to what the executable leaves open (UI.md).
 
 - **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
   (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0

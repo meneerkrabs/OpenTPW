@@ -335,7 +335,7 @@ public class PathBuilderTests
 	/// once more: a guest starts with drawn needs and a drawn exit counter that counts once per needs phase, so the guests spend the run differently (60 → 61 admissions). The traced leaving test (ORACLE.md F26: happiness below 1 or the counter exactly 0, no "at most 10")
 	/// moved it again (61 → 62). Guests stepping off once per park turn instead of every 0.4 s (tp.exe 0x004CF3E0, ARRIVAL-001)
 	/// moved it to 60. The original state machine of a guest in the park (state 6 deciding once per park turn, state 7 walking to a
-	/// wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash; the admissions stay 60.
+	/// wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash; the admissions stay 60. The guests' litter meter joined the hash (WANDER-plan §6). The prankery flag joined it next (pranksters in the Jungle's balance, WANDER-plan §7).
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsGuestPathingIdentical()
@@ -344,7 +344,7 @@ public class PathBuilderTests
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( 60, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0xE73179281F728325UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 0x09F0DCEC7AA207C5UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

@@ -157,7 +157,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | WEATHER / LOBBYOBJECTS | 0/10 | 1/70 | 1/100 | 1/100 | exposed |
 
 The Enhanced preset also stretches OpenTPW's fog distance by 2 ([EXT] view distance; the
-original presets keep scale 1). Default preset: the original's per-machine choice (traced: Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High), with the processor clock taken as at least 450 MHz (APPROX COMPAT-013). Settings live in
+original presets keep scale 1). Default preset: the original's per-machine choice (traced: Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High), with the processor clock taken as at least 450 MHz (`[EXT:graphics-preset-cpu]`). Settings live in
 `graphics.json` next to `display.json`; `--graphics-preset low|medium|high|enhanced`,
 `--save-graphics-settings`. Filtering/mipmap changes reach the samplers at the next start
 (`RestartRequired`); the view distance applies immediately. Custom presets keep the
@@ -224,20 +224,17 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-002 | Sign text | lfWidth applied as a horizontal scale with the Win32 rule (average character width = lfWidth) and fractional advances; the width search itself is traced (`0x100A9F9C`: no margin, height unchanged, bisection over lfWidth) | captures of long names (Mac GDI width rounding) |
 | COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending; GDI coverage, morphology, Gaussian filtering, source-height resampling and float rounding remain approximate | native masks and original-platform pixels |
 | COMPAT-004 | Sign text | Gate signs now compose their decoded .sgn boards; gate-specific pixels have not been compared with the original | original gate capture and board/text placement comparison |
-| COMPAT-005 | Sign text | The 85..141 slot field (read as horizontal scale) is not applied | binary use of the field |
-| COMPAT-006 | Sign text | No pair kerning (GDI TextOut default) | binary text-output call site |
+| COMPAT-006 | Sign text | No pair kerning: tp.exe has no TextOut/DrawText/ExtTextOut imports, sign text goes through Uniscribe (`0x5EAB70`: ScriptStringAnalyse flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array `0xF85F00`, ScriptStringOut) and no kerning API is called | whether usp10's natural widths include kerning |
 | COMPAT-007 | Sign text | Gate shows the THEMENAMES theme name until a save supplies a park name | save park-name field, capture |
-| COMPAT-008 | Sign text | Sign faces lifted 0.05 engine units along their normal | none once the gate model draws runtime textures |
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
 | COMPAT-016 | Sign text | Ride sign text = the object's display name (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space | record field selecting the name entries; capture of a shop/sideshow sign |
-| COMPAT-017 | Sign text | Bonus objects' SIGNA/SIGNB are sign lines 1/2 | bonus loader's call of the sign builder |
+| COMPAT-017 | Sign text | A language file without SIGNA or SIGNB leaves that line empty where the original shows its default "MISSING STRING" (`0x413600`) | which objects the original rebuilds signs for; its line-1 fallback (`0x78A374`) |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
 | COMPAT-030 | Sign text | Opaque dark or cream backing under every sign face; native compositor clears transparent, but downstream board coverage is untraced | original sign material/render path and original-platform gate and ride captures |
 | COMPAT-031 | Sign text | Light stone gate-name paint and upward-facing sign normals make the decoded dark stone board legible; stored paint is black | original-platform gate text pixels and later color or lighting treatment |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
-| COMPAT-011 | Localization | Missing string → English → internal name | original behaviour for missing strings |
-| COMPAT-012 | Text input | Unrepresentable characters → `?` | binary text-input handling |
-| COMPAT-013 | Graphics | The default preset follows the original's thresholds; the processor clock is taken as 450 MHz or faster | none for any machine that runs OpenTPW |
+| COMPAT-011 | Localization | Missing string → English → internal name; the only original fallback found is the object text parser's "MISSING STRING" (`0x413600`) | original behaviour for missing strings |
+| COMPAT-012 | Text input | `GameTextCodec.Encode`: unrepresentable characters → `?`; tp.exe never names UniToMB.dat/MBToUni.dat and converts wide text with WideCharToMultiByte (CP_ACP, default replacement character); Encode has no caller outside the tests | a caller of Encode that needs the rule |
 | COMPAT-014 | Theme Park Inc textures | FSH palette 0x24 has no alpha and decodes opaque; no colour key (see [FSH.md](FSH.md)) | Theme Park Inc texture upload code or captures |
 | COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque | Theme Park Inc palette conversion code or a capture |
 | COMPAT-019 | Theme Park Inc lake | `dlake.MD2` (lake surface and bed) is drawn as the finished lake; `lake.MD2` (the same lake with a building site) and the `idle`/`lakem` animations are ignored | Theme Park Inc lake code or captures ([THEME-PARK-INC.md](THEME-PARK-INC.md)) |
@@ -246,6 +243,16 @@ Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced 
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`
 view-distance scale, `[EXT:COMPAT-FIX <id>]` each fix. Pre-existing OpenTPW values outside
 this slice (e.g. the fog formula in `test.shader`) are not listed here.
+
+October 14, 2026 (tp.exe): COMPAT-005 is retired: the `.sgn` slot field at file offset +324 (memory slot base + 8,
+loader `0x5EC3A0`) scales each character's width as width × percent / 100, truncated (`0x5EAD01`–`0x5EAD2C` and in the
+font-size fit loop); `SignTextLayout.ScaledAdvance` applies it (the original's integer natural widths are not
+reproduced, COMPAT-002; at 100 percent the advance is left as it is). The baseline hashes of the 71 of 75 composed signs whose percent is not 100 were re-pinned for it.
+COMPAT-017's calls are traced: the object text's NAME/SIGNA/SIGNB are parsed at `0x413600`, SIGNA/SIGNB are copied into each placed
+object as two 32-character lines (`0x413020`/`0x4130B0` at `0x4DB6F9`/`0x4DB70D`), and the sign rebuild `0x468500` (types with flag 0x8000000)
+reads line 1 through `0x4E2860`, which strips a trailing "--", and line 2 through `0x4E2920`; `BonusNames` now does both.
+COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-lift]` (the gate sign faces' depth lift) and
+`[EXT:graphics-preset-cpu]` (the processor clock taken as 450 MHz or faster).
 
 ## Not done
 

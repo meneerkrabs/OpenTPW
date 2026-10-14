@@ -351,6 +351,8 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- CI runs each pull request once: a push builds only `main` and the `v*` release tags, so a push to a PR branch no longer starts the
+  whole build twice, and a new push to a pull request cancels its older run (`.github/workflows/build.yml`).
 - Thought bubbles are drawn, and staff think too, as in the original (tp.exe `0x50be80`, `0x506a40`, `0x4fa030`; GUEST-006, QUEUE-005;
   [GUESTS.md](GUESTS.md) "Thoughts"). Guests and staff show the original bubbles above their heads (a burger for hunger, a drink for thirst,
   a thumb up after a sideshow win, a sleeping face for a tired handyman, a protest sign for a striker). Staff think when unhappy, very happy,
@@ -969,6 +971,26 @@ research batch was included in this merge.
   animation/deferred speech start, and listening/visual checks of the result.
 
 ## Browser build, official server and website (October 10, 2026)
+
+- **Desktop setup chooses TPW or experimental TPI (October 14):** the setup window offers Theme Park World or the experimental Theme Park Inc / Sim Coaster
+  (`[EXT:tpi-viewer]`, building and guests only, no economy or campaign) with an edition-aware inspection that refuses mixed or wrong-edition folders and
+  needs an available world; the TPI choice is stored beside the TPW paths in `setup.json` and starts through `--load-original-level`. An ordinary desktop
+  start does not open the window: it uses the saved choice, then the old setting, then detection, and only a first start with no usable folder, a missing or
+  invalid saved TPI folder or world (including a timed-out re-inspection) or `--setup` opens it. Options > Game files has an Edition button for switching
+  on desktop, effective at the next start. The TPI/TPW world lists come from `GameEditions` instead of a copy. Tests cover direct TPW and TPI starts, the
+  wizard cases and the edition switch persisting to `setup.json`.
+  Review fixes: a saved, old or detected folder holding Theme Park Inc data no longer passes as Theme Park World (the window opens instead of every start failing);
+  `--setup` with an explicit tool mode refuses before any window; a stale or timed-out choice keeps the window open with the typed folder and a reason; and
+  Options > Game files reports a timed-out check as such.
+- **Coasters drawn with their original track, pylons and cars (October 14):** the track is the `coaster.sam` cross section
+  extruded along the curve (ten slices per knot pair, V every six units) with the real track textures, so the minecart track
+  has rails and sleepers, the Gorilla Thrilla a rope, the flumes water that flows and a ratcheted dry section where they
+  climb, and chain lifts a scrolling chain. Pylons are the StdPylon/LoopPylon models stretched by their loft clip to the node
+  height and turned by their rotate clip; cars are the car models posed on the samples with roll, pitch and yaw and spaced by
+  their own length. A track under construction is the curve through the placed pylons and a ghost pylon at the cursor instead
+  of straight green lines. Traced from tp.exe (rebuild 0x43eb70, slice emitter 0x43f4e0/0x43fd60, loader 0x42fad0, car pose
+  0x43ce20, edit step 0x435d50); COAST-026 is narrowed and COAST-033..035 added (docs/COASTERS.md). Rider heads in the cars
+  and the dry/wet blend sections are not done.
 
 - **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
   first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy

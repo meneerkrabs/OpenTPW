@@ -13,7 +13,6 @@ public partial class Level
 		var runtimes = Objects.Objects.Select( item =>
 		{
 			var state = item.Runtime.CaptureSnapshot();
-			RequireResumableAudio( state );
 			return new ParkResumeRuntime( state.HasScript && !state.Stopped ? item.Runtime.Script!.ScriptId : 0, state );
 		} ).ToArray();
 		var assets = verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings );
@@ -49,12 +48,6 @@ public partial class Level
 		return snapshot;
 	}
 
-	internal static void RequireResumableAudio( OriginalObjectRuntimeSnapshot runtime )
-	{
-		if ( runtime.HeldScream || runtime.OwnedScreamCount != 0 )
-			throw new NotSupportedException( "An attraction is still playing a scream. Save again after it finishes." );
-	}
-
 	/// <summary>
 	/// The park-resume prototype part: the developer Totem's whole own state — runtime, script root, position, open
 	/// flag and the exact economy association the live park holds — or null when the park has none. The Totem draws its
@@ -64,9 +57,7 @@ public partial class Level
 	{
 		if ( PlacedRide is not { } ride )
 			return null;
-		var part = PrototypeRideSave.Capture( ride.Runtime, ride.Position, ride.IsOpen, prototypeInstance, prototypeBought );
-		RequireResumableAudio( part.Runtime );
-		return part;
+		return PrototypeRideSave.Capture( ride.Runtime, ride.Position, ride.IsOpen, prototypeInstance, prototypeBought );
 	}
 
 	/// <summary>Called only during construction of a staged candidate, before it can simulate or replace the live park.</summary>
@@ -78,7 +69,6 @@ public partial class Level
 		for ( var index = 0; index < Objects.Objects.Count; index++ )
 		{
 			var saved = snapshot.Runtimes[index];
-			RequireResumableAudio( saved.State );
 			var runtime = Objects.Objects[index].Runtime;
 			var gaps = runtime.RestoreSnapshot( saved.State );
 			if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
@@ -123,7 +113,6 @@ public partial class Level
 	{
 		if ( saved == null )
 			return null;
-		RequireResumableAudio( saved.Runtime );
 		var ride = new PrototypeRide( new Vector3( saved.PositionX, saved.PositionY, saved.PositionZ ), Objects.ScriptWorld,
 			saved.ScriptSeed, saved.Open, saved.AttractionId );
 		var gaps = ride.Runtime.RestoreSnapshot( saved.Runtime );

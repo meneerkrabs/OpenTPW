@@ -173,7 +173,7 @@ public class ParticleEventRequestTests
 		Assert.IsNull(first.Runtime.LastParticleEventAttempt); Assert.IsTrue(ownLoop.IsFinished); Assert.IsFalse(otherLoop.IsFinished);
 		Assert.AreEqual(otherAttempt, other.Runtime.LastParticleEventAttempt); Assert.IsTrue(mixer.Mix(4).Any(value => value != 0));
 		foreach (var name in new[] { "particlePlacement", "particleKeys", "eventOrigin" }) Assert.IsNull(typeof(OriginalObjectRuntime).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(first.Runtime), name);
-		var stopped = first.Runtime.CaptureSnapshot(); Level.RequireResumableAudio(stopped); Assert.AreEqual("integration particle-owner fault", stopped.StoppedScriptFault);
+		var stopped = first.Runtime.CaptureSnapshot(); Assert.AreEqual("integration particle-owner fault", stopped.StoppedScriptFault);
 		StringAssert.Contains(Assert.ThrowsException<NotSupportedException>(() => other.Runtime.CaptureSnapshot()).Message, "looping EVENT");
 		first.Runtime.Simulate(FixedStepClock.TickDuration); Emit(first.Runtime, 2); Assert.IsNull(first.Runtime.LastParticleEventAttempt); Assert.IsFalse(otherLoop.IsFinished);
 		Assert.AreEqual(ParticleEventPreparationStatus.Prepared, retained.Status); Assert.IsNotNull(retained.Request);

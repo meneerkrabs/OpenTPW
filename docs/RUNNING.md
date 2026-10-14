@@ -181,8 +181,10 @@ hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted 
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
 Theme Park Inc data given to any other start (no `--load-original-level`, a Theme Park World level,
 `--sandbox`, `--front-end`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
-`--visit-park`) is refused with a message that points here. The setup window and the saved game
-folder still reject it, and so does the browser: its front end needs Theme Park World data. Adding
+`--visit-park`) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
+chooser is reviewed in PR #146 for a future release; the browser already offers explicit experimental
+TPI world selection. See the [static TPI launch guide](https://opentpw.io/theme-park-inc.html) for
+build availability, setup steps and limitations. Adding
 `--tpi-smoke-test` (best on `science`) drives the slice's whole HUD user flow with injected input —
 build window, place, queue tool, Escape ordering, pause and the pause menu's Quit — and fails loudly
 if any of it breaks; on Theme Park World data it is refused. See
@@ -384,3 +386,5 @@ These packages require a matching .NET 10 runtime and legally obtained external
 game assets. Build the arm64 dependency before publishing that RID. Successful
 cross-publication is not successful execution on the target platform.
 Current verification and remaining release blockers are recorded in PROGRESS.md.
+
+The CPU-only `--inspect-tpi-mission /local/mission.sam` command checks explicitly selected retained TPI mission bounds and reports parser omissions. See [static mission inspection](TPI-MISSION-INSPECTION.md) for its modified-NoCD evidence and lexical/runtime limits.

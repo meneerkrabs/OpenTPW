@@ -335,7 +335,7 @@ public class OriginalUiTests
 		Assert.AreEqual( "ui347ui348", ((UiLabel)screen.Find( "videocardLabel" )!).Text() );
 		Assert.AreEqual( "ui318ui342", ((UiLabel)screen.Find( "resolutionLabel" )!).Text() );
 		Assert.AreEqual( "ui319 100 %", ((UiLabel)screen.Find( "audioLabel" )!).Text() );
-		Assert.AreEqual( "ui320 80 %", ((UiLabel)screen.Find( "effectsLabel" )!).Text() );
+		Assert.AreEqual( "ui320 75 %", ((UiLabel)screen.Find( "effectsLabel" )!).Text() );
 		Assert.AreEqual( "ui324ui334", ((UiLabel)screen.Find( "advisorLabel" )!).Text() );
 		Assert.AreEqual( "ui350ui352", ((UiLabel)screen.Find( "rotationLabel" )!).Text(), "90 degs is the default" );
 		Assert.AreEqual( "ui353ui354", ((UiLabel)screen.Find( "scrollLabel" )!).Text() );
@@ -382,29 +382,29 @@ public class OriginalUiTests
 		var y = slider.Bounds.Y + slider.Bounds.Height / 2;
 		float XOf( int step ) => track.X + slider.KnobSize.X / 2 + (track.Width - slider.KnobSize.X) * step / GameOptions.MaximumVolume;
 
-		stack.Update( context, UiInput.Click( Pixel( context.Canvas, XOf( 3 ), y ) ) );
-		Assert.AreEqual( 3, options.MusicVolume, "a click sets the value under the mouse" );
+		stack.Update( context, UiInput.Click( Pixel( context.Canvas, XOf( 30 ), y ) ) );
+		Assert.AreEqual( 30, options.MusicVolume, "a click sets the value under the mouse" );
 
 		// Press, drag outside the hit region, release: the slider follows the mouse in x.
-		var down = new UiInput( Pixel( context.Canvas, XOf( 6 ), y ), true, true, false, false, UiKeys.None );
+		var down = new UiInput( Pixel( context.Canvas, XOf( 60 ), y ), true, true, false, false, UiKeys.None );
 		stack.Update( context, down );
-		Assert.AreEqual( 6, options.MusicVolume );
-		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 9 ), y + 400 ), true, false, false, false, UiKeys.None ) );
-		Assert.AreEqual( 9, options.MusicVolume, "dragging past the hit region keeps following" );
-		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 10 ) + 500, y ), false, false, true, false, UiKeys.None ) );
-		Assert.AreEqual( 10, options.MusicVolume );
+		Assert.AreEqual( 60, options.MusicVolume );
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 90 ), y + 400 ), true, false, false, false, UiKeys.None ) );
+		Assert.AreEqual( 90, options.MusicVolume, "dragging past the hit region keeps following" );
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 100 ) + 500, y ), false, false, true, false, UiKeys.None ) );
+		Assert.AreEqual( 100, options.MusicVolume );
 
-		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 4 ), y ), false, false, false, false, UiKeys.None, 1 ) );
-		Assert.AreEqual( 10, options.MusicVolume, "wheel up steps up (clamped here)" );
-		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 4 ), y ), false, false, false, false, UiKeys.None, -1 ) );
-		Assert.AreEqual( 9, options.MusicVolume );
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 40 ), y ), false, false, false, false, UiKeys.None, 1 ) );
+		Assert.AreEqual( 100, options.MusicVolume, "wheel up steps up (clamped here)" );
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 40 ), y ), false, false, false, false, UiKeys.None, -1 ) );
+		Assert.AreEqual( 99, options.MusicVolume );
 		stack.Update( context, UiInput.Key( UiKeys.Left ) );
-		Assert.AreEqual( 8, options.MusicVolume, "Left steps the focused slider" );
+		Assert.AreEqual( 98, options.MusicVolume, "Left steps the focused slider" );
 
 		// A disabled slider (audio quality) takes no input and is not hit.
 		var audio = (UiSlider)screen.Find( "audio" )!;
 		stack.Update( context, UiInput.Click( Pixel( context.Canvas, audio.Track.X, audio.Bounds.Y + 10 ) ) );
-		Assert.AreEqual( 10, audio.Value() );
+		Assert.AreEqual( 100, audio.Value() );
 	}
 
 	[TestMethod]
@@ -433,9 +433,9 @@ public class OriginalUiTests
 		screen.Find( "rotation" )!.Activate();
 		screen.Find( "scroll" )!.Activate();
 		((UiSlider)screen.Find( "resolution" )!).Adjust( 1 );
-		Assert.AreEqual( (9, false, false, false, false, false, false, RotationMode.Smooth, ScrollMode.RightButton),
+		Assert.AreEqual( (76, false, false, false, false, false, false, RotationMode.Smooth, ScrollMode.RightButton),
 			(options.SoundEffectsVolume, options.MusicOn, options.Advisor, options.Tutorial, options.PopupHelp, options.Confirmations, options.RmbCancel, options.Rotation, options.Scroll) );
-		Assert.AreEqual( "ui320 90 %", ((UiLabel)screen.Find( "effectsLabel" )!).Text() );
+		Assert.AreEqual( "ui320 76 %", ((UiLabel)screen.Find( "effectsLabel" )!).Text() );
 		Assert.AreEqual( "ui324ui333", ((UiLabel)screen.Find( "advisorLabel" )!).Text() );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		var defaults = new GameOptions();
@@ -596,26 +596,38 @@ public class OriginalUiTests
 		var path = Path.Combine( Path.GetTempPath(), $"opentpw-options-{Guid.NewGuid():N}.json" );
 		try
 		{
-			new GameOptions { MusicVolume = 3, SoundEffectsVolume = 42, PopupHelp = false, SpeechOn = false, Rotation = RotationMode.Smooth, Scroll = ScrollMode.RightButton, Tutorial = false }.Save( path );
+			new GameOptions { MusicVolume = 30, SoundEffectsVolume = 142, PopupHelp = false, SpeechOn = false, Rotation = RotationMode.Smooth, Scroll = ScrollMode.RightButton, Tutorial = false }.Save( path );
 			var loaded = GameOptions.Load( path );
-			Assert.AreEqual( (3, 10, false), (loaded.MusicVolume, loaded.SoundEffectsVolume, loaded.PopupHelp) );
+			Assert.AreEqual( (30, 100, false), (loaded.MusicVolume, loaded.SoundEffectsVolume, loaded.PopupHelp) );
 			Assert.AreEqual( (false, RotationMode.Smooth, ScrollMode.RightButton, false), (loaded.SpeechOn, loaded.Rotation, loaded.Scroll, loaded.Tutorial) );
-			Assert.AreEqual( 0.3f, GameOptions.Gain( 3 ), 1e-6f );
+			Assert.AreEqual( 0.3f, GameOptions.Gain( 30 ), 1e-6f );
 			Assert.AreEqual( 0f, loaded.SpeechGain, "a muted sound has no gain whatever its volume" );
 			Assert.AreEqual( 0.3f, loaded.MusicGain, 1e-6f );
-			Assert.AreEqual( 0f, GameOptions.Gain( 8, false ) );
+			Assert.AreEqual( 0f, GameOptions.Gain( 80, false ) );
 
-			// Files written before the mute toggles and gameplay switches existed get the defaults.
+			// Files written before the mute toggles and gameplay switches existed get the defaults; their 0..10 volume steps become percentages.
 			File.WriteAllText( path, "{ \"MusicVolume\": 5, \"PopupHelp\": false }" );
 			var old = GameOptions.Load( path );
-			Assert.AreEqual( (5, false), (old.MusicVolume, old.PopupHelp) );
+			Assert.AreEqual( (50, false), (old.MusicVolume, old.PopupHelp) );
+			Assert.AreEqual( (75, 75, 100), (old.SoundEffectsVolume, old.SpeechVolume, old.MovieVolume), "volumes absent from an old file keep the percent defaults" );
+
+			// A file carrying the format marker is read as percentages; an old full file is multiplied by ten.
+			File.WriteAllText( path, "{ \"VolumeFormat\": 2, \"MusicVolume\": 5, \"SoundEffectsVolume\": 250 }" );
+			var percent = GameOptions.Load( path );
+			Assert.AreEqual( (5, 100), (percent.MusicVolume, percent.SoundEffectsVolume) );
+			File.WriteAllText( path, "{ \"SoundEffectsVolume\": 8, \"MusicVolume\": 8, \"SpeechVolume\": 0, \"MovieVolume\": 10 }" );
+			var legacy = GameOptions.Load( path );
+			Assert.AreEqual( (80, 80, 0, 100), (legacy.SoundEffectsVolume, legacy.MusicVolume, legacy.SpeechVolume, legacy.MovieVolume) );
+			legacy.Save( path );
+			Assert.AreEqual( (80, 80, 0, 100), (GameOptions.Load( path ).SoundEffectsVolume, GameOptions.Load( path ).MusicVolume, GameOptions.Load( path ).SpeechVolume, GameOptions.Load( path ).MovieVolume), "a migrated file is not migrated twice" );
+			File.WriteAllText( path, "{ \"MusicVolume\": 5, \"PopupHelp\": false }" );
 			Assert.IsTrue( old.SoundEffectsOn && old.MusicOn && old.SpeechOn && old.MovieOn && old.Advisor && old.Tutorial && old.Confirmations && old.RmbCancel );
 			Assert.AreEqual( (RotationMode.Ninety, ScrollMode.Pushscroll), (old.Rotation, old.Scroll) );
 			Assert.AreEqual( 0.5f, old.MusicGain, 1e-6f );
 
 			File.WriteAllText( path, "{ not json" );
-			Assert.AreEqual( 8, GameOptions.Load( path ).MusicVolume, "corrupt files fall back to defaults" );
-			Assert.AreEqual( 8, GameOptions.Load( path + ".missing" ).MusicVolume );
+			Assert.AreEqual( 60, GameOptions.Load( path ).MusicVolume, "corrupt files fall back to defaults" );
+			Assert.AreEqual( 60, GameOptions.Load( path + ".missing" ).MusicVolume );
 		}
 		finally
 		{

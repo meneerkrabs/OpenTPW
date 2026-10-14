@@ -49,7 +49,7 @@ range validation is a separate input/display failure: at the supported bound it
 can refuse a tick even though the gameplay digest excludes the counter. Hash
 equality alone does not establish that display metadata passes its range checks.
 
-Native visitor timing and display units remain untraced (`GUEST-920`, `UI-908`).
+Native visitor timing remains untraced (`GUEST-920`). The original visitors list's "Time In Park" column shows whole hours (ticks → seconds / 36e9); OpenTPW's detail row (`[EXT:overview-detail-rows]`) shows HH:MM:SS instead.
 `GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,
 known/unknown codec continuation, both validators, invalid/overflow rejection,
 the live UI model and hash exclusion using synthetic fixtures only. No original

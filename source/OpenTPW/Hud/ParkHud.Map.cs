@@ -7,10 +7,13 @@ namespace OpenTPW.Hud;
 /// <summary>The original map window (Mac table <c>data:0x5265e</c>) with live paths and objects over the shipped theme map.</summary>
 public sealed partial class ParkHud
 {
+	// [BIN:TPW-EXE:0x985] map zoom control b_minus (0x985) subtracts and 0x986 adds half a step, clamped to 1.0..3.0.
 	private const float MapZoomStep = 0.5f;
 	private UiScreen? mapScreen;
 	private MapViewState mapView = MapViewState.Default;
-	private BuildCategory? mapCategory;
+	// [BIN:TPW-EXE:0x5f186c] each map category button XORs its own layer bit (the bits are 0x20, 8, 1, 2, 4 and 0x10,
+	// picked through the index table at 0x5f186c); the layers are independent toggles, not an exclusive filter.
+	private readonly HashSet<BuildCategory> mapCategories = new();
 	private readonly HashSet<StaffType> mapStaff = new();
 	public bool MapStaffRole( StaffType type ) => mapStaff.Contains( type );
 	public void ToggleMapStaff( StaffType type ) { if ( !mapStaff.Remove( type ) ) mapStaff.Add( type ); }
@@ -32,7 +35,10 @@ public sealed partial class ParkHud
 
 	public bool MapWindowOpen => mapScreen != null && Stack.Screens.Contains( mapScreen );
 	public float MapZoom => mapView.Zoom;
-	public BuildCategory? MapCategory => mapCategory;
+	public bool MapCategoryShown( BuildCategory category ) => mapCategories.Contains( category );
+	public void ToggleMapCategory( BuildCategory category ) { if ( !mapCategories.Remove( category ) ) mapCategories.Add( category ); }
+	/// <summary>Whether placed objects of a build category are drawn: all of them while no category layer is on, else the toggled-on categories.</summary>
+	public bool MapShowsCategory( int whichUiType ) => mapCategories.Count == 0 || mapCategories.Contains( (BuildCategory)whichUiType );
 
 	public void OpenMapWindow()
 	{
@@ -68,14 +74,22 @@ public sealed partial class ParkHud
 
 	public void ZoomMap( int direction )
 	{
-		// [APPROX:UI-087] the table has zoom buttons but no decoded zoom factor; half steps keep the visible area usable.
 		mapView = mapView.ZoomBy( direction * MapZoomStep );
 	}
 
 	public void PanMap( int x, int y )
 	{
-		// [APPROX:UI-087] one map pan moves 1/8 of the currently visible image.
-		mapView = mapView.PanBy( x, y );
+		// [BIN:TPW-EXE:0x5f35b0 map pan] the pan buttons and arrow keys move the view centre by one map unit (cell) whatever the zoom,
+		// clamped to 0..dimension-1.
+		var (width, height) = MapDimensions();
+		mapView = mapView.PanBy( x, y, width, height );
+	}
+
+	private (int Width, int Height) MapDimensions()
+	{
+		var grid = level.Objects.Grid;
+		var park = level.OriginalPark;
+		return (Math.Min( grid.Width, park?.Heightfield.CellCountX ?? grid.Width ), Math.Min( grid.Height, park?.Heightfield.CellCountZ ?? grid.Height ));
 	}
 
 	private UiScreen CreateMapScreen()
@@ -100,7 +114,8 @@ public sealed partial class ParkHud
 		Button( "zoomOut", "b_minus", 262, Rect( 32, 1327, 90, 1385 ), () => ZoomMap( -1 ) );
 		Button( "zoomIn", "b_plus", 261, Rect( 218, 1327, 275, 1384 ), () => ZoomMap( 1 ) );
 		// [DATA:Mac map table 0x5265e:2434,2439,2451,2452] object-category map buttons.
-		// [APPROX:UI-086] clicking a category filters placed-object footprints to that type; clicking it again restores all types.
+		// [BIN:TPW-EXE:0x5f186c] every category button toggles its own layer bit; OpenTPW draws all placed objects while none is on.
+		// [APPROX:UI-086] the layer colours are not traced — evidence needed: the original map layer colours
 		CategoryButton( "rides", "b_sride", BuildCategory.Rides, 267, Rect( 64, 1409, 167, 1512 ) );
 		CategoryButton( "sideshows", "b_sshow", BuildCategory.Sideshows, 271, Rect( 184, 1409, 286, 1512 ) );
 		CategoryButton( "shops", "b_sshop", BuildCategory.Shops, 269, Rect( 303, 1409, 406, 1512 ) );
@@ -127,7 +142,7 @@ public sealed partial class ParkHud
 		void CategoryButton( string id, string model, BuildCategory category, int help, UiRect rect ) => screen.Add( new UiButton
 		{
 			Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center,
-			Clicked = () => mapCategory = mapCategory == category ? null : category, Selected = () => mapCategory == category
+			Clicked = () => ToggleMapCategory( category ), Selected = () => MapCategoryShown( category )
 		} );
 		void MetricLayer( string id, string model, int help, UiRect rect, Action action, Func<bool> selected ) => screen.Add( new UiButton
 		{ Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center, Clicked = action, Selected = selected } );
@@ -181,19 +196,18 @@ public sealed partial class ParkHud
 			var content = ScreenRect( context.Canvas );
 			var side = Math.Min( content.Height - context.Canvas.Scale * 48f, content.Width - context.Canvas.Scale * 160f );
 			var image = new UiRect( content.X + (content.Width - side) / 2, content.Y + (content.Height - side) / 2, side, side );
-			var uv0 = owner.mapView.SourceMin;
-			var uv1 = owner.mapView.SourceMax;
 			var park = owner.level.OriginalPark;
+			var cells = owner.level.Paths?.Cells;
+			var grid = owner.level.Objects.Grid;
+			var width = Math.Min( grid.Width, park?.Heightfield.CellCountX ?? grid.Width );
+			var height = Math.Min( grid.Height, park?.Heightfield.CellCountZ ?? grid.Height );
+			var (uv0, uv1) = owner.mapView.Source( width, height, park != null );
 			var imagePath = park == null ? null : $"/levels/{park.LevelName}/2dmap.tga";
 			if ( imagePath != null )
 				context.Batch.AddQuad( UiTexture.Image( imagePath ), image, uv0, uv1, RgbaByte.White );
 			else
 				context.Batch.AddRectangle( image, new RgbaByte( 15, 81, 26, 255 ) );
 
-			var cells = owner.level.Paths?.Cells;
-			var grid = owner.level.Objects.Grid;
-			var width = Math.Min( grid.Width, park?.Heightfield.CellCountX ?? grid.Width );
-			var height = Math.Min( grid.Height, park?.Heightfield.CellCountZ ?? grid.Height );
 			// [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays.
 			UiRect CellRect( int x, int y )
 			{
@@ -214,10 +228,10 @@ public sealed partial class ParkHud
 				if ( right > left && bottom > top )
 					context.Batch.AddRectangle( new UiRect( left, top, right - left, bottom - top ), color );
 			}
-			// [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art.
+			// [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art — evidence needed: the original map layer colours
 			if ( imagePath == null )
 			{
-				// [APPROX:UI-089] the generic sandbox has no 2dmap.tga; use its live grid and height as a simple terrain base.
+				// [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content)
 				for ( var y = 0; y < height; y++ )
 					for ( var x = 0; x < width; x++ )
 					{
@@ -234,7 +248,7 @@ public sealed partial class ParkHud
 							case ParkCellType.Queue: Mark( x, y, new RgbaByte( 235, 139, 55, 220 ) ); break;
 					}
 			foreach ( var item in owner.level.Objects.Objects.Where( item => !item.IsDeleted &&
-				(owner.mapCategory == null || item.Entry.WhichUIType == (int)owner.mapCategory) ) )
+				owner.MapShowsCategory( item.Entry.WhichUIType ) ) )
 				foreach ( var cell in item.Cells )
 					Mark( cell.X, cell.Y, new RgbaByte( 207, 67, 198, 235 ) );
 			// [PROVISIONAL:MAP] Host overlay projects actual COAST samples (original x/z ground plane) onto map cells; unfinished tracks show the authored node chain.
@@ -269,20 +283,36 @@ public sealed partial class ParkHud
 	}
 }
 
-/// <summary>Clamped source-image view shared by the map buttons and map renderer.</summary>
-internal readonly record struct MapViewState( float Zoom, NVector2 Center )
+/// <summary>
+/// Map view shared by the map buttons and renderer: zoom 1..3 and a centre in map cells (clamped to 0..dimension-1, as in the original);
+/// the image window around it is clamped to stay inside the image.
+/// </summary>
+internal readonly record struct MapViewState( float Zoom, NVector2 Cell )
 {
-	public static MapViewState Default => new( 1f, new NVector2( 0.5f ) );
-	public NVector2 SourceMin => Center - new NVector2( 0.5f / Zoom );
-	public NVector2 SourceMax => Center + new NVector2( 0.5f / Zoom );
+	public const float MinZoom = 1f, MaxZoom = 3f;
+	/// <summary>Zoom 1 centred on the middle of the map (NaN cell = middle until the first pan).</summary>
+	public static MapViewState Default => new( 1f, new NVector2( float.NaN ) );
 
-	public MapViewState ZoomBy( float step ) => Clamped( Math.Clamp( Zoom + step, 1f, 4f ), Center );
-	public MapViewState PanBy( int x, int y ) => Clamped( Zoom, Center + new NVector2( x, y ) / (8f * Zoom) );
+	public MapViewState ZoomBy( float step ) => this with { Zoom = Math.Clamp( Zoom + step, MinZoom, MaxZoom ) };
 
-	private static MapViewState Clamped( float zoom, NVector2 center )
+	public MapViewState PanBy( int x, int y, int width, int height )
 	{
-		var half = 0.5f / zoom;
-		return new MapViewState( zoom, NVector2.Clamp( center, new NVector2( half ), new NVector2( 1f - half ) ) );
+		var cell = Centre( width, height ) + new NVector2( x, y );
+		return this with { Cell = NVector2.Clamp( cell, NVector2.Zero, new NVector2( Math.Max( 0, width - 1 ), Math.Max( 0, height - 1 ) ) ) };
+	}
+
+	public NVector2 Centre( int width, int height ) =>
+		float.IsNaN( Cell.X ) || float.IsNaN( Cell.Y ) ? new NVector2( (width - 1) / 2f, (height - 1) / 2f ) : Cell;
+
+	/// <summary>The visible window of the 512-pixel image as normalised corners.</summary>
+	public (NVector2 Min, NVector2 Max) Source( int width, int height, bool original )
+	{
+		var centre = Centre( width, height );
+		var rect = ParkMapGeometry.CellImageRect( width, height, original, (int)MathF.Round( centre.X ), (int)MathF.Round( centre.Y ) );
+		var half = 0.5f / Zoom;
+		var middle = NVector2.Clamp( new NVector2( rect.X + rect.Width / 2, rect.Y + rect.Height / 2 ) / ParkMapGeometry.ImagePixels,
+			new NVector2( half ), new NVector2( 1f - half ) );
+		return (middle - new NVector2( half ), middle + new NVector2( half ));
 	}
 }
 

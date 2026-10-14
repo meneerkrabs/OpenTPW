@@ -6,7 +6,7 @@ namespace OpenTPW.Hud;
 /// Test stand-in for <see cref="IHudParkStatus"/> (the game binds the HUD to the park economy).
 /// Starting cash is whatever the test passes; the calendar is a fixed test schedule.
 /// </summary>
-// [APPROX:UI-023] test-only calendar (2 s/day, 30-day months) — not used by the game
+// test fixture only (2 s/day, 30-day months); the game binds the HUD to the park economy's clock
 public sealed class StubParkStatus : IHudParkStatus
 {
 	public const float SecondsPerDay = 2f;
@@ -84,7 +84,7 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	}
 
 	// The level scales the elapsed time of its whole fixed clock (guests, rides, scripts, economy) by this factor; the economy itself runs one tick per fixed tick.
-	// [APPROX:UI-022] the four speed buttons scale the simulation clock by 0, 1, 2 and 4 — evidence needed: the original's key actions step the scale by 1.25 within 0.25..2 and no speed control was found in its UI (UITEXT 426 'Speed :' has no code reference)
+	// [EXT:speed-buttons] the four speed buttons (pause, ×1, ×2, ×4) are an OpenTPW addition scaling the simulation clock by 0, 1, 2 and 4; the original's time keys are numpad −/+ (×0.8, ×1.25, clamped 0.25-2.0) and * (= 1.0) (0x40c3b0/0x40c3c0/0x40c3d0), and "Speed :" is a ride-panel statistic, not a game-speed control
 	public float TimeScale => GameSpeedScale.Of( Speed );
 
 	public int GoldenTickets => Math.Max( 0, Economy?.GoldenTicketsAvailable ?? 0 );

@@ -161,8 +161,12 @@ internal static class ParkResumeSaveFile
 				Require( ride.Trains.Count <= definition.MaxTrains,
 					$"coaster {ride.AttractionId} holds {ride.Trains.Count} trains, above the definition's {definition.MaxTrains}" );
 				foreach ( var train in ride.Trains )
+				{
 					Require( train.Cars.Count == definition.MaxCars,
 						$"a train of coaster {ride.AttractionId} holds {train.Cars.Count} cars, not the definition's {definition.MaxCars}" );
+					Require( train.BoardingCars == null || train.BoardingCars.Count == definition.MaxCars,
+						$"a train of coaster {ride.AttractionId} holds {train.BoardingCars?.Count} boarding lists, not the definition's {definition.MaxCars}" );
+				}
 			}
 		}
 		// Tracks: every live track ride (water or kart) must be saved with a controller of its template's type, and no controller may exceed its template's vehicle limit.
@@ -943,6 +947,8 @@ internal static class ParkResumeSaveFile
 				Require( float.IsFinite( saved.Height ) && float.IsFinite( saved.T ) && float.IsFinite( saved.Bank ),
 					$"coaster {ride.AttractionId}'s node {node} holds a height, parameter or bank that is not finite" );
 				Require( saved.T is >= 0 and <= 1, $"coaster {ride.AttractionId}'s node {node} height parameter {saved.T} is outside 0..1" );
+				Require( saved.LoopRotate is null || (float.IsFinite( saved.LoopRotate.Value ) && saved.LoopRotate.Value is >= 0 and <= 1),
+					$"coaster {ride.AttractionId}'s node {node} loop rotate {saved.LoopRotate} is outside 0..1" );
 				Require( saved.StackIndex >= 0, $"coaster {ride.AttractionId}'s node {node} stack index {saved.StackIndex} is negative" );
 				Require( (saved.Flags & ~CoasterSave.KnownNodeFlags) == 0,
 					$"coaster {ride.AttractionId}'s node {node} carries flag bits 0x{saved.Flags:X}, which this format does not know" );
@@ -1023,8 +1029,12 @@ internal static class ParkResumeSaveFile
 			{
 				var saved = ride.Trains[train];
 				Require( saved != null, $"coaster {ride.AttractionId}'s train {train} is missing" );
-				Require( Enum.IsDefined( (CoasterTrainState)saved!.State ),
+				Require( saved!.State is >= 0 and <= 3,
 					$"coaster {ride.AttractionId}'s train {train} state {saved.State} is not a train state" );
+				Require( saved.Flags is null || (saved.Flags.Value & ~(int)(CoasterTrainFlags.Braking | CoasterTrainFlags.InStation | CoasterTrainFlags.Bumped | CoasterTrainFlags.Headway)) == 0,
+					$"coaster {ride.AttractionId}'s train {train} carries unknown flags {saved.Flags}" );
+				Require( saved.FirstBoardingCar >= 0 && saved.LastBoardingCar >= saved.FirstBoardingCar && saved.LastBoardingCar < Math.Max( 1, saved.Cars?.Count ?? 0 ),
+					$"coaster {ride.AttractionId}'s train {train} boards cars {saved.FirstBoardingCar}..{saved.LastBoardingCar}, outside its cars" );
 				Require( float.IsFinite( saved.Position ) && saved.Position >= 0,
 					$"coaster {ride.AttractionId}'s train {train} stands at {saved.Position}, negative or not finite" );
 				Require( float.IsFinite( saved.Speed ) && saved.Speed >= 0,
@@ -1041,12 +1051,20 @@ internal static class ParkResumeSaveFile
 					riders += saved.Cars[car]!.Count;
 					foreach ( var guestId in saved.Cars[car]! )
 						RequireRider( guestId, $"train {train} car {car}" );
+					if ( saved.BoardingCars == null || car >= saved.BoardingCars.Count )
+						continue;
+					Require( saved.BoardingCars[car] != null, $"coaster {ride.AttractionId}'s train {train} boarding list {car} is missing" );
+					riders += saved.BoardingCars[car]!.Count;
+					foreach ( var guestId in saved.BoardingCars[car]! )
+						RequireRider( guestId, $"train {train} boarding car {car}" );
 				}
 				Require( riders <= ride.SeatsPerTrain,
 					$"coaster {ride.AttractionId}'s train {train} holds {riders} riders above its {ride.SeatsPerTrain} seats" );
 			}
 			foreach ( var guestId in ride.Leaving! )
 				RequireRider( guestId, "the leaving queue" );
+			foreach ( var guestId in ride.Admission ?? new List<int>() )
+				RequireRider( guestId, "the admission ring" );
 		}
 	}
 

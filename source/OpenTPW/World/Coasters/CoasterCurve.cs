@@ -40,7 +40,7 @@ public struct CoasterSample
 /// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll, the
 /// node (section) it belongs to, on loop pylons the factor K, and whether the next node carries node flag 0x40.
 /// </summary>
-public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false );
+public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false );
 
 /// <summary>
 /// One cross-section slice of the drawn track mesh: the curve point at a parameter step of one knot pair, the yaw and
@@ -181,8 +181,9 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		{
 			var knot = knots[index];
 			// [BIN:STP-PPC:0x100326DC loop knot sides] with node flag 0x80 clear a loop pylon's back side always uses K and its forward side K when the next node has flag 0x40, else 1.7 (0x80 set mirrors this, 0x10032600..0x100326D8); plain knots use fCurviness
-			var backFactor = knot.LoopPylon ? knot.LoopSideFactor : curviness;
-			var forwardFactor = knot.LoopPylon ? knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent : curviness;
+			// the first pylon of a loop pair (node flag 0x80) mirrors the rule: its forward side always uses K and its back side K only after a loop node
+			var backFactor = knot.LoopPylon ? (knot.Reversed ? (knot.PreviousIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : knot.LoopSideFactor) : curviness;
+			var forwardFactor = knot.LoopPylon ? (knot.Reversed ? knot.LoopSideFactor : knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : curviness;
 			// [BIN:STP-PPC:0x10032990 knot chord] without a neighbour the chord is 1.0
 			var backChord = closed || index > 0 ? Chord( knots[(index - 1 + count) % count].Position, knot.Position ) : 1f;
 			var forwardChord = closed || index < count - 1 ? Chord( knot.Position, knots[(index + 1) % count].Position ) : 1f;
@@ -253,7 +254,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = (pair + 1) % count;
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
-			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls (the node bank on pylons, 0 on pylon-less nodes) instead of the second rail B(t) of 0x10041F80; the pylon-less second rail offset from node +224 and the pylon tag frames are not bounded — evidence needed: node +224 on pylon-less nodes and the pylon mesh tags (COAST-015)
+			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the second rail B(t) of the slice frame: at pylon-less knots the PC offset is (0, 1, 0), roll 0, as here (0x4313f0), and (−sin a, 0, −cos a) only on loop-flagged ones (0x43137c..0x4313e6); between knots the second rail needs the pylon tag frames (COAST-015) — evidence needed: the pylon mesh tags
 			var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
 			samples.Add( new CoasterSample
 			{
@@ -268,7 +269,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		}
 
 		// [BIN:STP-PPC:0x10044FF4 sampler] from t = 0 (sample 0 = the first knot) walk t in steps of 0.05, sum the chord lengths, place a sample on the current chord where the sum reaches 3.0 (fraction (3 − sum before)/d), restart the sum and realign t to the next multiple of 0.05
-		// [APPROX:COAST-019] the closing pair (last knot back to the first) is walked like every other pair to its end; the original stops after the first sample on it (t may pass 1) and duplicates the last sample into slot n; OpenTPW instead merges a last sample closer than half the spacing to the first into the wrap — evidence needed: the closing-pair branch 0x10044EA4 and the count fix-up 0x10045858..0x10045918 run on a real track
+		// [APPROX:COAST-019] the closing pair (the end node back to the station node, which is the whole platform here) is walked like every other pair to its end and a last sample closer than half the spacing to the first merges into the wrap; the PC sampler 0x440c10 runs the closing pair from the last knot to the first knot of the second node, emits ONE sample on it (t may pass 1), copies it into slot n and adds one to n when n ≤ trunc(c) + (frac(c) ≠ 0) with c the last knot's coordinate (0x4416f0, 0x441712..0x4417dc); that rule assumes the original's end node standing on the first station node, so the platform lies at the head of its sample list and the closing pair is a one-sample stub — with OpenTPW's platform on the closing pair, stopping after one sample would leave the platform unsampled — evidence needed: the three-node station (COAST-029)
 		var pair = 0;
 		var previousPoint = Point( 0, 0 );
 		var tPrevious = 0f;
@@ -330,4 +331,29 @@ public static class CoasterTrig
 	public static float Entry( int index ) => Table[index & (Size - 1)];
 	public static float Sin( float angle ) => Table[(int)(angle * Scale) & (Size - 1)];
 	public static float Cos( float angle ) => Table[(int)((HalfPi + angle) * Scale) & (Size - 1)];
+
+	// ---- The PC runtime table (tp.exe 0x4708d0) -------------------------------------------------------
+
+	/// <summary>The scale of the PC table, <c>0x7b095c</c> = f32(4096 · f32(1/2π)), the constant 0x6feb9c being f32(0.15915494).</summary>
+	// [BIN:TPW-EXE:0x4708e5 table scale] 0x4708d0(4096): mask 0x7b0960 = 4095, count 0x7b4968 = 4096, scale 0x7b095c = f32(4096 · [0x6feb9c]) with [0x6feb9c] = 0x3e22f983 = f32(1/2π)
+	public static readonly float PcScale = 4096f * 0.15915494f;
+	/// <summary>The PC table: T[k] = f32(fsin(k/4096 · f32(2π))), the product exact in extended precision (<c>0x47090f..0x47092d</c>, [0x6feba0] = 0x40c90fdb).</summary>
+	// [BIN:TPW-EXE:0x47090f table entries] T[k] = f32(fsin(k / 4096.0f · [0x6feba0])), the division and the product in x87 extended precision (both exact for k < 4096)
+	private static readonly float[] PcTable = Enumerable.Range( 0, Size ).Select( k => (float)Math.Sin( (k / 4096.0) * (double)6.2831855f ) ).ToArray();
+	/// <summary>−π/2 as single (<c>0x6fdf78</c>, <c>0x6fe040</c>), subtracted to turn a sine index into a cosine index.</summary>
+	private const float MinusHalfPi = -1.5707964f;
+
+	/// <summary>Entry <paramref name="index"/> of the PC table (masked like the lookups).</summary>
+	public static float PcEntry( int index ) => PcTable[index & (Size - 1)];
+
+	/// <summary>sin a with the index rounded to nearest even, the default <c>fistp</c> of the module's lookups (the swing, <c>0x43c7be</c>).</summary>
+	// [BIN:TPW-EXE:0x43c7be nearest index] index = fistp(f32(scale · a)) & mask under the default control word (round to nearest even); the Mac lookup truncates
+	public static float PcSin( float angle ) => PcTable[(int)MathF.Round( PcScale * angle ) & (Size - 1)];
+	/// <summary>cos a with the nearest index: the index of f32((a − (−π/2)) · scale), the difference carried unrounded (<c>0x43c7d0..0x43c7e5</c>).</summary>
+	public static float PcCos( float angle ) => PcTable[(int)MathF.Round( (float)(((double)angle - MinusHalfPi) * PcScale) ) & (Size - 1)];
+
+	/// <summary>sin a with the truncating index of the self-intersection pass, which runs with the rounding mode set to truncate (<c>0x439ac4</c>).</summary>
+	public static float PcSinTruncated( float angle ) => PcTable[(int)(angle * PcScale) & (Size - 1)];
+	/// <summary>cos a with the truncating index: the pass stores f32(a − (−π/2)) first, then f32(scale · that) (<c>0x43a33b..0x43a35b</c>).</summary>
+	public static float PcCosTruncated( float angle ) => PcTable[(int)(PcScale * (angle - MinusHalfPi)) & (Size - 1)];
 }

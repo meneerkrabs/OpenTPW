@@ -28,7 +28,9 @@ internal sealed partial class SandboxSmokeTest
 			var candidate = level.Objects.Objects.Where( ride => !ride.IsDeleted && ride.IsAnimating
 				&& objectMotion.TryGetValue( ride, out var motion ) && motion.MovedFrames >= 10 )
 				.SelectMany( ride => ride.Visitors.HungHeads()
-					.Where( head => RideHeadRenderer.CanDraw( level.Guests.Find( head.Visitor ), ride.Visitors.AttractionId ) )
+					// The readback checks the kid heads, so a rider the costume heads draw is not a candidate.
+					.Where( head => RideHeadRenderer.CanDraw( level.Guests.Find( head.Visitor ), ride.Visitors.AttractionId )
+						&& renderer.Draws?.Invoke( level.Guests.Find( head.Visitor )! ) != false )
 					.Select( head => (Ride: ride, Head: head)) ).FirstOrDefault();
 			if ( candidate.Ride == null )
 				return false;

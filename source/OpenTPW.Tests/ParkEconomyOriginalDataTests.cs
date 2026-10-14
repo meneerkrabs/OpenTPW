@@ -70,6 +70,21 @@ public class ParkEconomyOriginalDataTests
 		Assert.AreEqual( 30000, BalanceSettings.Load( "space", false ).GoldenTickets.ProfitYear );
 	}
 
+	/// <summary>The objects that spread a <c>RegionFX</c> row (GUEST-006): a small and a super toilet, a security camera per theme, and the Hallow and Space shows.</summary>
+	[TestMethod]
+	public void ToiletsCamerasAndShowsCarryTheirRegionFlags()
+	{
+		UseOriginalData();
+		foreach ( var (theme, toilets, camera, fireworks) in new[] { ("jungle", new[] { 1402, 1419 }, 1413, 0), ("hallow", new[] { 2404, 2406 }, 2403, 2415),
+			("space", new[] { 3402, 3403 }, 3413, 3416), ("fantasy", new[] { 4405, 4406 }, 4414, 0) } )
+		{
+			var catalog = EconomyObjectCatalog.Load( theme, easy: false );
+			CollectionAssert.AreEquivalent( toilets, catalog.Objects.Where( info => info.ProvidesRelief ).Select( info => info.InfoId ).ToArray(), theme );
+			CollectionAssert.AreEqual( new[] { camera }, catalog.Objects.Where( info => info.ProvidesSecurity ).Select( info => info.InfoId ).ToArray(), theme );
+			CollectionAssert.AreEqual( fireworks == 0 ? new int[0] : new[] { fireworks }, catalog.Objects.Where( info => info.IsFireworks ).Select( info => info.InfoId ).ToArray(), theme );
+		}
+	}
+
 	[TestMethod]
 	public void ObjectCatalogMergesCategoryObjectAndEasyFiles()
 	{

@@ -85,6 +85,14 @@ internal static class Game
 			Console.WriteLine( "Read-only container decoding only: original park payload semantics and gameplay import remain unverified." );
 			return;
 		}
+		var missionIndex = Array.IndexOf( args, "--inspect-tpi-mission" );
+		if ( missionIndex >= 0 )
+		{
+			if ( missionIndex + 1 >= args.Length || args[missionIndex + 1].StartsWith( "--" ) )
+				throw new ArgumentException( "--inspect-tpi-mission requires a local .sam path (docs/TPI-MISSION-INSPECTION.md)." );
+			TpiMissionInspection.Run( args[missionIndex + 1] );
+			return;
+		}
 		var pathIndex = Array.IndexOf( args, "--game-path" );
 		string? commandLinePath = null;
 		if ( pathIndex >= 0 )
@@ -376,6 +384,35 @@ internal static class Game
 				weather.ApplyQuality( debugQuality );
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
 			}
+		}
+		// [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes
+		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once.
+		// The balloon still runs down, rides still put it away and the renderers draw them as for a bought one.
+		if ( args.Contains( "--debug-guest-looks" ) )
+		{
+			// Guests seen in the current park only: a new park starts afresh (its ids restart), and guests who left are forgotten.
+			var dressed = new HashSet<Guest>( ReferenceEqualityComparer.Instance );
+			GuestSimulation? park = null;
+			Render.PostUpdate += () =>
+			{
+				if ( flow.Level?.Guests is not { } guests )
+					return;
+				if ( guests != park )
+				{
+					park = guests;
+					dressed.Clear();
+				}
+				dressed.IntersectWith( guests.Guests );
+				foreach ( var guest in guests.Guests )
+				{
+					if ( !dressed.Add( guest ) )
+						continue;
+					if ( guest.Id % 2 == 0 )
+						(guest.HasBalloon, guest.BalloonLife) = (true, GuestAppearance.MaximumBalloonLife);
+					if ( guest.Id % 3 == 0 )
+						guest.InCostume = true;
+				}
+			};
 		}
 		// [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own
 		// warning schedule as soon as the park's weather has started, so captures can show the forecast banner
@@ -683,7 +720,10 @@ internal static class Game
 			PrepassSprites = args.Contains( "--prepass-sprites" ),
 			HeroDirectory = GetOption( args, "--texture-pack-hero-dir", "a directory of hand-made replacement PNGs" ) ?? "" };
 		// Guest sprites are assembled into atlases from the sprite banks; they join the build under their pack keys.
-		var sprites = subtree.Length == 0 ? GuestSpriteAtlas.LoadKids() : new List<GuestSpriteAtlas>();
+		var sprites = subtree.Length == 0
+			? GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadBalloons() )
+				.Concat( new[] { "jungle", "fantasy", "hallow", "space" }.SelectMany( theme => GuestSpriteAtlas.LoadCostumes( theme ).Concat( GuestSpriteAtlas.LoadCostumeHeads( theme ) ) ) ).ToList()
+			: new List<GuestSpriteAtlas>();
 		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}{(options.Merge ? " (merging)" : "")}." );
 		var manifest = TexturePackBuilder.Build( TexturePackBuilder.EnumerateGameTextures( dataDirectory, subtree )
 			.Concat( sprites.Select( atlas => (atlas.PackKey, (Func<TextureData>)(() => new TextureData( atlas.Width, atlas.Height, atlas.Pixels ))) ) ), packDirectory,

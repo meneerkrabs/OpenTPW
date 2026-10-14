@@ -28,6 +28,8 @@ public sealed record BumperTemplate( int Type, int Laps, int VehicleRadius, int 
 	/// <summary>Types −1 (jungle), −6 (hallow), −11 (fantasy) and −14 (space): the bumper cars, which drive free inside an arena and have no track.</summary>
 	public bool IsBumper => Type is -1 or -6 or -11 or -14;
 	public TrackFamily Family => IsWater ? TrackFamily.Water : IsKart ? TrackFamily.Kart : TrackFamily.None;
+	/// <summary>The family a renderer draws the controller's vehicles under: the track family, or <see cref="TrackFamily.Bumper"/> for the bumper cars.</summary>
+	public TrackFamily RenderFamily => IsBumper ? TrackFamily.Bumper : Family;
 	/// <summary>The radius of the bumper arena's keep-in circle (collision object +0xC): 0x1200 jungle, 0x1100 fantasy, 0x1600 hallow and space.</summary>
 	// [BIN:TPW-EXE:0x00545890 bumper arena] the keep-in circle (flags 0x1F) at the station centre has radius 0x1200 for type −1, 0x1100 for −11 and 0x1600 for the other bumper types; the eight buoys lie on a ring of radius 0xC00, 0xB00 and 0x1000
 	public int ArenaRadius => Type switch { -1 => 0x1200, -11 => 0x1100, _ => 0x1600 };

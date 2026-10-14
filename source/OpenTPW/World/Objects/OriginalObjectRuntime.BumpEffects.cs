@@ -72,6 +72,10 @@ public sealed partial class OriginalObjectRuntime
 					GameAudio.PlayRseEvent( 3, (uint)stopEvent, sound );
 				}
 				break;
+			case BumpEffectKind.EngineHalt:
+				if ( engineVoices.Remove( effect.Slot, out var halted ) )
+					halted.Stop();
+				break;
 			case BumpEffectKind.EngineParameter:
 				// [APPROX:TRACK-025] the engine's pitch parameter (EventMap VAR_PAR0 = speed / 3) is raised every tick, but the voice is a plain event voice: no parameter reaches it
 				break;
@@ -84,13 +88,14 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	internal void ResumeBumpEffects()
 	{
-		if ( stopped || Bump is not { Template.IsKart: true } bump )
+		if ( stopped || Bump is not { Template.IsWater: false } bump )
 			return;
 		if ( EventMapEvent( BumpEffects.SlotEngine ) is not { } engineEvent )
 			return;
 		foreach ( var vehicle in bump.Vehicles )
 		{
-			if ( engineVoices.ContainsKey( vehicle.Slot ) )
+			// a kart's voice runs for its whole race; a bumper car holds one only while it is flagged (the first carrying car of a running ride)
+			if ( engineVoices.ContainsKey( vehicle.Slot ) || bump.Template.IsBumper && !vehicle.Engine )
 				continue;
 			var engine = bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height );
 			var sound = engine is { } point ? engineToSound?.Invoke( point ) : null;

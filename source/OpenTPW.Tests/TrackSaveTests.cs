@@ -180,6 +180,20 @@ public class TrackSaveTests
 	}
 
 	[TestMethod]
+	public void BumperCarsMustSitInTheArenaAndOneCarOwnsTheEngine()
+	{
+		ParkResumeSnapshot Bumper( int phase, params BumpVehicleSaveData[] cars ) => WithTracks( part => part with { Controllers = part.Controllers.Select( controller =>
+			controller with { Type = -1, Phase = phase, Sections = new List<TrackSectionSaveData>(), Vehicles = cars.ToList() } ).ToList() } );
+		var good = Vehicle( 3, 40000 ) with { Flags = 0x4404009, ObjectIndex = 0, Riders = new List<int> { 5 }, Engine = true, WallHits = -1 };
+		ParkResumeSaveFile.ValidateShape( Bumper( 2, good ) );
+		Rejects( Bumper( 2, good with { ObjectIndex = -1 } ), "not in the arena object" );
+		Rejects( Bumper( 1, good ), "engine voice" );
+		Rejects( Bumper( 2, good with { Flags = 0x4004009 } ), "engine voice" );
+		Rejects( Bumper( 2, good, Vehicle( 4, 41000 ) with { Flags = 0x4404009, ObjectIndex = 0, Riders = new List<int> { 6 }, Engine = true, WallHits = -1 } ), "engine voice" );
+		Rejects( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { Engine = true } } } ).ToList() } ), "engine voice" );
+	}
+
+	[TestMethod]
 	public void BoatsGuestsAndScalarsOutsideTheParkAreRefused()
 	{
 		BumpControllerSaveData Boats( BumpControllerSaveData controller, params BumpVehicleSaveData[] vehicles ) => controller with { Vehicles = vehicles.ToList() };

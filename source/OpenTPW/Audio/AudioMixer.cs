@@ -84,7 +84,7 @@ public sealed class AudioVoice
 			float left, right;
 			if ( channels == 1 )
 			{
-				// [APPROX:ADVISOR-012] Mono samples are duplicated to both channels — evidence needed: original output channel layout/panning
+				// [APPROX:ADVISOR-012] Mono samples are duplicated to both channels; the original submits the advisor's speech unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D), the left/right levels come from QMixer (AUDIO-018) — evidence needed: QMixer or a capture
 				left = right = samples[index] + (samples[next] - samples[index]) * fraction;
 			}
 			else

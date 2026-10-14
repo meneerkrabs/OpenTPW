@@ -57,7 +57,7 @@ public sealed class OriginalPark
 		yield return null;
 		var model = new ModelFile( $"/levels/{levelName}/terrain/base.MD2" );
 		yield return null;
-		// [APPROX:COMPAT-019] Theme Park Inc ships its lake as a separate model; the finished lake (dlake.MD2, not lake.MD2 with its building site) is drawn
+		// [APPROX:COMPAT-019] Theme Park Inc's lake is mission obstacle 1703 (lake.MD2, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (dlake.MD2); this viewer always draws dlake.MD2 and ignores the obstacle state — evidence needed: Theme Park Inc's obstacle code or a capture
 		var lakePath = FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
 		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
 		var catalog = new Dictionary<int, OriginalObjectInfo>();

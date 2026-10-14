@@ -22,7 +22,7 @@ public sealed class ThemeParkIncHudHost
 /// (no economy runs), and every button is an OpenTPW control. Building, path and queue interaction follows the
 /// traced Theme Park World tools (docs/PATHS.md) because they are what the slice runs.
 /// </summary>
-// [APPROX:TPI-900] the whole HUD is an OpenTPW text interface; no original Theme Park Inc interface behaviour is traced or reproduced
+// [EXT:tpi-text-hud] the whole HUD is an OpenTPW text interface (an OpenTPW design decision for the experimental slice); no original Theme Park Inc interface behaviour is claimed
 public sealed class ThemeParkIncHud
 {
 	/// <summary>Seconds a build/refusal message stays on screen (the TW HUD's message timing, UI-025).</summary>
@@ -96,7 +96,7 @@ public sealed class ThemeParkIncHud
 			return;
 		armedEntry = null;
 		level.BuildEntry = null;
-		// The placed object is free (TPI-901); the queue tool follows as in the Theme Park World place flow.
+		// The placed object is free ([EXT:tpi-free-builds]); the queue tool follows as in the Theme Park World place flow.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemNameOf( item.Entry ) ) );
 		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
@@ -231,7 +231,7 @@ public sealed class ThemeParkIncHud
 
 	private string ItemText( BuildItem item )
 	{
-		// [APPROX:TPI-901] builds are free because the slice runs no economy; the original would charge its own prices
+		// [EXT:tpi-free-builds] builds are free because the slice runs no economy (an OpenTPW scope decision); no original Theme Park Inc price is claimed
 		return $"{(item.Entry != null ? ItemNameOf( item.Entry ) : item.Id)} — free";
 	}
 
@@ -420,7 +420,7 @@ public sealed class ThemeParkIncHud
 	/// empty owned cell starts the path tool there, Backspace undoes a segment, right click cancels, and clicks inside
 	/// the tool commit lines. The commit reports the pointer as captured, so <see cref="Level"/>'s own park click skips it.
 	/// </summary>
-	// [APPROX:TPI-904] the tools follow the traced Theme Park World flow; Theme Park Inc's own build tools are untraced
+	// [EXT:tpi-tool-flow] the tools follow the traced Theme Park World flow (the TPW tool flow reused for the slice); no original Theme Park Inc build tool is claimed
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark )
 	{
 		var tool = level.CellTool;

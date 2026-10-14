@@ -253,7 +253,7 @@ public class OriginalObject : Entity
 				for ( var vertexIndex = 0; vertexIndex < part.Vertices.Length; vertexIndex++ )
 					if ( ObjectSigns.IsSignSlot( part.Textures[part.Vertices[vertexIndex].TexIndex] ) )
 					{
-						// [APPROX:COMPAT-031] orient the gate's sign lighting upward so the light stone name remains legible.
+						// [EXT:gate-paint-legibility] orient the gate's sign lighting upward so the light stone name remains legible (an OpenTPW presentation decision until an original capture exists).
 						var vertex = part.Vertices[vertexIndex];
 						vertex.Normal = System.Numerics.Vector3.UnitZ;
 						part.Vertices[vertexIndex] = vertex;

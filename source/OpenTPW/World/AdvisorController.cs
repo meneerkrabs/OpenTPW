@@ -209,7 +209,7 @@ internal sealed class AdvisorController
 			history[messageId] = new AdvisorMessageHistory( entry.SavedGameTick, entry.PreviousVariant, entry.HasBeenPlayed, entry.SlapCount );
 		}
 		Queue.Restore( pending, history );
-		// [APPROX:ADVISOR-022] OpenTPW's own park save does not store the controller, and an original save's pending advice and history of messages without a bound descriptor (only the wired game events' messages are bound) are dropped on import — evidence needed: the remaining descriptor rows and their score producers, and an OpenTPW save target for the controller
+		// [APPROX:ADVISOR-022] An original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129 and 323 are bound) are dropped on import; OpenTPW's own park save stores the controller (ParkResumeSaveFile, AutomaticAdvisorSnapshot) — evidence needed: the remaining descriptor rows (table 0x76E300)
 		return $"[APPROX:ADVISOR-022] Advisor controller imported: {imported} pending advice, history of {history.Count} bound messages; dropped {dropped.Count} pending advice of unbound messages ({string.Join( ", ", dropped )}) and {droppedHistory} unbound history entries; the imported records' thing, secondary and score-overridden fields are not kept ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
 	}
 

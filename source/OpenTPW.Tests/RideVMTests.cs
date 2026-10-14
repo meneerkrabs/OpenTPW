@@ -452,7 +452,7 @@ public class RideVMTests
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
 		Run( vm, 1 );
 		Assert.AreEqual( RideVMState.Waiting, vm.State );
-		Assert.AreEqual( 1000d / 60 + 500, vm.WakeTimeMilliseconds, 1e-9, "now + operand, not an absolute clock word" );
+		Assert.AreEqual( 16 + 500, vm.WakeTimeMilliseconds, 1e-9, "the integer clock word (16 at the 16.67 ms arming) + operand, not an absolute clock word" );
 		Run( vm, 29 );
 		Assert.AreEqual( 0, vm.Variables[0], "500 ms = 30 ticks have not passed" );
 		Run( vm, 2 );
@@ -467,7 +467,7 @@ public class RideVMTests
 			.I( Opcode.WAITABS, V( 1 ) )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
 		Run( vm, 1 );
-		Assert.AreEqual( 1000d / 60 + 250, vm.WakeTimeMilliseconds, 1e-9 );
+		Assert.AreEqual( 16 + 250, vm.WakeTimeMilliseconds, 1e-9, "the wake is when the integer clock reaches 16 + 250, not 250 ms after the fractional arming time" );
 		Run( vm, 14 );
 		Assert.AreEqual( RideVMState.Waiting, vm.State, "250 ms ≈ 15 ticks have not fully passed" );
 		Run( vm, 2 );
@@ -475,25 +475,44 @@ public class RideVMTests
 	}
 
 	/// <summary>
-	/// The original's first encounter always yields, even when the deadline is not in the future: WAITABS 0 and a
-	/// negative operand wake at the next servicing pass instead of continuing the same slice.
+	/// The original's first encounter always yields, even when the deadline is not in the future: WAITABS 0, and a
+	/// negative operand once the clock word has passed it (the 32-bit sum wraps), wake at the next servicing pass
+	/// instead of continuing the same slice.
 	/// </summary>
 	[DataTestMethod]
-	[DataRow( 0 )]
-	[DataRow( -100 )]
-	public void WaitAbsoluteWithAPastDeadlineYieldsOnceAndResumesNextTick( int operand )
+	[DataRow( 0, 0 )]
+	[DataRow( -100, 7 )]
+	public void WaitAbsoluteWithAPastDeadlineYieldsOnceAndResumesNextTick( int operand, int leadTicks )
 	{
-		var vm = Load( new Asm()
+		var asm = new Asm();
+		for ( var tick = 0; tick < leadTicks; tick++ )
+			asm.I( Opcode.ENDSLICE );
+		var vm = Load( asm
 			.I( Opcode.WAITABS, operand )
 			.I( Opcode.COPY, V( 0 ), 7 )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
-		Run( vm, 1 );
+		Run( vm, leadTicks + 1 );
 		Assert.AreEqual( RideVMState.Waiting, vm.State, "the first encounter yields" );
 		Assert.AreEqual( 0, vm.Variables[0] );
-		Assert.AreEqual( 1000d / 60, vm.WakeTimeMilliseconds, 1e-9, "a past deadline clamps to now" );
+		Assert.AreEqual( 1000d / 60 * ( leadTicks + 1 ), vm.WakeTimeMilliseconds, 1e-9, "a past deadline clamps to now" );
 		Run( vm, 1 );
 		Assert.AreEqual( 7, vm.Variables[0], "the next servicing pass resumes past the wait" );
 		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	/// <summary>
+	/// A negative operand is a 32-bit sum like any other: while the clock word is below the operand's magnitude the sum has not
+	/// wrapped, so the deadline is about 49.7 days ahead and the script waits (the original compares unsigned, 0x55386D).
+	/// </summary>
+	[TestMethod]
+	public void WaitAbsoluteWithANegativeOperandBeforeTheClockPassesItIsAVeryLongWait()
+	{
+		var vm = Load( new Asm().I( Opcode.WAITABS, -100 ).I( Opcode.COPY, V( 0 ), 7 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( RideVMState.Waiting, vm.State );
+		Assert.AreEqual( 16 + 4294967196d, vm.WakeTimeMilliseconds, 1e-3 );
+		Run( vm, 10 );
+		Assert.AreEqual( 0, vm.Variables[0] );
 	}
 
 	[TestMethod]
@@ -512,6 +531,44 @@ public class RideVMTests
 		Assert.AreEqual( 0, vm.Variables[0], "WAITABS 200 ≈ 12 more ticks" );
 		Run( vm, 6 );
 		Assert.AreEqual( 3, vm.Variables[0], "the second wait re-arms the shared deadline field (+160)" );
+	}
+
+	/// <summary>
+	/// The deadline is a wrapping 32-bit word compared unsigned (tp.exe 0x553828, jb at 0x55386D): a sum that wraps is
+	/// already past, and a sum of exactly 0 reads as "not armed", so the next execution stores again and yields.
+	/// </summary>
+	[TestMethod]
+	public void WaitAbsoluteWhoseDeadlineWrapsToZeroIsNotArmedAndArmsAgain()
+	{
+		// The second slice runs at 33.3 ms, so the clock word is 33 and an operand of -33 sums to 2^32: 0.
+		var vm = Load( new Asm()
+			.I( Opcode.ENDSLICE )
+			.I( Opcode.WAITABS, -33 )
+			.I( Opcode.COPY, V( 0 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 2 );
+		Assert.AreEqual( 33u, vm.ClockMilliseconds32 );
+		Assert.AreEqual( RideVMState.Running, vm.State, "a deadline of 0 is not stored as a wait: it yields and repeats" );
+		Assert.AreEqual( 0, vm.Variables[0] );
+		Run( vm, 1 );
+		Assert.AreEqual( RideVMState.Waiting, vm.State, "the next slice stores a wrapped (past) deadline and yields once" );
+		Assert.AreEqual( 0, vm.Variables[0] );
+		Run( vm, 1 );
+		Assert.AreEqual( 7, vm.Variables[0] );
+	}
+
+	/// <summary>
+	/// The original resumes once the integer clock word reaches the deadline (tp.exe 0x55386D). Armed at 16.67 ms (word 16) with
+	/// 500 ms, the deadline is 516, so the script resumes at the tick of 516.67 ms (31 ticks), not one tick later.
+	/// </summary>
+	[TestMethod]
+	public void WaitAbsoluteResumesWhenTheIntegerClockReachesItsDeadlineNotOneTickLate()
+	{
+		var vm = Load( new Asm().I( Opcode.WAITABS, 500 ).I( Opcode.COPY, V( 0 ), 7 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 30 );
+		Assert.AreEqual( 0, vm.Variables[0], "500.00 ms after arming is not yet 516" );
+		Run( vm, 1 );
+		Assert.AreEqual( 7, vm.Variables[0], "tick 31 (516.67 ms) has floor(clock) >= 516" );
 	}
 
 	/// <summary>Stopping the script cancels a pending WAITABS like any other wait: no slice runs after it.</summary>

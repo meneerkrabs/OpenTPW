@@ -204,7 +204,7 @@ public class DeterminismTests
 			var streams = resumed.RandomState;
 			// Move the economy and the script stream away from the save point by drawing, not through the
 			// restore path under test; the guest stream is covered by LoadRestoresEveryStreamDrawnAfterTheSave,
-			// because drawing from it also moves the (unsaved, DET-016) guests.
+			// because drawing from it also moves the (unsaved in this legacy economy-only save) guests.
 			resumed.Economy.Advance( 50_000 );
 			resumed.Scripts.NextScriptSeed();
 			Assert.AreNotEqual( atSave, resumed.Hash );
@@ -332,7 +332,7 @@ public class DeterminismTests
 			.Concat( world )
 			.SelectMany( path => File.ReadLines( path ).Select( ( line, index ) => (path, line, index) ) ).ToList();
 		Assert.AreEqual( 1, lines.Count( item => IsApprovedCivilTimeProvider( Path.GetRelativePath( source, item.path ), item.line ) ),
-			"Only the exact single TPW-gated provider boundary is approved (VM-902)." );
+			"Only the exact single TPW-gated provider boundary is approved (the host clock input, [EXT:vm-host-time])." );
 		var hits = lines.Where( item => ForbiddenInSimulation.IsMatch( item.line )
 			&& !IsApprovedCivilTimeProvider( Path.GetRelativePath( source, item.path ), item.line ) )
 			.Select( item => $"{Path.GetRelativePath( root.FullName, item.path )}:{item.index + 1}: {item.line.Trim()}" ).ToList();
@@ -492,6 +492,9 @@ public class DeterminismAssetTests
 			Assert.AreEqual( fixedRun, Run( RideScriptWorld.FixedClock ), "a fixed civil time gives the same run" );
 			Assert.AreNotEqual( Run( () => new DateTime( 2000, 1, 1, 3, 0, 0 ) ), Run( () => new DateTime( 2000, 1, 1, 16, 0, 0 ) ),
 				"the hour reaches the world state, so a headless run that pins a hash must fix the clock" );
+			// MIN and SEC are host time too (tp.exe 0x5566FF, 0x55674E), so a two-run comparison with a real clock can flake on them as well.
+			// In this 120 s run the minute and second do not reach the hash (only the hour does).
+			Assert.AreEqual( Run( () => new DateTime( 2000, 1, 1, 3, 10, 20 ) ), Run( () => new DateTime( 2000, 1, 1, 3, 40, 50 ) ) );
 		}
 		finally
 		{

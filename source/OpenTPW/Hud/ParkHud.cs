@@ -19,6 +19,8 @@ public sealed class HudHost
 	public Action<UiScreenStack>? GoOnline { get; init; }
 	/// <summary>Opens the existing postcard composer; it does not send a card.</summary>
 	public Action<UiScreenStack>? OpenPostcard { get; init; }
+	/// <summary>The open/close button or its shortcut was pressed (true: open, false: close), also when the park's state does not change; the advisor raises game event 3 or 4 on it.</summary>
+	public Action<bool>? ParkDoorPressed { get; init; }
 }
 
 /// <summary>
@@ -611,10 +613,19 @@ public sealed partial class ParkHud
 		// [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410)
 		if ( shortcutsAllowed && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
 		{
-			if ( Input.Pressed( InputButton.OpenPark ) && !doorEconomy.IsParkOpen )
-				doorEconomy.OpenPark();
-			if ( Input.Pressed( InputButton.ClosePark ) && doorEconomy.IsParkOpen )
-				doorEconomy.ClosePark();
+			// [BIN:TPW-EXE:0x0040C410 close-park handler] the shortcut calls the door routine 0x519EF0 whatever the park's state, which posts event 4 (0x51A1C6, also from a closed park) or, for opening, event 3 (0x51A033) every time
+			if ( Input.Pressed( InputButton.OpenPark ) )
+			{
+				if ( !doorEconomy.IsParkOpen )
+					doorEconomy.OpenPark();
+				host?.ParkDoorPressed?.Invoke( true );
+			}
+			if ( Input.Pressed( InputButton.ClosePark ) )
+			{
+				if ( doorEconomy.IsParkOpen )
+					doorEconomy.ClosePark();
+				host?.ParkDoorPressed?.Invoke( false );
+			}
 		}
 
 		// The original window keys (the key table the InputButton defaults document; the research and map buttons'
@@ -885,7 +896,8 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:STP-PPC:0x100866B8 SetCell ghost] LayLine(mode | 0x100) gives each previewed cell a BlueprintMesh face: blue (0) when the chooser 0x100895D8 accepts it, red (1) when it refuses it (money included)
 	// [BIN:STP-PPC:0x10080C50 cell ghost] the same blue or red faces for the cells of other build modes, checked by 0x10084154
-	// [APPROX:BLUEPRINT-003] a line marks every cell up to the refused one, existing cells blue; a footprint is blue when the build rule and the purchase allow it, red otherwise — evidence needed: the chooser's result for existing path cells and the footprint caller 0x10075618
+	// [BIN:TPW-EXE:0x0053C8D0 blueprint AddFace] the PC twins: AddFace 0x53C8D0 (face records at 0x820B00 + i * 0xA0, callers 0x46C480, 0x4FA030, 0x532FC0 and 0x5370E0), the ghost routine 0x5370E0 (called from 0x52BA50 and 0x53AAC0) whose chooser 0x539760 returns 1 for the refused branch 0x537A1B, 0 for the default texture and otherwise that texture, and 0x532FC0 (called from 0x452D30, 0x5286A0, 0x528A70 and 0x536100); the chooser walks neighbouring cell types (0x536340–0x536380, type 0x15)
+	// [APPROX:BLUEPRINT-003] a line marks every cell up to the refused one, existing cells blue; a footprint is blue when the build rule and the purchase allow it, red otherwise — evidence needed: chooser 0x539760's result for existing path cells and the footprint caller among the 0x532FC0 callers (Mac 0x10075618)
 	private void UpdateBlueprint( bool inPark )
 	{
 		if ( level.Blueprint is not { } blueprint )

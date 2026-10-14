@@ -96,10 +96,16 @@ Open points (`BlueprintApproximations`):
 
 - BLUEPRINT-001: every cell takes its corner height rounded up; the original's 0 for plain cells and the
   raise next to rides (`0x10086030`) are not reproduced.
-- BLUEPRINT-002: texture coordinates. The original's per-corner coordinates come from a runtime table
-  (`0x101ED3D4`) rotated by the face's direction code.
+- BLUEPRINT-002 (retired October 14, 2026): texture coordinates. The PC table `0x871EE8` holds the unit square in entries 0–3 and (0.5, 0.5) in
+  entry 4 (filled by `0x53C3F0`); entries 5–8 are the rotating ±0.4 square of the track symbols. The face builder `0x53DF30` uses the rotating set only
+  for textures 8–14 and the unit square for all others, with the corner order by direction byte (default 0,1,2,3; `0x40`: 1,3,0,2; `0x10`: 3,2,1,0;
+  4: 2,0,3,1), which shows only on a non-uniform texture. The blue and red markers match (a whole texture per face, both sides drawn), so nothing changed
+  in the code; the corner order is not applied.
 - BLUEPRINT-003: which cells get which marker. Existing path cells of a line are drawn blue, and a footprint
   is red when the build rule or the purchase refuses it; the chooser's exact result for existing cells and
-  the footprint caller `0x10075618` were not read in full. The track symbols (`m_direct`, `m_link`, `m_end`,
+  the footprint caller `0x10075618` were not read in full. The PC twins (October 14, 2026): AddFace `0x53C8D0` (face records `0x820B00 + i·0xA0`; callers
+  `0x46C480`, `0x4FA030`, `0x532FC0`, `0x5370E0`), the ghost routine `0x5370E0` (called from `0x52BA50` and `0x53AAC0`) with chooser `0x539760` (1: the refused
+  branch `0x537A1B`, 0: the default texture, otherwise that texture) and `0x532FC0` (called from `0x452D30`, `0x5286A0`, `0x528A70`, `0x536100`); still to read:
+  the chooser's result for existing path cells and the footprint caller among the `0x532FC0` callers. The track symbols (`m_direct`, `m_link`, `m_end`,
   `m_break`, `m_erase`) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet; entrance and exit
   arrows are not drawn because no routine read chooses them (see above).

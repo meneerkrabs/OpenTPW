@@ -34,7 +34,7 @@ internal sealed class SpeechAudioPlayer : IDisposable
 			if ( mixer != null )
 				return voice == null ? TimeSpan.Zero : TimeSpan.FromSeconds( Math.Min( mixer.PlayedSeconds( voice ), duration.TotalSeconds ) );
 			// [BIN:TPW-EXE:0x0051C570 sample length] the original's mouth runs on the advisor clock, never on audio; with the sound system inactive (0x802BC8/0x802BD4 clear, set at 0x51B660 only when sound init succeeds) the sample length is 1 ms (0x51C570), there is no sound handle (0x51BFC0) and the advice ends with a sequence built from a 501 ms budget
-			// [APPROX:ADVISOR-011] Wall clock for the full speech when no audio device opened, where the original shows no speech at all — evidence needed: none for the rule (traced); the C# speech model keeps its own clock
+			// [EXT:advisor-no-device-speech] wall clock for the full speech when no audio device opened (--mute and headless runs), where the original shows no speech at all (the rule is fully traced: 0x51BFC0 returns 0 and 0x51C570 returns its preset 1 without the sound system); an optional strict-parity change would use length 1 (budget 501) and no mouth
 			if ( output == null )
 				return clock.Elapsed < duration ? clock.Elapsed : duration;
 			// [APPROX:ADVISOR-010] Lip-sync clock = frames SDL took from its queue; leads the speaker by up to one device buffer (≈46 ms) — evidence needed: original A/V sync source and latency measurement
@@ -76,7 +76,7 @@ internal sealed class SpeechAudioPlayer : IDisposable
 	internal static short[] ToStereo( Mp2Audio audio )
 	{
 		// [BIN:TPW-EXE:0x0051BFC0 sound start] the advisor's sample start gets three 0.0 floats (position)
-		// [APPROX:ADVISOR-012] Mono speech duplicated to both channels — evidence needed: the original mixer's channel layout/panning for a sound started with zero position
+		// [APPROX:ADVISOR-012] Mono speech duplicated to both channels; the request is unpositioned (0x51BFC0 with 0,0,0, flat placeholder at (0,1,0) in the library, 0x6BC515–0x6BC52F) and the levels come from QMixer, outside tp.exe (AUDIO-018) — evidence needed: QMixer or a capture
 		if ( audio.Channels == 2 )
 			return audio.Samples;
 		var stereo = new short[audio.Samples.Length * 2];

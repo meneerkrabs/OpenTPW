@@ -16,8 +16,8 @@ TPW `YEAR`/`MONTH`/`DAY`/`HOUR` read host-local civil time, not the park calenda
 or scheduler clock (the Feral witness is in reverse/PPC-clock.md, "RSE civil
 time is an independent clock domain"). A `RideScriptWorld` accepts an injected
 provider; its default samples the current host clock per executed instruction.
-TPI and unsupported-edition worlds cannot enable it. VM-902 records the managed
-timezone/conversion and native destination/flag qualification limits.
+TPI and unsupported-edition worlds cannot enable it. `YEAR`, `MONTH`, `DAY`, `HOUR`, `MIN` and `SEC` all read it (tp.exe opcodes 97–102);
+the sample is an external input (`[EXT:vm-host-time]`; VM-902 retired), so a replay needs the same samples.
 
 The provider and its current host input are external: neither is serialized in
 `RideScriptWorldSnapshot` or fed to the canonical hash. Scheduler timestamps,
@@ -368,10 +368,22 @@ itself needs a renderer and is not constructed by tests.
 
 | ID | Rule |
 | --- | --- |
-| DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world LCG |
-| DET-014 | guests use their own SplitMix64 stream, not the world LCG reseeded per guest id |
-| DET-015 | the economy uses its own SplitMix64 stream, not the world LCG |
-| DET-016 | the economy-only park save holds the streams and the economy, not guests, queues or scripts (the park-resume world save of docs/PARK-SAVES.md does hold them) |
+| DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world generator (tp.exe `0x516330`: LCG, rotate right by 13, abs) |
+| DET-014 | guests use their own SplitMix64 stream, not the world generator reseeded per guest id |
+| DET-015 | the economy uses its own SplitMix64 stream, not the world generator |
+
+DET-016 is retired (October 14, 2026): the economy-only park save is the legacy `ParkSaveFile` (`[EXT:legacy-economy-save]`), used by the
+determinism tests; the player's save (`GameFlow.SaveCurrentPark` → `ParkResumeSaveFile`) stores the economy and its streams, the layout,
+the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks (docs/PARK-SAVES.md).
+
+Port requirements for DET-013 to DET-015 (tp.exe, static evidence, nothing missing; the port is not done): the one world generator is
+`s = rotr(s * 1664525 + 1013904223, 13)` returning `abs((int)s)` with `int.MinValue` staying negative (`0x516330`); one `WorldRng` per level
+holds the u32 at world+0x1DA708; `0x516370` reseeds it with the zero-extended u16 thing id at eight sites (`0x4D71CA` and `0x4D94E2` in litter,
+`0x4F7B7E`, `0x4FB19E` in guest creation with eight draws, the reseed and two more draws, `0x4FCAFD`, `0x4FE6A1` and `0x4FE6FC` for the balloon,
+`0x50205F`), all taking the id through `0x50B350`; the state is seeded from `time()` at world setup and saved as `mRandomSeed` next to
+`mGameTick` (save `0x51710F`, load `0x517DE8`); every consumer shares the one stream with its own projection (RAND `labs(labs(r >>> 1) % (int16 + 1))`,
+ADDHEAD and FINDSCRIPTRAND `(labs(r >>> 1) % n) + 1`, tour and flying cars `labs(r) % 100`, 139 direct calls plus four inline copies); the original
+call order (substeps and the RSE pass schedule, things newest first, economy month-end) is needed for the right sequence, not only the distribution.
 
 The remaining IDs proposed in DET-plan §4.6 (DET-001, DET-003 to DET-011) belong
 to the substep scheduler and the original generators. DET-I2 will register them

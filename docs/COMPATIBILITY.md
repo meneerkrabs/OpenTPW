@@ -25,7 +25,7 @@ belong to the original Windows executable and do not exist in a reimplementation
 | White textures in large parks (texture-memory estimate constant patched in the executable) | Not applicable to the original constant; OpenTPW uploads every texture. Revisit when the original texture budget is reproduced. |
 | Sound fixes via a newer QMixer DLL; MIDI SoundFont driver DLL | Not applicable (own audio output, advisor/audio slice). |
 | Text library (`usp10.dll`) workaround for missing sign text | Not applicable: no Windows text stack is used. |
-| Sim Theme Park (TPI) mangles non-ASCII characters in prebuilt coaster names | Robustness: `UniToMB.dat` reader + codec round-trips every string of all six languages; unrepresentable characters become `?` (APPROX COMPAT-012). TPI itself is not targeted yet. |
+| Sim Theme Park (TPI) mangles non-ASCII characters in prebuilt coaster names | Robustness: `UniToMB.dat` reader + codec round-trips every string of all six languages; unrepresentable characters become `?` (`[EXT:text-encode-helper]`: tp.exe never names the codec, see below). TPI itself is not targeted yet. |
 | TPI music archives for the second and third park are corrupt | Robustness: a damaged SDT entry is skipped and logged instead of failing the whole bank. All 47 TPW banks parse with no skipped entry. |
 | North American bonus content; two TPI bonus rides fixed for non-English versions | Rides slice (`--bonus-data`, sharing the `DataRoots` overlay below). |
 
@@ -69,8 +69,8 @@ Formats and evidence:
   OpenTPW puts an opaque contrast-selected backing under each face (COMPAT-030) while
   the downstream source of original board coverage remains untraced.
   The gate's stored paint is black over a dark decoded stone board; OpenTPW uses
-  light stone text and upward-facing sign normals there for legibility (COMPAT-031),
-  pending original-platform pixels.
+  light stone text and upward-facing sign normals there for legibility (`[EXT:gate-paint-legibility]`,
+  an OpenTPW presentation decision), pending original-platform pixels.
 - Sign models have texture slots `sign1` (left half) and `sign2` (right half); the shared
   `sign1.wct`/`sign2.wct` are 128x128 placeholders reading "SIGN1"/"SIGN2", i.e. the game
   renders these textures at runtime. The binary imports `CreateFontIndirectA`,
@@ -228,16 +228,12 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-007 | Sign text | Gate shows the THEMENAMES theme name until a save supplies a park name | save park-name field, capture |
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
 | COMPAT-016 | Sign text | Ride sign text = the object's display name (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space | record field selecting the name entries; capture of a shop/sideshow sign |
-| COMPAT-017 | Sign text | A language file without SIGNA or SIGNB leaves that line empty where the original shows its default "MISSING STRING" (`0x413600`) | which objects the original rebuilds signs for; its line-1 fallback (`0x78A374`) |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
 | COMPAT-030 | Sign text | Opaque dark or cream backing under every sign face; native compositor clears transparent, but downstream board coverage is untraced | original sign material/render path and original-platform gate and ride captures |
-| COMPAT-031 | Sign text | Light stone gate-name paint and upward-facing sign normals make the decoded dark stone board legible; stored paint is black | original-platform gate text pixels and later color or lighting treatment |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
-| COMPAT-011 | Localization | Missing string → English → internal name; the only original fallback found is the object text parser's "MISSING STRING" (`0x413600`) | original behaviour for missing strings |
-| COMPAT-012 | Text input | `GameTextCodec.Encode`: unrepresentable characters → `?`; tp.exe never names UniToMB.dat/MBToUni.dat and converts wide text with WideCharToMultiByte (CP_ACP, default replacement character); Encode has no caller outside the tests | a caller of Encode that needs the rule |
 | COMPAT-014 | Theme Park Inc textures | FSH palette 0x24 has no alpha and decodes opaque; no colour key (see [FSH.md](FSH.md)) | Theme Park Inc texture upload code or captures |
 | COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque | Theme Park Inc palette conversion code or a capture |
-| COMPAT-019 | Theme Park Inc lake | `dlake.MD2` (lake surface and bed) is drawn as the finished lake; `lake.MD2` (the same lake with a building site) and the `idle`/`lakem` animations are ignored | Theme Park Inc lake code or captures ([THEME-PARK-INC.md](THEME-PARK-INC.md)) |
+| COMPAT-019 | Theme Park Inc lake | Theme Park Inc's lake is mission obstacle 1703 (`lake.MD2`, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (`dlake.MD2`); the viewer always draws `dlake.MD2` and ignores the obstacle state and the `idle`/`lakem` animations | Theme Park Inc's obstacle code or a capture ([THEME-PARK-INC.md](THEME-PARK-INC.md)) |
 
 Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced preset
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`
@@ -251,6 +247,23 @@ reproduced, COMPAT-002; at 100 percent the advance is left as it is). The baseli
 COMPAT-017's calls are traced: the object text's NAME/SIGNA/SIGNB are parsed at `0x413600`, SIGNA/SIGNB are copied into each placed
 object as two 32-character lines (`0x413020`/`0x4130B0` at `0x4DB6F9`/`0x4DB70D`), and the sign rebuild `0x468500` (types with flag 0x8000000)
 reads line 1 through `0x4E2860`, which strips a trailing "--", and line 2 through `0x4E2920`; `BonusNames` now does both.
+October 14, 2026, second round (tp.exe and Theme Park Inc data): COMPAT-017 is retired with a code change. The sign lines come from
+the selected language's file only (no English fallback); a file without SIGNA or SIGNB shows "MISSING STRING", which the original sets
+for NAME, SIGNA, SIGNB and +0x500 before it parses (`0x413600`, `0x41360D`–`0x41361D`); without a language file the definition's text
+pointers stay NULL (`0x412C65`; the sign code's handling of a NULL line is untraced and OpenTPW draws the display name); the "both empty, keep the .sam name" rule is gone. The line-1 fallback `0x78A374` is a
+never-written .bss buffer, the empty string, so an empty line 1 stays empty (`0x4E2860`). Both getters (`0x413020`, `0x4130B0`) read the
+OBJECT_NAMES row (table `0x7488D8`, +4 and +8) when the id is listed, and otherwise def+0x4F8 (SIGNA) and def+0x4FC (SIGNB).
+COMPAT-011 (the localized-string fallback order), COMPAT-012 (the UniToMB encode rule: the original converts wide text with
+`WideCharToMultiByte`, `0x424DB0`, and `Encode` has no runtime caller) and COMPAT-031 (the gate paint) are OpenTPW decisions or helpers now:
+`[EXT:locale-fallback]`, `[EXT:text-encode-helper]` and `[EXT:gate-paint-legibility]`. The original opens one language folder
+(`Data\Language\<selected>`, `0x419710`) and has no English-then-identifier chain; the missing-id result of the table lookup (`0x6ACB70`) is untraced.
+COMPAT-019 is narrowed: Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
+Obstacle", `levels/science/obstacles/` holds `lake.wad` and `dlake.wad`, `terrain.wad` holds dlake, dlakem, lake, lakem1 and lakem2, and
+`missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10 ("Water Drainage"); so "dlake" is the
+drained lake, not a finished one (the viewer's drawing is unchanged). COMPAT-006 (kerning) stays open but its answer is in the shipped
+usp10.dll: tp.exe imports only ScriptStringAnalyse, ScriptStringGetLogicalWidths, ScriptStringOut, ScriptString_pSize and ScriptStringFree
+from USP10 and no kerning or ABC-width call from GDI32. COMPAT-001, -003, -004 and -018 need pixel captures; COMPAT-014 and -015 need
+Theme Park Inc's own FSH loader.
 COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-lift]` (the gate sign faces' depth lift) and
 `[EXT:graphics-preset-cpu]` (the processor clock taken as 450 MHz or faster).
 

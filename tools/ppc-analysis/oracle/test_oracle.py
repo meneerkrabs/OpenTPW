@@ -172,8 +172,8 @@ EXPECTED = {
     ('shop-sale-litter', 'plan'): (213, {'meters': {'thirst': 40.0, 'hunger': 40.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0},
                                          'effects': [20, 30, 5, 10, 50]}),
     ('shop-sale-litter', 'routine-reading'): AGREE,
-    ('shop-sale-litter', 'csharp'): (213, {'meters': {'thirst': 40.0, 'hunger': 40.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0},
-                                           'effects': [20, 30, 5, 10, 50]}),
+    # Fixed in C# (ORACLE.md 7.15): the guest's litter meter takes LitterEffect with MeterMath.Add, clamped like the routine.
+    ('shop-sale-litter', 'csharp'): AGREE,
     ('guest-litter-trigger', 'routine-reading'): AGREE,
     # F17 (fixed in C#): 0xfc1c4 divides each role's budget by ALL its employees (the base counts behind TOC -19008 are zero in the
     # file), debits the whole share for every employee below the top grade (the top grade's share is not spent), gives
@@ -1448,11 +1448,9 @@ class Oracle(unittest.TestCase):
         self.check(('shop-sale-litter', 'csharp'))
 
     def test_shop_sale_litter_rule_differs_only_where_the_meter_clamps(self):
-        # ECON-020: the old rule (store + LitterEffect) and C# agree with the routine wherever the meter stays inside 0..100; every
-        # mismatch is a sum outside that range (a NaN meter agrees: the clamp lets it through).
-        for side in ('plan', 'csharp'):
-            if side == 'csharp' and self.bridge is None:
-                continue
+        # ECON-020: the old rule (store + LitterEffect) agrees with the routine wherever the meter stays inside 0..100; every
+        # mismatch is a sum outside that range (a NaN meter agrees: the clamp lets it through). C# now clamps (pinned AGREE).
+        for side in ('plan',):
             [comparison] = [c for c in compare(targets.ECON_SALE, self.image, DEFAULT_COUNT, keep=10**6, bridge=self.bridge)
                             if c.side == side]
             self.assertEqual(comparison.mismatches, 213, side)

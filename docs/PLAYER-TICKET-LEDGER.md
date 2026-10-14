@@ -33,7 +33,10 @@ supply unknown player-wide or cross-theme history.
 
 The file rejects missing/unknown/duplicate JSON fields, numeric or unknown enums,
 noncanonical or forged identity scopes, duplicate earned identities, bad counters,
-unknown versions, and bodies above 64 KiB. There are at most 30 valid identities
+unknown versions, and bodies above 64 KiB. Enum fields require one exact,
+case-sensitive name; numeric strings, surrounding whitespace, different case and
+comma-combined aliases are refused. Built-in enum parsing can combine names into
+another defined non-Flags value, so this own reader validates the exact name. There are at most 30 valid identities
 (24 locals, four globals, two secrets). Model restore copies caller state; captured
 identities are read-only. Serialization validates before filesystem mutation;
 existing temporary/flush/rename logic publishes complete files and cleans its own

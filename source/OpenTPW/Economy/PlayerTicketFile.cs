@@ -15,8 +15,22 @@ internal static partial class PlayerTicketFile
 		UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
 		AllowDuplicateProperties = false,
 		MaxDepth = 8,
-		Converters = { new JsonStringEnumConverter<ParkGameMode>( allowIntegerValues: false ), new JsonStringEnumConverter<GoldenTicketKind>( allowIntegerValues: false ) }
+		Converters = { new ExactNameEnumConverter<ParkGameMode>(), new ExactNameEnumConverter<GoldenTicketKind>() }
 	};
+
+	// Non-Flags fields require one canonical name, not the built-in converter's comma-combined aliases.
+	private sealed class ExactNameEnumConverter<T> : JsonConverter<T> where T : struct, Enum
+	{
+		public override T Read( ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options )
+		{
+			if ( reader.TokenType != JsonTokenType.String ) throw new JsonException( "Expected one exact enum name." );
+			var name = reader.GetString();
+			if ( !Enum.TryParse<T>( name, out var value ) || Enum.GetName( value ) != name ) throw new JsonException( "Expected one exact enum name." );
+			return value;
+		}
+		public override void Write( Utf8JsonWriter writer, T value, JsonSerializerOptions options )
+			=> writer.WriteStringValue( Enum.GetName( value ) ?? throw new JsonException( "Unknown enum value." ) );
+	}
 
 	private static readonly ProgressJsonContext Context = new( Options );
 

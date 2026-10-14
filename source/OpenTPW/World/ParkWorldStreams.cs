@@ -39,7 +39,7 @@ public sealed record ParkWorldStreams( WorldSeed Seed, ParkEconomyRuntime? Park,
 		Park.Save( path, CaptureRandomState() );
 	}
 
-	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
+	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (the legacy economy-only save, [EXT:legacy-economy-save]).</summary>
 	public void LoadPark( string path )
 	{
 		if ( Park == null )

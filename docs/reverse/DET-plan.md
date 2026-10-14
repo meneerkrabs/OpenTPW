@@ -242,12 +242,23 @@ replay); render.
 
 | Class | State | Step | Return | Seeding in DET-I |
 | --- | --- | --- | --- | --- |
-| `WorldRng` | `uint` | `s = s*1664525 + 1013904223` | wrapping abs (`int.MinValue` bits kept) | from the save/replay header. `Reseed(ushort thingId)` at entity creation/transition sites (§2.3) |
+| `WorldRng` | `uint` | `s = rotr(s*1664525 + 1013904223, 13)` (PC, see below) | wrapping abs of the rotated state (`int.MinValue` bits kept) | from the save/replay header. `Reseed(ushort thingId)` at entity creation/transition sites (§2.3) |
 | `CoasterRng` | `uint` (one per process/world) | `s*214013 + 2531011` | `s >> 16` (logical) | one `ClibRng` draw at world init |
 | `ObjectMsRng` | `uint` per kart/particle object | `s*214013 + 2531011` | `(int)s >> 16` (arithmetic) | unknown → DET-006 |
 | `WeatherRng` | `uint` per weather object | `s*1664525 + 1013904223` | full `s` | unknown → DET-006 |
 | `ClibRng` | `uint`, static initial 1 | `s*1103515245 + 12345` | `(s >> 16) & 32767` | from the header (the original uses timer ms) |
 | `SoundSeed` | `uint` | none (candidate only) | `seed*1664525 + 1013904223` | from the header; never advanced by a draw |
+
+The PC world generator (tp.exe `0x516330`, October 14, 2026) rotates its state: it computes `s = s*1664525 + 1013904223`, then
+`ror s, 13`, stores the rotated value as the new state and returns its absolute value (`0x51633A`–`0x51635F`; the inline copies at
+`0x51674B`, `0x51680B`, `0x516879` and `0x51A34B` are the same, and the reseed `0x516370` stores its argument as the state).
+`ParkLitter.Next` already has the rotate. The first draft of this table (and the Mac generator `0x105328`, which should be checked
+again for the same rotate) left it out. Port requirements for DET-013 to DET-015: one `WorldRng` per level holding the u32 at
+world+0x1DA708; reseed with the zero-extended u16 thing id at the eight sites `0x4D71CA`, `0x4D94E2`, `0x4F7B7E`, `0x4FB19E` (guest
+creation: eight draws, reseed, two draws), `0x4FCAFD`, `0x4FE6A1`, `0x4FE6FC` (balloon) and `0x50205F`, all taking the id through
+`0x50B350`; the state is seeded from `time()` at world setup (`0x515879`) and saved as `mRandomSeed` (`0x51710F` save, `0x517DE8`
+load) next to `mGameTick`; every consumer shares the one stream (139 direct calls and four inline copies) in the original update
+order: substeps and the RSE pass schedule, things newest first, economy month-end.
 
 Projections stay with each caller. RSE RAND is
 `labs(labs(r >>> 1) % (int16(bound) + 1))`, and bound −1 is unsupported. BUMP

@@ -151,17 +151,37 @@ public class RideCivilTimeRuntimeTests
 	}
 
 	[TestMethod]
-	public void MinuteAndSecondKeepTheirUnimplementedFallbackWithoutSamplingTheProvider()
+	public void MinuteAndSecondAreHostLocalCivilTimeLikeYearToHour()
 	{
+		// [BIN:TPW-EXE:0x005567D8 civil time opcodes] opcodes 97-102 all read localtime: MIN is tm_min, SEC is tm_sec.
 		var reads = 0;
 		using var fixture = new RuntimeFixture( new Asm().I( Opcode.MIN, V( 0 ) ).I( Opcode.SEC, V( 1 ) ).I( Opcode.ENDSLICE ) );
-		var runtime = fixture.Create( new RideScriptWorld( 0, () => { reads++; return new DateTime( 2026, 10, 13 ); } ) );
+		var runtime = fixture.Create( new RideScriptWorld( 0, () => { reads++; return new DateTime( 2026, 10, 13, 8, 41, 17 ); } ) );
 		try
 		{
 			runtime.Simulate( Tick );
-			Assert.AreEqual( 0, reads );
-			Assert.AreEqual( 1, runtime.Script!.UnimplementedEffects[Opcode.MIN] );
-			Assert.AreEqual( 1, runtime.Script.UnimplementedEffects[Opcode.SEC] );
+			Assert.AreEqual( 2, reads );
+			Assert.AreEqual( 41, runtime.Script!.Variables[0] );
+			Assert.AreEqual( 17, runtime.Script.Variables[1] );
+			Assert.AreEqual( 0, runtime.Script.UnimplementedEffects.Count );
+		}
+		finally { runtime.Stop(); }
+	}
+
+	[DataTestMethod]
+	[DataRow( 0, 1 )]
+	[DataRow( 5, 2 )]
+	public void ALiteralMinuteOrSecondDestinationOnlySetsTheFlags( int second, int marker )
+	{
+		var script = new Asm().I( Opcode.SEC, 0 ).I( Opcode.BRANCH_Z, "zero" )
+			.I( Opcode.COPY, V( 0 ), 2 ).I( Opcode.BRANCH, "end" )
+			.Label( "zero" ).I( Opcode.COPY, V( 0 ), 1 ).Label( "end" ).I( Opcode.ENDSLICE );
+		using var fixture = new RuntimeFixture( script );
+		var runtime = fixture.Create( new RideScriptWorld( 0, () => new DateTime( 2026, 10, 13, 8, 41, second ) ) );
+		try
+		{
+			runtime.Simulate( Tick );
+			Assert.AreEqual( marker, runtime.Script!.Variables[0] );
 		}
 		finally { runtime.Stop(); }
 	}

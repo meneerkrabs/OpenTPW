@@ -430,9 +430,8 @@ public sealed class UiButton : UiElement
 	{
 		if ( !Enabled )
 			return;
-		// [BIN:STP-PPC:0x10137FD0 park view input] a control's 0x100 (activated) message plays cat_ui event 0x1F (0xBD when the control's flag word 0x1017F618 has a bit set outside 24-26)
-		// [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control — evidence needed: the meaning of the flag bits in control+0x44
-		// [APPROX:AUDIO-012] every activated button plays it, front end included; the traced witness is the park view's handler
+		// [BIN:TPW-EXE:0x485780 UI message hook] a global hook, installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and never removed, is called by the dispatchers 0x658d9f and 0x658e42 for every control message before the control's own procedure (unless the control's destroyed byte +4 is set); for message 0x100 on any control it plays cat_ui 0x1F (0xBD when the control's style word +0x48 has bit 0x10, 0x4857cb), so every activated button plays it, front end included
+		// [APPROX:AUDIO-004] 0xBD plays for a control whose construction style (+0x48, tp.exe 0x65bcad arg 2) has bit 0x10; which original controls are created with it is not traced, so no OpenTPW control plays it
 		GameAudio.PlayUi( GameAudio.ClickEvent );
 		Clicked?.Invoke();
 	}
@@ -624,7 +623,12 @@ public sealed class UiListItem : UiElement
 	public Func<string> Text { get; set; } = () => "";
 	public Action? Clicked { get; set; }
 	public override bool Focusable => Visible && Enabled;
-	public override void Activate() => Clicked?.Invoke();
+	// [BIN:TPW-EXE:0x485780 UI message hook] the hook sees every control's activation, so the front end's list lines click like its buttons
+	public override void Activate()
+	{
+		GameAudio.PlayUi( GameAudio.ClickEvent );
+		Clicked?.Invoke();
+	}
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{

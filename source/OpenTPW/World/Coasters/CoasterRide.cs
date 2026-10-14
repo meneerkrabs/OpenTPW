@@ -130,6 +130,7 @@ public sealed class CoasterRide
 	public float BrakingStart { get; private set; }
 	/// <summary>Set by <c>COAST 8</c>: the station script created its controller.</summary>
 	public bool Initialised { get; private set; }
+	// [APPROX:COAST-012] controller state 2 (built, never opened) is not told from state 8 (closed), and the tool's transitions to state 2 that unload every train (0x435844, from states 4 and 8) and to state 1 that remove the trains (0x43bf20) have no case here: the track is edited only through ClearTrains; the writers of the states are traced (1: 0x4368f0, 0x446740, 0x447520; 2: 0x435570, 0x442c70, 0x437b60, 0x447520; 4 and 8: COAST 5, 0x43b2f0)
 	/// <summary><c>COAST 5</c>: the ride is closed (controller state 8 or 2: trains keep circulating and unload on arrival, nobody boards).</summary>
 	public bool Closed { get; private set; } = true;
 	/// <summary><c>COAST 4</c> argument (0, 1, 2), mapped to the ride modes 16, 64 and 32 (1 is the breakdown: mode 64, no power).</summary>
@@ -151,7 +152,7 @@ public sealed class CoasterRide
 	/// <summary>Seconds of fixed simulation steps this controller has run.</summary>
 	public double TimeSeconds { get; private set; }
 	/// <summary>The guests seated in the cars of the trains (riders on the lap and guests seated at the station).</summary>
-	// [APPROX:COAST-012] the original's controller +0x140 is the self-intersection count, not a rider count (0x439c40, 0x441970), and its pick-up (0x446300) has no rider test; OpenTPW refuses edits while a train carries guests
+	// [APPROX:COAST-030] the original's controller +0x140 is the self-intersection count, not a rider count (0x439c40, 0x441970), and its pick-up (0x446300) has no rider test; OpenTPW refuses edits while a train carries guests, the Mac reading of the guest predicate
 	public int RidersOnBoard => trains.Sum( train => train.Riders );
 	/// <summary>Guests handed over by <c>COAST 1</c> and waiting for a train in the station to seat them (the admission ring).</summary>
 	public int AdmissionCount => admission.Count;
@@ -246,7 +247,7 @@ public sealed class CoasterRide
 		BrakingStart = BrakingStartFor( platform, samples[BrakingSpeedSample( samples, tail )].Speed, Spacing );
 		var length = Math.Max( 0f, samples.Length - PlatformStart );
 		// [BIN:TPW-EXE:0x43b750 station window] f8 = (1 − k)·A + k·(A + B)/2 and fc = (1 − k)·B + k·(A + B)/2 with k = definition +0x31c (fEntranceSizeInterval, copied unconditionally) and A, B the sample coordinates of the first and third station node ([[node+0x90]+4]+8)
-		// [APPROX:COAST-029] OpenTPW's station has two nodes, so A is the platform start (the end node) and B the station node's wrap at the sample count
+		// [APPROX:COAST-029] OpenTPW's station has two nodes, so A is the platform start (the end node) and B the station node's wrap at the sample count; the original takes the sample coordinates of its first and third station node
 		var k = Definition.EntranceSizeInterval;
 		var middle = (0f + length) * 0.5f;
 		StationWindow = ((1f - k) * 0f + k * middle, (1f - k) * length + k * middle);

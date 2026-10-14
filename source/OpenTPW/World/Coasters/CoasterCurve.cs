@@ -254,7 +254,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = (pair + 1) % count;
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
-			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls (the node bank on pylons, 0 on pylon-less nodes) instead of the second rail B(t) of 0x10041F80; the pylon-less second rail offset from node +224 and the pylon tag frames are not bounded — evidence needed: node +224 on pylon-less nodes and the pylon mesh tags (COAST-015)
+			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the second rail B(t) of the slice frame: at pylon-less knots the PC offset is (0, 1, 0), roll 0, as here (0x4313f0), and (−sin a, 0, −cos a) only on loop-flagged ones (0x43137c..0x4313e6); between knots the second rail needs the pylon tag frames (COAST-015) — evidence needed: the pylon mesh tags
 			var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
 			samples.Add( new CoasterSample
 			{
@@ -269,7 +269,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		}
 
 		// [BIN:STP-PPC:0x10044FF4 sampler] from t = 0 (sample 0 = the first knot) walk t in steps of 0.05, sum the chord lengths, place a sample on the current chord where the sum reaches 3.0 (fraction (3 − sum before)/d), restart the sum and realign t to the next multiple of 0.05
-		// [APPROX:COAST-019] the closing pair (last knot back to the first) is walked like every other pair to its end; the original stops after the first sample on it (t may pass 1) and duplicates the last sample into slot n; OpenTPW instead merges a last sample closer than half the spacing to the first into the wrap — evidence needed: the closing-pair branch 0x10044EA4 and the count fix-up 0x10045858..0x10045918 run on a real track
+		// [APPROX:COAST-019] the closing pair (the end node back to the station node, which is the whole platform here) is walked like every other pair to its end and a last sample closer than half the spacing to the first merges into the wrap; the PC sampler 0x440c10 runs the closing pair from the last knot to the first knot of the second node, emits ONE sample on it (t may pass 1), copies it into slot n and adds one to n when n ≤ trunc(c) + (frac(c) ≠ 0) with c the last knot's coordinate (0x4416f0, 0x441712..0x4417dc); that rule assumes the original's end node standing on the first station node, so the platform lies at the head of its sample list and the closing pair is a one-sample stub — with OpenTPW's platform on the closing pair, stopping after one sample would leave the platform unsampled — evidence needed: the three-node station (COAST-029)
 		var pair = 0;
 		var previousPoint = Point( 0, 0 );
 		var tPrevious = 0f;

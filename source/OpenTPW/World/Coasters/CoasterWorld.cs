@@ -25,7 +25,7 @@ public sealed class CoasterRandom
 /// pylon lookup the placement validator's stacking test reads across coasters. Owned by the park's
 /// <see cref="RideScriptWorld"/>, so every object runtime of the park reaches it.
 /// </summary>
-// [APPROX:COAST-025] the own-format park save holds the tracks, trains, riders and the coaster generator state (CoasterSave, since the park-resume coaster slice); the original's own coaster chunks between EMAK and SAOC are read structurally only (SaveCoasterBlock: header, auxiliary links, sections, links; train payload raw; nonempty TPW runtime import refused) and never written — evidence needed: the train payload layout and flag remap, should original TPWS coaster import ever be attempted
+// [EXT:coaster-own-save] the own-format park save holds the tracks, trains, riders and the coaster generator state (CoasterSave, since the park-resume coaster slice); the original's own coaster chunks between EMAK and SAOC are read structurally only (SaveCoasterBlock: header, auxiliary links, sections, links; train payload raw; nonempty TPW runtime import refused) and never written; importing them is a non-goal until someone needs it (the evidence for it would be the train payload layout in the save writer next to the loader 0x437b60)
 public sealed class CoasterWorld
 {
 	/// <summary>Key XORed into the script stream seed for the coaster generator's start state.</summary>
@@ -33,7 +33,7 @@ public sealed class CoasterWorld
 	private readonly List<CoasterRide> rides = new();
 
 	/// <param name="seed">The park's script stream seed (<see cref="WorldSeed.ScriptStream"/>).</param>
-	// [APPROX:COAST-027] the coaster generator starts from the world seed (folded script stream seed) instead of the original's one C-library rand() draw at world init — evidence needed: none possible for a replay seed; DET-I2 ports ClibRng
+	// [EXT:coaster-rng-seed] the coaster generator starts from the world seed (folded script stream seed) instead of the original's one C-library rand() at world init (0x457a90 → 0x67b5c0, stored at 0x7b0958); the boarding step itself is the original's s = s·0x343fd + 0x269ec3 with (s >> 16) % n (0x43b67f..0x43b69d): a determinism design decision (DET-I2 owns ClibRng)
 	public CoasterWorld( ulong seed = 0 )
 	{
 		var folded = seed ^ StreamKey;

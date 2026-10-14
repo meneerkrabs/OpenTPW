@@ -212,7 +212,7 @@ public sealed class CoasterTrack
 		var dx = next.X - previous.X;
 		var dy = next.Y - previous.Y;
 		var squared = dx * dx + dy * dy;
-		// [APPROX:COAST-007] the distance waiver (previous descriptor flag 2 with an ordinal other than 2) is not applied — evidence needed: the purpose of the waiver at 0x10036BA4 and which nodes carry descriptor flag 2 with ordinal ≠ 2
+		// [BIN:TPW-EXE:0x4349a5 distance waiver] a link outside [min², max²] is rejected when the previous node's ordinal ([ebp]) is 2 and otherwise waived when its descriptor has flag 2 (0x4349af..0x4349b9): the waiver exempts the station's internal nodes (ordinals 0 and 1, created by 0x436ac0); OpenTPW's one station node has no such predecessor, so every link it builds is checked as in the original (COAST-007 retired; the three-node station is COAST-029)
 		if ( squared < pylon.MinPlaceDistanceSquared )
 			return CoasterPlaceResult.TooClose;
 		if ( squared > pylon.MaxPlaceDistanceSquared )
@@ -229,7 +229,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>The point before node <paramref name="index"/> for its turn angle: the node before it, or the return end before the station node.</summary>
-	// [APPROX:COAST-030] the point before the station node is the return end cell; the original takes the station node's predecessor (r23+104, 0x10036D58..0x10036D60), and it skips the turn test when the nodes carry 0x10000 together with 0x20000 (0x10036D7C..0x10036DC0), flags OpenTPW never sets — evidence needed: the station node's predecessor and the writers of node flags 0x10000/0x20000
+	// [APPROX:COAST-030] the point before the station node is the return end cell; the original takes the station node's predecessor, and it skips the turn test when the nodes carry 0x10000 together with 0x20000 in move mode (0x4348af..0x4348d8, the cut ends of a reopened circuit, set by 0x434060 on a node added to an open circuit), flags OpenTPW never sets — evidence needed: the station node's predecessor
 	private (int X, int Y)? Before( int index ) => index >= 1 ? (nodes[index - 1].X, nodes[index - 1].Y) : ReturnCell;
 
 	/// <summary>
@@ -282,7 +282,7 @@ public sealed class CoasterTrack
 
 	/// <summary>Test 7: a cell that already holds pylons takes another only from the same coaster, with the same pylon control, below the stack limit.</summary>
 	// [BIN:STP-PPC:0x10037104 pylon stacking] an occupying pylon (found by walking every coaster's descriptor list, 0x10056BAC) must belong to the same coaster (+20), use the same pylon control (+24) and have stack height (+48) < uiMaxStackedPylons (+204), with no object flags 0x600
-	// [APPROX:COAST-030] the stacking test does not test the occupying object's flags (0x600, or 0x200 on the new-pylon branch, 0x10037290) — evidence needed: what object flags 0x200/0x400 mean on a coaster descriptor
+	// [APPROX:COAST-030] the stacking test does not test the bottom node's flags: the original reads node flags 0x200/0x400 of the bottom node of the stack (0x434d34..0x434d3d, 0x434da8..0x434db1), which only the station nodes carry (creation parameters 8 and 0x10), so no pylon stacks on a station node; OpenTPW never stacks on its pylon-less nodes
 	private CoasterPlaceResult CheckStack( CoasterWorld? world, CoasterRide? owner, int x, int y, bool loopMode, int? moving )
 	{
 		var count = 0;
@@ -414,7 +414,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>Whether the last pylon joins the return end (distance window, turn, and the arrival turn into the station).</summary>
-	// [APPROX:COAST-030] OpenTPW's closure check: the closing link and the arrival turn (entrance window at the return end) are validated and Revalidate marks the last pylon invalid when they fail; nothing traced does this — evidence needed: closure validation in the generic tool engine 0x10080C50
+	// [APPROX:COAST-030] OpenTPW's closure check: the closing link and the arrival turn (entrance window at the return end) are validated and Revalidate marks the last pylon invalid when they fail; the original validates the open start of a reopened circuit through the validator's re-validation (0x434d6b, 0x434e5a) and a fresh circuit is closed by completion
 	public CoasterPlaceResult CheckClosure()
 	{
 		if ( ReturnCell is not { } back || DepartCell is not { } depart || LastPylonIndex is not int lastIndex )
@@ -455,7 +455,7 @@ public sealed class CoasterTrack
 	/// </summary>
 	// [BIN:STP-PPC:0x10037EF0 complete track] completion sets controller +60 bit 0 and appends the station end node (0x10037CC8); then track flags 1 and 0x1000 (rebuild, re-rate, recount trains)
 	// [BIN:STP-PPC:0x10037CC8 station end nodes] definition bit 0x20 set → one end node with flags 0x144 (0x10037CF4, 0x10037E34), clear → two with flags 4; the loader always ORs 0xA0 into the definition flags (0x100301F4) and nothing clears 0x20, so the original always appends one end node with 0x144 whatever bVisibleEndPylon says
-	// [APPROX:COAST-029] the station end node stands at the station's '<' cell at the station track height fInitialPylonLoftHeight, and the station node at '>', so trains leave toward '>' and return at '<'; the station mesh tags that place these nodes are not read — evidence needed: the station mesh tag lookup of 0x10037CC8 and the station node placement
+	// [APPROX:COAST-029] the station is the '>' node and the '<' end node at fInitialPylonLoftHeight; the original builds three station nodes at the station model's attribute-0x400000 dummies 1..3 (0x436ac0: a StdPylon node, a pylon-less node and a StdPylon node, descriptors 0x12/0x13/0x12 with flag 2 and the winch flag) and puts the end node at the first node's pylon track tag (0x435570) — evidence needed: the dummy positions in the station MD2s (game data) and their transform by the station's placement
 	internal CoasterPlaceResult Complete()
 	{
 		if ( IsComplete )
@@ -593,7 +593,7 @@ public sealed class CoasterTrack
 	/// level 0, the node below + h(t) when stacked; pylon-less nodes stand at their loft height above the ground.
 	/// </summary>
 	// [BIN:STP-PPC:0x10033398 node position] descriptor +28 = 10x, +36 = 10y, +32 = terrain height; the node is at the cell centre (+5.0, 0x100333EC); Y = ground + h(t), or Y below + pylon +196 + h(t) when stacked
-	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank, the pylon mesh heights h0/h1 are fMinHeight/fMaxHeight, a stacked pylon's offset (+196) is 0 and a loop pylon's loop-rotate parameter is 0.5; the pylon mesh track tags and the loft/rotate/incline/bank animation that frames them are not read — evidence needed: the tag table builder behind 0x1019B298 and the tag data in the StdPylon/LoopPylon meshes
+	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank; the pylon mesh track tags behind 0x1019B298 and the incline and bank clips are not read, and OpenTPW's one station node stands for the original's three — evidence needed: the tag table builder and the tag data in the StdPylon/LoopPylon meshes
 	public SVector3 NodePosition( CoasterSite site, CoasterNode node )
 	{
 		var x = node.X * CellUnits + HalfCell;

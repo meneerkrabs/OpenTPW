@@ -885,6 +885,10 @@ research batch was included in this merge.
   a list of head sources, ready for the coaster seats. Every script (root, child, sound) has its own head table, as the
   script init allocates one for each, and the slot draw uses the original `labs(rand >> 1) % length` formula on the ride's
   own stream. Register: HEADS-002 and HEADS-003 retired, HEADS-001/004/005 narrowed.
+- **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
+  (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
+  the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points
+  (`WeatherStrike`); the park keeps its ground point below the top.
 - **Original weather visuals (October 14):** the procedural rain, snow and bolt approximations are replaced by the
   original engine's `CRain` renderer, traced in the Mac `engine_shared` library and tp.exe (`0x57F1F0-0x57F380`). Rain and
   snow are one fixed 1024-point field in a -4..4 box around the camera eye (original units, wrapping per axis, scrolling

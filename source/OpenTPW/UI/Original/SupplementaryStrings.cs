@@ -106,6 +106,9 @@ public enum OpenTpwText
 	ProgressUnsaved,
 	ProgressTrackingUnavailable,
 	CamcorderArmed,
+	ContinueAutomaticPark,
+	AutomaticCheckpointFailed,
+	RetryCheckpoint,
 	InvalidPrice,
 }
 
@@ -171,6 +174,9 @@ public static class SupplementaryStrings
 		[OpenTpwText.ProgressActionFailed] = new[] { "The action could not finish. Saved parks are unchanged. Reopen the choice or retry.", "Handlingen kunne ikke fuldføres. Gemte parker er uændrede. Åbn valget igen eller prøv igen.", "De actie kon niet worden voltooid. Opgeslagen parken zijn ongewijzigd. Open de keuze opnieuw of probeer opnieuw.", "Impossible de terminer. Les parcs sauvegardés sont inchangés. Rouvrez le choix ou réessayez.", "Die Aktion konnte nicht beendet werden. Gespeicherte Parks sind unverändert. Öffne die Auswahl erneut oder versuche es noch einmal.", "Åtgärden kunde inte slutföras. Sparade parker är oförändrade. Öppna valet igen eller försök igen." },
 		[OpenTpwText.ProgressUnsaved] = new[] { "Progress is not saved yet. Earned tickets are kept in memory. Retry before leaving the park.", "Fremskridt er ikke gemt endnu. Optjente billetter er bevaret i hukommelsen. Prøv igen før du forlader parken.", "Voortgang is nog niet opgeslagen. Verdiende tickets blijven in het geheugen. Probeer opnieuw voordat je het park verlaat.", "La progression n'est pas encore sauvegardée. Les tickets gagnés sont conservés en mémoire. Réessayez avant de quitter le parc.", "Der Fortschritt ist noch nicht gespeichert. Verdiente Tickets bleiben im Speicher. Versuche es erneut, bevor du den Park verlässt.", "Framstegen är inte sparade ännu. Intjänade biljetter finns kvar i minnet. Försök igen innan du lämnar parken." },
 		[OpenTpwText.ProgressTrackingUnavailable] = new[] { "OpenTPW progress is not tracking this park. Past player history is unknown or uses another mode. Existing saved parks remain playable.", "OpenTPW-fremskridt registrerer ikke denne park. Tidligere spillerhistorik er ukendt eller bruger en anden tilstand. Gemte parker kan stadig spilles.", "OpenTPW-voortgang wordt niet bijgehouden voor dit park. Eerdere spelergeschiedenis is onbekend of gebruikt een andere modus. Opgeslagen parken blijven speelbaar.", "OpenTPW ne suit pas la progression de ce parc. L'historique du joueur est inconnu ou utilise un autre mode. Les parcs sauvegardés restent jouables.", "OpenTPW erfasst den Fortschritt dieses Parks nicht. Der bisherige Verlauf ist unbekannt oder nutzt einen anderen Modus. Gespeicherte Parks bleiben spielbar.", "OpenTPW registrerar inte framsteg för denna park. Tidigare spelarhistorik är okänd eller använder ett annat läge. Sparade parker kan fortfarande spelas." },
+		[OpenTpwText.ContinueAutomaticPark] = new[] { "Continue automatic save", "Fortsæt automatisk gemt park", "Automatisch opgeslagen park hervatten", "Continuer la sauvegarde automatique", "Automatischen Spielstand fortsetzen", "Fortsätt automatisk sparning" },
+		[OpenTpwText.AutomaticCheckpointFailed] = new[] { "The automatic save could not finish. Stay in the park or retry.", "Den automatiske gemning mislykkedes. Bliv i parken eller prøv igen.", "Automatisch opslaan is mislukt. Blijf in het park of probeer opnieuw.", "La sauvegarde automatique a échoué. Restez dans le parc ou réessayez.", "Automatisches Speichern fehlgeschlagen. Bleibe im Park oder versuche es erneut.", "Den automatiska sparningen misslyckades. Stanna i parken eller försök igen." },
+		[OpenTpwText.RetryCheckpoint] = new[] { "Retry", "Prøv igen", "Opnieuw proberen", "Réessayer", "Erneut versuchen", "Försök igen" },
 		[OpenTpwText.CamcorderArmed] = new[] {
 			"Click the ground to walk. C or Escape returns to the park view.",
 			"Klik på jorden for at gå. C eller Escape vender tilbage til parkvisningen.",

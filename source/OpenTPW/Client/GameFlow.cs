@@ -138,6 +138,8 @@ internal sealed partial class GameFlow : IDisposable
 			StartPark = ( island, mode ) => RequestParkStart( island.Level, mode, createdMenu ),
 			Load = entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ),
 			ContinueEntry = FindContinueEntry,
+			AutomaticEntry = FindAutomaticContinueEntry,
+			ContinueAutomatic = entry => RequestAutomaticContinue( createdMenu!, entry ),
 			ContinuePark = entry => QueueProgressLevel( entry.Park.Level, () => ContinuePark( entry ) ),
 			Quit = RequestProgressQuit,
 			CreateOptions = CreateOptions,
@@ -342,10 +344,12 @@ internal sealed partial class GameFlow : IDisposable
 		return level;
 	}
 
-	private ParkHud CreateParkHud( Level level, IHudParkStatus status ) =>
-		new( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
+	private ParkHud CreateParkHud( Level level, IHudParkStatus status )
+	{
+		ParkHud? createdHud = null;
+		createdHud = new( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
 		{
-			ExitToLobby = () => QueueProgressTransition( () => ShowFrontEnd( level.LevelName ) ),
+			ExitToLobby = () => RequestAutomaticExit( level, createdHud! ),
 			Quit = RequestProgressQuit,
 			SavePark = SaveCurrentPark,
 			OpenPostcard = ShowPostcard,
@@ -353,6 +357,8 @@ internal sealed partial class GameFlow : IDisposable
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 			GoOnline = ShowOnline,
 		} );
+		return createdHud;
+	}
 
 	/// <summary>
 	/// Guests whose cell is within four cells of the camera's ground target — the crowd sentence's parameter

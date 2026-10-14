@@ -6,6 +6,14 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Automatic per-theme checkpoints (October 14, 2026)
+
+Exit to Lobby from a Theme Park World Full Simulation or Instant Action park now saves an automatic checkpoint for that theme
+(`opentpw-{theme}-automatic-world.json`, written atomically after the owned progress is flushed), beside the manual save, which it
+never replaces. Entering the theme again offers Continue for it. A failure before the write keeps the park with Retry and Back; a
+failure while leaving the park after the write is reported instead of crashing. Details: docs/AUTOMATIC-CHECKPOINT-INGRESS.md and
+docs/AUTOMATIC-CHECKPOINT-CORE.md.
+
 ## Application-owned progress entry and smoke repair (October 14, 2026)
 
 New Full Simulation checks the selected theme's explicit entry cost against

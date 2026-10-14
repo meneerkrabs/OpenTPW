@@ -894,6 +894,21 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **UI register round (October 14):** findings from the Windows `tp.exe` land. The hire window's control 9366 is the plain
+  cash label ("Cash $ N", UITEXT `0x1ca`/`0x1cb`); the applicant/employee toggle is now a labelled extension button
+  (UI-090 retired). The map zoom is 1.0–3.0 in half steps and a pan moves the centre one map cell whatever the zoom (UI-087
+  retired); each map category button toggles its own layer, not an exclusive filter (UI-086 keeps only the colours). A list
+  column press toggles that column's direction, a new column starts ascending and column 0 starts ascending, so the first
+  press on it descends (UI-084 keeps the per-list initial state). The HUD cash shows the bare balance in the original's
+  red-to-white colour steps (table `0x752e30`), without grouping or prefix (UI-021 keeps the control 47 placement). The
+  volume options are percentages (defaults 75/60/75/100) and old 0–10 options files migrate ×10 (UI-030 keeps the slider
+  step). Before each start-up movie the game waits until Esc, Space and all three mouse buttons are released (UI-035
+  retired; the letterbox is `[EXT:movie-letterbox]`). UI-019 and UI-062 are retired (the shipped lobby and `LOANNAMES.str` are
+  complete; data tests added) and UI-023 (test fixture). Widescreen anchors, HiDPI glyphs, the fixed options rows, the
+  autorun focus rectangle, the speed buttons and time keys, the sandbox map and the overview detail rows are now documented
+  `[EXT:...]` design decisions (UI-001, 038, 040, 043, 022, 902, 089, 906, 908 retired). The staff, locator, hire, dismissal,
+  overview, camera-button, slider, fluid and key-table items are narrowed to what the executable leaves open (UI.md).
+
 - **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
   (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0
   instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in

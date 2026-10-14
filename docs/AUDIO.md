@@ -482,8 +482,10 @@ implemented yet.
 | AUDIO-013 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
 | AUDIO-014 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
 
-The option volumes keep their 0–10 steps (UI-030); the original stores percentages whose
-defaults are `DefaultVolume.*` in `sound.sam` (effects 75, music 60, speech 75, movie 100).
+The option volumes are percentages (0–100) like the original's `{on, percent}` pairs, with the
+`DefaultVolume.*` defaults of `sound.sam` (effects 75, music 60, speech 75, movie 100; the globals holding them
+are medium confidence). Options files from before the change (0–10 steps) are migrated ×10 on load. Only the
+slider step granularity within 0–100 stays open (UI-030).
 
 ## Selected SDT entry to WAV (desktop)
 

@@ -160,7 +160,7 @@ internal sealed class AutorunView
 	}
 
 	// DrawFocusRect XORs a 1-pixel dotted frame (every second pixel) onto the button's client rectangle shrunk by 2 pixels.
-	// [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted.
+	// [EXT:autorun-focus-rect] platform emulation: the dotted focus rectangle imitates GDI's DrawFocusRect (pixels with even x + y inverted); Windows draws the original's, OpenTPW draws its own
 	private void DrawFocusRectangle( AutorunButton button )
 	{
 		var left = button.X + 2;

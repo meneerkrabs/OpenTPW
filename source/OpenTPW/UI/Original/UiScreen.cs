@@ -62,7 +62,7 @@ public class UiScreen
 		Modal || elements.Any( element => element.Visible && element.ScreenRect( canvas ).Contains( point ) );
 
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
-	// [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling
+	// [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out (the original's RMBCancelOn option, +0x39, defaults to 1) — evidence needed: the original input handling
 	public virtual bool Update( UiContext context, UiInput input )
 	{
 		if ( IsRemoved )

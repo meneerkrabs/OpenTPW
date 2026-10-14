@@ -21,7 +21,6 @@ public static class AudioApproximations
 		("AUDIO-014", "a failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word"),
 		("AUDIO-015", "only the level-driven rain voice is built; the weather thing's own rain voice (thing +0x54) is not, and whether the original's second voice is audible is not established"),
 		("AUDIO-016", "a scream's speed is the default 50 (the Mac's ride VM word at +192, set at 0x100B3154/0x100B318C); OpenTPW keeps no per-script speed word, so every scream uses 50"),
-		("AUDIO-017", "the lobby island one-shots (cat_locallobbysfx 3, 4, 5) are timed by a uniform 5-15 s gap; the original's timer distribution is not traced"),
 		("AUDIO-018", "the constant-power pan of a positioned voice follows the source's bearing; the original's pan law (QSound's processing) is not read"),
 		("AUDIO-019", "a positioned one-shot whose event has flag 0x8 loops its sample; flat one-shots do not loop; inaudible loops advance silently and resume when the listener returns"),
 		("AUDIO-020", "a placed scape.omp effect that is a sentence plays its first sound once rather than as the original's placed sentence"),

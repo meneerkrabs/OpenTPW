@@ -875,6 +875,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Lobby effects (October 14):** the front end's island effects follow the original's islands update (`0x10094474`):
+  the sky eases toward the nearest island's colour, hallow's lightning strikes on the lobby generator's draws with the
+  thunder (`cat_globallobbysfx` 1), the island one-shots come from the same draws instead of a timer (AUDIO-017 resolved),
+  the globe plays its own music and ambience (2, 3) and entering a park plays 4. The lobby's rain and bolts are stepped
+  and tested but drawn only once the original weather renderer lands (UI-018, UI-940..942; AUDIO.md "Lobby effects").
 - **Visitor click, backtrack and queue-join sounds (October 14):** traced in both executables. Opening a visitor's details
   (a park click or a roster activation) plays the visitor click `cat_kids` 129 (`0x1010B808` / tp.exe `0x4B79B0`). Backspace
   over a path cell with no tool on plays `cat_ui` 95 at the cell and removes it, as the original's "backtrack" key does

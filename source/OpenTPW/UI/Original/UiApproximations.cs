@@ -25,7 +25,7 @@ public static class UiApproximations
 		("UI-015", "front-end flow without player profiles: Game Mode is asked on every park entry instead of fixed at player creation (the original stores it per player, STP-PPC 0x1015D220/0x1013741C), and every entry starts a new park instead of resuming the player's per-theme autosave", "PC confirmation of the Mac player and autosave flow (docs/reverse/PPC-scenarios.md, \"Park entry\")"),
 		("UI-016", "lobby ISLAND angle = island yaw in degrees, height = camera target height", "binary: lobby script interpretation or capture"),
 		("UI-017", "lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused", "binary or capture of the lobby camera"),
-		("UI-018", "lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn", "binary/capture of the lobby"),
+		("UI-018", "lobby sky eases toward the nearest island's SKYCOLOUR without the original's red-toward-blue quirk and its settings gate; flying meshes and island/gate animations not drawn; lobby rain and bolts are stepped but not yet drawn", "capture of the lobby sky; the flying-mesh and animation systems"),
 		("UI-019", "fallback island position (400 + index × 200, 400) when lobby.txt has none", "none needed if lobby.txt is complete"),
 		("UI-021", "bank balance text at the Mac table rectangle as is (the original repositions it from font extents and drawable size); money grouped with ',' digits", "binary 0x156ef4 placement; locale number format"),
 		("UI-022", "speed control (pause, ×1, ×2, ×4) bottom-right: four buttons that set the clock scale of the whole simulation; the original steps its scale by 1.25 within 0.25..2 with key actions (ORACLE F32) and no speed control was found in its UI", "the key tokens' names and whether the shipped game shows a speed control (UITEXT 426 'Speed :' has no code reference)"),
@@ -99,6 +99,9 @@ public static class UiApproximations
 		("UI-933", "an editable selected shop or sideshow exposes a host decimal price editor in the information arm; it changes only the mapped instance Price using the existing nonnegative int API, without native slider/layout or quality/prize policy reconstruction", "original shop/sideshow control placement, native slider bounds and mode gating"),
 		("UI-934", "shared Load chooser uses an eight-row scroll viewport with explicit selection and activation; every supplied own, sandbox and original-reference entry remains reachable", "original Load chooser navigation, selection and viewport behavior"),
 		("UI-935", "selected factory-owned ordinary TPW rides expose a host next-tier cost confirmation calling the existing upgrade purchase API; live catalogue defaults remain separate from authored CAP/DUR", "original upgrade window geometry, confirmation and live reset/performance behavior"),
+		("UI-940", "the lobby effects advance at a fixed 30 ticks a second; the original steps them once per rendered frame", "the original's frame rate"),
+		("UI-941", "only the lobby islands' own draws advance the lobby generator; its flying meshes and camera wander also draw from it in the original, so strikes and one-shots come in a different rhythm", "the flying-mesh and camera-wander systems"),
+		("UI-942", "the globe's music and ambience (cat_globallobbysfx 2 and 3) replace the lobby's while the globe is up, and the enter-park sound (event 4) plays whatever game mode follows; the original keeps or stops the lobby's own sentences untraced and skips event 4 for game type 2", "the lobby music handles while the globe component runs; the game-type check at 0x10183CC0"),
 	};
 
 	private static bool logged;

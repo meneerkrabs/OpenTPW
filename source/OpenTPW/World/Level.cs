@@ -354,6 +354,7 @@ public partial class Level : IDisposable
 			sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
+		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 
@@ -742,8 +743,9 @@ public partial class Level : IDisposable
 		ExitRideView();
 		ExitFreeWalk();
 		onlinePanel?.Dispose();
-		trackRenderer?.Dispose();
-		trackRenderer = null;
+		foreach ( var renderer in trackRenderers.Values )
+			renderer.Dispose();
+		trackRenderers.Clear();
 		DetachOverlay();
 		TextOverlay?.Dispose();
 	}

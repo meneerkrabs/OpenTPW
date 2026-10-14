@@ -48,11 +48,13 @@ public sealed partial class OriginalObjectRuntime
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
 		}
-		// A water ride (Bumper.WhichTrackType 2) gets a bump-ride controller; kart rides keep the shared tables only (docs/TRACKS.md).
-		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { IsWater: true } template )
+		// A water ride (Bumper.WhichTrackType 2) or a go-kart ride (1) gets a bump-ride controller (docs/TRACKS.md).
+		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
 		{
-			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers );
+			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers ) { AttractionId = AttractionId };
 			world.Bumpers.Add( Bump );
+			if ( template.IsKart )
+				Bump.Effect += OnBumpEffect;
 			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
@@ -227,6 +229,7 @@ public sealed partial class OriginalObjectRuntime
 			Coaster.ClearTrains();
 			Coaster.World.Remove( Coaster );
 		}
+		StopBumpEffects();
 		ReleaseBump();
 		Script?.Stop();
 		Animator.StopAll();

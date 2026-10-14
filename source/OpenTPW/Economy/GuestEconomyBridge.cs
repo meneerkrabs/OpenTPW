@@ -108,10 +108,25 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public int CountHappierThan( int happiness ) => Guests.Guests.Count( guest => Guests.IsInPark( guest ) && guest.Happiness >= happiness );
 
-	/// <summary>Guests carry no balloons or costumes yet.</summary>
+	/// <summary>The percentage of the in-park guests holding a balloon (challenge type 9).</summary>
 	// [BIN:STP-PPC:0x100CE7B4 challenge types 9 and 10] percent = trunc(100 × in-park guests holding a balloon (guest +0x210, 0x100C3BEC) or wearing a costume (+0x24 == 2, 0x100C3CD0) / in-park guests), 0 without guests
-	// [APPROX:ECON-044] guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) — evidence needed: balloon lifetime (+0x214) and costume state rules
-	public int KidsWithBalloonsPercent => 0;
+	// [BIN:TPW-EXE:0x004D1746 challenge types 9 and 10] the same on the PC: the counts 0x004C9530 (+0x210 set) and 0x004C95D0 (+0x24 == 2) of the guests on a park cell (0x004FA990) times 100, divided (signed) by the in-park count 0x004C9130
+	public int KidsWithBalloonsPercent => Percent( guest => guest.HasBalloon );
 
-	public int KidsWithCostumesPercent => 0;
+	/// <summary>The percentage of the in-park guests wearing a costume (challenge type 10).</summary>
+	public int KidsWithCostumesPercent => Percent( guest => guest.InCostume );
+
+	private int Percent( Func<Guest, bool> holds )
+	{
+		int inPark = 0, count = 0;
+		foreach ( var guest in Guests.Guests )
+		{
+			if ( !Guests.IsOnParkCell( guest ) )
+				continue;
+			inPark++;
+			if ( holds( guest ) )
+				count++;
+		}
+		return inPark == 0 ? 0 : count * 100 / inPark;
+	}
 }

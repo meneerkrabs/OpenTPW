@@ -104,6 +104,13 @@ public sealed class StaffRenderer : Entity
 		} );
 	}
 
+	/// <summary>Where the member was last drawn, in cells (the thought bubbles hang above it); false before its first frame.</summary>
+	internal bool TryGetDrawCell( StaffMember member, out float x, out float y )
+	{
+		(x, y) = views.TryGetValue( member, out var view ) && view.Initialised ? (view.X, view.Y) : (0f, 0f);
+		return view is { Initialised: true };
+	}
+
 	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
 	internal (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Describe( StaffMember member, SVector3 cameraRight, SVector3 cameraForward )
 	{

@@ -132,13 +132,16 @@ internal sealed partial class GameFlow : IDisposable
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
-		Menu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
+		FrontEndMenu? createdMenu = null;
+		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
-			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode, overFrames: true ), prepareBuyWindow: true ),
-			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry, overFrames: true ), prepareBuyWindow: true ),
+			StartPark = ( island, mode ) => RequestParkStart( island.Level, mode, createdMenu ),
+			Load = entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ),
 			ContinueEntry = FindContinueEntry,
-			ContinuePark = entry => QueueLevel( entry.Park.Level, () => ContinuePark( entry ), prepareBuyWindow: true ),
-			Quit = Quit,
+			AutomaticEntry = FindAutomaticContinueEntry,
+			ContinueAutomatic = entry => RequestAutomaticContinue( createdMenu!, entry ),
+			ContinuePark = entry => QueueProgressLevel( entry.Park.Level, () => ContinuePark( entry ) ),
+			Quit = RequestProgressQuit,
 			CreateOptions = CreateOptions,
 			IslandSelected = island =>
 			{
@@ -150,6 +153,7 @@ internal sealed partial class GameFlow : IDisposable
 			LoadEntries = FindLoadEntries,
 			GoOnline = ShowOnline,
 		} );
+		Menu = createdMenu;
 		Menu.SelectIsland( 0 );
 		if ( selectLevel != null )
 			Menu.SelectLevel( selectLevel );
@@ -243,9 +247,8 @@ internal sealed partial class GameFlow : IDisposable
 	/// <param name="overFrames">Build the park over several frames while the current scene keeps running (the front end's own transitions).</param>
 	public void StartPark( string levelName, GameMode mode, bool overFrames = false )
 	{
-		var start = ParkStart.FromFrontEnd( mode );
-		StartLevel( levelName, original: true, developerPanels: false, start: start, overFrames: overFrames,
-			ready: _ => Log.Trace( $"Started {levelName} as a new {start} park from the front end." ) );
+		if ( mode == GameMode.InstantAction ) StartInstantPark( levelName, overFrames );
+		else RequestParkStart( levelName, mode );
 	}
 
 	/// <param name="overFrames">As for <see cref="StartPark"/>; a park save of the player's own is still resumed at once.</param>
@@ -337,20 +340,25 @@ internal sealed partial class GameFlow : IDisposable
 			import.Report( dropped );
 			Log.Trace( dropped );
 		}
+		AttachProgress( level );
 		return level;
 	}
 
-	private ParkHud CreateParkHud( Level level, IHudParkStatus status ) =>
-		new( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
+	private ParkHud CreateParkHud( Level level, IHudParkStatus status )
+	{
+		ParkHud? createdHud = null;
+		createdHud = new( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
 		{
-			ExitToLobby = () => Queue( () => ShowFrontEnd( level.LevelName ) ),
-			Quit = Quit,
+			ExitToLobby = () => RequestAutomaticExit( level, createdHud! ),
+			Quit = RequestProgressQuit,
 			SavePark = SaveCurrentPark,
 			OpenPostcard = ShowPostcard,
 			CreateOptions = CreateOptions,
-			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry, overFrames: true ), prepareBuyWindow: true ) ),
+			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 			GoOnline = ShowOnline,
 		} );
+		return createdHud;
+	}
 
 	/// <summary>
 	/// Guests whose cell is within four cells of the camera's ground target — the crowd sentence's parameter
@@ -378,6 +386,8 @@ internal sealed partial class GameFlow : IDisposable
 
 	private void TearDown( bool applyPendingLanguage = true )
 	{
+		RequireProgressSaved();
+		DetachProgress();
 		AbandonParkBuild();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
@@ -427,6 +437,7 @@ internal sealed partial class GameFlow : IDisposable
 	public void Update()
 	{
 		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
+		PumpProgress();
 		TexturePackSwitch.PumpCurrent();
 		// A park being built over frames (a transition queued meanwhile replaces it).
 		if ( parkBuild != null )
@@ -867,12 +878,16 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		Session = Online,
 		Level = () => Level,
-		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
+		Visit = visit => QueueProgressLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
 		Globe = () => Globe,
 	} );
 
 	public void Dispose()
 	{
+		// a window closed past the in-app Quit's check still writes earned awards a failed save left behind
+		if ( progressOwner is { Dirty: true } owner && !owner.TryFlush() )
+			Log.Warning( $"OpenTPW progress could not be saved on exit: {owner.Error}" );
+		DetachProgress();
 		AbandonParkBuild();
 		Advisor?.Dispose();
 		GameAudio.Shutdown();

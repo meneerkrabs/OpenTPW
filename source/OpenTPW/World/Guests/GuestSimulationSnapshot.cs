@@ -56,6 +56,12 @@ public sealed record GuestSnapshot
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
 	public required GuestThought Thought { get; init; }
+	/// <summary>The thought the bubble shows (None: no bubble). Absent before schema 7.</summary>
+	public GuestThought BubbleThought { get; init; }
+	/// <summary>The park turn of the last bubble. Absent before schema 7 (0).</summary>
+	public long BubbleTurn { get; init; }
+	/// <summary>A sideshow player's result (null otherwise). Absent before schema 7.</summary>
+	public bool? SideshowWon { get; init; }
 	public required int AttractionId { get; init; }
 	/// <summary>May name an attraction that is no longer registered (a demolished ride the guest remembers).</summary>
 	public required int LastAttractionId { get; init; }
@@ -203,10 +209,10 @@ public sealed record GuestSimulationSnapshot
 	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero. Versions 1 and 2
 	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped. Versions 1 to 3 (before
 	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters, versions 1 to 5 (before balloons and costumes)
-	/// without either.</summary>
-	public const int CurrentSchemaVersion = 6;
-	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 6 as written now, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
-	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6 };
+	/// without either, versions 1 to 6 (before thought bubbles) without a bubble.</summary>
+	public const int CurrentSchemaVersion = 7;
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 7 as written now, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>

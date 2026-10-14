@@ -6,6 +6,52 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Bank rules from tp.exe: bankruptcy timing and the withdrawals flag (October 14, 2026)
+
+The park's bankruptcy now follows the bank's month routine (`0x4d0370`) instead of counting month ends in the red. A debit that
+takes the balance from 0 or more below 0 stamps the park turn, and every debit keeps the balance after it (`0x4d01f0`); at a month
+end, a park whose balance and last balance are both below 0 counts the 30-day months since the stamp, and above 5 it is bankrupt
+(the original's message type 2, ECON-030). The bank's withdrawals flag is honoured: with it clear, debits, instalments and payoffs
+charge nothing, and instalments raise the year profit by their principal share. The three bank words are saved (older saves count
+the stamp back from their months in the red) and imported from original saves (SAVE-008 narrowed). An early payoff compares the
+balance as an unsigned word, so a balance below 0 does not refuse it (`0x4d0850`). ECON-005, 007 and 051 are narrowed to the
+traced routines; the determinism hash schema is 18.
+
+## Automatic per-theme checkpoints (October 14, 2026)
+
+Exit to Lobby from a Theme Park World Full Simulation or Instant Action park now saves an automatic checkpoint for that theme
+(`opentpw-{theme}-automatic-world.json`, written atomically after the owned progress is flushed), beside the manual save, which it
+never replaces. Entering the theme again offers Continue for it. A failure before the write keeps the park with Retry and Back; a
+failure while leaving the park after the write is reported instead of crashing. Details: docs/AUTOMATIC-CHECKPOINT-INGRESS.md and
+docs/AUTOMATIC-CHECKPOINT-CORE.md.
+
+## Application-owned progress entry and smoke repair (October 14, 2026)
+
+New Full Simulation checks the selected theme's explicit entry cost against
+application-owned ticket history before constructing a park. Missing history
+opens a starter-key consent screen; only confirmation can stage a new ledger
+with one extra key before activation. The model still defaults to zero keys.
+Known zero-key or incompatible history is not reset to make entry succeed.
+Instant Action creates no progress file, and manual Continue/Load retain their
+existing saved-mode behavior without a new-entry key gate. See
+[player progress entry and lifetime](PLAYER-PROGRESS-INGRESS.md) for storage,
+precommit failure, tracking and retirement qualifications.
+
+The front-end smoke uses a fresh temporary save directory. Its plan now asserts
+that `newProgress` is a `ProgressChoiceScreen` and that the progress file is absent
+before injecting the actual starter-consent button click. It then uses the
+existing 40-frame park-load wait; the timeout is not enlarged and no history is
+preseeded. CPU regression controls drive those actual queued smoke steps and
+menu/admission callbacks with synthetic theme metadata, checking successful
+consent, Back cancellation and preservation of known zero-key history.
+
+The original native smoke objection is not counted as a successful native rerun.
+These CPU controls do not exercise native text readback, the GPU/window, original
+Jungle assets or graphical park construction. A native run must observe the
+consent screen, accept it, load Jungle and finish the existing complete smoke
+without resetting history. Earlier native smoke results below belong to their
+older source snapshots, not this progress-entry change.
+
 ## Native smokes on a 120 Hz arm64 Mac (October 13, 2026)
 
 - **Retail WCT textures decode again.** The WCT bounds audit (`docs/WCT-ROBUSTNESS.md`) was written
@@ -324,6 +370,17 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- CI runs each pull request once: a push builds only `main` and the `v*` release tags, so a push to a PR branch no longer starts the
+  whole build twice, and a new push to a pull request cancels its older run (`.github/workflows/build.yml`).
+- Thought bubbles are drawn, and staff think too, as in the original (tp.exe `0x50be80`, `0x506a40`, `0x4fa030`; GUEST-006, QUEUE-005;
+  [GUESTS.md](GUESTS.md) "Thoughts"). Guests and staff show the original bubbles above their heads (a burger for hunger, a drink for thirst,
+  a thumb up after a sideshow win, a sleeping face for a tired handyman, a protest sign for a striker). Staff think when unhappy, very happy,
+  tired, on strike or lost; a guest sent away by a queue edit is angry one time in three, as in the original.
+- Guests now think as in the original (tp.exe `0x4fc8a0`, `0x50be80`, `0x50be40`; GUEST-006, GUEST-009 narrowed, ARRIVAL-006;
+  [GUESTS.md](GUESTS.md) "Thoughts"). On one needs phase in ten a guest picks from its needs, the litter around it ("Too messy", new) and its
+  happiness, and keeps its thought otherwise. Rides and shops no longer set "Pleased" or "Dissatisfied" (only sideshows do), and the
+  invented thresholds ("Super happy", "Okay", level 70) are gone. Each thought times a bubble: 12 turns, and a gap of 0 to 60 turns before
+  the next by the thought's priority (not drawn yet). The fixed-run, Jungle and cross-grid hashes moved; guest snapshots move to schema 7.
 - Toilets, security cameras and fireworks now act on the cells around them, as in the original (tp.exe `0x4db090`, `0x4dd0a0`,
   `0x4e2440`, `0x4dfd80`, `0x4e0b90`; GUEST-006, GUEST-001 retired; [GUESTS.md](GUESTS.md) "The environment grid"). A clean toilet makes
   guests nearby a little ill and less hungry, and more so once it is dirty, until a handyman cleans it. A camera spreads security over five
@@ -952,6 +1009,26 @@ research batch was included in this merge.
   (AUDIO-015). Retired: 002, 006, 007, 010, 012, 019, 020, 021, 027, 032, 035. Reclassified as `[EXT:...]` decisions: 005, 013, 014, 024, 030,
   031, 905-907 and the drawer window. Narrowed: 003, 004, 008, 009, 011, 015, 022, 025, 026, 034, 036, 900, 908. New: AUDIO-037. No canonical
   hash pin moved (the weather and the sound chooser are outside the hash, [DETERMINISM.md](DETERMINISM.md)).
+- **Desktop setup chooses TPW or experimental TPI (October 14):** the setup window offers Theme Park World or the experimental Theme Park Inc / Sim Coaster
+  (`[EXT:tpi-viewer]`, building and guests only, no economy or campaign) with an edition-aware inspection that refuses mixed or wrong-edition folders and
+  needs an available world; the TPI choice is stored beside the TPW paths in `setup.json` and starts through `--load-original-level`. An ordinary desktop
+  start does not open the window: it uses the saved choice, then the old setting, then detection, and only a first start with no usable folder, a missing or
+  invalid saved TPI folder or world (including a timed-out re-inspection) or `--setup` opens it. Options > Game files has an Edition button for switching
+  on desktop, effective at the next start. The TPI/TPW world lists come from `GameEditions` instead of a copy. Tests cover direct TPW and TPI starts, the
+  wizard cases and the edition switch persisting to `setup.json`.
+  Review fixes: a saved, old or detected folder holding Theme Park Inc data no longer passes as Theme Park World (the window opens instead of every start failing);
+  `--setup` with an explicit tool mode refuses before any window; a stale or timed-out choice keeps the window open with the typed folder and a reason; and
+  Options > Game files reports a timed-out check as such.
+- **Coasters drawn with their original track, pylons and cars (October 14):** the track is the `coaster.sam` cross section
+  extruded along the curve (ten slices per knot pair, V every six units) with the real track textures, so the minecart track
+  has rails and sleepers, the Gorilla Thrilla a rope, the flumes water that flows and a ratcheted dry section where they
+  climb, and chain lifts a scrolling chain. Pylons are the StdPylon/LoopPylon models stretched by their loft clip to the node
+  height and turned by their rotate clip; cars are the car models posed on the samples with roll, pitch and yaw and spaced by
+  their own length. A track under construction is the curve through the placed pylons and a ghost pylon at the cursor instead
+  of straight green lines. Traced from tp.exe (rebuild 0x43eb70, slice emitter 0x43f4e0/0x43fd60, loader 0x42fad0, car pose
+  0x43ce20, edit step 0x435d50); COAST-026 is narrowed and COAST-033..035 added (docs/COASTERS.md). Rider heads in the cars
+  and the dry/wet blend sections are not done.
+
 - **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
   first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy
   `[EXT:explicit-world-seed]`.
@@ -1069,6 +1146,18 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   a second; placed rides never take the idle restart); RIDES-022, 032, 036, 038, 043 and 044 are rewritten around what the
   PC shows. WAIT is divided by the script speed as well (`0xb0658`), screams use the script's speed word (AUDIO-016
   retired), and the M3 gate's boarding period follows the scaled WAIT (Belly Bounce: P 3, H 55).
+- **Track register round (October 14):** the kart and water register is read against tp.exe. The controller ticks once per
+  31 ms world substep (`0x54F4C4`, the bump module tick called at `0x54F55F`; the BUMP 13 duration unit stays 30), boats and
+  karts start at heading 0 (only bumper cars draw a random one), a water crossing's centre circle carries the 0x80 flag so
+  boats pass through each other there, and the kart bank has no clamp. The track line snaps X only when |dx| > |dy| and ends at
+  `start + 2 * floor((cursor - start) / 2)` (a tie goes to Y, the − direction rounds away from the start). Boats raise the spray
+  as particle 96, start an engine voice at the first launch and play BeamUpCar with a silent voice stop at the unload; the break
+  smoke is a persistent particle-2 emitter per carrying car, made by BUMP 8 and removed by the fix or the unload (it follows the
+  car every tick; the flag is saved, not hashed). The bumper chase was already ported as traced (TRACK-029 retired). Register:
+  TRACK-009, 011, 012, 013, 016, 017, 023, 024 and 029 retired; TRACK-020, 021, 027 and 028 become OpenTPW decisions
+  (`[EXT:...]`); TRACK-002, 005, 019, 025, 026, 030 and 031 narrowed (the station table of `0x52A1A0`, the arena formula of
+  `0x529E10`). The tick and heading changes move the boat, kart and bumper goldens and the track resume hashes; the pinned fixed
+  run and the hash schema are unchanged (DETERMINISM.md).
 - **Riders' heads on their traced seats (October 14):** a head is now attached through the model's own records, traced in
   the Mac binary: attribute record `i` belongs to node `Unknown46 + i`, a head id is the first record with flag `0x80` and
   that value, and the node-name guess is gone (Eruption's `Head1a` and the other previously unresolved ids now draw;

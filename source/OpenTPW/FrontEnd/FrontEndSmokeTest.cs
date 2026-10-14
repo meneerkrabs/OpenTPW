@@ -431,13 +431,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
 		} );
 		Wait( "game mode opens", 3 );
-		Do( "choose game mode", () =>
-		{
-			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "Enter on the focused enter-park button asks for the game mode" );
-			VerifyText( CaptureFrame( "game-mode.png" ), flow.Strings[UIStrings.InstantAction], "Instant Action button" );
-			Click( flow.Menu.Stack.Top!, "fullSimulation" );
-		} );
-		Wait( "park loads", 40 );
+		PlanFullSimulationStart( () => VerifyText( CaptureFrame( "game-mode.png" ), flow.Strings[UIStrings.InstantAction], "Instant Action button" ) );
 		Do( "park loaded", () =>
 		{
 			Require( flow.Level?.OriginalPark?.LevelName == "jungle" && flow.Hud != null, "menu loads the original jungle level with the HUD" );
@@ -1379,7 +1373,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			// The pause-menu save earlier left an own jungle save: entering the island now offers it (FrontEndMenu.ShowThemeStart).
 			Require( flow.Menu!.Stack.Top?.Name == "themeStart", "entering an island with a saved park offers to continue it" );
-			Click( flow.Menu.Stack.Top!, "choice1" ); // New park
+			// the manual Continue, then the automatic Continue when the last exit left a checkpoint, New park and Back: New is next to last
+			var themeStart = flow.Menu.Stack.Top!;
+			var choices = Enumerable.Range( 0, 8 ).Count( index => themeStart.Find( $"choice{index}" ) != null );
+			Click( themeStart, $"choice{choices - 2}" );
 		} );
 		Wait( "game mode again", 3 );
 		Do( "choose Instant Action", () =>

@@ -106,7 +106,7 @@ public sealed class TrackRenderer : IDisposable
 	/// <paramref name="rotation"/> degrees about its centre (the original's engine rotation is 360 − rotation), then moves to the tile and the ground.
 	/// </summary>
 	// [BIN:STP-PPC:0x1008B610 piece instancing] the instance sits at the origin cell plus an offset by rotation (90°: y+1; 180°: x+1, y+1; 270°: x+1) with engine rotation 360 − rotation, skipped for flag 0x10 or piece 0
-	// [APPROX:TRACK-003] the one-cell instance offset of the original is unresolved for 20-unit tiles; OpenTPW turns each tile about its own centre, which keeps every rotation inside the tile — evidence needed: the instancer 0x1008B610 and the mesh pivot of the pieces (Bumper.NorthXAdjust and its siblings are read but unused)
+	// [APPROX:TRACK-003] the one-cell instance offset of the original is unresolved for 20-unit tiles; OpenTPW turns each tile about its own centre, which keeps every rotation inside the tile — evidence needed: the instancer 0x1008B610's PC twin (the Bumper.*Adjust keys are the station-reference offsets of TRACK-005 and TRACK-030, not a mesh pivot)
 	// [APPROX:TRACK-001] a tile stands on the mean ground height of its four cells (the height profile .hmp and the original's height source are not decoded)
 	public Matrix4x4 TileTransform( int x, int y, int rotation )
 	{
@@ -226,7 +226,7 @@ public sealed class TrackRenderer : IDisposable
 	/// The rider heads of the vehicles: each rider hangs from the kart mesh's head dummy of its seat (class 0x100000B1, number 1, and 2 in the Halloween karts).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0044B410 head draw] the seat's dummy node is found by class 0x80 and its number (0x0044B220); each rider is drawn as the guest's head sprite at that node (0x00475A10), the ADDHEAD mechanism
-	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer; the original's draw internals and the riders' seat order are not traced
+	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer (seat order as traced: [BIN:TPW-EXE:0x00549C60] gives rider i of the car's rider list dummy i); the draw internals 0x44B410 and 0x475A10 and the boarding guest drawn between BUMP 1 and the car's creation are not traced
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		foreach ( var visual in visuals )
@@ -359,7 +359,8 @@ public sealed class TrackRenderer : IDisposable
 		return new PieceGeometry( models, surface ?? TrackSurface.FromModel( model ), heads.ToArray(), flags.ToArray() );
 	}
 
-	private static Texture LoadTexture( ObjectCatalogEntry entry, string name )
+	/// <summary>The texture of a model material or track texture of an object's archive (the textures, gtexture and theme sharetex directories), or <see cref="Texture.Missing"/>.</summary>
+	internal static Texture LoadTexture( ObjectCatalogEntry entry, string name )
 	{
 		var resolved = ObjectAssets.ResolveTexture( entry, name );
 		if ( resolved == null )

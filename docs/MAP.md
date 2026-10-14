@@ -170,7 +170,7 @@ the caller's current position and leaves the stream open without seeking,
 truncating or flushing. A physical I/O failure propagates and may leave partial
 bytes; this stream API does not promise file replacement or rollback. There is no
 CLI, terrain-rule change, native-writer parity or original-save interoperability
-claim. Original-asset round trips were not run for this slice.
+claim. Original-asset round trips were not run for this slice. Raw input lists and the mutable `Cells` array must remain stable during encoding; this API does not synchronize concurrent edits. The strict reader refuses unknown chunks, duplicate MAP chunks and nonempty/nonfinal END chunks, so no accepted unrepresented chunk payload is silently discarded.
 
 `MapFileWriterTests` locks nonsquare read/write byte equality with all raw cell
 values, high-bit title padding and opaque header words; one-cell edit/readback;

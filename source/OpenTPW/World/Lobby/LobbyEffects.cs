@@ -37,6 +37,7 @@ public sealed class LobbyEffects
 	private int skyR, skyG, skyB;
 	private bool skySet;
 	private readonly List<LobbyBolt> bolts = new();
+	private readonly List<WeatherStrike> strikes = new();
 
 	/// <summary>Seeds the lobby's generator; the original seeds it once from <c>time(NULL)</c>.</summary>
 	// [BIN:STP-PPC:0x1008CDBC lobby generator seed] the lobby system's constructor stores time(NULL) as the generator's state; it is never reset
@@ -98,6 +99,16 @@ public sealed class LobbyEffects
 		return (thunders, oneShots);
 	}
 
+	/// <summary>Moves the strikes since the last call into <paramref name="into"/> (the renderer's lobby source).</summary>
+	public void DrainStrikes( List<WeatherStrike> into )
+	{
+		into.AddRange( strikes );
+		strikes.Clear();
+	}
+
+	/// <summary>No island effects on this backdrop (the online city): no rain falls.</summary>
+	public void StopRain() => RainDrops = 0;
+
 	/// <summary>Eases the sky toward the globe's colour while the globe is up; the islands do not update then (no rain).</summary>
 	// [BIN:STP-PPC:0x100923A8 globe opens] the globe component sets the raindrops to 0, the field of view to 60 and the sky target to (243, 203, 191)
 	public void StepGlobe( float deltaSeconds )
@@ -151,6 +162,8 @@ public sealed class LobbyEffects
 			if ( bolts.Count >= MaximumBolts )
 				bolts.RemoveAt( 0 );
 			bolts.Add( new LobbyBolt( new Vector3( bottomX, bottomY, 0 ), new Vector3( topX, topY, 500 ), 0 ) );
+			// For the weather renderer, in original axes (Y up): the lobby's ground plane is its X/Y.
+			strikes.Add( new WeatherStrike( new System.Numerics.Vector3( topX, 500, topY ), new System.Numerics.Vector3( bottomX, 0, bottomY ) ) );
 			Flash = true;
 			thunder = true;
 		}
@@ -189,5 +202,23 @@ public sealed class LobbyEffects
 		skyR += ((target.R << 16) - skyR) / 16;
 		skyG += ((target.G << 16) - skyG) / 16;
 		skyB += ((target.B << 16) - skyB) / 16;
+	}
+}
+
+/// <summary>The lobby's rain and lightning as the weather renderer reads them (<see cref="LobbyEffects"/>): rain, never snow, and 500 ms bolts.</summary>
+// [BIN:STP-PPC:0x10094F8C lobby rain] the lobby sets rain type 1 and its drop count on the engine's CRain each frame; [BIN:STP-PPC:0x10095310 lobby strike] AddLightning(bottom, top, 500, 1)
+internal sealed class LobbyWeatherSource( LobbyEffects effects ) : IWeatherVisualSource
+{
+	private readonly List<WeatherStrike> strikes = new();
+
+	public int DropCount => effects.RainDrops;
+	public bool Snow => false;
+	public float BoltLifetimeSeconds => LobbyEffects.BoltSeconds;
+
+	public IReadOnlyList<WeatherStrike> TakeStrikes()
+	{
+		strikes.Clear();
+		effects.DrainStrikes( strikes );
+		return strikes;
 	}
 }

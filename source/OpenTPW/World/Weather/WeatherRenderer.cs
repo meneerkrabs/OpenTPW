@@ -29,6 +29,7 @@ public sealed class WeatherRenderer : Entity
 	private readonly IWeatherVisualSource source;
 	private readonly Func<SVector3, SVector3> originalToEngine;
 	private readonly Func<bool> paused;
+	private readonly float scale;
 	private readonly WeatherVisualState visual = new();
 
 	private Material<ObjectUniformBuffer>? rainMaterial;
@@ -46,11 +47,13 @@ public sealed class WeatherRenderer : Entity
 	/// <param name="source">The drop count, weather kind and bolt tops, in original units.</param>
 	/// <param name="originalToEngine">Maps an original position (Y up) to engine space; the park maps through its heightfield's origin.</param>
 	/// <param name="paused">Whether the visuals freeze (the engine's dt-zeroing flag); the park passes its paused state.</param>
-	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<bool> paused )
+	/// <param name="engineUnitsPerOriginal">Engine units per original unit: the park's models are drawn at <see cref="OriginalParkPlacement.ModelScale"/>, the lobby at 1.</param>
+	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<bool> paused, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale )
 	{
 		this.source = source;
 		this.originalToEngine = originalToEngine;
 		this.paused = paused;
+		scale = engineUnitsPerOriginal;
 		Name = "Weather";
 		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
 		// first simulation step — so no gameplay frame pays the shader compile and pipeline build mid-rain.
@@ -84,13 +87,13 @@ public sealed class WeatherRenderer : Entity
 	}
 
 	/// <summary>The engine camera as the field reads it: eye and view axes in original units (Y up).</summary>
-	private static WeatherCamera CurrentCamera()
+	private WeatherCamera CurrentCamera()
 	{
 		var view = Camera.ViewMatrix;
 		static SVector3 ToOriginalAxes( SVector3 engine ) => new( engine.X, engine.Z, engine.Y );
 		var eye = Camera.Position.GetSystemVector3();
 		return new WeatherCamera(
-			ToOriginalAxes( eye ) / OriginalParkPlacement.ModelScale,
+			ToOriginalAxes( eye ) / scale,
 			ToOriginalAxes( new SVector3( view.M11, view.M21, view.M31 ) ),
 			ToOriginalAxes( new SVector3( view.M12, view.M22, view.M32 ) ),
 			ToOriginalAxes( -new SVector3( view.M13, view.M23, view.M33 ) ) );
@@ -111,7 +114,6 @@ public sealed class WeatherRenderer : Entity
 		{
 			var written = visual.Snow ? visual.WriteSnow( camera, scratch ) : visual.WriteRain( camera, scratch );
 			// Camera space to Veldrid view space: z runs away from the viewer, so depth becomes -z; original units become engine units.
-			const float scale = OriginalParkPlacement.ModelScale;
 			for ( var index = 0; index < written; index++ )
 			{
 				var vertex = scratch[index];
@@ -179,7 +181,7 @@ public sealed class WeatherRenderer : Entity
 			var side = SVector3.Cross( along, eye - (a + b) * 0.5f );
 			if ( side.LengthSquared() < 1e-12f )
 				continue;
-			side = SVector3.Normalize( side ) * (WeatherVisualState.BoltWidth( segment.Depth ) * OriginalParkPlacement.ModelScale);
+			side = SVector3.Normalize( side ) * (WeatherVisualState.BoltWidth( segment.Depth ) * scale);
 			Vertex Corner( SVector3 position, float u, float v ) => new( position, new SVector3( grey, 1f, 0 ), new SVector2( u, v ) );
 			var topLeft = Corner( a - side, 0, 0 );
 			var topRight = Corner( a + side, 1, 0 );
@@ -210,18 +212,22 @@ public sealed class WeatherRenderer : Entity
 internal sealed class ParkWeatherVisualSource( ParkWeather weather ) : IWeatherVisualSource
 {
 	private readonly List<SVector3> tops = new();
+	private readonly List<WeatherStrike> strikes = new();
 
 	// [BIN:STP-PPC:engine_shared 0x1001FCE4 drawn count] the drawn count is min(CurrentDrops, MaxRaindrops) of the field's 1024 points
 	public int DropCount => Math.Min( weather.CurrentDrops, weather.MaxRaindrops );
 	public bool Snow => weather.Snow;
 	public float BoltLifetimeSeconds => weather.LightningTimeMilliseconds / 1000f;
 
-	/// <summary>The tops struck since the last call, in reusable storage valid until the next call, so a frame without strikes allocates nothing.</summary>
-	public IReadOnlyList<SVector3> TakeBoltTops()
+	/// <summary>The strikes since the last call, in reusable storage valid until the next call, so a frame without strikes allocates nothing.</summary>
+	public IReadOnlyList<WeatherStrike> TakeStrikes()
 	{
 		tops.Clear();
+		strikes.Clear();
 		weather.DrainBoltTops( tops );
-		return tops;
+		foreach ( var top in tops )
+			strikes.Add( WeatherStrike.Below( top ) );
+		return strikes;
 	}
 }
 

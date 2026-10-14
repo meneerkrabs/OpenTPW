@@ -907,6 +907,10 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Browser options no longer stop the game (October 14):** the browser has no .NET configuration system, so opening
+  Options → Game files read the old `Settings.Default` and stopped the game with "Configuration system failed to
+  initialize". The browser chooses its game folder on the page, so it no longer shows that button, and the old settings are
+  read through `LegacySettings`, which returns nothing in the browser or when a damaged user.config cannot be read.
 - **Water ride tracks, phase 1 (October 14):** one water ride, Splish Splash on the Jungle level, works end to end on the traced original rules
   ([TRACKS.md](TRACKS.md)). The track layer mirrors the original's 40-byte cell record (origin type 16, three type-12 extension cells), the
   Q1 piece tables and adjustments, the 14 controller templates and the `.hmp` height profiles (`HmpFile`) are ported, and the water track tool lays

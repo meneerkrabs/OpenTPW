@@ -6,6 +6,15 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Scream voices limited to the sound manager's pool of twelve (October 14, 2026)
+
+Ride screams no longer start new children everywhere in the park. tp.exe's sound manager (`0x6b62b0`) ticks only 12 audible
+voices, ranked by event priority with the ground distance as tie-break (`0x6bb9f0`, `0x6b6bc0`), and a held scream chain makes its
+children, the first included, only in that tick (`0x6bdae0` → `0x6bdb50`). Screams (priority 2700) rank below the crowd (5300) and
+most ride and ambient sounds, so OpenTPW now holds back a scream chain that is out of the listener's range (95 sound units over the
+ground) or outside the twelve highest-ranked voices; its started children play out (AUDIO-038). The timing of a chain itself was confirmed in tp.exe: a full
+ride (8+ riders, event 74) screams every 0–0.5 s, as in the original data.
+
 ## Ticket booth verdict, broken-ride state and no boredom loss (October 14, 2026)
 
 The ticket booth now weighs the entrance fee against the park as tp.exe does (`0x4ff5b0`, `0x4ff9d0`): the park value is the attraction
@@ -46,6 +55,11 @@ never replaces. Entering the theme again offers Continue for it. A failure befor
 failure while leaving the park after the write is reported instead of crashing. Details: docs/AUTOMATIC-CHECKPOINT-INGRESS.md and
 docs/AUTOMATIC-CHECKPOINT-CORE.md.
 
+Two checkpoint tests that capture a synthetic level failed locally when they ran after the original-data asset tests: those
+tests left the global `FileSystem` on the game data, so `Level.SetupStaff` loaded real staff atlases and created textures without
+a graphics device. The checkpoint tests' CPU renderer scope now also pins `FileSystem` to an empty directory, and the coaster,
+staff sprite and M4 gate asset tests restore `FileSystem` (and `Log`) after each test. CI has no game data, so it never saw this.
+
 ## Application-owned progress entry and smoke repair (October 14, 2026)
 
 New Full Simulation checks the selected theme's explicit entry cost against
@@ -60,11 +74,17 @@ precommit failure, tracking and retirement qualifications.
 
 The front-end smoke uses a fresh temporary save directory. Its plan now asserts
 that `newProgress` is a `ProgressChoiceScreen` and that the progress file is absent
-before injecting the actual starter-consent button click. It then uses the
-existing 40-frame park-load wait; the timeout is not enlarged and no history is
-preseeded. CPU regression controls drive those actual queued smoke steps and
+before injecting the actual starter-consent button click. It then waits in the
+queued readiness check for completed construction, the activated Jungle level
+and its HUD. It reports a progress failure dialog explicitly and retains the
+strict 3,000-frame budget; no history is preseeded. The former 40-frame delay
+could reach the original post-load assertion while construction was still
+active. CPU regression controls drive those actual queued smoke steps and
 menu/admission callbacks with synthetic theme metadata, checking successful
-consent, Back cancellation and preservation of known zero-key history.
+consent, Back cancellation and preservation of known zero-key history. Additional
+controller controls wait beyond 40 frames, reject a wrong theme or missing HUD,
+report a real failure dialog, and retain the strict noncompletion bound. These
+CPU controls model activation fields; native runs use actual construction state.
 
 The original native smoke objection is not counted as a successful native rerun.
 These CPU controls do not exercise native text readback, the GPU/window, original

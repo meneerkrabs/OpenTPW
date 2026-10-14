@@ -6,11 +6,11 @@ public readonly record struct StaffWorldSnapshot( int Id, StaffType Type, float 
 /// <summary>
 /// Host presentation policy, not recovered native staff movement: new employees enter at the supplied
 /// gate path (otherwise the first path in row order), and move one connected cell per second towards
-/// their existing assigned job. Idle employees stay where they are. This never changes job timers,
+/// their existing assigned job. Idle employees stay where they are. Movement does not alter job timers,
 /// finance, research or staff states. Exact native sub-cell positions survive import and load;
 /// off-path actors remain there rather than teleporting to a convenient job or path.
 /// </summary>
-public sealed class StaffWorldSimulation
+public sealed class StaffWorldSimulation : IMechanicJobWorld
 {
 	public const double SecondsPerCell = 1;
 	private readonly GuestPathGrid grid;
@@ -60,6 +60,10 @@ public sealed class StaffWorldSimulation
 		target = access;
 		return grid.Distance( x, y, target.X, target.Y ) >= 0;
 	}
+
+	/// <summary>Only this world's current employee at its reachable assigned access cell has arrived.</summary>
+	public bool HasArrived( StaffMember member ) => members().Any( current => ReferenceEquals( current, member ) )
+		&& CanTravel( member, out var target, out var x, out var y ) && (x, y) == target;
 
 	public IReadOnlyList<StaffWorldSnapshot> Snapshots => members().Where( member => member.CellX.HasValue && member.CellY.HasValue )
 		.Select( member =>

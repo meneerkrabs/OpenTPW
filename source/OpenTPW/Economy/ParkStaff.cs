@@ -29,6 +29,8 @@ public sealed class StaffMember
 	public StaffState State { get; set; } = StaffState.Idle;
 	/// <summary>Remaining ticks of the current job (repair, cleaning), 0 when free.</summary>
 	public long BusyTicks { get; set; }
+	/// <summary>A new live-world mechanic job is reserved but its work timer has not started. Legacy jobs default false.</summary>
+	public bool AwaitingJobArrival { get; set; }
 	/// <summary>Object instance the employee works on, 0 when none.</summary>
 	public int AssignedInstanceId { get; set; }
 	/// <summary>Actual host actor position in cell units; null until attached to a world. Native saves use X/Y divided by 256.</summary>

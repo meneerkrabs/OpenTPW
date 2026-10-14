@@ -216,3 +216,14 @@ WebAssembly restart. The 600-tick equality check above was performed in the nati
 ## Continuing a theme from the lobby
 
 The explicit Continue choice described in [UI.md](UI.md#explicit-theme-continuation) reuses the existing manual own-world slot and staged resume. It does not create an automatic save, rewrite a manual checkpoint, change saved game mode or resume a TPI layout checkpoint. New Park remains a distinct action. A readable matching save makes Continue available; trusted game-asset and full candidate validation still happen on activation, and failures preserve the existing world instead of falling back to New.
+
+
+New live-world mechanic dispatch may persist `AwaitingJobArrival` in the embedded
+own economy staff record. It is omitted when false; old missing fields retain
+already-started countdowns. A true phase requires a mechanic with positive work,
+matching assigned ride and reciprocal owner. Capture validation refuses invalid
+pending jobs before an owned save write, and load validates them again. Existing
+staff actor position/fraction supports mid-travel resume; no world binding means
+pending work waits rather than becoming a headless repair. The binding is rebuilt
+by the Level staff setup. This is an additive own-format phase, not a native staff
+field or a save-format version change; canonical gameplay hash schema14 includes it.

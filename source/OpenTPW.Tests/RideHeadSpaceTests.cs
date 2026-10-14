@@ -141,4 +141,28 @@ public class RideHeadSpaceTests
 		Assert.IsFalse( RideHeadRenderer.CanDraw( guest, 2 ) );
 	}
 
+	[TestMethod]
+	public void EveryScriptKeepsItsOwnHeadTable()
+	{
+		// The Mac script init (0x100B2BA0) allocates a head table for every script, root, child and sound alike.
+		var childBytes = new Asm().I( Opcode.ADDHEAD, 77 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables );
+		var bridge = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 2, 25, 30 ) { Heads = RideHeadSpace.Of( new[] { 4, 5 }, 1 ) };
+		var bytes = new Asm().I( Opcode.HUSH, 7 ).I( Opcode.ADDHEAD, 7 ).I( Opcode.SPAWNCHILD, S( 0 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables, "child.rse" );
+		var script = new RideVM( new RideScriptFile( new MemoryStream( bytes ) ), new RideVMOptions
+		{
+			Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1,
+			ResolveScript = name => name == "child.rse" ? new RideScriptFile( new MemoryStream( childBytes ) ) : null
+		} );
+		bridge.Attach( script, () => true );
+		script.Advance( Tick );
+		script.Advance( Tick );
+		Assert.AreEqual( 1, bridge.Heads!.Hung().Count( x => x.Visitor == 7 ) );
+		Assert.AreEqual( 0, bridge.Heads.Hung().Count( x => x.Visitor == 77 ), "the root's table does not take the child's rider" );
+		Assert.AreEqual( 2, bridge.HeadTables.Count() );
+		Assert.AreEqual( 2, bridge.HungHeads().Count() );
+		Assert.AreEqual( 1, bridge.HeadTables.Last().Hung().Count( x => x.Visitor == 77 ) );
+		bridge.ReleaseAll();
+		Assert.IsFalse( bridge.HungHeads().Any() );
+	}
 }

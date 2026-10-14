@@ -92,8 +92,27 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>The wear gauge (ride <c>+64</c>, the state of repair 0–100) the relief predicate reads; the level mirrors it from the economy.</summary>
 	public double WearGauge { get; set; } = 100;
 	/// <summary>The ride's head table for ADDHEAD/DELHEAD, null when its model has no head records (see <see cref="RideHeadSpace"/>).</summary>
-	// [APPROX:HEADS-005] root and resolved child/sound scripts share the attraction head table; the Mac opcode reads the calling script +48/+76, but allocation/binding for child scripts is not traced
+	// [BIN:STP-PPC:0x100B2BA0 script init] every script (root, child, sound) has its own head table; this is the root script's, child and sound scripts get their own on their first ADDHEAD/DELHEAD (HeadTableFor)
 	public RideHeadSpace? Heads { get; set; }
+
+	private readonly Dictionary<RideVM, RideHeadSpace> childHeads = new( ReferenceEqualityComparer.Instance );
+
+	/// <summary>The head table of the script that runs a head opcode: the root's, or a child/sound script's own (created empty from the root's records).</summary>
+	// [APPROX:HEADS-005] whether a child takes its parent's thing id (+0xAC) is untraced; child tables are not part of the park-resume snapshot (no shipped child script uses a head opcode)
+	private RideHeadSpace? HeadTableFor( RideVM vm )
+	{
+		if ( Heads == null || vm.Parent == null )
+			return Heads;
+		if ( !childHeads.TryGetValue( vm, out var table ) )
+			childHeads[vm] = table = Heads.NewTable( childHeads.Count + 1 );
+		return table;
+	}
+
+	/// <summary>Every script's head table: the root's, then the child and sound scripts'.</summary>
+	public IEnumerable<RideHeadSpace> HeadTables => Heads == null ? Enumerable.Empty<RideHeadSpace>() : Enumerable.Repeat( Heads, 1 ).Concat( childHeads.Values );
+
+	/// <summary>Visitors with a head up on any script's table and the model node each hangs from.</summary>
+	public IEnumerable<(int Visitor, int Node)> HungHeads() => HeadTables.SelectMany( table => table.Hung() );
 	public int AttractionValue { get; }
 	/// <summary>Type <c>UsageInfo.ThirstEffect</c> (<c>+324</c>).</summary>
 	public int ThirstEffect { get; set; }
@@ -866,7 +885,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( !onRide.Remove( guest ) )
 			return;
 		// Host cleanup: do not leave a presentation slot on the previous ride after release.
-		Heads?.Remove( guest );
+		foreach ( var table in HeadTables )
+			table.Remove( guest );
 		hopped.Remove( guest );
 		limbo.RemoveAll( entry => entry.Guest == guest );
 		for ( var index = 0; index < bouncing.Count; index++ )
@@ -880,7 +900,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public void ReleaseAll()
 	{
 		// Host teardown, not a claim about the original script destructor: clear even orphaned head ids.
-		Heads?.Clear();
+		foreach ( var table in HeadTables )
+			table.Clear();
 		if ( called != 0 )
 		{
 			var guest = called;
@@ -976,11 +997,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				return true;
 			case Opcode.ADDHEAD:
 				// [BIN:STP-PPC:0x100B0E9C ADDHEAD] no register write; the head is drawn by RideHeadRenderer from the table
-				Heads?.Add( call.Argument( 0 ) );
+				HeadTableFor( call.VM )?.Add( call.Argument( 0 ) );
 				return true;
 			case Opcode.DELHEAD:
 				// [BIN:STP-PPC:0x100B0F90 DELHEAD] no register write
-				Heads?.Remove( call.Argument( 0 ) );
+				HeadTableFor( call.VM )?.Remove( call.Argument( 0 ) );
 				return true;
 			default:
 				return false;

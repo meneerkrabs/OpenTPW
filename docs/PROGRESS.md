@@ -875,6 +875,16 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Riders' heads on their traced seats (October 14):** a head is now attached through the model's own records, traced in
+  the Mac binary: attribute record `i` belongs to node `Unknown46 + i`, a head id is the first record with flag `0x80` and
+  that value, and the node-name guess is gone (Eruption's `Head1a` and the other previously unresolved ids now draw;
+  `monkey.MD2` id 3 is node 10 `Head02`, `Bird.MD2` id 9 is node 2 `Head03`). The head is drawn the way `0x1019B6F8` does:
+  at exactly the node's world position, hidden for node flag `0x8000`, the camera binned in the node's frame to the 7 x 8
+  frames of the kids' head art (direction row times 8 plus azimuth column), and the sprite rolled with the seat
+  (`atan2(-m10, m11)`), at scale 0.685. The new GPU-free `HeadPresentation` is unit-tested and `RideHeadRenderer` draws from
+  a list of head sources, ready for the coaster seats. Every script (root, child, sound) has its own head table, as the
+  script init allocates one for each, and the slot draw uses the original `labs(rand >> 1) % length` formula on the ride's
+  own stream. Register: HEADS-002 and HEADS-003 retired, HEADS-001/004/005 narrowed.
 - **Original weather visuals (October 14):** the procedural rain, snow and bolt approximations are replaced by the
   original engine's `CRain` renderer, traced in the Mac `engine_shared` library and tp.exe (`0x57F1F0-0x57F380`). Rain and
   snow are one fixed 1024-point field in a -4..4 box around the camera eye (original units, wrapping per axis, scrolling

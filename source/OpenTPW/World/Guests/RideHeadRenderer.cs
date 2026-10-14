@@ -5,10 +5,40 @@ using SVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
 
+/// <summary>One rider head to draw: the visitor, the attraction it must be riding, and the head node's world matrix (MD2 axes, see <see cref="HeadPresentation"/>) with the node flags.</summary>
+internal readonly record struct HeadSource( int Visitor, int AttractionId, System.Numerics.Matrix4x4 NodeWorld, uint NodeFlags );
+
+/// <summary>A producer of head sources (flat rides now; coaster seats can be added next).</summary>
+internal interface IHeadSourceProvider
+{
+	/// <summary>Appends the heads currently up; <paramref name="onlyAttraction"/> restricts the smoke readback to one attraction.</summary>
+	void Collect( List<HeadSource> sources, int? onlyAttraction );
+}
+
+/// <summary>Heads of flat rides: every script's head table of every original object, at the node of the head record.</summary>
+internal sealed class FlatRideHeadSources : IHeadSourceProvider
+{
+	private readonly ParkObjects objects;
+
+	public FlatRideHeadSources( ParkObjects objects ) => this.objects = objects;
+
+	public void Collect( List<HeadSource> sources, int? onlyAttraction )
+	{
+		foreach ( var ride in objects.Objects )
+		{
+			if ( ride.Visitors.Heads == null || ride.IsDeleted || onlyAttraction is int attraction && attraction != ride.Visitors.AttractionId )
+				continue;
+			foreach ( var (visitor, node) in ride.Visitors.HungHeads() )
+				sources.Add( new HeadSource( visitor, ride.Visitors.AttractionId, ObjectPlacement.SwapAxes( ride.GetNodeTransform( node ) ), ride.Runtime.Model.Nodes[node].Type ) );
+		}
+	}
+}
+
 /// <summary>
 /// Draws the head of every rider whose ride has a head up (ADDHEAD, <see cref="RideHeadSpace"/>) as a camera-facing quad of
-/// the kid's head sprite, hung at the position of the head's model node. A rider on a ride is otherwise not drawn
-/// (<see cref="GuestRenderer"/> skips guests in the Using state), so this renderer supplies their head presentation.
+/// the kid's head sprite at the head node's position, with the frame and roll of <see cref="HeadPresentation"/>. A rider on
+/// a ride is otherwise not drawn (<see cref="GuestRenderer"/> skips guests in the Using state), so this renderer supplies
+/// their head presentation.
 /// </summary>
 public sealed class RideHeadRenderer : Entity
 {
@@ -16,7 +46,8 @@ public sealed class RideHeadRenderer : Entity
 
 	private readonly GuestSimulation simulation;
 	private readonly IReadOnlyList<GuestSpriteAtlas> atlases;
-	private readonly ParkObjects objects;
+	private readonly List<IHeadSourceProvider> providers = new();
+	private readonly List<HeadSource> sources = new();
 	private readonly Material<ObjectUniformBuffer>? material;
 	private readonly List<Texture> textures = new();
 	private DeviceBuffer? vertexBuffer;
@@ -28,6 +59,9 @@ public sealed class RideHeadRenderer : Entity
 	public int DrawnHeads { get; private set; }
 
 	/// <summary>Restricts the native smoke readback to one identified attraction.</summary>
+	/// <summary>Adds a producer of head sources (the coaster seats, later).</summary>
+	internal void AddSource( IHeadSourceProvider provider ) => providers.Add( provider );
+
 	internal int? OnlyAttraction { get; set; }
 	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
 
@@ -38,7 +72,7 @@ public sealed class RideHeadRenderer : Entity
 	{
 		this.simulation = simulation;
 		this.atlases = atlases;
-		this.objects = objects;
+		providers.Add( new FlatRideHeadSources( objects ) );
 		Name = "Ride heads";
 		if ( atlases.Count == 0 )
 			return;
@@ -97,50 +131,53 @@ public sealed class RideHeadRenderer : Entity
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 		var forward = -new SVector3( view.M13, view.M23, view.M33 );
-		var rightFlat = SVector2.Normalize( new SVector2( right.X, right.Y ) + new SVector2( 1e-6f, 0 ) );
-		var forwardFlat = SVector2.Normalize( new SVector2( forward.X, forward.Y ) + new SVector2( 0, 1e-6f ) );
+		// The presentation works in MD2 axes (Y up): engine Y and Z swapped.
+		var camera = Camera.Position;
+		var cameraMd2 = new SVector3( camera.X, camera.Z, camera.Y );
+		sources.Clear();
+		foreach ( var provider in providers )
+			provider.Collect( sources, OnlyAttraction );
 		var count = 0;
-		foreach ( var ride in objects.Objects )
+		foreach ( var source in sources )
 		{
-			var heads = ride.Visitors.Heads;
-			if ( heads == null || ride.IsDeleted || OnlyAttraction is int attraction && attraction != ride.Visitors.AttractionId )
+			var guest = simulation.Find( source.Visitor );
+			if ( !CanDraw( guest, source.AttractionId ) )
 				continue;
-			foreach ( var (visitor, node) in heads.Hung() )
-			{
-				var guest = simulation.Find( visitor );
-				if ( !CanDraw( guest, ride.Visitors.AttractionId ) )
-					continue;
-				// [APPROX:HEADS-004] pre-boarding guest heading, the body five-direction selector and stand frame 0 present the seven-direction head art; node translation omits seat orientation and world size uses the body pixel scale, none traced as original head presentation
-				var atlasIndex = guest!.Type % Math.Min( 8, atlases.Count );
-				var atlas = atlases[atlasIndex];
-				var heading = new SVector2( guest.HeadingX, guest.HeadingY );
-				var (direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
-				var frame = atlas.Frames[atlas.GetFrame( GuestSpriteAtlas.StandSlot, direction, 0 )];
-				var feet = ride.GetNodeTransform( node ).Translation;
-				if ( count + VerticesPerHead > vertices.Length )
-					Array.Resize( ref vertices, Math.Max( VerticesPerHead * 64, vertices.Length * 2 ) );
-				var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-				var x0 = left * GuestRenderer.UnitsPerPixel;
-				var x1 = (left + frame.Width) * GuestRenderer.UnitsPerPixel;
-				var yTop = -frame.OriginY * GuestRenderer.UnitsPerPixel;
-				var yBottom = -(frame.OriginY + frame.Height) * GuestRenderer.UnitsPerPixel;
-				var u0 = frame.X / (float)atlas.Width;
-				var u1 = (frame.X + frame.Width) / (float)atlas.Width;
-				if ( mirror )
-					(u0, u1) = (u1, u0);
-				var v0 = frame.Y / (float)atlas.Height;
-				var v1 = (frame.Y + frame.Height) / (float)atlas.Height;
-				var topLeft = new Vertex( feet + right * x0 + up * yTop, -forward, new SVector2( u0, v0 ) ) { TexIndex = atlasIndex };
-				var topRight = new Vertex( feet + right * x1 + up * yTop, -forward, new SVector2( u1, v0 ) ) { TexIndex = atlasIndex };
-				var bottomLeft = new Vertex( feet + right * x0 + up * yBottom, -forward, new SVector2( u0, v1 ) ) { TexIndex = atlasIndex };
-				var bottomRight = new Vertex( feet + right * x1 + up * yBottom, -forward, new SVector2( u1, v1 ) ) { TexIndex = atlasIndex };
-				// Both windings, as GuestRenderer does, so the quad survives back-face culling.
-				vertices[count++] = topLeft; vertices[count++] = topRight; vertices[count++] = bottomLeft;
-				vertices[count++] = topRight; vertices[count++] = bottomRight; vertices[count++] = bottomLeft;
-				vertices[count++] = topLeft; vertices[count++] = bottomLeft; vertices[count++] = topRight;
-				vertices[count++] = topRight; vertices[count++] = bottomLeft; vertices[count++] = bottomRight;
-				DrawnHeads++;
-			}
+			var placement = HeadPresentation.Compute( source.NodeWorld, source.NodeFlags, cameraMd2 );
+			if ( !placement.Visible )
+				continue;
+			// [BIN:STP-PPC:0x100E8F70] the kidsheads art, or costumeheads when the visitor's costume flag (+0x24) is 2 (set index +0x20); OpenTPW guests wear no costumes yet, so the kid's own head set is used
+			// [APPROX:HEADS-004] head sprite size is the body's pixel scale times the traced scale property 0.685; how the original maps sprite scale to world units and handles depth is untraced
+			var atlasIndex = guest!.Type % Math.Min( 8, atlases.Count );
+			var atlas = atlases[atlasIndex];
+			// The head art is 7 directions (rows, from the pole) of 8 frames (azimuth steps): frame 8 * row + column.
+			var frame = atlas.Frames[atlas.GetFrame( GuestSpriteAtlas.StandSlot, placement.Row, placement.Column )];
+			var feet = new SVector3( placement.Anchor.X, placement.Anchor.Z, placement.Anchor.Y );
+			if ( count + VerticesPerHead > vertices.Length )
+				Array.Resize( ref vertices, Math.Max( VerticesPerHead * 64, vertices.Length * 2 ) );
+			var angle = placement.Roll * 2 * MathF.PI;
+			var (sin, cos) = MathF.SinCos( angle );
+			var spriteRight = right * cos + up * sin;
+			var spriteUp = up * cos - right * sin;
+			var unit = GuestRenderer.UnitsPerPixel * placement.Scale;
+			var x0 = frame.OriginX * unit;
+			var x1 = (frame.OriginX + frame.Width) * unit;
+			var yTop = -frame.OriginY * unit;
+			var yBottom = -(frame.OriginY + frame.Height) * unit;
+			var u0 = frame.X / (float)atlas.Width;
+			var u1 = (frame.X + frame.Width) / (float)atlas.Width;
+			var v0 = frame.Y / (float)atlas.Height;
+			var v1 = (frame.Y + frame.Height) / (float)atlas.Height;
+			var topLeft = new Vertex( feet + spriteRight * x0 + spriteUp * yTop, -forward, new SVector2( u0, v0 ) ) { TexIndex = atlasIndex };
+			var topRight = new Vertex( feet + spriteRight * x1 + spriteUp * yTop, -forward, new SVector2( u1, v0 ) ) { TexIndex = atlasIndex };
+			var bottomLeft = new Vertex( feet + spriteRight * x0 + spriteUp * yBottom, -forward, new SVector2( u0, v1 ) ) { TexIndex = atlasIndex };
+			var bottomRight = new Vertex( feet + spriteRight * x1 + spriteUp * yBottom, -forward, new SVector2( u1, v1 ) ) { TexIndex = atlasIndex };
+			// Both windings, as GuestRenderer does, so the quad survives back-face culling.
+			vertices[count++] = topLeft; vertices[count++] = topRight; vertices[count++] = bottomLeft;
+			vertices[count++] = topRight; vertices[count++] = bottomRight; vertices[count++] = bottomLeft;
+			vertices[count++] = topLeft; vertices[count++] = bottomLeft; vertices[count++] = topRight;
+			vertices[count++] = topRight; vertices[count++] = bottomLeft; vertices[count++] = bottomRight;
+			DrawnHeads++;
 		}
 		if ( count == 0 )
 			return;

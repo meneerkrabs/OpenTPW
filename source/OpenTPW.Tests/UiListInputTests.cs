@@ -24,6 +24,8 @@ public class UiListInputTests
 		public bool ArrowsSelect => true;
 		public bool HoverSelects => HoverSelectsRows;
 		public void Select( int index ) { Selected = index; Log.Add( $"select{index}" ); }
+		public int Hovered = -1;
+		public void Hover( int index ) => Hovered = index;
 		public void Scroll( int rows ) { }
 		public int RowAt( UiCanvas canvas, System.Numerics.Vector2 point )
 		{
@@ -54,16 +56,15 @@ public class UiListInputTests
 	}
 
 	[TestMethod]
-	public void AMovedPointerSelectsTheHoveredRowButAStationaryOneDoesNot()
+	public void HoveringOnlyHighlightsAndNeverChangesTheSelection()
 	{
 		var (screen, list, context, row, _) = Build();
-		screen.Update( context, UiInput.Idle( row( 2 ) ) );
-		Assert.AreEqual( 2, list.Selected, "hovering selects the row under the pointer" );
 		list.Select( 0 );
 		screen.Update( context, UiInput.Idle( row( 2 ) ) );
-		Assert.AreEqual( 0, list.Selected, "a pointer that stays put leaves the keyboard's selection alone" );
-		screen.Update( context, UiInput.Idle( row( 3 ) ) );
-		Assert.AreEqual( 3, list.Selected );
+		Assert.AreEqual( 2, list.Hovered, "the pointer highlights the row under it" );
+		Assert.AreEqual( 0, list.Selected, "buttons beside the list keep acting on the selected row" );
+		screen.Update( context, UiInput.Idle( new System.Numerics.Vector2( 900, 700 ) ) );
+		Assert.AreEqual( -1, list.Hovered, "leaving the list clears the highlight" );
 	}
 
 	[TestMethod]
@@ -72,7 +73,7 @@ public class UiListInputTests
 		var (screen, list, context, row, _) = Build();
 		list.HoverSelectsRows = false;
 		screen.Update( context, UiInput.Idle( row( 1 ) ) );
-		Assert.AreEqual( -1, list.Selected );
+		Assert.AreEqual( -1, list.Hovered );
 	}
 
 	[TestMethod]
@@ -119,7 +120,8 @@ public class UiListInputTests
 		Assert.AreEqual( 500, UiInputSource.ClickMilliseconds );
 		Assert.AreEqual( 6f, UiInputSource.ClickSlop );
 		Assert.IsFalse( UiInputSource.IsNotClick( 1000, 1500, false ), "exactly 500 ms still clicks" );
-		Assert.IsTrue( UiInputSource.IsNotClick( 1000, 1501, false ), "longer than 500 ms does not" );
+		Assert.IsTrue( UiInputSource.IsNotClick( 1000, 1501, false, 30 ), "longer than 500 ms over many frames does not" );
+		Assert.IsFalse( UiInputSource.IsNotClick( 1000, 1900, false, 2 ), "one long frame (a hitch) between press and release still clicks" );
 		Assert.IsTrue( UiInputSource.IsNotClick( 1000, 1100, true ), "a press marked moved does not, however short" );
 	}
 
@@ -141,16 +143,22 @@ public class UiListInputTests
 			Assert.IsFalse( Frame( false, 53, 54 ).NotClick, "a short press with a 3 px drift is a click" );
 			now = 1000;
 			Frame( true, 50, 50 );
-			now = 1700;
-			Assert.IsTrue( Frame( false, 50, 50 ).NotClick, "a 700 ms press is not" );
-			now = 2000;
 			Frame( true, 50, 50 );
-			now = 2100;
+			Frame( true, 50, 50 );
+			now = 1700;
+			Assert.IsTrue( Frame( false, 50, 50 ).NotClick, "a 700 ms press held over several frames is not" );
+			now = 1800;
+			Frame( true, 50, 50 );
+			now = 2500;
+			Assert.IsFalse( Frame( false, 50, 50 ).NotClick, "a 700 ms hitch frame between press and release still clicks" );
+			now = 4000;
+			Frame( true, 50, 50 );
+			now = 4100;
 			Frame( true, 58, 50 );
 			Assert.IsTrue( Frame( false, 58, 50 ).NotClick, "a move of 8 px on one axis is not" );
-			now = 3000;
+			now = 5000;
 			Frame( true, 50, 50 );
-			now = 3100;
+			now = 5100;
 			Frame( true, 56, 44 );
 			Assert.IsFalse( Frame( false, 56, 44 ).NotClick, "6 px on both axes is still a click" );
 		}

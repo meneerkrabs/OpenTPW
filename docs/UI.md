@@ -382,7 +382,7 @@ glyph in all 14 UI fonts of each language.
 - Staff window (`ParkHud.Staff.cs`, Mac table `data:0x4a1e0`): `b_allstaff` opens the `w_big` window over the buy window.
   The authored `f_staffpic`, `f_staffinfo`, `f_balance` and `hirestaff` frames initially show applicants from
   `ParkEconomy.Staff.Candidates`. The five role buttons filter applicants (help 154–158), the name and wage headers sort
-  them (help 159/160; the sort is kept for the session), the list selects the hovered row and a left click hires the
+  them (help 159/160; the sort is kept for the session), the list highlights the hovered row (the original selects it; here the click selects, so the buttons beside the list never retarget) and a left click hires the
   applicant through `ParkEconomy.Hire` (help 161; list message 0x400 → `0x49b988`, which here starts the Place tool;
   Enter hires too, `[EXT:staff-enter-hire]`; UI-083). The list scrolls (UI-080); candidate detail values and the text
   portrait are approximations (UI-081/082).
@@ -394,7 +394,7 @@ glyph in all 14 UI fonts of each language.
   focuses the host park camera on that actor's world position (UI-091). The keyboard locators
   Ctrl+S and Ctrl+V cycle the same targets (UI-904).
 - The All Attractions and All Visitors windows' lists (attribute 0x291) follow the original's list control: the pointer
-  selects the hovered row, a left click opens the row's info panel (the info arm for an attraction, the window's detail
+  highlights the hovered row (the original selects it), a left click selects it and opens the row's info panel (the info arm for an attraction, the window's detail
   rows for a visitor) and keeps the list, a right click centres the camera on the row and closes the window
   (list messages 0x400 and 0x402, tp.exe `0x6655a2`/`0x66563d`; button index 0 is taken as the left button, UI-910).
   Enter and the select/go-to buttons keep the older select-and-close behaviour (`[EXT:overview-select-button]`).
@@ -438,10 +438,10 @@ glyph in all 14 UI fonts of each language.
   button instead. A second press of a window key closes the
   window (`[EXT:window-key-toggle]`); dialogs and the pause menu keep the keys. The shortcut letters come from the
   language's `KEYBOARD.str` (21 entries, `Input.ApplyKeyboardStrings`; the Dutch buy key is K and research is O),
-  except a plain letter that is a camera-pan key (W, A, S, D), which keeps its default (the Dutch hire letter A, UI-012). The time keys
+  except a plain letter that is a camera-pan key (W, A, S, D), which keeps its default, and in the browser build the Ctrl+W/T/N chords the browser reserves (`[EXT:browser-reserved-chords]`); a plain shortcut never fires while Ctrl is held (Dutch research O vs Ctrl+O) (the Dutch hire letter A, UI-012). The time keys
   (numpad +/−/*) step and reset the four-speed clock model (`[EXT:time-key-speeds]`; the original scales the clock by ×0.8/×1.25 within 0.25–2.0 and * resets to 1.0),
   comma adds 90° to the pending blueprint's angle (one `Level.RotateBuild` step) and full stop adds 270° (three steps; tp.exe `0x40c120`/`0x40c150`),
-  holding exactly Ctrl at the placing click keeps the build tool armed and leaving the tool resets the angle to 0 (`0x5253b8`, `0x52f3b6`; UI-031),
+  holding exactly Ctrl at the placing click keeps the build tool armed (Escape or a right click leaves it) and leaving the tool resets the angle to 0 (`0x5253b8`, `0x52f3b6`; UI-031),
   and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
   keep acting over their own window. Camcorder terrain-walk ingress and postcard ingress use their dedicated full-frame
@@ -571,7 +571,7 @@ the real assets. Approximation tags refer to the register below.
 | Window | Controls | Status | Test |
 | --- | --- | --- | --- |
 | Buy (`ParkHud.BuyWindow.cs`) | list select/sort/scroll, category buttons, purchase via row activation, staff button, all-attractions button, exit/Back | wired | `BuyWindowTests`, `FrontEndSmokeTest` |
-| Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on a left click (hover selects), pick-up button (`b_pick`), employee view (`[EXT:staff-employee-view]`), dismiss with confirmation (UI-092), scroll, locators, all-visitors and all-attractions buttons, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
+| Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on a left click (hover highlights), pick-up button (`b_pick`), employee view (`[EXT:staff-employee-view]`), dismiss with confirmation (UI-092), scroll, locators, all-visitors and all-attractions buttons, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
 | Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905, `[EXT:overview-detail-rows]`), a left click opens the info panel and keeps the list, a right click locates and closes, delete with the original category confirmations, exit/Back; the sandbox developer Totem is listed beside the catalogue rides and its delete goes through the prototype removal | wired | `OverviewWindowTests`, `FrontEndSmokeTest` (list/activation/sell, prototype list/activation/remove with healed selection, visit open + read-only refusal) |
 | Visitors (`ParkHud.VisitorWindow.cs`) | list select/number-sort/scroll, live visitor detail rows (UI-907, `[EXT:overview-detail-rows]`), a left click selects (detail rows), a right click locates and closes, exit/Back, V key | wired | `OverviewWindowTests`, `HudScreenShortcutTests`, `FrontEndSmokeTest` (list/scroll/sort/Enter-locate) |
 | Map (`ParkHud.Map.cs`) | pan, zoom, four category filters, track/visitor/staff/metric layer toggles, close | wired | `MapViewStateTests`, `MapStaffControlTests` |
@@ -629,7 +629,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: the park-view mouse-down object hit test (the 0x5234d0/0x524960 region, large), or a capture of clicks on overhanging objects |
 | UI-028 | `Hud/ParkHud.cs:283` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
 | UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
-| UI-031 | `Hud/ParkHud.cs:350` | exactly Ctrl at the placing click keeps the build tool armed (0x5253b8) and at the last click of a ride's queue re-arms it, the tool's angle returns to 0 when it is left (0x52f3b6); the coaster and water-track tools, whose original sub-modes are not traced, end the build tool whatever the modifier, and moving an existing object (0x5259e2) is not ported; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | what 0x52fab0 tests (an entrance or queue, medium confidence) and the coaster and track sub-modes' continuation |
+| UI-031 | `Hud/ParkHud.cs:350` | exactly Ctrl at the placing click keeps the build tool armed (0x5253b8) and at the last click of a ride's queue re-arms it, the tool's angle returns to 0 when it is left (0x52f3b6); the coaster and water-track tools, whose original sub-modes are not traced, end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 are not mapped to an OpenTPW action; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | what 0x52fab0 tests (an entrance or queue, medium confidence) and the coaster and track sub-modes' continuation |
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
 | UI-034 | `UI/Original/UiImages.cs` | a fully opaque texture on a transparent (flag 0x2) model slot keys out black; only `ipan` in the lobby `f_lobbutbg` panel | the original's render state for flagged texture slots |
 | UI-036 | `UI/Original/UiWidgets.cs` | options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step | capture of the original slider ends or binary slider code |

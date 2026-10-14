@@ -500,7 +500,7 @@ internal sealed partial class GameFlow : IDisposable
 			if ( parkBuild != null && Camera.Mode is FreeWalkCameraMode walkCamera )
 				walkCamera.ModalOpen = true;
 			UpdateParkGlobe( Hud );
-			// The pause menu and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
+			// The pause menu, the map window and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
 			// The park being left waits too while the next one is built.
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();

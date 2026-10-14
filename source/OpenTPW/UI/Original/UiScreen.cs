@@ -80,9 +80,13 @@ public class UiScreen
 			Focused = hit;
 		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
 			Focused = null;
-		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under a moved pointer (not under a pointer that stays put, so the arrow keys still move the selection)
-		if ( hit is IUiRowList { HoverSelects: true } hoverList && input.Mouse.X >= 0 && input.Mouse != lastMouse && hoverList.RowAt( canvas, input.Mouse ) is >= 0 and var hoverRow )
-			hoverList.Select( hoverRow );
+		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer; OpenTPW only highlights it, because the buttons beside the list act on the selection
+		// Here the hover only highlights (the click selects), so action buttons beside the list keep their target.
+		foreach ( var element in elements )
+		{
+			if ( element is IUiRowList { HoverSelects: true } hoverList )
+				hoverList.Hover( ReferenceEquals( element, hit ) && input.Mouse.X >= 0 ? hoverList.RowAt( canvas, input.Mouse ) : -1 );
+		}
 		lastMouse = input.Mouse;
 		var consumed = hit != null;
 		if ( input.LeftPressed )

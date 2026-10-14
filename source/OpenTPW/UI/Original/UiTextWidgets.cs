@@ -69,6 +69,8 @@ public interface IUiRowList
 	void Scroll( int rows );
 	/// <summary>Whether moving the pointer over a row selects it (list attribute 0x80, tp.exe 0x6656a0).</summary>
 	bool HoverSelects => false;
+	/// <summary>The row under the pointer (-1: none) for lists that highlight on hover. Hovering never changes the selection, so a button beside the list cannot retarget while the pointer travels to it.</summary>
+	void Hover( int index ) { }
 	/// <summary>
 	/// A completed click on row <paramref name="index"/> (<paramref name="left"/>: the left button, otherwise the right one); true when the list
 	/// handled it. False leaves the screen's default: a click selects, a second click on the selected row activates, a right click backs out.

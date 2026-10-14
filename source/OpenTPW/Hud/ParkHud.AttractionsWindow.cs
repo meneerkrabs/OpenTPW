@@ -191,7 +191,7 @@ public sealed partial class ParkHud
 			EnsureAttractionSelection();
 		}
 		if ( GameOptions.Current.Confirmations )
-			Stack.Push( UiDialogs.Message( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )],
+			Stack.Push( UiDialogs.Message( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )] + "\n" + row.Name,
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
 				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 		else Remove();
@@ -339,6 +339,8 @@ public sealed partial class ParkHud
 		public void Select( int index ) => owner.SelectAttraction( index );
 		public void Scroll( int rows ) => owner.ScrollAttractions( rows );
 		public bool HoverSelects => true;
+		public int HoveredRow { get; private set; } = -1;
+		public void Hover( int index ) => HoveredRow = index;
 		// [BIN:TPW-EXE:0x665c35 list dispatcher] attribute 0x291 lists: a left click selects the row and opens its info panel and keeps the list; a right click selects the row, centres the camera on it and closes
 		public bool RowClicked( int index, bool left )
 		{
@@ -371,6 +373,8 @@ public sealed partial class ParkHud
 				var y = AttractionContent.Y + visible * StaffRowHeight;
 				var rect = canvas.Map( Rect( AttractionContent.X, y, AttractionContent.Right, y + StaffRowHeight ), Anchor );
 				var selected = row.AttractionId == owner.selectedAttractionId;
+				if ( index == HoveredRow && !selected )
+					context.Batch.AddRectangle( rect, new Veldrid.RgbaByte( 60, 90, 200, 60 ) );
 				if ( selected )
 					context.Batch.AddRectangle( rect, new Veldrid.RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
 				var color = selected ? UiColors.Highlight : UiColors.Text;

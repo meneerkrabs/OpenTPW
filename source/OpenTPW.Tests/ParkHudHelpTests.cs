@@ -57,7 +57,7 @@ public class ParkHudHelpTests
 		hud.Stack.Push( staff );
 		using var tap = Input.InjectKeyDown( control, Key.H );
 		Input.UpdateButtons();
-		Assert.IsTrue( Input.Pressed( InputButton.HireStaff ), "the shared physical H reaches both button bindings" );
+		Assert.IsFalse( Input.Pressed( InputButton.HireStaff ), "a plain shortcut does not fire while Ctrl is held" );
 		Handler( hud )( false );
 		Assert.IsTrue( hud.StaffWindowOpen, "Ctrl+H cannot close the unrelated staff window" );
 		Assert.IsTrue( Input.Pressed( InputButton.ToggleHelpBar ) );

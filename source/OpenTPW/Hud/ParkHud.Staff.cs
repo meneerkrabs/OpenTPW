@@ -162,6 +162,15 @@ public sealed partial class ParkHud
 		return true;
 	}
 
+	/// <summary>Feedback for a click that cannot hire (bankrupt, role full, read-only, no applicant): a message and the error sound instead of a silent select.</summary>
+	internal void RefuseHire()
+	{
+		if ( showingEmployedStaff )
+			return;
+		PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
+		GameAudio.PlayUi( GameAudio.ErrorEvent );
+	}
+
 	/// <summary>Whether the selected employee may be picked up now (tp.exe <c>CanBePickedUp</c> 0x505bd0, read each tick by the window).</summary>
 	public bool CanPickUpSelectedStaff => showingEmployedStaff && !level.IsReadOnlyVisit && SelectedStaff is { } member
 		&& level.StaffPlacement != null && level.Guests?.Grid.Cells is { } cells && StaffPlacementRules.CanBePickedUp( member, cells );
@@ -230,7 +239,8 @@ public sealed partial class ParkHud
 			DismissSelectedStaff();
 			return;
 		}
-		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee],
+		var targetName = SelectedName;
+		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee] + "\n" + targetName,
 			(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); DismissSelectedStaff(); }),
 			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 	}
@@ -496,14 +506,17 @@ public sealed partial class ParkHud
 		public void Select( int index ) => owner.SelectStaff( index );
 		public void Scroll( int rows ) => owner.ScrollStaff( rows );
 		public bool HoverSelects => true;
-		// [BIN:TPW-EXE:0x6655a2 list click, 0x49b843 hire window] the applicant list (9358, attribute 0x291) selects the hovered row, and a click of button 0 (or a double click) posts 0x400, which the window routes to 0x49b988: the row's item, hire 0x507bf0, advisor message 0x135, close. Here the hire starts the Place tool, so the click starts placement.
+		public int HoveredRow { get; private set; } = -1;
+		public void Hover( int index ) => HoveredRow = index;
+		// [BIN:TPW-EXE:0x6655a2 list click, 0x49b843 hire window] the applicant list (9358, attribute 0x291) selects the hovered row (OpenTPW only highlights it, because the dismiss, pick-up and patrol buttons act on the selection), and a click of button 0 (or a double click) posts 0x400, which the window routes to 0x49b988: the row's item, hire 0x507bf0, advisor message 0x135, close. Here the hire starts the Place tool, so the click starts placement.
 		// [APPROX:UI-083] button 0 is taken as the left button (medium confidence: the DirectInput order behind the 0xf0..0xf2 codes of 0x486ca1 is not traced); the right button (0x402) does nothing in this window and backs out as everywhere
 		public bool RowClicked( int index, bool left )
 		{
 			if ( !left )
 				return false;
 			Select( index );
-			owner.HireSelectedStaff();
+			if ( !owner.HireSelectedStaff() )
+				owner.RefuseHire();
 			return true;
 		}
 		// [EXT:staff-enter-hire] Enter hires the selected applicant too (no original key emits 0x400); it is the keyboard analogue of the click.
@@ -527,6 +540,8 @@ public sealed partial class ParkHud
 				var id = owner.showingEmployedStaff ? owner.StaffItems[index].Id : owner.StaffCandidates[index].Id;
 				var y = StaffContent.Y + visible * StaffRowHeight;
 				var row = canvas.Map( Rect( StaffContent.X, y, StaffContent.Right, y + StaffRowHeight ), Anchor );
+				if ( index == HoveredRow && id != owner.selectedStaffId )
+					context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, 60 ) );
 				if ( id == owner.selectedStaffId )
 					context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
 				var color = id == owner.selectedStaffId ? UiColors.Highlight : UiColors.Text;

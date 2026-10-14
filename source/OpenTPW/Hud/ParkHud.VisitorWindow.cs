@@ -235,6 +235,8 @@ public sealed partial class ParkHud
 		public void Select( int index ) => owner.SelectVisitor( index );
 		public void Scroll( int rows ) => owner.ScrollVisitors( rows );
 		public bool HoverSelects => true;
+		public int HoveredRow { get; private set; } = -1;
+		public void Hover( int index ) => HoveredRow = index;
 		// [BIN:TPW-EXE:0x665c35 list dispatcher] attribute 0x291 lists: a left click selects the row and opens its info panel (the window's detail rows) and keeps the list; a right click selects the row, centres the camera on the visitor and closes
 		public bool RowClicked( int index, bool left )
 		{
@@ -273,6 +275,8 @@ public sealed partial class ParkHud
 				var y = VisitorContent.Y + visible * StaffRowHeight;
 				var row = canvas.Map( Rect( VisitorContent.X, y, VisitorContent.Right, y + StaffRowHeight ), Anchor );
 				var selected = guest.Id == owner.selectedVisitorId;
+				if ( index == HoveredRow && !selected )
+					context.Batch.AddRectangle( row, new Veldrid.RgbaByte( 60, 90, 200, 60 ) );
 				if ( selected )
 					context.Batch.AddRectangle( row, new Veldrid.RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
 				var color = selected ? UiColors.Highlight : UiColors.Text;

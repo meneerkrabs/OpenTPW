@@ -1130,7 +1130,7 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   original `b_pick` model with help 88 (UI-098 narrowed). Shortcut letters now come from the language's `KEYBOARD.str` except a
   plain letter that is a camera-pan key (Dutch hire A keeps H; UI-012 narrowed). The advisor message 309 (response 569) is not
   posted: its score is a field of the `Advisor.sam` balance object whose key is untraced (UI-097 narrowed). UI-015, 900, 909 and
-  931-935 are documented `[EXT:...]` decisions. 407 to 391 unresolved IDs.
+  931-935 are documented `[EXT:...]` decisions. Review fixes: list hover only highlights (the click selects, so buttons beside a list never retarget), a plain shortcut never fires under Ctrl, Escape and a right click leave a Ctrl-kept build tool, the click time limit ignores a single long frame, and the browser keeps the default for Ctrl+W/T/N chords. 407 to 391 unresolved IDs.
 
 - **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
   (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0

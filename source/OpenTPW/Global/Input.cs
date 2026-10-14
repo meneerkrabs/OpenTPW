@@ -102,6 +102,7 @@ public static partial class Input
 	}
 
 	private static Dictionary<InputButton, Key[]> Bindings = new();
+	private static readonly HashSet<InputButton> ctrlSuppressed = new();
 
 	static Input()
 	{
@@ -194,6 +195,17 @@ public static partial class Input
 		foreach ( var (button, vkeys) in Bindings )
 		{
 			bool isPressed = !TextEntryActive;
+			// A plain (modifier-free) shortcut does not fire while Ctrl is held: with KEYBOARD.str letters a plain key can equal a Ctrl chord's letter (Dutch research O and Ctrl+O).
+			// Releasing Ctrl while the letter stays held does not turn the held chord into a plain press either.
+			if ( vkeys.Length == 1 && vkeys[0] is not (Key.ControlLeft or Key.ControlRight) )
+			{
+				if ( !IsDown( vkeys[0] ) )
+					ctrlSuppressed.Remove( button );
+				else if ( IsDown( Key.ControlLeft ) || IsDown( Key.ControlRight ) )
+					ctrlSuppressed.Add( button );
+				if ( ctrlSuppressed.Contains( button ) )
+					isPressed = false;
+			}
 
 			foreach ( var vkey in vkeys )
 			{

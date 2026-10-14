@@ -482,7 +482,7 @@ public partial class Level
 	public bool KeepBuildToolOnPlace { get; private set; }
 
 	/// <summary>Whether a placing click with this modifier mask keeps the build tool armed: exactly Ctrl (mask 0xc), no Shift or Alt.</summary>
-	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] after a placement without an entrance `cmp di,0xc; je 0x525a06` keeps the tool armed (param 3 is the modifier mask of 0x486aa0, 0xc = Ctrl); otherwise 0x52f580(0,0) returns the tool to mode 0
+	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] after a placement without an entrance `cmp di,0xc; je 0x525a06` keeps the tool armed (the same test is `cmp word ptr [esp+0x3c],0xc` at 0x5259e2 and 0x5259f4, where the tool is left otherwise and the angle reset by 0x52f1b0(0)) (param 3 is the modifier mask of 0x486aa0, 0xc = Ctrl); otherwise 0x52f580(0,0) returns the tool to mode 0
 	internal static bool KeepsBuildTool( int modifierMask ) => modifierMask == 0xc;
 
 	/// <summary>Grid cell under the cursor (sandbox tiles or original cells).</summary>

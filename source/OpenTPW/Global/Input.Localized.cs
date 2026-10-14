@@ -43,8 +43,9 @@ public static partial class Input
 	/// Rebinds the shortcuts to the letters of one language's KEYBOARD.str. An entry that is missing or no single known key keeps the shortcut's
 	/// default (the Polish file stores two-byte characters, which this does not decode). The chord's modifier keys stay.
 	/// </summary>
-	internal static void ApplyKeyboardStrings( IReadOnlyList<string> entries )
+	internal static void ApplyKeyboardStrings( IReadOnlyList<string> entries, bool? browser = null )
 	{
+		var inBrowser = browser ?? OperatingSystem.IsBrowser();
 		ResetKeyboardStrings();
 		for ( var index = 0; index < KeyboardStringButtons.Length && index < entries.Count; index++ )
 		{
@@ -53,6 +54,9 @@ public static partial class Input
 				continue;
 			// The host camera pans with W, A, S and D, so a plain shortcut cannot take one of them (the Dutch hire letter A): it keeps its default.
 			if ( chord.Length == 1 && key is Key.W or Key.A or Key.S or Key.D )
+				continue;
+			// [EXT:browser-reserved-chords] the browser owns Ctrl+W, Ctrl+T and Ctrl+N (close tab, new tab, new window; the Dutch staff locator is Ctrl+W), so in the browser build a chord keeps its default letter.
+			if ( inBrowser && chord.Length > 1 && key is Key.W or Key.T or Key.N )
 				continue;
 			defaultChordKeys.TryAdd( button, chord[^1] );
 			var keys = (Key[])chord.Clone();

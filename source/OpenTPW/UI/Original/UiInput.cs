@@ -31,8 +31,7 @@ public enum UiKeys
 /// </param>
 public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false )
 {
-	/// <summary>A left release that counts as a click.</summary>
-	public bool LeftClicked => LeftReleased && !NotClick;
+
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );
 	public static UiInput Click( NVector2 mouse ) => new( mouse, false, false, true, false, UiKeys.None );
 	public static UiInput Key( UiKeys keys ) => new( new NVector2( -1, -1 ), false, false, false, false, keys );
@@ -55,6 +54,7 @@ public sealed class UiInputSource
 	private long pressedAt;
 	private NVector2 pressedPosition;
 	private bool pressMoved;
+	private int pressFrames;
 	/// <summary>The clock the click rule reads, in milliseconds (replaced by tests).</summary>
 	internal Func<long> Clock { get; set; } = () => Environment.TickCount64;
 	private HashSet<Key> previousKeys = new();
@@ -91,11 +91,14 @@ public sealed class UiInputSource
 			pressedAt = Clock();
 			pressedPosition = window;
 			pressMoved = false;
+			pressFrames = 0;
 		}
+		if ( mouse.Left )
+			pressFrames++;
 		if ( (mouse.Left || wasLeft) && (Math.Abs( window.X - pressedPosition.X ) > ClickSlop || Math.Abs( window.Y - pressedPosition.Y ) > ClickSlop) )
 			pressMoved = true;
 		if ( !mouse.Left && wasLeft )
-			notClick = IsNotClick( pressedAt, Clock(), pressMoved );
+			notClick = IsNotClick( pressedAt, Clock(), pressMoved, pressFrames );
 		var input = new UiInput( new NVector2( mouse.Position.X * framebufferPerWindowX, mouse.Position.Y * framebufferPerWindowY ),
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
 			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick );
@@ -105,5 +108,9 @@ public sealed class UiInputSource
 	}
 
 	/// <summary>Whether a release <paramref name="releasedAt"/> after a press at <paramref name="pressedAt"/> (milliseconds), with the press marked moved or not, is no click.</summary>
-	public static bool IsNotClick( long pressedAt, long releasedAt, bool moved ) => moved || releasedAt - pressedAt > ClickMilliseconds;
+	/// <remarks>The input layer has no event timestamps, so the time is measured per frame; a press held for at most <see cref="MaxQuickClickFrames"/> frames (press and release in consecutive frames) always counts, so one long frame (a browser hitch) cannot drop a normal click.</remarks>
+	public static bool IsNotClick( long pressedAt, long releasedAt, bool moved, int heldFrames = 0 ) => moved || (releasedAt - pressedAt > ClickMilliseconds && heldFrames > MaxQuickClickFrames);
+
+	/// <summary>Frames a press may last and still be a click whatever the clock says.</summary>
+	public const int MaxQuickClickFrames = 2;
 }

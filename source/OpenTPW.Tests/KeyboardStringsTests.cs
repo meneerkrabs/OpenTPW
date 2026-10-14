@@ -112,4 +112,62 @@ public class KeyboardStringsTests
 		var all = string.Concat( entries );
 		Assert.AreEqual( name == "Dutch" ? "KAIVWBFLTMOCWBAHSO,.P" : "BHIASVFLTGRCSVPHCO,.P", all, $"{name} KEYBOARD.str letters in file order" );
 	}
+
+	private static IEnumerable<InputButton> DownButtons() => Enum.GetValues<InputButton>().Where( Input.Down );
+
+	private static void AssertNoPlainButtonFiresUnderCtrl( string label )
+	{
+		var previous = Input.Keyboard;
+		try
+		{
+			foreach ( var chord in Enum.GetValues<InputButton>().Where( button => Input.ChordKey( button ) != default && IsCtrlChord( button ) ) )
+			{
+				Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.ControlLeft, Input.ChordKey( chord ) } );
+				Input.UpdateButtons();
+				var fired = DownButtons().Where( button => button != chord && button != InputButton.Clone ).ToArray();
+				CollectionAssert.AreEqual( Array.Empty<InputButton>(), fired, $"{label}: Ctrl+{Input.ChordKey( chord )} ({chord}) also fires {string.Join( ",", fired )}" );
+			}
+		}
+		finally
+		{
+			Input.Keyboard = previous;
+			Input.UpdateButtons();
+		}
+	}
+
+	private static bool IsCtrlChord( InputButton button ) => button is InputButton.OpenPark or InputButton.ClosePark or InputButton.ToggleHelpBar
+		or InputButton.StaffLocator or InputButton.VisitorLocator or InputButton.SendEmailPostcard;
+
+	[TestMethod]
+	public void TheDutchLettersDoNotMakeACtrlChordFireAPlainShortcut()
+	{
+		var dutch = "KAIVWBFLTMOCWBAHSO,.P".Select( c => c.ToString() ).ToArray();
+		Input.ApplyKeyboardStrings( dutch );
+		AssertNoPlainButtonFiresUnderCtrl( "Dutch" );
+	}
+
+	[DataTestMethod]
+	[DataRow( "English" )]
+	[DataRow( "Dutch" )]
+	public void NoShippedLanguageLetsAPlainShortcutFireUnderACtrlChord( string name )
+	{
+		var language = LanguageTests.OriginalLanguagePublic( name );
+		Input.ApplyKeyboardStrings( language.LoadStrings( "KEYBOARD.str" ).Entries );
+		AssertNoPlainButtonFiresUnderCtrl( name );
+	}
+
+	[TestMethod]
+	public void TheBrowserKeepsTheDefaultForCtrlChordsItReserves()
+	{
+		var entries = Enumerable.Range( 0, 21 ).Select( _ => "?" ).ToArray();
+		entries[12] = "W";
+		entries[13] = "T";
+		entries[14] = "N";
+		Input.ApplyKeyboardStrings( entries, browser: true );
+		Assert.AreEqual( Key.S, Input.ChordKey( InputButton.StaffLocator ), "Ctrl+W would close the tab" );
+		Assert.AreEqual( Key.V, Input.ChordKey( InputButton.VisitorLocator ), "Ctrl+T would open a tab" );
+		Assert.AreEqual( Key.P, Input.ChordKey( InputButton.SendEmailPostcard ), "Ctrl+N would open a window" );
+		Input.ApplyKeyboardStrings( entries, browser: false );
+		Assert.AreEqual( Key.W, Input.ChordKey( InputButton.StaffLocator ), "the native build takes the letter" );
+	}
 }

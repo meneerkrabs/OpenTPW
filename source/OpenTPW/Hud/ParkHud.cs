@@ -76,6 +76,7 @@ public sealed partial class ParkHud
 		// Harnesses that build a Level without its constructor have no tool object.
 		if ( (CellBuildTool?)level.CellTool is { } cellTool )
 			cellTool.Ended += OnCellToolEnded;
+		level.BuildToolsEnded += () => { pendingItem = null; queueRearmItem = null; };
 		hud = new UiScreen( "hud" ) { Modal = false };
 		Stack.Push( hud );
 		Build();
@@ -342,6 +343,8 @@ public sealed partial class ParkHud
 				patrolTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
+			else if ( pendingItem != null || level.BuildEntry != null )
+				LeaveBuildTool();
 			else
 				OpenPauseMenu();
 		};
@@ -412,7 +415,7 @@ public sealed partial class ParkHud
 	}
 
 	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance continues into the entrance, exit and queue sub-modes (0x52fab0 / 0x52faf0, 0x52f580(3,0)), whose last click does the same Ctrl test. Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
-	// [APPROX:UI-031] the coaster and water-track tools (whose original sub-modes are not traced) end the build tool whatever the modifier, and moving an existing object (0x5259e2) is not ported — evidence needed: those sub-modes' continuation and what 0x52fab0 tests
+	// [APPROX:UI-031] the coaster and water-track tools (whose original sub-modes are not traced) end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 (another exit path that keeps the tool on exactly Ctrl and otherwise leaves it and resets the angle) are not mapped to an OpenTPW action — evidence needed: those sub-modes' continuation and what 0x52fab0 tests
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		if ( pendingItem?.Entry != item.Entry )
@@ -424,7 +427,6 @@ public sealed partial class ParkHud
 		if ( level.KeepBuildToolOnPlace && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
 		{
 			// Ctrl at the placing click: the tool stays armed with its item and angle for the next placement.
-			PostMessage( strings.Help( 440 ) );
 			return;
 		}
 		pendingItem = null;
@@ -458,19 +460,30 @@ public sealed partial class ParkHud
 	private BuildItem? queueRearmItem;
 	private bool cellToolClicking;
 
-	/// <summary>The path/queue tool turned off: a queue ended by a click with exactly Ctrl re-arms the build tool, anything else returns the tool to mode 0.</summary>
-	// [BIN:TPW-EXE:0x5253b8 queue end] the queue end does the same Ctrl test as a placement: exactly Ctrl continues, else the build tool ends and the angle returns to 0 (0x52f3b6)
+	/// <summary>The path/queue tool turned off. Inside a click the decision waits for the click's result (<see cref="ResolveQueueRearm"/>); any other end (Escape, right click) returns the build tool to mode 0.</summary>
 	private void OnCellToolEnded()
 	{
-		var item = queueRearmItem;
-		if ( item == null )
+		if ( queueRearmItem == null || cellToolClicking )
 			return;
 		queueRearmItem = null;
-		if ( cellToolClicking && Level.KeepsBuildTool( Input.ModifierMaskDown ) && item.Entry is { } entry )
+		level.ResetBuildRotation();
+	}
+
+	/// <summary>Whether a queue ended by a click re-arms the build tool: the click held exactly Ctrl and the line was not refused.</summary>
+	// [BIN:TPW-EXE:0x5253b8 queue end] the queue end does the same Ctrl test as a placement: exactly Ctrl continues, else the build tool ends and the angle returns to 0 (0x52f3b6); a refused cell ends the tool without a placement, so it does not continue
+	internal static bool RearmsAfterQueue( int modifierMask, SegmentResult? result ) => Level.KeepsBuildTool( modifierMask ) && result is not { Completed: false };
+
+	/// <summary>Called after a queue-tool click: when that click ended the tool, re-arm the build tool or reset the angle.</summary>
+	private void ResolveQueueRearm( SegmentResult? result )
+	{
+		var item = queueRearmItem;
+		if ( item == null || level.CellTool.IsActive )
+			return;
+		queueRearmItem = null;
+		if ( RearmsAfterQueue( Input.ModifierMaskDown, result ) && item.Entry is { } entry )
 		{
 			pendingItem = item;
 			level.BuildEntry = entry;
-			PostMessage( strings.Help( 440 ) );
 			return;
 		}
 		level.ResetBuildRotation();
@@ -755,6 +768,12 @@ public sealed partial class ParkHud
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
 			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
+		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
+		if ( inPark && !rideOwnsInput && !paused && input.RightPressed && GameOptions.Current.RmbCancel && level.BuildEntry != null && !toolClick )
+		{
+			LeaveBuildTool();
+			toolClick = true;
+		}
 		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
@@ -890,6 +909,7 @@ public sealed partial class ParkHud
 		{
 			cellToolClicking = false;
 		}
+		ResolveQueueRearm( result );
 		level.PlayQueueJoin( queueJoin );
 		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); [APPROX:AUDIO-022] a refused commit plays cat_ui 175
 		if ( result is { Completed: true } )

@@ -100,6 +100,8 @@ public sealed class BumpVehicle
 	public int ChaseTarget { get; set; } = -1;
 	/// <summary>Whether the car holds the engine voice (+0x20 non-zero): only the controller's first carrying car starts one, at the first launch of a running ride.</summary>
 	public bool Engine { get; set; }
+	/// <summary>Whether the car holds a break-smoke emitter (+0x2C): created by BUMP 8 for a car that carries guests, removed by the fix and the unload. Saved, not hashed.</summary>
+	public bool Smoke { get; set; }
 	/// <summary>The guests aboard, in boarding order.</summary>
 	public List<int> Riders { get; } = new();
 	/// <summary>Spray particles the boat made (cosmetic counter).</summary>

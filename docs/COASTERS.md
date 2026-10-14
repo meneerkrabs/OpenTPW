@@ -59,9 +59,9 @@ leaves the station at its `>` cell. That is the station node.
   on a complete track. A drop on the same cell is free. The height change works
   the same way. Deleting pylons or the whole track refunds nothing, and there is
   no undo stack (Backspace deletes the last pylon without a refund). Track money
-  is posted as other costs and income (COAST-031); the original debit `0x4d01f0` also tests the bank's withdrawals
-  gate (ECON-051) and keeps the last balance and the turn it entered the red (SAVE-008), which OpenTPW leaves to the
-  economy and save owners, and the station's total spent is OpenTPW's own.
+  is posted as other costs and income (COAST-031); the economy's posting follows the original debit `0x4d01f0`
+  (the bank's withdrawals gate, the last balance and the turn it entered the red), and the station's total spent is
+  OpenTPW's own.
 - **Closing and completing.** A click on a station end cell closes the circuit
   without adding a node. A second click, or Enter, completes it: one station end
   node with node flags `0x144` is appended (the loader always sets definition bit

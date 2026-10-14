@@ -90,6 +90,9 @@ public sealed partial class OriginalObjectRuntime
 			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the +0x140 == 0 test and the not-being-edited exclusion are not modelled (OpenTPW has no such state: an edit un-completes the track) and the state 11 thought-13 exit (GUESTS.md) belongs to the guest and queue owner
 			// A water ride takes guests only while its circuit is valid (the original's counts-test reads the track word the walk writes, TRACK-005).
 			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) && (Bump?.IsTrackValid ?? true) );
+			// [APPROX:TOUR-007] a tour ride's riders take one second to walk off after WALKOFF; the original's walk-off nodes and their duration are not traced, and a walker that completes at once makes the unload loops of the Star and Tweety Tours scripts end after one rider
+			if ( UsesTour )
+				Visitors.WalkOffMilliseconds = 1000;
 		}
 	}
 
@@ -209,6 +212,7 @@ public sealed partial class OriginalObjectRuntime
 			Bump.SetPerformance( ScriptPerformance );
 			Bump.Advance( deltaSeconds );
 		}
+		Tour?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
 		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
@@ -231,6 +235,7 @@ public sealed partial class OriginalObjectRuntime
 		}
 		StopBumpEffects();
 		ReleaseBump();
+		ReleaseTour();
 		Script?.Stop();
 		Animator.StopAll();
 	}
@@ -338,6 +343,7 @@ public sealed partial class OriginalObjectRuntime
 				Coaster.World.Remove( Coaster );
 			}
 			ReleaseBump();
+			ReleaseTour();
 			Script?.Stop();
 			Animator.StopAll();
 			if ( snapshot.StoppedScriptFault is { } fault )
@@ -627,6 +633,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		// The water ride's BUMP commands go to its controller (docs/TRACKS.md); the visitor opcodes keep the guest protocol (BUMP 1 and 2 only move guest ids).
 		if ( call.Opcode == Opcode.BUMP && ride.Bump is { } bump )
 			return bump.Command( call.Argument( 0 ), call.OperandCount > 1 ? call.Argument( 1 ) : 0 );
+		// The tour rides' TOUR commands go to their flying-car controller (docs/TOURS.md).
+		if ( call.Opcode == Opcode.TOUR )
+			return ride.PerformTour( call );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
 		// Routed EVENT and repair-hide sounds can use the placed origin; scream/show placement and reverb remain unimplemented.

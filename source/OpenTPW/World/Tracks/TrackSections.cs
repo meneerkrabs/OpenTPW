@@ -16,7 +16,8 @@ public sealed class CollisionObject
 	public const int Sides = 0x1E;
 	public const int Box = 0x20;
 	public const int KeepOut = 0x40;
-	/// <summary>Water crossing (reserved by the original, never set by the section builder this slice runs).</summary>
+	/// <summary>Water crossing: the section builder sets it on the centre circle of a crossing for the water controllers; vehicles inside such an object skip the vehicle-vehicle pass (both as the mover and as the other vehicle).</summary>
+	// [BIN:TPW-EXE:0x0054B986 water crossing flag] for the water types −5, −8, −12 and −13 the crossing's centre object gets flag 0x80 (0x54B986..0x54B99F); the vehicle pass 0x546C80 skips vehicles in such an object
 	public const int Crossing = 0x80;
 	public const int AddOn = 0x100;
 
@@ -97,7 +98,7 @@ public static class TrackSections
 	/// <paramref name="stationBuoys"/> (already numbered first). The first two sections carry no buoy.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0054B2F0 section builder] the section pool (1024 × 40) refuses a duplicate tile ("Duplicate track section - IGNORED!"); a section holds its kind, tile corner, add-on values and collision objects; the first two straights of the walk carry the no-buoy bit 0x10000
-	public static Result Build( IReadOnlyList<TrackStep> steps, int slack, IReadOnlyList<Buoy> stationBuoys )
+	public static Result Build( IReadOnlyList<TrackStep> steps, int slack, IReadOnlyList<Buoy> stationBuoys, bool water = false )
 	{
 		var sections = new List<TrackSection>();
 		var objects = new List<CollisionObject>();
@@ -126,7 +127,7 @@ public static class TrackSections
 			}
 			var section = new TrackSection { Kind = kind, NoBuoy = noBuoy, X = x0, Y = y0, Segment = step.Segment };
 			sections.Add( section );
-			var made = Geometry( section, slack );
+			var made = Geometry( section, slack, water );
 			foreach ( var item in made.Objects )
 			{
 				if ( objects.Count >= MaximumCollisionObjects )
@@ -162,7 +163,7 @@ public static class TrackSections
 		buoys.Add( buoy );
 	}
 
-	private static (List<CollisionObject> Objects, Buoy? Buoy) Geometry( TrackSection section, int slack )
+	private static (List<CollisionObject> Objects, Buoy? Buoy) Geometry( TrackSection section, int slack, bool water )
 	{
 		var objects = new List<CollisionObject>();
 		var (x0, y0) = (section.X, section.Y);
@@ -194,10 +195,10 @@ public static class TrackSections
 				break;
 			default:
 				// a crossing: one keep-in circle through the lane corners and four keep-out circles at the tile corners
-				// [APPROX:TRACK-017] the quadrant clipping of the crossing's four keep-out circles is assumed to follow the tile's interior like a corner's; the trace gives their centres and radius only — evidence needed: the section builder 0x0054B2F0's flag words for kind 11
+				// [BIN:TPW-EXE:0x0054B2F0 crossing] case 11: keep-in 0x1F with radius sqrt(s² + 0x900000), then four keep-outs (0x40) at the tile corners clipped to the tile's interior (flags &amp; ~0x14 at (X0+0x1800, Y0), ~0x12 at (X0, Y0), ~0x0A at (X0, Y0+0x1800), ~0x0C at (X0+0x1800, Y0+0x1800)); water controllers add 0x80 to the centre object
 				objects.Add( new CollisionObject
 				{
-					Flags = CollisionObject.Used | CollisionObject.Sides,
+					Flags = CollisionObject.Used | CollisionObject.Sides | (water ? CollisionObject.Crossing : 0),
 					X = x0 + Cell,
 					Y = y0 + Cell,
 					Extent = (int)Math.Sqrt( (double)slack * slack + (double)Cell * Cell ),

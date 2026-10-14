@@ -51,7 +51,7 @@ public sealed class ParkLedger
 	public IReadOnlyList<LedgerMonth> History => history;
 	public IReadOnlyDictionary<LedgerCategory, long> CurrentTotals => current;
 
-	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received — evidence needed: the per-category ledger routines of other income and other costs (executed: 0xcc904 credits a loan to the balance, the money-in word and the year profit, then takes the same amount off the year profit, so a loan is money in but not profit, and an instalment costs the year profit only its interest share, ORACLE F14; this monthly Profit still charges whole instalments)
+	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; the monthly Profit charges whole instalments — evidence needed: the writers of the finance screen's per-category rows (tp.exe keeps one money-in word, +0x1FC90, and one total-cost word, +0x1F5A0, in 0x4d0190 / 0x4d01f0; a loan taken, 0x4d0750, is money in and nets to 0 on the year profit, and an instalment, 0x4d0370, costs it only its interest share)
 	public static bool IsIncome( LedgerCategory category ) => category is LedgerCategory.GateTakings or LedgerCategory.ShopTakings or LedgerCategory.SideshowTakings or LedgerCategory.OtherIncome or LedgerCategory.LoanReceived;
 
 	/// <summary>The year's running profit (<c>mProfitThisYear</c>): reset at each new calendar year.</summary>

@@ -91,7 +91,7 @@ Role order everywhere: handyman/cleaner, mechanic, entertainer, guard, researche
 | `Upgrades[n].DurationOfUpgrade` | 0/2/4 | "time taken for mechanic to carry out the upgrade — in conjunction with mechanic's WorkDuration" | multiplies WorkDuration for the upgrade to level n, no minimum (executed, ORACLE F19) |
 | Advisor `StaffHireMechanics1.PoorerStateThan` | 25 | Worn-ride threshold | data (mechanic dispatch below 25) |
 
-Staff states use `STAFFSTATES.str` order (Idle, Patrolling, Working, Resting, On strike, Picked up).
+Staff states use `STAFFSTATES.str` order (Idle, Patrolling, Working, Resting, On strike, Picked up). In a level a hire starts the Place tool and an employee is picked up and moved with the Carry tool, see [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md).
 Patrol areas are not simulated.
 
 **Vitals and strikes (ECON-014, traced and executed in the oracle, ORACLE.md F22).** Every member has an energy and a happiness (singles, 0..100,
@@ -379,6 +379,9 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-049 | `World/ParkGate.cs:218` | the maintenance flag (the ride's mRequestedService, +0x64 on the PC) and the back-of-queue link test (tp.exe 0x4DE4A0: connection bits beyond the link) are not modelled: OpenTPW has no maintenance button and takes the queue as connected | the writers of mRequestedService and the queue tool's connection writes |
 | ECON-050 | `World/ParkGate.cs` | the gate census reads the reduced imported guest grid; unpreserved outside, approach and footprint cells can remain counted type 0 | original cell-type provenance in the guest-grid import |
 | ECON-051 | `Economy/ParkEconomy.cs:500` | the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) | the writer of the flag and when the original clears it |
+| ECON-052 | `World/Staff/StaffPlacement.cs` | the original refuses a pick-up in the staff state 13 besides 4, 5, 7 and 18, and plays script 0x14 (slot 3, one frame) for state 6; OpenTPW's StaffJob has neither state, so the pick-up rule refuses only the jobs it has (strike walks, strike, in hand, escorting) and no clip plays state 6 | what the staff states 6 and 13 are (the state setter 0x5054D0 and the handlers 0x4D4810, 0x4D6410) |
+| ECON-053 | `World/Staff/StaffPlacement.cs` | a member carried at save time is saved dropped on its old cell and the tool ends (the original saves it in state 7 and nothing re-creates the carry tool after a load, so it probably stays stuck) | a load of an original save made while carrying |
+| ECON-054 | `Economy/IMechanicJobWorld.cs` | a mechanic put down off the path network (a drop on grass or a queue) is not dispatched: the original's walk from such a cell to the network is untraced, and a reserved ride would wait for an arrival that cannot happen | what the mechanic state machine (0x4DA490) does from a cell off the paths |
 
 ## Open questions
 

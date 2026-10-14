@@ -33,7 +33,8 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 	{
 		var spawn = gate is { } entry && grid.IsWalkable( entry.X, entry.Y ) ? gate : FirstPath();
 		foreach ( var member in members() )
-			if ( member.CellX == null && member.CellY == null && spawn is { } cell )
+			// a member in the player's hand without a position waits for the drop; the gate spawn is for the others (staff placement, docs/STAFF-PLACEMENT.md)
+			if ( member.CellX == null && member.CellY == null && member.State != StaffState.PickedUp && spawn is { } cell )
 			{
 				member.CellX = cell.X + 0.5f;
 				member.CellY = cell.Y + 0.5f;
@@ -60,6 +61,10 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 		target = access;
 		return grid.Distance( x, y, target.X, target.Y ) >= 0;
 	}
+
+	/// <summary>A positioned member must stand on a path cell to be given a job; an unpositioned one is placed first.</summary>
+	public bool CanStartJobs( StaffMember member ) =>
+		member.CellX is not { } x || member.CellY is not { } y || grid.IsWalkable( (int)MathF.Floor( x ), (int)MathF.Floor( y ) );
 
 	/// <summary>Only this world's current employee at its reachable assigned access cell has arrived.</summary>
 	public bool HasArrived( StaffMember member ) => members().Any( current => ReferenceEquals( current, member ) )

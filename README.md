@@ -86,7 +86,9 @@ What works today, with your own original game data:
   show riders' heads at the nodes the model's head records name, with the traced frame and roll; the
   head size, depth and slot stream remain qualified (HEADS-001, 004, 005), and coaster and tour cars do not show riders
   yet. Money, loans, wages, research, objectives, golden tickets and keys run on the original
-  settings files ([guests](https://opentpw.io/docs/GUESTS.html), [economy](https://opentpw.io/docs/ECONOMY.html)).
+  settings files ([guests](https://opentpw.io/docs/GUESTS.html), [economy](https://opentpw.io/docs/ECONOMY.html)). A hired staff member is
+  placed with a click on the park, can be picked up and moved from the staff window, and is drawn with the original sprites
+  ([staff placement](https://opentpw.io/docs/STAFF-PLACEMENT.html)).
 - **Park door and rides:** the park door (the entry-price screen's door button, Ctrl-O and Ctrl-C) opens
   and closes the park: admissions stop at the booth, the rides close, and the entrance gate shuts once
   the park is empty ([park door](https://opentpw.io/docs/GATES.html)). A placed queue cell can be clicked to extend its ride's
@@ -131,7 +133,7 @@ What works today, with your own original game data:
 Not done yet: the jumps and tunnels of the water and go-kart rides (the water rides and the go-karts of all four themes build, run and save their original tracks,
 [phases 1 and 2](https://opentpw.io/docs/TRACKS.html)), rider heads on coaster and tour cars, the particle effects of the other
 callers (ride smoke, flying cars, litter; RSE EVENT types 1 and 2 are drawn, [particles](https://opentpw.io/docs/PARTICLES.html)),
-additional staff actions and their sounds, the path tool's link-end and undo sounds, and the exact original rules in places where
+additional staff actions (the guards' chase and escort, entertainer shows) and their sounds, the path tool's link-end and undo sounds, and the exact original rules in places where
 OpenTPW still uses a documented approximation. The
 [completion plan](https://opentpw.io/docs/COMPLETION-PLAN.html), [feature matrix](https://opentpw.io/docs/FEATURE-MATRIX.html) and
 [progress](https://opentpw.io/docs/PROGRESS.html) track what remains.

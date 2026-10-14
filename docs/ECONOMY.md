@@ -382,3 +382,11 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 - The park value's cell points (ECON-026); how golden keys are earned.
 - The money block before the loan table (87,987 / 87,787 / −12,013), the extra words around the
   challenge table (`09 00 0b 00`, floats 100.0) and the last loan-record word.
+
+### Selected ride upgrade confirmation
+
+The selected ordinary TPW ride detail offers **Buy upgrades** when its factory-owned catalogue defaults support the exact next SAM tier. The confirmation previews the existing economy catalogue's next-tier price; accepting calls the unchanged `TryBuyUpgrade` API for that live instance. Research, Instant Action, pending work, bankruptcy and available-money refusals remain model decisions. A successful purchase charges the existing Other Costs ledger and waits for a mechanic, including when none is hired. Cancel never buys, and there is no cancellation/refund API for already queued work.
+
+Open and confirm recheck unique object/economy ownership, the current tier, factory parameter identity and current cost. Sparse/custom/stopped/faulted runtimes, coasters, prototypes, TPI, read-only visits and missing economies refuse before charging. Captured mouse gestures cannot open or confirm on a later held release. UI-935 qualifies this host confirmation and placement; native upgrade-window geometry is not established. Completion applies only the existing minimum catalogue-default contract: live CAP/DUR remain authored, with no native reset or full performance claim. Synthetic HUD, ledger, queued-no-mechanic and completion controls do not qualify original assets or rendering.
+
+Independent synthetic actual-HUD controls verify the exact localized next-tier cost preview, refuse a cost or economy change during confirmation without charging, and require a fresh confirmation at the new cost. Authored CAP9/DUR77, an active WAIT deadline and occupied rider/head slots survive HUD purchase and mechanic completion; the other instance remains at its prior fallback capacity. These are host integration controls, not native upgrade performance or seat-count qualification.

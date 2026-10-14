@@ -324,6 +324,12 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Guests now buy balloons and costumes, as in the original (tp.exe `0x4fe1e0`, `0x501650`, `0x501db0`; ECON-044, GUEST-007;
+  [GUESTS.md](GUESTS.md) "Balloons and costumes"). A balloon shop gives a balloon that lives 127 needs phases (about two minutes) at the
+  build's quality of goods; a ride puts it away and gives it back. A costume shop puts a costume on, and a second visit returns it. Balloon
+  pranksters now find victims: they burst another guest's balloon on their cell. The challenges "kids with balloons" and "kids with
+  costumes" count real guests instead of 0. Balloons and costumes are not drawn yet. Guest schema 6, world hash schema 17; the fixed-run,
+  Jungle and cross-grid hashes moved.
 - The player can call a mechanic and draw patrol areas, as in the original (tp.exe `0x4dfe30`, `0x4b5b50`, `0x524960`, `0x506f30`;
   ECON-049, ECON-022; [WANDER-plan.md](reverse/WANDER-plan.md) §4). The ride panel shows the original call button (`b_callmech`, or
   `b_callhandy` on a toilet): a call closes the ride and the nearest free mechanic comes even when nothing is broken (a toilet's call brings a
@@ -925,6 +931,13 @@ research batch was included in this merge.
   invalid saved TPI folder or world (including a timed-out re-inspection) or `--setup` opens it. Options > Game files has an Edition button for switching
   on desktop, effective at the next start. The TPI/TPW world lists come from `GameEditions` instead of a copy. Tests cover direct TPW and TPI starts, the
   wizard cases and the edition switch persisting to `setup.json`.
+- **Server tests no longer hang on macOS (October 14):** `ServerProgram.Build` turns off appsettings.json reload-on-change
+  (`--hostBuilder:reloadConfigOnChange=false`, which a later argument can override). The server binds its options once, so the
+  watcher did nothing, and on macOS starting it calls `sync(2)`, which never returns while a mounted volume (here a stalled SMB
+  share) hangs; that hung every loopback-server test locally while CI on Linux passed. The news test's own web host skips the
+  watcher too, and `BaseFileSystem.CreateWatcher` returns its watcher unstarted (the caller subscribes, then starts it), so the
+  test suite starts no watcher at all. The test `LoopbackServer` now builds, starts and stops within 30 seconds or fails with
+  a clear message, and requests stay bounded by `OnlineClient`'s HttpClient timeout.
 - **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
   applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
   places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a

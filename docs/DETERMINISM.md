@@ -235,7 +235,9 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x74187CE603B2ACDC`, schema 16: the guests' prankery flag joins the hash, so the schema is bumped; the synthetic park has no pranksters
+  (`0x776A2A9E9A53BF25`, schema 17: the guests' balloon life, balloon and costume join the hash, so the schema is bumped; the synthetic park has no
+  balloon or costume shop, so only the hashed fields change the value (docs/GUESTS.md, "Balloons and costumes"). Before that:
+  `0x74187CE603B2ACDC`, schema 16: the guests' prankery flag joins the hash, so the schema is bumped; the synthetic park has no pranksters
   (PrankeryLikelihood 0), so only the hashed field changes the value. Vomit and stinkbombs now spread their RegionFX on the environment grid,
   which the needs update reads (docs/reverse/WANDER-plan.md §7). Before that:
   `0x05B8B8443FF0454B`, schema 15: litter moves from a park-wide count to map cells (the economy snapshot keeps the littered cells and a

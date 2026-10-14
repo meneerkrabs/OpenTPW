@@ -241,7 +241,7 @@ public static class SupplementaryStrings
 			"Ce dossier ne contient pas de données de Theme Park World.",
 			"Dieser Ordner enthält keine Theme Park World-Daten.",
 			"Den här mappen innehåller inga Theme Park World-data." },
-		[OpenTpwText.Edition] = new[] { "Edition...", "Udgave...", "Editie...", "Édition...", "Edition...", "Utgåva..." },
+		[OpenTpwText.Edition] = new[] { "Edition...", "Udgave...", "Editie...", "Édition...", "Ausgabe...", "Utgåva..." },
 		[OpenTpwText.EditionThemeParkWorld] = new[] { "Theme Park World", "Theme Park World", "Theme Park World", "Theme Park World", "Theme Park World", "Theme Park World" },
 		[OpenTpwText.EditionThemeParkInc] = new[] { "Theme Park Inc (experimental)", "Theme Park Inc (eksperimentel)", "Theme Park Inc (experimenteel)", "Theme Park Inc (expérimental)", "Theme Park Inc (experimentell)", "Theme Park Inc (experimentell)" },
 		[OpenTpwText.EditionRestart] = new[] {

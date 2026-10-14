@@ -31,6 +31,13 @@ public static class GameAudio
 	public const uint LobbyMusicEvent = 1;
 	/// <summary>The looping lobby ambience event (<c>0x10095A50</c>: event 2 of the selected level's <c>cat_locallobbysfx</c>).</summary>
 	public const uint LobbyAmbienceEvent = 2;
+	/// <summary>The lobby's thunder (<c>cat_globallobbysfx</c> 1, with the lobby lightning).</summary>
+	public const uint LobbyThunderEvent = 1;
+	/// <summary>The globe's music and ambience sentences (<c>cat_globallobbysfx</c> 2 and 3).</summary>
+	public const uint GlobeMusicEvent = 2;
+	public const uint GlobeAmbienceEvent = 3;
+	/// <summary>The enter-park sound (<c>cat_globallobbysfx</c> 4).</summary>
+	public const uint EnterParkEvent = 4;
 	/// <summary>The repair sound a ride script's <c>REPAIREFFECT 1</c> starts (<c>0x100B1F78</c> → <c>0x100ACC24</c>: <c>cat_kids</c>, families 75–78/79–82/83–86/87–90 by the object's repair level, index 0 for the traced call).</summary>
 	public const uint RepairStartEvent = 75;
 	/// <summary>The first sound pair a ride script's <c>REPAIREFFECT 0</c> plays (<c>0x100B1E60</c>–<c>0x100B1EC0</c>: <c>cat_rides</c> 111 at the object's position).</summary>
@@ -68,6 +75,9 @@ public static class GameAudio
 	private static SoundSentence? crowd;
 	private static SoundSentence? lobbyMusic;
 	private static SoundSentence? lobbyAmbience;
+	private static SoundSentence? globeMusic;
+	private static SoundSentence? globeAmbience;
+	private static string? lobbyLevelBeforeGlobe;
 	private static SoundSentence? rain;
 	private static long staffTurn = -1;
 	private static DeterministicRandom staffRandom = new( 1 );
@@ -259,9 +269,6 @@ public static class GameAudio
 	}
 
 	private static string? lobbyLevel;
-	private static double lobbyOneShotSeconds;
-	private static readonly uint[] LobbyIslandOneShotEvents = { 3, 4, 5 };
-	private static System.Random? lobbyOneShotRandom;
 
 	public static void LeaveLobby()
 	{
@@ -273,30 +280,63 @@ public static class GameAudio
 		LobbyMusic = null;
 		LobbySfx = null;
 		lobbyLevel = null;
-		lobbyOneShotSeconds = 0;
-		lobbyOneShotRandom = null;
+		// Leaving the front end (or the island's audio switching) also ends the globe's sentences.
+		globeMusic?.Stop();
+		globeAmbience?.Stop();
+		globeMusic = null;
+		globeAmbience = null;
 	}
 
-	/// <summary>
-	/// The lobby's island ambience one-shots: events 3, 4 and 5 of the selected level's <c>cat_locallobbysfx</c>, played
-	/// on a random timer while the front end shows. The original arms a timer per one-shot and restarts it after each
-	/// plays; only the events are traced, not the timer's shape, so the gap here is OpenTPW's own.
-	/// </summary>
-	// [BIN:STP-PPC:0x100953F8-0x10095450 lobby one-shots] cat_locallobbysfx 3, 4 and 5 play off random timers beside the looping ambience (event 2)
-	// [APPROX:AUDIO-017] the one-shot timer's distribution is not traced; a uniform gap of 5-15 s stands — evidence needed: the timers armed at 0x100953F8
-	private static void UpdateLobbyOneShots()
+	/// <summary>An island one-shot of the lobby (event 3, 4 or 5 of the island's <c>cat_locallobbysfx</c>), drawn by <see cref="LobbyEffects"/>.</summary>
+	// [BIN:STP-PPC:0x100953F8-0x10095450 lobby one-shots] cat_locallobbysfx 3, 4 and 5 play beside the looping ambience (event 2), picked by the islands update's draws
+	public static void PlayLobbyOneShot( uint eventId )
 	{
 		if ( events == null || lobbyAmbience == null )
 			return;
-		lobbyOneShotRandom ??= new System.Random();
-		lobbyOneShotSeconds -= Time.Delta;
-		if ( lobbyOneShotSeconds > 0 )
-			return;
-		var eventId = LobbyIslandOneShotEvents[lobbyOneShotRandom.Next( LobbyIslandOneShotEvents.Length )];
 		events.Play( LobbySfx, eventId, AudioChannel.Effects );
-		lobbyOneShotSeconds = 5 + lobbyOneShotRandom.NextDouble() * 10;
 	}
 
+	/// <summary>The lobby thunder: <c>cat_globallobbysfx</c> 1, flat, at the strike (no delay).</summary>
+	public static void PlayLobbyThunder()
+	{
+		var voice = events?.Play( GlobalLobbySfx, LobbyThunderEvent, AudioChannel.Effects );
+		Log.Trace( $"Sound: lobby thunder cat_globallobbysfx {LobbyThunderEvent} {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>The enter-park sound: <c>cat_globallobbysfx</c> 4, flat, as the camera flies into the island.</summary>
+	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat; [APPROX:UI-942] its game-type 2 check is not reproduced
+	public static void PlayEnterPark()
+	{
+		var voice = events?.Play( GlobalLobbySfx, EnterParkEvent, AudioChannel.Effects );
+		Log.Trace( $"Sound: enter park cat_globallobbysfx {EnterParkEvent} {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>Starts the globe's music (<c>cat_globallobbysfx</c> 2) and ambience (3) as looping sentences while the online globe is up.</summary>
+	// [BIN:STP-PPC:0x100923A8 globe audio] the globe component starts cat_globallobbysfx 2 (globe music) and 3 (globe ambience) and keeps both handles; closing stops them by handle (0x1009261C)
+	// [APPROX:UI-942] the lobby's own music and ambience are stopped while the globe plays and restarted after it; what the original does with them is not traced
+	public static void EnterGlobe()
+	{
+		if ( events == null || globeMusic != null )
+			return;
+		var level = lobbyLevel;
+		LeaveLobby();
+		lobbyLevelBeforeGlobe = level;
+		globeMusic = events.StartSentence( GlobalLobbySfx, GlobeMusicEvent, AudioChannel.Music );
+		globeAmbience = events.StartSentence( GlobalLobbySfx, GlobeAmbienceEvent, AudioChannel.Effects );
+	}
+
+	/// <summary>Stops the globe's sounds and brings the lobby's back.</summary>
+	public static void LeaveGlobe()
+	{
+		globeMusic?.Stop();
+		globeAmbience?.Stop();
+		var hadGlobe = globeMusic != null || globeAmbience != null;
+		globeMusic = null;
+		globeAmbience = null;
+		if ( hadGlobe && lobbyLevelBeforeGlobe is { } level )
+			EnterLobby( level );
+		lobbyLevelBeforeGlobe = null;
+	}
 	/// <summary>
 	/// The crowd sentence: starts <c>cat_kids</c> 0x5B when guests are near the camera, follows the count as the
 	/// sentence's parameter and stops when nobody is. The original's park turn counts guests within four cells of the
@@ -640,7 +680,6 @@ public static class GameAudio
 				music.Resume();
 			}
 		}
-		UpdateLobbyOneShots();
 		events.Pump();
 		mixer.Pump();
 	}

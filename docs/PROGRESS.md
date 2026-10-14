@@ -884,6 +884,14 @@ research batch was included in this merge.
   game's `Data/Generic/Weather` (nothing is committed). Time is wall-clock capped at 500 ms and frozen while paused. The
   renderer reads an `IWeatherVisualSource`, so the lobby can reuse it. Still approximate (AUDIO-900..904): the blend, the
   parallax sign, the snow swirl flag, the near clip, and the bolt's displacement and pulse curve.
+- **Lobby effects (October 14):** the front end's island effects follow the original's islands update (`0x10094474`):
+  the sky eases toward the nearest island's colour, hallow's lightning strikes on the lobby generator's draws with the
+  thunder (`cat_globallobbysfx` 1), the island one-shots come from the same draws instead of a timer (AUDIO-017 resolved),
+  the globe plays its own music and ambience (2, 3) and entering a park plays 4. The lobby's rain and bolts are stepped
+  and tested but drawn only once the original weather renderer lands (UI-018, UI-940..942; AUDIO.md "Lobby effects").
+- **Front-end smoke follows the saved-park offer (October 14):** since entering an island with a saved park first offers to
+  continue it (79726a00), the native front-end smoke, which saves a Jungle park earlier on, met that dialog instead of the game
+  mode menu and stopped; it now checks the offer and takes "New park".
 - **Visitor click, backtrack and queue-join sounds (October 14):** traced in both executables. Opening a visitor's details
   (a park click or a roster activation) plays the visitor click `cat_kids` 129 (`0x1010B808` / tp.exe `0x4B79B0`). Backspace
   over a path cell with no tool on plays `cat_ui` 95 at the cell and removes it, as the original's "backtrack" key does

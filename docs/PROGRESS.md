@@ -328,7 +328,8 @@ preview; original runtime fidelity and the complete offline scope remain open.
   [WANDER-plan.md](reverse/WANDER-plan.md) §4). An entertainer patrols and, when guests stand within his `ActivationDistance` (3 to 5
   cells), performs for `WorkDuration` turns (cat_staff 135 at the end); wherever he stands he cheers the cells around him (`RegionFX[0]`).
   A guard spreads security (`RegionFX[3]`) around him; a prank within three cells of a guard sends the free guard nearest the staff HQ
-  (map cell (0, 0)), who chases the prankster (136), catches it (137), carries it to the gate and sets it down to leave (cat_kids 128).
+  (map cell (0, 0)), who chases the prankster (136), catches it (137), carries it to the gate and sets it down there (cat_kids 128); as in the original, a
+  prankster that still wants to stay walks back in.
   Their idle and walking voices come from their state machines (AUDIO-024 narrowed); the park save keeps their state, target and rows.
 - A guest's litter going into a bin now fires the bin's script trigger (variable 0, `VAR_TRIGGER` in every theme; tp.exe `0x4fff20`,
   `0x55a0b0`), so the bin plays its own sound, and a stinkbomb plays `cat_kids` 207 at the prankster (`0x4ff289`).

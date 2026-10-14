@@ -546,6 +546,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.IsMoving = false;
 		guest.AttractionId = 0;
 		guest.BinId = 0;
+		// a guest caught in its activity (the original's state 8) leaves it: state 17 replaces state 8
+		guest.Activity = GuestActivity.None;
 		guest.State = GuestState.HeldByGuard;
 	}
 
@@ -564,6 +566,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		PlaceOnGrid( guest, cell.X, cell.Y );
 		var reachable = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) }
 			.Any( lane => lane != null && Grid.Distance( cell.X, cell.Y, lane[^1].X, lane[^1].Y ) >= 0 );
+		// The leaving handler's recall (0x00500A50) applies to it like any leaving guest: with its exit counter and happiness byte above 0, the
+		// park open and its cell a path, it decides again on its next turn (and clears +0x188), so a guard sends home only a guest that wants to go.
 		guest.State = reachable ? GuestState.LeavingPark : GuestState.Gone;
 		return reachable;
 	}

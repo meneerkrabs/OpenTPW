@@ -219,6 +219,28 @@ public class GuardEntertainerTests
 	}
 
 	[TestMethod]
+	public void ANewGuardStandsWithHisRowDownBeforeHisFirstTurn()
+	{
+		var f = new Fixture();
+		var guard = f.Hire( StaffType.Guard );
+		var prankster = f.Guests.SpawnInPark( 1, 5 );
+		f.World.ReportPrank( f.Park, prankster.Id );
+		Assert.AreEqual( StaffJob.Chasing, guard.Job, "the constructor puts the security row down" );
+	}
+
+	[TestMethod]
+	public void AGuestCaughtInItsActivityLeavesIt()
+	{
+		var f = new Fixture();
+		var guest = f.Guests.SpawnInPark( 3, 5 );
+		guest.Activity = GuestActivity.Cheering;
+		((IGuardGuests)f.Guests).Hold( guest.Id );
+		Assert.AreEqual( (GuestState.HeldByGuard, GuestActivity.None), (guest.State, guest.Activity) );
+		var validation = f.Guests.ValidateSnapshot( f.Guests.CaptureSnapshot() );
+		Assert.IsTrue( validation.IsValid, string.Join( "; ", validation.Errors ) );
+	}
+
+	[TestMethod]
 	public void AGuardsWorldStateSurvivesASave()
 	{
 		var f = new Fixture();

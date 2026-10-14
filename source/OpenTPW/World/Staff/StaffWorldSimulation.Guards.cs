@@ -73,6 +73,11 @@ public sealed partial class StaffWorldSimulation
 	// Approximation (ECON-022, registered at UpdateStaff): the guard list's order is the staff list's (hire order) and the prank reaches the guards at once, where the original's list order and the bus's delivery time are not traced
 	public void ReportPrank( ParkEconomy economy, int guestId )
 	{
+		// a member hired since the last staff turn already stands with his row down (the constructors put it on their cell)
+		Synchronize();
+		foreach ( var member in economy.Staff.Members.Where( member => member.Navigation == null && ParkEconomy.EffectRow( member.Type ) != null && economy.DrivenByWorld( member ) ) )
+			if ( Place( member ) )
+				economy.MoveStaffEffect( member, Cell( member ) );
 		if ( Guests?.CellOf( guestId ) is not { } cell || economy.Litter.Environment.At( cell.X, cell.Y ).Security < 1 )
 			return;
 		StaffMember? guard = null;

@@ -336,7 +336,8 @@ is sent, and the HQ always sits at map cell (0, 0), so the guard nearest the map
 to the prankster (cat_staff 136) and chases it for `GuardConstsPerGrade.WorkDuration` turns (10 to 75 by grade), re-routing when he arrives where
 it no longer is. On its cell he catches it if it is deciding, wandering, taking litter to a bin or walking to a ride (cat_staff 137): he carries it,
 out of sight, to the ticket booth (in OpenTPW the park entrance, as the booth lies off the paths) and sets it down there (cat_kids 128), and it
-leaves the park. A carried guest whose guard is dismissed or abandons the escort is removed from the park, as in the original.
+heads for the exit. Like any leaving guest it is recalled on its next turn while its exit counter and happiness are above 0 and the park is
+open (the leaving handler `0x500a50`), so the guard's escort sends home only a guest that wanted to go anyway. A carried guest whose guard is dismissed or abandons the escort is removed from the park, as in the original.
 
 Vomit and stinkbombs spread their `RegionFX` row around their cell while they lie: every cell within the row's square radius gets the row's
 happiness, illness and hunger divided by its distance + 1, and a guest's needs phase adds those of its own cell (vomit: −1 happiness, +1 illness,

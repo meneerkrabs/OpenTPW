@@ -144,6 +144,8 @@ public sealed class StaffPlacement
 		Cancel();
 		ReleaseAssignments( park, member );
 		member.State = StaffState.PickedUp;
+		// state 7 takes the thought bubble away (0x005054D0 → 0x0050C0D0)
+		member.BubbleThought = 0;
 		Kind = StaffToolKind.Carry;
 		Carried = member;
 		Origin = origin;

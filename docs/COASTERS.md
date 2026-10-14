@@ -23,7 +23,9 @@ of this work.
 | `World/Coasters/CoasterRide.cs` | The controller of one station: samples, rating, trains, the `COAST` commands of the station script and the train motion `0x40650`. |
 | `World/Coasters/CoasterBuilder.cs` | The headless build API: place, move, height, close, complete, reopen, delete, and the money of each. |
 | `World/Coasters/CoasterWorld.cs` | The coasters of one park and the boarding generator `CoasterRng`. It is owned by the park's `RideScriptWorld`. |
-| `World/Coasters/CoasterRenderer.cs` | Presentation: the track as a box-section tube, the pylons and the cars. |
+| `World/Coasters/CoasterRenderer.cs`, `CoasterAssets.cs` | Presentation: per coaster the track mesh, the pylon models and the cars, rebuilt only when the track or the build cursor changes (see "Presentation" below). |
+| `World/Coasters/CoasterCrossSections.cs`, `CoasterTrackMesh.cs` | The `coaster.sam` cross sections and their extrusion along the curve slices. |
+| `World/Coasters/CoasterPylonRig.cs`, `CoasterCarRig.cs` | The pylon models posed with their loft and rotate clips, the car models, their extents, spacing and pose. |
 | `World/Level.Coasters.cs`, `Hud/ParkHud.cs` | The coaster tool of the park view. |
 
 ## Building
@@ -177,6 +179,42 @@ Nonempty original TPW controllers are refused at `ParkObjects.ImportOriginal`
 before any runtime object is created. This includes controllers with no saved
 sections: an empty topology is not proof of an empty controller.
 
+## Presentation
+
+The coaster is drawn the way the original builds it (traced in tp.exe: the rebuild `0x43eb70`, the slice emitter
+`0x43f4e0` with `0x43fd60`, the cross-section loader `0x42d5a0`/`0x42d6d0`, the select `0x43e9c0`, the model loader
+`0x42fad0`, the car setup `0x42f1a0`/`0x430130`, the car pose `0x43ce20`/`0x43d8f0` and the edit step `0x435d50`).
+
+- **Track.** `coaster.sam` holds the track textures (`asTextureData`, with `fScrollRate`), the cross-section point
+  blocks (X, Y, U, normal; `fTrackHeightAdjust` is added to every Y) and edge blocks (texture, point, point), the
+  sections and the selects. The mesh is the section extruded along slices: the curve at ten uniform steps per knot pair.
+  Each point is turned by the slice roll, pitch and yaw and moved to the slice position; U is the point's U and V grows
+  by the distance to the previous slice over six, so a texture repeats every six world units. Every edge is a strip of
+  quads between two slices. The select picks the section by pitch (a flume's climbing window of -90 to -1 degrees is its
+  dry, ratcheted section, the rest is water) and a chain-lift segment uses `uiWinchCrossSection`. Rails, sleepers,
+  struts, ropes, gutters and the flume's water all come from these sections and the textures of the coaster's wad
+  (`gtexture` first). Scrolling textures (water, ratchet, chain) shift V by their rate per second on their own few
+  vertices; everything else is a static model.
+- **Building.** The original treats the track under construction as the same chain: the rebuild pairs every node with
+  its next node until there is none, and the edit step puts a cursor node at the hovered cell in the chain after the last
+  node. OpenTPW draws the curve (an open chain: the end knots take the direction toward or away from their neighbour,
+  chord 1.0) through the placed nodes and a ghost pylon at the cursor with the tool's height; a closed but unfinished
+  circuit ends in the station end node. An invalid link is flat red.
+- **Pylons.** `StdPylon.MD2`/`LoopPylon.MD2` with the loft clip `<name>L` (adds a vertex animation to the pylon mesh and
+  a 0 to 80 or 90 position key to the track tag and stack-height dummies, played in "add" mode, which only the TrackMaster
+  loader asks for) and the rotate clip `<name>R` (turns the pylon about the cell centre; the parameter is the knot yaw
+  over 2π). The pylon stretches until its track tag stands at the node height; outside the loft range it is scaled or sinks.
+- **Cars.** The `asCarTypes` meshes, front, centre and rear by `sTrainType`. A car's pivot is its root node; its front
+  and rear extents come from the model bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd` and give the spacing; it stands
+  on the interpolated sample with roll, pitch and yaw of that point and `fYOffset` along its up axis.
+- **Debug.** In a Debug build `--debug-coaster built|open [--debug-coaster-id N] [--debug-coaster-height H]` with
+  `--load-original-level` builds a small coaster for captures (`--capture-world`): finished with trains, or open after
+  four pylons with the cursor on the fifth cell.
+
+Evidence found but not used: `uiInvalidCrossSection` and the node flags 0x800000/0x804000 mark the invalid presentation;
+the pylon loft heights are the tag's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon) and so
+the true h0 and h1 of COAST-015, which would change the node heights and costs and is left to a follow-up.
+
 ## Tests
 
 - `CoasterTests` (no game data): the loader, each validator test with its
@@ -205,13 +243,17 @@ sections: an empty topology is not proof of an empty controller.
   park import with cell joins; plus two gated fixtures (the Easymode empty
   boundary, and the Theme Park Inc prebuilt body as a labelled structural
   cross-check).
+- `CoasterPresentationTests` (no game data): the cross-section loader and select, the extrusion (vertex count, frame
+  orientation, bank, V), an open and a closed unfinished track, the pylon height fit and the car pose and spacing;
+  `CoasterPresentationAssetTests` (`OPENTPW_GAME_PATH`): every coaster wad's cross sections, track textures, pylon
+  models (the tag reaches the node height) and car models.
 - The native smoke test of an original level builds a coaster through HUD clicks
   (pylons, wheel height, close, complete), sees a train leave and the track
   drawn, and removes it.
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twenty-one open
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twenty-four open
 IDs (COAST-013 is retired). The IDs below 15 are the unknowns of COAST-plan §10 that are still open.
 COAST-015..019 are the new unknowns of §10.1. COAST-022..031 are rules OpenTPW
 chose while implementing the plan. COAST-032 is the single-precision arithmetic
@@ -220,7 +262,9 @@ original uses fused and double-precision steps. COAST-020 (cost rates) and COAST
 term) were resolved by the COAST-V review and are traced now. The generated
 table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).
 
-The track is drawn as a flat-coloured box-section tube along the samples, not
-with the original cross sections and pylon meshes (COAST-026). The ride camera
+The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
+COAST-034 (cars) and COAST-035 (the build cursor). Rider heads are not seated in the cars yet (the head renderer
+takes providers of head sources; a coaster provider reading the cars' seat sockets, `CoasterCarRig.Seats`, is the
+next step). The ride camera
 is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose
 (COAST-011).

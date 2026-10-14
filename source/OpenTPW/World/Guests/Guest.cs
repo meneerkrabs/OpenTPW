@@ -120,6 +120,15 @@ public sealed class Guest
 	public float SecondsSinceRide { get; internal set; }
 	public int RidesTaken { get; internal set; }
 	public GuestThought Thought { get; internal set; }
+	/// <summary>
+	/// The thought the guest's bubble shows (the thought object's script, guest <c>+0x30 +0x84</c>), <see cref="GuestThought.None"/> without a bubble; presentation
+	/// state the simulation times (<see cref="GuestThoughts"/>).
+	/// </summary>
+	public GuestThought BubbleThought { get; internal set; }
+	/// <summary>The park turn the last bubble appeared (guest <c>+0x30 +0x8C</c>): it goes 12 turns later and gates the next one.</summary>
+	public long BubbleTurn { get; internal set; }
+	/// <summary>Whether the sideshow the guest is playing was won (guest <c>+0x1F1</c>, set when the play starts); null outside a sideshow or without its result.</summary>
+	public bool? SideshowWon { get; internal set; }
 	/// <summary>Attraction the guest is heading to, queueing for or riding (0 = none).</summary>
 	public int AttractionId { get; internal set; }
 	public int LastAttractionId { get; internal set; }

@@ -248,7 +248,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x776A2A9E9A53BF25`, schema 17: the guests' balloon life, balloon and costume join the hash, so the schema is bumped; the synthetic park has no
+  (`0xB4FA626D739B5697`, schema 17: the guests think as in tp.exe (the pick of the needs phase on one phase in ten, from a hash of the
+  guest and the turn, and no thought at the end of a ride or shop visit), so the hashed thoughts change; the guests' stream is untouched
+  (docs/GUESTS.md "Thoughts"). Before that:
+  `0x776A2A9E9A53BF25`, schema 17: the guests' balloon life, balloon and costume join the hash, so the schema is bumped; the synthetic park has no
   balloon or costume shop, so only the hashed fields change the value (docs/GUESTS.md, "Balloons and costumes"). Before that:
   `0x74187CE603B2ACDC`, schema 16: the guests' prankery flag joins the hash, so the schema is bumped; the synthetic park has no pranksters
   (PrankeryLikelihood 0), so only the hashed field changes the value. Vomit and stinkbombs now spread their RegionFX on the environment grid,

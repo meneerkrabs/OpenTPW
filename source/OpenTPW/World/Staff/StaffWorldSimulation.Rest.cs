@@ -43,10 +43,14 @@ public sealed partial class StaffWorldSimulation
 		if ( energy > settings.RestLevel )
 		{
 			member.BaseSpeed = energy < 100 ? GuestSpeed.BaseSpeeds[energy / 20] : GuestSpeed.BaseSpeeds[^1];
-			if ( StaffVitals.Byte( member.Happiness ) > 97 )
-				Draw( economy ); // the "happy" message's one-in-sixteen draw
+			var happiness = StaffVitals.Byte( member.Happiness );
+			if ( happiness <= 10 )
+				Think( member, StaffThoughts.Unhappy, turn );
+			else if ( happiness > 97 && (Draw( economy ) & 15) == 0 )
+				Think( member, StaffThoughts.VeryHappy, turn );
 			return false;
 		}
+		Think( member, StaffThoughts.Tired, turn );
 		if ( FindRestArea( member ) is { } rest && Route( member, rest.Access, GuestWander.CentreByte, GuestWander.CentreByte ) )
 		{
 			member.RestAreaId = rest.Id;
@@ -111,6 +115,8 @@ public sealed partial class StaffWorldSimulation
 				SearchByType( economy, member, turn );
 				return;
 			case StaffJob.ToStrike:
+				// [BIN:TPW-EXE:0x00505709 staff model] state 4 thinks 21 on every update (priority 0: the bubble starts again each time)
+				Think( member, StaffThoughts.Strike, turn );
 				if ( Walk( member, maxSpeed, maxForce ) == WalkResult.Walking )
 					return;
 				SetJob( economy, member, StaffJob.Striking, turn );

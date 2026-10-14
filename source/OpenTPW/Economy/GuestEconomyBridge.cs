@@ -55,9 +55,12 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public bool TryPayAdmission( long guestMoney, out int feePaid ) => Economy().TryAdmitVisitor( guestMoney, out feePaid );
 
-	public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid )
+	public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) => TryPayVisit( attraction, guestMoney, out pricePaid, out _ );
+
+	public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid, out bool? won )
 	{
 		pricePaid = 0;
+		won = null;
 		if ( !instances.TryGetValue( attraction.AttractionId, out var instance ) )
 			return true;
 		var economy = Economy();
@@ -66,7 +69,9 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 			case RideVisitorKind.Shop:
 				return economy.TryBuy( instance, guestMoney, out pricePaid );
 			case RideVisitorKind.Sideshow:
-				return economy.PlaySideshow( instance, guestMoney, out pricePaid, out _ );
+				var played = economy.PlaySideshow( instance, guestMoney, out pricePaid, out var result );
+				won = played ? result : null;
+				return played;
 			default:
 				economy.RecordRideUse( instance );
 				return true;

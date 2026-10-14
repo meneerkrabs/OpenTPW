@@ -1,0 +1,166 @@
+using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// The guests' thoughts as tp.exe sets them (GUEST-006, docs/GUESTS.md "Thoughts"): the pick of the needs phase (<c>0x004FC8A0</c>), the thought object's
+/// bubble with its 12 turns and its cooldown by priority (<c>0x0050BE80</c>, <c>0x0050BE40</c>).
+/// </summary>
+[TestClass]
+public class GuestThoughtTests
+{
+	[TestMethod]
+	public void ThePickTakesNeedsThenLitterThenHappiness()
+	{
+		GuestThought? Pick( float hunger = 0, float thirst = 0, float toilet = 0, float illness = 0, float happiness = 50, float messy = 0 ) =>
+			GuestThoughts.Pick( hunger, thirst, toilet, illness, happiness, messy );
+		Assert.AreEqual( GuestThought.HungryAndThirsty, Pick( hunger: 91, thirst: 91 ), "both bytes above 90" );
+		Assert.AreEqual( null, Pick( hunger: 90.9f, thirst: 99 ), "a byte of 90 is not above 90, and 99 is not above 99" );
+		Assert.AreEqual( GuestThought.Hungry, Pick( hunger: 100, thirst: 50 ) );
+		Assert.AreEqual( GuestThought.Thirsty, Pick( thirst: 100 ) );
+		Assert.AreEqual( GuestThought.NeedToilet, Pick( toilet: 100 ) );
+		Assert.AreEqual( GuestThought.FeelingSick, Pick( illness: 100 ) );
+		Assert.AreEqual( GuestThought.NeedToilet, Pick( toilet: 100, illness: 100, messy: 1 ), "needs come first" );
+		Assert.AreEqual( GuestThought.TooMessy, Pick( messy: 0.21f, happiness: 100 ), "litter before happiness" );
+		Assert.AreEqual( null, Pick( messy: 0.2f ), "0.2 is not above 0.2" );
+		Assert.AreEqual( GuestThought.TooMessy, Pick( messy: float.PositiveInfinity ), "litter on a block without paths" );
+		Assert.AreEqual( GuestThought.Happy, Pick( happiness: 100 ) );
+		Assert.AreEqual( GuestThought.Unhappy, Pick( happiness: 9.9f ) );
+		Assert.AreEqual( null, Pick( happiness: 10 ), "10 to 99 keeps the thought" );
+		Assert.AreEqual( null, Pick( happiness: 99.9f ) );
+	}
+
+	[TestMethod]
+	public void ABubbleWaitsForTheNewThoughtsPriority()
+	{
+		Assert.AreEqual( (1, 0, 3, 2, 0), (GuestThoughts.Priority( 1 ), GuestThoughts.Priority( 5 ), GuestThoughts.Priority( 9 ), GuestThoughts.Priority( 19 ),
+			GuestThoughts.Priority( 22 )) );
+		Assert.IsTrue( GuestThoughts.TakesBubble( (int)GuestThought.Pleased, 100, 100 ), "priority 0: at once" );
+		Assert.IsFalse( GuestThoughts.TakesBubble( (int)GuestThought.Hungry, 119, 100 ) );
+		Assert.IsTrue( GuestThoughts.TakesBubble( (int)GuestThought.Hungry, 120, 100 ), "priority 1: 20 turns" );
+		Assert.IsFalse( GuestThoughts.TakesBubble( (int)GuestThought.Happy, 159, 100 ) );
+		Assert.IsTrue( GuestThoughts.TakesBubble( (int)GuestThought.Happy, 160, 100 ), "priority 3: 60 turns" );
+		Assert.IsFalse( GuestThoughts.TakesBubble( 23, 1000, 0 ), "not a known thought" );
+		Assert.IsFalse( GuestThoughts.TakesBubble( 0, 1000, 0 ) );
+	}
+
+	[TestMethod]
+	public void AHungryGuestThinksItOnSomePhaseAndItsBubbleGoesAfterTwelveTurns()
+	{
+		var settings = GuestTests.CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 6, 5 );
+		// the first bubble needs turn ≥ stamp 0 + 20 × priority 1
+		while ( simulation.ParkTurn < 2 * GuestThoughts.CooldownTurns )
+		{
+			guest.Hunger = 0;
+			simulation.Tick( GuestSnapshotTests.Tick );
+		}
+		long thoughtAt = -1;
+		for ( var tick = 0; tick < 60 * 60 * 4 && thoughtAt < 0; tick++ )
+		{
+			guest.Hunger = 100;
+			simulation.Tick( GuestSnapshotTests.Tick );
+			if ( guest.Thought == GuestThought.Hungry )
+				thoughtAt = simulation.ParkTurn;
+		}
+		Assert.IsTrue( thoughtAt > 0, "within four minutes the one-in-ten pick comes" );
+		Assert.IsTrue( NeedsUpdate.IsPhase( (uint)thoughtAt, guest.Id ), "on the guest's needs phase" );
+		Assert.AreEqual( 0u, GuestThoughts.PickDraw( guest.Id, (uint)thoughtAt ) % GuestThoughts.PickOdds );
+		Assert.AreEqual( (GuestThought.Hungry, thoughtAt), (guest.BubbleThought, guest.BubbleTurn), "the first bubble" );
+		long gone = -1;
+		for ( var tick = 0; tick < 60 * 60 && gone < 0; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			if ( guest.BubbleThought == GuestThought.None )
+				gone = simulation.ParkTurn;
+		}
+		Assert.IsTrue( gone > thoughtAt + GuestThoughts.BubbleTurns && gone <= thoughtAt + GuestThoughts.BubbleTurns + 4, $"{thoughtAt} -> {gone}: the first needs phase past 12 turns" );
+		Assert.AreEqual( GuestThought.Hungry, guest.Thought, "the thought stays" );
+
+		var restored = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false };
+		guest.BubbleThought = GuestThought.Hungry;
+		restored.RestoreSnapshot( simulation.CaptureSnapshot() );
+		var copy = restored.Guests.Single( item => item.Id == guest.Id );
+		Assert.AreEqual( (guest.BubbleThought, guest.BubbleTurn), (copy.BubbleThought, copy.BubbleTurn), "the bubble is saved" );
+	}
+
+	[TestMethod]
+	public void LitterInTheGuestsBlockMakesItThinkTooMessy()
+	{
+		var settings = GuestTests.CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
+		var litter = new ParkLitter();
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false, Litter = litter };
+		var guest = simulation.SpawnInPark( 6, 5 );
+		var seen = false;
+		for ( var tick = 0; tick < 60 * 60 * 4 && !seen; tick++ )
+		{
+			// litter on every path cell of the guest's 4 × 4 block
+			for ( var x = guest.CellX & ~3; x < (guest.CellX & ~3) + 4; x++ )
+				for ( var y = guest.CellY & ~3; y < (guest.CellY & ~3) + 4; y++ )
+					if ( simulation.Grid.IsWalkable( x, y ) && litter.TypeAt( x, y ) == LitterType.None )
+						litter.Drop( x, y, (LitterType)1 );
+			guest.Happiness = 50;
+			simulation.Tick( GuestSnapshotTests.Tick );
+			seen = guest.Thought == GuestThought.TooMessy;
+		}
+		Assert.IsTrue( seen );
+	}
+
+	private sealed class SideshowPayments( bool won ) : IGuestPayments
+	{
+		public int AdmissionFee => 0;
+		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return true; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid, out bool? result )
+		{
+			result = won;
+			return TryPayVisit( attraction, guestMoney, out pricePaid );
+		}
+	}
+
+	[TestMethod]
+	public void ASideshowThinksItsResultAndARideOrShopNothing()
+	{
+		foreach ( var won in new[] { true, false } )
+		{
+			var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 9 ) { ArrivalsEnabled = false, Payments = new SideshowPayments( won ) };
+			IRideVisitorHost host = simulation;
+			var guest = simulation.SpawnInPark( 6, 5 );
+			guest.Happiness = 100;
+			var sideshow = new RideVisitorBridge( 1, "Sideshow", RideVisitorKind.Sideshow, 2, 50, 10 ) { ExitCell = (6, 5) };
+			host.OnVisitorBoarded( sideshow, guest.Id );
+			Assert.AreEqual( won, guest.SideshowWon );
+			host.OnVisitorReleased( sideshow, guest.Id );
+			Assert.AreEqual( won ? GuestThought.Pleased : GuestThought.Dissatisfied, guest.Thought, $"won {won}, whatever the happiness did" );
+			Assert.IsNull( guest.SideshowWon );
+			guest.Thought = GuestThought.Hungry;
+			var ride = new RideVisitorBridge( 2, "Ride", RideVisitorKind.Ride, 2, 50, 10 ) { ExitCell = (6, 5) };
+			host.OnVisitorBoarded( ride, guest.Id );
+			host.OnVisitorReleased( ride, guest.Id );
+			Assert.AreEqual( GuestThought.Hungry, guest.Thought, "a ride sets none" );
+		}
+	}
+
+	[TestMethod]
+	public void OldSavesLoseTheInventedThoughtsAndAFutureBubbleIsRefused()
+	{
+		var settings = GuestTests.CreateSettings();
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false };
+		var happy = simulation.SpawnInPark( 6, 5 );
+		var okay = simulation.SpawnInPark( 6, 5 );
+		happy.Thought = GuestThought.SuperHappy;
+		okay.Thought = GuestThought.Okay;
+		var snapshot = simulation.CaptureSnapshot();
+		var old = snapshot with { SchemaVersion = 6 };
+		var restored = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false };
+		restored.RestoreSnapshot( old );
+		Assert.AreEqual( (GuestThought.Happy, GuestThought.None), (restored.Find( happy.Id )!.Thought, restored.Find( okay.Id )!.Thought ) );
+
+		var future = snapshot with { Guests = snapshot.Guests.Select( guest => guest with { BubbleTurn = long.MaxValue } ).ToArray() };
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => new GuestSimulation( GuestTests.CreateCross(), settings, 9 ).RestoreSnapshot( future ) );
+	}
+}

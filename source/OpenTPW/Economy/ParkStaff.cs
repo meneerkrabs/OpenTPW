@@ -11,6 +11,25 @@ public enum StaffState
 	PickedUp = 5
 }
 
+/// <summary>
+/// The handyman's own state (tp.exe word <c>+0x19c</c>, the handler <c>0x004D73C0</c>); <see cref="StaffMember.State"/> is its display name
+/// (<c>0x005064F0</c>: 0 Idle, 1 Patrolling, 2–3 Resting, 4–5 On strike, 7 Picked up, the others Working).
+/// </summary>
+public enum HandymanJob : byte
+{
+	Idle = 0,
+	Patrol = 1,
+	ToRestArea = 2,
+	Resting = 3,
+	ToStrike = 4,
+	Striking = 5,
+	PickedUp = 7,
+	ToLitter = 8,
+	Sweeping = 9,
+	ToToilet = 10,
+	Cleaning = 11
+}
+
 /// <summary>An employee. <see cref="NameIndex"/> indexes the role's name table (e.g. <c>MECHANIC_NAMES.str</c>).</summary>
 public sealed class StaffMember
 {
@@ -41,6 +60,26 @@ public sealed class StaffMember
 	/// <summary>Fraction of the host's next one-cell movement interval, persisted across loads.</summary>
 	public double TravelSeconds { get; set; }
 	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
+
+	// A handyman in a world (IHandymanWorld): the original's state machine and walk (docs/reverse/WANDER-plan.md §4; tp.exe offsets in brackets).
+	/// <summary>The handyman's own state [+0x19c].</summary>
+	public HandymanJob Job { get; set; }
+	/// <summary>The turn an idle spell started [+0x200] (0: search at once).</summary>
+	public long IdleStamp { get; set; }
+	/// <summary>The turn a sweep or a clean started [+0x214].</summary>
+	public long JobStamp { get; set; }
+	/// <summary>The toilet a handyman walks to or cleans [+0x21a], 0 when none.</summary>
+	public int ToiletId { get; set; }
+	/// <summary>The patrol rectangle, inclusive cells [+0x20a, +0x20c]; the whole map until the player draws one.</summary>
+	public (int X0, int Y0, int X1, int Y1) PatrolArea { get; set; } = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
+	/// <summary>Base speed [+0xc0]: 60, 80, 100, 120 or 140 by energy.</summary>
+	public int BaseSpeed { get; set; } = 60;
+	/// <summary>Speed bonus [+0xc2]: 25 while walking to a job.</summary>
+	public int SpeedBonus { get; set; }
+	/// <summary>The smoothed speed [+200] (<see cref="GuestSpeed.Update"/>).</summary>
+	public float SmoothedSpeed { get; set; }
+	/// <summary>The steering state [+0xd4] while a world moves the member; null before.</summary>
+	public GuestNavigation? Navigation { get; set; }
 }
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>

@@ -141,6 +141,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
+	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
+	public IHandymanWorld? HandymanWorld { get; set; }
 	// A mechanic's BusyTicks is the number of park turns (staff updates) until its job completes.
 
 	public long Turn => ParkCalendar.Turn( Tick );
@@ -167,7 +169,10 @@ public sealed class ParkEconomy : IParkEconomy
 				StrikeOrRest( member, HasRestArea );
 			}
 		}
-		DispatchHandymen();
+		if ( HandymanWorld != null )
+			HandymanWorld.UpdateHandymen( this, turn );
+		else
+			DispatchHandymen();
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
@@ -227,6 +232,9 @@ public sealed class ParkEconomy : IParkEconomy
 						member.State = StaffState.Patrolling;
 					continue;
 			}
+			// A handyman in a world drains and decides in its own state machine (0x004D73C0: the walk drain in state 1, the work drain in 9 and 11, the strike and rest gate in the job search).
+			if ( member.Type == StaffType.Handyman && HandymanWorld != null )
+				continue;
 			if ( member.BusyTicks > 0 )
 			{
 				StaffVitals.Work( member );
@@ -236,6 +244,28 @@ public sealed class ParkEconomy : IParkEconomy
 				StaffVitals.Walk( member );
 			StrikeOrRest( member, restArea );
 		}
+	}
+
+	/// <summary>The strike and rest gate of a handyman's job search (tp.exe <c>0x00506A40</c>): true when the member now strikes or rests.</summary>
+	internal bool HandymanStrikeOrRest( StaffMember member ) => StrikeOrRest( member, HasRestArea );
+
+	/// <summary>A toilet's gauge byte is below <see cref="DirtyToiletGauge"/> (tp.exe <c>0x004E0390</c>).</summary>
+	internal static bool IsDirtyToilet( ParkObjectState item ) => (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
+
+	/// <summary>The relief objects (toilets), in object order.</summary>
+	internal IEnumerable<ParkObjectState> Toilets() =>
+		objects.Values.Where( item => Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief ).OrderBy( item => item.Id );
+
+	/// <summary>The end of a handyman's clean (tp.exe <c>0x004DFD80</c>): the gauge is back at 100, the claim and the request clear.</summary>
+	internal void FinishToiletClean( StaffMember member )
+	{
+		if ( objects.TryGetValue( member.ToiletId, out var item ) && item.MechanicId == member.Id )
+		{
+			item.Repair = RideRepair.FullGauge;
+			item.MechanicId = 0;
+			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+		}
+		member.ToiletId = 0;
 	}
 
 	/// <summary>Whether any placed object is a rest area for staff (<c>UsageInfo.ChillsYouOut</c>, in the shipped data the Staff Room).</summary>
@@ -515,7 +545,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Either job keeps him busy for <c>HandymanConstsPerGrade[grade].WorkDuration</c> park turns and the update that ends it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D7100 handyman job search] after the strike/rest gate (0x00506A40) and the too-tired gate (energy byte below RestLevel), the litter finder 0x004C8ED0 scans the cells within DetectionRange (x outer, y inner) for litter claimed by nobody or by him and takes the nearest by Manhattan distance; only without litter does 0x004D7880 look for a toilet flagged by mRequestedService, or one whose gauge byte is below 25 within DetectionRange; a sweep or a clean ends when the turn passes the arrival stamp + WorkDuration[grade] (0x004D76A0, 0x004D73C0; the grade table 0x007853EC {WorkDuration, DetectionRange, PoundsPerTrainingPoint})
-	// [APPROX:ECON-022] handymen have no position: a free handyman claims the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, and the job's time starts at once; the walks (states 8 and 10), DetectionRange, the nearest choice, the too-tired gate and the mRequestedService flag are not modelled — evidence needed: none (read, tp.exe 0x004D7100); waits for handyman positions (WANDER-plan phase 3)
+	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateHandymen): without a world the handymen have no position, so a free handyman takes the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, timed from the dispatch
 	private void DispatchHandymen()
 	{
 		var role = Settings[StaffType.Handyman];
@@ -1126,10 +1156,13 @@ public sealed class ParkEconomy : IParkEconomy
 		member.AwaitingJobArrival = false;
 		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) && item.MechanicId == member.Id )
 			item.MechanicId = 0;
-		// A dismissed handyman's litter goes back to the others (the original's thing is gone, and its id no longer matches a collector).
-		if ( member.LitterCell is { } litter && Litter.CollectorAt( litter.X, litter.Y ) == member.Id )
-			Litter.Claim( litter.X, litter.Y, 0, 0 );
+		// A dismissed handyman's litter and toilet go back to the others (the original's thing is gone, and its id no longer matches a claim).
+		foreach ( var (x, y) in Litter.Littered().Where( cell => Litter.CollectorAt( cell.X, cell.Y ) == member.Id ).ToList() )
+			Litter.Claim( x, y, 0, 0 );
 		member.LitterCell = null;
+		if ( objects.TryGetValue( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id )
+			toilet.MechanicId = 0;
+		member.ToiletId = 0;
 		var wage = Staff.MonthlyWage( member );
 		if ( wage > 0 )
 			Post( LedgerCategory.StaffCosts, wage );

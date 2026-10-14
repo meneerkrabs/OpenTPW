@@ -1966,6 +1966,68 @@ REGION_TARGET = Target(
     notes=['No stubs: the writer calls nothing. A synthetic cell manager holds the effect table at +0x1d9104 (12 bytes a row) and '
            'the grid at +0x1b1104 (10 bytes a cell); the 19 × 19 window around the source is read back.'])
 
+# ============================================================================== tp.exe handyman litter finder 0x4c8ed0 (ECON-022)
+FINDER_ENTRY = 0x4C8ED0        # thiscall (park, out, collector id, cell id, range), ret 0x10
+FINDER_RANGES = [(0x4C8ED0, 0x4C9034), (DEBUG_PRINT, DEBUG_PRINT + 1)]
+FINDER_SCRATCH = 0x1F020       # the park's scratch buffer of candidate cells
+
+
+def finder_binary(sb: Sandbox, x: dict, log) -> int:
+    """The cell id the routine writes to its out word (0: none)."""
+    cells = sb.object(0x44 * 0x80 * 0x80)
+    sb.write(STATE6_CELLS, 'I', cells)
+    for cx, cy, kind, collector in x['litter']:
+        record = cells + 0x44 * (cy * 0x80 + cx)
+        sb.write(record + 0x2C, 'I', kind)
+        sb.write(record + 0x30, 'H', collector)
+    park = sb.object(FINDER_SCRATCH + 2 * 121 + 16)
+    out = sb.object(4)
+    cx, cy = x['cell']
+    result = sb.call(FINDER_ENTRY, args=(out, x['collector'], cy * 128 + cx + 1, x['range']), this=park)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return sb.read(out, 'H')
+
+
+def finder_plan(x: dict) -> int:
+    """StaffWorldSimulation.FindLitter: within the clipped square of the range, litter claimed by nobody or the collector, nearest by
+    Manhattan distance, the first in the x-outer, y-inner scan on a tie; the cell id or 0."""
+    litter = {(cx, cy): (kind, collector) for cx, cy, kind, collector in x['litter']}
+    cx, cy = x['cell']
+    r = x['range']
+    best, best_distance = 0, None
+    for wx in range(max(0, cx - r), min(127, cx + r) + 1):
+        for wy in range(max(0, cy - r), min(127, cy + r) + 1):
+            kind, collector = litter.get((wx, wy), (0, 0))
+            if not kind or collector not in (0, x['collector']):
+                continue
+            distance = abs(wx - cx) + abs(wy - cy)
+            if best_distance is None or distance < best_distance:
+                best, best_distance = wy * 128 + wx + 1, distance
+    return best
+
+
+def finder_inputs(rng: random.Random, n: int) -> list:
+    def make() -> dict:
+        cell = rng.choice([(rng.randrange(0, 128), rng.randrange(0, 128)), (0, 0), (127, 127), (2, 125), (64, 64)])
+        r = rng.randrange(0, 6)
+        litter, seen = [], set()
+        for _ in range(rng.randrange(0, 12)):
+            spot = (min(127, max(0, cell[0] + rng.randrange(-6, 7))), min(127, max(0, cell[1] + rng.randrange(-6, 7))))
+            if spot in seen:
+                continue
+            seen.add(spot)
+            litter.append(spot + (rng.choice([1, 2, 5, 7, 8]), rng.choice([0, 0, 0, 3, 9])))
+        return {'cell': cell, 'range': r, 'collector': rng.choice([3, 9, 4]), 'litter': litter}
+    return [make() for _ in range(n + 20)]
+
+
+FINDER_TARGET = Target(
+    'tpw-exe-litter-finder', 'tpw', 'tp.exe handyman litter finder 0x4c8ed0', 'WANDER-plan §4 / StaffWorldSimulation.FindLitter (ECON-022)',
+    FINDER_ENTRY, FINDER_RANGES, lambda t: {}, finder_binary, finder_plan, finder_inputs,
+    notes=['No stubs but the debug print. Synthetic cell records at [0x8023a0] (litter type +0x2c, collector word +0x30) and a park '
+           'object whose scratch buffer at +0x1f020 the routine fills; the cell id of the out word is compared.'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -2585,5 +2647,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

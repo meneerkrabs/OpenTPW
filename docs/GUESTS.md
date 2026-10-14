@@ -316,8 +316,10 @@ route reaches, the nearest first. It walks there (state 9) and throws its litter
 kinds) and decides on. Either way the meter empties. Vomit lies on the cell where the guest was sick.
 
 A cell holds one item of litter: what falls on a littered cell is lost. Litter stays until a handyman sweeps it; it does not decay or spread. An online visit
-drops none. The handymen strike over litter when the littered cells exceed 0.2 of the path and queue cells. Handymen have no position yet (ECON-022): a free
-handyman takes the first unclaimed littered cell, scanning columns from the left, and sweeps it for `WorkDuration` park turns.
+drops none. The handymen strike over litter when the littered cells exceed 0.2 of the path and queue cells. In a level the handymen patrol
+the paths and take the nearest unclaimed litter within their `DetectionRange` (2 to 5 cells by grade); each walks there and sweeps it for `WorkDuration`
+park turns from his arrival (ORACLE.md X23, WANDER-plan.md §4). A headless economy without a map takes the first unclaimed littered cell, scanning columns
+from the left.
 
 ### Pranks
 

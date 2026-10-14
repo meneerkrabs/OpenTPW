@@ -458,7 +458,7 @@ implemented yet.
 | AUDIO-021 | `scape.omp` places and the camera-midpoint listener share the park's sound units after undoing terrain centering; the midpoint follows a fork lead | The Mac's listener position and placement units traced together |
 | AUDIO-022 | A refused path-tool commit plays `cat_ui` 175; the Mac site is gated and its mapping to a refusal is inferred | The tool latch `obj+36` and the refusal path |
 | AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
-| AUDIO-024 | A staff member's walking/idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `STAF`; its state is not persisted on save/load | The handlers' turn boundary, shared world draw order and presentation-stream continuity |
+| AUDIO-024 | A staff member's walking/idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `STAF`; its state is not persisted on save/load; handymen in a level draw theirs in their state machine (tp.exe `0x4d73c0`, states 0 and 1) from the economy's stream | The handlers' turn boundary, shared world draw order and presentation-stream continuity |
 | AUDIO-025 | The December season row reads past the four-season table; the fork's reading is used | The Mac's row address for index 4 |
 | AUDIO-026 | The forecast applies DaysOfWarning after the roll, on day indices | The Mac's day comparison units (`now` against `+0x20`) |
 | AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |

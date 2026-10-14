@@ -150,6 +150,18 @@ public sealed class ParkLitter
 		return ((int)(Next( ref state ) % 9) + 1, (int)(Next( ref state ) % 9) + 1);
 	}
 
+	/// <summary>
+	/// The point in a littered cell a handyman walks to, in 1/256 of a cell: the job search reseeds the world generator with the cell id and
+	/// draws twice (tp.exe <c>0x004D71CA</c>), each draw's low seven bits clamped to 1..9 and times 13, so the spot depends on the cell alone.
+	/// </summary>
+	public static (int X, int Y) SweepSpot( int x, int y )
+	{
+		var state = (uint)(y * 128 + x + 1);
+		int Byte( uint draw ) => Math.Clamp( (int)(draw & 0x7F), 1, 9 ) * 13;
+		var first = Byte( Next( ref state ) );
+		return (first, Byte( Next( ref state ) ));
+	}
+
 	/// <summary>The world generator step (tp.exe <c>0x00516330</c>, ORACLE.md X1): LCG, rotate right by 13, signed absolute value.</summary>
 	private static uint Next( ref uint state )
 	{

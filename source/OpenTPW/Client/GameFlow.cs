@@ -485,7 +485,9 @@ internal sealed partial class GameFlow : IDisposable
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
-			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1 );
+			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesHandymen == true );
+			if ( Level.StaffWorld != null )
+				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );
 			GameAudio.SetRain( Level.Weather?.RainLevel ?? 0 );
 			foreach ( var strike in Level.Weather?.TakeThunder() ?? Array.Empty<Vector3>() )
 				GameAudio.PlayThunder( strike );

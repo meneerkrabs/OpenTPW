@@ -56,9 +56,12 @@ public sealed partial class OriginalObjectRuntime
 		{ reason = "the script is missing the common CAP/DUR seed variables"; return false; }
 		if ( !ResolveCatalogueTier( tier, out var row, out var parameters, out reason ) ) return false;
 		ApplyCatalogueMetadata( tier, row, parameters );
-		// Preserve the constructor's raw CAP/DUR initialization semantics, including RIDES-016's unit qualification.
+		// The same CAP/DUR/SPEED initialization as the constructor: DUR is the clamped low byte (0x4df8f0), written when above 0.
 		SetVariable( nameof( RideVariables.VAR_CAPACITY ), row.GetInt( "InitCapacity" ) );
-		SetVariable( nameof( RideVariables.VAR_DURATION ), row.GetInt( "InitDuration" ) );
+		if ( ClampInitDuration( Entry.Settings, row.GetInt( "InitDuration" ) ) is { } duration )
+			SetVariable( nameof( RideVariables.VAR_DURATION ), duration );
+		if ( row.GetInt( "InitSpeed" ) is > 0 and var speed )
+			Script.SpeedBias = speed;
 		return true;
 	}
 

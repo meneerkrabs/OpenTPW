@@ -318,12 +318,13 @@ public class ObjectCatalogCorpusTests
 	[TestMethod]
 	public void CatalogCountsPerThemeArePinned()
 	{
+		// Named = objects with an OBJECT_NAMES binding: all but the three tools of each theme (RIDES-010: the Info.Id table binds the gates, signs, lights, loudspeakers and more).
 		var expected = new Dictionary<string, (int Entries, int Buildable, int Rides, int Shops, int Sideshows, int Features, int Upgrades, int Named, int Scripts)>
 		{
-			["jungle"] = (70, 58, 18, 8, 5, 36, 3, 58, 67),
-			["hallow"] = (70, 58, 20, 8, 4, 35, 3, 56, 67),
-			["space"] = (68, 56, 21, 8, 4, 32, 3, 54, 65),
-			["fantasy"] = (66, 55, 17, 8, 4, 35, 2, 52, 63)
+			["jungle"] = (70, 58, 18, 8, 5, 36, 3, 67, 67),
+			["hallow"] = (70, 58, 20, 8, 4, 35, 3, 67, 67),
+			["space"] = (68, 56, 21, 8, 4, 32, 3, 65, 65),
+			["fantasy"] = (66, 55, 17, 8, 4, 35, 2, 63, 63)
 		};
 		foreach ( var theme in ObjectCatalog.Themes )
 		{

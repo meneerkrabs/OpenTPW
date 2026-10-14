@@ -165,7 +165,7 @@ public class CoasterSaveAssetTests
 		Rejects( snapshot with { Coasters = snapshot.Coasters! with { Rides = snapshot.Coasters.Rides.Take( 1 ).ToList() } },
 			"places 2 live coaster stations" );
 		// Definition bounds: the coaster's train and car counts (both entries stay saved, so the count check passes).
-		var definition = CoasterDefinition.FromSettings( fixture.Coaster.Settings );
+		var definition = CoasterDefinition.FromEntry( fixture.Coaster );
 		var tooManyTrains = Enumerable.Range( 0, definition.MaxTrains + 1 )
 			.Select( _ => snapshot.Coasters!.Rides[0].Trains[0] with { Cars = Enumerable.Range( 0, definition.MaxCars ).Select( _ => new List<int>() ).ToList() } )
 			.ToList();

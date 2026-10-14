@@ -874,14 +874,23 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( hud.SelectedAttractionId == thirdAttractionId, "clicking a row selects that attraction" );
-			ClickAttractionRow( hud, thirdAttractionId ); // a second click on the selected row activates it
+			Require( hud.SelectedObject == thirdObject && hud.InfoArmOpen && hud.AttractionsWindowOpen,
+				"a left click on a row opens the object's info panel and keeps the list (list message 0x400)" );
+			// Park the camera target in a far corner so the right click has to move it to the object.
+			var camera = (ParkCameraMode)Camera.Mode;
+			camera.SetPose( new Vector3( -9999, -9999, 0 ), camera.Height, camera.Yaw );
+			ClickAttractionRow( hud, thirdAttractionId, right: true );
 		} );
-		Wait( "row activated", 3 );
-		Do( "row activation selects the object", () =>
+		Wait( "row located", 3 );
+		Do( "right click locates the object", () =>
 		{
 			var hud = flow.Hud!;
-			Require( !hud.AttractionsWindowOpen && hud.SelectedObject == thirdObject && hud.InfoArmOpen,
-				"a second click on the selected row selects the object in the park and closes the window" );
+			Require( !hud.AttractionsWindowOpen && hud.SelectedObject == thirdObject,
+				"a right click on a row centres the camera on the object and closes the list (list message 0x402)" );
+			var camera = (ParkCameraMode)Camera.Mode;
+			var extent = Math.Max( 0, ParkCameraMode.TargetExtent );
+			var expected = new Vector3( Math.Clamp( thirdObject!.Position.X, -extent, extent ), Math.Clamp( thirdObject.Position.Y, -extent, extent ), 0 );
+			Require( ( camera.Target - expected ).Length < 2, $"the camera focuses the clicked object (target {camera.Target}, expected {expected})" );
 			flow.Hud.OpenBuyWindow();
 			Click( flow.Hud.Stack.Top!, "allAttractions" );
 		} );
@@ -1014,14 +1023,14 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Level!.PlacedRide!.IsOpen
 				&& ParkAttractionRoster.StatusOf( hud.AttractionItems.Single( row => row.AttractionId == prototypeAttractionId ) ) == UIStrings.Blank,
 				"opening the prototype clears its CLOSED status" );
-			ClickAttractionRow( hud, prototypeAttractionId ); // the selected row activates on a second click
+			flow.InjectedInput = UiInput.Key( UiKeys.Accept ); // Enter keeps the select-and-close action ([EXT:overview-select-button])
 		} );
 		Wait( "prototype row activated", 3 );
 		Do( "prototype activation selects the Totem", () =>
 		{
 			var hud = flow.Hud!;
 			Require( !hud.AttractionsWindowOpen && hud.InfoArmOpen && hud.SelectedObject == flow.Level!.PlacedRide,
-				"activating the prototype's row selects the Totem in the park and closes the window" );
+				"Enter on the prototype's row selects the Totem in the park and closes the window" );
 			Require( hud.Stack.Top == hud.Screen, "row activation returns to the HUD before riding" );
 		} );
 		Wait( "HUD before ride-view gate", 3 );
@@ -1637,15 +1646,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 427 + (visible + 0.5f) * ParkHud.BuyRowHeight ), UiAnchor.Center ) );
 	}
 
-	/// <summary>Clicks the attractions-window row of <paramref name="attractionId"/>; a second click on the selected row activates it.</summary>
-	private void ClickAttractionRow( ParkHud hud, int attractionId )
+	/// <summary>Clicks the attractions-window row of <paramref name="attractionId"/>; a right click locates it.</summary>
+	private void ClickAttractionRow( ParkHud hud, int attractionId, bool right = false )
 	{
 		Require( hud.AttractionsWindowOpen, "the attractions window is open" );
 		var index = hud.AttractionItems.ToList().FindIndex( row => row.AttractionId == attractionId );
 		var visible = index - hud.AttractionFirstRow;
 		Require( index >= 0 && visible >= 0 && visible < ParkHud.StaffVisibleRows, "the requested attraction is among the visible rows" );
-		flow.InjectedInput = UiInput.Click( Context.Canvas.Map(
-			new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center ) );
+		var point = Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center );
+		flow.InjectedInput = right ? UiInput.Idle( point ) with { RightPressed = true } : UiInput.Click( point );
 	}
 
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>

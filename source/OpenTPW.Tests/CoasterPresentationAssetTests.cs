@@ -42,7 +42,7 @@ public class CoasterPresentationAssetTests
 		foreach ( var entry in PcCoasters() )
 		{
 			count++;
-			var sections = CoasterCrossSections.FromSettings( entry.Settings );
+			var sections = CoasterCrossSections.FromSettings( entry.CoasterSettings );
 			Assert.IsFalse( sections.IsEmpty, $"{entry.InfoId} has a cross section" );
 			Assert.IsTrue( sections.Textures.Count >= 1, $"{entry.InfoId} has track textures" );
 			foreach ( var texture in sections.Textures )
@@ -67,7 +67,7 @@ public class CoasterPresentationAssetTests
 	public void TheFlumesPickTheDrySectionWhenClimbing()
 	{
 		var flume = PcCoasters().Single( entry => entry.InfoId == 1185 );
-		var sections = CoasterCrossSections.FromSettings( flume.Settings );
+		var sections = CoasterCrossSections.FromSettings( flume.CoasterSettings );
 		var dry = sections.SelectSection( -0.3f, winch: false );
 		var wet = sections.SelectSection( 0, winch: false );
 		Assert.AreNotEqual( dry, wet );
@@ -82,7 +82,7 @@ public class CoasterPresentationAssetTests
 	{
 		foreach ( var entry in PcCoasters() )
 		{
-			var definition = CoasterDefinition.FromSettings( entry.Settings );
+			var definition = CoasterDefinition.FromEntry( entry );
 			foreach ( var loop in new[] { false, true } )
 			{
 				if ( loop && !definition.HasLoopPylon )
@@ -128,7 +128,7 @@ public class CoasterPresentationAssetTests
 	{
 		foreach ( var entry in PcCoasters() )
 		{
-			var types = CoasterCarTypes.FromSettings( entry.Settings );
+			var types = CoasterCarTypes.FromSettings( entry.CoasterSettings );
 			Assert.IsTrue( types.Types.Count >= 1, $"{entry.InfoId} has a car type" );
 			foreach ( var index in new[] { types.FrontIndex, types.CentreIndex, types.RearIndex }.Distinct() )
 			{

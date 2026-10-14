@@ -185,6 +185,8 @@ public sealed record RideVisitorBridgeSnapshot
 	/// <summary>True when the called guest's id is written to the script's VAR_LETMEON.</summary>
 	public required bool LetMeOnWritten { get; init; }
 	public required long LastAdmissionTurn { get; init; }
+	/// <summary>The ride is in state 1 (<see cref="RideVisitorBridge.IsBrokenDown"/>); absent in older saves, which held no state: the ride update reads VAR_BROKEN again.</summary>
+	public bool BrokenDown { get; init; }
 	public required long CalledTurn { get; init; }
 	/// <summary>Computed queue cells from the front (index 0) to the back.</summary>
 	public required (int X, int Y)[] QueueCells { get; init; }

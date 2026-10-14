@@ -806,13 +806,45 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		SetLaneWaypoint( guest );
 	}
 
+	/// <summary>
+	/// The booth (state 4, <c>0x004FF9D0</c>): the verdict on the entrance fee (<see cref="BoothVerdict"/>) sends a guest home when the park is far too
+	/// expensive, keeps one that finds it expensive at the booth for 50 + R % 50 park turns with a medium happiness loss (home once its happiness
+	/// truncates to 0), and lets the others pay, a cheap park with a medium happiness gain.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4ff9d0 booth] verdict 0: thought 6 and home (state 18); 1: +0x200 = 50 + R % 50 (counted down one per update before the verdict runs again), thought 6, 0x4fea70(1), home when the happiness byte is 0; 2: 0x4fe9c0(1), then 3: the fee is booked (0x4d0600) and the guest enters (+0x204 = 1, state 3)
 	private void PayAdmission( Guest guest )
 	{
+		if ( Payments?.ParkClosed != true )
+		{
+			var verdict = BoothVerdict.Decide( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), Settings );
+			if ( verdict == BoothVerdictKind.FarTooExpensive )
+			{
+				Think( guest, GuestThought.Dissatisfied );
+				StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
+				return;
+			}
+			if ( verdict == BoothVerdictKind.Expensive )
+			{
+				var wait = BoothVerdict.ExpensiveWaitBase + random.NextWord() % BoothVerdict.ExpensiveWaitBase;
+				Think( guest, GuestThought.Dissatisfied );
+				guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
+				if ( ((int)guest.Happiness & 0xFF) != 0 )
+				{
+					// [APPROX:ARRIVAL-006] the wait counts park turns of the booth's fixed clock (248 ms each) rather than the guest updates of state 4, and the draws come from the guest stream (DET-014)
+					guest.StateTimer = wait * ParkCalendar.TurnMilliseconds / 1000f;
+					return;
+				}
+				StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
+				return;
+			}
+			if ( verdict == BoothVerdictKind.Cheap )
+				guest.Happiness = MeterMath.Add( guest.Happiness, Settings.MediumHappinessChange );
+		}
 		int fee;
 		if ( Payments != null ? !Payments.TryPayAdmission( guest.Money, out fee ) : guest.Money < (fee = AdmissionFee) )
 		{
-			// Closed park or too expensive: the guest turns back at the booth, thinking 6 as the original's two price refusals do (0x004FFA44, 0x004FFA7D).
-			// [APPROX:ARRIVAL-006] ADMISSION DECISION: the original's booth weighs the entrance fee against the park (0x004FF5B0: far too expensive, on the expensive side with a wait of 50 + R % 50 updates, on the cheap side, fair; 0x004FF9D0) and turns a guest away by that verdict; OpenTPW admits any guest who has the fee while the park is open and turns the others back with the same thought — evidence needed: the verdict 0x004FF5B0 (its inputs and bands)
+			// A closed park, or a guest whose purse is short of the fee, turns back with thought 6 as the booth's refusals do.
+			// [APPROX:ARRIVAL-007] OpenTPW charges the fee from the guest's purse and turns back a guest who cannot pay; the original's booth books the fee (0x004D0600) without reading the guest's cash — evidence needed: whether anything takes the fee from the guest's cash
 			Think( guest, GuestThought.Dissatisfied );
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
 			return;
@@ -873,7 +905,6 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return true;
 		}, ( prank, type ) => Prank( guest, prank, type ), () =>
 		{
-			UpdateMood( guest );
 			choice = ChooseAttraction( guest );
 			return choice != null;
 		}, () => Wander( guest ), () => guest.Happiness );
@@ -1105,16 +1136,6 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return true;
 	}
 
-	// [APPROX:GUEST-009] BOREDOM: a guest whose last ride lies more than its type's BoredomThreshold seconds back loses SmallHappinessChange at each major decision; tp.exe loads BoredomThreshold as field 6 of the PeepTypes record, but its reader is not located — evidence needed: the reader of the peep type's BoredomThreshold
-	private void UpdateMood( Guest guest )
-	{
-		var small = Settings.SmallHappinessChange;
-		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-		if ( guest.SecondsSinceRide > type.BoredomThreshold )
-			guest.Happiness -= small;
-		guest.Happiness = Math.Clamp( guest.Happiness, 0, 100 );
-	}
-
 	/// <summary>
 	/// The guest thinks <paramref name="thought"/> (tp.exe <c>0x0050BE80</c>): the thought is stored, and a bubble shows it when the last one is old enough
 	/// for the new thought's priority (<see cref="GuestThoughts.TakesBubble"/>).
@@ -1188,8 +1209,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// odd park turn, wins if the attraction is open and not broken and the guest can reach it. There is no random bonus.
 	/// </summary>
 	// [BIN:STP-PPC:0x100E8FF4 choice loop] executed by the PowerPC oracle (attraction-choice); the tie rule reads the world turn's bit 0 (game +0x1da70c)
-	// [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original's counts-test 0xdc834 also tests the ride state, the open word, the queue room and the coaster controller (ARRIVAL-003)
+	// [BIN:TPW-EXE:0x4dd920 counts-test] the candidate needs flag +0x32 bit 4, a state other than 1 and 4 (+0x19c), the open word (+0x68), a back cell, queue room below 4 × cells (+0x40) and the type checks; VAR_BROKEN is not read, so a ride whose script just reported a breakdown is chosen until its ride update enters state 1
+	// [APPROX:QUEUE-017] the queue room and the coaster controller tests of the counts-test are left to the join (ARRIVAL-003)
 	// [BIN:TPW-EXE:0x004FCB10 choice loop] no price or money test in the choice: a candidate needs flag +0x32 bit 4, a back-of-queue cell, a score above 9 that beats the best (ties on an odd turn), the counts-test 0x004DD920 and a route; the price is tested when the guest is called forward (0x004FDE50)
+	// [BIN:TPW-EXE:0x4ff419 major decision] once the turn is above +0x1FC + 30 the choice 0x4fcb10 runs; with no target the guest logs event 1, thinks 4, loses the small step (0x4fea70(0)) and is stamped; nothing in it tests time since a ride, and no instruction reads PeepTypes' BoredomThreshold (0x7850EC + 12 × type has no reference; excitement 0x7850E4 and cash 0x7850E8 have)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest )
 	{
 		IEnumerable<AttractionChoice.Candidate> Candidates()
@@ -1198,7 +1221,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				var canJoin = attraction.JoinCell != null;
 				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
-					() => attraction.IsOpen && !attraction.IsBroken && attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
+					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
 			}
 		}
 		var id = AttractionChoice.Pick( Candidates(), ParkTurn );
@@ -1644,7 +1667,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.QueueMoveDelay--;
 				return;
 			}
-			if ( !attraction.IsBroken )
+			if ( !attraction.IsBrokenDown )
 			{
 				MoveToQueuePosition( guest, attraction );
 				return;

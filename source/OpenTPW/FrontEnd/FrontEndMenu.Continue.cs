@@ -4,12 +4,20 @@ namespace OpenTPW.FrontEnd;
 
 public sealed partial class FrontEndMenu
 {
+	/// <summary>Whether the enter-park sound (cat_globallobbysfx 4) plays for the game mode that follows: not in Instant Action (game type 2).</summary>
+	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action plays cat_globallobbysfx 4 unless the game type that follows is 2 (Instant Action); Mac-traced, the PC enter action was not checked
+	internal static bool EnterParkSoundPlays( bool instantAction ) => !instantAction;
+
+	private static void PlayEnterPark( bool instantAction )
+	{
+		if ( EnterParkSoundPlays( instantAction ) )
+			GameAudio.PlayEnterPark();
+	}
+
 	/// <summary>Distinct own manual/automatic continuation, or the existing new-park mode choice.</summary>
-	// [APPROX:UI-931] the theme entry offers distinct own-save actions; native per-player theme-entry flow is not reproduced — evidence needed: original profile/theme-entry UI behavior
+	// [EXT:theme-continue] the theme entry offers distinct own-save actions (Continue saved, Continue automatic, New): host UI with no original rule to match; no native profile or autosave flow is reproduced
 	private void ShowThemeStart()
 	{
-		// The enter action's sound as the camera would fly into the island (cat_globallobbysfx 4).
-		GameAudio.PlayEnterPark();
 		var saved = actions.ContinuePark == null ? null : actions.ContinueEntry( Selected.Level );
 		var automatic = actions.ContinueAutomatic == null ? null : actions.AutomaticEntry( Selected.Level );
 		if ( saved == null && automatic == null ) { ShowGameMode(); return; }
@@ -19,8 +27,8 @@ public sealed partial class FrontEndMenu
 		void Activate( Action action ) { if ( Current() && choice!.TryActivate( Stack ) ) action(); }
 		string Mode( ParkGameMode mode ) => strings[mode == ParkGameMode.InstantAction ? UIStrings.InstantAction : UIStrings.FullSimulation];
 		var entries = new List<(Func<string>, Action)>();
-		if ( saved != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueSavedPark ) + " (" + Mode( saved.Mode ) + ")", () => Activate( () => actions.ContinuePark!( saved ) )) );
-		if ( automatic != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueAutomaticPark ) + " (" + Mode( automatic.Mode ) + ")", () => Activate( () => actions.ContinueAutomatic!( automatic ) )) );
+		if ( saved != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueSavedPark ) + " (" + Mode( saved.Mode ) + ")", () => Activate( () => { PlayEnterPark( saved.Mode == ParkGameMode.InstantAction ); actions.ContinuePark!( saved ); } )) );
+		if ( automatic != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueAutomaticPark ) + " (" + Mode( automatic.Mode ) + ")", () => Activate( () => { PlayEnterPark( automatic.Mode == ParkGameMode.InstantAction ); actions.ContinueAutomatic!( automatic ); } )) );
 		entries.Add( (() => strings.Extra( OpenTpwText.NewPark ), () => Activate( () => { Stack.Pop(); ShowGameMode(); } )) );
 		entries.Add( (() => strings.Extra( OpenTpwText.Back ), () => { if ( Current() ) Stack.Pop(); }) );
 		var summary = SelectedName;

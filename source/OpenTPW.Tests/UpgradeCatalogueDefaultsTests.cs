@@ -103,6 +103,29 @@ public class UpgradeCatalogueDefaultsTests
 	}
 
 	private const string Tier2 = "Upgrades[2].InitCapacity 5\nUpgrades[2].InitDuration 30\nUpgrades[2].InitSpeed 150\nUpgrades[2].QueueWaitTimeConstant 300\n";
+	/// <summary>RIDES-033: upgrade completion 0x4df8f0 writes Upgrades[level].InitSpeed (when above 0) to the script's speed bias, like ride init does for level 0.</summary>
+	[TestMethod]
+	public void CompletedTierSetsTheScriptSpeedBiasToThatLevelsInitSpeed()
+	{
+		var w = World( Tier2 );
+		Assert.AreEqual( (50, 1f), (w.One.Script!.SpeedBias, w.One.Script.ScriptSpeed) );
+		Complete( w );
+		Assert.AreEqual( (100, 1.5f), (w.One.Script.SpeedBias, w.One.Script.ScriptSpeed) );
+		w.One.Runtime.Simulate( .001 );
+		Complete( w, 2 );
+		Assert.AreEqual( 150, w.One.Script.SpeedBias );
+		Assert.AreEqual( 50, w.Two.Script!.SpeedBias, "only the upgraded owner changes" );
+	}
+	[TestMethod]
+	public void CompletedTierWithoutInitSpeedKeepsTheScriptSpeedBias()
+	{
+		var w = World( "Upgrades[2].InitCapacity 5\nUpgrades[2].QueueWaitTimeConstant 300\n" );
+		Complete( w );
+		Assert.AreEqual( 100, w.One.Script!.SpeedBias );
+		w.One.Runtime.Simulate( .001 );
+		Complete( w, 2 );
+		Assert.AreEqual( 100, w.One.Script.SpeedBias, "a level whose InitSpeed is not above 0 writes nothing" );
+	}
 	[TestMethod]
 	public void FreshAndImportedBindingsSeedRequestedTierBeforeExecution()
 	{

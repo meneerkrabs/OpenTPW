@@ -5,6 +5,8 @@ import { readFile } from 'node:fs/promises';
 // The page module as shipped, without a package.json or a test dependency (as test_web_textures.mjs does).
 const source = await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-originals.js', import.meta.url), 'utf8');
 const { MODES, openOriginalStore, supported } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const startupSource = await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-startup.js', import.meta.url), 'utf8');
+const { plan, importStartup } = await import(`data:text/javascript;base64,${Buffer.from(startupSource).toString('base64')}`);
 
 // An in-memory stand-in for the origin-private file system: the handle methods the module uses.
 const notFound = name => Object.assign(new Error(`${name} not found`), { name: 'NotFoundError' });
@@ -502,4 +504,92 @@ test('clear removes everything, and bad paths and unlisted files are refused', a
 	await store.clear();
 	assert.equal(store.manifest, null);
 	assert.equal((await openOriginalStore(root, { digest })).manifest, null);
+});
+
+// Edition choices use the existing originals manifest and readers; no edition-specific cache bypass.
+test('a reopened TPI cache requires the whole selected theme and preserves other themes', async () => {
+	const root = new FakeDirectory();
+	let store = await openOriginalStore(root, { digest });
+	const files = [['Data/Ver.txt', 1], ['Data/levels/Standard.sam', 1], ['Data/levels/water/a.wad', 1], ['Data/levels/water/b.wad', 1], ['Data/levels/science/a.wad', 1]];
+	await store.begin('lazy', files);
+	for (const [path] of files.slice(0, 3)) await store.write(path, bytes('a'));
+	await store.flush();
+	store = await openOriginalStore(root, { digest });
+	const selected = () => plan(Object.entries(store.manifest.files).map(([path, entry]) => [path, () => store.read(path), entry.size]), 'water');
+	assert.equal(selected().start.every(([path]) => store.has(path)), false);
+	await store.write('Data/levels/water/b.wad', bytes('b'));
+	await store.flush();
+	store = await openOriginalStore(root, { digest });
+	assert.equal(selected().start.every(([path]) => store.has(path)), true);
+	assert.equal(store.has('Data/levels/science/a.wad'), false);
+	const loaded = [];
+	await importStartup({ BeginImport() {}, LevelLoaded: theme => loaded.push(theme) }, selected(), async sources => {
+		for (const [, read] of sources) assert.equal((await read()).byteLength, 1);
+	});
+	assert.deepEqual(loaded, ['water']);
+});
+
+test('a physically incomplete cached TPI theme fails without marking it loaded and can recover', async () => {
+	const root = new FakeDirectory();
+	const store = await openOriginalStore(root, { digest });
+	const files = [['Data/Ver.txt', 1], ['Data/levels/water/a.wad', 1]];
+	await store.begin('lazy', files);
+	for (const [path] of files) await store.write(path, bytes('a'));
+	await store.flush();
+	const dir = await (await (await (await root.getDirectoryHandle('opentpw-originals')).getDirectoryHandle('Data')).getDirectoryHandle('levels')).getDirectoryHandle('water');
+	(await dir.getFileHandle('a.wad')).bytes = new Uint8Array(0);
+	let resets = 0;
+	const loaded = [];
+	const program = { BeginImport() { resets++; }, LevelLoaded: theme => loaded.push(theme) };
+	const planned = () => plan(files.map(([path, size]) => [path, async () => {
+		const kept = await store.read(path);
+		if (!kept) throw new Error(`${path}: kept copy is missing`);
+		return kept;
+	}, size]), 'water');
+	const copy = async sources => { for (const [, read] of sources) await read(); };
+	await assert.rejects(importStartup(program, planned(), copy), /missing/);
+	assert.deepEqual(loaded, []);
+	await store.write('Data/levels/water/a.wad', bytes('r'));
+	await importStartup(program, planned(), copy);
+	assert.equal(resets, 2);
+	assert.deepEqual(loaded, ['water']);
+});
+
+test('changing cached editions keeps the existing installation replacement policy', async () => {
+	const root = new FakeDirectory();
+	const store = await openOriginalStore(root, { digest });
+	await store.begin('lazy', [['Data/levels/jungle/a.wad', 1]]);
+	await store.write('Data/levels/jungle/a.wad', bytes('a'));
+	await store.flush();
+	const tpi = [['Data/Ver.txt', 1], ['Data/levels/water/a.wad', 1]];
+	await store.begin('lazy', tpi);
+	assert.equal(store.has('Data/levels/jungle/a.wad'), false);
+	for (const [path] of tpi) await store.write(path, bytes('t'));
+	await store.flush();
+	const restored = await openOriginalStore(root, { digest });
+	assert.deepEqual(Object.keys(restored.manifest.files).sort(), tpi.map(([path]) => path).sort());
+	assert.deepEqual(plan(tpi.map(([path]) => [path]), 'water').levels, []);
+});
+
+test('a filtered actual directory witness survives cache reopening without cached or imported media', async () => {
+	const root = new FakeDirectory(); let store = await openOriginalStore(root, { digest });
+	const sources = [['Data/Ver.txt', null, 1], ['Data/levels/water/a.wad', null, 1], ['Data/levels/space/preview.mpg', null, 1000]];
+	const planned = plan(sources);
+	await store.begin('lazy', planned.manifestSources.map(([path, , size]) => [path, size]));
+	await store.write('Data/Ver.txt', bytes('v')); await store.flush();
+	store = await openOriginalStore(root, { digest });
+	assert.equal(store.has('Data/levels/space/preview.mpg'), false);
+	assert.equal(store.manifest.version, 1);
+	assert.equal(store.manifest.files['Data/levels/space/preview.mpg'].stored, false);
+	assert.equal(store.manifest.files['Data/levels/space/preview.mpg'].sha256, undefined);
+	assert.equal(await store.read('Data/levels/space/preview.mpg'), null);
+	const reopened = plan(Object.entries(store.manifest.files).map(([path, entry]) => [path, () => store.read(path), entry.size]));
+	assert.deepEqual(reopened.themeDirectories, ['Data/levels/water', 'Data/levels/space']);
+	assert.deepEqual(reopened.start.map(([path]) => path), ['Data/Ver.txt']);
+	assert.equal(reopened.all.some(([path]) => path.endsWith('.mpg')), false);
+	let witnesses; const loaded = [];
+	await importStartup({ BeginImport(dirs) { witnesses = dirs; }, LevelLoaded(theme) { loaded.push(theme); } }, reopened, async sources => {
+		for (const [, read] of sources) assert.equal((await read()).byteLength, 1);
+	});
+	assert.deepEqual(witnesses, reopened.themeDirectories); assert.deepEqual(loaded, []);
 });

@@ -4,6 +4,7 @@ import * as audio from './opentpw-audio.js';
 import * as storage from './opentpw-storage.js';
 import { createTextureDownloads } from './opentpw-textures.js';
 import * as originals from './opentpw-originals.js';
+import { plan, importStartup, startSelected } from './opentpw-startup.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
@@ -39,11 +40,6 @@ const perf = loopback && perfQuery.get('perf') === '1' ? {
 if (perf)
 	globalThis.opentpwPerf = perf;
 
-// Not copied: the movies and the start-up pictures (no movies in the browser yet).
-const notCopied = /\/data\/(movies|init)\/|\.(sf2|mpg)$/i;
-// Copied when a park first needs them: the theme folders below levels (about 45 MB each, most of it
-// music). Their saved park (Easymode.TPWI) comes at once, for the Load list.
-const deferred = /^\/data\/levels\/[^/]+\/(?!easymode\.tpwi$)/i;
 let levelSources = [];
 let speechSources = new Map();
 let languageLoadingText = '';
@@ -229,7 +225,7 @@ async function sameInstallation(folder) {
 async function readFromFolder(relative, size) {
 	let file = chosenFolder && findIn(chosenFolder, relative);
 	if (!file || size != null && file.size !== size) {
-		chosenFolder = await askForFolder('Some game files are not kept in this browser yet: choose your Theme Park World folder again to load them.', relative, size);
+		chosenFolder = await askForFolder('Some game files are not kept in this browser yet: choose your game folder again to load them.', relative, size);
 		file = findIn(chosenFolder, relative);
 	}
 	return file.arrayBuffer();
@@ -250,7 +246,7 @@ function replaceStore(relative) {
 		keepGeneration++;
 		try {
 			await store.clear();
-			await store.begin(keepMode, attemptFiles.all.map(([path, , size]) => [path, size ?? null]));
+			await store.begin(keepMode, attemptFiles.manifestSources.map(([path, , size]) => [path, size ?? null]));
 		} catch (error) {
 			keepFailed = true;
 			console.warn('Replacing the kept game files failed; this visit keeps nothing more', error);
@@ -291,53 +287,17 @@ function keeping(sources, fromFolder) {
 	}, size]);
 }
 
-// The CD keeps the other languages beside Data: <Lang>/data/Language/<Lang> (text, fonts) and <Lang>/Meshes/<Lang>
-// (banners), about 2 to 3 MB per language, copied at once so the language can be listed and switched. The advisor's
-// speech of a language (<Lang>/data/global/speech/speechHD.SDT, about 27 MB, and lips.WAD, plus each level's speech folder, about 0.6 MB) is copied when that language
-// is chosen (requestLanguage), both files together. A folder counts as a language by that structure, not by name, so
-// every CD folder that holds its own text is offered.
-function languageFolders(sources) {
-	const found = new Set();
-	for (const [relative] of sources) {
-		const match = /^([^/]+)\/data\/language\/([^/]+)\//i.exec(relative);
-		if (match && match[1].toLowerCase() === match[2].toLowerCase() && match[1].toLowerCase() !== 'data')
-			found.add(match[1].toLowerCase());
-	}
-	return found;
-}
-
-// Which of a folder's files the page copies: the files it may copy at all (Data without movies, the other languages' text,
-// banners and speech), those it copies at start, the theme folders it copies when a park needs them, and each language's speech.
-// Each source is [path below the game folder, () => Promise<ArrayBuffer>, size or null].
-function plan(sources) {
-	const languages = languageFolders(sources);
-	const wanted = relative => {
-		if (/^data\//i.test(relative))
-			return !notCopied.test(`/${relative}`);
-		const match = /^([^/]+)\/(data\/language|meshes)\//i.exec(relative);
-		return match != null && languages.has(match[1].toLowerCase());
-	};
-	const speech = new Map();
-	for (const source of sources) {
-		const match = /^([^/]+)\/data\/(global\/speech\/(speechHD\.SDT|lips\.wad)|levels\/[^/]+\/speech\/.+)$/i.exec(source[0]);
-		if (match && languages.has(match[1].toLowerCase()))
-			speech.set(match[1].toLowerCase(), [...(speech.get(match[1].toLowerCase()) ?? []), source]);
-	}
-	const kept = sources.filter(([relative]) => wanted(relative) || [...speech.values()].some(files => files.some(([path]) => path === relative)));
-	const copied = sources.filter(([relative]) => wanted(relative));
-	return {
-		all: kept,
-		start: copied.filter(([relative]) => !deferred.test(`/${relative}`)),
-		levels: copied.filter(([relative]) => deferred.test(`/${relative}`)),
-		speech,
-	};
-}
-
 let starting = false;
 async function copy(sources, fromFolder = false) {
 	if (starting)
 		return;
-	const files = plan(sources);
+	let files;
+	try {
+		files = plan(sources, document.getElementById('edition').value);
+	} catch (error) {
+		status.textContent = error.message;
+		return;
+	}
 	if (!files.start.some(([relative]) => /^data\//i.test(relative))) {
 		status.textContent = 'No Data folder in that folder.';
 		return;
@@ -359,34 +319,40 @@ async function copy(sources, fromFolder = false) {
 }
 
 async function copyAndStart(files, fromFolder) {
-	if (store && keepMode !== 'off' && !keepFailed) {
-		try {
-			await store.begin(keepMode, files.all.map(([relative, , size]) => [relative, size ?? null]));
-		} catch (error) {
-			keepFailed = true;
-			console.warn('Keeping the game files could not start', error);
+	await importStartup(program, files, async () => {
+		if (store && keepMode !== 'off' && !keepFailed) {
+			try {
+				await store.begin(keepMode, files.manifestSources.map(([relative, , size]) => [relative, size ?? null]));
+			} catch (error) {
+				keepFailed = true;
+				console.warn('Keeping the game files could not start', error);
+			}
 		}
-	}
-	const kept = plan(keeping(files.all, fromFolder));
-	speechSources = kept.speech;
-	levelSources = kept.levels;
-	await copyFiles(kept.start, text => status.textContent = `Copying ${text}…`);
-	// 'all': the rest of the folder is kept now, before the game starts (the theme folders and every language's speech).
-	if (keepMode === 'all' && store?.manifest && !keepFailed) {
-		openKeeping();
-		// From a chosen folder every file is read, the kept ones too, so each is compared with its kept copy (keeping()).
-		const missing = kept.all.filter(([relative]) => (fromFolder || !store.has(relative)) && keepQueued.get(relative) !== keepGeneration);
-		let bytes = 0;
-		for (const [index, [, read]] of missing.entries()) {
-			bytes += (await read()).byteLength;
-			if (index % 20 === 0 || index === missing.length - 1)
-				status.textContent = `Keeping the game files in this browser: ${index + 1} of ${missing.length} (${(bytes / 1048576).toFixed(0)} MB)…`;
-			if (keepFailed)
-				break;
+		const kept = plan(keeping(files.all, fromFolder), files.theme, files.themeDirectories);
+		speechSources = kept.speech;
+		levelSources = kept.levels;
+		copiedSpeech.clear();
+		languageLoadingText = '';
+		parkLoadingText = '';
+		updateLoading();
+		await copyFiles(kept.start, text => status.textContent = `Copying ${text}…`);
+		// 'all': the rest of the folder is kept now, before the game starts (the theme folders and every language's speech).
+		if (keepMode === 'all' && store?.manifest && !keepFailed) {
+			openKeeping();
+			// From a chosen folder every file is read, the kept ones too, so each is compared with its kept copy (keeping()).
+			const missing = kept.all.filter(([relative]) => (fromFolder || !store.has(relative)) && keepQueued.get(relative) !== keepGeneration);
+			let bytes = 0;
+			for (const [index, [, read]] of missing.entries()) {
+				bytes += (await read()).byteLength;
+				if (index % 20 === 0 || index === missing.length - 1)
+					status.textContent = `Keeping the game files in this browser: ${index + 1} of ${missing.length} (${(bytes / 1048576).toFixed(0)} MB)…`;
+				if (keepFailed)
+					break;
+			}
+			await keepFlush();
 		}
-		await keepFlush();
-	}
-	await start();
+	});
+	await start(files.theme);
 }
 
 // Called by the game (GameFlow.LevelDataReady) when a park in a theme not copied yet is started.
@@ -479,13 +445,21 @@ document.getElementById('folder').addEventListener('change', event => {
 // The setup screen's choices for kept files: Play starts from them, the mode applies to the next folder chosen and to what the
 // game reads from now on, and Remove deletes them.
 function startKept() {
-	return !!store?.manifest && plan(Object.entries(store.manifest.files).map(([relative]) => [relative])).start.every(([relative]) => store.has(relative));
+	if (!store?.manifest)
+		return false;
+	try {
+		const files = plan(Object.entries(store.manifest.files).map(([relative]) => [relative]), document.getElementById('edition').value);
+		return files.start.length > 0 && files.start.every(([relative]) => store.has(relative));
+	} catch {
+		return false;
+	}
 }
 function updateSetup() {
 	const select = document.getElementById('keep');
 	select.value = keepMode;
 	document.getElementById('keepRow').hidden = !store || perf !== null && !!perfQuery.get('data');
 	document.getElementById('forget').disabled = starting;
+	document.getElementById('edition').disabled = starting;
 	if (keepNote && !starting && !gameRunning)
 		status.textContent = keepNote;
 	const ready = keepMode !== 'off' && startKept();
@@ -495,6 +469,7 @@ function updateSetup() {
 	if (store?.manifest)
 		document.getElementById('keptSize').textContent = `${(store.bytes.stored / 1048576).toFixed(0)} MB`;
 }
+document.getElementById('edition').addEventListener('change', updateSetup);
 document.getElementById('keep').addEventListener('change', event => {
 	keepMode = event.target.value;
 	localStorage.setItem('opentpw-keep', keepMode);
@@ -526,7 +501,7 @@ if (served) {
 	}]));
 }
 
-async function start() {
+async function start(theme) {
 	status.textContent = 'Starting the game…';
 	try {
 		await storage.restore(program);
@@ -554,7 +529,7 @@ async function start() {
 	try {
 		document.getElementById('setup').hidden = true;
 		gameRunning = true;
-		program.Start(location.origin);
+		startSelected(program, location.origin, theme);
 		openKeeping();
 		// Keep saves and settings: every few seconds, and when the page is hidden or closed.
 		const keep = () => storage.sync(program).catch(error => console.warn('Saving to this browser failed', error));

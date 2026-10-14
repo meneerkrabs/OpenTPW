@@ -908,6 +908,12 @@ research batch was included in this merge.
 - **Localized detail labels (October 14):** the attractions and visitors windows' detail rows show their labels from the
   original UITEXT table (users last month, wait, cost and the rest) instead of the enum names they had shown since the
   overview windows came in; the extra rows keep their six-language supplementary strings.
+- **Experimental TPI themes in the browser (October 14):** with Theme Park Inc data, the browser page starts one of its three
+  themes (arabian, science, water) only when it is chosen explicitly in the edition selector; Theme Park World starts exactly as
+  before, and the kept-files store keeps one witness file per theme folder so the edition check still finds them.
+- **Shop and sideshow prices in the HUD (October 14, #109):** a shop's or sideshow's price can be set through the HUD; the edit
+  goes through the park economy's price setter, is saved with the park and reaches the guests' price test at the next step
+  (UI-933: the original's slider bounds are not traced).
 - **Walk camera (October 13, #106):** C arms a terrain-following walk camera in the park and a click starts walking; it is an
   OpenTPW extension (UI-932) that restores the park camera exactly on leaving and stays frozen while a park is being built.
 - **Map legend and model totals (October 13):** the live map totals its satisfaction legend by counting

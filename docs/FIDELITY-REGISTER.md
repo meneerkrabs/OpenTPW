@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **390 unresolved unique APPROX IDs**, 464 APPROX occurrences, 156 EXT occurrences, 170 DATA occurrences and 505 BIN occurrences.
+Current inventory: **391 unresolved unique APPROX IDs**, 465 APPROX occurrences, 156 EXT occurrences, 170 DATA occurrences and 505 BIN occurrences.
 
-Of these, 366 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 367 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -1127,7 +1127,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:177` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:57` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:101` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
-| tpi-viewer | `source/OpenTPW.Web/Program.cs:79` | [EXT:tpi-viewer] the browser front end needs Theme Park World data; Theme Park Inc data is refused here too, |
+| tpi-viewer | `source/OpenTPW.Web/Program.cs:104` | [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:90` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:128` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:280` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |

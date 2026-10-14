@@ -7,34 +7,73 @@ namespace OpenTPW.Tests;
 public class MapViewStateTests
 {
 	[TestMethod]
-	public void ZoomKeepsSourceInsideTheImage()
+	public void ZoomStepsHalfAndClampsToOneThroughThree()
 	{
 		var view = MapViewState.Default;
 		Assert.AreEqual( 1f, view.Zoom );
-		Assert.AreEqual( 0f, view.SourceMin.X );
-		Assert.AreEqual( 1f, view.SourceMax.Y );
+		var (min, max) = view.Source( 96, 85, true );
+		Assert.AreEqual( 0f, min.X );
+		Assert.AreEqual( 1f, max.Y );
+		view = view.ZoomBy( 0.5f );
+		Assert.AreEqual( 1.5f, view.Zoom );
 		view = view.ZoomBy( 10f );
-		Assert.AreEqual( 4f, view.Zoom );
-		Assert.AreEqual( 0.375f, view.SourceMin.X );
-		Assert.AreEqual( 0.625f, view.SourceMax.X );
+		Assert.AreEqual( 3f, view.Zoom );
+		(min, max) = view.Source( 96, 85, true );
+		Assert.AreEqual( 1f / 3f, max.X - min.X, 1e-5f );
+		Assert.IsTrue( min.X >= 0f && max.X <= 1f && min.Y >= 0f && max.Y <= 1f );
 		view = view.ZoomBy( -10f );
 		Assert.AreEqual( 1f, view.Zoom );
-		Assert.AreEqual( 0f, view.SourceMin.X );
-		Assert.AreEqual( 1f, view.SourceMax.X );
+		view = view.ZoomBy( -0.5f );
+		Assert.AreEqual( 1f, view.Zoom );
 	}
 
 	[TestMethod]
-	public void PanningMovesOneEighthOfVisibleImageAndClampsAtEdges()
+	public void PanningMovesOneCellWhateverTheZoomAndClampsToTheMap()
 	{
-		var view = MapViewState.Default.ZoomBy( 1f ).PanBy( 1, -1 );
-		Assert.AreEqual( 2f, view.Zoom );
-		Assert.AreEqual( 0.5625f, view.Center.X );
-		Assert.AreEqual( 0.4375f, view.Center.Y );
-		view = view.PanBy( 100, -100 );
-		Assert.AreEqual( 0.75f, view.Center.X );
-		Assert.AreEqual( 0.25f, view.Center.Y );
-		Assert.AreEqual( 0f, view.SourceMin.Y );
-		Assert.AreEqual( 1f, view.SourceMax.X );
+		var view = MapViewState.Default.PanBy( 0, 0, 96, 85 );
+		Assert.AreEqual( new System.Numerics.Vector2( 47.5f, 42f ), view.Cell );
+		var zoomed = view.ZoomBy( 1.5f ).PanBy( 1, -1, 96, 85 );
+		Assert.AreEqual( 48.5f, zoomed.Cell.X );
+		Assert.AreEqual( 41f, zoomed.Cell.Y );
+		Assert.AreEqual( view.PanBy( 1, -1, 96, 85 ).Cell, zoomed.Cell );
+		zoomed = zoomed.PanBy( 1000, -1000, 96, 85 );
+		Assert.AreEqual( 95f, zoomed.Cell.X );
+		Assert.AreEqual( 0f, zoomed.Cell.Y );
+		var (min, max) = zoomed.Source( 96, 85, true );
+		Assert.IsTrue( min.X >= 0f && max.X <= 1f && min.Y >= 0f && max.Y <= 1f );
+	}
+
+	[TestMethod]
+	public void SuccessivePansMoveTheWindowOneCellEach()
+	{
+		var view = MapViewState.Default.ZoomBy( 2f ).PanBy( 0, 0, 96, 85 );
+		var cell = 5f / ParkMapGeometry.ImagePixels;
+		var previous = view.Source( 96, 85, true ).Min.X;
+		for ( var step = 0; step < 3; step++ )
+		{
+			view = view.PanBy( 1, 0, 96, 85 );
+			var min = view.Source( 96, 85, true ).Min.X;
+			Assert.AreEqual( cell, min - previous, 1e-5f, $"pan {step + 1} moves the window exactly one cell, not a rounded one" );
+			previous = min;
+		}
+	}
+
+	[TestMethod]
+	public void CategoryButtonsAreIndependentLayerToggles()
+	{
+		var hud = (OpenTPW.Hud.ParkHud)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OpenTPW.Hud.ParkHud ) );
+		typeof( OpenTPW.Hud.ParkHud ).GetField( "mapCategories", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!
+			.SetValue( hud, new System.Collections.Generic.HashSet<BuildCategory> { BuildCategory.Rides, BuildCategory.Shops, BuildCategory.Sideshows, BuildCategory.Features } );
+		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Rides ) && hud.MapShowsCategory( (int)BuildCategory.Features ), "all four layers start on" );
+		hud.ToggleMapCategory( BuildCategory.Rides );
+		Assert.IsFalse( hud.MapShowsCategory( (int)BuildCategory.Rides ), "turning a layer off hides only its category" );
+		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Shops ) && hud.MapShowsCategory( (int)BuildCategory.Sideshows ) && hud.MapShowsCategory( (int)BuildCategory.Features ) );
+		hud.ToggleMapCategory( BuildCategory.Shops );
+		hud.ToggleMapCategory( BuildCategory.Sideshows );
+		hud.ToggleMapCategory( BuildCategory.Features );
+		Assert.IsFalse( hud.MapShowsCategory( (int)BuildCategory.Shops ) || hud.MapShowsCategory( (int)BuildCategory.Features ), "with every layer off nothing is shown" );
+		hud.ToggleMapCategory( BuildCategory.Rides );
+		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Rides ) && !hud.MapShowsCategory( (int)BuildCategory.Shops ), "toggling one layer on leaves the others off" );
 	}
 
 	[TestMethod]

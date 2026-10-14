@@ -29,14 +29,21 @@ public static class IntroPlaylist
 }
 
 /// <summary>
-/// Skip decision of the start-up movies. The original samples the skip inputs (Esc, Space, mouse button) before
-/// starting each movie and while it plays, so an input still held after skipping one movie also skips the next.
-/// Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game
-/// with a button down does not drop the intro.
+/// Skip decision of the start-up movies. Before each movie (the Bullfrog logo, then the trailer) the original waits
+/// until Esc, Space and every mouse button (left, right and middle) are released
+/// ([BIN:TPW-EXE:0x54e360 states 5-8]); an input held while a movie plays stops it. An input still held after one
+/// movie was skipped therefore delays the next movie instead of skipping it, and input held at launch is ignored
+/// until released, so launching the game with a button down does not drop the intro.
 /// </summary>
 public sealed class IntroSkipGate
 {
 	private bool armed;
+
+	/// <summary>True once the skip inputs were seen released since the last <see cref="Rearm"/>; a movie may start only then.</summary>
+	public bool Armed => armed;
+
+	/// <summary>Called when a movie ends: the next one waits for the skip inputs to be released.</summary>
+	public void Rearm() => armed = false;
 
 	/// <summary>True when the movie that is about to start, or is playing, must end now.</summary>
 	public bool Poll( bool skipInputDown )

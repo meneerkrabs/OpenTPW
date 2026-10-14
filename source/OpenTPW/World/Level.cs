@@ -373,7 +373,10 @@ public partial class Level : IDisposable
 			else if ( item.Kind == ParkEventKind.UpgradeBought )
 				CloseForUpgrade( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
+			{
+				ApplyCompletedCatalogueTier( item.InstanceId );
 				OpenAfterRepair( item.InstanceId );
+			}
 		};
 	}
 

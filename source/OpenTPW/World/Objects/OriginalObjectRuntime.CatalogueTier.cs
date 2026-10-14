@@ -1,0 +1,98 @@
+namespace OpenTPW;
+
+public sealed partial class OriginalObjectRuntime
+{
+	private QueueParameters? catalogueParameters;
+	private int catalogueFallbackCapacity;
+	private bool catalogueInitialized;
+	/// <summary>Derived catalogue metadata; operating VM state remains separate.</summary>
+	public int? CatalogueTier { get; private set; }
+
+	private void RememberCatalogueDefaults()
+	{
+		catalogueParameters = Visitors.Parameters;
+		catalogueFallbackCapacity = Visitors.Capacity;
+	}
+
+	internal bool SupportsCatalogueTier => GameEditions.Current == GameEdition.ThemeParkWorld
+		&& Script != null && ObjectCatalog.Themes.Contains( Entry.Theme ) && Entry.Category == ObjectCategory.Ride && IsAttraction && Coaster == null;
+
+	private bool CanConfigureCatalogue( out string reason )
+	{
+		reason = "";
+		if ( !SupportsCatalogueTier ) reason = "catalogue tier binding supports ordinary scripted Theme Park World rides only";
+		else if ( stopped || Script is { State: RideVMState.Faulted } ) reason = "the owning runtime is stopped or faulted";
+		else if ( !ReferenceEquals( Visitors.Parameters, catalogueParameters ) || Visitors.Capacity != catalogueFallbackCapacity ) reason = "the runtime has custom queue/default parameters";
+		return reason.Length == 0;
+	}
+
+	private bool ResolveCatalogueTier( int tier, out ObjectUpgradeLevel row, out QueueParameters parameters, out string reason )
+	{
+		row = null!; parameters = null!; reason = "";
+		if ( tier < 0 || Entry.Upgrades.FirstOrDefault( entry => entry.Level == tier ) is not { } found )
+		{ reason = $"{Entry.ArchivePath} has no exact SAM upgrade tier {tier}"; return false; }
+		row = found;
+		parameters = QueueParametersFor( Entry, row );
+		return true;
+	}
+
+	/// <summary>Before execution/restore only: seed requested catalogue defaults, then saved VM state may replace them.</summary>
+	internal bool TryInitializeCatalogueTier( int tier, out string reason )
+	{
+		if ( !CanConfigureCatalogue( out reason ) ) return false;
+		if ( catalogueInitialized || Script!.ExecutedInstructions != 0 )
+		{ reason = "catalogue VM seeds may only be initialized once before script execution"; return false; }
+		if ( Script.GetVariableIndex( nameof( RideVariables.VAR_CAPACITY ) ) < 0 || Script.GetVariableIndex( nameof( RideVariables.VAR_DURATION ) ) < 0 )
+		{ reason = "the script is missing the common CAP/DUR seed variables"; return false; }
+		if ( !ResolveCatalogueTier( tier, out var row, out var parameters, out reason ) ) return false;
+		ApplyCatalogueMetadata( tier, row, parameters );
+		// Preserve the constructor's raw CAP/DUR initialization semantics, including RIDES-016's unit qualification.
+		SetVariable( nameof( RideVariables.VAR_CAPACITY ), row.GetInt( "InitCapacity" ) );
+		SetVariable( nameof( RideVariables.VAR_DURATION ), row.GetInt( "InitDuration" ) );
+		return true;
+	}
+
+	/// <summary>Completed tier metadata only: no live VM, queue/rider/head, animator or scheduler mutation.</summary>
+	// [APPROX:QUEUE-011] exact completed economy tiers drive factory-owned catalogue defaults; live CAP/DUR stay authored, and native completion reset/performance behavior remains unverified.
+	internal bool TryApplyCatalogueTierDefaults( int tier, out string reason )
+	{
+		if ( !CanConfigureCatalogue( out reason ) ) return false;
+		if ( CatalogueTier is int current && tier < current )
+		{ reason = "completed catalogue tiers cannot regress on a live owner"; return false; }
+		if ( !ResolveCatalogueTier( tier, out var row, out var parameters, out reason ) ) return false;
+		if ( catalogueInitialized && CatalogueTier == tier ) return true;
+		ApplyCatalogueMetadata( tier, row, parameters );
+		return true;
+	}
+
+	private void ApplyCatalogueMetadata( int tier, ObjectUpgradeLevel row, QueueParameters parameters )
+	{
+		Visitors.SetCatalogueFallbackCapacity( row.GetInt( "InitCapacity" ) );
+		Visitors.Parameters = parameters;
+		catalogueParameters = parameters;
+		catalogueFallbackCapacity = Visitors.Capacity;
+		catalogueInitialized = true;
+		CatalogueTier = tier;
+	}
+
+	/// <summary>Pure no-schema snapshot eligibility; stopped matching owners remain representable.</summary>
+	internal bool CanCaptureCatalogueDefaults( int economyTier, out string reason )
+	{
+		reason = "";
+		if ( !SupportsCatalogueTier ) return true;
+		if ( !ReferenceEquals( Visitors.Parameters, catalogueParameters ) || Visitors.Capacity != catalogueFallbackCapacity )
+			reason = "custom catalogue parameters cannot be reconstructed from the existing snapshot";
+		else if ( economyTier < 0 || (CatalogueTier ?? 0) != economyTier )
+			reason = "the live catalogue defaults do not match the saved economy tier";
+		// The legacy constructor's unbound tier0 defaults (including absent row0) reconstruct unchanged.
+		return reason.Length == 0;
+	}
+
+	/// <summary>Exact row overload; missing/sparse tiers never select a different row.</summary>
+	internal static QueueParameters CreateQueueParameters( ObjectCatalogEntry entry, int tier )
+	{
+		if ( tier < 0 || entry.Upgrades.FirstOrDefault( row => row.Level == tier ) is not { } found )
+			throw new InvalidDataException( $"{entry.ArchivePath} has no exact SAM upgrade tier {tier}." );
+		return QueueParametersFor( entry, found );
+	}
+}

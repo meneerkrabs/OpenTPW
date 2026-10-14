@@ -547,6 +547,7 @@ public partial class Level
 
 	private void LinkEconomy( OriginalObject item, int instance )
 	{
+		InitializeCatalogueBinding( item, instance, economyInstances.ContainsKey( item ) );
 		economyInstances[item] = instance;
 		Park?.Guests?.Link( item.Visitors.AttractionId, instance );
 	}

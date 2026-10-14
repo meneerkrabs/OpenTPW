@@ -1313,14 +1313,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				// the dismissal 0x005012F0 lowers happiness by the medium step (0x004FEA70 with 1)
 				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
-				LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
+				LeaveQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
 			if ( guest.State == GuestState.Boarding )
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest plays no animation and gets the QueueTooLong thought, where the original plays animation 13 for one guest in three (id % 3 = 0, 0x0050BE80) and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what animation 13 and the event-6 record are
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest thinks Angry for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id, and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight, which OpenTPW does not (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what the event-6 record feeds
 			if ( index < 0 && !onJoinCell )
 			{
 				LeaveQueue( guest, attraction, GuestThought.Confused );

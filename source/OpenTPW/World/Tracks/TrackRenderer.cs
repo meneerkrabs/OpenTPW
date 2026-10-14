@@ -359,7 +359,8 @@ public sealed class TrackRenderer : IDisposable
 		return new PieceGeometry( models, surface ?? TrackSurface.FromModel( model ), heads.ToArray(), flags.ToArray() );
 	}
 
-	private static Texture LoadTexture( ObjectCatalogEntry entry, string name )
+	/// <summary>The texture of a model material or track texture of an object's archive (the textures, gtexture and theme sharetex directories), or <see cref="Texture.Missing"/>.</summary>
+	internal static Texture LoadTexture( ObjectCatalogEntry entry, string name )
 	{
 		var resolved = ObjectAssets.ResolveTexture( entry, name );
 		if ( resolved == null )

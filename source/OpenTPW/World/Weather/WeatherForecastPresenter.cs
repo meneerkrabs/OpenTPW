@@ -14,6 +14,8 @@ namespace OpenTPW;
 // [APPROX:AUDIO-905] the forecast shows as a banner line at the top centre, drawn in the overlay pass with the original GAME8AA BF4 font above every screen (the chat overlay's channel); which surface the original warned on is unknown — evidence needed: the original's forecast message handler
 public sealed class WeatherForecastPresenter : Entity
 {
+	/// <summary>Upper bound of one step's delta, so a hitch after a stall cannot jump the transient line's clock.</summary>
+	private const float MaximumStepSeconds = 0.25f;
 	private const int Margin = 16;
 	private const int Padding = 6;
 	private static readonly RgbaByte BackgroundColor = new( 16, 24, 48, 200 );
@@ -45,7 +47,7 @@ public sealed class WeatherForecastPresenter : Entity
 		var bands = quality is { } value ? weather.BandsOf( value ) : default;
 		// Simulation-scaled time: a paused park (scale 0) freezes the transient line mid-display.
 		var scale = Level.SimulationTimeScale;
-		var delta = Math.Clamp( Time.Delta, 0f, WeatherRenderer.MaximumStepSeconds ) * (float.IsFinite( scale ) && scale > 0f ? scale : 0f);
+		var delta = Math.Clamp( Time.Delta, 0f, MaximumStepSeconds ) * (float.IsFinite( scale ) && scale > 0f ? scale : 0f);
 		forecast.Step( new WeatherForecastSample( weather.CurrentDay, quality, weather.ForecastApplyDay, bands,
 			new WeatherQualityBands( weather.Snow, weather.Rain, weather.Lightning ) ), delta );
 		foreach ( var announcement in forecast.TakeAnnouncements() )

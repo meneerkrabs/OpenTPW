@@ -875,6 +875,15 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Original weather visuals (October 14):** the procedural rain, snow and bolt approximations are replaced by the
+  original engine's `CRain` renderer, traced in the Mac `engine_shared` library and tp.exe (`0x57F1F0-0x57F380`). Rain and
+  snow are one fixed 1024-point field in a -4..4 box around the camera eye (original units, wrapping per axis, scrolling
+  down at 2.5 / 0.8 units a second plus camera parallax), drawn count `min(CurrentDrops, MaxRaindrops)`; rain streaks use the
+  original's depth-to-grey ramp and 0x80..0xFF alpha, snow flakes the 2x2 atlas. Bolts are recursive midpoint-displaced
+  ribbons from the strike's top down to original y = 0, up to 16, living `LightningTime` (2000 ms). The images come from the
+  game's `Data/Generic/Weather` (nothing is committed). Time is wall-clock capped at 500 ms and frozen while paused. The
+  renderer reads an `IWeatherVisualSource`, so the lobby can reuse it. Still approximate (AUDIO-900..904): the blend, the
+  parallax sign, the snow swirl flag, the near clip, and the bolt's displacement and pulse curve.
 - **Visitor click, backtrack and queue-join sounds (October 14):** traced in both executables. Opening a visitor's details
   (a park click or a roster activation) plays the visitor click `cat_kids` 129 (`0x1010B808` / tp.exe `0x4B79B0`). Backspace
   over a path cell with no tool on plays `cat_ui` 95 at the cell and removes it, as the original's "backtrack" key does

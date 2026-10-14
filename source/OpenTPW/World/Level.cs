@@ -21,7 +21,10 @@ public partial class Level : IDisposable
 		set
 		{
 			if ( value )
+			{
 				StaffPlacement?.Cancel();
+				PatrolTool?.Cancel();
+			}
 			isPlacing = value;
 		}
 	}

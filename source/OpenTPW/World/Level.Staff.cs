@@ -5,6 +5,8 @@ public partial class Level
 	public StaffWorldSimulation? StaffWorld { get; private set; }
 	/// <summary>The hire and pick-up tools of the staff (docs/STAFF-PLACEMENT.md); null without a park economy.</summary>
 	public StaffPlacement? StaffPlacement { get; private set; }
+	/// <summary>The patrol area tool of the employee view (tp.exe mouse mode 0x36); null without a park economy.</summary>
+	public PatrolAreaTool? PatrolTool { get; private set; }
 	/// <summary>Draws the placed staff and the tool's dangling sprite.</summary>
 	public StaffRenderer? StaffRenderer { get; private set; }
 
@@ -32,6 +34,7 @@ public partial class Level
 		};
 		AttachStaffWorld();
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsPathBlocked );
+		PatrolTool = new PatrolAreaTool( () => Park?.Economy );
 		if ( OriginalPark != null )
 		{
 			StaffSpriteSet sprites;
@@ -44,6 +47,7 @@ public partial class Level
 	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
 	public void EndBuildTools()
 	{
+		PatrolTool?.Cancel();
 		CellTool.Cancel();
 		ExitCoasterTool();
 		BuildEntry = null;

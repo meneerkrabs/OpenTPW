@@ -1,0 +1,173 @@
+namespace OpenTPW;
+
+/// <summary>
+/// The presentation assets of one coaster type (one catalogue entry): its cross sections and track textures, the pylon and car models read from its archive and the
+/// textures they use. Everything loads through the entry's file system, as the other objects' models do, so the browser build reads the same archive members.
+/// </summary>
+internal sealed class CoasterAssets : IDisposable
+{
+	/// <summary>The track texture slot of the flat red texture an invalid segment shows.</summary>
+	public const int InvalidSlot = 15;
+
+	private readonly Dictionary<string, Texture> textures = new( StringComparer.OrdinalIgnoreCase );
+	private readonly Dictionary<bool, CoasterPylonRig?> pylons = new();
+	private readonly Dictionary<int, CoasterCarRig?> cars = new();
+	private readonly Dictionary<CoasterCarRig, Model[]> carModels = new();
+	private Texture? red;
+	private bool disposed;
+
+	public CoasterAssets( ObjectCatalogEntry entry, CoasterDefinition definition )
+	{
+		Entry = entry;
+		Definition = definition;
+		Sections = CoasterCrossSections.FromSettings( entry.Settings );
+		CarTypes = CoasterCarTypes.FromSettings( entry.Settings );
+	}
+
+	public ObjectCatalogEntry Entry { get; }
+	public CoasterDefinition Definition { get; }
+	public CoasterCrossSections Sections { get; }
+	public CoasterCarTypes CarTypes { get; }
+	/// <summary>The 16 texture slots of the track mesh: the <c>asTextureData</c> files, then the red texture of invalid segments.</summary>
+	public Texture[]? TrackSlots { get; private set; }
+
+	/// <summary>The track textures, loaded on first use.</summary>
+	public Texture[] GetTrackSlots()
+	{
+		if ( TrackSlots != null )
+			return TrackSlots;
+		var slots = new Texture[16];
+		Array.Fill( slots, Texture.Missing );
+		for ( var index = 0; index < Sections.Textures.Count && index < InvalidSlot; index++ )
+		{
+			if ( Sections.Textures[index].FileName.Length > 0 )
+				slots[index] = Load( Sections.Textures[index].FileName );
+		}
+		// [APPROX:COAST-026] an invalid segment is a flat red texture; the original draws its invalid cross section (uiInvalidCrossSection)
+		red ??= new Texture( new byte[] { 210, 50, 40, 255, 210, 50, 40, 255, 210, 50, 40, 255, 210, 50, 40, 255 }, 2, 2 );
+		slots[InvalidSlot] = red;
+		return TrackSlots = slots;
+	}
+
+	/// <summary>A texture of the archive by name (cached), or <see cref="Texture.Missing"/>.</summary>
+	public Texture Load( string name )
+	{
+		var key = Path.GetFileNameWithoutExtension( name.TrimEnd( '\0' ) );
+		if ( textures.TryGetValue( key, out var texture ) )
+			return texture;
+		try
+		{
+			texture = TrackRenderer.LoadTexture( Entry, name );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+		{
+			Log?.Warning( $"A coaster texture could not be read ({name}): {exception.Message}" );
+			texture = Texture.Missing;
+		}
+		textures[key] = texture;
+		return texture;
+	}
+
+	/// <summary>The 16 slots of a model part's materials.</summary>
+	public Texture[] SlotsFor( IReadOnlyList<string> names )
+	{
+		var slots = new Texture[16];
+		Array.Fill( slots, Texture.Missing );
+		for ( var index = 0; index < names.Count && index < slots.Length; index++ )
+			slots[index] = Load( names[index] );
+		return slots;
+	}
+
+	/// <summary>The pylon rig of a standard or loop pylon, or null when the archive has no such model.</summary>
+	public CoasterPylonRig? GetPylon( bool loop )
+	{
+		if ( pylons.TryGetValue( loop, out var cached ) )
+			return cached;
+		CoasterPylonRig? rig = null;
+		var name = Definition.Pylon( loop ).MeshName;
+		try
+		{
+			if ( !string.IsNullOrEmpty( name ) && FindModel( name ) is { Kind: ModelFileKind.Geometry } geometry )
+			{
+				var loft = FindModel( name + "L" )?.Clip;
+				var rotate = (FindModel( name + "R" ) ?? FindModel( name + "R1" ))?.Clip;
+				rig = new CoasterPylonRig( geometry, loft, rotate );
+			}
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
+		{
+			Log?.Warning( $"A coaster pylon model could not be read ({name}): {exception.Message}" );
+		}
+		return pylons[loop] = rig;
+	}
+
+	/// <summary>The car rig of a car type, or null when the archive has no such model.</summary>
+	public CoasterCarRig? GetCar( int typeIndex )
+	{
+		if ( cars.TryGetValue( typeIndex, out var cached ) )
+			return cached;
+		CoasterCarRig? rig = null;
+		if ( typeIndex >= 0 && typeIndex < CarTypes.Types.Count )
+		{
+			var name = CarTypes.Types[typeIndex].MeshName;
+			try
+			{
+				if ( !string.IsNullOrEmpty( name ) && FindModel( name ) is { Kind: ModelFileKind.Geometry } geometry )
+					rig = new CoasterCarRig( geometry );
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
+			{
+				Log?.Warning( $"A coaster car model could not be read ({name}): {exception.Message}" );
+			}
+		}
+		return cars[typeIndex] = rig;
+	}
+
+	/// <summary>The drawable models of a car rig's parts, shared by every car of the type.</summary>
+	public Model[] GetCarModels( CoasterCarRig rig )
+	{
+		if ( carModels.TryGetValue( rig, out var cached ) )
+			return cached;
+		var list = new Model[rig.Parts.Count];
+		for ( var index = 0; index < list.Length; index++ )
+		{
+			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+			material.Set( "Color", SlotsFor( rig.Parts[index].Textures ) );
+			list[index] = new Model( rig.Parts[index].Vertices, rig.Parts[index].Indices, material, false );
+		}
+		return carModels[rig] = list;
+	}
+
+	/// <summary>Reads an MD2 member of the archive by file stem, or null.</summary>
+	private ModelFile? FindModel( string stem )
+	{
+		string[] files;
+		try
+		{
+			files = Entry.FileSystem.GetFiles( Entry.ArchivePath ).ToArray();
+		}
+		catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException or IOException )
+		{
+			return null;
+		}
+		var path = files.FirstOrDefault( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) && string.Equals( Path.GetFileNameWithoutExtension( file ), stem, StringComparison.OrdinalIgnoreCase ) );
+		return path == null ? null : ObjectAssets.LoadModel( Entry.FileSystem, path );
+	}
+
+	public void Dispose()
+	{
+		if ( disposed )
+			return;
+		disposed = true;
+		foreach ( var model in carModels.Values.SelectMany( models => models ) )
+		{
+			model.ReleaseBuffers();
+			model.Material.ReleaseOwnedResources();
+		}
+		carModels.Clear();
+		foreach ( var texture in textures.Values )
+			texture.ReleaseOwned();
+		red?.ReleaseOwned();
+		textures.Clear();
+	}
+}

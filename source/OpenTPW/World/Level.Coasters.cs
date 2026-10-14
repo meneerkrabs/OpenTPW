@@ -23,7 +23,82 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			OnCoasterStationPlaced( item );
 		coasterSite = CoasterSite.FromGrid( Objects.Grid );
-		coasterRenderer = new CoasterRenderer( () => Coasters, () => Objects.Grid.Origin, ObjectPlacement.ModelScale );
+		coasterRenderer = new CoasterRenderer( () => Coasters, () => Objects.Grid.Origin, ObjectPlacement.ModelScale, CoasterEntry,
+			ride => CoasterToolStation?.Runtime.Coaster == ride ? DemoPreview ?? CoasterPreview : null );
+	}
+
+	/// <summary>The build cursor the coaster tool shows: the track is drawn through a ghost pylon there. Set by the HUD each frame, null when the tool is off.</summary>
+	public CoasterPreview? CoasterPreview { get; set; }
+
+	/// <summary>A build cursor the debug demo holds (it wins over the HUD's cursor, so a capture does not depend on the mouse).</summary>
+	internal CoasterPreview? DemoPreview { get; set; }
+
+	/// <summary>The pylon cells of the demo circuit, as offsets from the station's '&gt;' cell (the circuit of the native smoke test, which passes every window).</summary>
+	private static readonly (int X, int Y)[] DemoCircuit = { (4, 0), (7, 4), (4, 8), (-4, 8), (-8, 4), (-7, 0) };
+
+	/// <summary>
+	/// Places a coaster station with a small circuit near the park's paths and points the park camera at it (the debug flag <c>--debug-coaster</c>, for captures):
+	/// <paramref name="finished"/> closes and finishes the track, otherwise it stays open after the fourth pylon with the build cursor on the fifth cell.
+	/// <paramref name="infoId"/> picks the coaster (its <c>Info.Id</c>), the first buildable one by default. Null when no site has room.
+	/// </summary>
+	// [EXT:debug-coaster] developer/screenshot helper, not original behaviour: it builds the track for the player without the tool and without charging money
+	internal OriginalObject? BuildDemoCoaster( bool finished, int? infoId, int height = 40 )
+	{
+		if ( IsReadOnlyVisit || Guests == null || OriginalPark == null )
+			return null;
+		var entries = Objects.Catalog.Buildable.Where( item => CoasterDefinition.IsCoaster( item.Settings ) ).OrderBy( item => item.InfoId ).ToArray();
+		var entry = infoId is int id ? entries.FirstOrDefault( item => item.InfoId == id ) : entries.FirstOrDefault();
+		if ( entry == null )
+			return null;
+		var grid = Objects.Grid;
+		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height && Objects.FindAt( x, y ) == null
+			&& grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed && Guests.Grid.Cells.RawTypeAt( x, y ) == 0;
+		var near = (X: Guests.Grid.CountX / 2, Y: Guests.Grid.CountY / 2);
+		var path = Enumerable.Range( 0, Guests.Grid.CountX * Guests.Grid.CountY ).Select( index => (X: index % Guests.Grid.CountX, Y: index / Guests.Grid.CountX) ).Where( cell => Guests.Grid.IsWalkable( cell.X, cell.Y ) ).ToArray();
+		if ( path.Length > 0 )
+			near = (path.Sum( cell => cell.X ) / path.Length, path.Sum( cell => cell.Y ) / path.Length);
+		foreach ( var cell in Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
+			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
+		{
+			if ( Objects.Check( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed || CoasterBuilder.StationEnds( entry.Shape, cell.X, cell.Y, 0 ) is not { } ends )
+				continue;
+			var cells = DemoCircuit.Select( offset => (X: ends.Depart.X + offset.X, Y: ends.Depart.Y + offset.Y) ).Append( ends.Return ).ToArray();
+			if ( !cells.All( target => Free( target.X, target.Y ) ) )
+				continue;
+			var station = Objects.TryPlace( entry, cell.X, cell.Y, 0, out _ );
+			if ( station?.Runtime.Coaster == null || GetCoasterBuilder( station ) is not { } builder )
+				return null;
+			builder.Height = height;
+			var count = finished ? DemoCircuit.Length : 4;
+			for ( var index = 0; index < count; index++ )
+				builder.Place( ends.Depart.X + DemoCircuit[index].X, ends.Depart.Y + DemoCircuit[index].Y );
+			if ( finished )
+			{
+				builder.Place( ends.Return.X, ends.Return.Y );
+				builder.Complete();
+			}
+			else
+			{
+				EnterCoasterTool( station );
+				DemoPreview = new CoasterPreview( ends.Depart.X + DemoCircuit[4].X, ends.Depart.Y + DemoCircuit[4].Y, true, height, false );
+			}
+			var centre = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, ends.Depart.X - 2, ends.Depart.Y + 4 );
+			(Camera.Mode as ParkCameraMode)?.SetPose( new Vector3( centre.X, centre.Y, 0 ), 28, -20 );
+			Log.Trace( $"--debug-coaster: {entry.DisplayName} at ({cell.X}, {cell.Y}), {(finished ? "finished" : "open")} with {builder.Track.PylonCount} pylons; camera on engine ({centre.X:0.#}, {centre.Y:0.#})." );
+			return station;
+		}
+		return null;
+	}
+
+	/// <summary>The catalogue entry (archive) of a coaster's station object, or null when the station left.</summary>
+	private ObjectCatalogEntry? CoasterEntry( CoasterRide ride )
+	{
+		foreach ( var item in Objects.Objects )
+		{
+			if ( !item.IsDeleted && ReferenceEquals( item.Runtime.Coaster, ride ) )
+				return item.Entry;
+		}
+		return null;
 	}
 
 	private void OnCoasterStationPlaced( OriginalObject item )
@@ -75,7 +150,11 @@ public partial class Level
 	}
 
 	/// <summary>Ends the coaster tool (the track keeps its pylons; an incomplete track takes no riders).</summary>
-	public void ExitCoasterTool() => CoasterToolStation = null;
+	public void ExitCoasterTool()
+	{
+		CoasterToolStation = null;
+		CoasterPreview = null;
+	}
 
 	/// <summary>
 	/// A park click in the coaster tool: on the station's return end it completes the track, otherwise it places a

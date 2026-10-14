@@ -674,36 +674,59 @@ public sealed class CoasterTrack
 	/// </summary>
 	// [BIN:STP-PPC:0x10033630 auto-bank pass] nodes with a next node are banked in order when definition flag 0x10 is set and node flag 0x4 is clear (0x1003360C); node flag 0x100 forces bank 0 (0x1003F584); the speed estimate starts at 0 and is updated after each banked node with floor fMinSpeed
 	// [BIN:STP-PPC:0x10032DD8 knot direction] a knot without a pylon takes (0, −1, 0) when its node has flag 0x40 and flag 0x80 is clear (0x10032DFC; the 0x144 station end node), (0, 1, 0) when both are set (never: OpenTPW sets no node flag 0x80), else the node tangent
-	public IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site )
+	public IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site ) => BuildKnots( site, nodes, closed: true, writeBanks: true );
+
+	/// <summary>
+	/// The knots of <paramref name="chain"/>: closed like <see cref="BuildKnots(CoasterSite)"/> or open, the shape of a track under
+	/// construction (a chain with no wrap: the first knot has no previous and the last no next node). <paramref name="writeBanks"/>
+	/// stores the auto-banks on the nodes (the controller's rebuild); a preview leaves the nodes untouched.
+	/// </summary>
+	// [BIN:STP-PPC:0x10031450 node tangents] an end node without a previous node takes T+ = b/SD along the next node, one without a next node T+ = −a/SD away from the previous node; the chord to the missing neighbour is 1.0 (0x10032990)
+	// [BIN:TPW-EXE:0x43eb70 track rebuild] the mesh rebuild walks the node list of an open chain exactly like a closed one: it pairs every node with its next node until there is none, so a track under construction is drawn as the curve through the placed nodes
+	internal IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site, IReadOnlyList<CoasterNode> chain, bool closed, bool writeBanks )
 	{
-		var count = nodes.Count;
-		var positions = nodes.Select( node => NodePosition( site, node ) ).ToArray();
+		var count = chain.Count;
+		int Wrap( int index ) => closed ? (index + count) % count : Math.Clamp( index, 0, count - 1 );
+		var positions = chain.Select( node => NodePosition( site, node ) ).ToArray();
+		var banks = new float[count];
 		var speed = 0f;
 		for ( var index = 0; index < count; index++ )
 		{
-			var node = nodes[index];
-			node.Bank = 0;
+			var node = chain[index];
 			// [APPROX:COAST-015] the station node (whose descriptor flags are not read) is taken to carry node flag 0x4 like the station end node, so it does not bank — evidence needed: the station node's flags from 0x10035FDC for descriptor flag 2
-			if ( !Definition.AutoBanks || node.IsPylonless || (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) != 0 )
+			if ( !Definition.AutoBanks || node.IsPylonless || (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) != 0 || !closed && (index == 0 || index == count - 1) )
 				continue;
-			var previous = positions[(index - 1 + count) % count];
-			var next = positions[(index + 1) % count];
+			var previous = positions[Wrap( index - 1 )];
+			var next = positions[Wrap( index + 1 )];
 			var turn = TurnAngleXZ( previous, positions[index], next );
-			node.Bank = AutoBank( speed, turn, (previous - positions[index]).Length(), (next - positions[index]).Length() );
+			banks[index] = AutoBank( speed, turn, (previous - positions[index]).Length(), (next - positions[index]).Length() );
 			speed = SpeedEstimate( Definition, speed, Definition.MinSpeed, positions[index].Y, next.Y );
+		}
+		if ( writeBanks )
+		{
+			for ( var index = 0; index < count; index++ )
+				chain[index].Bank = banks[index];
 		}
 		var knots = new CoasterKnot[count];
 		for ( var index = 0; index < count; index++ )
 		{
-			var node = nodes[index];
-			var previous = positions[(index - 1 + count) % count];
-			var next = positions[(index + 1) % count];
+			var node = chain[index];
+			var previous = positions[Wrap( index - 1 )];
+			var next = positions[Wrap( index + 1 )];
 			var pylon = node.IsPylonless ? null : Definition.Pylon( node.LoopPylon );
-			var before = nodes[(index - 1 + count) % count];
-			var after = nodes[(index + 1) % count];
-			// The tangent rule tests pylon flag 0x4000: a flume's trough pylon (0x8000) is not a loop pylon there.
-			var loopNeighbour = IsLoopPylon( before ) || IsLoopPylon( after );
-			var tangent = ForwardTangent( previous, positions[index], next, Definition.Curviness, Definition.StraightDivisor, pylon?.StraightDotThreshold, IsLoopPylon( node ), loopNeighbour );
+			var before = chain[Wrap( index - 1 )];
+			var after = chain[Wrap( index + 1 )];
+			SVector3 tangent;
+			if ( !closed && index == 0 )
+				tangent = next - positions[index];
+			else if ( !closed && index == count - 1 )
+				tangent = positions[index] - previous;
+			else
+			{
+				// The tangent rule tests pylon flag 0x4000: a flume's trough pylon (0x8000) is not a loop pylon there.
+				var loopNeighbour = IsLoopPylon( before ) || IsLoopPylon( after );
+				tangent = ForwardTangent( previous, positions[index], next, Definition.Curviness, Definition.StraightDivisor, pylon?.StraightDotThreshold, IsLoopPylon( node ), loopNeighbour );
+			}
 			var direction = node.IsPylonless && (node.Flags & CoasterNodeFlags.Loop) != 0 ? new SVector3( 0, -1, 0 )
 				: tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ;
 			var factor = 0f;
@@ -714,9 +737,38 @@ public sealed class CoasterTrack
 				var side = heading.LengthSquared() > 0 && axis.LengthSquared() > 0 ? SVector3.Dot( SVector3.Normalize( heading ), SVector3.Normalize( axis ) ) : 0;
 				factor = HermiteCoasterCurve.LoopKnotFactor( Definition.Curviness, side, DefaultLoopRotate );
 			}
-			knots[index] = new CoasterKnot( positions[index], direction, node.Bank, index, node.LoopPylon, factor, (after.Flags & CoasterNodeFlags.Loop) != 0 );
+			knots[index] = new CoasterKnot( positions[index], direction, banks[index], index, node.LoopPylon, factor, (after.Flags & CoasterNodeFlags.Loop) != 0 );
 		}
 		return knots;
+	}
+
+	/// <summary>
+	/// The chain the editor draws while the track is being built: the placed nodes, plus either a ghost pylon at the build cursor (open
+	/// chain) or the station end node the closed circuit will end in (closed, not yet completed). Null while fewer than two nodes exist.
+	/// </summary>
+	// [BIN:TPW-EXE:0x435d50 build cursor] every frame the edited coaster (data 0x790fec, flag 4) runs this edit step: for a hovered cell within 300 units of the last node it fills the coaster's spare cursor node (controller +0x68, 0x436190, 0x436230) with the cell and links it after the last node, then rebuilds the track (0x444700) — the cursor node is a regular node of the chain, so the curve is drawn through it before the pylon is placed; a hovered cell that already holds a node of the chain marks the chain's start as closing (flag 0x8) instead
+	// [APPROX:COAST-035] the ghost node takes the tool's current height and loop mode and is drawn like a placed one (no tint for an invalid cell); the original's ghost/invalid presentation (node flags 0x200000, 0x800000, 0x804000 and the invalid cross section uiInvalidCrossSection) is not decoded — evidence needed: the consumers of node flags 0x800000/0x804000 and a capture of an invalid pylon
+	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop )
+	{
+		if ( IsComplete || nodes.Count == 0 || DepartCell == null )
+			return null;
+		var chain = new List<CoasterNode>( nodes );
+		if ( IsClosed )
+		{
+			if ( ReturnCell is not { } back )
+				return null;
+			chain.Add( new CoasterNode( back.X, back.Y, Definition.InitialPylonLoftHeight, 0, false, 0, false, IsStationEnd: true ) { Flags = StationEndFlags } );
+			return (chain, true);
+		}
+		if ( cursor is { } cell && !IsChainStart( cell.X, cell.Y ) )
+		{
+			var pylon = Definition.Pylon( loop );
+			var (clamped, t) = ClampHeight( pylon, height );
+			var stack = nodes.Count( node => !node.IsPylonless && node.X == cell.X && node.Y == cell.Y );
+			if ( nodes[^1].X != cell.X || nodes[^1].Y != cell.Y )
+				chain.Add( new CoasterNode( cell.X, cell.Y, clamped, t, loop, stack, false ) { Flags = loop ? CoasterNodeFlags.Loop : CoasterNodeFlags.None } );
+		}
+		return chain.Count < 2 ? null : (chain, false);
 	}
 
 	private bool IsLoopPylon( CoasterNode node ) => !node.IsPylonless && Definition.Pylon( node.LoopPylon ).IsLoop;

@@ -296,7 +296,7 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void SixMonthsInTheRedMakeTheParkBankrupt()
+	public void SixThirtyDayMonthsInTheRedMakeTheParkBankrupt()
 	{
 		var park = EconomyTestData.Park( initialCash: 100 );
 		var events = new List<ParkEvent>();
@@ -306,12 +306,21 @@ public class ParkEconomyTests
 		park.AdvanceMonths( 1 );
 		Assert.IsTrue( park.Balance < 0 );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.InTheRed ) );
-		Assert.AreEqual( 1, park.MonthsInRed );
-		park.AdvanceMonths( 4 );
+		var stamp = park.TurnEnteredRed;
+		Assert.AreEqual( park.Balance, park.LastBalance );
+		Assert.AreEqual( 0, park.MonthsInRed, "the wages took the park into the red at this month end (0x4d0370 counts from the stamp)" );
+		var counts = new List<int>();
+		while ( !park.IsBankrupt && counts.Count < 12 )
+		{
+			park.AdvanceMonths( 1 );
+			counts.Add( park.MonthsInRed );
+			Assert.AreEqual( stamp, park.TurnEnteredRed, "debits in the red keep the stamp" );
+			Assert.AreEqual( (ParkCalendar.Turn( park.Tick ) - stamp) * ParkCalendar.SecondsPerTurn / (30 * ParkCalendar.SecondsPerDay), park.MonthsInRed, "whole 30-day months since the stamp" );
+		}
+		Assert.IsTrue( park.IsBankrupt, string.Join( ", ", counts ) );
+		Assert.AreEqual( 6, counts[^1], "more than 5" );
+		Assert.IsTrue( counts.Take( counts.Count - 1 ).All( count => count <= 5 ) );
 		CollectionAssert.AreEqual( new long[] { 3, 5 }, events.Where( item => item.Kind == ParkEventKind.BankruptcyWarning ).Select( item => item.Amount ).ToArray() );
-		Assert.IsFalse( park.IsBankrupt );
-		park.AdvanceMonths( 1 );
-		Assert.IsTrue( park.IsBankrupt );
 		Assert.IsFalse( park.IsParkOpen );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ) );
 		var tick = park.Tick;

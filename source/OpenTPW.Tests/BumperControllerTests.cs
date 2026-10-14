@@ -189,6 +189,111 @@ public class BumperControllerTests
 	}
 
 	[TestMethod]
+	public void CarsChaseEachOtherAndGiveUp()
+	{
+		var chased = 0;
+		var sawTarget = false;
+		for ( uint seed = 1; seed <= 12; seed++ )
+		{
+			var controller = Create( -6, seed );
+			LoadAndStart( controller, 6, 60 );
+			for ( var tick = 0; tick < 1200; tick++ )
+			{
+				controller.Tick();
+				foreach ( var car in controller.Vehicles.Where( car => (car.Flags & BumpVehicle.Chasing) != 0 ) )
+				{
+					chased++;
+					var target = controller.Vehicles.SingleOrDefault( other => other.Slot == car.ChaseTarget );
+					sawTarget |= target != null && target != car;
+					Assert.IsTrue( car.BuoyCountdown <= 0x5A, "a chase lasts at most 90 ticks" );
+				}
+			}
+		}
+		Assert.IsTrue( chased > 0, "cars chase now and then" );
+		Assert.IsTrue( sawTarget, "a chasing car names another car" );
+	}
+
+	[TestMethod]
+	public void ChaseEndsWhenItsTargetIsRetired()
+	{
+		for ( uint seed = 1; seed <= 40; seed++ )
+		{
+			var controller = Create( -6, seed );
+			LoadAndStart( controller, 3, 60 );
+			for ( var tick = 0; tick < 600; tick++ )
+			{
+				controller.Tick();
+				var chaser = controller.Vehicles.FirstOrDefault( car => (car.Flags & BumpVehicle.Chasing) != 0 );
+				if ( chaser == null )
+					continue;
+				var target = controller.Vehicles.Single( car => car.Slot == chaser.ChaseTarget );
+				controller.Retire( target );
+				controller.Tick();
+				Assert.AreEqual( 0, chaser.Flags & BumpVehicle.Chasing, "a retired target ends the chase at the next step" );
+				return;
+			}
+		}
+		Assert.Fail( "no chase started in 40 seeds" );
+	}
+
+	[TestMethod]
+	public void CrashCodeFollowsTheType()
+	{
+		foreach ( var (type, expected) in new[] { (-6, BumpEffects.SoundCrunch), (-11, BumpEffects.SoundCrunch), (-14, BumpEffects.SoundCrunch), (-1, -1) } )
+		{
+			var controller = Create( type );
+			var sounds = 0;
+			controller.Effect += effect => { if ( effect.Kind == BumpEffectKind.GlobalSound && effect.Id == BumpEffects.SoundCrunch ) sounds++; };
+			LoadAndStart( controller, 8, 120 );
+			// two cars head-on at speed: the impulse is above the 0x82 threshold
+			var a = controller.Vehicles[0];
+			var b = controller.Vehicles[1];
+			a.X = 5 * 0xC00; a.Y = 5 * 0xC00; a.VX = 600; a.VY = 0; a.VX0 = 600;
+			b.X = 5 * 0xC00 + 500; b.Y = 5 * 0xC00; b.VX = -600; b.VY = 0; b.VX0 = -600;
+			Run( controller, 3 );
+			if ( expected < 0 )
+				Assert.AreEqual( 0, sounds, "the jungle bumper makes no crash sound" );
+			else
+				Assert.IsTrue( sounds > 0, $"type {type} crunches" );
+		}
+	}
+
+	[TestMethod]
+	public void FirstCarryingCarHoldsTheEngineUntilItsRiderLeaves()
+	{
+		var controller = Create();
+		var starts = 0;
+		var halts = 0;
+		controller.Effect += effect => { if ( effect.Kind == BumpEffectKind.EngineStart ) starts++; if ( effect.Kind == BumpEffectKind.EngineHalt ) halts++; };
+		LoadAndStart( controller, 3, 5 );
+		Assert.AreEqual( 1, starts, "one engine voice for the first car" );
+		Run( controller, 200 );
+		Assert.AreEqual( 1, halts, "the voice stops when the car hands its rider over" );
+		Assert.IsFalse( controller.Vehicles.Any( car => car.Engine ) );
+	}
+
+	[TestMethod]
+	public void SaveRoundTripKeepsASessionRunning()
+	{
+		var original = Create( -14 );
+		LoadAndStart( original, 4, 30 );
+		Run( original, 300 );
+		var data = TrackSave.CaptureController( original, 7 );
+		var restored = Create( -14 );
+		restored.Restore( data );
+		var hashA = new StateHasher();
+		var hashB = new StateHasher();
+		original.AddCanonicalState( hashA );
+		restored.AddCanonicalState( hashB );
+		Assert.AreEqual( hashA.Value, hashB.Value, "the restored controller hashes like the original" );
+		// the generators are not part of the state, so the continuations differ in detail; the restored session still runs out and hands everybody back
+		Run( restored, 600 );
+		Assert.AreEqual( 0, restored.RiderCount );
+		Assert.AreEqual( 4, restored.Leaving.Count );
+		Assert.AreEqual( BumpController.PhaseLoading, restored.Phase );
+	}
+
+	[TestMethod]
 	public void SameSeedGivesTheSameSession()
 	{
 		static int[] Trace( uint seed )

@@ -74,6 +74,8 @@ palette; index 255 is black. `autorun.tre` holds one RefPack entry, `autorun.cfg
 
 ## In OpenTPW
 
+The application-owned [desktop edition starter](SETUP.md#the-setup-window) appears before game assets are loaded on ordinary interactive startup when autorun is enabled. It offers TPW and the explicitly experimental TPI world route without executing either original autorun executable. The TPW CD artwork screen below remains optional after a TPW choice; TPI launches the selected world directly and does not enter that TPW screen.
+
 `AutorunAssets` (art, script rows, read-me lookup), `AutorunView` (CPU composite, focus, clicks, no GPU),
 `AutorunScreen` (GPU: the 640x480 image point-sampled at the largest integer scale that fits the window,
 centred on black), `AutorunLauncher` (when to show it) in `source/OpenTPW/Client/Autorun`;

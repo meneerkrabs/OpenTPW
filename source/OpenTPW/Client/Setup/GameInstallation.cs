@@ -5,6 +5,8 @@ public sealed record InstallationReport( string Path, string? DataDirectory, IRe
 {
 	/// <summary>The folder has the data OpenTPW needs; <see cref="Warnings"/> may still list missing optional parts.</summary>
 	public bool IsUsable => Problems.Count == 0;
+	public GameEdition? SelectedEdition { get; init; }
+	public IReadOnlyList<string> Worlds { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -17,7 +19,11 @@ public static class GameInstallation
 	/// <summary>Language files the installer adds from the CD's language folders (banners, word filter).</summary>
 	private static readonly string[] OptionalLanguageFiles = { "bankrupt.MD2", "congrats.MD2", "paused.MD2", "swears.txt" };
 
-	public static InstallationReport Inspect( string? path )
+	public static InstallationReport Inspect( string? path ) => InspectCore( path, null );
+
+	public static InstallationReport Inspect( string? path, GameEdition edition ) => InspectCore( path, edition ) with { SelectedEdition = edition };
+
+	private static InstallationReport InspectCore( string? path, GameEdition? edition )
 	{
 		var warnings = Array.Empty<string>();
 		if ( string.IsNullOrWhiteSpace( path ) )
@@ -37,7 +43,7 @@ public static class GameInstallation
 			return new( root, null, Array.Empty<string>(), new[] { "This folder does not exist." }, warnings );
 		try
 		{
-			return InspectFolder( root );
+			return InspectFolder( root, edition );
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or System.Security.SecurityException )
 		{
@@ -45,7 +51,7 @@ public static class GameInstallation
 		}
 	}
 
-	private static InstallationReport InspectFolder( string root )
+	private static InstallationReport InspectFolder( string root, GameEdition? edition )
 	{
 		var problems = new List<string>();
 		var warnings = new List<string>();
@@ -63,8 +69,18 @@ public static class GameInstallation
 
 		// Exact negative identity for the supplied Sim Coaster retail corpus. Unknown or
 		// modified editions are not classified from generic folders or missing assets.
-		if ( GameEditions.HasKnownStandardSam( dataDirectory ) )
+		if ( edition == null && GameEditions.HasKnownStandardSam( dataDirectory ) )
 			problems.Add( "These files match the supplied Theme Park Inc / Sim Coaster retail edition, which is not supported yet. Choose Theme Park World files." );
+
+		var detected = edition == null ? null : GameEditions.Detect( dataDirectory );
+		var tpwThemes = new[] { "jungle", "fantasy", "hallow", "space" };
+		var worlds = edition == null ? Array.Empty<string>() : new[] { "arabian", "science", "water" }.Where( world => GameLanguage.FindEntry( dataDirectory, "levels/" + world, true ) != null ).ToArray();
+		if ( edition != null )
+		{
+			var mixed = worlds.Length > 0 && tpwThemes.Any( world => GameLanguage.FindEntry( dataDirectory, "levels/" + world, true ) != null );
+			if ( !Enum.IsDefined( edition.Value ) || mixed || edition == GameEdition.ThemeParkWorld && worlds.Length > 0 || detected!.Edition != edition || (edition == GameEdition.ThemeParkInc && worlds.Length == 0) )
+				problems.Add( "This folder does not identify the selected edition, or mixes both editions. Choose matching game files." );
+		}
 
 		foreach ( var required in new[] { "levels", "global" } )
 			if ( GameLanguage.FindEntry( dataDirectory, required, true ) == null )
@@ -85,7 +101,7 @@ public static class GameInstallation
 		if ( !IsWritable( root ) )
 			warnings.Add( "This folder is read-only (for example a mounted CD); saved parks go to the OpenTPW settings folder instead." );
 
-		return new( root, dataDirectory, languages, problems, warnings );
+		return new( root, dataDirectory, languages, problems, warnings ) { SelectedEdition = edition, Worlds = worlds };
 	}
 
 	private static bool LooksLikeDataFolder( string directory ) =>

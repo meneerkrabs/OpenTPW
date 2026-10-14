@@ -540,11 +540,41 @@ internal static class Game
 	/// Finds the game folder (and the saved CD), or asks for it in the setup wizard (docs/SETUP.md).
 	/// Null when the player closes the wizard without choosing one.
 	/// </summary>
-	private static string[]? ResolveGameFolder( string[] args, string? commandLinePath )
+	private static string[]? ResolveGameFolder( string[] args, string? commandLinePath ) =>
+		ResolveDesktopGameFolder( args, commandLinePath, SetupWizard.Run );
+
+	/// <summary>Uses the real starter by default; the callback boundary permits CPU-only startup/cancellation controls.</summary>
+	internal static string[]? ResolveDesktopGameFolder( string[] args, string? commandLinePath, Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?> runWizard )
 	{
 		var setupPath = SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( setupPath );
 		InstallationDiscoveryResult? discovery = null;
+		var showStarter = DesktopSetupSelection.ShouldShowStarter( args, commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), saved );
+		if ( !showStarter && DesktopSetupSelection.CanUseRememberedEdition( args, commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ) ) && !Enum.IsDefined( saved.SelectedEdition ) )
+			throw new InvalidDataException( "The saved edition choice is unknown. Run --setup to choose an edition." );
+		if ( showStarter || saved.SelectedEdition == GameEdition.ThemeParkInc && DesktopSetupSelection.CanUseRememberedEdition( args, commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ) ) )
+		{
+			var chosen = showStarter ? runWizard( saved, null ) : new SetupWizard.Result( saved.ThemeParkIncPath ?? "", null, saved.SelectedEdition, saved.ThemeParkIncWorld );
+			if ( chosen == null ) return null;
+			var selection = new DesktopSetupSelection( saved );
+			selection.Select( chosen.Edition, chosen.GamePath );
+			selection.World = chosen.World;
+			var check = InstallationDiscovery.InspectAsync( chosen.GamePath, chosen.Edition ).GetAwaiter().GetResult();
+			if ( check.Reports.FirstOrDefault() is not { } report || !selection.AcceptInspection( selection.Revision, report ) || !selection.CanStart )
+				throw new DirectoryNotFoundException( "The selected edition folder or world is no longer available. Run --setup to choose again." );
+			args = selection.LaunchArguments( args );
+			if ( showStarter )
+			{
+				saved = selection.Remember( saved );
+				TrySave( saved, setupPath );
+			}
+			Settings.Default.GamePath = selection.Path;
+			if ( chosen.Edition == GameEdition.ThemeParkWorld && saved.CdPath != null && !args.Contains( "--cd-data" )
+				&& string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ) )
+				&& InstallationDiscovery.InspectAsync( saved.CdPath ).GetAwaiter().GetResult().Reports.FirstOrDefault()?.DataDirectory != null )
+				args = [.. args, "--cd-data", saved.CdPath];
+			return args;
+		}
 		var resolved = args.Contains( "--setup" ) ? null
 			: GamePathResolution.Resolve( commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), new( null, null ), null, () => Array.Empty<string>() );
 		if ( resolved == null && !args.Contains( "--setup" ) )
@@ -570,15 +600,27 @@ internal static class Game
 		{
 			if ( !GamePathResolution.IsInteractive( args ) )
 				throw new DirectoryNotFoundException( "Theme Park World data not found. Use --game-path or OPENTPW_GAME_PATH, or start OpenTPW without arguments to choose the folder in the setup window." );
-			var chosen = SetupWizard.Run( saved, discovery );
+			var chosen = runWizard( saved, discovery );
 			if ( chosen == null )
 			{
 				Log.Trace( "Setup closed without choosing a game folder." );
 				return null;
 			}
-			saved = saved with { GamePath = chosen.GamePath, CdPath = chosen.CdPath };
+			var selection = new DesktopSetupSelection( saved );
+			selection.Select( chosen.Edition, chosen.GamePath );
+			selection.World = chosen.World;
+			var check = InstallationDiscovery.InspectAsync( chosen.GamePath, chosen.Edition ).GetAwaiter().GetResult();
+			if ( check.Reports.FirstOrDefault() is not { } report || !selection.AcceptInspection( selection.Revision, report ) || !selection.CanStart )
+				throw new DirectoryNotFoundException( "The selected edition folder or world is no longer available." );
+			args = selection.LaunchArguments( args );
+			saved = selection.Remember( saved );
 			TrySave( saved, setupPath );
 			resolved = (chosen.GamePath, GamePathSource.Wizard);
+			if ( chosen.Edition == GameEdition.ThemeParkInc )
+			{
+				Settings.Default.GamePath = selection.Path;
+				return args;
+			}
 		}
 		else if ( resolved.Value.Source is GamePathSource.Legacy or GamePathSource.Detected )
 		{

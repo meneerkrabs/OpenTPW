@@ -1139,7 +1139,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:108` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:146` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:298` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:666` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:708` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:297` | [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world, |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:106` | [EXT:tpi-viewer] Theme Park Inc runs an experimental slice (docs/THEME-PARK-INC.md), not the supported game |

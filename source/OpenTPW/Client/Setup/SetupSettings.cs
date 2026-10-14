@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// <c>bonusPath</c> means not chosen; an empty one means the player removed the bonus content.
 /// <c>showAutorun: false</c> skips the CD launcher screen at startup (docs/AUTORUN.md).
 /// </summary>
-public sealed record SetupSettings( string? GamePath, string? CdPath, string? BonusPath = null, bool ShowAutorun = true )
+public sealed record SetupSettings( string? GamePath, string? CdPath, string? BonusPath = null, bool ShowAutorun = true, GameEdition SelectedEdition = GameEdition.ThemeParkWorld, string? ThemeParkIncPath = null, string? ThemeParkIncWorld = null )
 {
 	public const string FileName = "setup.json";
 

@@ -2,7 +2,7 @@
 
 OpenTPW needs the files of the original Theme Park World and ships none of them.
 Players no longer have to pass `--game-path`: on the first start OpenTPW looks for
-the game itself and, when it finds nothing, opens a small setup window.
+the game itself. Ordinary interactive startup shows the desktop edition starter when autorun is enabled; explicit command-line paths and tool/game modes retain direct startup.
 
 ## How the game folder is chosen
 
@@ -37,7 +37,7 @@ Unknown or modified editions are not classified from generic folders; structural
 usability does not certify edition compatibility. The experimental Theme Park Inc level
 viewer (`--load-original-level`, [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice))
 has its own, wider edition check that also accepts edited Theme Park Inc folders; it never
-makes such a folder usable for setup, settings or normal play. The inspector warns, without
+changes the legacy one-argument inspector. The explicit experimental desktop selection uses the same positive edition evidence, rejects mixed folders and requires an available supported world. It does not enable TPW normal play or the TPW game-files settings path for TPI. The inspector warns, without
 refusing, when:
 
 - the language folder lacks `bankrupt.MD2`, `congrats.MD2`, `paused.MD2` or
@@ -53,7 +53,13 @@ Pages: welcome (with the folders detection found, each with a **Use** button), g
 folder (typed path, **Browse…** and drag-and-drop onto the window, with live results
 of the inspection), and a summary. Closing the window or choosing **Quit** exits without
 saving. The window draws with ImGui because no original art or font is readable before
-the game folder is known; it asks only for that folder.
+the game folder is known.
+
+The welcome page offers **Theme Park World** and **Theme Park Inc / Sim Coaster (Experimental)**. The experimental choice requires positively identified TPI files and an explicit available **arabian**, **science** or **water** world; Polar and Director are not supported world names. Start re-inspects the chosen folder before remembering it or launching. A changed folder invalidates its inspection, and cancellation does not change settings.
+
+`setup.json` keeps the existing TPW `gamePath`, CD and bonus paths, and adds `selectedEdition` (0 = TPW, 1 = TPI), `themeParkIncPath` and `themeParkIncWorld`. Old files default to TPW. The TPI choice never overwrites the TPW path and never borrows its CD. `--setup` opens the starter explicitly. `--no-autorun`, `OPENTPW_NO_AUTORUN=1` and `showAutorun: false` skip the ordinary starter; a remembered explicit TPI choice is revalidated and launches its selected world directly. Explicit CLI/environment paths and gameplay/tool modes take precedence over that remembered choice.
+
+TPI Start feeds the existing `--load-original-level` experimental flow rather than the TPW lobby. It has the existing capability limits: no TPI economy, campaign, native saves, advisor or original interface. No original `autorun.exe` or installer is executed, and no TPI autorun artwork is required. Folder inspection is not proof that every world asset decodes successfully; normal runtime validation still applies. Synthetic CPU tests cover selection, migration, stale results and the actual no-window saved-selection resolver. Native starter drawing, GPU gameplay and original-edition parity remain unqualified.
 
 ## Changing the folders in game
 

@@ -13,7 +13,7 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class SetupWizard : IDisposable
 {
-	public sealed record Result( string GamePath, string? CdPath );
+	public sealed record Result( string GamePath, string? CdPath, GameEdition Edition = GameEdition.ThemeParkWorld, string? World = null );
 
 	private enum Page { Welcome, GameFolder, Done }
 
@@ -36,6 +36,9 @@ internal sealed class SetupWizard : IDisposable
 
 	private Page page;
 	private string gamePath;
+	private readonly DesktopSetupSelection selection;
+	private readonly SetupSettings savedSettings;
+	private int inspectionRevision;
 	private readonly string? savedCd;
 	private InstallationReport? gameReport;
 	private Task<InstallationDiscoveryResult>? picker;
@@ -48,7 +51,9 @@ internal sealed class SetupWizard : IDisposable
 	{
 		detected = initialDiscovery?.Reports ?? Array.Empty<InstallationReport>();
 		discoveryTimedOut = initialDiscovery?.TimedOut == true;
-		gamePath = saved.GamePath ?? detected.FirstOrDefault()?.Path ?? "";
+		savedSettings = saved;
+		selection = new( saved );
+		gamePath = selection.Path;
 		savedCd = saved.CdPath;
 		if ( gamePath.Length > 0 )
 			pendingInspection = gamePath;
@@ -140,8 +145,11 @@ internal sealed class SetupWizard : IDisposable
 			{
 				var report = inspection.Result.Reports.FirstOrDefault() ?? new InstallationReport( gamePath, null,
 					Array.Empty<string>(), new[] { "This folder could not be inspected. Choose an available local folder or CD." }, Array.Empty<string>() );
-				gameReport = report;
-				if ( report.IsUsable ) gamePath = report.Path;
+				if ( selection.AcceptInspection( inspectionRevision, report ) )
+				{
+					gameReport = report;
+					if ( report.IsUsable ) gamePath = report.Path;
+				}
 			}
 			inspection = null;
 			inspectionCancellation?.Dispose();
@@ -151,7 +159,8 @@ internal sealed class SetupWizard : IDisposable
 		{
 			pendingInspection = null;
 			inspectionCancellation = CancellationTokenSource.CreateLinkedTokenSource( lifetime.Token );
-			inspection = InstallationDiscovery.InspectAsync( pending, cancellation: inspectionCancellation.Token );
+			inspectionRevision = selection.Revision;
+			inspection = InstallationDiscovery.InspectAsync( pending, selection.Edition, cancellation: inspectionCancellation.Token );
 		}
 		if ( picker is { IsCompleted: true } )
 		{
@@ -187,6 +196,14 @@ internal sealed class SetupWizard : IDisposable
 	private void DrawWelcome()
 	{
 		Heading( "Welcome to OpenTPW" );
+		if ( ImGui.RadioButton( "Theme Park World", selection.Edition == GameEdition.ThemeParkWorld ) ) SelectEdition( GameEdition.ThemeParkWorld );
+		if ( ImGui.RadioButton( "Theme Park Inc / Sim Coaster (Experimental)", selection.Edition == GameEdition.ThemeParkInc ) ) SelectEdition( GameEdition.ThemeParkInc );
+		if ( selection.Edition == GameEdition.ThemeParkInc )
+		{
+			ImGui.TextWrapped( "Experimental worlds: building and guests, without economy, campaign or original saves." );
+			Footer( false, "Choose a folder", true, () => page = Page.GameFolder );
+			return;
+		}
 		ImGui.TextWrapped( "OpenTPW is a new engine for Theme Park World (1999). It needs the files of the original game, which it does not include: an installed copy, a copy of the CD or the CD itself." );
 		ImGui.Spacing();
 		if ( detected.Count > 0 )
@@ -215,24 +232,31 @@ internal sealed class SetupWizard : IDisposable
 
 	private void DrawGameFolder()
 	{
-		Heading( "Where is Theme Park World?" );
+		Heading( selection.Edition == GameEdition.ThemeParkInc ? "Where is Theme Park Inc / Sim Coaster?" : "Where is Theme Park World?" );
 		ImGui.TextWrapped( "Choose the folder that contains the game's Data folder: where it is installed, a copy of the CD or the CD drive. You can also drag the folder onto this window." );
 		ImGui.Spacing();
 		FolderField( "##game", ref gamePath, SetGamePath );
 		Report( gameReport );
-		Footer( canGoBack: true, nextLabel: "Next", canGoNext: gameReport is { IsUsable: true }, next: () => page = Page.Done, back: () => page = Page.Welcome );
+		if ( selection.Edition == GameEdition.ThemeParkInc && gameReport is { IsUsable: true } )
+		{
+			ImGui.TextUnformatted( "Choose a world:" );
+			foreach ( var world in gameReport.Worlds )
+				if ( ImGui.RadioButton( world, string.Equals( selection.World, world, StringComparison.OrdinalIgnoreCase ) ) ) selection.World = world;
+		}
+		Footer( canGoBack: true, nextLabel: "Next", canGoNext: selection.CanStart, next: () => page = Page.Done, back: () => page = Page.Welcome );
 	}
 
 	private void DrawDone()
 	{
 		Heading( "Ready" );
 		ImGui.TextWrapped( $"Game files: {gameReport?.Path}" );
+		if ( selection.Edition == GameEdition.ThemeParkInc ) ImGui.TextWrapped( $"Experimental world: {selection.World}" );
 		if ( gameReport is { Languages.Count: > 0 } )
 			ImGui.TextWrapped( $"Languages: {string.Join( ", ", gameReport.Languages )}" );
 		ImGui.Spacing();
 		ImGui.TextWrapped( "OpenTPW remembers this folder. Change it, or add the CD for music and movies, later in Options > Game files." );
-		Footer( canGoBack: true, nextLabel: "Start OpenTPW", canGoNext: true,
-			next: () => result = new Result( gameReport!.Path, savedCd ), back: () => page = Page.GameFolder );
+		Footer( canGoBack: true, nextLabel: "Start OpenTPW", canGoNext: selection.CanStart,
+			next: () => result = new Result( selection.Path, selection.Edition == GameEdition.ThemeParkWorld ? savedCd : null, selection.Edition, selection.World ), back: () => page = Page.GameFolder );
 	}
 
 	private void FolderField( string id, ref string path, Action<string> set )
@@ -257,9 +281,16 @@ internal sealed class SetupWizard : IDisposable
 	private void SetGamePath( string path )
 	{
 		gamePath = path;
+		selection.Select( selection.Edition, path );
 		gameReport = null;
 		inspectionCancellation?.Cancel();
 		pendingInspection = path.Trim().Length > 0 ? path : null;
+	}
+
+	private void SelectEdition( GameEdition edition )
+	{
+		selection.Select( edition, edition == GameEdition.ThemeParkInc ? savedSettings.ThemeParkIncPath ?? "" : savedSettings.GamePath ?? "" );
+		SetGamePath( selection.Path );
 	}
 
 	private static void Report( InstallationReport? report )
@@ -268,7 +299,7 @@ internal sealed class SetupWizard : IDisposable
 			return;
 		ImGui.Spacing();
 		if ( report.IsUsable )
-			Good( $"Theme Park World found ({string.Join( ", ", report.Languages )})." );
+			Good( $"Selected game files found ({string.Join( ", ", report.Languages )})." );
 		foreach ( var problem in report.Problems )
 			Bad( problem );
 		foreach ( var warning in report.Warnings )

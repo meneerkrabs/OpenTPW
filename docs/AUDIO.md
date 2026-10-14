@@ -467,3 +467,9 @@ cancellation remain retryable. Tests pin real source-factory propagation/retry,
 worker/cooperative bounds, exact-limit reads, valid PCM/cache/Forget, cancellation
 and public wrapper compatibility. This correction changes no decoder limit,
 format, ownership, playback or original/native qualification.
+
+Independent corrected-group controls also preserve the exact source exception
+instance when its message mimics an oversized-entry refusal, at either metadata
+or payload open, across synchronous, worker and cooperative decoding. A changed
+source length refuses before reporting size; Forget clears cached size refusals
+and retired categories do not retain them again. These are synthetic CPU tests.

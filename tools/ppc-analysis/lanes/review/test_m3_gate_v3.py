@@ -451,8 +451,9 @@ class MutationsRound3(v1.Mutations):
         # held 60 turns fail too. Both are stricter, not looser.
         row = self.rows('hold-slots-longer')['queues.no-stuck-queue']
         self.assertEqual('fail', row['verdict'], row)
-        # Litter by cell (ORACLE.md 7.15) moves the guests' walks (bins, the litter step), so the observed values moved with it.
-        self.assertIn('203 turns after becoming head > bound 202', row['evidence']['firstViolation'])
+        # The exact turns move with every change to the guests' walks (litter by cell gave 203 > 202, pranks 179 > 178 again), so the
+        # pin is the kind of violation: the head's wait bound.
+        self.assertRegex(row['evidence']['firstViolation'], r'\d+ turns after becoming head > bound \d+')
         self.assertEqual(0, row['evidence']['attraction']['headNotReadyViolations'])
         row = self.rows('head-delayed-60-turns')['queues.no-stuck-queue']
         self.assertEqual('fail', row['verdict'], row)

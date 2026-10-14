@@ -875,6 +875,15 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Ride particles (October 14):** RSE EVENT types 1 and 2 now create, simulate and draw particles of the original system
+  (docs/PARTICLES.md). `Data/Particle/Tp2.plb` (105 templates, 20 effectors) is read by `ParticleTemplateFile`; `ParticleSystem`
+  mirrors the traced pool (120 emitter slots, 2048 particles, private LCG seeded 1, 31 ms ticks, bursts, per-quarter rates,
+  chained and death effects, the type-2 direction, the control scale); `ParticleRenderer` draws camera-facing sprites from the
+  `particles` set (`esprites.wad` SPR_PA/PB) with the template's blend, as a weather-style entity with a precompiled web shader
+  and a new one-plus-one material flag. A prepared request is converted back to native units and handed to the pool
+  (fire and forget, no save state, outside the determinism hash). PTCL-901 is retired for PTCL-902 to PTCL-908 (arithmetic,
+  effectors, sprite scale, draw order, settings and ground callback, the PART save block, the callers not wired); PTCL-900 is
+  narrowed. In the shipped jungle the Aztec Mayhem torches already fire EVENT 2.
 - **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
   (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
   the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points

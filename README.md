@@ -129,8 +129,8 @@ What works today, with your own original game data:
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](https://opentpw.io/docs/PS2.html)).
 
 Not done yet: go-kart and water ride tracks, rider heads on coaster and tour cars, unresolved flat-ride
-head attachments, ride particle effects (RSE EVENT types 1 and 2; the positioned ride sounds play),
-additional staff actions and their sounds, the original weather visuals (drawn now as procedural
+head attachments, the particle effects of the other callers (ride smoke, flying cars, litter; RSE EVENT types 1 and 2 are drawn,
+[particles](https://opentpw.io/docs/PARTICLES.html)), additional staff actions and their sounds, the original weather visuals (drawn now as procedural
 approximations), the visitor click and visitor panel sounds (selecting visitors works), global lobby
 effects, the path tool's link-end and undo sounds, and the exact original rules in places where
 OpenTPW still uses a documented approximation. The

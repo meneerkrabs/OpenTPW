@@ -25,7 +25,7 @@ public partial class Level
 		coasterSite = CoasterSite.FromGrid( Objects.Grid );
 		coasterRenderer = new CoasterRenderer( () => Coasters, () => Objects.Grid.Origin, ObjectPlacement.ModelScale, CoasterEntry,
 			ride => CoasterToolStation?.Runtime.Coaster == ride ? DemoPreview ?? CoasterPreview : null,
-			ride => Objects.Objects.FirstOrDefault( item => !item.IsDeleted && ReferenceEquals( item.Runtime.Coaster, ride ) )?.Runtime.AttractionId ?? 0 );
+			ride => CoasterStation( ride )?.Runtime.AttractionId ?? 0 );
 	}
 
 	/// <summary>The riders of the coasters as head sources, hung from the head sockets of the car models.</summary>
@@ -99,12 +99,15 @@ public partial class Level
 	}
 
 	/// <summary>The catalogue entry (archive) of a coaster's station object, or null when the station left.</summary>
-	private ObjectCatalogEntry? CoasterEntry( CoasterRide ride )
+	private ObjectCatalogEntry? CoasterEntry( CoasterRide ride ) => CoasterStation( ride )?.Entry;
+
+	/// <summary>The station object a coaster belongs to (a plain loop: the renderer asks every frame).</summary>
+	private OriginalObject? CoasterStation( CoasterRide ride )
 	{
 		foreach ( var item in Objects.Objects )
 		{
 			if ( !item.IsDeleted && ReferenceEquals( item.Runtime.Coaster, ride ) )
-				return item.Entry;
+				return item;
 		}
 		return null;
 	}

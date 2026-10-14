@@ -62,6 +62,9 @@ internal sealed class CoasterAssets : IDisposable
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
 		{
 			Log?.Warning( $"A coaster texture could not be read ({name}): {exception.Message}" );
+			// An I/O failure is not remembered as a missing texture: the next load tries again.
+			if ( exception is IOException )
+				return Texture.Missing;
 			texture = Texture.Missing;
 		}
 		textures[key] = texture;
@@ -78,7 +81,25 @@ internal sealed class CoasterAssets : IDisposable
 		return slots;
 	}
 
-	/// <summary>The pylon rig of a standard or loop pylon, or null when the archive has no such model.</summary>
+	/// <summary>Read failures a model gets before it is given up (an I/O error may pass; bad data never does).</summary>
+	private const int ReadAttempts = 3;
+	private readonly Dictionary<string, int> failures = new();
+
+	/// <summary>
+	/// Logs a failed model read. Bad data (<see cref="InvalidDataException"/> and the like) is final; an I/O failure is not cached as an absent model, so the
+	/// next request tries again, up to <see cref="ReadAttempts"/> times. Returns whether the failure is final.
+	/// </summary>
+	private bool Failed( string what, string name, Exception exception )
+	{
+		var key = what + ":" + name;
+		failures.TryGetValue( key, out var count );
+		failures[key] = ++count;
+		var final = exception is not IOException || count >= ReadAttempts;
+		Log?.Warning( $"A coaster {what} model could not be read ({name}): {exception.Message}{(final ? "; it is not drawn" : "; it is tried again")}" );
+		return final;
+	}
+
+	/// <summary>The pylon rig of a standard or loop pylon, or null when the archive has no such model or it cannot be used.</summary>
 	public CoasterPylonRig? GetPylon( bool loop )
 	{
 		if ( pylons.TryGetValue( loop, out var cached ) )
@@ -96,12 +117,30 @@ internal sealed class CoasterAssets : IDisposable
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
 		{
-			Log?.Warning( $"A coaster pylon model could not be read ({name}): {exception.Message}" );
+			return Failed( "pylon", name, exception ) ? pylons[loop] = null : null;
 		}
 		return pylons[loop] = rig;
 	}
 
-	/// <summary>The car rig of a car type, or null when the archive has no such model.</summary>
+	/// <summary>
+	/// Poses a pylon for a node. The mesh conversion happens here, after the model loaded, so a vertex the converter refuses (a nonfinite position) is caught
+	/// here: the rig is switched off for the level and the pylon is left out.
+	/// </summary>
+	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, float height, float yaw, bool stackedAbove )
+	{
+		try
+		{
+			return rig.Pose( height, yaw, stackedAbove );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException )
+		{
+			Failed( "pylon", Definition.Pylon( loop ).MeshName, exception );
+			pylons[loop] = null;
+			return Array.Empty<CoasterModelPart>();
+		}
+	}
+
+	/// <summary>The car rig of a car type, or null when the archive has no such model or it cannot be used.</summary>
 	public CoasterCarRig? GetCar( int typeIndex )
 	{
 		if ( cars.TryGetValue( typeIndex, out var cached ) )
@@ -117,7 +156,7 @@ internal sealed class CoasterAssets : IDisposable
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
 			{
-				Log?.Warning( $"A coaster car model could not be read ({name}): {exception.Message}" );
+				return Failed( "car", name, exception ) ? cars[typeIndex] = null : null;
 			}
 		}
 		return cars[typeIndex] = rig;
@@ -138,7 +177,9 @@ internal sealed class CoasterAssets : IDisposable
 		return carModels[rig] = list;
 	}
 
-	/// <summary>Reads an MD2 member of the archive by file stem, or null.</summary>
+	/// <summary>
+	/// Reads an MD2 member of the archive by file stem. Null means the archive has no such member (absent); a read failure throws, so the caller can tell the two apart.
+	/// </summary>
 	private ModelFile? FindModel( string stem )
 	{
 		string[] files;
@@ -146,13 +187,16 @@ internal sealed class CoasterAssets : IDisposable
 		{
 			files = Entry.FileSystem.GetFiles( Entry.ArchivePath ).ToArray();
 		}
-		catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException or IOException )
+		catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException )
 		{
 			return null;
 		}
 		var path = files.FirstOrDefault( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) && string.Equals( Path.GetFileNameWithoutExtension( file ), stem, StringComparison.OrdinalIgnoreCase ) );
 		return path == null ? null : ObjectAssets.LoadModel( Entry.FileSystem, path );
 	}
+
+	/// <summary>Views using these assets; the renderer disposes them when the last view goes.</summary>
+	public int Users { get; set; }
 
 	public void Dispose()
 	{

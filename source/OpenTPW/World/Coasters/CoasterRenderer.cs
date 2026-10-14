@@ -69,8 +69,10 @@ public sealed class CoasterRenderer : Entity
 				present = ReferenceEquals( rides[ride], views[index].Ride );
 			if ( present )
 				continue;
-			views[index].Dispose();
+			var gone = views[index];
 			views.RemoveAt( index );
+			gone.Dispose();
+			ReleaseAssets( gone.Assets );
 		}
 		var triangles = 0;
 		for ( var index = 0; index < rides.Count; index++ )
@@ -95,9 +97,26 @@ public sealed class CoasterRenderer : Entity
 			return null;
 		if ( !assets.TryGetValue( entry, out var shared ) )
 			assets[entry] = shared = new CoasterAssets( entry, ride.Definition );
+		shared.Users++;
 		var view = new RideView( this, ride, shared );
 		views.Add( view );
 		return view;
+	}
+
+	/// <summary>Drops a view's use of its type's assets; the models and textures are released with the last user.</summary>
+	private void ReleaseAssets( CoasterAssets shared )
+	{
+		if ( --shared.Users > 0 )
+			return;
+		shared.Dispose();
+		foreach ( var (entry, candidate) in assets )
+		{
+			if ( ReferenceEquals( candidate, shared ) )
+			{
+				assets.Remove( entry );
+				break;
+			}
+		}
 	}
 
 	protected override void OnDelete()
@@ -177,6 +196,7 @@ public sealed class CoasterRenderer : Entity
 		}
 
 		public CoasterRide Ride { get; }
+		public CoasterAssets Assets => assets;
 		public int Triangles => trackTriangles + pylonTriangles + carTriangles;
 		public int ModelCount => models.Count;
 
@@ -296,7 +316,7 @@ public sealed class CoasterRenderer : Entity
 				var baseHeight = knot.Position.Y - definition.TrackHeightAdjust - lift;
 				var yaw = MathF.Atan2( knot.Direction.X, knot.Direction.Z );
 				var stackedAbove = chain.Any( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
-				var parts = rig.Pose( lift, yaw, stackedAbove );
+				var parts = assets.PosePylon( node.LoopPylon, rig, lift, yaw, stackedAbove );
 				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );
 				for ( var part = 0; part < parts.Count; part++ )
 				{

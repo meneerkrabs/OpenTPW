@@ -39,16 +39,24 @@ HOOKS_V2 = [
      '\t\t\tMutateAfterTick( tick );\n\t\t\tMutateV2( tick, ticks );\n'),
     ('\t\t\t\trepairs++;\n',
      '\t\t\t{\n\t\t\t\trepairs++;\n\t\t\t\tif ( Mutation == "idle-mechanic-after-first-repair" )\n\t\t\t\t\tidleMechanic = true;\n\t\t\t}\n'),
-    ('\t\t\tlitterPeak = Math.Max( litterPeak, economy.LitterScaled );\n',
-     '\t\t\tif ( Mutation == "no-wear-no-litter" || (Mutation == "late-litter" && tick < ticks) )\n'
-     '\t\t\t{\n\t\t\t\ttypeof( ParkEconomy ).GetProperty( "LitterScaled" )!.SetValue( economy, 0L );\n\t\t\t\tpreviousLitter = 0;\n\t\t\t}\n'
-     '\t\t\telse if ( Mutation == "late-litter" )\n\t\t\t\teconomy.AddLitter( (int)ParkEconomy.LitterScale );\n'
-     '\t\t\tlitterPeak = Math.Max( litterPeak, economy.LitterScaled );\n'),
-    ('\t\t\tpreviousLitter = economy.LitterScaled;\n',
-     '\t\t\tpreviousLitter = economy.LitterScaled;\n'
+    # Litter by cell (ORACLE.md 7.15): no-wear-no-litter and late-litter switch the drops off from the start; late-litter drops one item on
+    # the last tick. The gate's guests rarely fill their litter meters (90) within a run, so steady-litter and idle-handyman-after-first-clean
+    # drop an item on the entrance cell every fourth turn; the latter also takes every claim back after the first sweep, so free handymen
+    # leave litter waiting.
+    ('\t\tlong litterPeak = economy.Litter.Count, litterCleaned = 0, litterDropped = 0;\n',
+     '\t\tif ( Mutation == "no-wear-no-litter" || Mutation == "late-litter" )\n\t\t\teconomy.Litter.Disabled = true;\n'
+     '\t\tlong litterPeak = economy.Litter.Count, litterCleaned = 0, litterDropped = 0;\n'),
+    ('\t\t\tvar litter = economy.Litter.Count;\n',
+     '\t\t\tif ( Mutation == "late-litter" && tick == ticks )\n'
+     '\t\t\t{\n\t\t\t\teconomy.Litter.Disabled = false;\n\t\t\t\teconomy.Litter.Drop( 0, 0, (LitterType)1 );\n\t\t\t}\n'
+     '\t\t\tif ( (Mutation == "steady-litter" || Mutation == "idle-handyman-after-first-clean") && ParkCalendar.Turn( economy.Tick ) != ParkCalendar.Turn( economy.Tick - 1 )\n'
+     '\t\t\t\t&& ParkCalendar.Turn( economy.Tick ) % 4 == 0 )\n'
+     '\t\t\t\teconomy.Litter.Drop( entranceCell.X, entranceCell.Y, (LitterType)1 );\n'
      '\t\t\tif ( Mutation == "idle-handyman-after-first-clean" && litterCleaned > 0 )\n'
-     '\t\t\t\tforeach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Handyman ) )\n'
-     '\t\t\t\t\tmember.State = StaffState.PickedUp;\n'),
+     '\t\t\t\tforeach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Handyman && member.LitterCell != null ) )\n'
+     '\t\t\t\t{\n\t\t\t\t\teconomy.Litter.Claim( member.LitterCell!.Value.X, member.LitterCell.Value.Y, 0, 0 );\n'
+     '\t\t\t\t\tmember.LitterCell = null;\n\t\t\t\t\tmember.BusyTicks = 0;\n\t\t\t\t\tmember.State = StaffState.Patrolling;\n\t\t\t\t}\n'
+     '\t\t\tvar litter = economy.Litter.Count;\n'),
     ('\tprivate string AttractionName( int id )',
      '\tprivate bool idleMechanic;\n'
      '\tprivate void MutateV2( long tick, long ticks )\n\t{\n'
@@ -150,11 +158,18 @@ def test_mechanic_idle_after_first_repair_fails(self):
 
 def test_handyman_idle_after_first_clean_fails(self):
     row = _staff(self, 'idle-handyman-after-first-clean')
-    baseline = _staff(self, '')
+    steady = _staff(self, 'steady-litter')
     self.assertLess(row['evidence']['litterCleanedItems'], 2)
-    self.assertGreater(row['evidence']['litterDroppedItems'], 100)
-    self.assertLess(row['evidence']['litterCleanedItems'], baseline['evidence']['litterCleanedItems'])
+    self.assertGreater(row['evidence']['litterDroppedItems'], 1)
+    self.assertLess(row['evidence']['litterCleanedItems'], steady['evidence']['litterCleanedItems'])
     self.assertEqual('fail', row['verdict'], row)  # round 2 weakness (one clean satisfied the row), closed by GATE-UPD
+    self.assertIn('unclaimed beside a free handyman', row['evidence']['problems'])
+
+
+def test_steady_litter_is_swept(self):
+    row = _staff(self, 'steady-litter')
+    self.assertGreater(row['evidence']['litterCleanedItems'], 1)
+    self.assertEqual('pass', row['verdict'], row)
 
 
 def test_zero_wear_and_zero_litter_pass_with_idle_staff(self):
@@ -188,7 +203,7 @@ def test_halted_gate_fixed_item_is_judged_by_no_row(self):
 
 
 for _test in [test_mechanic_idle_after_first_repair_fails, test_handyman_idle_after_first_clean_fails,
-              test_zero_wear_and_zero_litter_pass_with_idle_staff, test_litter_in_last_tick_only_fails,
+              test_steady_litter_is_swept, test_zero_wear_and_zero_litter_pass_with_idle_staff, test_litter_in_last_tick_only_fails,
               test_halt_in_last_tick_fails_scripts_run, test_halted_gate_fixed_item_is_judged_by_no_row]:
     setattr(MutationsRound2, _test.__name__, _test)
 

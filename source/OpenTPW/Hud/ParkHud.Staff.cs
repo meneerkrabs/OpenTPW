@@ -33,7 +33,6 @@ public sealed partial class ParkHud
 	private bool showingEmployedStaff;
 	private bool staffSortByWage;
 	private bool staffSortDescending;
-	private bool staffSortWasChosen;
 	private int selectedStaffId;
 	private int staffFirstRow;
 	private Dictionary<StaffType, string[]>? staffNames;
@@ -106,7 +105,9 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Switches between the original applicant list and a view of existing employees.</summary>
-	// [APPROX:UI-090] Control 9366 has no decoded handler; its authored rectangle toggles the applicant and employee views — evidence needed: original control 9366 handler.
+	// [EXT:staff-employee-view] The original hire window only lists applicants; its employee list is the separate All Staff window
+	// (table 0x750e10, screen 0x11d, S key), which OpenTPW does not port. This view of existing employees inside the hire window,
+	// reached by the labelled "staffViewExt" button, is an OpenTPW extension that also hosts the dismiss button.
 	public void ShowEmployedStaff( bool employed )
 	{
 		showingEmployedStaff = employed;
@@ -115,11 +116,12 @@ public sealed partial class ParkHud
 		EnsureStaffSelection();
 	}
 
+	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends.
+	// [APPROX:UI-084] the initial column state of each list (column 0 ascending here) — evidence needed: the initial state of each original list
 	public void SortStaff( bool byWage )
 	{
-		staffSortDescending = staffSortWasChosen && staffSortByWage == byWage && !staffSortDescending;
+		staffSortDescending = staffSortByWage == byWage && !staffSortDescending;
 		staffSortByWage = byWage;
-		staffSortWasChosen = true;
 		EnsureStaffSelection();
 		var selectedIndex = showingEmployedStaff
 			? StaffItems.ToList().FindIndex( member => member.Id == selectedStaffId )
@@ -241,7 +243,7 @@ public sealed partial class ParkHud
 		3 => $"{member.Happiness}%",
 		_ => ""
 	};
-	// [APPROX:UI-081] Applicant summary fields use the economy's expected monthly wage and grade-derived skill; the original candidate detail binding is not decoded.
+	// [APPROX:UI-081] applicant summary fields use the economy's expected monthly wage and grade-derived skill as text; the original shows a skill gauge (9346 = skill byte × 1024/5) and a mini balance (9349) and no grade or wage text — evidence needed: porting them
 	private string CandidateStat( StaffCandidate candidate, int row ) => row switch
 	{
 		0 => CandidateName( candidate ),
@@ -261,6 +263,14 @@ public sealed partial class ParkHud
 	private string SelectedStat( int row ) => showingEmployedStaff
 		? SelectedStaff is { } member ? StaffStat( member, row ) : ""
 		: SelectedCandidate is { } candidate ? CandidateStat( candidate, row ) : "";
+	/// <summary>The hire window's cash label (control 9366): UITEXT 0x1ca "Cash $ N" or 0x1cb "Cash -$ N" with the bare balance magnitude.</summary>
+	public string StaffCashText => !Status.HasEconomy ? "" : CashLabel( Status.Money );
+	private string CashLabel( long balance )
+	{
+		var template = strings[balance < 0 ? UIStrings.CashNegativeDollar : UIStrings.CashDollar];
+		var number = (balance < 0 ? -(decimal)balance : balance).ToString( CultureInfo.InvariantCulture );
+		return template.Contains( "%d" ) ? template.Replace( "%d", number ) : template + number;
+	}
 	private string HireTitle => strings[(UIStrings)( (int)UIStrings.HireCleaners + (int)( staffFilter ?? StaffType.Handyman ) )];
 	private string ListName( int index ) => showingEmployedStaff ? StaffName( StaffItems[index] ) : CandidateName( StaffCandidates[index] );
 	private string ListWage( int index ) => showingEmployedStaff ? StaffWage( StaffItems[index] ) : CandidateWage( StaffCandidates[index] );
@@ -283,7 +293,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiLabel { Id = "staffGrade", Text = () => SelectedGrade,
 			Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right, Fit = true,
 			Bounds = Rect( 722, 536, 957, 575 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-082] The staff portrait content has no resolved per-role art; show the selected role and grade as text in f_staffpic.
+		// [APPROX:UI-082] the selected role and grade are text in f_staffpic; the original draws a 3D candidate preview in control 9348's rectangle (0x49ba00) — evidence needed: that renderer
 		screen.Add( new UiLabel { Id = "portraitText", Text = () => SelectedGrade.Length > 0 ? $"{SelectedRole}  {SelectedGrade}" : "",
 			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
 			Bounds = Rect( 513, 202, 723, 415 ), Anchor = UiAnchor.Center } );
@@ -317,11 +327,14 @@ public sealed partial class ParkHud
 		// [DATA:Mac staff table 0x4a1e0:9365] b_allthings returns to the buy window.
 		screen.Add( new UiButton { Id = "allThings", Model = "b_allthings", Help = strings.Help( 162 ), Clicked = CloseStaffWindow,
 			Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-090] The unhandled title-side control 9366 toggles the employee view and original applicant view.
-		screen.Add( new UiButton { Id = "staffView", Text = () => showingEmployedStaff ? HireTitle : strings[UIStrings.AllStaff],
+		// [BIN:TPW-EXE:0x49b650 control 9366 is a plain cash label: handler 0x49b697 and builder 0x49bf75 format UITEXT 0x1ca "Cash $ N" or 0x1cb "Cash -$ N"]
+		screen.Add( new UiLabel { Id = "staffCash", Text = () => StaffCashText, Font = fonts => fonts.Label, Color = UiColors.Value,
+			Align = UiAlign.Right, Fit = true, Bounds = Rect( 1297, 74, 1769, 153 ), Anchor = UiAnchor.Center } );
+		// [EXT:staff-employee-view] labelled button between the staff info and stat frames toggling the employee view.
+		screen.Add( new UiButton { Id = "staffViewExt", Text = () => showingEmployedStaff ? HireTitle : strings[UIStrings.AllStaff],
 			Clicked = () => ShowEmployedStaff( !showingEmployedStaff ), Font = fonts => fonts.Label,
-			Bounds = Rect( 1297, 74, 1769, 153 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-092] The economy supports Fire, but the decoded table has no proven dismissal handler; this explicit button and confirmation occupy the free area below the portrait.
+			Bounds = Rect( 320, 610, 909, 690 ), Anchor = UiAnchor.Center } );
+		// [APPROX:UI-092] an explicit dismiss button with a confirmation below the portrait; the original dismisses with b_fire (1292) on the per-employee panel (0x4b6080, table 0x756f48, jump 0x4b5e5d) and confirms (UITEXT 0x18d) only when [0x78d90f] is set — evidence needed: porting that panel
 		dismissStaffButton = new UiButton { Id = "dismissStaff", Text = () => strings[UIStrings.DismissEmployee].Split( '\n' )[0].Trim(),
 			Clicked = ConfirmDismissSelectedStaff, Font = fonts => fonts.Label, Enabled = false,
 			Bounds = Rect( 320, 449, 909, 518 ), Anchor = UiAnchor.Center };
@@ -337,7 +350,7 @@ public sealed partial class ParkHud
 		// The original staff window navigates to the visitor and attractions windows (UI-MAP 0x1014b124:
 		// messages 0x32f and 0x330 open them with the last used category); this entry keeps the All
 		// Attractions window reachable where the buy window is closed (a read-only visit disables buy).
-		// [APPROX:UI-909] a text button: the shipped b_allthinginfo art has no texture in ui.wad.
+		// [EXT:overview-entry-buttons] a text button: the shipped b_allthinginfo art has no texture in ui.wad.
 		screen.Add( new UiButton { Id = "allAttractions", Text = () => strings[UIStrings.AllRides], Font = fonts => fonts.Label,
 			Clicked = OpenAttractionsWindow, Bounds = Rect( 24, 1320, 127, 1422 ), Anchor = UiAnchor.Center } );
 		// [PROVISIONAL:LOCATE] Locate controls focus live actors; role lookup prefers the selected employee, otherwise cycles IDs.
@@ -393,7 +406,7 @@ public sealed partial class ParkHud
 		public bool ArrowsSelect => true;
 		public void Select( int index ) => owner.SelectStaff( index );
 		public void Scroll( int rows ) => owner.ScrollStaff( rows );
-		// [APPROX:UI-083] Help 161 identifies hiring the selected applicant; Enter or a second row click activates it.
+		// [APPROX:UI-083] Enter or a second row click hires the selected applicant; the original's list message 0x400 hires (0x49b988 → 0x507bf0), closes and posts 0x135 — evidence needed: the gesture producing 0x400 (input 0x11006/0x11007)
 		public override void Activate() => owner.HireSelectedStaff();
 		public override void Adjust( int direction ) => owner.SelectStaff( Math.Max( 0, Selected ) + direction );
 		public int RowAt( UiCanvas canvas, NVector2 point )
@@ -434,7 +447,6 @@ public sealed partial class ParkHud
 		private readonly bool byWage;
 		public StaffHeader( ParkHud owner, bool byWage ) { this.owner = owner; this.byWage = byWage; }
 		public override bool Focusable => Visible && Enabled;
-		// [APPROX:UI-084] Repeated header presses reverse the ascending order; the original sort cycle is not decoded.
 		public override void Activate() => owner.SortStaff( byWage );
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
 			context.DrawFittedText( context.Fonts.Label, owner.strings[byWage ? UIStrings.MonthlyWageStaff : UIStrings.NameAttr],

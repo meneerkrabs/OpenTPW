@@ -1197,7 +1197,18 @@ STATE6_CALLS = {
     'wander': 0x4F9490,        # thiscall (guest): the wander destination (target tpw-exe-wander-destination); from the input; recorded
     'state': 0x501DB0,         # thiscall (guest, state), ret 4: the state setter; recorded
     'guest_id': 0x50B350,      # thiscall (guest, out), ret 4: the guest's thing id
+    'message': 0x40FB10,       # thiscall (bus, message), ret 4: the message bus; the prank message (type 14) is recorded
+    'burst': 0x4FE950,         # thiscall (victim): the balloon burst; recorded
 }
+STATE6_BUS = 0x788D3C          # the message bus, built on first use; pre-set so the run never allocates it
+STATE6_STINKBOMB = 0x7850E0    # PeepInfo.StinkbombLikelihood
+STATE6_SELF_ID = 7             # the guest's thing id (0x50b350 stub)
+STATE6_CHANGES = {0: 5, 1: 15, 2: 25}   # Small/Medium/BigHappinessChange, the bytes at 0x785058 / 0x78505c / 0x785060 (shipped values)
+
+
+def _happiness_change( happiness: float, amount: int ) -> float:
+    value = happiness - amount
+    return 100.0 if value > 100.0 else 0.0 if value < 0.0 else struct.unpack('<f', struct.pack('<f', value))[0]
 STATE6_CELLS = 0x8023A0        # global: the map's cell records (0x44 bytes each, id = y * 128 + x + 1)
 STATE6_STATE = type('State6State', (), {})()
 
@@ -1235,11 +1246,17 @@ def state6_stubs(target: Target) -> dict:
         return 0, 8
 
     def bin_search(sb):
-        raise AssertionError('the bin search ran: the litter meter is 0 in every input')
+        guest(sb, '0x500dc0')
+        target.log.append(('bin_search', sb.arg(1)))
+        sb.write(sb.arg(0), 'H', state.x['bin'])
+        return 0, 8
 
     def happiness(sb):
+        # 0x4fea70 as read: subtract the selector's settings byte (0x785058 / 5c / 60) from the happiness float, clamped to 0..100
         guest(sb, '0x4fea70')
         target.log.append(('happiness', sb.arg(0)))
+        address = state.guest + STATE6_GUEST['happiness']
+        sb.write(address, 'f', _happiness_change( sb.read(address, 'f'), STATE6_CHANGES[sb.arg(0)] ))
         return 0, 4
 
     def closed(sb):
@@ -1285,10 +1302,20 @@ def state6_stubs(target: Target) -> dict:
         return 0, 4
 
     def guest_id(sb):
-        sb.write(sb.arg(0), 'H', 7)
+        sb.write(sb.arg(0), 'H', STATE6_SELF_ID)
         return sb.arg(0), 4
 
-    return {c['rand']: rand, c['activity']: activity, c['litter']: litter, c['event']: event, c['sound']: sound,
+    def message(sb):
+        thiscall_check(sb, state.bus, '0x40fb10')
+        msg = sb.arg(0)
+        target.log.append(('message', sb.read(msg, 'I'), sb.read(msg + 8, 'H'), sb.read(msg + 0xC, 'I')))
+        return 0, 4
+
+    def burst(sb):
+        target.log.append(('burst', state.things.get(sb.reg('ecx'))))
+        return 0, 0
+
+    return {c['message']: message, c['burst']: burst, c['rand']: rand, c['activity']: activity, c['litter']: litter, c['event']: event, c['sound']: sound,
             c['bin']: bin_search, c['happiness']: happiness, c['closed']: closed, c['gate_prep']: gate_prep,
             c['gate_cell']: gate_cell, c['route']: route, c['show']: show, PARK_OF_GAME: park, c['performers']: performers,
             c['choice']: choice, c['wander']: wander, c['state']: set_state, c['guest_id']: guest_id}
@@ -1299,15 +1326,32 @@ def state6_binary(sb: Sandbox, x: dict, log) -> tuple:
     checked here instead: the gate passes iff a route was tried, and the first route found ends the tries."""
     state = STATE6_STATE
     state.x = x
-    state.draws = [x['r']]
+    state.draws = [x['r'], x['r2']]
     state.game = bind_game(sb, fields={WORLD_RNG + 4: ('I', x['turn'] & MASK32)})
     state.park = sb.object(16)
     sb.write(STATE6_CELLS, 'I', sb.object(0x44 * 0x80 * 0x40))
+    state.bus = sb.object(16)
+    sb.write(STATE6_BUS, 'I', state.bus)
+    sb.write(STATE6_STINKBOMB, 'I', x['stink'])
     g = STATE6_GUEST
     state.guest = sb.object(0x400, {g['x']: ('B', 20), g['y']: ('B', 30), g['happiness']: ('f', x['happiness']),
-                                    g['illness']: ('f', x['illness']), g['litter']: ('f', 0.0), g['exit']: ('i', x['exit']),
-                                    g['prank']: ('B', 0), g['decision']: ('I', x['decision'] & MASK32),
+                                    g['illness']: ('f', x['illness']), g['litter']: ('f', x['litter']), g['exit']: ('i', x['exit']),
+                                    g['prank']: ('B', x['prank']), g['decision']: ('I', x['decision'] & MASK32),
                                     g['activity']: ('I', x['activity'] & MASK32), g['state']: ('I', 6)})
+    # the guest's cell (20, 30) holds the things of x['things'] in list order: 'self', or (type byte, balloon) for another thing
+    state.things = {}
+    indices = [STATE6_SELF_ID if thing == 'self' else 40 + n for n, thing in enumerate(x['things'])]
+    for n, (thing, index) in enumerate(zip(x['things'], indices)):
+        next_index = indices[n + 1] if n + 1 < len(indices) else 0
+        if thing == 'self':
+            address = state.guest
+            sb.write(address + 2, 'B', 1)
+        else:
+            address = sb.object(0x400, {2: ('B', thing[0]), 0x210: ('I', thing[1])})
+        sb.write(address + 0xA, 'H', next_index)
+        sb.write(POINTS_THINGS + 20 * index, 'I', address)
+        state.things[address] = index
+    sb.write(state.game + 0x2B8 + 0x44 * (30 * 128 + 20 + 1), 'H', indices[0] if indices else 0)
     sb.set_fpcw(X87_CONTROL_WORD)
     result = sb.call(STATE6_ENTRY, this=state.guest)
     if result.esp_delta != 0:
@@ -1317,41 +1361,82 @@ def state6_binary(sb: Sandbox, x: dict, log) -> tuple:
         raise AssertionError('more routes tried after one was found')
     if routes and not x['way_out'] and len(routes) != 4:
         raise AssertionError('the gate tries both cells twice')
-    effects = tuple(e for e in log if e[0] != 'route')
-    if routes:
-        effects = (('gate',),) + effects
-    return effects, sb.read(state.guest + g['decision'], 'I'), sb.read(state.guest + g['illness'], 'I')
+    # the gate's big change comes first, then its routes: one ('gate',) entry stands where the change was recorded
+    effects = []
+    for entry in log:
+        if entry == ('happiness', 2) and routes and ('gate',) not in effects:
+            effects.append(('gate',))
+        if entry[0] != 'route':
+            effects.append(entry)
+    effects = tuple(effects)
+    return (effects, sb.read(state.guest + g['decision'], 'I'), sb.read(state.guest + g['illness'], 'I'), sb.read(state.guest + g['litter'], 'I'),
+            sb.read(state.guest + g['ride'], 'H'), sb.read(state.guest + g['happiness'], 'I'))
 
 
 def _f32_bits(value: float) -> int:
     return struct.unpack('<I', struct.pack('<f', value))[0]
 
 
-def state6_plan(x: dict) -> tuple:
+def state6_plan(x: dict, reread: bool = True) -> tuple:
     """docs/reverse/WANDER-plan.md §2 as GuestDecision runs it, with the original's own effects of each branch: cheering
-    (activity 5), vomiting (activity 7, litter 7, event 18, sound 0xcc, illness 0), the leaving gate (the big change, a
-    route, state 18), the major choice (event 2 and state 10, or event 1, activity 4, the small change and the stamp) and
-    the wander (state 7, or the stamp)."""
+    (activity 5), vomiting (activity 7, litter 7, event 18, sound 0xcc, illness 0), the litter step (the bin search with radius 3:
+    a bin sets +0x1dc and state 9; none drops litter 1 + R2 % 5 and empties the meter), the leaving gate (the big change, a route,
+    state 18), the major choice (event 2 and state 10, or event 1, activity 4, the small change and the stamp) and the wander
+    (state 7, or the stamp)."""
     turn, r = x['turn'] & MASK32, x['r']
-    decision, illness = x['decision'] & MASK32, _f32_bits(x['illness'])
+    decision, illness, litter, ride = x['decision'] & MASK32, _f32_bits(x['illness']), _f32_bits(x['litter']), 0
     happiness = _byte(x['happiness'])
+    level = struct.unpack('<f', struct.pack('<f', x['happiness']))[0]
+
+    def result(effects):
+        return tuple(effects), decision, illness, litter, ride, _f32_bits(level)
     if (turn - x['activity']) & MASK32 > 100 and happiness > 80:
-        return (('activity', 5),), decision, illness
+        return result([('activity', 5)])
     ill = _byte(x['illness'])
     if ill > 80 and ill == 100 and r % 3 == 0:
-        return (('activity', 7), ('litter', 7), ('event', 0x12), ('sound', 0xCC)), decision, 0
+        illness = 0
+        return result([('activity', 7), ('litter', 7), ('event', 0x12), ('sound', 0xCC)])
     effects = []
+    if _byte(x['litter']) >= 90:
+        effects.append(('bin_search', 3))
+        if x['bin']:
+            ride = x['bin']
+            return result(effects + [('state', 9)])
+        effects.append(('litter', 1 + x['r2'] % 5))
+        litter = 0
     if happiness == 0 or x['exit'] == 0 or x['closed']:
         effects += [('gate',), ('happiness', 2)]
+        level = _happiness_change( level, STATE6_CHANGES[2] )
         if x['way_out']:
-            return tuple(effects + [('state', 18)]), decision, illness
+            return result(effects + [('state', 18)])
+    # pranks (GuestDecision): happiness byte below 15 and the flag above R % 101
+    if _byte(level if reread else x['happiness']) < 15 and x['prank'] > r % 101:
+        pranked = False
+        if x['prank'] == 100:
+            if r % 100 < x['stink']:
+                effects += [('litter', 8), ('sound', 0xCF)]
+                pranked = True
+        elif x['prank'] == 101:
+            effects.append(('litter', r % 5 + 1))
+            pranked = True
+        elif x['prank'] == 102:
+            for n, thing in enumerate(x['things']):
+                if thing != 'self' and thing[0] == 1 and thing[1]:
+                    effects.append(('burst', 40 + n))
+                    pranked = True
+                    break
+        if pranked:
+            effects += [('event', 0xF), ('message', 0x7007A8, STATE6_SELF_ID, STATE6_SELF_ID % 3)]
+            level = _happiness_change( level, -1 )
     if r % 3 == 0:
         if (decision + 30) & MASK32 < turn:
             effects.append(('choice',))
+            ride = x['ride']
             if x['ride']:
                 effects += [('event', 2), ('state', 10)]
             else:
                 effects += [('event', 1), ('activity', 4), ('happiness', 0)]
+                level = _happiness_change( level, STATE6_CHANGES[0] )
                 decision = turn
     elif r % 3 == 1:
         effects.append(('wander',))
@@ -1359,7 +1444,7 @@ def state6_plan(x: dict) -> tuple:
             effects.append(('state', 7))
         else:
             decision = turn
-    return tuple(effects), decision, illness
+    return result(effects)
 
 
 def state6_inputs(rng: random.Random, n: int) -> list:
@@ -1372,10 +1457,13 @@ def state6_inputs(rng: random.Random, n: int) -> list:
              'activity': rng.choice([(turn - rng.randrange(0, 200)) & MASK32, turn, (turn + 5) & MASK32, rng.randrange(0, 1 << 32)]),
              'decision': rng.choice([(turn - rng.randrange(0, 60)) & MASK32, (turn - 30) & MASK32, (turn - 31) & MASK32, 0,
                                      rng.randrange(0, 1 << 32)]),
-             'happiness': meter([0.0, 0.5, 1.0, 14.9, 50.0, 80.0, 80.99, 81.0, 100.0]),
+             'happiness': meter([0.0, 0.5, 1.0, 14.9, 14.99, 15.0, 10.0, 50.0, 80.0, 80.99, 81.0, 100.0]),
              'illness': meter([0.0, 80.0, 99.99, 100.0, 100.0]),
              'exit': rng.choice([0, 0, -1, 1, 50, rng.randrange(-100, 300)]),
-             'closed': rng.random() < 0.1, 'r': rng.randrange(0, 1 << 31),
+             'closed': rng.random() < 0.1, 'r': rng.randrange(0, 1 << 31), 'r2': rng.randrange(0, 1 << 31),
+             'litter': rng.choice([0.0, 0.0, 89.99, 90.0, 95.5, 100.0, rng.uniform(0, 100)]), 'bin': rng.choice([0, 0, 5, 0x77]),
+             'prank': rng.choice([0, 0, 100, 101, 102, 99]), 'stink': rng.choice([0, 25, 100, rng.randrange(0, 101)]),
+             'things': rng.choice([[], ['self'], ['self', (1, 0x5150)], [(1, 0), (2, 0x5150), 'self', (1, 0x6160)], [(1, 0x5150)]]),
              'way_out': rng.random() < 0.7, 'ride': rng.choice([0, 0, 3, 0x1234]), 'wander': rng.random() < 0.7}
         x.update(kw)
         return x
@@ -1384,18 +1472,28 @@ def state6_inputs(rng: random.Random, n: int) -> list:
     edges += [make(illness=i, r=r, happiness=50.0, activity=0, turn=50, exit=50, closed=False) for i in (99.99, 100.0) for r in (3, 4, 5)]
     edges += [make(turn=t, decision=100, r=r, happiness=50.0, illness=0.0, activity=t, exit=50, closed=False)
               for t in (130, 131) for r in (0, 1, 2)]
+    edges += [make(litter=m, bin=b, r2=r2, happiness=50.0, illness=0.0, activity=0, turn=50, exit=50, closed=False, r=2)
+              for m in (89.99, 90.0) for b in (0, 5) for r2 in (4, 5)]
+    edges += [make(prank=flag, stink=s, r=r, happiness=h, litter=0.0, illness=0.0, activity=0, turn=50, exit=50, closed=False,
+                   things=['self', (2, 1), (1, 0), (1, 0x4242)])
+              for flag in (100, 101, 102) for s in (0, 25) for r in (24, 25, 100, 202) for h in (14.99, 15.0)]
+    edges += [make(prank=101, stink=25, r=4, happiness=h, exit=0, way_out=False, litter=0.0, illness=0.0, activity=0, turn=50, closed=False)
+              for h in (30.0, 39.5, 40.0, 41.0)]
     return edges + [make() for _ in range(n)]
 
 
 STATE6_TARGET = Target(
     'tpw-exe-guest-state6', 'tpw', 'tp.exe guest state 6 0x4fec90', 'WANDER-plan §2 / GuestDecision (GUEST-010)',
     STATE6_ENTRY, STATE6_RANGES, state6_stubs, state6_binary, state6_plan, state6_inputs,
+    alternatives={'prank-before-gate-change': lambda x: state6_plan(x, reread=False)},
     notes=['Executed: 0x4fec90 with its SEH frame, _ftol and the debug print. Stubs: the draw (scripted), the activity '
            '0x4fc800, litter 0x4d93b0, events 0x50c100, sound 0x4faa00, the happiness change 0x4fea70, the closed word '
            '0x51a280, the gate cells 0x4d86d0 and routes 0x4fa530, the presentation look-ups 0x501020 / 0x4c8eb0 (none), '
            'the choice 0x4fcb10 (+0x1dc from the input), the wander 0x4f9490 and the state setter 0x501db0, all recorded. '
-           'The litter meter (+0x1b4) and the prank byte (+0x1c0) are 0, so steps 3 and 7 are passed over; the routes are '
-           'reduced to one "gate" entry. x87 control word 0x27F.'])
+           'The bin search 0x500dc0 is stubbed (radius recorded, +0x1dc from the input); the prank step runs on the input flag, with '
+           'the cell\'s thing list (game +0x2b8 + 0x44 × cell id, next word at +0xa, the thing table 0x7cfb90), the balloon burst '
+           '0x4fe950 and the message bus 0x40fb10 (pre-set at 0x788d3c) recorded. The routes are reduced to one "gate" entry. '
+           'x87 control word 0x27F.'])
 
 
 # ============================================================================== tp.exe wander destination 0x4f9490 (GUEST-010)
@@ -1591,6 +1689,344 @@ WANDER_TARGET = Target(
            'on one, path-to-queue links one way, no links to empty cells (the map keeps none); the direction table 0x7cdba0.. as its initialiser 0x4d9a65 writes it. Stubs: the draw (scripted), '
            '0x4fa670, the route request 0x510100 (always found; its point is the result), the stranded animation 0x50be80, '
            'the thing id 0x50b350; the staff calls 0x506ed0 / 0x506f30 and the stranded test 0x4fa770 must not run.'])
+
+# ============================================================================== tp.exe littering a cell 0x4d93b0 (ECON-020)
+LITTER_ENTRY = 0x4D93B0        # thiscall (cell record, type), ret 4: "Littering cell"
+LITTER_RANGES = [(0x4D93B0, 0x4D95D3), (0x516330, 0x516365), (0x516370, 0x51637D), FTOL, (DEBUG_PRINT, DEBUG_PRINT + 1)]
+LITTER_GAMETYPE = 0xFB3B7C     # the GameType object's word 0 (1 = online); 0xfb34b9 bit 0 marks it constructed
+LITTER_GAMETYPE_GUARD = 0xFB34B9
+LITTER_CALLS = {'sprite': 0x475A10, 'place': 0x475480, 'effect': 0x4D8440, 'particle': 0x521E60}
+LITTER_SPRITES = {1: 0x74F050, 2: 0x74F078, 3: 0x74F0A0, 4: 0x74F0C8, 5: 0x74F0F0, 6: 0x74F118, 7: 0x74F140, 8: 0x74F168}
+LITTER_STATE = type('LitterState', (), {})()
+
+
+def litter_stubs(target: Target) -> dict:
+    state = LITTER_STATE
+    c = LITTER_CALLS
+
+    def sprite(sb):
+        target.log.append(('sprite', sb.arg(0), sb.arg(1)))
+        return 0x5150, 0
+
+    def place(sb):
+        target.log.append(('place', sb.arg(0), struct.unpack('<f', struct.pack('<I', sb.arg(1)))[0],
+                           struct.unpack('<f', struct.pack('<I', sb.arg(3)))[0]))
+        return 0, 0
+
+    def effect(sb):
+        thiscall_check(sb, state.cells, '0x4d8440')
+        target.log.append(('effect', sb.arg(0), sb.arg(1) & 0xFFFF))
+        return 0, 8
+
+    def particle(sb):
+        target.log.append(('particle', sb.arg(0)))
+        return 0x7070, 0
+
+    return {c['sprite']: sprite, c['place']: place, c['effect']: effect, c['particle']: particle}
+
+
+def litter_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """(the stored type, the sprite handle, the collector word, the world generator's state, the recorded calls)."""
+    state = LITTER_STATE
+    game = bind_game(sb, size=0x1E0000, fields={WORLD_RNG: ('I', x['seed'])})
+    sb.write(LITTER_GAMETYPE_GUARD, 'B', 1)
+    sb.write(LITTER_GAMETYPE, 'I', 1 if x['online'] else 0)
+    state.cells = sb.object(0x44 * 0x80 * 0x40)
+    sb.write(STATE6_CELLS, 'I', state.cells)
+    cx, cy = x['cell']
+    cell_id = cy * 128 + cx + 1
+    record = state.cells + 0x44 * (cell_id - 1)
+    sb.write(record, 'H', cell_id)
+    sb.write(record + 0x2C, 'I', x['occupied'])
+    sb.write(record + 0x30, 'H', 0x55)
+    sb.set_fpcw(X87_CONTROL_WORD)
+    result = sb.call(LITTER_ENTRY, args=(x['type'],), this=record)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return (sb.read(record + 0x2C, 'I'), sb.read(record + 0x28, 'I'), sb.read(record + 0x30, 'H'), sb.read(game + WORLD_RNG, 'I'),
+            tuple(log))
+
+
+def _world_step(state: int) -> tuple[int, int]:
+    value = (state * 1664525 + 1013904223) & MASK32
+    state = ror32(value, 13)
+    signed = s32(state)
+    return state, (-signed if signed < 0 else signed) & MASK32
+
+
+def litter_plan(x: dict) -> tuple:
+    """ParkLitter.Drop and SpriteOffset: nothing online or on a littered cell; else the type, no collector, a sprite of bank 11 at
+    (x·10 + r1 % 9 + 1, y·10 + r2 % 9 + 1) with the generator reseeded to the cell id; vomit and stinkbomb add RegionFX 2 and 5
+    (phase B), a stinkbomb its particle."""
+    if x['online'] or x['occupied']:
+        return x['occupied'], 0, 0x55, x['seed'], ()
+    cx, cy = x['cell']
+    cell_id = cy * 128 + cx + 1
+    seed, r1 = _world_step(cell_id)
+    seed, r2 = _world_step(seed)
+    kind = x['type']
+    calls = []
+    if kind == 7:
+        calls.append(('effect', 2, cell_id))
+    elif kind == 8:
+        calls.append(('effect', 5, cell_id))
+    calls.append(('sprite', LITTER_SPRITES.get(kind, 0x74F118), 0xB))
+    px, pz = float(cx * 10 + r1 % 9 + 1), float(cy * 10 + r2 % 9 + 1)
+    calls.append(('place', 0x5150, px, pz))
+    if kind == 8:
+        calls.append(('particle', 0x32))
+    return kind, 0x5150, 0, seed, tuple(calls)
+
+
+def litter_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'cell': (rng.randrange(0, 128), rng.randrange(0, 64)), 'type': rng.choice([1, 2, 3, 4, 5, 6, 7, 8, rng.randrange(1, 9)]),
+             'occupied': rng.choice([0, 0, 0, 1, 7]), 'online': rng.random() < 0.1, 'seed': rng.getrandbits(32)}
+        x.update(kw)
+        return x
+    edges = [make(cell=c, type=t, occupied=0, online=False) for c in ((0, 0), (127, 63), (20, 30)) for t in range(1, 9)]
+    edges += [make(occupied=1), make(online=True)]
+    return edges + [make() for _ in range(n)]
+
+
+LITTER_TARGET = Target(
+    'tpw-exe-litter-drop', 'tpw', 'tp.exe littering a cell 0x4d93b0', 'WANDER-plan §6 / ParkLitter.Drop (ECON-020)',
+    LITTER_ENTRY, LITTER_RANGES, litter_stubs, litter_binary, litter_plan, litter_inputs,
+    notes=['Executed: 0x4d93b0, the world generator step 0x516330 and its reseed 0x516370, _ftol and the debug print. Stubs: the '
+           'sprite creation 0x475a10 (descriptor and bank recorded), its placement 0x475480 (x and z recorded), the RegionFX add '
+           '0x4d8440 and the stinkbomb particle 0x521e60. The GameType object is marked constructed (0xfb34b9 bit 0) with word 0 '
+           'from the input; synthetic cell records at [0x8023a0] (id +0, type +0x2c, collector +0x30). x87 control word 0x27F.'])
+
+
+# ============================================================================== tp.exe state 9, the walk to a bin 0x4fff20 (GUEST-005)
+BIN_WALK_ENTRY = 0x4FFF20      # thiscall (guest): the state-9 handler
+BIN_WALK_RANGES = [(0x4FFF20, 0x4FFFE5), (DEBUG_PRINT, DEBUG_PRINT + 1)]
+BIN_WALK_CALLS = {'rand': 0x516330, 'walk': 0x4FA2A0, 'sound': 0x55A070, 'play': 0x55A0B0, 'litter': 0x4D93B0, 'state': 0x501DB0}
+BIN_WALK_STATE = type('BinWalkState', (), {})()
+
+
+def bin_walk_stubs(target: Target) -> dict:
+    state = BIN_WALK_STATE
+    c = BIN_WALK_CALLS
+
+    def rand(sb):
+        thiscall_check(sb, state.game, '0x516330')
+        return state.draw, 0
+
+    def walk(sb):
+        thiscall_check(sb, state.guest, '0x4fa2a0')
+        return state.x['walk'], 0
+
+    def sound(sb):
+        target.log.append(('bin_sound', sb.arg(0)))
+        return 0x5050, 0
+
+    def play(sb):
+        target.log.append(('play', sb.arg(0), sb.arg(1), sb.arg(2)))
+        return 0, 0
+
+    def litter(sb):
+        target.log.append(('litter', sb.arg(0), (sb.reg('ecx') - state.cells) // 0x44 + 1))
+        return 0, 4
+
+    def set_state(sb):
+        thiscall_check(sb, state.guest, '0x501db0')
+        target.log.append(('state', sb.arg(0)))
+        return 0, 4
+
+    return {c['rand']: rand, c['walk']: walk, c['sound']: sound, c['play']: play, c['litter']: litter, c['state']: set_state}
+
+
+def bin_walk_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """(the recorded calls, the litter meter's bits, the +0x1dc word)."""
+    state = BIN_WALK_STATE
+    state.x, state.draw = x, x['r']
+    state.game = bind_game(sb)
+    state.cells = sb.object(0x44 * 0x80 * 0x40)
+    sb.write(STATE6_CELLS, 'I', state.cells)
+    if x['bin']:
+        thing = sb.object(0x100, {0x24: ('I', 0x2424)})
+        sb.write(POINTS_THINGS + 20 * x['bin'], 'I', thing)
+    state.guest = sb.object(0x400, {0x5: ('B', 20), 0x7: ('B', 30), 0x1B4: ('f', 93.0), 0x1DC: ('H', x['bin']), 0x220: ('I', 9)})
+    result = sb.call(BIN_WALK_ENTRY, this=state.guest)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return tuple(log), sb.read(state.guest + 0x1B4, 'I'), sb.read(state.guest + 0x1DC, 'H')
+
+
+def bin_walk_plan(x: dict) -> tuple:
+    """GuestSimulation.UpdateThrowingAwayLitter: walking on (1) changes nothing; arriving (0) at a bin plays its sound; arriving without
+    a bin, or stuck (2), drops litter 1 + rand % 5 on the guest's cell; then the meter is 0 and the state 6. The original leaves +0x1dc
+    as it was (OpenTPW clears its bin id; the next major choice overwrites the word in the original)."""
+    meter = struct.unpack('<I', struct.pack('<f', 93.0))[0]
+    if x['walk'] == 1:
+        return (), meter, x['bin']
+    if x['walk'] == 0 and x['bin']:
+        calls = [('bin_sound', 0x2424), ('play', 0x5050, 0, 1)]
+    else:
+        calls = [('litter', 1 + x['r'] % 5, 30 * 128 + 20 + 1)]
+    return tuple(calls + [('state', 6)]), 0, x['bin']
+
+
+def bin_walk_inputs(rng: random.Random, n: int) -> list:
+    edges = [{'walk': w, 'bin': b, 'r': r} for w in (0, 1, 2) for b in (0, 3) for r in (0, 4, 5)]
+    return edges + [{'walk': rng.choice([0, 1, 2]), 'bin': rng.choice([0, 3, 0x41]), 'r': rng.randrange(0, 1 << 31)} for _ in range(n)]
+
+
+BIN_WALK_TARGET = Target(
+    'tpw-exe-bin-walk', 'tpw', 'tp.exe state 9 (walk to a bin) 0x4fff20', 'WANDER-plan §6 / GuestSimulation state 9 (GUEST-005)',
+    BIN_WALK_ENTRY, BIN_WALK_RANGES, bin_walk_stubs, bin_walk_binary, bin_walk_plan, bin_walk_inputs,
+    notes=['Executed: 0x4fff20 and the debug print. Stubs: the walk step 0x4fa2a0 (0 arrived, 1 walking, 2 stuck, from the input), '
+           'the bin sound look-up 0x55a070 and player 0x55a0b0, the draw, the litter drop 0x4d93b0 (type and cell recorded) and '
+           'the state setter 0x501db0. The bin is a synthetic thing in the thing table 0x7cfb90 with its sound handle at +0x24.'])
+
+# ============================================================================== tp.exe region effect writer 0x4d8480 (GUEST-006)
+REGION_ENTRY = 0x4D8480        # thiscall (cell manager, add flag, effect index, cell id), ret 0xc
+REGION_RANGES = [(0x4D8480, 0x4D8608)]
+REGION_TABLE = 0x1D9104        # cell manager + 12 × index: five signed words and the radius byte at +10
+REGION_GRID = 0x1B1104         # cell manager + 10 × (cell id − 1): five signed words per cell
+REGION_WINDOW = 9              # the words read back: a 19 × 19 window around the source (radius up to 9)
+
+
+def region_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """The words of the window around the source after the call, row by row (cells off the map are skipped)."""
+    manager = sb.object(REGION_TABLE + 12 * RegionTableRows + 16)
+    for index, (radius, coefficients) in enumerate(x['table']):
+        for component, value in enumerate(coefficients):
+            sb.write(manager + REGION_TABLE + 12 * index + 2 * component, 'h', value)
+        sb.write(manager + REGION_TABLE + 12 * index + 10, 'B', radius)
+    cx, cy = x['cell']
+    for (wx, wy), words in x['grid']:
+        for component, value in enumerate(words):
+            sb.write(manager + REGION_GRID + 10 * (wy * 128 + wx) + 2 * component, 'h', value)
+    result = sb.call(REGION_ENTRY, args=(int(x['add']), x['index'], cy * 128 + cx + 1), this=manager)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    words = []
+    for wy in range(cy - REGION_WINDOW, cy + REGION_WINDOW + 1):
+        for wx in range(cx - REGION_WINDOW, cx + REGION_WINDOW + 1):
+            if 0 <= wx < 128 and 0 <= wy < 128:
+                words.append(tuple(sb.read(manager + REGION_GRID + 10 * (wy * 128 + wx) + 2 * c, 'h') for c in range(5)))
+    return tuple(words)
+
+
+RegionTableRows = 8
+
+
+def region_plan(x: dict) -> tuple:
+    """ParkEnvironment.Apply: each cell of the square radius, clipped to 0..127, gains sign × coefficient / (|dx| + |dy| + 1), truncated
+    toward zero, as a wrapping signed word."""
+    cx, cy = x['cell']
+    grid = {cell: list(words) for cell, words in x['grid']}
+    radius, coefficients = x['table'][x['index']]
+    sign = 1 if x['add'] else -1
+    for wx in range(max(0, cx - radius), min(127, cx + radius) + 1):
+        for wy in range(max(0, cy - radius), min(127, cy + radius) + 1):
+            words = grid.setdefault((wx, wy), [0] * 5)
+            divisor = abs(wx - cx) + abs(wy - cy) + 1
+            for c in range(5):
+                words[c] = s16(words[c] + trunc_div(sign * coefficients[c], divisor))
+    out = []
+    for wy in range(cy - REGION_WINDOW, cy + REGION_WINDOW + 1):
+        for wx in range(cx - REGION_WINDOW, cx + REGION_WINDOW + 1):
+            if 0 <= wx < 128 and 0 <= wy < 128:
+                out.append(tuple(grid.get((wx, wy), [0] * 5)))
+    return tuple(out)
+
+
+def s16(value: int) -> int:
+    value &= 0xFFFF
+    return value - 0x10000 if value & 0x8000 else value
+
+
+def region_inputs(rng: random.Random, n: int) -> list:
+    def coefficient() -> int:
+        return rng.choice([0, 1, -1, 2, -3, 3, 10, 20, -32768, 32767, rng.randrange(-40, 41)])
+
+    def make(**kw) -> dict:
+        table = [(rng.choice([0, 1, 3, 5, 6, rng.randrange(0, 10)]), tuple(coefficient() for _ in range(5))) for _ in range(RegionTableRows)]
+        cell = rng.choice([(rng.randrange(0, 128), rng.randrange(0, 128)), (0, 0), (127, 127), (1, 126), (64, 64)])
+        grid = [((min(127, max(0, cell[0] + rng.randrange(-6, 7))), min(127, max(0, cell[1] + rng.randrange(-6, 7)))),
+                 tuple(rng.choice([0, 0, 5, -5, 32767, -32768, rng.randrange(-200, 201)]) for _ in range(5))) for _ in range(rng.randrange(0, 6))]
+        # one write per cell
+        seen, unique = set(), []
+        for item in grid:
+            if item[0] not in seen:
+                seen.add(item[0])
+                unique.append(item)
+        x = {'table': table, 'index': rng.randrange(0, RegionTableRows), 'cell': cell, 'add': rng.random() < 0.6, 'grid': unique}
+        x.update(kw)
+        return x
+    return [make() for _ in range(n + 20)]
+
+
+REGION_TARGET = Target(
+    'tpw-exe-region-effect', 'tpw', 'tp.exe region effect writer 0x4d8480', 'PPC-guests phase 2 / ParkEnvironment.Apply (GUEST-006)',
+    REGION_ENTRY, REGION_RANGES, lambda t: {}, region_binary, region_plan, region_inputs,
+    notes=['No stubs: the writer calls nothing. A synthetic cell manager holds the effect table at +0x1d9104 (12 bytes a row) and '
+           'the grid at +0x1b1104 (10 bytes a cell); the 19 × 19 window around the source is read back.'])
+
+# ============================================================================== tp.exe handyman litter finder 0x4c8ed0 (ECON-022)
+FINDER_ENTRY = 0x4C8ED0        # thiscall (park, out, collector id, cell id, range), ret 0x10
+FINDER_RANGES = [(0x4C8ED0, 0x4C9034), (DEBUG_PRINT, DEBUG_PRINT + 1)]
+FINDER_SCRATCH = 0x1F020       # the park's scratch buffer of candidate cells
+
+
+def finder_binary(sb: Sandbox, x: dict, log) -> int:
+    """The cell id the routine writes to its out word (0: none)."""
+    cells = sb.object(0x44 * 0x80 * 0x80)
+    sb.write(STATE6_CELLS, 'I', cells)
+    for cx, cy, kind, collector in x['litter']:
+        record = cells + 0x44 * (cy * 0x80 + cx)
+        sb.write(record + 0x2C, 'I', kind)
+        sb.write(record + 0x30, 'H', collector)
+    park = sb.object(FINDER_SCRATCH + 2 * 121 + 16)
+    out = sb.object(4)
+    cx, cy = x['cell']
+    result = sb.call(FINDER_ENTRY, args=(out, x['collector'], cy * 128 + cx + 1, x['range']), this=park)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return sb.read(out, 'H')
+
+
+def finder_plan(x: dict) -> int:
+    """StaffWorldSimulation.FindLitter: within the clipped square of the range, litter claimed by nobody or the collector, nearest by
+    Manhattan distance, the first in the x-outer, y-inner scan on a tie; the cell id or 0."""
+    litter = {(cx, cy): (kind, collector) for cx, cy, kind, collector in x['litter']}
+    cx, cy = x['cell']
+    r = x['range']
+    best, best_distance = 0, None
+    for wx in range(max(0, cx - r), min(127, cx + r) + 1):
+        for wy in range(max(0, cy - r), min(127, cy + r) + 1):
+            kind, collector = litter.get((wx, wy), (0, 0))
+            if not kind or collector not in (0, x['collector']):
+                continue
+            distance = abs(wx - cx) + abs(wy - cy)
+            if best_distance is None or distance < best_distance:
+                best, best_distance = wy * 128 + wx + 1, distance
+    return best
+
+
+def finder_inputs(rng: random.Random, n: int) -> list:
+    def make() -> dict:
+        cell = rng.choice([(rng.randrange(0, 128), rng.randrange(0, 128)), (0, 0), (127, 127), (2, 125), (64, 64)])
+        r = rng.randrange(0, 6)
+        litter, seen = [], set()
+        for _ in range(rng.randrange(0, 12)):
+            spot = (min(127, max(0, cell[0] + rng.randrange(-6, 7))), min(127, max(0, cell[1] + rng.randrange(-6, 7))))
+            if spot in seen:
+                continue
+            seen.add(spot)
+            litter.append(spot + (rng.choice([1, 2, 5, 7, 8]), rng.choice([0, 0, 0, 3, 9])))
+        return {'cell': cell, 'range': r, 'collector': rng.choice([3, 9, 4]), 'litter': litter}
+    return [make() for _ in range(n + 20)]
+
+
+FINDER_TARGET = Target(
+    'tpw-exe-litter-finder', 'tpw', 'tp.exe handyman litter finder 0x4c8ed0', 'WANDER-plan §4 / StaffWorldSimulation.FindLitter (ECON-022)',
+    FINDER_ENTRY, FINDER_RANGES, lambda t: {}, finder_binary, finder_plan, finder_inputs,
+    notes=['No stubs but the debug print. Synthetic cell records at [0x8023a0] (litter type +0x2c, collector word +0x30) and a park '
+           'object whose scratch buffer at +0x1f020 the routine fills; the cell id of the out word is compared.'])
 
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
@@ -2211,5 +2647,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

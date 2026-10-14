@@ -37,7 +37,7 @@ public class PathAssetTests
 	/// 15 timer units instead of the shipped 150, so 24 guests are admitted in 120 s. The traced needs and starting values (ORACLE.md F25) re-pinned it: a guest's
 	/// exit counter now runs from the first turn and its needs start drawn, so one guest fewer (23) has been admitted by then. The traced leaving test (F26) changed the hash again (the admissions stay 23). Guests stepping off once per park turn instead of every 0.4 s
 	/// (tp.exe 0x004CF3E0, ARRIVAL-001) leave 22 admitted. The original state machine of a guest in the park (state 6 deciding once per
-	/// park turn, state 7 walking to a wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash again and admits 23.
+	/// park turn, state 7 walking to a wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash again and admits 23. The guests' litter meter joined the hash (WANDER-plan §6). The prankery flag joined it next (pranksters in the Jungle's balance, WANDER-plan §7).
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -51,7 +51,7 @@ public class PathAssetTests
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( 23, simulation.Admissions );
-		Assert.AreEqual( 0x2DED487510E7556AUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 0xB2D25895DB0A2DC3UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

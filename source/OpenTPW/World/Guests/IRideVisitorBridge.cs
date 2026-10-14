@@ -127,6 +127,8 @@ public interface IRideVisitorBridge
 	bool HasSideshowTerms => false;
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>): how much happiness a visit adds.</summary>
 	int HappinessEffect => 0;
+	/// <summary>Type <c>UsageInfo.LitterEffect</c> (tp.exe type <c>+0x154</c>): how much a visit adds to the guest's litter meter.</summary>
+	int LitterEffect => 0;
 	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>): above 0 raises the score by <c>1 + (cost + 1) / 10</c>.</summary>
 	int GoldenTicketCost => 0;
 	/// <summary>Type <c>+440</c>, <c>Upgrades[0].CostOfUpgrade</c>: above 3000 raises the score of a ride without a golden-ticket cost.</summary>

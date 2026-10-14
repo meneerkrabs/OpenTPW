@@ -20,4 +20,6 @@ public interface IGuestPayments
 	void VisitFinished( IRideVisitorBridge attraction ) { }
 	/// <summary>A guest used a relief object with this toilet meter (as a byte): the toilet's gauge wears (tp.exe 0x004E2440).</summary>
 	void ReliefUsed( IRideVisitorBridge attraction, int toiletByte ) { }
+	/// <summary>The park's litter by cell, where guests drop theirs (null: litter is not kept).</summary>
+	ParkLitter? Litter => null;
 }

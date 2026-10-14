@@ -11,6 +11,7 @@ public static partial class Input
 
 		public bool Left;
 		public bool Right;
+		public bool Middle;
 
 		public float Wheel;
 

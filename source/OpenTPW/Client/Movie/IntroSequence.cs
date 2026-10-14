@@ -13,7 +13,7 @@ internal interface IIntroMovie : IDisposable
 
 /// <summary>
 /// Plays the start-up movies (<see cref="IntroPlaylist"/>) in the game window before the front end. Skippable
-/// with Esc, Space or a mouse button; a missing or unreadable movie is skipped silently, like the original.
+/// with Esc, Space or a mouse button (left, right or middle); a missing or unreadable movie is skipped silently, like the original.
 /// </summary>
 internal sealed class IntroSequence : IDisposable
 {
@@ -44,13 +44,16 @@ internal sealed class IntroSequence : IDisposable
 	public event Action? Completed;
 
 	public static bool SkipInputDown() =>
-		Input.Keyboard.KeysDown.Contains( Key.Escape ) || Input.Keyboard.KeysDown.Contains( Key.Space ) || Input.Mouse.Left || Input.Mouse.Right;
+		Input.Keyboard.KeysDown.Contains( Key.Escape ) || Input.Keyboard.KeysDown.Contains( Key.Space ) || Input.Mouse.Left || Input.Mouse.Right || Input.Mouse.Middle;
 
 	public void Update()
 	{
 		if ( completed )
 			return;
 		var skip = gate.Poll( skipInput() );
+		// [BIN:TPW-EXE:0x54e360 states 5-8] before each movie the PC waits until Esc, Space and every mouse button are released.
+		if ( current == null && remaining.Count > 0 && !gate.Armed )
+			return;
 		while ( current == null )
 		{
 			if ( !remaining.TryDequeue( out var name ) )
@@ -119,6 +122,7 @@ internal sealed class IntroSequence : IDisposable
 		var movie = current;
 		current = null;
 		currentName = null;
+		gate.Rearm();
 		movie?.Dispose();
 	}
 }

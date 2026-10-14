@@ -108,8 +108,19 @@ public sealed partial class ParkHud
 	/// <summary>The name of the Escape pause menu's screen.</summary>
 	public const string PauseMenuScreen = "pause";
 
-	// [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original
-	public string MoneyText => !Status.HasEconomy ? "" : FormatMoney( Status.Money );
+	// [BIN:TPW-EXE:0x48ff70 HUD cash text] control 47 (refresh 0x4a0ab0) shows the bare |balance| through swprintf "%d": no digit grouping and no
+	// currency prefix; the sign is carried by control 50 (i_dollar), whose state is balance < 0.
+	public string MoneyText => !Status.HasEconomy ? "" : Math.Abs( (decimal)Status.Money ).ToString( System.Globalization.CultureInfo.InvariantCulture );
+	/// <summary>The bank balance with the currency prefix and grouped digits, for panels that spell it out (the info window).</summary>
+	private string BalanceWithCurrency => !Status.HasEconomy ? "" : FormatMoney( Status.Money );
+
+	// [DATA:tp.exe table 0x752e30] the cash text colour steps through six colours as the balance falls: index (balance + 999) / 1000 clamped to 0..5
+	// (so a balance up to 0 or below is red and 5001 and more is white).
+	private static readonly Veldrid.RgbaByte[] CashColors =
+	{
+		new( 255, 0, 0, 255 ), new( 250, 90, 0, 255 ), new( 255, 175, 0, 255 ), new( 255, 200, 0, 255 ), new( 255, 255, 150, 255 ), new( 255, 255, 255, 255 ),
+	};
+	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
 	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
 	/// <summary>The balance change shown beside the balance (Mac HUD table control 48): the sum of the changes of the last <see cref="CashChangeTracker.Seconds"/>; 0 when none is shown.</summary>
@@ -157,9 +168,9 @@ public sealed partial class ParkHud
 		// [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text
 		// (control 47, (258,60,720,260), white font slot 1) sits at the top left of the screen, not in the panel, whose
 		// buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the
-		// measured font extents and the drawable size (0x156ef4); the table rectangle is used as is; ","-grouped digits.
+		// measured font extents and the drawable size (0x156ef4); the table rectangle is used as is.
 		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Date, Color = new Veldrid.RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
-		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
+		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
 		// [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display
@@ -177,10 +188,10 @@ public sealed partial class ParkHud
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
-		// [APPROX:UI-042] camera button cycles host park views; original camera-view action remains unqualified
+		// [EXT:camera-view-cycle] the camera button cycles host Standard/Close/Overview views; [APPROX:UI-042] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 with camcorder mode (99, help 479) and send a postcard (100, help 480) and starts sound 0x131 — evidence needed: that panel's actions
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, CycleCameraView );
 
-		// [APPROX:UI-022] speed buttons and multipliers — evidence needed: the original's key actions step its clock scale by 1.25 within 0.25..2 and no speed control was found in its UI
+		// [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0)
 		// Speed control (OpenTPW buttons): each sets the clock scale of the whole simulation.
 		var speeds = new[] { (GameSpeed.Paused, "||"), (GameSpeed.Normal, ">"), (GameSpeed.Fast, ">>"), (GameSpeed.Fastest, ">>>") };
 		for ( var index = 0; index < speeds.Length; index++ )

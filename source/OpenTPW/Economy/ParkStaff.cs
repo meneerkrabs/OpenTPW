@@ -152,7 +152,7 @@ public sealed class ParkStaff
 {
 	// [DATA:Language/English/*_NAMES.str:entry count 35]
 	public const int NameTableSize = 35; // every *_NAMES.str table of the English data has 35 entries
-	// [APPROX:ECON-008] 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") — evidence needed: capture of a training run
+	// [BIN:TPW-EXE:0x505a10 CStaff::Train] the points are min(share / price, 100) and a grade is reached at 100 (the carry is points − 100, happiness set to 100.0); the Standard.sam comment "costs 1000 to get up to grade 1" is not what the code charges (100 points at price 5 cost 500)
 	public const int TrainingPointsPerGrade = 100;
 	private readonly BalanceSettings settings;
 	private readonly List<StaffMember> members = new();

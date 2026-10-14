@@ -260,7 +260,7 @@ public sealed class OriginalEconomyImport
 			var energy = Math.Clamp( staff.Energy, 0f, 100f );
 			if ( energy != staff.Energy )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} energy {staff.Energy} imported as {energy} (traced range 0-100)" );
-			// OpenTPW keeps 0-99 training points and promotes at 100 (ECON-008), so a saved 100 % is imported as 99 and reported
+			// OpenTPW keeps 0-99 training points and promotes at 100 (tp.exe 0x505a10), so a saved 100 % is imported as 99 and reported
 			var points = Math.Min( staff.GradePercentage, ParkStaff.TrainingPointsPerGrade - 1 );
 			if ( points != staff.GradePercentage )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );

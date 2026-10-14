@@ -6,6 +6,17 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Ticket booth verdict, broken-ride state and no boredom loss (October 14, 2026)
+
+The ticket booth now weighs the entrance fee against the park as tp.exe does (`0x4ff5b0`, `0x4ff9d0`): the park value is the attraction
+points over 4..6 plus `MinimumEntryFee`, and the fee against it is far too expensive (home), expensive (a wait of 50 + R % 50 park turns
+and a medium happiness loss, home when happiness runs out), cheap (a medium gain) or fair, with the thresholds from `PeepInfo` in
+Standard.sam (ARRIVAL-006 narrowed; ARRIVAL-007 registers that OpenTPW still charges the guest's purse). A broken ride now keeps state 1
+until it is opened again, as the ride dispatch `0x4e0e00` does, instead of following `VAR_BROKEN`: guests may still choose it until its
+update notices the breakdown, and a script that clears `VAR_BROKEN` early no longer releases the whole queue at once (QUEUE-017..019
+narrowed). The boredom loss is gone: the major decision `0x4ff419` has no boredom test and nothing in tp.exe reads `BoredomThreshold`
+(GUEST-009 retired). The determinism hash schema is 19.
+
 ## Challenge chains, training and speed keys from tp.exe (October 14, 2026)
 
 A won challenge with a follow-up type no longer pays its prize: the original (`0x4d2fb0`) credits the prize only when the challenge

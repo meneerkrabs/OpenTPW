@@ -18,6 +18,16 @@ public sealed class GuestSettings
 	public int StartingCashVarPercent { get; set; } = 15;
 	public int SmallHappinessChange { get; set; } = 5;
 	public int MediumHappinessChange { get; set; } = 15;
+	/// <summary><c>PeepInfo.ExcitementToCostDivisor</c>: the booth's park value is the attraction points over this plus a draw of up to half of it (tp.exe <c>0x004FF5B0</c>, word <c>0x0078507C</c>).</summary>
+	public int ExcitementToCostDivisor { get; set; } = 4;
+	/// <summary><c>PeepInfo.MinimumEntryFee</c>: added to the park value; a fee and value both at or below it are always fair (word <c>0x00785080</c>).</summary>
+	public int MinimumEntryFee { get; set; } = 20;
+	/// <summary><c>PeepInfo.CheapPriceMultiplier</c>: a fee up to this × the park value is cheap (float <c>0x00785084</c>).</summary>
+	public float CheapPriceMultiplier { get; set; } = 0.75f;
+	/// <summary><c>PeepInfo.AveragePriceMultiplier</c>: from this × the park value the fee is on the expensive side (float <c>0x00785088</c>).</summary>
+	public float AveragePriceMultiplier { get; set; } = 1.25f;
+	/// <summary><c>PeepInfo.ExpensivePriceMultiplier</c>: from this × the park value the fee is far too expensive (float <c>0x0078508C</c>).</summary>
+	public float ExpensivePriceMultiplier { get; set; } = 2.0f;
 	public int BigHappinessChange { get; set; } = 25;
 	public int RideVomitDivisor { get; set; } = 10;
 	public int ToiletDesperate { get; set; } = 100;
@@ -106,6 +116,13 @@ public sealed class GuestSettings
 		settings.SmallHappinessChange = Get( "PeepInfo.SmallHappinessChange", settings.SmallHappinessChange );
 		settings.MediumHappinessChange = Get( "PeepInfo.MediumHappinessChange", settings.MediumHappinessChange );
 		settings.BigHappinessChange = Get( "PeepInfo.BigHappinessChange", settings.BigHappinessChange );
+		// [DATA:levels/Standard.sam:PeepInfo.ExcitementToCostDivisor/MinimumEntryFee/CheapPriceMultiplier/AveragePriceMultiplier/ExpensivePriceMultiplier] the key table's consecutive records 0x0073FF80..0x00740070 fill the words 0x0078507C..0x0078508C read by the booth verdict 0x004FF5B0
+		float GetFloat( string key, float fallback ) => values.TryGetValue( key, out var v ) ? float.Parse( v[0], CultureInfo.InvariantCulture ) : fallback;
+		settings.ExcitementToCostDivisor = Get( "PeepInfo.ExcitementToCostDivisor", settings.ExcitementToCostDivisor );
+		settings.MinimumEntryFee = Get( "PeepInfo.MinimumEntryFee", settings.MinimumEntryFee );
+		settings.CheapPriceMultiplier = GetFloat( "PeepInfo.CheapPriceMultiplier", settings.CheapPriceMultiplier );
+		settings.AveragePriceMultiplier = GetFloat( "PeepInfo.AveragePriceMultiplier", settings.AveragePriceMultiplier );
+		settings.ExpensivePriceMultiplier = GetFloat( "PeepInfo.ExpensivePriceMultiplier", settings.ExpensivePriceMultiplier );
 		settings.RideVomitDivisor = Math.Max( 1, Get( "PeepInfo.RideVomitDivisor", settings.RideVomitDivisor ) );
 		settings.ToiletDesperate = Get( "PeepInfo.ToiletDesparate", settings.ToiletDesperate );
 		settings.VomitCapacity = Get( "PeepInfo.VomitCapacity", settings.VomitCapacity );

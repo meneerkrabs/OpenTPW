@@ -204,7 +204,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int SpecialIngredient { get; set; }
 	/// <summary>The type's <c>UsageInfo.AppearanceEffect</c> (tp.exe <c>+0x15C</c>): 1 gives the guest a balloon, 2 puts on or returns a costume.</summary>
 	public int AppearanceEffect { get; set; }
-	/// <summary>The ride's amount of the special ingredient (<c>+404</c>), 50 when the ride is built.</summary>
+	/// <summary>The ride's amount of the special ingredient (Mac <c>+404</c>, PC <c>+0x198</c> beside the price per use at <c>+0x194</c>; the serializer <c>0x004DB7D0</c> names it <c>mAmountOfSpecialIngredient</c>), 50 when the ride is built.</summary>
 	// [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (a Sugar visit adds 3): the original's shop screen can change it (ride +404, saved as mAmountOfSpecialIngredient) and OpenTPW has neither that control nor the saved field — evidence needed: the screen that sets +404 (handlers 0x1685b4 and 0x168640), its range and the save field
 	// Only tests change it: nothing in play sets +404 and it is neither saved nor hashed, so a public setter would make state the save loses.
 	public int IngredientAmount { get; internal set; } = GuestSpeed.DefaultIngredientAmount;
@@ -226,6 +226,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// the life gauge is 0): the ride dismisses its queue head first, one guest per park turn, and takes nobody (ORACLE.md F15).
 	/// </summary>
 	public bool IsBroken => vm != null && Get( RideVariables.VAR_BROKEN ) != 0;
+	/// <summary>
+	/// The ride is in state 1 (broken down; 4 when condemned is not told apart): entered by the ride update that reads <c>VAR_BROKEN</c>, left only when
+	/// the ride is opened again (a repair, an upgrade's end or the open button: <c>SetState(0)</c>), whatever the script does to <c>VAR_BROKEN</c> meanwhile.
+	/// </summary>
+	// The repair (0xdf4d4) and the other openers write the open word 1 and VAR_RIDECLOSED 0 together with SetState(0), so an opened ride has left state 1
+	public bool IsBrokenDown => brokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0);
+	private bool brokenDown;
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
 	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
 	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
@@ -303,6 +310,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		hash.Add( letMeOnWritten );
 		hash.Add( lastAdmissionTurn );
+		hash.Add( brokenDown );
 		hash.Add( QueueFrontCell is { } front ? front.X : -1 );
 		hash.Add( QueueFrontCell is { } frontCell ? frontCell.Y : -1 );
 		hash.Add( QueueEntranceDirection );
@@ -343,6 +351,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		CalledGuest = called,
 		LetMeOnWritten = letMeOnWritten,
 		LastAdmissionTurn = lastAdmissionTurn,
+		BrokenDown = brokenDown,
 		CalledTurn = calledTurn,
 		QueueCells = queueCells.ToArray(),
 		QueueEditCount = QueueEditCount,
@@ -507,6 +516,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		called = snapshot.CalledGuest;
 		letMeOnWritten = snapshot.LetMeOnWritten;
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
+		brokenDown = snapshot.BrokenDown;
 		calledTurn = snapshot.CalledTurn;
 		queueCells.Clear();
 		queueCells.AddRange( snapshot.QueueCells );
@@ -681,8 +691,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	{
 		if ( guestId <= 0 || !IsOpen )
 			return QueueJoinResult.Closed;
-		// [APPROX:QUEUE-018] a broken ride (VAR_BROKEN ≠ 0) refuses joins as if closed; the state-10 join checks of 0xeccb0 are traced without a breakdown test, and how a broken ride keeps guests out of state 10 is not — evidence needed: the ride +408 state and the state-6/state-10 handling of a broken ride
-		if ( IsBroken )
+		// [APPROX:QUEUE-018] a ride in state 1 refuses joins as if closed (its open word is 0 then); the PC join gate is not traced, the Mac join offer 0xe03f0 rejects states 1 and 4 (ORACLE.md) — evidence needed: the PC twin of the state-10 join checks
+		if ( IsBrokenDown )
 			return QueueJoinResult.Closed;
 		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
 			return QueueJoinResult.AlreadyQueued;
@@ -843,7 +853,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 		// A breakdown takes precedence over a closed ride: SetState(1) writes VAR_RIDECLOSED = 1 itself, and the original still drains the
 		// queue head first (0xe0aec) instead of emptying it at once.
-		if ( !isOpen() && !IsBroken )
+		if ( !isOpen() && !IsBroken && !IsBrokenDown )
 		{
 			if ( called != 0 )
 			{
@@ -868,7 +878,17 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		lastAdmissionTurn = turn;
 		// [BIN:STP-PPC:0x100E0AEC ride update, states 1, 2 and 4] while the ride is broken (state 1; 4 when condemned) every update removes the head guest from the queue and sends it away (0xdcebc, 0xee804) unless the script has already taken it; the rest wait their turn, so a queue drains one guest per park turn. Static reading (ORACLE.md F15): the dispatch is exercised in the oracle target queue-ride-update
 		// [BIN:STP-PPC:0x100E1864 breakdown noticed] in state 0 the ride update runs the admission (0xe1404) first and only then reads VAR_BROKEN and enters state 1 (4 when the life gauge is 0): SetState(1) runs the head step once, zeroes the pending visitor and writes VAR_RIDECLOSED = 1 with the open word 0 (the oracle target ride-set-state executes it, ORACLE.md F27)
-		// [APPROX:QUEUE-019] OpenTPW keeps no ride state word: a ride is in state 0 while it is open and in state 1 while it is closed and VAR_BROKEN ≠ 0; a queue that is still there when the script clears VAR_BROKEN is turned away at once, the original's ride stays in state 1 and keeps dismissing its head until a SetState(0) caller (0xdad24, 0xde8e4 open, 0xdf4d4 repair, 0xdf90c maintenance off, 0xdfb08 upgrade done) reopens it, and state 4 (life gauge 0) is not told apart — evidence needed: none for the callers (executed), a trace of when the script clears VAR_BROKEN
+		// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] state 0 runs 0x4e14e0 (VAR_BROKEN, script slot 7: SetState(1), or 4 when the life gauge +0x48 truncates to 0); states 1, 2 and 4 run the head step 0x4e0450 and the script dismiss 0x4e1410; nothing in states 1, 2 or 4 reads VAR_BROKEN
+		// [APPROX:QUEUE-019] OpenTPW keeps state 1 in the bridge (state 2, upgrading, is the economy's closed ride, ECON-023): it is left when the ride is opened again, which stands for the SetState(0) callers (repair 0x4df8f0, the open button, an upgrade's end); state 4 (life gauge 0) is not told apart from 1 — evidence needed: none for the dispatch (read), the life gauge in the bridge
+		if ( brokenDown )
+		{
+			if ( IsBrokenDown )
+			{
+				DismissHead();
+				return;
+			}
+			brokenDown = false;
+		}
 		if ( IsBroken )
 		{
 			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 )
@@ -889,6 +909,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	private void EnterBrokenState()
 	{
+		brokenDown = true;
 		DismissHead();
 		if ( called != 0 )
 			Withdraw();

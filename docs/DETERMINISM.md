@@ -245,7 +245,9 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xCAF8114002723B8C`, schema 18: the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp join the
+  (`0x9F437861FA2E5452`, schema 19: a ride keeps its broken-down state (QUEUE-019) in the hash, the booth's verdict on the fee
+  (tp.exe `0x004FF5B0`) draws from the guest stream, and the invented boredom loss is gone (nothing in tp.exe reads BoredomThreshold; docs/GUESTS.md). Before that:
+  `0xCAF8114002723B8C`, schema 18: the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp join the
   park save and so the hash; the synthetic park stays in the black, so only the hashed fields change the value (docs/ECONOMY.md). Before that:
   `0xB4FA626D739B5697`, schema 17: the guests think as in tp.exe (the pick of the needs phase on one phase in ten, from a hash of the
   guest and the turn, and no thought at the end of a ride or shop visit), so the hashed thoughts change; the guests' stream is untouched

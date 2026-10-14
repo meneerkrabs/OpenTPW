@@ -18,12 +18,16 @@ internal static class ParticleRendererModule
 		OriginalObjectRuntime.ParticleRequested += request => Start( request );
 		OriginalObjectRuntime.ParticleStarter = Start;
 		OriginalObjectRuntime.ParticleKiller = Kill;
+		OriginalObjectRuntime.ParticleAlive = IsAlive;
 		Level.ParticlesCaptured = Capture;
 		Level.ParticlesResumed = Resume;
 	}
 
-	private static ParticleRenderer? RendererOf( Level level ) =>
-		ParticleRenderer.Current is { } current && ReferenceEquals( current.Level, level ) ? current : null;
+	private static ParticleRenderer? RendererOf( Level level ) => ParticleRenderer.For( level );
+
+	/// <summary>True when the handle names a live emitter, or when there is no pool to ask.</summary>
+	private static bool IsAlive( int handle ) =>
+		Level.Current is not { } level || RendererOf( level ) is not { } renderer || renderer.Particles.IsAlive( handle );
 
 	/// <summary>Starts a prepared request and returns the pool's handle (-1 when nothing started).</summary>
 	private static int Start( ParticleEventRequest request )
@@ -58,7 +62,16 @@ internal static class ParticleRendererModule
 		if ( global::Global.Render == null )
 			return;
 		var renderer = RendererOf( level ) ?? Create( level );
-		renderer?.Particles.Restore( state );
+		try
+		{
+			renderer?.Particles.Restore( state );
+		}
+		catch ( InvalidDataException exception )
+		{
+			// presentation only: a saved pool the template file cannot rebuild is dropped, the park still resumes
+			Log.Warning( $"The saved particles were dropped ({exception.Message})." );
+			renderer?.Particles.Clear();
+		}
 	}
 
 	private static ParticleRenderer? Create( Level level )
@@ -72,7 +85,7 @@ internal static class ParticleRendererModule
 			if ( atlas != null )
 				// the entity takes Level.Current at construction; a resumed park's candidate is not necessarily current yet
 				return new ParticleRenderer( new ParticleSystem( templates.Templates, effectors: templates.EffectorTemplates ), atlas,
-					position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f) ) { Level = level };
+					position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f), level: level );
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidDataException or NullReferenceException )
 		{

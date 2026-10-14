@@ -211,11 +211,12 @@ public class ParticleEventRequestTests
 			OriginalObjectRuntime.ParticleStarter = request => 0;
 			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 7, 43, 9).I(Opcode.ADDOBJ, 1, 7, 0x8001, 9).I(Opcode.KILLOBJ, 9));
 			Assert.AreEqual(3, killed.Count);
-			// stopping the object forgets its records: the effects it started keep running
+			// [BIN:TPW-EXE:0x558703] destroying the object ends the effects its ADDOBJ records hold
 			OriginalObjectRuntime.ParticleStarter = request => next++;
 			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 7, 43, 8));
 			placed.Runtime.Stop(); Assert.IsNull(placed.Runtime.LastParticleObjectAttempt);
-			placed.Runtime.KillParticleObjects(8); Assert.AreEqual(3, killed.Count);
+			Assert.AreEqual(4, killed.Count, "Stop kills the record's effect");
+			placed.Runtime.KillParticleObjects(8); Assert.AreEqual(4, killed.Count, "and forgets it");
 		}
 		finally { OriginalObjectRuntime.ParticleStarter = previousStarter; OriginalObjectRuntime.ParticleKiller = previousKiller; }
 	}
@@ -235,6 +236,32 @@ public class ParticleEventRequestTests
 			Assert.AreEqual(1, received.Count, "the request is announced like any prepared EVENT");
 		}
 		finally { OriginalObjectRuntime.ParticleRequested -= handler; }
+	}
+
+	[TestMethod]
+	public void NegativeHandlesAreKeptRecordsOfEndedEffectsArePrunedAndRecordsSurviveTheSnapshot()
+	{
+		var killed = new List<int>(); var alive = new HashSet<int> { unchecked((int)0x80010003), 0x10004 }; var handles = new Queue<int>(new[] { unchecked((int)0x80010003), 0x10004, -1, 0 });
+		var previousStarter = OriginalObjectRuntime.ParticleStarter; var previousKiller = OriginalObjectRuntime.ParticleKiller; var previousAlive = OriginalObjectRuntime.ParticleAlive;
+		OriginalObjectRuntime.ParticleStarter = request => handles.Dequeue(); OriginalObjectRuntime.ParticleKiller = killed.Add; OriginalObjectRuntime.ParticleAlive = alive.Contains;
+		try
+		{
+			var placed = Placed();
+			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 7, 43, 5).I(Opcode.ADDOBJ, 1, 7, 43, 6).I(Opcode.ADDOBJ, 1, 7, 43, 7).I(Opcode.ADDOBJ, 1, 7, 43, 8));
+			var saved = placed.Runtime.CaptureSnapshot();
+			CollectionAssert.AreEqual(new[] { (5, unchecked((int)0x80010003)), (6, 0x10004) }, saved.ParticleObjects!.Select(r => (r.Slot, r.Handle)).ToArray(), "a negative generation is a handle; 0 and -1 are refusals");
+			alive.Remove(0x10004);
+			Assert.AreEqual(1, placed.Runtime.CaptureSnapshot().ParticleObjects!.Count, "the record of an effect that ended is pruned");
+			var copy = saved.DeepCopy(); saved.ValidateSnapshot();
+			Assert.AreEqual(2, copy.ParticleObjects!.Count);
+			Assert.ThrowsException<InvalidDataException>(() => (saved with { ParticleObjects = new[] { new ParticleObjectRecord { Slot = 1, Handle = 0 } } }).ValidateSnapshot());
+			// a restored runtime holds the records, so its KILLOBJ still ends the effect
+			var restored = OriginalObjectRuntime.CreateForRestore(entry, new RideScriptWorld(), seed: 2, open: true, attractionId: saved.AttractionId);
+			Assert.AreEqual(0, restored.RestoreSnapshot(saved).Count);
+			Run(restored, a => a.I(Opcode.KILLOBJ, 5));
+			CollectionAssert.AreEqual(new[] { unchecked((int)0x80010003) }, killed);
+		}
+		finally { OriginalObjectRuntime.ParticleStarter = previousStarter; OriginalObjectRuntime.ParticleKiller = previousKiller; OriginalObjectRuntime.ParticleAlive = previousAlive; }
 	}
 
 }

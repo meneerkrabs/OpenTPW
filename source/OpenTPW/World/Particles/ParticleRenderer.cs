@@ -23,8 +23,11 @@ public sealed class ParticleRenderer : Entity
 	/// <summary>Cull margin around an emitter's particle bounds, in 1/64 original units (a particle's own size).</summary>
 	private const int CullMargin = 16 * 64;
 
-	/// <summary>The renderer of the current level, or null.</summary>
-	public static ParticleRenderer? Current { get; private set; }
+	// one renderer per level: a staged resume candidate gets its own, and a rolled-back candidate's deletion leaves the live level's alone
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Level, ParticleRenderer> byLevel = new();
+
+	/// <summary>The renderer of a level, or null.</summary>
+	public static ParticleRenderer? For( Level level ) => level != null && byLevel.TryGetValue( level, out var renderer ) ? renderer : null;
 
 	private readonly ParticleSystem system;
 	private readonly ParticleSpriteAtlas atlas;
@@ -48,8 +51,10 @@ public sealed class ParticleRenderer : Entity
 	public ParticleSystem Particles => system;
 
 	public ParticleRenderer( ParticleSystem system, ParticleSpriteAtlas atlas, Func<SVector3, SVector3> originalToEngine, Func<bool> paused,
-		float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale )
+		float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, Level? level = null )
 	{
+		if ( level != null )
+			Level = level;
 		this.system = system;
 		this.atlas = atlas;
 		this.originalToEngine = originalToEngine;
@@ -70,7 +75,8 @@ public sealed class ParticleRenderer : Entity
 			Delete();
 			throw;
 		}
-		Current = this;
+		if ( Level != null )
+			byLevel.AddOrUpdate( Level, this );
 	}
 
 	private static Material<ObjectUniformBuffer> Prepare( Texture atlas, MaterialFlags flags )
@@ -229,8 +235,8 @@ public sealed class ParticleRenderer : Entity
 	{
 		deleted = true;
 		system.Clear();
-		if ( ReferenceEquals( Current, this ) )
-			Current = null;
+		if ( Level != null && byLevel.TryGetValue( Level, out var registered ) && ReferenceEquals( registered, this ) )
+			byLevel.Remove( Level );
 		alphaMaterial?.ReleaseOwnedResources();
 		additiveMaterial?.ReleaseOwnedResources();
 		oneOneMaterial?.ReleaseOwnedResources();

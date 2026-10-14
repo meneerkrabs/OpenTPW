@@ -18,11 +18,14 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>Raised for every prepared EVENT1/2 request (not for refusals), so a particle renderer can start the effect; null in headless hosts.</summary>
 	internal static event Action<ParticleEventRequest>? ParticleRequested;
 
-	/// <summary>Starts a prepared ADDOBJ request and returns its particle handle (0 or negative when nothing started); null in headless hosts.</summary>
+	/// <summary>Starts a prepared ADDOBJ request and returns its particle handle (0 or -1 when nothing started; every other value, negative generations included, is a handle); null in headless hosts.</summary>
 	internal static Func<ParticleEventRequest, int>? ParticleStarter { get; set; }
 
 	/// <summary>Ends the effect of a handle ADDOBJ returned (the pool's life -2: no death effect); null in headless hosts.</summary>
 	internal static Action<int>? ParticleKiller { get; set; }
+
+	/// <summary>Whether a handle still names a live emitter; true when the host has no pool to ask. Used to drop records of effects that ended.</summary>
+	internal static Func<int, bool>? ParticleAlive { get; set; }
 
 	internal void BindParticlePlacement(ObjectPlacement placement) => particlePlacement = placement;
 
@@ -64,9 +67,11 @@ public sealed partial class OriginalObjectRuntime
 	internal void ObserveParticleObject(RideEffectCall call)
 	{
 		if (stopped || call.OperandCount < 4 || call.Argument(0) is not (1 or 2)) return;
+		PruneParticleObjects();
 		var attempt = PrepareParticle(call.VM.ScriptId, call.Argument(0), (short)call.Argument(1), (short)call.Argument(2), 1000);
 		LastParticleObjectAttempt = attempt;
-		if (attempt.Request is { } request && ParticleStarter?.Invoke(request) is int handle && handle > 0)
+		// native keeps any non-zero handle (0x5579F9); -1 is this port's refusal, and a generation from 0x8000 makes handles negative
+		if (attempt.Request is { } request && ParticleStarter?.Invoke(request) is int handle && handle != 0 && handle != -1)
 			particleObjects.Add((call.Argument(3), handle));
 	}
 
@@ -81,10 +86,33 @@ public sealed partial class OriginalObjectRuntime
 		}
 	}
 
+	/// <summary>Drops the records whose emitter has ended (a finished effect frees its slot; the handle would otherwise pile up).</summary>
+	private void PruneParticleObjects()
+	{
+		if (ParticleAlive is not { } alive) return;
+		particleObjects.RemoveAll(record => !alive(record.Handle));
+	}
+
+	/// <summary>The ADDOBJ records of live effects for the runtime snapshot, or null when there are none.</summary>
+	private IReadOnlyList<ParticleObjectRecord>? CaptureParticleObjects()
+	{
+		PruneParticleObjects();
+		return particleObjects.Count == 0 ? null : particleObjects.Select(record => new ParticleObjectRecord { Slot = record.Slot, Handle = record.Handle }).ToArray();
+	}
+
+	private void RestoreParticleObjects(IReadOnlyList<ParticleObjectRecord>? records)
+	{
+		particleObjects.Clear();
+		// not pruned here: the pool is restored after the runtimes, the first ADDOBJ, KILLOBJ or capture drops the ones that ended
+		if (records != null)
+			foreach (var record in records) particleObjects.Add((record.Slot, record.Handle));
+	}
+
 	private void ClearParticleRequests()
 	{
 		particlePlacement = null; particleKeys = null; LastParticleEventAttempt = null; LastParticleObjectAttempt = null;
-		// the effects already started keep running; the records go with the runtime
+		// [BIN:TPW-EXE:0x558703 object destructor] the object's ADDOBJ records of types 1 and 2 end their effects (0x51FF70 life -2); effects started by EVENT have no record and run on
+		foreach (var record in particleObjects) ParticleKiller?.Invoke(record.Handle);
 		particleObjects.Clear();
 	}
 }

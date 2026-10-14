@@ -161,8 +161,10 @@ alpha as whole floats) so the existing vertex format and the web shader path nee
 precompiled web shader is `content/shaders/web/particle.json` (`WebShaderTests`).
 
 The renderer is created by the first request of a level (or by a resumed park that held live emitters) and deleted
-with the level's entities, which clears the pool at park teardown. An object that stops does not kill the effects it
-already started.
+with the level's entities, which clears the pool at park teardown; renderers are registered per level, so a rolled-back
+resume candidate leaves the live park's pool alone. When an object stops (sold, demolished) its ADDOBJ records end their
+effects, as the native destructor does (`0x558703` walks the object's list and sets life -2); effects an EVENT started have
+no record and run on.
 
 ## Wiring
 
@@ -171,7 +173,8 @@ frozen engine position, unit direction for type 2; see PARTICLE-KEYS.md) for RSE
 `OriginalObjectRuntime.ParticleRequested` for prepared requests only (`[BIN:TPW-EXE:0x552615]`: the dispatcher
 `0x5573D0` runs with control 1000 and the handle is discarded). `ObserveParticleObject` does the same for RSE `ADDOBJ`
 type 1/2 (`type key effect slot`, `0x551F5F`) through `OriginalObjectRuntime.ParticleStarter`, which returns the pool
-handle: the runtime keeps it under the slot operand and `KILLOBJ slot` ends every record of the slot with the pool's
+handle (any non-zero value counts, a generation from 0x8000 included): the runtime keeps it under the slot operand,
+drops records whose emitter ended, and `KILLOBJ slot` ends every record of the slot with the pool's
 life -2 (`0x5522C5` -> `0x51FF70`; no death effect). `ParticleRendererModule` (module initialiser, like the weather)
 converts the engine pose to native units, inverting the placement (0.2 engine units per original unit, the park
 heightfield's centring, engine Z-up to original Y-up) and truncating `world * 1024` as the original's `_ftol` does
@@ -201,8 +204,10 @@ the live effectors and the free lists' order, no particles and no templates; the
 counts, ranges and generations; `Level.CaptureResumeSnapshot` captures it through the renderer module and
 `RestoreResumeSimulation` rebuilds the renderer and restores the pool (`Level.ParticlesCaptured` / `ParticlesResumed`).
 It is presentation: it is not in the world hash, so the hash schema and `DETERMINISM.md`'s conditional extension rule do
-not apply, and the envelope version is unchanged. The handles an `ADDOBJ` record holds are not saved, so a resumed
-immortal effect can no longer be ended by its `KILLOBJ` (`APPROX:PTCL-908`).
+not apply, and the envelope version is unchanged. The runtime snapshot also keeps the object's `ADDOBJ` records (slot and handle; the pool's generations and counters
+restore exactly), so a resumed effect can still be ended by its `KILLOBJ`. `ValidateState` bounds the emitters' lives,
+rate bytes, control, cap and counters; a saved pool the template file cannot rebuild is dropped with a warning instead of
+failing the resume.
 
 ## Registered
 

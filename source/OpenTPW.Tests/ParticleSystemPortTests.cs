@@ -470,10 +470,12 @@ public class ParticleSystemPortTests
 		system.Create( 1, (1024, 1024, 1024) );
 		system.CreateEffector( 0, (1024, 1024, 1024) );
 		Run( system, 50 );
+		Assert.IsTrue( system.LiveParticles > 20, "the pool is busy while it is measured" );
+		Run( system, 100 ); // warm-up: tier-up compiles allocate once
 		var before = GC.GetAllocatedBytesForCurrentThread();
-		Run( system, 200 );
+		Run( system, 100 );
 		Assert.AreEqual( 0, GC.GetAllocatedBytesForCurrentThread() - before, "a tick allocates nothing" );
-		Assert.IsTrue( system.LiveParticles > 0 );
+		Assert.IsTrue( system.LiveParticles > 20, "the pool was still busy" );
 	}
 
 	// ---- the corpus ----
@@ -635,6 +637,10 @@ public class ParticleSystemPortTests
 		Assert.IsNotNull( ParticleSystem.ValidateState( good with { FreeEmitters = good.FreeEmitters.Select( slot => slot == 5 ? 6 : slot ).ToArray() } ), "a slot twice" );
 		Assert.IsNotNull( ParticleSystem.ValidateState( good with { Emitters = new[] { good.Emitters[0] with { EffectId = 200 } } } ), "an effect outside the table" );
 		Assert.IsNotNull( ParticleSystem.ValidateState( good with { GenerationCounter = 70000 } ) );
+		var emitter = good.Emitters[0];
+		foreach ( var bad in new[] { emitter with { Life = 0x20000000, InitialLife = -1 }, emitter with { InitialLife = int.MinValue }, emitter with { Rates = new[] { 1, 2, 3, 300 } },
+			emitter with { Control = 70000 }, emitter with { Cap = int.MaxValue }, emitter with { SpiralAngle = 5000 }, emitter with { RateCounter = 1 << 20 } } )
+			Assert.IsNotNull( ParticleSystem.ValidateState( good with { Emitters = new[] { bad } } ), "out-of-range emitter fields are refused before they can overflow a tick" );
 		Assert.ThrowsException<InvalidDataException>( () => New( pool ).Restore( good with { FreeEmitters = Array.Empty<int>() } ) );
 		var smaller = New( new[] { pool[0] } );
 		Assert.ThrowsException<InvalidDataException>( () => smaller.Restore( good with { Emitters = new[] { good.Emitters[0] with { EffectId = 50 } } } ), "the template file lacks the effect" );

@@ -155,6 +155,15 @@ public sealed partial class ParticleSystem
 			if ( effector.Generation is < 0 or > 0xFFFF )
 				return $"the particle state's effector {effector.Slot} has generation {effector.Generation}";
 		}
+		const int Bound = 1 << 24;
+		foreach ( var emitter in state.Emitters )
+			if ( Math.Abs( (long)emitter.Life ) > Bound || Math.Abs( (long)emitter.InitialLife ) > Bound || emitter.Rates.Any( rate => rate is < -128 or > 127 )
+				|| emitter.Control is < short.MinValue or > short.MaxValue || emitter.Cap is < short.MinValue or > short.MaxValue || Math.Abs( (long)emitter.Burst ) > Bound
+				|| emitter.RateCounter is < short.MinValue or > short.MaxValue || emitter.SpiralAngle is < 0 or > 0xFFF )
+				return $"the particle state's emitter {emitter.Slot} has a life, rate, control, cap or counter outside the native ranges";
+		foreach ( var effector in state.Effectors )
+			if ( Math.Abs( (long)effector.Life ) > Bound || Math.Abs( (long)effector.Radius ) > Bound )
+				return $"the particle state's effector {effector.Slot} has a life or radius outside the native ranges";
 		if ( state.GenerationCounter is < 0 or > 0xFFFF || state.EffectorGenerationCounter is < 0 or > 0xFFFF || state.TickCounter < 0 )
 			return "the particle state's counters are out of range";
 		return null;

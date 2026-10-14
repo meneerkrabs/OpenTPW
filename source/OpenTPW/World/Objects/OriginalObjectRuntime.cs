@@ -297,7 +297,8 @@ public sealed partial class OriginalObjectRuntime
 			HeldScreamLevel = effects.HeldScreamLevel,
 			HeldScreamSpeed = effects.HeldScreamSpeed,
 			OwnedScreamCount = effects.OwnedScreamCount,
-			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null
+			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null,
+			ParticleObjects = CaptureParticleObjects()
 		};
 	}
 
@@ -344,6 +345,7 @@ public sealed partial class OriginalObjectRuntime
 				Script!.RestoreStoppedFault( fault );
 		}
 		wasRunning = snapshot.WasRunning;
+		RestoreParticleObjects( snapshot.Stopped ? null : snapshot.ParticleObjects );
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();

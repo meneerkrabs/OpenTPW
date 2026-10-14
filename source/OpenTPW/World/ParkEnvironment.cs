@@ -6,9 +6,13 @@ public readonly record struct RegionEffect( int Radius, short Happiness, short I
 	/// <summary>The rows the original indexes: entertainer, clean toilet, vomit, guard, camera, stinkbomb, dirty toilet, fireworks.</summary>
 	public const int Count = 8;
 	public const int Entertainer = 0;
+	public const int CleanToilet = 1;
 	public const int Vomit = 2;
 	public const int Guard = 3;
+	public const int Camera = 4;
 	public const int Stinkbomb = 5;
+	public const int DirtyToilet = 6;
+	public const int Fireworks = 7;
 
 	/// <summary>The table from the balance settings (rows the file lacks spread nothing).</summary>
 	// [DATA:levels/Standard.sam:RegionFX[0..7].Radius/Happiness/Illness/Hunger/Security/Attraction] the effect table the writer reads at cell manager +0x1D9104 + 12 × index (five words, the radius byte at +10; tp.exe 0x004D8480, the Mac 0xd73a0)
@@ -28,8 +32,8 @@ public readonly record struct RegionEffect( int Radius, short Happiness, short I
 /// <summary>
 /// The park's environment grid (the cell manager's ten-byte records at <c>+0x1B1104</c>, docs/reverse/PPC-guests.md phase 2): per map cell five signed
 /// words (happiness, illness, hunger, security, attraction) that region sources spread around them. A guest's needs phase adds its cell's first three
-/// words to its meters (<see cref="NeedsUpdate"/>). Today vomit and stinkbombs are the sources (litter types 7 and 8); the entertainers, toilets, guards,
-/// cameras and fireworks follow with their own items (GUEST-006).
+/// words to its meters (<see cref="NeedsUpdate"/>). The sources are all the original's: vomit and stinkbombs (litter types 7 and 8), the entertainers and
+/// guards where they stand, the toilets (clean or dirty), the security cameras and the fireworks (<see cref="ParkEconomy.PlaceObjectEffects"/>).
 /// </summary>
 public sealed class ParkEnvironment
 {

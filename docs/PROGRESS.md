@@ -324,6 +324,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Toilets, security cameras and fireworks now act on the cells around them, as in the original (tp.exe `0x4db090`, `0x4dd0a0`,
+  `0x4e2440`, `0x4dfd80`, `0x4e0b90`; GUEST-006, GUEST-001 retired; [GUESTS.md](GUESTS.md) "The environment grid"). A clean toilet makes
+  guests nearby a little ill and less hungry, and more so once it is dirty, until a handyman cleans it. A camera spreads security over five
+  cells, so a prank there brings a guard. A Firework Show or Laser Show cheers guests up around it and changes how attractive the rides
+  beside it look, until its show has run. All eight original region sources are now modelled.
 - Balloons and costumes are drawn, as in the original (tp.exe `0x4fa030`, `0x4f9f00`, `0x4fe950`; GUEST-017; [GUESTS.md](GUESTS.md)
   "Rendering"). A guest in costume walks in the theme's costume (Jungle's tiger, Fantasy's knight, and so on), and riders in costume show
   the costume head where the theme has one. Balloons in four colours hang over their guests, trail behind and dip while they walk, bob, and

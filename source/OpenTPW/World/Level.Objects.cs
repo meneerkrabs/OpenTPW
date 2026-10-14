@@ -674,7 +674,12 @@ public partial class Level
 		InitializeCatalogueBinding( item, instance, economyInstances.ContainsKey( item ) );
 		economyInstances[item] = instance;
 		Park?.Guests?.Link( item.Visitors.AttractionId, instance );
+		// a toilet, a camera or a fireworks object spreads its RegionFX row where it stands (its thing's cell)
+		Park?.Economy.PlaceObjectEffects( instance, (item.Placement.X, item.Placement.Y) );
 	}
+
+	/// <summary>The fireworks' script variable 0 (<c>VAR_STATUS</c> in Hallow's Firework Show and Space's Laser Show).</summary>
+	public const string FireworksStatusVariable = "VAR_STATUS";
 
 	/// <summary>Mirrors ordinary objects and the live prototype between their scripts, visitor bridges and linked economy records.</summary>
 	private void SyncObjectEconomy()
@@ -691,6 +696,9 @@ public partial class Level
 	{
 		if ( Park!.Economy.TryGetObject( instance, out var state ) )
 		{
+			// [BIN:TPW-EXE:0x004E0B90 fireworks] a show whose script variable 0 reached 1 loses its RegionFX row, and the variable becomes 2
+			if ( item.Runtime.GetVariableByName( FireworksStatusVariable ) == 1 && Park.Economy.FireworksFired( instance ) )
+				item.Runtime.SetVariable( FireworksStatusVariable, 2 );
 			state.IsOpen = item.IsOpen;
 			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;

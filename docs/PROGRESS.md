@@ -6,6 +6,17 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Bank rules from tp.exe: bankruptcy timing and the withdrawals flag (October 14, 2026)
+
+The park's bankruptcy now follows the bank's month routine (`0x4d0370`) instead of counting month ends in the red. A debit that
+takes the balance from 0 or more below 0 stamps the park turn, and every debit keeps the balance after it (`0x4d01f0`); at a month
+end, a park whose balance and last balance are both below 0 counts the 30-day months since the stamp, and above 5 it is bankrupt
+(the original's message type 2, ECON-030). The bank's withdrawals flag is honoured: with it clear, debits, instalments and payoffs
+charge nothing, and instalments raise the year profit by their principal share. The three bank words are saved (older saves count
+the stamp back from their months in the red) and imported from original saves (SAVE-008 narrowed). An early payoff compares the
+balance as an unsigned word, so a balance below 0 does not refuse it (`0x4d0850`). ECON-005, 007 and 051 are narrowed to the
+traced routines; the determinism hash schema is 18.
+
 ## Automatic per-theme checkpoints (October 14, 2026)
 
 Exit to Lobby from a Theme Park World Full Simulation or Instant Action park now saves an automatic checkpoint for that theme

@@ -12,10 +12,10 @@ public sealed record Mp2Audio( int SampleRate, int Channels, short[] Samples, in
 
 /// <summary>
 /// Clean-room MPEG Audio decoder for TPW raw SDT frame streams: MPEG-1/2 Layer I
-/// and MPEG-2 (LSF) Layer II, using the shared 32-band polyphase synthesis filterbank.
+/// and MPEG-1/2 Layer II, using the shared 32-band polyphase synthesis filterbank.
 /// Layer I accepts mono, stereo, dual-channel and intensity joint stereo. Layer II
-/// accepts the mono/stereo modes already verified against the TPW corpus. MPEG-1
-/// Layer II, free format, Layer III and MPEG-2.5 are rejected. CRC check words are
+/// accepts mono, stereo and dual channel with their version-specific allocation tables.
+/// Layer II joint stereo, free format, Layer III and MPEG-2.5 are rejected. CRC check words are
 /// verified when present (mismatches are counted, not concealed); a nonzero emphasis
 /// indication is applied as a de-emphasis filter after synthesis. See docs/LIPS.md.
 /// </summary>
@@ -44,7 +44,6 @@ public static partial class Mp2Decoder
 		(7, 3, new[] { 0, 1, 2, 4, 5, 6, 7, 8 }),
 		(19, 2, new[] { 0, 1, 2, 4 }),
 	};
-	private const int SubbandLimit = 30;
 
 	// ISO/IEC 11172-3 Table 3-B.3 synthesis window D[0..256], in units of 2^-16
 	// (the standard's nine-decimal values are exact multiples of 1/65536).
@@ -191,8 +190,8 @@ public static partial class Mp2Decoder
 	/// <summary>
 	/// Layer I retains its existing 128/256-bit coverage. For supported nonjoint Layer II,
 	/// ISO/IEC 11172-3 B.5 protects allocation plus transmitted scfsi (2.4.1.6: only
-	/// nonzero allocations have scfsi). The LSF table uses 75 allocation bits per channel;
-	/// add two bits for each allocated channel/subband, excluding scalefactors and samples.
+	/// nonzero allocations have scfsi). Use the frame's version-specific table and add
+	/// two bits for each allocated channel/subband, excluding scalefactors and samples.
 	/// </summary>
 	private static int ProtectedBits( ReadOnlySpan<byte> frame, Header header )
 	{
@@ -200,7 +199,7 @@ public static partial class Mp2Decoder
 			return 128 * header.Channels;
 		var bits = new Bits( frame, 48 );
 		var count = 0;
-		foreach ( var row in AllocationTable )
+		foreach ( var row in LayerTwoAllocation( header ) )
 			for ( var subband = 0; subband < row.Count; subband++ )
 				for ( var channel = 0; channel < header.Channels; channel++ )
 				{
@@ -244,7 +243,7 @@ public static partial class Mp2Decoder
 	}
 
 	private readonly record struct Header( bool Crc, int SampleRate, int Mode, int ModeExtension, int Layer, int FrameBytes,
-		int Emphasis )
+		int Emphasis, int Version, int Bitrate )
 	{
 		public int Channels => Mode == 3 ? 1 : 2;
 
@@ -263,19 +262,20 @@ public static partial class Mp2Decoder
 				throw new NotSupportedException( "MPEG-2.5 audio is not supported." );
 			if ( layer is not (2 or 3) )
 				throw new NotSupportedException( "MPEG Audio Layer III is not supported." );
-			if ( layer == 2 && version != 2 )
-				throw new NotSupportedException( "Only MPEG-2 (LSF) Layer II is supported." );
 			var bitrateIndex = (int)(word >> 12) & 15;
 			var rateIndex = (int)(word >> 10) & 3;
 			if ( bitrateIndex == 0 )
 				throw new NotSupportedException( "Free-format MPEG audio is not supported." );
 			if ( bitrateIndex == 15 || rateIndex == 3 )
 				throw new InvalidDataException( "MP2 frame header uses a reserved bitrate or sample rate." );
-			var bitrate = layer == 3 ? LayerOneBitrates[version == 3 ? 1 : 0][bitrateIndex] : Mpeg2Bitrates[bitrateIndex];
+			var bitrate = layer == 3 ? LayerOneBitrates[version == 3 ? 1 : 0][bitrateIndex]
+				: version == 3 ? Mpeg1LayerTwoBitrates[bitrateIndex] : Mpeg2Bitrates[bitrateIndex];
 			var sampleRate = Mpeg2SampleRates[rateIndex] * (version == 3 ? 2 : 1);
 			var mode = (int)(word >> 6) & 3;
 			if ( mode == 1 && layer == 2 )
 				throw new NotSupportedException( "Joint-stereo MPEG audio is not supported." );
+			if ( layer == 2 && version == 3 && (mode == 3 ? bitrate > 192 : bitrate is 32 or 48 or 56 or 80) )
+				throw new InvalidDataException( "MPEG-1 Layer II bitrate is not allowed for its channel mode." );
 			var padding = (int)(word >> 9) & 1;
 			var emphasis = (int)word & 3;
 			if ( emphasis == 2 )
@@ -284,7 +284,7 @@ public static partial class Mp2Decoder
 				? (12 * bitrate * 1000 / sampleRate + padding) * 4
 				: 144 * bitrate * 1000 / sampleRate + padding;
 			return new Header( (word & 0x10000) == 0, sampleRate, mode, (int)(word >> 4) & 3,
-				layer == 3 ? 1 : 2, frameBytes, emphasis );
+				layer == 3 ? 1 : 2, frameBytes, emphasis, version, bitrate );
 		}
 	}
 
@@ -396,22 +396,24 @@ public static partial class Mp2Decoder
 	{
 		var bits = new Bits( frame, header.Crc ? 48 : 32 );
 		var channels = header.Channels;
+		var allocationTable = LayerTwoAllocation( header );
+		var subbandLimit = allocationTable.Sum( row => row.Count );
 
 		var classes = new int[2, 32];
 		var subband = 0;
-		foreach ( var row in AllocationTable )
+		foreach ( var row in allocationTable )
 			for ( var count = 0; count < row.Count; count++, subband++ )
 				for ( var channel = 0; channel < channels; channel++ )
 					classes[channel, subband] = row.Classes[bits.Read( row.Bits )];
 
 		var selection = new int[2, 32];
-		for ( subband = 0; subband < SubbandLimit; subband++ )
+		for ( subband = 0; subband < subbandLimit; subband++ )
 			for ( var channel = 0; channel < channels; channel++ )
 				if ( classes[channel, subband] != 0 )
 					selection[channel, subband] = bits.Read( 2 );
 
 		var factors = new float[2, 32, 3];
-		for ( subband = 0; subband < SubbandLimit; subband++ )
+		for ( subband = 0; subband < subbandLimit; subband++ )
 		{
 			for ( var channel = 0; channel < channels; channel++ )
 			{
@@ -438,7 +440,7 @@ public static partial class Mp2Decoder
 		{
 			samples.Clear();
 			var part = granule / 4;
-			for ( subband = 0; subband < SubbandLimit; subband++ )
+			for ( subband = 0; subband < subbandLimit; subband++ )
 			{
 				for ( var channel = 0; channel < channels; channel++ )
 				{

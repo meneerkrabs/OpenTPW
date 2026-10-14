@@ -106,7 +106,7 @@ Geometry, cross-edition equivalence and device timing remain separate gates.
 
 The speech banks are MPEG-2 (LSF) Layer II, 22,050 Hz mono, 48 kbps (640 of 641
 global entries; `z_error` is Layer I). Music banks are LSF Layer II stereo.
-`Mp2Decoder` now dispatches MPEG-1/2 Layer I and MPEG-2 LSF Layer II from the
+`Mp2Decoder` now dispatches MPEG-1/2 Layer I and nonjoint Layer II from the
 actual frame header, including sound effects whose bank-member suffix is still
 `.mp2`. The Layer I addition is in `Mp2Decoder.Layer1.cs`; both layers share the
 existing synthesis/window and signed 16-bit PCM output. Its synthesis window is
@@ -118,7 +118,9 @@ payload to within 23 spare bits, unlike the tested alternatives.
 
 Verification: all 965 corpus Layer II streams that ffmpeg also decodes (speech and
 stereo music; same-name duplicates and 1-frame clips ffmpeg rejects excluded) decode to the same length as ffmpeg's `mp2` decoder with a maximum difference of
-**1 LSB** (≈81 dB SNR on speech). Layer II still rejects MPEG-1 and joint stereo;
+**1 LSB** (≈81 dB SNR on speech). Layer II now accepts MPEG-1 mono/stereo/dual
+through standard allocation tables (the separate synthetic verification below),
+and still rejects joint stereo;
 Layer I accepts MPEG-1/2 mono, stereo, dual-channel and intensity joint stereo.
 Free format, Layer III and MPEG-2.5 remain unsupported. CRC check words are
 verified when protection_bit is 0 (mismatches are counted, not concealed); a
@@ -189,6 +191,35 @@ implementation. The selected merged implementation retains the combined factor
 arithmetic pinned to all 882 original Mac factors and the separately recorded
 56,410,752-sample corpus comparison above.
 
+### MPEG-1 nonjoint Layer II (October 14 follow-up)
+
+The decoder now accepts mono, stereo and dual-channel MPEG-1 Layer II at
+44.1/48/32 kHz, using the bitrate/mode combinations and A/B/C/D allocation tables
+from [ISO/IEC 11172-3](https://previewnorm.com/iso/ISO%20IEC%2011172-3-1993%20PDF.pdf)
+§2.4.2.3 and Annex B.2a-d. The table is selected per frame from per-channel bitrate
+and sample rate. Low-table code15 uses 32767 levels and 15 bits; no library/table
+code was vendored. Header-derived SDT metadata and the existing selected WAV
+export inherit this support. Layer II joint, free format, MPEG-2.5 and Layer III
+remain unsupported; Layer I and the existing LSF maps stay unchanged.
+
+Only header/profile selection and Layer II table limits changed. SCFSI, grouping,
+requantization, synthesis/window, PCM rounding/clamp, emphasis, cooperative batches
+and count-and-continue mismatch policy reuse the current decoder. CRC counts the
+frame's transmitted allocation/SCFSI fields through the corrected shared rule.
+This does not establish original PPC/x86 audio behavior or full MPEG conformance.
+
+`Mpeg1LayerTwoTests` checks every legal header, table/row endpoints, padding,
+ignored nonjoint mode extension, grouped/scalefactor errors, SCFSI/channel
+independence, per-frame table transitions, CRC, truncation and actual SDT metadata.
+Unclipped negative-quarter DC distinguishes low-table 15-bit code15 from an
+incorrect 16-bit mapping. `Mpeg1LayerTwoWavExportTests` uses the real exporter.
+Fifteen pinned independently generated reference excerpts add transient/channel
+and quantizer checks without a temporary directory or external decoder dependency.
+See [MPEG1-LAYER2-VERIFICATION.md](MPEG1-LAYER2-VERIFICATION.md) for complete
+reference provenance, hashes, the measured one-LSB difference and its limits.
+Original corpus counts above are earlier verification; no game assets were opened
+or original corpus rerun for this generic format addition.
+
 ### CRC verification and de-emphasis (follow-up)
 
 October 11, 2026: CRC verification and de-emphasis were added. October 14:
@@ -209,8 +240,8 @@ independent oracle for coverage. The original corpus inventory below was not
 rerun for this correction.
 
 Layer I's existing 128/256-bit coverage—including its joint-mode behavior—is
-unchanged and is not newly qualified here. MPEG-1 Layer II and Layer II joint
-stereo remain unsupported. The stored checkword, CrcChecks/CrcFailures and
+unchanged and is not newly qualified here. Layer II joint stereo remains
+unsupported; MPEG-1 nonjoint frames use the same actual-field CRC rule below. The stored checkword, CrcChecks/CrcFailures and
 count-and-continue mismatch policy (AUDIO-014) remain; no muting, playback or save
 policy changes. The WAV exporter still refuses failed checks and now accepts
 correctly protected Layer II entries through the existing decoder.

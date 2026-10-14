@@ -10,7 +10,13 @@ public enum MaterialFlags
 	DisableDepthTest,
 	DisableDepthWrite,
 
-	DisableDepth = DisableDepthTest | DisableDepthWrite
+	DisableDepth = DisableDepthTest | DisableDepthWrite,
+
+	/// <summary>Source-alpha-over-one blending instead of the default alpha blend (the weather's rain streaks).</summary>
+	AdditiveBlend = 4,
+
+	/// <summary>No face culling, so camera-facing particles survive whichever way they wind.</summary>
+	DoubleSided = 8
 }
 
 public partial class Material : Asset
@@ -283,7 +289,7 @@ public partial class Material : Asset
 		//
 		var pipelineDescription = new GraphicsPipelineDescription()
 		{
-			BlendState = BlendStateDescription.SingleAlphaBlend,
+			BlendState = flags.HasFlag( MaterialFlags.AdditiveBlend ) ? BlendStateDescription.SingleAdditiveBlend : BlendStateDescription.SingleAlphaBlend,
 
 			DepthStencilState = new DepthStencilStateDescription(
 				!flags.HasFlag( MaterialFlags.DisableDepthTest ),
@@ -292,7 +298,7 @@ public partial class Material : Asset
 			),
 
 			RasterizerState = new RasterizerStateDescription(
-				FaceCullMode.Back,
+				flags.HasFlag( MaterialFlags.DoubleSided ) ? FaceCullMode.None : FaceCullMode.Back,
 				PolygonFillMode.Solid,
 				FrontFace.Clockwise,
 				true,

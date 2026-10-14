@@ -27,7 +27,7 @@ public static class AudioApproximations
 		("AUDIO-020", "a placed scape.omp effect that is a sentence plays its first sound once rather than as the original's placed sentence"),
 		("AUDIO-021", "scape.omp places and the camera-midpoint listener share the park's sound units after undoing terrain centering; the listener midpoint is a fork lead and the Mac's placement units are not traced together"),
 		("AUDIO-022", "a refused path-tool commit plays cat_ui 175; the Mac site is gated by the tool latch and its mapping to a refusal is inferred, not fully traced"),
-		("AUDIO-023", "the path tool's link-end sound (cat_ui 139) is not played; its trigger is inferred and no undo sound is traced"),
+		("AUDIO-023", "cat_ui 139's second source (a laid path cell linking to a neighbouring queue cell, 0x10082D6C) is not played; the queue tool's join and the backtrack (cat_ui 95) play"),
 		("AUDIO-024", "a staff member's walking or idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR STAF, not the Mac's shared world LCG; save/load continuity of this presentation stream is not implemented"),
 		("AUDIO-025", "the December season row reads past the four-season table; this follows the fork's reading (Avg 4, Tolerance DaysOfWarning, Chance DaysBetweenChanges)"),
 		("AUDIO-026", "a forecast applies on its day index DaysOfWarning after the roll, and the roll is taken on the first turn of its day; the Mac's day comparison units are not traced"),

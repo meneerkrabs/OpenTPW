@@ -40,7 +40,7 @@ stops or the object is deleted. Park teardown deletes the park's objects and fol
 the same cleanup. One-shots keep their existing mixer lifetime. This adds no new
 audio handle encoding or controller rule and does not stop another object's voices.
 
-An alive looping EVENT voice makes runtime/world-save capture refuse with a clear
+An alive owned looping EVENT or repair-hide voice makes runtime/world-save capture refuse with a clear
 reason: live audio persistence is unsupported. One-shots, finished voices and
 headless/no-audio or stopped owners remain eligible. No save schema changes or
 audio continuation/parity claim are introduced by this eligibility restriction.
@@ -50,6 +50,33 @@ objects, the real VM/effects path and the real mixer with synthetic decoded PCM.
 They check every routed type, coordinates/range, flat refusal controls, per-call
 sampling and loop ownership. Original assets, GPU behavior and native emitter
 geometry/timing remain unqualified.
+
+## Placed repair-hide pair
+
+`REPAIREFFECT 0` submits the traced global `cat_rides` events 111 and 211 using
+one sample of the same trusted sound-space origin as placed EVENT sounds. The
+existing `PlayAt` distance/pan and flag-`0x8` loop policy applies independently to
+each returned voice. Live hide loops join the existing exact-runtime ledger, so
+Stop, object removal and root-fault containment stop only that owner's loops.
+They trigger the same narrow live-audio capture refusal; one-shots, finished
+loops, missing audio and flat/headless fallback do not add a save restriction.
+No audio handle or save schema is introduced. If the second submission fails,
+only a partially submitted first loop is stopped before the original exception
+propagates; a first one-shot keeps its existing lifetime.
+
+All nonzero show values keep the old flat `cat_kids` family-75 path without
+sampling an origin or adding ownership. AUDIO-008's unknown repair level, two
+float operands and show-family selection remain untouched, as do the visual
+repair effect and unsupported VM result/count. The public
+`GameAudio.PlayRepairEffect(int show)` API retains its flat behavior.
+
+`RepairHideAudioTests` exercises actual placed root VMs, imported-terrain
+centering, listener/mixer equivalence for both IDs, per-pair sampling, missing or
+nonfinite origins, show controls, owner/fault teardown and narrow capture policy.
+Only existing managed PCM and synthetic model/catalog data are used. AUDIO-908
+still qualifies the emitter anchor and update timing; no native anchor, pan-law,
+visual, original-asset or GPU parity is claimed. Loop positions remain the sampled
+instruction-time positions, rather than following later provider movement.
 
 ## RSE particle events are outside the sound service
 

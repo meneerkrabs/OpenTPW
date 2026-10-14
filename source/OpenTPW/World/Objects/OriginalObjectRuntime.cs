@@ -302,7 +302,8 @@ public sealed partial class OriginalObjectRuntime
 			HeldScreamLevel = effects.HeldScreamLevel,
 			HeldScreamSpeed = effects.HeldScreamSpeed,
 			OwnedScreamCount = effects.OwnedScreamCount,
-			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null
+			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null,
+			ParticleObjects = CaptureParticleObjects()
 		};
 	}
 
@@ -350,6 +351,7 @@ public sealed partial class OriginalObjectRuntime
 				Script!.RestoreStoppedFault( fault );
 		}
 		wasRunning = snapshot.WasRunning;
+		RestoreParticleObjects( snapshot.Stopped ? null : snapshot.ParticleObjects );
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();
@@ -660,6 +662,17 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		if ( call.Opcode == Opcode.SINGLESCREAM )
 		{
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null, call.VM.SpeedBias );
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		// ADDOBJ type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
+		if ( call.Opcode == Opcode.ADDOBJ )
+		{
+			ride.ObserveParticleObject(call);
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		if ( call.Opcode == Opcode.KILLOBJ )
+		{
+			ride.KillParticleObjects(call.Argument(0));
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		if ( call.Opcode == Opcode.EVENT )

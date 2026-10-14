@@ -324,6 +324,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Guests now think as in the original (tp.exe `0x4fc8a0`, `0x50be80`, `0x50be40`; GUEST-006, GUEST-009 narrowed, ARRIVAL-006;
+  [GUESTS.md](GUESTS.md) "Thoughts"). On one needs phase in ten a guest picks from its needs, the litter around it ("Too messy", new) and its
+  happiness, and keeps its thought otherwise. Rides and shops no longer set "Pleased" or "Dissatisfied" (only sideshows do), and the
+  invented thresholds ("Super happy", "Okay", level 70) are gone. Each thought times a bubble: 12 turns, and a gap of 0 to 60 turns before
+  the next by the thought's priority (not drawn yet). The fixed-run, Jungle and cross-grid hashes moved; guest snapshots move to schema 7.
 - Toilets, security cameras and fireworks now act on the cells around them, as in the original (tp.exe `0x4db090`, `0x4dd0a0`,
   `0x4e2440`, `0x4dfd80`, `0x4e0b90`; GUEST-006, GUEST-001 retired; [GUESTS.md](GUESTS.md) "The environment grid"). A clean toilet makes
   guests nearby a little ill and less hungry, and more so once it is dirty, until a handyman cleans it. A camera spreads security over five

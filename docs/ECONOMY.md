@@ -306,7 +306,7 @@ tests compare saves before/after load and after identical continuations byte for
   admission, shop and sideshow money goes through `TryAdmitVisitor`/`TryBuy`/`PlaySideshow` (the
   economy's entrance fee and open state are the single source; closed park or too little money turns
   the guest back at the booth), rides call `RecordRideUse`, and the bridge implements
-  `IParkGuestStatistics` (people in park, average happiness, happy-visitor count; balloons/costumes 0).
+  `IParkGuestStatistics` (people in park, average happiness, happy-visitor count, the balloon and costume percentages).
   The guest slice keeps no money totals, only purses and the `MoneySpent` event. Attractions are
   linked with `ParkEconomyRuntime.LinkAttraction` (the prototype Totem is registered uncharged as
   Info.Id 1110 in jungle; other themes do not have it, so its visits are not booked there).
@@ -374,7 +374,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-038 | `Economy/ParkObjectives.cs:290` | big park uses MinCellsOwned, cameras use MinCellsCovered | golden ticket award captures |
 | ECON-040 | `Economy/ParkObjectives.cs:331` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |
 | ECON-041 | `Economy/EconomyObjectCatalog.cs:118` | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | buy-menu capture |
-| ECON-044 | `Economy/GuestEconomyBridge.cs:105` | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | balloon lifetime (+0x214) and costume state rules |
+| ECON-044 | `World/Guests/GuestSimulation.cs` | the shop's quality of goods stays at the build's 50 (a balloon lives 127 needs phases), the balloon model's world reseed and the guest events 11 and 12 are not followed; a balloon's life counts down, and the challenge percentages count, while the guest is in the park and on the grid rather than on a park-type cell | none (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0) |
 | ECON-048 | `Economy/ParkEconomy.cs:944` | a negative path or queue cell cost (modified `Costs.*`) is booked as other income; balance and profit match the original's Spend of a negative amount | the ledger category of a negative Spend |
 | ECON-049 | `World/ParkGate.cs:218` | the back-of-queue link test (tp.exe 0x4DE4A0: connection bits beyond the link) is not modelled: OpenTPW takes the queue as connected; the maintenance flag (mRequestedService, +0x64) is the ride panel's call for a mechanic | the queue tool's connection writes |
 | ECON-050 | `World/ParkGate.cs` | the gate census reads the reduced imported guest grid; unpreserved outside, approach and footprint cells can remain counted type 0 | original cell-type provenance in the guest-grid import |

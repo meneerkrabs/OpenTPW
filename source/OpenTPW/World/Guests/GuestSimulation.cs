@@ -378,6 +378,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	public bool IsInPark( Guest guest ) => InPark( guest );
 
+	/// <summary>Whether the guest stands on a park cell: in the park and on the grid (not on the leaving lanes).</summary>
+	// Approximation (ECON-044, registered at ApplyAppearance): the original's park-cell test (0x004FA990, cell types 0, 1, 3, 9 and 10) is a guest in the park by its state that stands on the grid
+	public bool IsOnParkCell( Guest guest ) => InPark( guest ) && guest.OnGrid;
+
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
 		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone);
 
@@ -441,6 +445,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( result.ToiletSpeedTerm is { } term )
 			guest.ToiletBonus = term;
 		NeedsUpdate.DecayHistory( guest.TemporaryHistory, turn );
+		// [BIN:TPW-EXE:0x00501932 balloon life] on the needs phase, outside states 16 and 17 and on a park cell (0x004FA990): +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
+		if ( NeedsUpdate.IsPhase( turn, guest.Id ) && guest.BalloonLife > 0 && guest.State is not (GuestState.Using or GuestState.HeldByGuard) && IsOnParkCell( guest )
+			&& --guest.BalloonLife == 0 )
+			guest.HasBalloon = false;
 	}
 
 	/// <summary>
@@ -549,6 +557,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// a guest caught in its activity (the original's state 8) leaves it: state 17 replaces state 8
 		guest.Activity = GuestActivity.None;
 		guest.State = GuestState.HeldByGuard;
+		// [BIN:TPW-EXE:0x005022DA state 17 entry] a held guest's balloon bursts (0x004FE950); its life stays
+		guest.HasBalloon = false;
 	}
 
 	/// <summary>
@@ -988,13 +998,21 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: pranksters prank as in tp.exe (0x4FF0F5, x86 X18) and a prank on a cell with security sends a guard (0x508A30), but no guest carries a balloon, so a balloon prankster never finds a victim; the prank message reaches no advisor line and the guest event 15 is not recorded; a guest the guard sets down stands at its own offset and walks to the nearer arrival lane rather than the gate cell its draw picked — evidence needed: none (read); waits for balloons and the advisor's prank lines
+	// [APPROX:GUEST-007] PRANKS: pranksters prank as in tp.exe (0x4FF0F5, x86 X18) and a prank on a cell with security sends a guard (0x508A30); a balloon prankster's victim is the first other guest on the cell in OpenTPW's guest order rather than the cell's thing list; the prank message reaches no advisor line and the guest event 15 is not recorded; a guest the guard sets down stands at its own offset and walks to the nearer arrival lane rather than the gate cell its draw picked — evidence needed: none (read); waits for the advisor's prank lines and the cell thing lists
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
-			return false;
-		// A littering prank counts even when the cell already holds litter (the drop is lost; tp.exe sets the prank flag after 0x004D93B0 either way).
-		DropLitter( guest, type );
+		{
+			// [BIN:TPW-EXE:0x004FF1CD balloon prank] the first other guest (thing type 1) on the prankster's cell list whose +0x210 is set has its balloon burst (0x004FE950); without one there is no prank
+			var victim = guests.FirstOrDefault( other => other != guest && other.HasBalloon && other.OnGrid && other.Cell == guest.Cell
+				&& other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) );
+			if ( victim == null )
+				return false;
+			victim.HasBalloon = false;
+		}
+		else
+			// A littering prank counts even when the cell already holds litter (the drop is lost; tp.exe sets the prank flag after 0x004D93B0 either way).
+			DropLitter( guest, type );
 		Pranked?.Invoke( guest, prank );
 		guest.Happiness = MeterMath.Add( guest.Happiness, 1f );
 		return true;
@@ -1724,6 +1742,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		ClearQueueState( guest );
 		guest.State = GuestState.Using;
+		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays
+		guest.HasBalloon = false;
 		guest.AttractionId = ride.AttractionId;
 		guest.HasWaypoint = false;
 		var price = 0;
@@ -1752,6 +1772,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		PushHistory( guest.UsedHistory, ride.AttractionId );
 		ApplyVisit( guest, ride );
+		// [BIN:TPW-EXE:0x00501FD3 state 15 entry] after the use routine (0x005015F4, 0x004FD970) the state-15 entry gives a guest with balloon life its balloon back, except at a balloon shop, whose use routine has just made one
+		if ( guest.BalloonLife > 0 && ride.AppearanceEffect != GuestAppearance.Balloon )
+			guest.HasBalloon = true;
 	}
 
 	/// <summary>
@@ -1804,6 +1827,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Litter = MeterMath.Add( guest.Litter, ride.LitterEffect );
 		// then 0xeaaf8 switches on the type's special ingredient (0xeaf44; its sole caller 0xe9ff8 runs when a guest leaves the object): Sugar raises the speed boost
 		guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
+		ApplyAppearance( guest, ride.AppearanceEffect );
 		if ( ride.ProvidesRelief )
 		{
 			// [BIN:TPW-EXE:0x004FE1E0 relief visit] for an object with the relief flag: the toilet wears by the guest's toilet meter as a byte (0x004E2440), the meter goes to 0, and an illness byte above 90 goes to 0 as well
@@ -1811,6 +1835,26 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Toilet = 0;
 			if ( ((long)guest.Nausea & 0xFF) > 90 )
 				guest.Nausea = 0;
+		}
+	}
+
+	/// <summary>
+	/// The use routine's appearance step (tp.exe <c>0x004FE1E0</c>, after the special ingredient): a balloon shop gives a balloon with a life from the shop's
+	/// quality of goods (<see cref="GuestAppearance.BalloonLife"/>); a costume shop takes back the costume the guest wears or puts one on.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FE615 appearance effect] type +0x15C: 1 creates the balloon model (+0x210, sprite set 10) and sets +0x214 to the balloon life, guest event 12; 2 with +0x24 == 2 ("Customer returning a costume") sets +0x24 to 0 and the sprite bank +0x20 back, otherwise +0x24 = 2, the costume bank and guest event 11; another value logs "Balance file error"
+	// [APPROX:ECON-044] the shop's quality of goods stays at the build's 50 (OpenTPW has no quality control, ride +0x18C, so a balloon lives 127 needs phases), the balloon model's world reseed (0x00516370, DET-014) is not followed and the guest events 11 and 12 are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0)
+	private static void ApplyAppearance( Guest guest, int effect )
+	{
+		switch ( effect )
+		{
+			case GuestAppearance.Balloon:
+				guest.HasBalloon = true;
+				guest.BalloonLife = GuestAppearance.BalloonLife( GuestAppearance.BuiltQualityOfGoods );
+				break;
+			case GuestAppearance.Costume:
+				guest.InCostume = !guest.InCostume;
+				break;
 		}
 	}
 
@@ -1945,6 +1989,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Litter = guest.Litter,
 			BinId = guest.BinId,
 			PrankFlag = guest.PrankFlag,
+			BalloonLife = guest.BalloonLife,
+			HasBalloon = guest.HasBalloon,
+			InCostume = guest.InCostume,
 			QueueJoinHappiness = guest.QueueJoinHappiness,
 			QueueCellIndex = guest.QueueCellIndex,
 			QueueTargetIndex = guest.QueueTargetIndex,
@@ -2175,6 +2222,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Bounded( guest.Id, guest.Litter, nameof( guest.Litter ), 0, 100 );
 			if ( guest.PrankFlag is not (0 or 100 or 101 or 102) )
 				Error( $"Guest {guest.Id} prankery flag {guest.PrankFlag} is not 0, 100, 101 or 102." );
+			if ( guest.BalloonLife is < 0 or > GuestAppearance.MaximumBalloonLife || (guest.HasBalloon && guest.BalloonLife == 0) )
+				Error( $"Guest {guest.Id} balloon life {guest.BalloonLife} is outside 0..255 or holds a balloon at 0." );
 			if ( guest.BinId < 0 || (guest.BinId != 0) != (guest.State == GuestState.ThrowingAwayLitter) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
@@ -2483,6 +2532,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Litter = snapshot.Litter;
 		guest.BinId = snapshot.BinId;
 		guest.PrankFlag = snapshot.PrankFlag;
+		guest.BalloonLife = snapshot.BalloonLife;
+		guest.HasBalloon = snapshot.HasBalloon;
+		guest.InCostume = snapshot.InCostume;
 		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
 		guest.QueueCellIndex = snapshot.QueueCellIndex;
 		guest.QueueTargetIndex = snapshot.QueueTargetIndex;
@@ -2599,6 +2651,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( guest.Litter );
 			hash.Add( guest.BinId );
 			hash.Add( guest.PrankFlag );
+			hash.Add( guest.BalloonLife );
+			hash.Add( guest.HasBalloon );
+			hash.Add( guest.InCostume );
 			hash.Add( guest.QueuePosition );
 			hash.Add( guest.QueueJoinTurn );
 			hash.Add( guest.LastQueueWaitTurns );
@@ -2664,6 +2719,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			AddFloat( guest.Litter );
 			Add( guest.BinId );
 			Add( guest.PrankFlag );
+			Add( guest.BalloonLife );
+			Add( guest.HasBalloon ? 1 : 0 );
+			Add( guest.InCostume ? 1 : 0 );
 			AddFloat( guest.Happiness );
 			Add( guest.ExitLevel );
 			Add( guest.Money );

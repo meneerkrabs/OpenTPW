@@ -969,7 +969,8 @@ clamped to 0..100), `0xeaf44` switches on type `+344` (`UsageInfo.SpecialIngredi
 | other | | nothing |
 
 The next block (`0xeb0f8`, the lead's list of callees `0x105360`, `0x6a730`, `0x6a7a8`, `0xb882c`, `0xe234c`) switches on `+348` (`UsageInfo.AppearanceEffect`:
-1 balloon, 2 costume): the balloon and costume use (ECON-044), which draws random numbers and creates objects; it does not touch the boost.
+1 balloon, 2 costume): the balloon and costume use (ECON-044, modelled from tp.exe `0x4fe1e0`, docs/GUESTS.md "Balloons and costumes"), which reseeds
+the world generator and creates the balloon's object; it does not touch the boost.
 The only other writers of `+196` are the constructor (0, `0xe4878`) and the decay of `0xe6b28`. `walk-boost` executes the whole `0xeaaf8` on 521 inputs
 (ingredient 0..5, -1 and 9, amount word 0..255 and above, boost 0..65,535, thirst effect, ride and shop type words): the reading above **agrees** 521/521
 (boost, thirst and toilet). It is sharp: a factor 5 or 7, an unmasked amount, a clamped sum, Sugar read as Ice or Fat as Salt each differ

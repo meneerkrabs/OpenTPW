@@ -13,17 +13,21 @@ namespace OpenTPW;
 /// </summary>
 // [BIN:STP-PPC:engine_shared 0x1ACC8 particle draw] over the emitter slots, culled by bounding box; a camera-facing quad of half-size size/1024 times the sprite scale, rotated by the spin
 // [BIN:STP-PPC:engine_shared 0x1ACC8 blend] untextured: SRC_ALPHA, ONE_MINUS_SRC_ALPHA; render flags 0x2004: SRC_ALPHA, ONE; flags 0x4: ONE, ONE; otherwise the sprite's own alpha blend
-// [APPROX:PTCL-905] OpenTPW draws the alpha, then the source-alpha-over-one, then the one-plus-one batch, each in emitter slot order, depth-tested without depth writes and unsorted; the native order and depth sorting are untraced
-// [APPROX:PTCL-907] presentation only: the pool is not in the world hash or any save, and the original's PART save block is not restored
+// [BIN:TPW-EXE:0x57C620 draw driver] one quad per particle in slot order 0..119, newest particle first, each with its own blend state; the render flags apply to untextured particles too
+// [APPROX:PTCL-905] OpenTPW groups the quads into three blend batches (alpha, source-alpha-over-one, one-plus-one), each in emitter slot order, depth-tested without depth writes and unsorted; the original submits one primitive per particle in that order, and whether its engine queue depth-sorts (tp.exe 0x565F90) is untraced; untextured particles with neither flag draw as alpha (the original's 0x1256 / 0x556 states are not mapped)
 public sealed class ParticleRenderer : Entity
 {
 	private const int VerticesPerQuad = 6;
-	private const float ReferenceFramePixels = 64f;
+	/// <summary>The width factor of an untextured particle; the original multiplies by the projection's aspect (tp.exe DAT_008BCBCC, value untraced).</summary>
+	private const float UntexturedWidthFactor = 1f;
 	/// <summary>Cull margin around an emitter's particle bounds, in 1/64 original units (a particle's own size).</summary>
 	private const int CullMargin = 16 * 64;
 
-	/// <summary>The renderer of the current level, or null.</summary>
-	public static ParticleRenderer? Current { get; private set; }
+	// one renderer per level: a staged resume candidate gets its own, and a rolled-back candidate's deletion leaves the live level's alone
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Level, ParticleRenderer> byLevel = new();
+
+	/// <summary>The renderer of a level, or null.</summary>
+	public static ParticleRenderer? For( Level level ) => level != null && byLevel.TryGetValue( level, out var renderer ) ? renderer : null;
 
 	private readonly ParticleSystem system;
 	private readonly ParticleSpriteAtlas atlas;
@@ -47,8 +51,10 @@ public sealed class ParticleRenderer : Entity
 	public ParticleSystem Particles => system;
 
 	public ParticleRenderer( ParticleSystem system, ParticleSpriteAtlas atlas, Func<SVector3, SVector3> originalToEngine, Func<bool> paused,
-		float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale )
+		float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, Level? level = null )
 	{
+		if ( level != null )
+			Level = level;
 		this.system = system;
 		this.atlas = atlas;
 		this.originalToEngine = originalToEngine;
@@ -69,7 +75,8 @@ public sealed class ParticleRenderer : Entity
 			Delete();
 			throw;
 		}
-		Current = this;
+		if ( Level != null )
+			byLevel.AddOrUpdate( Level, this );
 	}
 
 	private static Material<ObjectUniformBuffer> Prepare( Texture atlas, MaterialFlags flags )
@@ -87,12 +94,14 @@ public sealed class ParticleRenderer : Entity
 
 	private enum Batch { Alpha, Additive, OneOne }
 
+	// [BIN:TPW-EXE:0x57C7C8 blend flags] the flags test (bit 4, then 0x2000) runs for every particle, untextured ones included
 	// [BIN:STP-PPC:engine_shared 0x1ACC8 blend] see the class comment
-	private static Batch BatchOf( in ParticleSprite sprite ) =>
-		sprite.FrameCount == 0 ? Batch.Alpha
-		: (sprite.RenderFlags & 0x2004) == 0x2004 ? Batch.Additive
-		: (sprite.RenderFlags & 0x4) != 0 ? Batch.OneOne
-		: Batch.Alpha;
+	internal static int BatchIndexOf( int renderFlags ) =>
+		(renderFlags & 0x2004) == 0x2004 ? 1
+		: (renderFlags & 0x4) != 0 ? 2
+		: 0;
+
+	private static Batch BatchOf( in ParticleSprite sprite ) => (Batch)BatchIndexOf( sprite.RenderFlags );
 
 	protected override void OnRender()
 	{
@@ -160,16 +169,22 @@ public sealed class ParticleRenderer : Entity
 		return !(outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar);
 	}
 
+	/// <summary>Half-width and half-height of a quad in engine units: the height is size / 1024 original units for every particle, the width gets a factor (see the call site).</summary>
+	internal static (float HalfWidth, float HalfHeight) HalfExtents( int size, float scale, int frameCount, int frameWidth, int frameHeight )
+	{
+		var halfHeight = size / 1024f * scale;
+		return (halfHeight * (frameCount == 0 || frameHeight <= 0 ? UntexturedWidthFactor : (float)frameWidth / frameHeight), halfHeight);
+	}
+
 	private bool AddQuad( in ParticleSprite sprite, Batch batch, SVector3 right, SVector3 up, ref int vertexCount )
 	{
 		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );
 		if ( frame is not { } found )
 			return false;
 		var centre = originalToEngine( new SVector3( sprite.X, sprite.Y, sprite.Z ) / 64f );
-		// [APPROX:PTCL-904] half-size = size / 1024 original units, times the frame's pixel size over 64 for sprites (untextured quads are scale 1)
-		var half = sprite.Size / 1024f * scale;
-		var halfWidth = sprite.FrameCount == 0 ? half : half * found.Width / ReferenceFramePixels;
-		var halfHeight = sprite.FrameCount == 0 ? half : half * found.Height / ReferenceFramePixels;
+		// [BIN:TPW-EXE:0x57C6B8 sprite size] half-height = (size << 1) * (1/1024) * 0.5 = size / 1024 original units for every particle; only the width gets a factor
+		// [APPROX:PTCL-904] the width factor is the frame record's float +8 (textured) or the projection aspect DAT_008BCBCC (untextured) in the original; neither is traced, so a sprite uses its frame's pixel aspect and an untextured quad 1
+		var (halfWidth, halfHeight) = HalfExtents( sprite.Size, scale, sprite.FrameCount, found.Width, found.Height );
 		if ( !(halfWidth > 0 && halfHeight > 0) )
 			return false;
 		var angle = sprite.Spin * (MathF.Tau / 65536f);
@@ -220,8 +235,8 @@ public sealed class ParticleRenderer : Entity
 	{
 		deleted = true;
 		system.Clear();
-		if ( ReferenceEquals( Current, this ) )
-			Current = null;
+		if ( Level != null && byLevel.TryGetValue( Level, out var registered ) && ReferenceEquals( registered, this ) )
+			byLevel.Remove( Level );
 		alphaMaterial?.ReleaseOwnedResources();
 		additiveMaterial?.ReleaseOwnedResources();
 		oneOneMaterial?.ReleaseOwnedResources();

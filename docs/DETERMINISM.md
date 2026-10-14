@@ -130,7 +130,10 @@ script world, per-object runtimes, clock and the attraction→economy links —
 and restores it into a fresh candidate park, continuing the run exactly. The
 streams still ride inside the embedded economy's `World` section, and the
 envelope's shape check requires them to agree with the typed guest and script
-fields, so a resumed park continues the same streams this page describes.
+fields, so a resumed park continues the same streams this page describes. The
+envelope's optional `Particles` part (the particle pool's emitters, effectors and
+private generator, docs/PARTICLES.md) is presentation: it is neither hashed nor
+drawn from any of these streams, so the hash schema stays 14.
 
 ## Canonical state hash
 

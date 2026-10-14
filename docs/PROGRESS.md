@@ -1144,6 +1144,21 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
   mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
   narrowed to what remains. No determinism or coaster pin moved.
+- **Particle register round (October 14):** `ParticleSystem` is now ported from the traced `tp.exe` instructions
+  (docs/PARTICLES.md): density as `(rate * density) >> 10` clamped to 127 (negative rates scaled too, default PARTICLEDENSITY
+  500), the pool init (flat-zero ground stub, 0x800 particles), the signed and unsigned random forms (a jitter of -1 still
+  draws three times), LIFO emitter slots with a global generation, the rate quarter taken from the remaining life
+  (immortal emitters stay on the first rate), a burst that ignores the cap and one cap check per tick, the horizontal
+  disc, ring and box volumes with the Y rotation, the horizontal radial burst that replaces the base velocity, colour
+  flicker, the frame, size and spin formulas, physics on the spawn tick, dead emitters and the child rules (+0xBC, +0xAA,
+  the child offset), the effectors and the spiral; `ParticleEffectorTemplate` names the effector record. PTCL-902, 903 and
+  907 are retired (the save is an optional `Particles` part of the park-resume envelope: emitters, effectors and the
+  generator, no particles, screen-space emitters killed on load, outside the world hash). PTCL-900, 904, 905, 906 and 908
+  are narrowed: a key entry without a matrix starts at the world origin, the quad's half-height is size / 1024, the
+  render flags decide the blend of untextured particles too, positions truncate like `_ftol`, and RSE ADDOBJ types 1
+  and 2 start effects whose handle `KILLOBJ` ends. Where the research report and the instructions disagreed the
+  instructions won: byte +0xC2 != 0 is the box and 0 the disc, the ring flag is word +0xA8, the gravity word +0x28 and the
+  jitter word +0x50 are words, and a non-immortal child never sees its life -1.
 - **Ride particles (October 14):** RSE EVENT types 1 and 2 now create, simulate and draw particles of the original system
   (docs/PARTICLES.md). `Data/Particle/Tp2.plb` (105 templates, 20 effectors) is read by `ParticleTemplateFile`; `ParticleSystem`
   mirrors the traced pool (120 emitter slots, 2048 particles, private LCG seeded 1, 31 ms ticks, bursts, per-quarter rates,

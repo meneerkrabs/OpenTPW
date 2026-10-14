@@ -266,16 +266,19 @@ public class OriginalObjectRuntimeSnapshotTests
 	}
 
 	[TestMethod]
-	public void AHeldScreamIsReportedAsAnExplicitRestoreGap()
+	public void AHeldScreamRestoresWithoutAGapAndKeepsItsOperands()
 	{
+		// Screams no longer block a save: a held scream is started again from its STARTSCREAM operands (silent without
+		// an audio system), and unreferenced chains are only counted.
 		var world = new RideScriptWorld();
 		var runtime = new OriginalObjectRuntime( Totem(), world, seed: 5, open: true );
-		var snapshot = runtime.CaptureSnapshot() with { HeldScream = true, OwnedScreamCount = 2 };
+		var snapshot = runtime.CaptureSnapshot() with { HeldScream = true, HeldScreamBand = 3, HeldScreamLevel = 40, HeldScreamSpeed = 60, OwnedScreamCount = 2 };
+		snapshot.ValidateSnapshot();
 		var candidate = OriginalObjectRuntime.CreateForRestore( Totem(), new RideScriptWorld(), seed: 5, open: true, attractionId: snapshot.AttractionId );
 		var gaps = candidate.RestoreSnapshot( snapshot );
-		Assert.AreEqual( 2, gaps.Count, string.Join( "; ", gaps ) );
-		StringAssert.Contains( gaps[0], "STARTSCREAM" );
-		StringAssert.Contains( gaps[1], "2 owned scream" );
+		Assert.AreEqual( 0, gaps.Count, string.Join( "; ", gaps ) );
+		var again = candidate.CaptureSnapshot();
+		Assert.AreEqual( 0, again.OwnedScreamCount, "unreferenced chains are not carried over" );
 	}
 
 	[TestMethod]

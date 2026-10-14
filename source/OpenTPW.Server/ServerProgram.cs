@@ -35,7 +35,10 @@ public static class ServerProgram
 	/// <param name="emailSender">Replaces the Resend sender (tests); null uses <see cref="ServerOptions.ResendApiKey"/> when set.</param>
 	public static WebApplication Build( string[] args, Action<ServerOptions>? configure = null, IEmailSender? emailSender = null )
 	{
-		var builder = WebApplication.CreateBuilder( new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory } );
+		// Options are bound once below, so appsettings.json changes need a restart anyway. Watching the file only adds a
+		// file watcher, and on macOS starting one calls sync(2), which never returns while any mounted volume (a stalled
+		// SMB share) hangs. Later arguments win, so an operator can still pass --hostBuilder:reloadConfigOnChange=true.
+		var builder = WebApplication.CreateBuilder( new WebApplicationOptions { Args = [ "--hostBuilder:reloadConfigOnChange=false", .. args ], ContentRootPath = AppContext.BaseDirectory } );
 		var options = new ServerOptions();
 		builder.Configuration.GetSection( ServerOptions.Section ).Bind( options );
 		configure?.Invoke( options );

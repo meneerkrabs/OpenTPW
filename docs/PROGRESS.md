@@ -924,6 +924,13 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Server tests no longer hang on macOS (October 14):** `ServerProgram.Build` turns off appsettings.json reload-on-change
+  (`--hostBuilder:reloadConfigOnChange=false`, which a later argument can override). The server binds its options once, so the
+  watcher did nothing, and on macOS starting it calls `sync(2)`, which never returns while a mounted volume (here a stalled SMB
+  share) hangs; that hung every loopback-server test locally while CI on Linux passed. The news test's own web host skips the
+  watcher too, and `BaseFileSystem.CreateWatcher` returns its watcher unstarted (the caller subscribes, then starts it), so the
+  test suite starts no watcher at all. The test `LoopbackServer` now builds, starts and stops within 30 seconds or fails with
+  a clear message, and requests stay bounded by `OnlineClient`'s HttpClient timeout.
 - **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
   applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
   places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a

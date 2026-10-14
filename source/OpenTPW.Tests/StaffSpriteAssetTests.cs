@@ -9,9 +9,12 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class StaffSpriteAssetTests
 {
+	private BaseFileSystem previousFileSystem = null!;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original staff sprites." );
@@ -20,6 +23,13 @@ public class StaffSpriteAssetTests
 			Assert.Inconclusive( "OPENTPW_GAME_PATH lacks esprites.wad." );
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+	}
+
+	// Other tests read the global FileSystem, so the original game data must not outlive the test.
+	[TestCleanup]
+	public void Cleanup()
+	{
+		FileSystem = previousFileSystem;
 	}
 
 	[DataTestMethod]

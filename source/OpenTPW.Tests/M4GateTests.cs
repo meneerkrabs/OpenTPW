@@ -149,9 +149,14 @@ public class M4GateAssetTests
 	private const int BellyBounce = 1100, DrinksShop = 1203, SmallToilet = 1402, ChacAtak = 1185;
 	private const double Window = 2;
 
+	private BaseFileSystem previousFileSystem = null!;
+	private Logger previousLog = null!;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
+		previousLog = Log;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
@@ -161,6 +166,14 @@ public class M4GateAssetTests
 			Assert.Inconclusive( "OPENTPW_GAME_PATH lacks levels/Standard.sam." );
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+	}
+
+	// Other tests read the global FileSystem, so the original game data must not outlive the test.
+	[TestCleanup]
+	public void Cleanup()
+	{
+		FileSystem = previousFileSystem;
+		Log = previousLog;
 	}
 
 	private static M4GateReport Run( IEnumerable<int> objects, M4GateHooks? hooks = null, bool determinism = false ) => M4Gate.Run( new M4GateOptions

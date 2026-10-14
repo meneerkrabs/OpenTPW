@@ -55,6 +55,11 @@ never replaces. Entering the theme again offers Continue for it. A failure befor
 failure while leaving the park after the write is reported instead of crashing. Details: docs/AUTOMATIC-CHECKPOINT-INGRESS.md and
 docs/AUTOMATIC-CHECKPOINT-CORE.md.
 
+Two checkpoint tests that capture a synthetic level failed locally when they ran after the original-data asset tests: those
+tests left the global `FileSystem` on the game data, so `Level.SetupStaff` loaded real staff atlases and created textures without
+a graphics device. The checkpoint tests' CPU renderer scope now also pins `FileSystem` to an empty directory, and the coaster,
+staff sprite and M4 gate asset tests restore `FileSystem` (and `Log`) after each test. CI has no game data, so it never saw this.
+
 ## Application-owned progress entry and smoke repair (October 14, 2026)
 
 New Full Simulation checks the selected theme's explicit entry cost against

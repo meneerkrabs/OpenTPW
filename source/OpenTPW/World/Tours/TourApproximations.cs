@@ -15,6 +15,8 @@ public static class TourApproximations
 		("TOUR-005", "TOUR-GROUND: the ground the cars avoid is the terrain's cell-corner height truncated to whole model units; the original's lookup also returns the top of a building standing on the cell (thing type 3)"),
 		("TOUR-006", "TOUR-LEGACY: a park-resume save from before the tour controllers restores each live tour ride with a fresh controller (one car at the station, ready) as if its script had just run TOUR 1; nobody was aboard in such a save"),
 		("TOUR-007", "TOUR-WALKOFF: a tour ride's riders take one second to walk off after WALKOFF; the original's walk-off nodes and their duration are not traced, and a walker that completes at once makes the unload loops of the Star and Tweety Tours scripts end after one rider"),
+		("TOUR-009", "TOUR-SLOT: a car created in a slot starts with no heading, patrol corner or seat contents (the first car takes the station's heading); the original reuses the slot's stale words, which no save holds"),
+		("TOUR-010", "TOUR-CLOSE: a departure the script ordered that the closing stops before the car lifts off is cancelled (the car stays ready, so the script unloads it); the original leaves the ready flag clear and the sole car never takes off or reads as ready"),
 		("TOUR-008", "TOUR-DRAW: the cars are drawn from the ride's supplemental mesh 0 at the controller's pose, riders as head sprites at the mesh's head dummies; the mesh's forward axis (taken as +X), the signs of pitch and roll, the car animations (ids 0, 3, 4, 5, 6, 9, 10) and the car shadow are assumptions or not drawn"),
 	};
 }

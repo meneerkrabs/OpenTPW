@@ -66,7 +66,7 @@ public sealed class TourController
 		StationY = station.Y;
 		StationZ = station.Z;
 		RotationDegrees = station.RotationDegrees;
-		Heading = 0x400 - station.RotationDegrees * 4096 / 360;
+		Heading = (0x400 - station.RotationDegrees * 4096 / 360) & 0xFFF;
 		Small = small != 0;
 		ApproachRadius = Small ? 0x9C4 : 5000;
 		AvoidanceScale = 0x400;
@@ -94,7 +94,7 @@ public sealed class TourController
 		StationY = saved.StationY;
 		StationZ = saved.StationZ;
 		RotationDegrees = saved.RotationDegrees;
-		Heading = 0x400 - saved.RotationDegrees * 4096 / 360;
+		Heading = (0x400 - saved.RotationDegrees * 4096 / 360) & 0xFFF;
 		Small = saved.Small;
 		ApproachRadius = Small ? 0x9C4 : 5000;
 		Wait = 300;
@@ -305,7 +305,9 @@ public sealed class TourController
 			car.RiderCount++;
 			Riders--;
 			Released++;
-			return car.Riders[-car.RiderCount];
+			var guest = car.Riders[-car.RiderCount];
+			car.Riders[-car.RiderCount] = 0;
+			return guest;
 		}
 		if ( car != null && Ejected.Count > 0 )
 		{
@@ -362,6 +364,9 @@ public sealed class TourController
 				car.Timer = 0;
 			if ( car.State == TourCar.StateDocked && car.RiderCount > 0 )
 				car.RiderCount = -car.RiderCount;
+			// [APPROX:TOUR-010] a departure the script ordered (TOUR 11 cleared the ready flag) that the closing stops before the car lifted off is cancelled: the car stays ready, so the script's unload loop runs; the original leaves the flag clear and the sole car never takes off nor reads as ready
+			if ( car.State == TourCar.StateDocked && !Ready )
+				Ready = true;
 		}
 		IsOpen = false;
 	}
@@ -409,6 +414,7 @@ public sealed class TourController
 			while ( car.RiderCount > 0 )
 			{
 				var guest = car.Riders[car.RiderCount - 1];
+				car.Riders[car.RiderCount - 1] = 0;
 				car.RiderCount--;
 				Riders--;
 				Ejected.Add( guest );
@@ -470,6 +476,11 @@ public sealed class TourController
 			return;
 		var car = cars[slot];
 		car.State = TourCar.StateReturn;
+		// [APPROX:TOUR-009] a car created in a slot starts with no heading, patrol corner or seat contents; the original reuses the slot's stale words, which no save holds, so a saved and an uninterrupted run would diverge
+		car.Heading = 0;
+		car.Corner = 0;
+		car.ApproachHeading = 0;
+		Array.Clear( car.Riders );
 		car.Pitch = car.Roll = 0;
 		car.VerticalVelocity = 0;
 		car.Turn = 0;

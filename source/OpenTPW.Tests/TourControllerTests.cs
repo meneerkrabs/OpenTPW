@@ -257,6 +257,105 @@ public class TourControllerTests
 		Assert.AreEqual( hashA.Value, hashB.Value );
 	}
 
+	private sealed class Lcg
+	{
+		public uint State;
+		public uint Next() => State = unchecked( State * 1664525u + 1013904223u );
+	}
+
+	private static string Digest( TourController controller )
+	{
+		var hash = new StateHasher();
+		controller.AddCanonicalState( hash );
+		return hash.Value.ToString();
+	}
+
+	[TestMethod]
+	public void EveryPlacementRotationSavesAndRestoresWithTheSameDigest()
+	{
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			var world = new TourWorld();
+			var controller = Create( world, rotation: rotation );
+			Assert.IsTrue( controller.Heading is >= 0 and < 4096, $"rotation {rotation}: the heading word is normalised ({controller.Heading})" );
+			controller.Board( 4 );
+			controller.Board( 5 );
+			controller.Command( TourController.CommandUnboard, 0 );
+			var saved = TourSave.Capture( controller );
+			TourSave.Validate( saved, guest => true, new HashSet<int>() );
+			var copy = new TourController( System.Text.Json.JsonSerializer.Deserialize<TourControllerSaveData>( System.Text.Json.JsonSerializer.Serialize( saved ) )!, Random( 1 ), new TourWorld() );
+			Assert.AreEqual( Digest( controller ), Digest( copy ), $"rotation {rotation}: the digest survives the round trip" );
+		}
+	}
+
+	[TestMethod]
+	public void HandedOutSeatsAreEmptyAndTheDigestIgnoresThem()
+	{
+		var controller = Create();
+		controller.Board( 8 );
+		controller.Board( 9 );
+		controller.Cars[0].RiderCount = -2;
+		controller.Unboard();
+		controller.Unboard();
+		Assert.IsTrue( controller.Cars[0].Riders.All( seat => seat == 0 ), "the vacated seats are cleared" );
+	}
+
+	[TestMethod]
+	public void ClosingBeforeTheLiftOffCancelsAPendingDeparture()
+	{
+		var controller = Create();
+		controller.Board( 21 );
+		Assert.AreEqual( 1, controller.Command( TourController.CommandDepart, 0 ) );
+		Assert.IsFalse( controller.Ready );
+		controller.Command( TourController.CommandOpen, 0 );
+		Assert.IsTrue( controller.Ready, "the car that was about to leave is ready again" );
+		Run( controller, 50 );
+		Assert.AreEqual( TourCar.StateDocked, controller.Cars[0].State, "it never lifted off" );
+		Assert.AreEqual( 1, controller.Command( TourController.CommandReady, 0 ), "the script's TOUR 10 sees it" );
+		Assert.AreEqual( 21, controller.Command( TourController.CommandUnboard, 0 ), "its rider is handed out" );
+	}
+
+	[TestMethod]
+	public void ASavedLandingReservationNeedsACarThatHoldsIt()
+	{
+		var controller = Create();
+		controller.Command( TourController.CommandDepart, 0 );
+		Assert.IsTrue( RunUntil( controller, () => controller.Cars[0].State == TourCar.StateTour, 1000 ) );
+		var saved = TourSave.Capture( controller );
+		Assert.IsFalse( saved.LandingReserved );
+		TourSave.Validate( saved, guest => true, new HashSet<int>() );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => TourSave.Validate( saved with { LandingReserved = true }, guest => true, new HashSet<int>() ) );
+	}
+
+	[TestMethod]
+	public void ACloseSaveAndReopenMatchesAnUninterruptedRun()
+	{
+		var world = new TourWorld { CellHeight = ( x, z ) => 10f };
+		var first = new Lcg { State = 9 };
+		var controller = new TourController( TourStation.Default with { RotationDegrees = 180 }, first.Next, world );
+		controller.Command( TourController.CommandCars, 3 );
+		controller.Command( TourController.CommandDuration, 12 );
+		Run( controller, 30 );
+		controller.Command( TourController.CommandOpen, 0 );
+		Assert.IsTrue( RunUntil( controller, () => controller.CarCount == 1, 30_000 ), "the extra cars left" );
+		var saved = System.Text.Json.JsonSerializer.Deserialize<TourControllerSaveData>( System.Text.Json.JsonSerializer.Serialize( TourSave.Capture( controller ) ) )!;
+		TourSave.Validate( saved, guest => true, new HashSet<int>() );
+		var second = new Lcg { State = first.State };
+		var copy = new TourController( saved, second.Next, new TourWorld { CellHeight = world.CellHeight } );
+		Assert.AreEqual( Digest( controller ), Digest( copy ) );
+		foreach ( var item in new[] { controller, copy } )
+		{
+			item.Command( TourController.CommandOpen, 1 );
+			item.Command( TourController.CommandCars, 3 );
+		}
+		for ( var tick = 0; tick < 4000; tick++ )
+		{
+			controller.Tick();
+			copy.Tick();
+		}
+		Assert.AreEqual( Digest( controller ), Digest( copy ), "reopening after a save continues exactly as an uninterrupted run" );
+	}
+
 	[TestMethod]
 	public void ValidationRefusesInconsistentSaves()
 	{

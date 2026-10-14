@@ -116,6 +116,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		if ( queueToolVerified && !waterTrackVerified && frame >= 6 )
 			VerifyHudWaterTrack();
 		UpdateWaterTrackPhase();
+		UpdateTourPhase();
 		UpdateStaffPhase();
 		if ( !sharedCoasterExported && level.OriginalPark != null && smokeStation?.Runtime.Coaster is { IsOperational: true } )
 			ExportSharedCoasterFixture();
@@ -200,7 +201,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		}
 		if ( step >= 66 && !displayChangesDone )
 			displayChangesDone = StepDisplayChanges();
-		if ( step >= 90 && displayChangesDone && !completed && smokeStation == null && TrackSmokesDone && StaffPhaseSettled )
+		if ( step >= 90 && displayChangesDone && !completed && smokeStation == null && TrackSmokesDone && TourSmokeSettled && StaffPhaseSettled )
 		{
 			if ( level.Park != null )
 				VerifyParkEconomy( level.Park, level.Guests );
@@ -210,7 +211,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			completed = true;
 			Log.Trace( level.OriginalPark == null
 				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback; {displaySummary}."
-				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, a HUD-built coaster, a hired, placed, drawn, picked-up and dropped handyman, a closed water track with a running boat, a go-kart circuit with a parked, started and finished race, guest sprite readback, isolated rider-head GPU readback on a frozen identified ADDHEAD ride, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, a HUD-built coaster, a hired, placed, drawn, picked-up and dropped handyman, a closed water track with a running boat, a go-kart circuit with a parked, started and finished race, a tour ride whose cars take off, fly, are read back from the GPU and land with their riders, guest sprite readback, isolated rider-head GPU readback on a frozen identified ADDHEAD ride, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
 		}
 	}

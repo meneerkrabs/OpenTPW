@@ -17,6 +17,13 @@ public partial class Level
 	private TourRenderer? tourRenderer;
 	private bool tourRenderFailed;
 
+	private ObjectCatalogEntry? TourEntryOf( TourController controller ) => Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Runtime.AttractionId == controller.AttractionId )?.Entry;
+
+	private Vector2 TourGridOrigin() => Objects.Grid.Origin;
+
+	/// <summary>The tour renderer, or null before the first tour car is drawn (the native smoke test reads it back).</summary>
+	internal TourRenderer? TourRenderer => tourRenderer;
+
 	/// <summary>Car instances the tour renderer holds (0 before the first car is drawn).</summary>
 	public int TourCarInstances => tourRenderer?.CarCount ?? 0;
 
@@ -30,8 +37,7 @@ public partial class Level
 			return;
 		try
 		{
-			tourRenderer ??= new TourRenderer( controller => Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Runtime.AttractionId == controller.AttractionId )?.Entry,
-				() => Objects.Grid.Origin );
+			tourRenderer ??= new TourRenderer( TourEntryOf, TourGridOrigin );
 			tourRenderer.Update( tours.Controllers );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
@@ -67,7 +73,14 @@ public partial class Level
 			ride.Runtime.RestoreTour( entry );
 			restored.Add( entry.AttractionId );
 		}
-		foreach ( var ride in rides.Where( item => !restored.Contains( item.Runtime.AttractionId ) ) )
-			ride.Runtime.CreateTour();
+		foreach ( var ride in rides )
+		{
+			if ( restored.Contains( ride.Runtime.AttractionId ) )
+				continue;
+			// riders the script holds with no car to carry them (a save from before the controllers cannot have any, but a save is not trusted to) are handed out at the station through TOUR 4
+			var tour = ride.Runtime.CreateTour();
+			if ( tour != null )
+				tour.Ejected.AddRange( ride.Visitors.Riders.Where( guest => !tour.Ejected.Contains( guest ) ) );
+		}
 	}
 }

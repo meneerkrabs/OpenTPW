@@ -40,6 +40,10 @@ internal sealed partial class ParkResumeSmokeTest
 		public bool WaterVariant { get; init; }
 		/// <summary>The water ride's track tiles and boats at the save boundary (capture phase), the restore phase's oracle.</summary>
 		public SmokeWater WaterAtSave { get; init; } = new();
+		/// <summary>Whether both phases ran the tour-ride fixture option (they must agree).</summary>
+		public bool TourVariant { get; init; }
+		/// <summary>The tour ride's cars and riders at the save boundary (capture phase), the restore phase's oracle.</summary>
+		public SmokeTour TourAtSave { get; init; } = new();
 		/// <summary>The fixture Totem's identity (capture phase); null when the fixture placed none.</summary>
 		public SmokePrototype? Prototype { get; init; }
 		public SmokeSaveFile Save { get; init; } = new();
@@ -54,6 +58,15 @@ internal sealed partial class ParkResumeSmokeTest
 		public bool Completed { get; init; }
 		/// <summary>Set when the phase failed; the message is the thrown failure's text.</summary>
 		public string? Failure { get; init; }
+	}
+
+	/// <summary>Cars, cars on their tour and riders of the tour-ride fixture at one moment.</summary>
+	internal sealed record SmokeTour
+	{
+		public int Cars { get; init; }
+		public int Flying { get; init; }
+		public int Riders { get; init; }
+		public int Departures { get; init; }
 	}
 
 	/// <summary>Track tiles and boats of the water-ride fixture at one moment.</summary>
@@ -218,6 +231,8 @@ internal sealed partial class ParkResumeSmokeTest
 			$"both phases ran the same fixture (prototype variant {capture.PrototypeVariant}/{restore.PrototypeVariant})" );
 		Require( capture.WaterVariant == restore.WaterVariant && (!capture.WaterVariant || capture.WaterAtSave == restore.WaterAtSave),
 			$"both phases ran the same water fixture (variant {capture.WaterVariant}/{restore.WaterVariant}, {capture.WaterAtSave}/{restore.WaterAtSave})" );
+		Require( capture.TourVariant == restore.TourVariant && (!capture.TourVariant || capture.TourAtSave == restore.TourAtSave),
+			$"both phases ran the same tour fixture (variant {capture.TourVariant}/{restore.TourVariant}, {capture.TourAtSave}/{restore.TourAtSave})" );
 		if ( capture.PrototypeVariant )
 			Require( capture.Prototype != null && restore.Prototype != null
 				&& capture.Prototype.AttractionId == restore.Prototype.AttractionId

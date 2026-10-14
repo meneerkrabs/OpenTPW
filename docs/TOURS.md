@@ -64,3 +64,7 @@ Sounds and effects (TOUR-004), the car animations and the exact mesh orientation
 ## Drawing
 
 `TourRenderer` draws every live car as the ride's supplemental mesh 0 (`Bird.md2`, balloon, craft, kite) at the car's pose, and the riders hang from the mesh's head dummies through the ride-head renderer, like the go-karts' riders.
+
+## Verification
+
+The native jungle smoke places Jurassic Tours through the build path, sends two real guests to it, and when a car flies with riders freezes the world and reads back the GPU pixels with the cars shown and hidden (they differ); the run goes on until the car landed and both riders were handed back through `TOUR 4`, then removes the ride. The park-resume smoke with `OPENTPW_SMOKE_TOUR=1` (both phases) buys the ride with a golden ticket, saves with a car in flight, restores through the menu load and matches the 600 continuation ticks of canonical hashes. The saved car is empty in that run; riders in flight are covered by the unit round trip and the asset test.

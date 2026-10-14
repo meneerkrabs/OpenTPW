@@ -18,6 +18,7 @@ public sealed class TourRenderer : IDisposable
 	{
 		public List<ModelEntity> Body = new();
 		public TourController? Controller;
+		public ObjectCatalogEntry? Entry;
 		public TourCar? Car;
 		public Matrix4x4 Transform = Matrix4x4.Identity;
 	}
@@ -28,6 +29,7 @@ public sealed class TourRenderer : IDisposable
 	private readonly List<CarVisual> visuals = new();
 	private readonly List<(TourController Controller, TourCar Car)> wanted = new();
 	private bool disposed;
+	private bool visible = true;
 
 	/// <param name="entryOf">The catalogue entry of the ride a controller belongs to (null: its cars are not drawn).</param>
 	/// <param name="gridOrigin">Engine position of grid corner (0, 0).</param>
@@ -35,6 +37,28 @@ public sealed class TourRenderer : IDisposable
 	{
 		this.entryOf = entryOf;
 		this.gridOrigin = gridOrigin;
+	}
+
+	/// <summary>Whether the cars are drawn (the native smoke test hides them to read back the pixels they cover).</summary>
+	public bool Visible
+	{
+		get => visible;
+		set
+		{
+			visible = value;
+			foreach ( var visual in visuals )
+			{
+				foreach ( var entity in visual.Body )
+					entity.Hidden = !value;
+			}
+		}
+	}
+
+	/// <summary>The engine position of the first car carrying a rider (else the first car), or null when none is drawn.</summary>
+	public Vector3? FlyingCarPosition()
+	{
+		var visual = visuals.FirstOrDefault( item => item.Body.Count > 0 && item.Car is { State: TourCar.StateTour, RiderCount: > 0 } ) ?? visuals.FirstOrDefault( item => item.Body.Count > 0 );
+		return visual == null ? null : visual.Transform.Translation;
 	}
 
 	/// <summary>Car instances drawn after the last <see cref="Update"/>.</summary>
@@ -67,8 +91,9 @@ public sealed class TourRenderer : IDisposable
 			if ( visual.Controller != controller || visual.Body.Count == 0 )
 			{
 				Delete( visual );
-				if ( entryOf( controller ) is { } entry && Mesh( entry ) is { } geometry )
-					visual.Body = geometry.Models.Select( model => new ModelEntity { Model = model, Name = "tour car" } ).ToList();
+				visual.Entry = entryOf( controller );
+				if ( visual.Entry is { } entry && Mesh( entry ) is { } geometry )
+					visual.Body = geometry.Models.Select( model => new ModelEntity { Model = model, Name = "tour car", Hidden = !visible } ).ToList();
 			}
 			visual.Controller = controller;
 			visual.Car = car;
@@ -96,7 +121,7 @@ public sealed class TourRenderer : IDisposable
 		foreach ( var visual in visuals )
 		{
 			if ( visual.Car is not { } car || visual.Controller is not { AttractionId: >= 0 } controller || onlyAttraction is { } only && only != controller.AttractionId
-				|| entryOf( controller ) is not { } entry || Mesh( entry ) is not { } geometry )
+				|| visual.Entry is not { } entry || Mesh( entry ) is not { } geometry )
 				continue;
 			var riders = Math.Min( Math.Abs( car.RiderCount ), TourCar.MaximumRiders );
 			for ( var seat = 0; seat < riders && seat < geometry.HeadNodes.Length; seat++ )
@@ -184,6 +209,7 @@ public sealed class TourRenderer : IDisposable
 			entity.Delete();
 		visual.Body = new List<ModelEntity>();
 		visual.Controller = null;
+		visual.Entry = null;
 		visual.Car = null;
 	}
 

@@ -84,5 +84,7 @@ internal static class TourSave
 		foreach ( var guest in saved.Ejected! )
 			Require( guestExists( guest ) && listedGuests.Add( guest ), "an ejected rider is a guest the park does not hold, or one listed twice" );
 		Require( saved.Riders == riders, $"the rider total {saved.Riders} is not the {riders} aboard its cars" );
+		// the landing slot is held by a car that stands at the station, is lifting off, or is on its approach; with no such car a flag left set would keep every waiting car circling for ever
+		Require( !saved.LandingReserved || saved.Cars.Any( car => car.State is TourCar.StateDocked or TourCar.StateTakeoff or TourCar.StateStaging or TourCar.StateApproach or TourCar.StateLanding ), "the landing slot is reserved but no car holds it" );
 	}
 }

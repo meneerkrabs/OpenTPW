@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// </summary>
 internal static class ParticleRendererModule
 {
-	private static Level? unavailableFor;
+	private static WeakReference<Level>? unavailableFor;
 
 	[ModuleInitializer]
 	internal static void Attach() => OriginalObjectRuntime.ParticleRequested += Start;
@@ -31,7 +31,7 @@ internal static class ParticleRendererModule
 
 	private static ParticleRenderer? Create( Level level )
 	{
-		if ( ReferenceEquals( unavailableFor, level ) )
+		if ( unavailableFor != null && unavailableFor.TryGetTarget( out var failed ) && ReferenceEquals( failed, level ) )
 			return null;
 		try
 		{
@@ -44,7 +44,7 @@ internal static class ParticleRendererModule
 		{
 			Log.Warning( $"The particle templates are not available ({exception.Message}); particles are not drawn." );
 		}
-		unavailableFor = level;
+		unavailableFor = new WeakReference<Level>( level );
 		return null;
 	}
 

@@ -215,16 +215,18 @@ public sealed class ParticleSystem
 		emitter.Sequence = ++sequence;
 		// [BIN:STP-PPC:0x1009F968 density] burst, cap and rates scale with the density setting unless template byte +0xC0 is set
 		var scale = template.IgnoresDensity ? 1000 : Density;
-		emitter.Burst = template.Burst * scale / 1000;
-		emitter.Cap = Math.Max( 1, template.Cap * scale / 1000 );
+		emitter.Burst = (int)Math.Clamp( (long)template.Burst * scale / 1000, 0, int.MaxValue );
+		emitter.Cap = (int)Math.Clamp( (long)template.Cap * scale / 1000, 1, int.MaxValue );
 		for ( var quarter = 0; quarter < 4; quarter++ )
 		{
 			var rate = template.Rate( quarter );
 			emitter.Rates[quarter] = rate > 0 ? (rate * scale + 999) / 1000 : rate < 0 ? -Math.Max( 1, -rate * 1000 / scale ) : 0;
 		}
 		order.Add( slot );
+		// stops at the first refusal (cap or pool full), so a huge burst value cannot spin
 		for ( var index = 0; index < emitter.Burst; index++ )
-			Spawn( emitter );
+			if ( !Spawn( emitter ) )
+				break;
 		// [BIN:STP-PPC:0x1009FD70 chained effect] template +0xB4 starts a second emitter at the same place; +0xB8 makes it follow
 		if ( template.ChildEffect >= 0 )
 		{

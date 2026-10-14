@@ -509,6 +509,23 @@ public class ParticleSystemTests
 	}
 
 	[TestMethod]
+	public void HugeBurstStopsAtTheFirstRefusal()
+	{
+		var system = new ParticleSystem( Pool( (1, Template( Life( 3 ), Burst( int.MaxValue ), Cap( int.MaxValue ), ParticleLife( 1000 ) )) ), particleCount: 100 );
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+		Assert.IsTrue( system.Create( 1, Origin ) >= 0 );
+		Assert.AreEqual( 100, system.LiveParticles, "the burst fills the pool and stops" );
+		Assert.IsTrue( watch.ElapsedMilliseconds < 2000 );
+	}
+
+	[TestMethod]
+	public void OversizedTemplateFilesAreRejectedBeforeParsing()
+	{
+		var big = new byte[ParticleTemplateFile.TemplateSize * 105 + 100000];
+		Assert.ThrowsException<InvalidDataException>( () => new ParticleTemplateFile( new MemoryStream( big ) ) );
+	}
+
+	[TestMethod]
 	public void ParticlePoolExhaustionStopsEmissionWithoutFailing()
 	{
 		var system = new ParticleSystem( Pool( (1, Template( Life( 3 ), Burst( 500 ), Cap( 500 ), Rates( 20, 20, 20, 20 ), ParticleLife( 1000 ) )) ), particleCount: 100 );

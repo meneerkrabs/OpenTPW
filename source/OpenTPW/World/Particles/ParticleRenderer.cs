@@ -34,6 +34,8 @@ public sealed class ParticleRenderer : Entity
 	private readonly List<ParticleEmitterBounds> bounds = new();
 	private readonly HashSet<int> visibleEmitters = new();
 	private readonly Vertex[] vertices;
+	private readonly (int First, int Count)[] ranges = new (int First, int Count)[3];
+	private Texture? atlasTexture;
 	private Material<ObjectUniformBuffer>? alphaMaterial;
 	private Material<ObjectUniformBuffer>? additiveMaterial;
 	private Material<ObjectUniformBuffer>? oneOneMaterial;
@@ -54,16 +56,26 @@ public sealed class ParticleRenderer : Entity
 		scale = engineUnitsPerOriginal;
 		vertices = new Vertex[system.Capacity * VerticesPerQuad];
 		Name = "Particles";
-		alphaMaterial = Prepare( atlas, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
-		additiveMaterial = Prepare( atlas, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
-		oneOneMaterial = Prepare( atlas, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );
+		try
+		{
+			// one atlas texture shared by the three materials; a failure leaves no half-built entity or assets behind
+			atlasTexture = new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+			alphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
+			additiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
+			oneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );
+		}
+		catch
+		{
+			Delete();
+			throw;
+		}
 		Current = this;
 	}
 
-	private static Material<ObjectUniformBuffer> Prepare( ParticleSpriteAtlas atlas, MaterialFlags flags )
+	private static Material<ObjectUniformBuffer> Prepare( Texture atlas, MaterialFlags flags )
 	{
 		var material = new Material<ObjectUniformBuffer>( "content/shaders/particle.shader", flags );
-		material.Set( "Color", new Texture( atlas.Pixels, atlas.Width, atlas.Height ) );
+		material.Set( "Color", atlas );
 		return material;
 	}
 
@@ -99,9 +111,9 @@ public sealed class ParticleRenderer : Entity
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 
 		var vertexCount = 0;
-		var ranges = new (int First, int Count)[3];
-		foreach ( var batch in Enum.GetValues<Batch>() )
+		for ( var batchIndex = 0; batchIndex < ranges.Length; batchIndex++ )
 		{
+			var batch = (Batch)batchIndex;
 			var first = vertexCount;
 			foreach ( var sprite in sprites )
 			{
@@ -214,6 +226,8 @@ public sealed class ParticleRenderer : Entity
 		additiveMaterial?.ReleaseOwnedResources();
 		oneOneMaterial?.ReleaseOwnedResources();
 		alphaMaterial = additiveMaterial = oneOneMaterial = null;
+		atlasTexture?.ReleaseOwned();
+		atlasTexture = null;
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

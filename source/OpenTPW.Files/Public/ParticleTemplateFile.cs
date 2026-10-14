@@ -105,7 +105,8 @@ public sealed class ParticleTemplateFile : BaseFormat
 {
 	public const int TemplateSize = ParticleTemplate.Size;
 	public const int EffectorSize = 104;
-	public const int MaximumRecords = 4096;
+	public const int MaximumTemplates = 105;
+	public const int MaximumEffectors = 20;
 	public const int TrailerBytes = 8;
 
 	public IReadOnlyList<ParticleTemplate> Templates { get; private set; } = Array.Empty<ParticleTemplate>();
@@ -117,13 +118,22 @@ public sealed class ParticleTemplateFile : BaseFormat
 
 	protected override void ReadFromStream( Stream stream )
 	{
+		// bounded read: the header, the templates and effectors of the largest supported file, the trailer and some margin
+		const int Limit = 8 + MaximumTemplates * TemplateSize + 8 + MaximumEffectors * EffectorSize + TrailerBytes + 1024;
 		using var memory = new MemoryStream();
-		stream.CopyTo( memory );
+		var buffer = new byte[8192];
+		int read;
+		while ( (read = stream.Read( buffer, 0, buffer.Length )) > 0 )
+		{
+			if ( memory.Length + read > Limit )
+				throw new InvalidDataException( "Particle template file is larger than any supported layout." );
+			memory.Write( buffer, 0, read );
+		}
 		var data = memory.ToArray();
 		var position = 0;
 		var count = ReadInt( data, ref position );
 		var size = ReadInt( data, ref position );
-		if ( count < 0 || count > MaximumRecords || size != TemplateSize )
+		if ( count < 0 || count > MaximumTemplates || size != TemplateSize )
 			throw new InvalidDataException( $"Particle template file declares {count} templates of {size} bytes." );
 		if ( (long)count * size > data.Length - position )
 			throw new InvalidDataException( "Particle template file ends inside its templates." );
@@ -135,7 +145,7 @@ public sealed class ParticleTemplateFile : BaseFormat
 		}
 		var effectorCount = ReadInt( data, ref position );
 		var effectorSize = ReadInt( data, ref position );
-		if ( effectorCount < 0 || effectorCount > MaximumRecords || effectorSize != EffectorSize )
+		if ( effectorCount < 0 || effectorCount > MaximumEffectors || effectorSize != EffectorSize )
 			throw new InvalidDataException( $"Particle template file declares {effectorCount} effectors of {effectorSize} bytes." );
 		if ( (long)effectorCount * effectorSize > data.Length - position )
 			throw new InvalidDataException( "Particle template file ends inside its effectors." );

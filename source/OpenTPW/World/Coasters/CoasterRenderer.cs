@@ -21,7 +21,7 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 /// a chain lift) moves by rewriting its own few vertices.
 /// </summary>
 // [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
-// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment; scroll textures advance by their fScrollRate per second (the original's rate source, controller +0x2c, is not resolved) and self-illuminated textures are lit like the rest
+// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment; scroll textures advance by their fScrollRate per second (the original's rate source, controller +0x2c, is not resolved) and self-illuminated textures are lit like the rest; the coaster MD2 models' Add-mode vertex and UV animation (TrackMaster loader 0x42fad0 keeps header flag 4: keys added to a per-update base copy, the add paths of 0x471860) is not modelled (formerly the remainder of RIDES-043)
 public sealed class CoasterRenderer : Entity
 {
 	private readonly Func<IReadOnlyList<CoasterRide>> coasters;

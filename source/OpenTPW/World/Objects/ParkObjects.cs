@@ -263,9 +263,10 @@ public sealed class ParkObjects
 
 	/// <summary>
 	/// For levels without an original save: the three fixed items the Easymode save records (Gates, Lights,
-	/// Bus), in park space. Which fixed items the original spawns, and when (seaplane, ferry, end), is not known.
+	/// Bus), in park space. The original creates Gates and Lights at world setup; its arrival vehicle is picked per arrival (RIDES-019).
 	/// </summary>
-	// [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level
+	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
+	// [APPROX:RIDES-019] The arrival vehicle is always the Bus here; the original creates none at setup and picks bus, seaplane or ferry at random per arrival (0x51a2f0: LCG s = s·0x19660d + 0x3c6ef35f, s = rotr(s, 13), |s| % 3, seeded at 0x1da708 from 0x67d3f0; the current vehicle is reused), and End (0x762464) is created by 0x516b00, called from 0x503d40, not at setup — evidence needed: the arrival owner's vehicle choice (ARRIVAL register)
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>

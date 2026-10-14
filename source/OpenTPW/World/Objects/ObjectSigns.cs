@@ -67,7 +67,7 @@ public static class ObjectSigns
 	// [BIN:STP-PPC:0x1018E254 sign text builder] one name string is split at its middle space (SignCanvas.SplitAtMiddleSpace); a caller may instead pass the two lines (text slot 0 and 1) explicitly
 	// [BIN:STP-PPC:0x1011A08C object name builder] the name string (info record +0x70C) is the first OBJECT_NAMES text, a space, then the second ("%ls%ls%ls"); an entry ending in '-' is joined to the next without space or dash
 	// [BIN:STP-PPC:0x101598C4 object sign call] for objects built from the catalogue the sign text is that name string of the object's info record (no explicit text passed)
-	// [APPROX:COMPAT-016] the display name stands for the info record's name string: the join of the OBJECT_NAMES entries this port binds by English name (RIDES-010) and, for unbound objects, the .sam name — evidence needed: the record field that selects the entries and a capture of a shop or sideshow sign
+	// [APPROX:COMPAT-016] the display name stands for the info record's name string: the join of the two OBJECT_NAMES entries of the executable's Info.Id table 0x7488D8 (name getter 0x4146B0) and, for an id outside the table, the .sam name where the original has an empty name — evidence needed: a capture of a shop or sideshow sign (that its sign text is the name getter's string)
 	public static (string Line1, string Line2) Lines( ObjectCatalogEntry entry )
 	{
 		if ( entry.IsBonus && BonusNames.ReadSignLines( entry ) is { } explicitLines )

@@ -215,7 +215,7 @@ This is host-specific race evidence, not Windows or power-loss qualification.
   or whether `0x24` textures get a colour key (COMPAT-014).
 - The meaning of the directory gap (`Buy ERTS`), the four position words and the
   repeated palette entry count; the reader keeps them raw or ignores them.
-- Which of the `stexture/` and `textures/` copies the game loads, and when.
+- Which of the `stexture/` and `textures/` copies Theme Park Inc loads, and when (Theme Park World loads `stexture` and `ssharete` exactly with the Low detail preset, TEXTUREQUALITY 0 or 1: docs/OBJECTS.md).
 - FSH variants outside this corpus (other EA image codes, multi-image banks,
   other RefPack headers) are rejected, not supported.
 

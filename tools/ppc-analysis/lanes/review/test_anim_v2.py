@@ -217,7 +217,7 @@ class Source(unittest.TestCase):
         self.assertIn('NoObjectMilliseconds = 0', animation)
         self.assertIn('WaitUntilDeadline( vm, wait )', animation)
         self.assertIn('[BIN:TPW-EXE:0x5535c7 TRIGWAITANIM compare]', animation)  # RIDES-037 retired
-        self.assertIn('[APPROX:RIDES-038]', animation)
+        self.assertIn('[EXT:trig-anim-speed-guard]', animation)  # RIDES-038 reclassified (RIDES round 2)
 
     def test_aw1_script_clock_versus_scheduler_clock_is_registered(self):
         # The original's waits and GETTIME read the shared scheduler clock (0x10e844 on the global r30); OpenTPW's

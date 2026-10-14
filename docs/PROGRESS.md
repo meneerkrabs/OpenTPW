@@ -939,6 +939,9 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
+  first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy
+  `[EXT:explicit-world-seed]`.
 - **Server tests no longer hang on macOS (October 14):** `ServerProgram.Build` turns off appsettings.json reload-on-change
   (`--hostBuilder:reloadConfigOnChange=false`, which a later argument can override). The server binds its options once, so the
   watcher did nothing, and on macOS starting it calls `sync(2)`, which never returns while a mounted volume (here a stalled SMB

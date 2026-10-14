@@ -97,6 +97,27 @@ public class CoasterSaveTests
 		Assert.AreEqual( ride.RidersOnBoard, resumed.RidersOnBoard );
 	}
 
+	/// <summary>
+	/// A speed change on a completed track (COAST 8 with the script's bias, 0x43b2b0 → 0x43c3d0) re-rates it at the new
+	/// cap, so a park resume, which re-derives the rating from the saved cap, holds the same controller.
+	/// </summary>
+	[TestMethod]
+	public void ASpeedChangeOnACompletedTrackResumesToTheSameState()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		for ( var tick = 0; tick < 10 * 60; tick++ )
+			ride.Advance( Tick );
+		ride.Command( 8, 0, 20 );
+		Assert.AreEqual( CoasterRide.SpeedCapFor( ride.Definition, 20 ), ride.SpeedCap );
+		var captured = CoasterSave.CaptureRide( ride, attractionId: 3 );
+		var restored = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( captured ) );
+		var resumed = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		resumed.RestoreSnapshot( restored );
+		Assert.AreEqual( ride.Rating, resumed.Rating, "the re-rated pass is what the resume derives" );
+		Assert.AreEqual( Hash( ride ), Hash( resumed ) );
+	}
+
 	[TestMethod]
 	public void AnUnfinishedTrackRoundTripsWithoutTrains()
 	{

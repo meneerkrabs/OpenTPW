@@ -488,6 +488,7 @@ public sealed class RideVM
 	/// The script's speed bias (the ride's SPEED; setter 0x55a300): ride init writes <c>Upgrades[0].InitSpeed</c> when above 0
 	/// (0x4db51c..0x4db54c) and children copy their parent's (0x551888). The host also writes it at ride-settings apply and upgrade completion.
 	/// </summary>
+	// The signed 16-bit word at script +192 (0xC0); the ride-script loop (tp.exe 0x5516b0, 0x5517e1..0x5517ef) hands it to the coaster speed setter 0x43b2b0 every pass.
 	public int SpeedBias { get; internal set; } = DefaultSpeedBias;
 
 	/// <summary>Script speed of the animation opcodes: <c>0.5 + bias / 100</c> in single precision (constants −0.01 and 0.5 at 0x551769).</summary>

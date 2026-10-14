@@ -56,3 +56,17 @@ restore; asset-free capture/resume seams supply verified synthetic asset hashes
 and avoid renderer/lobby construction. Full graphical candidate construction,
 original assets, native oracles, GPU/window lifecycle and browser durability are
 not qualified by these tests. Existing capture/schema/audio guards are retained.
+
+Independent ingress controls additionally run a real VM EVENT through the existing
+synthetic sound dispatcher and CPU mixer: a live owned loop refuses actual Level
+capture without stopping either owner, preserves world hash and prior automatic/
+manual bytes, and a fresh retry after stopping that owner saves while the other
+voice remains alive. This uses synthetic PCM, not a speaker or native audio claim.
+
+Actual automatic read into the default ResumePark asset preflight retains the live
+Level/HUD and both slots when synthetic assets are missing. Actual menu activation
+retains Full/Instant mode without a key bootstrap, treats world-file whitespace as
+semantic-equivalent, and refuses raw profile whitespace changes. An oversized
+opaque profile hides only the automatic offer while manual Continue remains
+selectable and files stay unchanged. Positive graphical candidate/lobby activation
+remains outside these CPU controls.

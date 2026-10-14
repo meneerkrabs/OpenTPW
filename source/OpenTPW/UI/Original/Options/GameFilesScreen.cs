@@ -18,7 +18,7 @@ public static class GameFilesScreen
 	{
 		settingsPath ??= SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( settingsPath );
-		var gamePath = saved.GamePath ?? Settings.Default.GamePath;
+		var gamePath = saved.GamePath ?? LegacySettings.GamePath ?? "";
 		var cdPath = saved.CdPath;
 		// The bonus folder shown is the one the game would use: the saved choice, else the imported copy in the configuration directory.
 		var configDirectory = Path.GetDirectoryName( Path.GetFullPath( settingsPath ) )!;

@@ -234,7 +234,7 @@ home (21) → removed.
 | Item | OpenTPW choice |
 | --- | --- |
 | Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
-| Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts from level 70 (GUEST-009) |
+| Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
 | Boredom | `BoredomThreshold` read as seconds since the last ride |
@@ -264,7 +264,7 @@ attraction of the type used last scores 0 outright, so the divisors that matter 
 boring, too exciting) and forgets it after 80 park turns (a 0 is shifted in every 20 turns). The guest chooses the highest score of at least 10 (ties go to the later attraction on odd park turns), among open, unbroken
 attractions it can reach; there is no random bonus. A use gives happiness `PerfectRide` below 5 from the preferred excitement, `GoodRide` below 15, `OKRide` below 40 and nothing beyond (no penalty) and raises illness by
 `excitement / RideVomitDivisor · ((100 − hunger) / 20)`, so a hungry guest (81 and up) is not made sick.
-Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters, thought thresholds (`GUEST-002..005`).
+Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters (`GUEST-002..005`).
 
 ### Needs and starting values
 
@@ -282,7 +282,7 @@ its thing id (OpenTPW: its guest id, WALK-010):
 
 Using an attraction then applies its own effects after the outcome of [Attraction choice](#attraction-choice): thirst and hunger fall by the type's `ThirstEffect` / `HungerEffect`, illness and happiness rise by
 `VomitEffect` / `HappinessEffect` (clamped); a toilet sets the toilet meter to 0 (GUEST-005). Illness has no decay of its own. A guest at hunger 80 at a shop with a hunger effect of 50 goes to 30.
-Open: the thought selection (hunger and thirst above 90, a single need above 99, happiness above 99 or below 10; GUEST-009), the draws (OpenTPW's own stream, DET-014).
+Open: the boredom loss (GUEST-009), the draws (OpenTPW's own stream, DET-014).
 
 ### Lifecycle
 
@@ -344,6 +344,26 @@ happiness, illness and hunger divided by its distance + 1, and a guest's needs p
 −1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). Entertainers and guards carry their rows with them: an
 entertainer's `RegionFX[0]` adds 2 happiness on his cell and 1 beside it, a guard's `RegionFX[3]` the security above. The other sources (toilets,
 cameras, fireworks) are not modelled yet (GUEST-006).
+
+### Thoughts
+
+Read in full in tp.exe (GUEST-006). A guest's thought (the visitor window's line and the park's most common thought) is set by the thought
+object `0x50be80`, which 22 places call:
+
+- **The needs phase** (`0x501650`), outside states 16 and 17 and on a park cell, picks on one phase in ten (`0x4fc8a0`): hunger and thirst
+  bytes both above 90 → "Hungry and thirsty"; a hunger, thirst, toilet or illness byte above 99 → that need; else more than 20% littered
+  path cells in the guest's 4 × 4 block → "Too messy"; else happiness above 99 → "Happy!", below 10 → "Unhappy"; else the thought stays.
+- **Events:** a queue join refused as too exciting ("Scared"), not exciting enough ("Bored") or too long; leaving a queue for the toilet,
+  illness, unhappiness or boredom; a price refusal at the queue's head or the booth ("Dissatisfied"); navigation failures ("Confused"); a
+  sideshow won ("Pleased") or lost ("Dissatisfied"). A ride or shop visit sets no thought.
+- **The bubble:** each thought replaces the bubble, and a new one shows when the last appeared at least 20 × the thought's priority turns
+  ago (0 for event thoughts, 1 for needs and "Too messy", 3 for the happiness thoughts); it goes on the first needs phase more than 12
+  turns after it appeared, and when the guest boards a ride or is caught. Ids 18-22 are the staff's own (tiredness, walking pace, no
+  destination).
+
+The thresholds OpenTPW used before (`NeedThoughtLevel` 70, happiness bands 90/70/30, "Super happy" and "Okay") have no source in tp.exe and
+are gone; the original never thinks those two. Not yet: "Angry" for a failing coaster and for a shortened queue (one guest in three), the
+staff's thoughts and drawing the bubbles.
 
 ### The environment grid
 

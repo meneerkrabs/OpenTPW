@@ -642,14 +642,14 @@ public sealed partial class ParkHud
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
 			{
 				// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
-				// [APPROX:AUDIO-009] the traced 0x1D callers are the buy window and dialog errors; the placement rejection plays it too — evidence needed: the original's build-tool rejection path
+				// [APPROX:AUDIO-009] the traced 0x1D callers are buy and hire money and limit checks (tp.exe 0x4879d0, 0x4ac590, 0x4af500); no placement-tool site was found (the build tool's click handler 0x52496e plays only cat_ui 0xAF), and the object-placement refusal cases of its tool switch were not enumerated
 				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}
 
-		// [BIN:STP-PPC:0x10137FD0 park view input] a 0x100 (activated) message in the park view plays cat_ui event 0x1F (0xBD when the message's control flag word, read at 0x1017F618, has a bit set outside 24-26)
-		// [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control, so the view always plays 0x1F — evidence needed: the meaning of the flag bits in the control's +0x44 word
+		// [BIN:TPW-EXE:0x485780 UI message hook] a 0x100 (activated) message plays cat_ui event 0x1F, or 0xBD when the control's construction style (+0x48) has bit 0x10 (0x4857cb)
+		// [APPROX:AUDIO-004] which original controls are created with style bit 0x10 is not traced, so the view always plays 0x1F
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
@@ -790,12 +790,12 @@ public sealed partial class ParkHud
 		var queueJoin = level.QueueJoinCell( tool );
 		var result = tool.Click( (cursorX, cursorY) );
 		level.PlayQueueJoin( queueJoin );
-		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); [APPROX:AUDIO-022] a refused commit plays cat_ui 175
+		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); [APPROX:AUDIO-022] a refused commit plays cat_ui 175 at the clicked cell
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
-			GameAudio.PlayPathToolSound( GameAudio.PathRefusedEvent );
+			GameAudio.PlayPathRefused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		}
 		return toolPress = true;

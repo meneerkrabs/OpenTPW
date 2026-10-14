@@ -239,7 +239,8 @@ public class DeterminismTests
 			park.Sound.Draw();
 			park.Save( path );
 			var saved = park.RandomState;
-			Assert.AreEqual( park.Seed.SoundStream, saved.SoundSeed, "sound draws do not move the chooser seed (0x100118C8 is its only store)" );
+			Assert.AreEqual( park.Sound.Seed, saved.SoundSeed, "the chooser's advanced state is what the save holds (AUDIO-037: the original's chooser is clock-seeded and unsaved)" );
+			Assert.AreNotEqual( park.Seed.SoundStream, saved.SoundSeed, "the draw before the save advanced the chooser (tp.exe 0x6bc84c stores every draw's state)" );
 			for ( var tick = 0; tick < 600; tick++ )
 				park.Guests.Tick( Tick );
 			park.Scripts.NextScriptSeed();
@@ -268,6 +269,7 @@ public class DeterminismTests
 		park.Run( 600 );
 		var before = park.Streams.ComputeStateHash();
 		park.Sound.Draw();
+		Assert.AreNotEqual( park.Seed.SoundStream, park.Sound.Seed, "the draw advanced the chooser" );
 		Assert.AreEqual( before, park.Streams.ComputeStateHash() );
 		Assert.AreEqual( before, new ParkWorldStreams( park.Seed, null, park.Guests, park.Scripts, null ).ComputeStateHash(), "a headless run hashes like a run with sound" );
 	}
@@ -444,8 +446,8 @@ public class DeterminismAssetTests
 			var economy = ParkSaveFile.Serialize( park.Economy );
 			Run( 3000 );
 			streams.Scripts.NextScriptSeed();
-			// Since ORACLE-F a draw never stores the sound seed (sound_shared 0x100118C8), so only a reseed moves it.
-			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "sound draws do not move the seed" );
+			// A draw stores the chooser's advanced state (tp.exe 0x6bc84c), and the park saves it so a resume continues the same draws.
+			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "no draw since the save" );
 			streams.Sound.Draw();
 			streams.Sound.Reseed( unchecked(saved.SoundSeed + 1) );
 			var moved = streams.CaptureRandomState();

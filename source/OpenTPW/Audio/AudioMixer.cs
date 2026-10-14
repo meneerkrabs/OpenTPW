@@ -63,7 +63,7 @@ public sealed class AudioVoice
 		if ( Position is { } place && Range > 0 )
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
-			// [APPROX:AUDIO-019] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event
+			// [EXT:inaudible-loop-advance] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event
 			// [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — the original's pan law (QSound's processing) is not read
 			var angle = (pan + 1) * MathF.PI / 4;
 			leftScale = distanceGain * MathF.Cos( angle );

@@ -467,7 +467,7 @@ public sealed class ThemeParkIncHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
-			GameAudio.PlayPathToolSound( GameAudio.PathRefusedEvent );
+			GameAudio.PlayPathRefused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		}
 		return toolPress = true;

@@ -570,7 +570,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			["prototype"] = SectionSha256( snapshot.Prototype ),
 		};
 		var composite = new StringBuilder( "opentpw-park-resume/1|" ).Append( snapshot.Theme ).Append( '|' )
-			.Append( snapshot.StartKind ).Append( '|' ).Append( snapshot.Seed ).Append( '|' ).Append( snapshot.SoundSeed );
+			.Append( snapshot.StartKind ).Append( '|' ).Append( snapshot.Seed );
 		foreach ( var (name, hash) in sections.OrderBy( pair => pair.Key, StringComparer.Ordinal ) )
 			composite.Append( '|' ).Append( name ).Append( '=' ).Append( hash );
 		return new SmokeSample

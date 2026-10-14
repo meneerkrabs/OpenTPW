@@ -225,6 +225,8 @@ public sealed partial class OriginalObjectRuntime
 	{
 		stopped = true;
 		eventOrigin = null;
+		footprintMiddle = null;
+		eventSoundSpace = null;
 		ClearParticleRequests();
 		effects.StopSounds();
 		Visitors.ReleaseAll();
@@ -578,7 +580,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	/// <summary>Park resume: starts the held scream again from its saved operands.</summary>
 	internal void RestoreHeldScream( int band, int level, int speed )
 	{
-		screamChain = GameAudio.StartScream( () => null, band, level, null, speed );
+		screamChain = GameAudio.StartScream( () => null, band, level, ride.ReadFootprintMiddle(), speed );
 		(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (band, level, speed);
 		if ( screamChain != null )
 			ownedScreams.Add( screamChain );
@@ -644,7 +646,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
-			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null, call.VM.SpeedBias );
+			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
 			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = screamChain != null ? (call.Argument( 0 ), call.Argument( 1 ), call.VM.SpeedBias) : (0, 0, 0);
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			if ( screamChain != null )
@@ -661,7 +663,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.SINGLESCREAM )
 		{
-			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null, call.VM.SpeedBias );
+			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		// ADDOBJ type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
@@ -679,8 +681,16 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		{
 			if (call.Argument(0) is 1 or 2) ride.ObserveParticleEvent(call);
 			// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position
+			// [BIN:TPW-EXE:0x5575c7 EVENT sound] the key operand (the 2nd) picks the anchor (a model node, or the footprint middle for a negative key; an unknown key plays nothing) and the 3rd is the event id, for every sound type 3-9
 			var type = call.Argument(0);
-			var voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), type is >= 3 and <= 9 ? ride.ReadEventOrigin() : null);
+			AudioVoice? voice = null;
+			if (type is >= 3 and <= 9)
+			{
+				if (ride.ResolveEventAnchor(call.Argument(1), out var anchor) == OriginalObjectRuntime.EventAnchorStatus.Play)
+					voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), anchor);
+			}
+			else
+				voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), null);
 			ownedEventLoops.RemoveAll(loop => loop.IsFinished);
 			if (voice is { Loops: true }) ownedEventLoops.Add(voice);
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
@@ -689,8 +699,6 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		{
 			// [BIN:STP-PPC:0x100B1E34 REPAIREFFECT] showing (value 1) starts a cat_kids repair sound (0x100ACC24, event 75 for the traced call); hiding (value 0) plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
 			var show = call.Argument( 0 );
-			if ( show != 0 ) GameAudio.PlayRepairEffect( show );
-			else
 			{
 				var voices = GameAudio.PlayRepairEffect( show, ride.ReadEventOrigin() );
 				ownedEventLoops.RemoveAll( loop => loop.IsFinished );

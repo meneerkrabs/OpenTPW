@@ -32,7 +32,7 @@ public sealed class TrackRenderer : IDisposable
 	}
 
 	private readonly ObjectCatalogEntry entry;
-	private readonly TrackPieceKit kit;
+	private readonly TrackPieceKit? kit;
 	private readonly Func<Vector2> gridOrigin;
 	private readonly Func<int, int, float> groundHeight;
 	private readonly Dictionary<int, PieceGeometry> pieces = new();
@@ -47,10 +47,10 @@ public sealed class TrackRenderer : IDisposable
 	private bool disposed;
 
 	/// <param name="entry">The ride whose archive holds the pieces, the vehicle meshes and the textures.</param>
-	/// <param name="kit">The piece kit of the ride's family; this renderer draws that family's cells and the controllers it is given.</param>
+	/// <param name="kit">The piece kit of the ride's family; this renderer draws that family's cells and the controllers it is given. Null for the bumper cars, which have no pieces.</param>
 	/// <param name="gridOrigin">Engine position of grid corner (0, 0).</param>
 	/// <param name="groundHeight">Engine height of the ground at a cell.</param>
-	public TrackRenderer( ObjectCatalogEntry entry, TrackPieceKit kit, Func<Vector2> gridOrigin, Func<int, int, float> groundHeight )
+	public TrackRenderer( ObjectCatalogEntry entry, TrackPieceKit? kit, Func<Vector2> gridOrigin, Func<int, int, float> groundHeight )
 	{
 		this.entry = entry;
 		this.kit = kit;
@@ -59,7 +59,7 @@ public sealed class TrackRenderer : IDisposable
 		probe = ( x, y ) => SurfaceHeight( probeLayer!, x, y );
 	}
 
-	public TrackFamily Family => kit.Family;
+	public TrackFamily Family => kit?.Family ?? TrackFamily.Bumper;
 	/// <summary>Tile instances drawn after the last <see cref="Update"/>.</summary>
 	public int TileCount => tiles.Count;
 	/// <summary>Vehicle instances drawn after the last <see cref="Update"/>.</summary>
@@ -86,6 +86,8 @@ public sealed class TrackRenderer : IDisposable
 		foreach ( var entity in tiles )
 			entity.Delete();
 		tiles.Clear();
+		if ( kit == null )
+			return;
 		foreach ( var (x, y, cell) in layer.Cells() )
 		{
 			if ( !cell.IsOrigin || cell.Piece == 0 || cell.Family != (int)kit.Family )
@@ -139,9 +141,12 @@ public sealed class TrackRenderer : IDisposable
 		{
 			var (controller, vehicle) = wanted[index];
 			var visual = visuals[index];
-			var kart = controller.Template.IsKart;
-			var hover = kart && (vehicle.Flags & BumpVehicle.Hover) != 0;
-			var shadow = kart && (vehicle.Flags & BumpVehicle.Shadow) != 0;
+			// [APPROX:TRACK-031] bumper cars: the pose probes read the terrain (not the ride's platform mesh) and the jungle wake is drawn as a shadow-style instance
+			// a bumper car is posed like a kart on flat ground: the drawn heading follows its motion (the original's +0x54), the four probes read the terrain
+			var kart = !controller.Template.IsWater;
+			var hover = controller.Template.IsKart && (vehicle.Flags & BumpVehicle.Hover) != 0;
+			// the shadow instance is the ride's mesh 0: the hovering karts' gk_shadow, the jungle bumper cars' wake (flag 0x2000000)
+			var shadow = controller.Template.IsKart ? (vehicle.Flags & BumpVehicle.Shadow) != 0 : controller.Template.IsBumper && (vehicle.Flags & BumpVehicle.Wake) != 0;
 			if ( visual.Variant != vehicle.Variant || visual.HasShadow != shadow )
 				Rebuild( visual, vehicle, shadow );
 			if ( visual.Body.Count == 0 )
@@ -251,6 +256,8 @@ public sealed class TrackRenderer : IDisposable
 		var cell = layer.Get( cellX, cellY );
 		if ( cell.Type == 0 )
 			return Ground( cellX, cellY );
+		if ( kit == null )
+			return Ground( cellX, cellY );
 		var (ox, oy) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (cellX, cellY);
 		var tile = layer.Get( ox, oy );
 		var baseHeight = (Ground( ox, oy ) + Ground( ox + 1, oy ) + Ground( ox, oy + 1 ) + Ground( ox + 1, oy + 1 )) / 4;
@@ -283,7 +290,7 @@ public sealed class TrackRenderer : IDisposable
 		if ( pieces.TryGetValue( piece, out var cached ) )
 			return cached;
 		PieceGeometry? geometry = null;
-		if ( kit.GetModel( piece ) is { } model )
+		if ( kit?.GetModel( piece ) is { } model )
 		{
 			geometry = Build( model, entry, kit.Family == TrackFamily.Kart && kit.GetHeightProfile( piece ) is { } profile ? TrackSurface.FromProfile( profile ) : null );
 		}
@@ -352,7 +359,8 @@ public sealed class TrackRenderer : IDisposable
 		return new PieceGeometry( models, surface ?? TrackSurface.FromModel( model ), heads.ToArray(), flags.ToArray() );
 	}
 
-	private static Texture LoadTexture( ObjectCatalogEntry entry, string name )
+	/// <summary>The texture of a model material or track texture of an object's archive (the textures, gtexture and theme sharetex directories), or <see cref="Texture.Missing"/>.</summary>
+	internal static Texture LoadTexture( ObjectCatalogEntry entry, string name )
 	{
 		var resolved = ObjectAssets.ResolveTexture( entry, name );
 		if ( resolved == null )

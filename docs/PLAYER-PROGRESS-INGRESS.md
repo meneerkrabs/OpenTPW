@@ -14,7 +14,9 @@ world construction and checks cost/profile again at candidate precommit.
 
 If own history is missing, New offers explicit opt-in through the existing message
 window. Confirm stages a new Full Simulation ledger with one extra key, admitting
-only a nonnegative cost at most one. It does not change the model's zero default.
+only a nonnegative cost at most one; a theme that costs more (Fantasy 3, Space 5) is refused with the
+keys message before any opt-in is offered. It does not change the model's zero default. Instant Action keeps no
+progress and starts in every edition.
 Profile publication occurs atomically before retiring the old scene. A failed
 write retains that scene and any prior file; a successfully created profile stays
 created if later activation fails. Reopening/retrying never grants a second key.
@@ -36,7 +38,8 @@ existing host AllLandOwned storage makes no new native earning claim.
 
 Failed persistence keeps earned identities in memory. Normal Exit, New, Load,
 Continue, Visit and UI Quit flush before abandoning pending work or retiring the
-old world; failure keeps the live world and allows retry. A queued request and
+old world; failure keeps the live world and allows retry. Closing the window, which
+cannot be refused, tries the flush once more and logs a failure. A queued request and
 candidate commit recheck the owner. Cancellation wins combined input, captured
 or retired callbacks cannot start a park, and stale error callbacks cannot pop a
 fresh screen. Notifications belong to their owner and do not duplicate an already

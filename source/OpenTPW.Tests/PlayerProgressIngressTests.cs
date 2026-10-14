@@ -99,7 +99,8 @@ public class PlayerProgressIngressTests
 	[TestMethod]
 	public void RefusedFantasyCannotManufactureStarterProfileAndKnownInstantModeIsNotReset()
 	{
-		Choose( "fullSimulation", "fantasy" ); Click( "choice0" ); Pending(); Assert.AreEqual( 0, built ); Assert.IsFalse( File.Exists( Profile ) );
+		// Fantasy costs 3 keys: a new history could only start with one, so the refusal comes before any consent
+		Choose( "fullSimulation", "fantasy" ); Assert.AreNotEqual( "newProgress", menu.Stack.Top?.Name ); Pending(); Assert.AreEqual( 0, built ); Assert.IsFalse( File.Exists( Profile ) );
 		menu.Stack.Clear(); Known( 9, ParkGameMode.InstantAction ); var before = File.ReadAllBytes( Profile );
 		Choose( "fullSimulation" ); Pending(); Assert.AreEqual( 0, built ); CollectionAssert.AreEqual( before, File.ReadAllBytes( Profile ) );
 	}

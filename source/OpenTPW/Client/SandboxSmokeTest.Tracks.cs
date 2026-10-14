@@ -28,11 +28,12 @@ internal sealed partial class SandboxSmokeTest
 
 	private readonly TrackSmokeRun waterSmoke = new();
 	private readonly TrackSmokeRun kartSmoke = new();
+	private readonly TrackSmokeRun bumperSmoke = new();
 	private bool waterTrackVerified => waterSmoke.Verified;
 	private bool waterTrackDone => waterSmoke.Done;
 
 	/// <summary>Whether every track phase that started has finished (the smoke test completes after them).</summary>
-	private bool TrackSmokesDone => (waterSmoke.Done || !waterSmoke.Verified) && (kartSmoke.Done || !kartSmoke.Verified);
+	private bool TrackSmokesDone => (waterSmoke.Done || !waterSmoke.Verified) && (kartSmoke.Done || !kartSmoke.Verified) && (bumperSmoke.Done || !bumperSmoke.Verified);
 
 	/// <summary>Cell offsets from the footprint anchor (rotation 0) of the circuit's three corner clicks: right of the station, above it, back down the left side.</summary>
 	private static readonly (int X, int Y)[] WaterCircuit = { (4, 0), (4, 4), (-2, 4), (-2, 0) };
@@ -126,6 +127,100 @@ internal sealed partial class SandboxSmokeTest
 				StartTrackSmoke( kartSmoke, trackType: 1 );
 		}
 		UpdateKartPhase();
+		if ( kartSmoke.Done && !bumperSmoke.Verified && frame >= 6 )
+			StartBumperSmoke();
+		UpdateBumperPhase();
+	}
+
+	/// <summary>
+	/// The bumper-car phase: a bumper ride is placed on an on-screen site (no track, no tool), the script makes its cars, the smoke loads two riders through the
+	/// controller's own commands (the script waits for real guests), starts a short session, captures the cars wandering the arena with their riders' heads, lets
+	/// the session run out, checks both riders were handed back, and removes the ride.
+	/// </summary>
+	private void StartBumperSmoke()
+	{
+		var run = bumperSmoke;
+		run.Verified = true;
+		var entry = level.Objects.Catalog.Buildable.Where( item => BumperTemplates.ForRide( item.Settings.GetInt( "Bumper.WhichTrackType" ), item.Settings.GetInt( "Bumper.BumperType" ) ) is { IsBumper: true } ).OrderBy( item => item.InfoId ).FirstOrDefault();
+		if ( hudContext == null || level.OriginalPark == null || level.Guests == null || entry == null )
+		{
+			run.Done = true;
+			return;
+		}
+		var canvas = hudContext.Canvas;
+		var viewport = new System.Numerics.Vector2( canvas.Width, canvas.Height );
+		bool OnScreen( (int X, int Y) cell ) =>
+			level.TryProjectCell( cell.X, cell.Y, viewport, out var point ) && point.X > canvas.Width * 0.05f && point.X < canvas.Width * 0.95f && point.Y > canvas.Height * 0.05f && point.Y < canvas.Height * 0.95f;
+		var grid = level.Objects.Grid;
+		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height
+			&& level.Objects.FindAt( x, y ) == null && grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed
+			&& level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0;
+		(int X, int Y)? anchor = null;
+		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
+		{
+			var cell = (X: index % grid.Width, Y: index / grid.Width);
+			var candidate = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
+			if ( level.Objects.Check( entry, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
+				continue;
+			if ( Enumerable.Range( candidate.X - 1, 7 ).All( x => Enumerable.Range( candidate.Y - 1, 8 ).All( y => Free( x, y ) && OnScreen( (x, y) ) ) ) )
+				anchor = candidate;
+		}
+		Require( anchor != null, "find an on-screen site for a bumper ride" );
+		var station = level.PlaceObject( entry, anchor!.Value.X + 1, anchor.Value.Y + 1, 0 ) ?? level.Objects.TryPlace( entry, anchor.Value.X, anchor.Value.Y, 0, out _ );
+		Require( station?.Runtime.Bump is { Template.IsBumper: true }, "place a bumper ride with its controller" );
+		var bump = station!.Runtime.Bump!;
+		Require( !level.TrackStations.ContainsKey( station ) && bump.IsTrackValid && bump.Objects.Count == 1 && bump.Buoys.Count == 8, "a bumper ride has an arena, no station tiles and a valid ride" );
+		var (arenaX, arenaY) = Level.BumperArenaCentre( station );
+		Require( bump.StationX == arenaX && bump.StationY == arenaY, "the arena sits on the ride's footprint" );
+		run.Station = station;
+		run.Wait = System.Diagnostics.Stopwatch.StartNew();
+		Log.Trace( $"HUD bumper ride: {entry.DisplayName} (type {bump.Type}) placed with an arena of radius {bump.Objects[0].Extent} and {bump.Buoys.Count} buoys." );
+	}
+
+	private void UpdateBumperPhase()
+	{
+		var run = bumperSmoke;
+		if ( run.Station == null || run.Done )
+			return;
+		var bump = run.Station.Runtime.Bump!;
+		Require( run.Wait!.Elapsed.TotalSeconds < 180, $"the bumper session runs (phase {bump.Phase}, cars {bump.VehicleCount}, riders {bump.RiderCount}, stage {run.Phase})" );
+		switch ( run.Phase )
+		{
+			case 0:
+				// the script opens the ride and makes the cars up to its capacity
+				if ( bump.Phase != BumpController.PhaseLoading || bump.VehicleCount < 2 )
+					return;
+				Require( bump.Command( 1, 7101 ) == 1 && bump.Command( 12, 0 ) == 1, "the first rider takes a car" );
+				Require( bump.Command( 1, 7102 ) == 1 && bump.Command( 12, 0 ) == 1, "the second rider takes a car" );
+				Require( level.TrackInstances.Boats == bump.VehicleCount, $"the renderer holds every car ({level.TrackInstances})" );
+				bump.Command( 13, 12 );
+				bump.Command( 3, 0 );
+				Require( bump.Phase == BumpController.PhaseRunning && bump.RiderCount == 2, "BUMP 3 starts the session with both riders" );
+				run.VehicleStart = bump.Vehicles.Where( car => car.Riders.Count > 0 ).Select( car => (car.X, car.Y) ).First();
+				run.Wait.Restart();
+				run.Phase = 1;
+				return;
+			case 1:
+				var moving = bump.Vehicles.FirstOrDefault( car => car.Riders.Count > 0 );
+				if ( !run.Captured && moving != null && Math.Abs( moving.X - run.VehicleStart.X ) + Math.Abs( moving.Y - run.VehicleStart.Y ) > 3000 )
+				{
+					run.Captured = true;
+					CaptureFrame( "original-bumper-cars.png" );
+					Require( bump.Vehicles.All( car => BumpMath.Distance( car.X - bump.StationX, car.Y - bump.StationY ) <= bump.Objects[0].Extent + 512 ), "the cars stay in the arena" );
+				}
+				if ( bump.RiderCount != 0 )
+					return;
+				Require( run.Captured, "the cars were seen driving before the session ended" );
+				Require( bump.Phase == BumpController.PhaseLoading, "the ride loads again once the riders left" );
+				Require( bump.Command( 2, 0 ) != 0 && bump.Command( 2, 0 ) != 0 && bump.Command( 2, 0 ) == 0, "both riders were handed back" );
+				var ride = run.Station;
+				level.Objects.Remove( ride );
+				Require( !level.Objects.ScriptWorld.Bumpers.Controllers.Contains( bump ), "removing the ride removes its controller" );
+				Log.Trace( $"HUD bumper ride: {bump.VehicleCount} cars wandered the arena with two riders, the session ended, both riders were handed back and the ride was removed." );
+				run.Station = null;
+				run.Done = true;
+				return;
+		}
 	}
 
 	/// <summary>Waits for the script to launch a boat, checks that the tiles and the boat are drawn and the boat runs, then removes the ride.</summary>

@@ -4,7 +4,11 @@ using System.Text.Json;
 namespace OpenTPW;
 
 /// <summary>Setup operation metadata; dialog selections are inspected separately before use.</summary>
-internal sealed record InstallationDiscoveryResult( IReadOnlyList<InstallationReport> Reports, bool TimedOut, string? Error );
+internal sealed record InstallationDiscoveryResult( IReadOnlyList<InstallationReport> Reports, bool TimedOut, string? Error )
+{
+	/// <summary>A reason the setup window opens again (a stale or timed-out choice), shown above the folder choice.</summary>
+	public string? Notice { get; init; }
+}
 
 /// <summary>
 /// Filesystem probes can block inside the OS on an unavailable mounted drive. Isolate discovery
@@ -26,7 +30,7 @@ internal static class InstallationDiscovery
 	{
 		if ( args.Length == 0 || args[0] is not (SearchCommand or InspectCommand or PickerCommand) )
 			return null;
-		if ( args[0] == SearchCommand && args.Length != 1 || args[0] == InspectCommand && args.Length != 2 || args[0] == PickerCommand && args.Length != 3 )
+		if ( args[0] == SearchCommand && args.Length != 1 || args[0] == InspectCommand && args.Length is not (2 or 3) || args[0] == PickerCommand && args.Length != 3 )
 			return 2;
 		if ( args[0] == PickerCommand )
 		{
@@ -34,11 +38,18 @@ internal static class InstallationDiscovery
 				Console.WriteLine( JsonSerializer.Serialize( new InstallationReport( chosen, null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>() ) ) );
 			return 0;
 		}
+		GameEdition? edition = null;
+		if ( args[0] == InspectCommand && args.Length == 3 )
+		{
+			if ( args[2] is not ("ThemeParkWorld" or "ThemeParkInc") ) return 2;
+			edition = Enum.Parse<GameEdition>( args[2] );
+		}
 		var paths = args[0] == SearchCommand ? InstallationFinder.GetCandidates() : new[] { args[1] };
 		var count = 0;
 		foreach ( var path in paths )
 		{
-			var report = GameInstallation.Inspect( path );
+			// A search finds Theme Park World only: a Theme Park Inc folder must not be offered or saved as TPW.
+			var report = edition is { } selected ? GameInstallation.Inspect( path, selected ) : args[0] == SearchCommand ? GameInstallation.Inspect( path, GameEdition.ThemeParkWorld ) : GameInstallation.Inspect( path );
 			if ( args[0] == InspectCommand || report.IsUsable )
 			{
 				Console.WriteLine( JsonSerializer.Serialize( report ) );
@@ -55,6 +66,9 @@ internal static class InstallationDiscovery
 
 	internal static Task<InstallationDiscoveryResult> InspectAsync( string path, TimeSpan? timeout = null, CancellationToken cancellation = default ) =>
 		RunAsync( ChildStart( InspectCommand, path ), timeout ?? DefaultTimeout, cancellation );
+
+	internal static Task<InstallationDiscoveryResult> InspectAsync( string path, GameEdition edition, CancellationToken cancellation = default ) =>
+		RunAsync( ChildStart( InspectCommand, path, edition.ToString() ), DefaultTimeout, cancellation );
 
 	internal static Task<InstallationDiscoveryResult> PickAsync( string title, string? initial, CancellationToken cancellation ) =>
 		RunAsync( ChildStart( PickerCommand, title, initial ?? "" ), Timeout.InfiniteTimeSpan, cancellation, picker: true );
@@ -115,7 +129,7 @@ internal static class InstallationDiscovery
 		{
 			return new( reports, !cancellation.IsCancellationRequested, cancellation.IsCancellationRequested ? "Search cancelled." : "Automatic search timed out." );
 		}
-		catch ( Exception exception ) when ( exception is System.ComponentModel.Win32Exception or IOException or InvalidOperationException or JsonException )
+		catch ( Exception exception ) when ( exception is System.ComponentModel.Win32Exception or IOException or InvalidOperationException or JsonException or InvalidDataException )
 		{
 			return new( reports, false, exception.Message );
 		}

@@ -316,6 +316,50 @@ public class GuestAssetTests
 	}
 
 	/// <summary>
+	/// The balloon and costume art (GUEST-017): one balloon set with four colours of a whole and a burst frame; one costume set per theme with the
+	/// kids' animation slots; costume heads in Jungle and Space only. Each atlas has its own texture pack key.
+	/// </summary>
+	[TestMethod]
+	public void BalloonAndCostumeSpritesLoad()
+	{
+		var balloons = GuestSpriteAtlas.LoadBalloons();
+		Assert.AreEqual( "SPR_BL", balloons.Single().Name );
+		var slots = balloons[0].Animations.Animations.Where( slot => !slot.IsEmpty ).ToArray();
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3 }, slots.Select( slot => slot.Slot ).ToArray() );
+		Assert.IsTrue( slots.All( slot => slot.FramesPerDirection == 2 && slot.Directions == 0 ), "a whole and a burst frame per colour" );
+		Assert.IsTrue( balloons[0].Frames.All( frame => frame.OriginY < -70 ), "the balloon floats above its anchor" );
+		var keys = new HashSet<string> { balloons[0].PackKey };
+		foreach ( var (theme, set, heads) in new[] { ("jungle", "SPR_TI", 1), ("fantasy", "SPR_BK", 0), ("hallow", "SPR_HK", 0), ("space", "SPR_SK", 1) } )
+		{
+			var costume = GuestSpriteAtlas.LoadCostumes( theme ).Single();
+			Assert.AreEqual( set, costume.Name, theme );
+			Assert.AreEqual( 8, costume.Animations.Animations.Count( slot => !slot.IsEmpty ), $"{theme}: the kids' slots" );
+			Assert.IsTrue( costume.FramesPerDirection( GuestSpriteAtlas.WalkSlot ) == 8, theme );
+			Assert.IsTrue( keys.Add( costume.PackKey ), costume.PackKey );
+			StringAssert.StartsWith( costume.PackKey, $"esprites/{theme}/costumes/" );
+			Assert.AreEqual( heads, GuestSpriteAtlas.LoadCostumeHeads( theme ).Count, $"{theme} costume heads" );
+		}
+	}
+
+	/// <summary>The thought bubbles (GUEST-006): <c>SPR_TB</c> with one frame per slot for the guests' sixteen, then <c>SPR_TC</c> with the staff's.</summary>
+	[TestMethod]
+	public void ThoughtBubblesLoadInCategoryOrder()
+	{
+		var banks = GuestSpriteAtlas.LoadThoughts();
+		CollectionAssert.AreEqual( new[] { "SPR_TB", "SPR_TC" }, banks.Select( bank => bank.Name ).ToArray() );
+		Assert.AreEqual( 16, banks[0].Frames.Length );
+		Assert.AreEqual( 10, banks[1].Frames.Length );
+		for ( var thought = 1; thought <= 22; thought++ )
+		{
+			var slot = ThoughtRenderer.Slot( thought );
+			var bank = banks[slot < ThoughtRenderer.FirstBankSlots ? 0 : 1];
+			Assert.IsFalse( bank.Animations.Animations[slot % ThoughtRenderer.FirstBankSlots].IsEmpty, $"thought {thought} slot {slot}" );
+		}
+		Assert.AreEqual( 8, banks[1].GetFrame( ThoughtRenderer.Slot( 20 ) - 16, 0, 0 ), "the tired staff's sleeping bubble is SPR_TC frame 8" );
+		Assert.AreEqual( 2, banks[1].GetFrame( ThoughtRenderer.Slot( 5 ) - 16, 0, 0 ), "Pleased: the thumb up, SPR_TC frame 2" );
+	}
+
+	/// <summary>
 	/// Every theme's shops: only the balloon shops (ShopType 6) carry <c>UsageInfo.AppearanceEffect</c> 1 and only the costume shops (ShopType 5) carry 2
 	/// (ECON-044, tp.exe <c>0x004FE1E0</c>).
 	/// </summary>

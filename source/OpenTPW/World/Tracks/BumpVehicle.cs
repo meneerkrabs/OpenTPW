@@ -21,12 +21,16 @@ public sealed class BumpVehicle
 	public const int Retarget = 0x10000;
 	/// <summary>The vehicle aims at an intermediate waypoint toward its target buoy.</summary>
 	public const int Waypoint = 0x20000;
+	/// <summary>The bumper car chases another car (+0x80) for the countdown in +0x8C.</summary>
+	public const int Chasing = 0x4;
 	/// <summary>The vehicle was bumped this tick.</summary>
 	public const int Bumped = 0x40000;
 	/// <summary>The damping is cut to 70 % (kart finish slowdown).</summary>
 	public const int Slowed = 0x80000;
 	/// <summary>The vehicle was just created: it is launched for the first time.</summary>
 	public const int FirstLaunch = 0x100000;
+	/// <summary>The jungle bumper car's extra presentation object (+0xC, the wake mesh) exists (flags 0x3000000 at the first launch).</summary>
+	public const int Wake = 0x2000000;
 	/// <summary>A crash sound already played this tick.</summary>
 	public const int Crunched = 0x200000;
 	/// <summary>The controller's first vehicle (the one whose model the controller tracks).</summary>
@@ -92,6 +96,10 @@ public sealed class BumpVehicle
 	/// <summary>Consecutive wall contacts in the current 32-tick window (+0xA4) and the window's tick count (+0xA8).</summary>
 	public int WallHits { get; set; }
 	public int WallWindow { get; set; }
+	/// <summary>The slot of the car this bumper car chases (+0x80, −1 for none); the chase flag 4 is set while it does.</summary>
+	public int ChaseTarget { get; set; } = -1;
+	/// <summary>Whether the car holds the engine voice (+0x20 non-zero): only the controller's first carrying car starts one, at the first launch of a running ride.</summary>
+	public bool Engine { get; set; }
 	/// <summary>The guests aboard, in boarding order.</summary>
 	public List<int> Riders { get; } = new();
 	/// <summary>Spray particles the boat made (cosmetic counter).</summary>

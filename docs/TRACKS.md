@@ -233,7 +233,7 @@ The golden values freeze this implementation of the traced rules; they are not c
 
 ## Open points
 
-- Jumps and tunnels, the bumper cars' chase mode, effects and drawing (TRACK-015, 029, 030, 031), the water animation and arm masks, the boats' spray particles (TRACK-016), the
+- Jumps and tunnels, the bumper cars' arena centre and look (TRACK-030, 031), the water animation and arm masks, the boats' spray particles (TRACK-016), the
   kart sounds' catalogue ids and the engine pitch (TRACK-025), the advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
@@ -349,7 +349,21 @@ first car without riders); when the cars are full or ten seconds passed after th
 **Saves**: a bumper controller is saved like a kart's (phase, state, duration, guest lists, cars); it has no sections. A park-resume save from before the controller restores
 the ride freshly (TRACK-027) and hands the riders it still held to the new leaving list.
 
-**Open**: chase mode (TRACK-029), the arena centre (TRACK-030), drawing and effects (TRACK-031).
+**Chase** (`0x54A040`, `0x5474B0`): at a relaunch a car that is neither chasing nor just bumped draws `rand & 0xF`; at 0..2, with two or more cars, it locks onto a random other car that is not unloading
+(+0x80 = its slot, countdown 90, flags `(flags & 0xFFEBFF85) | 0x8004`). Each step the countdown falls; at 0, or when the target's flags `& 0x40021` are not exactly 1 (bumped or going home), the car relaunches.
+Otherwise it aims at the target's position plus its velocity times the ticks to reach it (at most 24), pulled onto the arena rim when outside, and steers there with the shared steering.
+
+**Effects and drawing**: the crash asks for code 5 (the CRUNCH sound, global `cat_rides` 12) above impulse 0x82 for hallow, fantasy and space; the jungle type (−1) has no case in the crash switch and is silent
+(`0x546C80`). Non-jungle cars that carry a rider throw sparks (particle 1, code 1 = `cat_rides` 24) on every 32nd tick when `(lcg >> 16) & 3 == 2`. The first carrying car of a running ride
+starts the engine voice (EventMap slot 0), stopped when it hands its riders over or is removed (no stop sound, unlike karts). The drawn heading follows the steering heading (jungle) or the velocity (others) at
+speed / 1000 of the angle gap. Cars are the ride's supplemental meshes (`b_car` jungle, `halcar`, `spacecar`, `bbugscar`; model base 1 in the jungle, 0 elsewhere) drawn by the kart renderer without a kit
+(`TrackFamily.Bumper`), the jungle `b_wake` as the shadow instance, and the riders' heads hang from the car's head dummy.
+
+**Saves** (park-resume): the validator accepts a bumper session (durations up to 0x10000 ticks, the wall counter −1, the chase target). `OPENTPW_SMOKE_BUMPER=1` on both phases of the park-resume smoke buys and places the theme's
+bumper ride, saves with a session running and guests in the cars, restores through the menu load and matches the 600 continuation hashes. The digest holds the chase target and the drawn heading of bumper cars only.
+
+**Open**: the arena centre (TRACK-030), the ground-only pose probes and the unmapped sound ids (TRACK-031).
 
 **Tests**: `BumperCarAssetTests` (with `OPENTPW_GAME_PATH`): each theme's real script with 16 guests for ten simulated minutes: every guest boards and is released, the ride cycles at least twice,
-nobody stays in `GuestState.Using`, the phase returns to loading after each session; `BumpControllerTests` pins the arena, the duration countdown and the release.
+nobody stays in `GuestState.Using`, the phase returns to loading after each session; `BumperControllerTests` (asset-free) pins the arena, the countdown, the release, the chase, the crash codes and the saves. The native smoke places a bumper ride, loads two riders, runs a short session and captures
+`artifacts/native-smoke-original-bumper-cars.png`.

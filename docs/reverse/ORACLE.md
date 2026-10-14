@@ -1271,7 +1271,7 @@ The shipped values are 1, 1, 1, 2, 2, 2, 2 and 7, 5, 5 in every theme (`GuestAss
 *The score.* In order: the guest's last used attraction, when it still exists and is of the same type (`+14`) as the candidate, scores the candidate 0 (`0xe92d4..0xe931c`). The seven
 matches are
 (1) distance `100 - min(100, 100 (dx² + dy²) / 450)` for the squared displacement of the guest's cell and the candidate's back-of-queue cell (`0xdd3f4`), divided (unsigned) by the signed
-cell record word `+8` at that cell when it is nonzero (the environment grid has component 4 there; C# has none, GUEST-001);
+cell record word `+8` at that cell when it is nonzero (the environment grid has component 4 there, which only the fireworks' row 7 writes; C# reads it since GUEST-001 was retired);
 (2) queue `100 - 100 count / (4 max(cells, 1))` in unsigned 32 bits, only when the squared distance is at most 8 (else the match and its weight are 0), **not clamped**: a queue above four per cell wraps, and the
 whole sum wraps with it (count 9 in 1 cell gives -125 as a word);
 (3) excitement `2 (50 - min(50, |preferred - live excitement|))` over the bytes of `0xeb7e4` and `0xe02ec(ride, 0)`, its weight counted only when the low byte of the type's `ExcitementLevel` (`0xe02ec(ride, 1)`) is nonzero;
@@ -1308,7 +1308,7 @@ happiness from the ride itself (a refused join still costs `SmallHappinessChange
 `attraction-choice` 515 (99; the score 9 is not a candidate in the original). Mutation checks: `450 → 449`, `<= → <` of the new-ride test, the good band `<= 15` and the swapped tie parity are caught.
 
 *Not changed / open.* The decision cadence (C# decides every 3 s; the original every 30+ turns in state 6 behind a draw modulo 3, with the idle interlude and the happiness loss of an empty decision), the minor decision, the
-thing-list order and the counts-test `0xdc834` conditions (ARRIVAL-003, GUEST-002), the environment grid and its component 4 (GUEST-001), price eligibility (GUEST-003), the shop and toilet effects on the meters (GUEST-005, F18) and the thought
+thing-list order and the counts-test `0xdc834` conditions (ARRIVAL-003, GUEST-002), the environment grid and its component 4 (GUEST-001, retired: only fireworks write it), price eligibility (GUEST-003), the shop and toilet effects on the meters (GUEST-005, F18) and the thought
 selection `0xe8c58` (single needs above 99, both hunger and thirst above 90, happiness above 99 or below 10 and a litter ratio: thresholds still 70 in C#) stay approximations. The Windows tp.exe was not compared.
 
 **F25, the guests' needs and starting values (GUESTS.md "Needs", `NeedsUpdate`, `GuestStart`, `UseEffects`; fixed in C#).** The lead for this finding was another fork's static
@@ -1365,7 +1365,7 @@ for each such need. A thirsty guest at 90 who reaches a drinks shop with a thirs
 penalty. First counterexamples: `guest-needs-turn`, id 4 on turn 0, needs 10 and counter 120: original thirst 12, hunger 12, toilet 11, counter 119, the former rule thirst 10.11 and counter 119.752;
 `guest-constructor`, world state 0: type 2, money 528, thirst 12, hunger 47, toilet 4, counter 109 and happiness 50, against type 7, money 522, needs 0, counter 122 and happiness 60.
 
-*Not changed / open.* The environment words of the cells (GUEST-006), the thought pick and its thresholds (GUEST-009: the original's `0xe8c58` takes hunger and thirst both above 90, a single need above 99 or happiness above 99
+*Not changed / open.* The environment words of the cells (GUEST-006), the thought pick and its thresholds (since modelled from tp.exe `0x4fc8a0`, GUEST-006; the Mac `0xe8c58` takes hunger and thirst both above 90, a single need above 99 or happiness above 99
 or below 10), the prankery byte (GUEST-007), the energy meter (OpenTPW only, GUEST-008), the guest's thing id against OpenTPW's guest id for the phase (WALK-010), the litter meter and the toilet branch of the use routine
 (GUEST-005). The Windows executables were not compared (the x86 oracle was not run for this finding).
 

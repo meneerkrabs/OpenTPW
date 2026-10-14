@@ -877,6 +877,9 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		// a window closed past the in-app Quit's check still writes earned awards a failed save left behind
+		if ( progressOwner is { Dirty: true } owner && !owner.TryFlush() )
+			Log.Warning( $"OpenTPW progress could not be saved on exit: {owner.Error}" );
 		DetachProgress();
 		AbandonParkBuild();
 		Advisor?.Dispose();

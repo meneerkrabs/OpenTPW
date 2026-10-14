@@ -48,13 +48,14 @@ internal sealed partial class GameFlow
 		try
 		{
 			RequireProgressSaved( newPark: true );
-			if ( !GameEditions.Capabilities.Economy || GameEditions.IsThemeParkInc || !ObjectCatalog.Themes.Contains( theme, StringComparer.Ordinal ) )
-				throw new NotSupportedException( "Application-owned progression is available only for Theme Park World." );
+			// Instant Action keeps no progress, so it starts in every edition as before; only Full Simulation needs Theme Park World's progression
 			if ( mode == GameMode.InstantAction )
 			{
 				QueueLevel( theme, () => { if ( Owns( screen ) ) StartInstantPark( theme ); }, prepareBuyWindow: true );
 				return;
 			}
+			if ( !GameEditions.Capabilities.Economy || GameEditions.IsThemeParkInc || !ObjectCatalog.Themes.Contains( theme, StringComparer.Ordinal ) )
+				throw new NotSupportedException( "Application-owned progression is available only for Theme Park World." );
 			if ( mode != GameMode.FullSimulation ) throw new InvalidDataException( "Unknown park mode." );
 			var state = PlayerTicketFile.ReadIfPresent( ProgressPath );
 			var offeredCost = FileSystem.FileExists( $"/levels/{theme}/global.sam" ) ? TrustedThemeEntryCost( theme ) : (int?)null;
@@ -73,6 +74,9 @@ internal sealed partial class GameFlow
 			}
 			if ( state != null ) { Admit( screen ); return; }
 			if ( owner == null || screen == null ) throw new InvalidOperationException( "Choose New Full Simulation in the lobby to confirm new OpenTPW progress." );
+			// A theme that costs more than the one starter key (Fantasy 3, Space 5 in the shipped global.sam) is refused before the consent, which could not admit it
+			if ( offeredCost is int cost && cost > PlayerProgressAdmission.StarterKeys )
+				throw new PlayerProgressKeysException( cost, PlayerProgressAdmission.StarterKeys );
 			ProgressChoiceScreen? confirmation = null;
 			confirmation = ProgressChoiceScreen.Message( "newProgress", () => Strings.Extra( OpenTpwText.NewProgressConsent ),
 				(() => Strings.Extra( OpenTpwText.StartNewProgress ), () => { if ( confirmation!.TryActivate( owner.Stack ) ) Admit( confirmation ); }

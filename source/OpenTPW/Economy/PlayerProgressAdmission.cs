@@ -12,6 +12,8 @@ internal sealed class PlayerProgressAdmission
 	private bool published;
 	public string Theme { get; }
 	public bool Creating { get; }
+	/// <summary>The keys a new progress history starts with.</summary>
+	public const int StarterKeys = 1;
 	public bool IsActive => ownsRequest();
 	public PlayerTicketLedger Ledger { get; }
 
@@ -21,7 +23,7 @@ internal sealed class PlayerProgressAdmission
 		this.path = path; Theme = theme; this.offeredCost = offeredCost; this.cost = cost;
 		this.ownsRequest = ownsRequest; this.flushPrevious = flushPrevious;
 		expectedDigest = observed?.Digest; Creating = observed == null;
-		Ledger = observed?.Ledger ?? PlayerTicketLedger.Restore( new PlayerTicketLedger().Capture() with { ExtraKeys = 1 } );
+		Ledger = observed?.Ledger ?? PlayerTicketLedger.Restore( new PlayerTicketLedger().Capture() with { ExtraKeys = StarterKeys } );
 	}
 
 	public void Validate()

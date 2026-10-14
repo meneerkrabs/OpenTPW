@@ -10,7 +10,8 @@ public enum GameSpeed
 {
 	Paused = 0,
 	Normal = 1,
-	// [APPROX:ECON-004] Fast x2 and Fastest x4 are OpenTPW's buttons: the original steps its clock scale by 1.25 within 0.25..2 (x4 exceeds its maximum) with key actions whose physical keys are unnamed — evidence needed: the key tokens' names and whether the shipped game shows a speed control
+	// [BIN:TPW-EXE:0x40c3b0 speed actions] the key table at 0x7480a0 maps VK_SUBTRACT (0x6D) to 0x40c3b0 (rate × 0.8, 0x403340), VK_ADD (0x6B) to 0x40c3c0 (rate × 1.25, 0x4032f0) and VK_MULTIPLY (0x6A) to 0x40c3d0 (rate 1.0, 0x4032d0); both steps clamp to 0.25..2.0 (0x6fd648 / 0x6fd650) on the clock 0x785970 +0x20
+	// [APPROX:ECON-004] Fast x2 and Fastest x4 are OpenTPW's buttons: the original has no fixed speeds; numpad + and numpad − multiply its clock rate by 1.25 and 0.8 within 0.25..2 and numpad * resets it to 1 (x4 exceeds its maximum) — evidence needed: whether the shipped game shows a speed control and which action it sends
 	Fast = 2,
 	Fastest = 4
 }
@@ -59,7 +60,8 @@ public static class ParkCalendar
 	public const long SecondsPerTurn = 15000 / 4;
 	// [BIN:STP-PPC:0x100E4348 calendar start] TbTimeStamp::SetTime( 2000, 1, 1, 0, 0, 0, 0 )
 	public static readonly DateTime Epoch = new( 2000, 1, 1, 0, 0, 0, DateTimeKind.Unspecified );
-	// [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms park turns (4.03 a second at normal speed, the rate the original's scheduler executes at its default clock scale 1.0 over a millisecond clock), without the original's 31 ms substeps, its limit of three park turns per call and its drop of a backlog above 2000 ms (ORACLE F30) — evidence needed: the clock route a real run selects (the library's millisecond clock is a microsecond API on every route read, none executed) and the original's behaviour under load
+	// [BIN:TPW-EXE:0x54e360 park frame] case 10: the backlog over the scaled millisecond clock (0x4031e0) is cut to 2000 ms, each substep adds 31 ms, every eighth substep is a park turn (0x516380, 8 × 31 = 248 ms) while fewer than three ran this frame (DAT_00879064, reset after the loop)
+	// [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms park turns (4.03 a second at normal speed), without the original's 31 ms substeps, its limit of three park turns per frame (further due turns in that frame are skipped, not deferred) and its drop of a backlog above 2000 ms — evidence needed: the clock route a real run selects (QueryPerformanceCounter when its flag is set, else timeGetTime) and the original's behaviour under load
 	private const long TickTurnNumerator = 1000;
 	private const long TickTurnDenominator = (long)TicksPerSecond * TurnMilliseconds;
 	// [BIN:STP-PPC:0x101C5C4C TbTimeStamp::GetTime] the hour comes from the OS LongDateRec hour field (0–23)

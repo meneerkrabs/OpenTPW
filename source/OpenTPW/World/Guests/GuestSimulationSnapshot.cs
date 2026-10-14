@@ -171,6 +171,9 @@ public sealed record RideVisitorBridgeSnapshot
 	public required int[] OnRide { get; init; }
 	/// <summary>WALKOFF guests waiting for WALKGET, in FIFO order.</summary>
 	public required int[] WalkingOff { get; init; }
+	/// <summary>The script times at which each walking-off guest may be handed out, parallel to <see cref="WalkingOff"/>; null for a ride whose WALKOFF completes at once (every ride but the tour rides).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public double[]? WalkingOffReady { get; init; }
 	/// <summary>Guests already picked by HOP, sorted.</summary>
 	public required int[] Hopped { get; init; }
 	/// <summary>LIMBO entries in slot order.</summary>

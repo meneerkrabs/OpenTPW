@@ -340,6 +340,7 @@ public partial class Level : IDisposable
 			{
 				SetupPaths();
 				SetupTracks();
+				SetupTours();
 			}
 			if ( OriginalTerrain != null && Guests != null )
 			{
@@ -382,11 +383,13 @@ public partial class Level : IDisposable
 			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume };
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
+		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );
 		if ( costumeHeads.Count > 0 )
 		{
 			CostumeHeadRenderer = new RideHeadRenderer( Guests, costumeHeads, Objects ) { Draws = guest => guest.InCostume };
 			CostumeHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
+			CostumeHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 			AddCoasterHeads( CostumeHeadRenderer );
 		}
 		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadBalloons() );
@@ -838,6 +841,8 @@ public partial class Level : IDisposable
 		foreach ( var renderer in trackRenderers.Values )
 			renderer.Dispose();
 		trackRenderers.Clear();
+		tourRenderer?.Dispose();
+		tourRenderer = null;
 		DetachOverlay();
 		TextOverlay?.Dispose();
 	}

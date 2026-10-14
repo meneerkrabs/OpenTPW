@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// The kart and water track mode of <see cref="CellBuildTool"/> (tool mode 11 or 16, the cell type the drag writes): the line snaps to
-/// the dominant axis in steps of two cells, every tile of the line is charged <c>Costs.*TrackCell</c> once, the path cells under a tile
+/// the axis of the larger offset in steps of two cells, every tile of the line is charged <c>Costs.*TrackCell</c> once, the path cells under a tile
 /// are cleared, and consecutive tiles are connected. The level re-walks the circuit through <paramref name="changed"/> after each commit.
 /// </summary>
 public sealed class TrackLineWriter : ICellLineWriter
@@ -23,17 +23,21 @@ public sealed class TrackLineWriter : ICellLineWriter
 	public CellToolMode Mode => builder.Family == TrackFamily.Water ? CellToolMode.WaterTrack : CellToolMode.KartTrack;
 
 	/// <summary>
-	/// The end of a track line from <paramref name="start"/> toward <paramref name="cursor"/>: the dominant axis keeps the cursor's
-	/// coordinate in whole two-cell steps (rounded toward the start), the other axis keeps the start's. A tie keeps X.
+	/// The end of a track line from <paramref name="start"/> toward <paramref name="cursor"/>: the axis is X only when |dx| &gt; |dy| (a tie goes to Y),
+	/// the end keeps the start's other coordinate and lies on the axis at start + 2 × floor((cursor − start) / 2), so an odd distance rounds toward the
+	/// start in the + direction and away from it in the − direction.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0053AAC0 track line snap] the line tool snaps to the dominant axis and steps two cells per tile (a tile is 2 × 2 cells)
-	// [APPROX:TRACK-009] the rounding of a cursor that lies between two tile steps is toward the start; the original's rounding rule is not traced — evidence needed: the snap routine 0x0053AAC0 for odd distances
+	// [BIN:TPW-EXE:0x0053AAC0 track line snap] instruction level 0x53AAC0..0x53AB21: the axis is X only when |dx| > |dy| (the jle at 0x53AB02 sends a tie to Y); with u = start − cursor on that axis an odd positive u is incremented and the end is start − 2 × trunc(u / 2), which is start + 2 × floor((cursor − start) / 2); the walk steps ±2 along the axis at the start's other coordinate
 	public static (int X, int Y) SnapEnd( (int X, int Y) start, (int X, int Y) cursor )
 	{
-		var end = ParkPathBuilder.SnapEnd( start, cursor );
-		var step = TrackStation.TileCells;
-		return (start.X + (end.X - start.X) / step * step, start.Y + (end.Y - start.Y) / step * step);
+		var dx = cursor.X - start.X;
+		var dy = cursor.Y - start.Y;
+		return Math.Abs( dx ) > Math.Abs( dy )
+			? (start.X + 2 * FloorDiv( dx, 2 ), start.Y)
+			: (start.X, start.Y + 2 * FloorDiv( dy, 2 ));
 	}
+
+	private static int FloorDiv( int value, int divisor ) => (int)Math.Floor( (double)value / divisor );
 
 	/// <summary>The tile origins of the line from <paramref name="start"/> to <paramref name="end"/>, both included, two cells apart.</summary>
 	public static IReadOnlyList<(int X, int Y)> LayLine( (int X, int Y) start, (int X, int Y) end )

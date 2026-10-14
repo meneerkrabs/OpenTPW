@@ -98,11 +98,19 @@ public class TrackCircuitTests
 	[TestMethod]
 	public void SnapKeepsTheDominantAxisInWholeTileSteps()
 	{
-		Assert.AreEqual( (14, 10), TrackLineWriter.SnapEnd( (10, 10), (15, 11) ), "an odd distance rounds toward the start" );
+		Assert.AreEqual( (14, 10), TrackLineWriter.SnapEnd( (10, 10), (15, 11) ), "an odd distance in the + direction rounds toward the start" );
 		Assert.AreEqual( (16, 10), TrackLineWriter.SnapEnd( (10, 10), (16, 13) ) );
 		Assert.AreEqual( (10, 14), TrackLineWriter.SnapEnd( (10, 10), (11, 15) ) );
 		Assert.AreEqual( (10, 10), TrackLineWriter.SnapEnd( (10, 10), (11, 10) ), "one cell is less than a tile" );
-		Assert.AreEqual( (8, 10), TrackLineWriter.SnapEnd( (10, 10), (7, 10) ), "toward −X too" );
+		Assert.AreEqual( (6, 10), TrackLineWriter.SnapEnd( (10, 10), (7, 10) ), "an odd distance in the − direction rounds away from the start: start + 2 × floor(−3 / 2) ([BIN:TPW-EXE:0x53AAC0], TRACK-009)" );
+		Assert.AreEqual( (8, 10), TrackLineWriter.SnapEnd( (10, 10), (9, 10) ), "one cell toward −X already makes a tile step" );
+		Assert.AreEqual( (10, 8), TrackLineWriter.SnapEnd( (10, 10), (10, 9) ), "and toward −Y" );
+		Assert.AreEqual( (10, 12), TrackLineWriter.SnapEnd( (10, 10), (13, 13) ), "a tie |dx| = |dy| goes to Y (the jle at 0x53AB02)" );
+		Assert.AreEqual( (10, 12), TrackLineWriter.SnapEnd( (10, 10), (12, 12) ) );
+		Assert.AreEqual( (10, 10), TrackLineWriter.SnapEnd( (10, 10), (10, 10) ), "no offset, no line" );
+		Assert.AreEqual( (12, 10), TrackLineWriter.SnapEnd( (10, 10), (12, 11) ), "X only when |dx| > |dy|" );
+		var committed = TrackLineWriter.SnapEnd( (10, 10), (7, 10) );
+		Assert.AreEqual( committed, TrackLineWriter.SnapEnd( (10, 10), committed ), "a snapped end snaps to itself, so a preview and its commit agree" );
 		CollectionAssert.AreEqual( new[] { (14, 10), (14, 12), (14, 14) }, TrackLineWriter.LayLine( (14, 10), (14, 14) ).ToArray() );
 		CollectionAssert.AreEqual( new[] { (14, 10), (12, 10) }, TrackLineWriter.LayLine( (14, 10), (12, 10) ).ToArray() );
 	}

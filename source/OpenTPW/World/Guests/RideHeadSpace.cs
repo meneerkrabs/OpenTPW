@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The head space of one ride model and the slot table a ride script keeps for it (ADDHEAD / DELHEAD).
+/// The head space of one ride model and the slot table the ride's root script keeps for it (ADDHEAD / DELHEAD).
 /// A head id is the <see cref="ModelDummyAttribute.Value"/> of a dummy attribute record whose type has flag 0x80; the
 /// ids that run from 1 give the table length. Slot <c>n</c> holds the visitor on head id <c>n + 1</c>, 0 when free.
 /// </summary>
@@ -9,7 +9,8 @@ namespace OpenTPW;
 // [BIN:STP-PPC:0x100B0F90 DELHEAD] every slot holding the visitor is zeroed, and a head hung on it is taken down
 // [BIN:STP-PPC:0x1019B298 head lookup] the 20-byte lookup records of the model's lookup state: a record matches head id k when its +4 word is k and its flags have 0x80
 // [BIN:STP-PPC:0x1019B56C head hang] the matched record gets flag 0x2 and a sprite handle, and the lookup state counts one more attached head
-// [BIN:STP-PPC:0x100B2BA0 script init] counts head ids from 1 until the lookup returns -1, allocates 4 bytes per id at script +0x30 and stores the count at +0x4C [0x100B32D4..0x100B3368]; the init also runs for SPAWNCHILD and SPAWNSOUND, so every script has its own table
+// [BIN:STP-PPC:0x100B2BA0 script init] counts head ids from 1 until the lookup returns -1, allocates 4 bytes per id at script +0x30 and stores the count at +0x4C [0x100B32D4..0x100B3368]
+// [BIN:TPW-EXE:0x00558D2B script init] only the root script gets a table; a child or sound script is created with thing id 0, which skips the lookup and the allocation, so its ADDHEAD and DELHEAD do nothing
 // [BIN:STP-PPC:0x1019AE64 lookup construction] attribute record i belongs to node header+0x46 (Unknown46) + i; below the mesh count (+0x44) it is a mesh record, else a dummy record [0x1019AE64, 0x1019B7CC]
 // [BIN:STP-PPC:0x1019B298 head id lookup] a head id is the FIRST attribute record with type flag 0x80 whose value equals the id; every shipped head record has type 0xb1/0xf1, so it has flag 0x30 and a world matrix
 public sealed class RideHeadSpace
@@ -19,7 +20,6 @@ public sealed class RideHeadSpace
 
 	private readonly int[] nodes;
 	private readonly int[] visitors;
-	private readonly int seed;
 	// An owned seeded .NET-compatible generator whose full state the park-resume snapshot stores (ScriptRandomTests
 	// proves its draws equal a seeded System.Random's).
 	private readonly ScriptRandom random;
@@ -27,7 +27,6 @@ public sealed class RideHeadSpace
 	private RideHeadSpace( int[] nodes, int seed )
 	{
 		this.nodes = nodes;
-		this.seed = seed;
 		visitors = new int[nodes.Length];
 		random = new ScriptRandom( seed );
 	}
@@ -42,7 +41,8 @@ public sealed class RideHeadSpace
 	/// The head space of <paramref name="model"/>, or null when it has no head id 1 (the original's table is null then, so
 	/// ADDHEAD does nothing). <paramref name="seed"/> drives the slot draw; the original draws from its global generator.
 	/// </summary>
-	// [APPROX:HEADS-001] the slot draw uses the original's formula, labs(worldRand() >> 1) % length (0x100B0E9C), on a generator seeded per ride instead of the shared world stream 0x10105328 (s * 1664525 + 1013904223), which is not ported (DET-015)
+	// [BIN:TPW-EXE:0x00554CB5 ADDHEAD slot draw] the PC loop draws labs(world() >>> 1) % [+0x4C] from the global world generator 0x516330 until it finds a free slot (0x554CAF–0x554CCB)
+	// [APPROX:HEADS-001] the slot draw uses the original's formula, labs(worldRand() >>> 1) % length (tp.exe 0x554CB5), on a stream seeded per ride instead of the shared world generator 0x516330 (s * 1664525 + 1013904223, rotated right by 13, absolute value), which is not ported (DET-013)
 	public static RideHeadSpace? Create( ModelFile model, int seed )
 	{
 		ArgumentNullException.ThrowIfNull( model );
@@ -79,14 +79,6 @@ public sealed class RideHeadSpace
 		}
 		return NoRecord;
 	}
-
-	/// <summary>
-	/// A new empty table with this table's length and nodes and its own draw stream: every script (root, child, sound) has
-	/// its own head table, allocated by the script init at its start.
-	/// </summary>
-	// [BIN:STP-PPC:0x100B2BA0 script init] also runs for SPAWNCHILD (63) and SPAWNSOUND (64)
-	// [APPROX:HEADS-005] whether a child takes its parent's thing id (+0xAC) is untraced; the child's draw stream is seeded from the ride's seed and a child index
-	internal RideHeadSpace NewTable( int index ) => new( (int[])nodes.Clone(), unchecked( seed * 31 + index ) );
 
 	/// <summary>The visitor on slot <paramref name="slot"/>, 0 when free.</summary>
 	public int VisitorAt( int slot ) => visitors[slot];

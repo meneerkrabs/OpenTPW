@@ -8,7 +8,7 @@ namespace OpenTPW;
 	/// policy — no economy, staff, advisor, front end, continuation saves or sharing. Layout checkpoints start fresh sessions. Everything here is an OpenTPW extension, not
 /// traced Theme Park Inc behaviour.
 /// </summary>
-// [APPROX:TPI-903] the slice's frame is gated by OpenTPW's capability policy, not by traced Theme Park Inc behaviour
+// [EXT:tpi-capability-gates] the slice's frame is gated by OpenTPW's capability policy (a scope decision), not by traced Theme Park Inc behaviour
 internal sealed partial class GameFlow
 {
 	/// <summary>The experimental HUD of the running Theme Park Inc level (null outside the slice).</summary>
@@ -27,7 +27,7 @@ internal sealed partial class GameFlow
 	/// modal menu is open) and the crowd audio follows the park's guests. Nothing else of the reference game's frame
 	/// (advisor, staff voices, weather sounds) runs: those systems need the economy the slice refuses.
 	/// </summary>
-	// [APPROX:TPI-902] the guests and scripts that run here are the ported Theme Park World rules over Theme Park Inc data
+	// [EXT:tpi-twp-guest-rules] the guests and scripts that run here are the ported Theme Park World rules over Theme Park Inc data (an OpenTPW scope decision); no Theme Park Inc guest behaviour is claimed
 	private void UpdateThemeParkIncSlice( Level level, ThemeParkIncHud hud, UiInput input )
 	{
 		var captured = hud.Update( Context, input );

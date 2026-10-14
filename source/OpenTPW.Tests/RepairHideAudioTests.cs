@@ -36,7 +36,7 @@ public class RepairHideAudioTests
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
 		mixer = new AudioMixer( null ); system = new SoundEventSystem( mixer, 7 ); var category = Empty<SoundCategory>(); var catalog = Empty<SoundCatalog>();
 		SoundEntry Sound( int bank ) => new( 100, 100, 0, 0, 0, 0, 1, 100, new[] { new SoundSample( 1, 65535, 0, (ushort)bank, 0 ) }, Array.Empty<SoundLink>(), Array.Empty<byte>() );
-		Set( catalog, "Events", new[] { new SoundEvent( 111, 0, 8, 0, new[] { Sound( 1 ) } ), new SoundEvent( 211, 0, 8, 0, new[] { Sound( 2 ) } ), new SoundEvent( 75, 0, 8, 0, new[] { Sound( 3 ) } ) } ); Set( category, "Catalog", catalog );
+		Set( catalog, "Events", new[] { new SoundEvent( 111, 0, 8, 0, new[] { Sound( 1 ) } ), new SoundEvent( 211, 0, 8, 0, new[] { Sound( 2 ) } ), new SoundEvent( 75, 0, 0, 0, new[] { Sound( 3 ) } ) } ); Set( category, "Catalog", catalog );
 		var decoded = (Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem ).GetField( "decoded", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( system )!;
 		for ( var bank = 1; bank <= 3; bank++ ) decoded[(category, bank, 1)] = Pcm( (short)(bank * 1000) );
 		AudioField( "events", system ); AudioField( "<Rides>k__BackingField", category ); AudioField( "<Kids>k__BackingField", category );
@@ -74,11 +74,12 @@ public class RepairHideAudioTests
 	[TestMethod]
 	public void HideSamplesOncePerPairAndInvalidOrStoppedOriginsRetainFlatFallback()
 	{
-		var owner = new OriginalObjectRuntime( entry ); Repair( owner ); foreach ( var voice in mixer.Voices ) Assert.IsNull( voice.Position );
-		Assert.IsNotNull( owner.CaptureSnapshot() ); var calls = 0; Vector3? value = null; Bind( owner, () => { calls++; return value; } );
+		// the fixture's events 111 and 211 carry flag 0x8, so even a flat pair loops ([BIN:TPW-EXE:0x6bc621]) and an owner with live loops refuses capture until they are stopped
+		var owner = new OriginalObjectRuntime( entry ); Repair( owner ); foreach ( var voice in mixer.Voices ) { Assert.IsNull( voice.Position ); Assert.IsTrue( voice.Loops ); }
+		Assert.ThrowsException<NotSupportedException>( () => owner.CaptureSnapshot() ); var calls = 0; Vector3? value = null; Bind( owner, () => { calls++; return value; } );
 		foreach ( var invalid in new Vector3?[] { null, new Vector3( float.NaN, 0, 0 ), new Vector3( 0, float.PositiveInfinity, 0 ), new Vector3( 0, 0, float.NegativeInfinity ) } )
-		{ value = invalid; var before = mixer.Voices.Count; Repair( owner ); foreach ( var voice in mixer.Voices.Skip( before ) ) { Assert.IsNull( voice.Position ); Assert.IsFalse( voice.Loops ); } }
-		Assert.AreEqual( 4, calls ); Assert.IsNotNull( owner.CaptureSnapshot() ); owner.Stop(); value = new Vector3( 2, 3, 4 ); Repair( owner ); Assert.AreEqual( 4, calls ); Assert.IsNull( mixer.Voices.Last().Position );
+		{ value = invalid; var before = mixer.Voices.Count; Repair( owner ); foreach ( var voice in mixer.Voices.Skip( before ) ) { Assert.IsNull( voice.Position ); Assert.IsTrue( voice.Loops ); } }
+		Assert.AreEqual( 4, calls ); owner.Stop(); Assert.IsNotNull( owner.CaptureSnapshot() ); value = new Vector3( 2, 3, 4 ); Repair( owner ); Assert.AreEqual( 4, calls ); Assert.IsNull( mixer.Voices.Last().Position );
 	}
 	[TestMethod]
 	public void ChangingProviderIsSampledPerHidePairAndOldVoicesKeepTheirSnapshot()
@@ -93,11 +94,12 @@ public class RepairHideAudioTests
 	[DataRow( 2 )]
 	[DataRow( -1 )]
 	[DataRow( int.MaxValue )]
-	public void EveryNonzeroShowKeepsFlatFamily75WithoutSamplingOrLoopOwnership( int show )
+	public void EveryNonzeroShowPlaysFamily75AtTheObjectWithoutLoopOwnership( int show )
 	{
-		var owner = new OriginalObjectRuntime( entry ); var calls = 0; Bind( owner, () => { calls++; throw new AssertFailedException( "Show must not sample placement." ); } );
-		Repair( owner, show ); var voice = mixer.Voices.Single(); Assert.IsNull( voice.Position ); Assert.IsFalse( voice.Loops ); Assert.AreEqual( 0, calls ); Assert.IsNotNull( owner.CaptureSnapshot() );
-		using var reference = new AudioMixer( null ); reference.Play( Pcm( 3000 ), AudioChannel.Effects ); CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
+		// [BIN:TPW-EXE:0x55635f] the repair-start sound is submitted at the object's position (0x556a80), as the hide pair is
+		var owner = new OriginalObjectRuntime( entry ); var calls = 0; var place = new Vector3( 4, 5, 6 ); Bind( owner, () => { calls++; return place; } );
+		Repair( owner, show ); var voice = mixer.Voices.Single(); Assert.AreEqual( place, voice.Position ); Assert.IsFalse( voice.Loops ); Assert.AreEqual( 1, calls ); Assert.IsNotNull( owner.CaptureSnapshot() );
+		using var reference = new AudioMixer( null ); reference.Play( Pcm( 3000 ), AudioChannel.Effects, 1, position: place, range: 100 ); CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
 		owner.Stop(); Assert.IsFalse( voice.IsFinished ); mixer.Mix( 4 ); Assert.IsTrue( voice.IsFinished );
 	}
 	[TestMethod]
@@ -114,7 +116,9 @@ public class RepairHideAudioTests
 	[TestMethod]
 	public void OneShotsAndMissingAudioRemainCaptureEligibleAndPublicHideApiStaysFlat()
 	{
-		GameAudio.PlayRepairEffect( 0 ); Assert.AreEqual( 2, mixer.Voices.Count ); Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null && !voice.Loops ) );
+		// events 111 and 211 carry flag 0x8: a flat one-shot loops as a positioned one does ([BIN:TPW-EXE:0x6bc621])
+		GameAudio.PlayRepairEffect( 0 ); Assert.AreEqual( 2, mixer.Voices.Count ); Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null && voice.Loops ) );
+		foreach ( var voice in mixer.Voices.ToArray() ) voice.Stop();
 		mixer.Mix( 4 ); typeof( GameAudio ).GetField( "events", BindingFlags.Static | BindingFlags.NonPublic )!.SetValue( null, null );
 		var placed = new OriginalObject( entry, new ObjectPlacement( 1, 2, 0, System.Numerics.Vector2.Zero, 0 ) ); placed.Runtime.Simulate( FixedStepClock.TickDuration ); Assert.AreEqual( 0, mixer.Voices.Count ); Assert.IsNotNull( placed.Runtime.CaptureSnapshot() );
 	}

@@ -12,7 +12,7 @@ namespace OpenTPW;
 internal sealed class AutomaticAdvisor : IDisposable
 {
 	// [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300
-	// [APPROX:ADVISOR-017] the clock starts at 0 when the automatic advisor is created, is sampled once per frame and stands still while the pause menu is open — evidence needed: carrying the saved clock through an original save import (0x415140) and which screen each pause caller is (0x46B600, 0x47F020, 0x48C830, 0x49EFB0, 0x49F280, 0x4A3A30, 0x4A9380, 0x5F0B40)
+	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park and an original-save import (the original's load sets its +0x50 offset to the saved value, 0x402E80 -> 0x403160), is sampled once per frame and stands still while the pause menu is open (the original stands still whenever 0x4092A0 pauses the timer: eight callers at 0x46B74C, 0x47F26C, 0x48C87E, 0x49EFBA, 0x49F29F, 0x4A3A6C, 0x4A93D7 and 0x5F0B7F, screens unidentified) — evidence needed: the saved clock field in the import and the UI owners of the eight callers
 	private readonly PausableClock clock;
 	// Tests substitute a controllable speech state for the presentation (see the internal constructor).
 	private readonly Func<bool>? speechActive;
@@ -101,21 +101,19 @@ internal sealed class AutomaticAdvisor : IDisposable
 
 	private void OnParkEvent( ParkEvent item )
 	{
-		// [BIN:TPW-EXE:0x004D0370 bankruptcy event] at the bank's month-end message (type 0xC via 0x4D02D0): balance < 0, previous balance (+0x11C) < 0 and ((now − turn entered red +0x120) × rate / 4) × 10^7 / 2.592·10^13 > 5 post event 2 every month while that holds; it does not close the park
-		// [BIN:TPW-EXE:0x00519EF0 open/close events] events 3/4 are posted on every press of the open/close button (control 0x4F3B1), also when the state does not change
-		// [APPROX:ADVISOR-020] The economy's bankruptcy (six months in the red) and park open/close transitions stand in for the original's event 2/3/4 producers, which post event 2 every month the red-time condition holds and events 3/4 on every button press — evidence needed: the economy's turn-entered-red and rate terms (ParkEconomy belongs to the economy work) and the button's repeat behaviour in OpenTPW
-		switch ( item.Kind )
-		{
-			case ParkEventKind.Bankrupt:
-				Raise( AdvisorGameEvent.Bankrupted );
-				break;
-			case ParkEventKind.ParkOpened:
-				Raise( AdvisorGameEvent.ParkNowOpen );
-				break;
-			case ParkEventKind.ParkClosed:
-				Raise( AdvisorGameEvent.ParkNowClosed );
-				break;
-		}
+		// [BIN:TPW-EXE:0x004D0370 bankruptcy event] at the bank's month-end message (type 0xC via 0x4D02D0): balance < 0, previous balance (+0x11C) < 0 and __alldiv(0x4F88B0(world+0x2A0, turn entered red +0x120), 0x1792F8648000 = 2.592e13) >= 6 (0x4D053B–0x4D054F) post event 2 every month while that holds, through 0x40F630(2); the turn entered red is set when the balance first goes below zero (0x4D041A–0x4D0432); it does not close the park
+		// [APPROX:ADVISOR-020] The economy's bankruptcy (six months in the red) stands in for the original's event 2 producer, which posts it every month the red-time condition holds — evidence needed: 0x4F88B0's term and an economy field for the turn entered red (ParkEconomy belongs to the economy work)
+		if ( item.Kind == ParkEventKind.Bankrupt )
+			Raise( AdvisorGameEvent.Bankrupted );
+	}
+
+	/// <summary>The open/close button or its shortcut was pressed: game event 3 (open) or 4 (close), whatever the park's state.</summary>
+	// [BIN:TPW-EXE:0x00519EF0 open/close events] the door routine posts event 3 (0x51A033) or 4 (0x51A1C6) on every press of the open/close button (control 0x4F3B1) and of the Ctrl-O/Ctrl-C shortcuts (0x40C410), also when the park is already in that state; it is not the economy's transition
+	public void OnParkDoorPressed( bool open )
+	{
+		if ( level == null )
+			return;
+		Raise( open ? AdvisorGameEvent.ParkNowOpen : AdvisorGameEvent.ParkNowClosed );
 	}
 
 	private void Raise( AdvisorGameEvent gameEvent )
@@ -156,7 +154,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 				return null;
 			}
 			// [BIN:TPW-EXE:0x005994AC response player return] the span is the sequence sum + 1000 + the length of clip 15 (a generated sequence already ends with clip 15, so it counts twice); the clip length is trailer word 2 × 1000 / 30, unsigned (0x474070), from the level advisor if loaded, else the global one (0x5989C0)
-			// [APPROX:ADVISOR-016] A fixed-sequence response (60 of 610) and a game without advisor clip archives return speech length + 200 + 300 + 1000 — evidence needed: the fixed sequences of table 0x76DC18 (0x50-byte rows; their clips and lengths)
+			// [BIN:TPW-EXE:0x00598BF0 fixed-sequence builder] a fixed-sequence response (60 of 610) returns its row's clip sum from table 0x76DC18 + 1000 + the length of clip 15 (a row that sums to 0 uses the generator)
 			return presentation.ResponseSpanMilliseconds;
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException or NotSupportedException or OverflowException )
@@ -234,7 +232,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>World pass: renders the shown advisor into its own image (see <see cref="Draw"/>).</summary>
-	// [APPROX:ADVISOR-018] The model is drawn until the response's span ends instead of until Kill, because the clips are not drawn (ADVISOR-006), where the original keeps it shown until the next Kill advisor — evidence needed: whether the clip-15 end (0x4735D0) hides the model
+	// [BIN:TPW-EXE:0x004735D0 animation sampler] the model is drawn until the last clip of the response's sequence ends (Advisor.DrawnSpanMilliseconds), where the sampler hides it; only a later response or Kill changes that
 	public void Render() =>
 		Image = presentation is { IsDrawn: true } ? presentation.RenderImage( Screen.PixelSize ) : null;
 

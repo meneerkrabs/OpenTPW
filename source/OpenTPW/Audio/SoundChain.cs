@@ -56,7 +56,7 @@ public sealed class SoundChain
 		children.RemoveAll( child => child.IsFinished );
 		if ( nextChildAt < 0 || system.Mixer.PlayedFrames < nextChildAt )
 			return;
-		var sample = SoundEventSystem.ChooseSample( soundEvent.Sounds[soundIndex].Samples, system.Draw(), -1, avoidRepeat: false );
+		var sample = system.PickSample( soundEvent.Sounds[soundIndex].Samples, -1, avoidRepeat: false );
 		if ( sample >= 0 && system.Decode( category, soundEvent.Sounds[soundIndex].Samples[sample] ) is { } audio )
 		{
 			var child = system.Mixer.Play( audio, channel, system.Volume( soundEvent.Sounds[soundIndex] ) / 100f, position, range );
@@ -79,7 +79,7 @@ public sealed class SoundChain
 		var high = Math.Max( sound.MinimumDelay, sound.MaximumDelay );
 		if ( high == 0 )
 			return 0;
-		var milliseconds = low + (double)(system.Draw() % (uint)Math.Max( 1, high - low ));
+		var milliseconds = low + (double)system.DrawBelow( (uint)Math.Max( 1, high - low ) );
 		return milliseconds / 1000;
 	}
 

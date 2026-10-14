@@ -1001,6 +1001,38 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Advisor, compatibility and VM register round 2 (October 14):** the advisor's fixed sequences are imported: the ten rows in use of table `0x76DC18` (`AdvisorFixedSequences`), a
+  span of the clip sum + 1000 + clip 15, a row that sums to 0 (sequence 28, or clips missing from the archives) generated instead, the immediate start derived from
+  "first clip is not 14", and the timer entries' effect (particle `0x521E60`, sound `0xC6`, `0x4B9340`) registered as ADVISOR-025; ADVISOR-016 is retired. ADVISOR-018 is settled at the
+  instruction level: the animation sampler `0x4735D0` hides the advisor model at the end of the last clip (nothing queued, model flag 8, then `0x45BDD0`), which agrees with the earlier
+  finding that the normal end of advice `0x599880` calls no Kill, so the model now hides when the sequence's clip sum has passed instead of staying for another second and clip 15
+  (LIPS.md fixed). Game events 3 and 4 are raised on every press of the open/close button and the Ctrl-O/Ctrl-C shortcuts (`0x519EF0`, `0x40C410`), also when the park
+  is already in that state (ADVISOR-020 narrowed to event 2). COMPAT-017 is retired: the sign lines come from the selected language's file only and a missing SIGNA or SIGNB shows
+  "MISSING STRING" (`0x413600`). HEADS-005 is retired: child and sound scripts have no head table on the PC (thing id 0 at init), so their ADDHEAD/DELHEAD do nothing; the per-child tables and the
+  save refusal are gone and no pinned hash moved. VM-901 is narrowed: WAITABS keeps a wrapping 32-bit deadline compared unsigned, 0 meaning not armed, and wakes when the integer clock reaches it (`0x553828`); only a wait spanning the clock word's 2^32 wrap is unmodelled. VM-902 is retired:
+  MIN and SEC read host-local time like YEAR to HOUR (`0x5566FF`, `0x55674E`). BLUEPRINT-002 is retired (the PC UV table and face builder `0x53DF30` match the whole-texture faces). Reclassified as
+  OpenTPW decisions: ADVISOR-011, COMPAT-011, COMPAT-012, COMPAT-031, TPI-900 to TPI-904 and DET-016 (the player's park save already stores guests, scripts and the advisor). Narrowed: ADVISOR-006, -007, -012,
+  -017, -022, COMPAT-019 (`dlake` is the drained lake obstacle 1704 of Theme Park Inc), HEADS-001 and BLUEPRINT-003. The PC world generator `0x516330` rotates its state right by 13: DET-plan §4.3,
+  DETERMINISM.md and the HEADS-001 text say so, and DET-013 to DET-015 now carry the port requirements (eight reseed sites, the saved `mRandomSeed`, the update order); the port itself is not started.
+  This round took 16 IDs out of the register (VM-901 stays, narrowed) and added ADVISOR-025.
+- **Audio register round 2 (October 14):** the second static round over tp.exe settled the open sound items
+  ([AUDIO.md](AUDIO.md) "Register round 2"). Behaviour changes, each with a test: a bank lives under `Global` when its map record has
+  flag 0x20 and otherwise in its own folder, with no second try (AUDIO-002; every shipped bank still resolves); **one shared, advancing
+  sound chooser** (`s·0x19660D + 0x3C6EF35F` stored on every draw, `ror(s, 13)` then `>> 16` or `% range`, a lone sound, sample or empty
+  range draws nothing) replaces the frozen Mac reading, the crowd's separate stream and the fixed volume draw (AUDIO-035 retired; the
+  Mac-versus-PC contradiction is documented in AUDIO.md and DETERMINISM.md, the park still reseeds and saves the chooser, AUDIO-037); the
+  drawer plays 0x1C when it starts to close as well as 0xC2 at its end; flat one-shots with flag 0x8 loop like positioned ones (AUDIO-019);
+  a placed scape sentence plays as a positioned sentence for the park's life (AUDIO-020); the listener helper takes the eye in the
+  camera modes `0x790ab0 & 0x16` and the midpoint otherwise (AUDIO-021); the weather's constructed quality is never applied and the first
+  update rolls a forecast at once, with the schedule on game-clock timestamps instead of day indices and the apply falling through to the
+  roll test (AUDIO-026/027; the snapshot's schedule fields now hold game seconds, older day-index saves are migrated on restore); screams, the repair sound and EVENT sounds are
+  positioned at the ride's footprint middle, the object and the key's model node (selector 0x200), and an unknown EVENT key plays nothing
+  (AUDIO-032/008/908); the refused path click plays at the clicked cell (also fixing `Level.CellSoundPosition`, which returned a
+  height/ground mix); `cat_ui` 0xD2 plays once at start-up; every front-end list line and row clicks like a button (AUDIO-012); the
+  weather thing's own flat 0x21 rain voice sounds beside the level-driven one while it rains, which keeps following the drops in snow
+  (AUDIO-015). Retired: 002, 006, 007, 010, 012, 019, 020, 021, 027, 032, 035. Reclassified as `[EXT:...]` decisions: 005, 013, 014, 024, 030,
+  031, 905-907 and the drawer window. Narrowed: 003, 004, 008, 009, 011, 015, 022, 025, 026, 034, 036, 900, 908. New: AUDIO-037. No canonical
+  hash pin moved (the weather and the sound chooser are outside the hash, [DETERMINISM.md](DETERMINISM.md)).
 - **Tour rides take and release riders (October 14):** the four original tour rides (Jurassic, Flightmare, Star and Tweety Tours) no longer
   leave guests in the queue. Their scripts' `TOUR` commands, traced from tp.exe (the flying-car module `FLY_`), drive a controller of up to 20 free-flying
   cars with no track: a car lifts off from the ride's launch pad, flies a terrain-avoiding lattice walk for the ride's duration, returns, circles until the landing slot is

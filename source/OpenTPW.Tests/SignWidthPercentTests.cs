@@ -3,7 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
 
-/// <summary>COMPAT-005: the slot's percent scales each character's width, truncated; COMPAT-017: the two 32-character sign lines.</summary>
+/// <summary>COMPAT-005: the slot's percent scales each character's width, truncated; the sign-line reader: the two 32-character sign lines.</summary>
 [TestClass]
 public class SignWidthPercentTests
 {

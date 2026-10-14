@@ -75,7 +75,7 @@ Theme Park Inc slice runs building and guests under an experimental HUD and refu
 Theme Park Inc rules or data OpenTPW has not traced: economy (its `Standard.sam` lacks 89 of the 155
 balance keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage`; measured
 October 13, 2026), staff, advisor, front end, park saves, sharing (export/import/visit), the mission
-campaign, the Global Master Save and the disc's COS files (TPI-903). `Level` gates its economy on the
+campaign, the Global Master Save and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision). `Level` gates its economy on the
 policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save, GMS
 or COS file, and the start-up command line additionally refuses `--sandbox`, `--front-end`,
 `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`, `--park-resume-smoke`,
@@ -88,19 +88,19 @@ paths, placed objects and fixed-item records. Arabian and water have no matching
 save and still use the default fixed items (RIDES-019). The camera is the park camera (pan, rotate,
 zoom); the sandbox developer panels are off. On top of that the slice adds:
 
-- The **experimental HUD** (`ThemeParkIncHud`, TPI-900): an OpenTPW text interface — a state line that
+- The **experimental HUD** (`ThemeParkIncHud`, `[EXT:tpi-text-hud]`): an OpenTPW text interface — a state line that
   names the experiment and its refused systems, a guest counter, a message line, a build window over
   the world's own catalog, remove/rotate/cancel tools, a speed control and a pause menu (Esc) whose
-  application-owned layout checkpoint controls are described below. Building is **free** (TPI-901): the slice runs no economy, so nothing is
+  application-owned layout checkpoint controls are described below. Building is **free** (`[EXT:tpi-free-builds]`): the slice runs no economy, so nothing is
   charged or refunded. If the HUD cannot be built the world falls back to the bare viewer
   (Esc quits, P pauses) with a warning.
 - **Building** through the same rules as a Theme Park World park (`ParkObjects` terrain and occupancy
   checks, `Level.PlaceObject` without the purchase), including the path and queue tools of the traced
-  Theme Park World flow (TPI-904): a click on an empty owned cell starts the path tool, Backspace
+  Theme Park World flow (`[EXT:tpi-tool-flow]`): a click on an empty owned cell starts the path tool, Backspace
   undoes, right-click cancels; a placed `Info.HasQueue` ride switches to the queue tool. The build
   ghost markers now resolve their textures by name without extension, so Theme Park Inc's own
   `blue.tga`/`red.tga` markers draw (Theme Park World keeps its `blue.wct`/`red.wct`).
-- **Guests** (TPI-902) under the ported Theme Park World guest rules over the Theme Park Inc world's
+- **Guests** (`[EXT:tpi-twp-guest-rules]`) under the ported Theme Park World guest rules over the Theme Park Inc world's
   own guest settings: arrivals from the bus stop through the ticket booth, path walking, needs,
   queues and rides. The slice's frame pumps guests, object scripts and crowd audio only — no advisor,
   staff voices or weather sounds, which need the economy.
@@ -151,8 +151,11 @@ file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` ho
 (`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
 cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
 shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
-viewer now draws `dlake.MD2` as the finished lake (COMPAT-019; `lake.MD2` and the animations are
-ignored). That was a loader gap. Open: six of its bed textures (`bed04`, `bed06`, `bed07`, `bed09`,
+viewer now always draws `dlake.MD2` (COMPAT-019; `lake.MD2` and the animations are
+ignored). That was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
+"New Science Drained Lake Obstacle", and `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10
+("Water Drainage"); so `dlake` is the drained lake, not a finished one, and which one a park shows is data-driven (the exe holds no
+"lake" string). Open: six of its bed textures (`bed04`, `bed06`, `bed07`, `bed09`,
 `bed10`, `bed12`) are in no archive of the supplied data, so the lake's bank is drawn white. `arabian`
 has 29 more open cells in two mountain pits that no mesh covers (`4an_newenv.MD2`/`3an_newenv.MD2`,
 variants of the environment, do not either); they show the clear colour. The `*_newenv.MD2` files,
@@ -163,6 +166,10 @@ variants of the environment, do not either); they show the clear colour. The `*_
 snowfield), most likely because the ground is drawn without blending (not confirmed). The mountain pits next to the entrance road
 show black interiors in all three worlds. Esc and P in the viewer are implemented but were not
 exercised by an automated run (all checks used `--capture-world`).
+
+The slice's own scope decisions are OpenTPW design decisions, not approximations (October 14, 2026): the text HUD, the free builds,
+the Theme Park World guest rules over Theme Park Inc data, the capability gates and the Theme Park World tool flow (`[EXT:tpi-*]` at their sites; TPI-900 to
+TPI-904 are retired).
 
 **Approximations and open questions.** COMPAT-014, COMPAT-015 (palettes), COMPAT-019 (lake),
 RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,

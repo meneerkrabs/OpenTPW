@@ -136,6 +136,11 @@ public sealed class ParkStaff
 	public IReadOnlyList<StaffCandidate> Candidates => candidates;
 	public int NextId { get; private set; } = 1;
 	public long NextPoolUpdateTick { get; private set; }
+	/// <summary>
+	/// The candidate whose Place tool is running (the original's "being placed" flag, candidate <c>+0xb</c>, tp.exe 0x507bf0): it stays in the pool,
+	/// is not hired yet and does not expire while the player places it. Not saved: a pending hire is only a flag.
+	/// </summary>
+	public int PendingPlacementId { get; set; }
 
 	// [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing
 	public long UpdateInterval => Math.Max( 1, ParkCalendar.SecondsToTicks( settings.TimeBetweenStaffUpdates ) );
@@ -179,7 +184,7 @@ public sealed class ParkStaff
 		if ( tick < NextPoolUpdateTick )
 			return;
 		NextPoolUpdateTick = tick + UpdateInterval;
-		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick );
+		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId );
 		var roles = settings.Roles;
 		var shortfall = roles.Select( role => OfType( role.Type ).Count() >= role.MaximumInPark ? 0 : role.MaximumInPool - candidates.Count( candidate => candidate.Type == role.Type ) ).ToArray();
 		var cap = Math.Min( settings.MaxNumberOfStaffPerUpdate, PoolSlots - candidates.Count );
@@ -284,6 +289,7 @@ public sealed class ParkStaff
 
 	internal void Restore( IEnumerable<StaffMember> restoredMembers, IEnumerable<StaffCandidate> restoredCandidates, IReadOnlyList<long> budgets, int nextId, long nextPoolUpdate )
 	{
+		PendingPlacementId = 0;
 		members.Clear();
 		members.AddRange( restoredMembers );
 		candidates.Clear();

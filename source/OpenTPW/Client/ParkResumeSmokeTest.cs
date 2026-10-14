@@ -190,6 +190,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	private void SavePark()
 	{
 		boundarySample = CaptureSample( 0 );
+		savedWater = WaterCounts();
 		// The actual HUD save handler (GameFlow.Resume.cs's SaveCurrentPark), writing the own-format world save.
 		flow.SaveCurrentPark();
 		var written = SaveFileSystem.GetAbsolutePath( "opentpw-jungle-world.json" );
@@ -242,6 +243,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		Require( level.Park != null && level.Guests != null && level.Paths != null && level.OriginalPark != null, "the resumed park has its economy, guests, paths and original park" );
 		Require( ReferenceEquals( Level.Current, level ), "the resumed level is the current level" );
 		Require( level.Coasters.Count == 0, "the resumed park carries no coaster state" );
+		VerifyWaterRestored();
 		if ( PrototypeVariant )
 		{
 			var totem = level.PlacedRide;
@@ -676,6 +678,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			SavedUtc = savedUtc,
 			ManifestSha256 = CanonicalManifestSha256( verifiedAssets ),
 			PrototypeVariant = PrototypeVariant,
+			WaterVariant = WaterVariant,
+			WaterAtSave = new SmokeWater { Tiles = savedWater.Tiles, Boats = savedWater.Boats },
 			Prototype = savedPrototype,
 			Save = new SmokeSaveFile { Name = Path.GetFileName( savePath ), ByteCount = bytes.Length, Sha256 = Sha256Hex( bytes ) },
 			Boundary = boundarySample,

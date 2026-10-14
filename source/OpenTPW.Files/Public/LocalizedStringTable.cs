@@ -5,7 +5,8 @@ namespace OpenTPW;
 /// the caller's internal name, so a missing or empty localized string never crashes or shows blank.
 /// Each fallback is reported once in <see cref="Diagnostics"/>.
 /// [APPROX:COMPAT-011] the fallback order is an OpenTPW choice — evidence needed: original behaviour
-/// for missing strings.
+/// for missing strings (the only fallback found in tp.exe is the default "MISSING STRING" of the object text
+/// parser, 0x413600).
 /// </summary>
 public sealed class LocalizedStringTable
 {

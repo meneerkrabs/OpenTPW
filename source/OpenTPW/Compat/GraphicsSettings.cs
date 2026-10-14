@@ -148,7 +148,7 @@ public static class GraphicsPresets
 		: GraphicsPreset.High;
 
 	/// <summary>The default for this machine: its memory as .NET reports it.</summary>
-	// [APPROX:COMPAT-013] the processor clock is taken as 450 MHz or faster, since .NET cannot read it portably — evidence needed: none for any machine that runs OpenTPW (all exceed 450 MHz)
+	// [EXT:graphics-preset-cpu] the processor clock is taken as 450 MHz or faster, since .NET cannot read it portably; the original's thresholds are applied to the memory and this fixed clock (any machine that runs OpenTPW exceeds 450 MHz)
 	public static GraphicsPreset DefaultForThisMachine()
 	{
 		var bytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;

@@ -48,11 +48,13 @@ public sealed partial class OriginalObjectRuntime
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
 		}
-		// A water ride (Bumper.WhichTrackType 2) gets a bump-ride controller; kart rides keep the shared tables only (docs/TRACKS.md).
-		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { IsWater: true } template )
+		// A water ride (Bumper.WhichTrackType 2) or a go-kart ride (1) gets a bump-ride controller (docs/TRACKS.md).
+		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
 		{
-			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers );
+			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers ) { AttractionId = AttractionId };
 			world.Bumpers.Add( Bump );
+			if ( template.IsKart )
+				Bump.Effect += OnBumpEffect;
 			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
@@ -227,6 +229,7 @@ public sealed partial class OriginalObjectRuntime
 			Coaster.ClearTrains();
 			Coaster.World.Remove( Coaster );
 		}
+		StopBumpEffects();
 		ReleaseBump();
 		Script?.Stop();
 		Animator.StopAll();
@@ -290,6 +293,9 @@ public sealed partial class OriginalObjectRuntime
 			AnimationsPlayed = AnimationsPlayed,
 			UnresolvedAnimations = unresolvedAnimations.ToArray(),
 			HeldScream = effects.HoldsScream,
+			HeldScreamBand = effects.HeldScreamBand,
+			HeldScreamLevel = effects.HeldScreamLevel,
+			HeldScreamSpeed = effects.HeldScreamSpeed,
 			OwnedScreamCount = effects.OwnedScreamCount,
 			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null
 		};
@@ -346,10 +352,13 @@ public sealed partial class OriginalObjectRuntime
 		if ( snapshot.Heads != null )
 			Visitors.Heads!.RestoreSnapshot( snapshot.Heads );
 		Animator.RestoreSnapshot( snapshot.Animator, ResolveSnapshotClip );
+		// Screams are presentation: a held scream starts again from its STARTSCREAM operands (the script still holds a handle,
+		// so its STOPSCREAM and a refused second STARTSCREAM behave as before); chains the script had lost track of are not
+		// carried over, the original's own unreferenced chains end with the program too.
 		if ( snapshot.HeldScream )
-			gaps.Add( $"{Entry.ArchivePath}: the script held a STARTSCREAM chain at capture; live audio cannot cross a restart, the handle is cleared" );
+			effects.RestoreHeldScream( snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed );
 		if ( snapshot.OwnedScreamCount > 0 )
-			gaps.Add( $"{Entry.ArchivePath}: {snapshot.OwnedScreamCount} owned scream chain(s) at capture; live audio cannot cross a restart, they are dropped" );
+			Log.Trace( $"{Entry.ArchivePath}: {snapshot.OwnedScreamCount} unreferenced scream chain(s) at capture are not resumed." );
 		return gaps;
 	}
 
@@ -536,11 +545,34 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		screamChain = null;
 	}
 
-	/// <summary>Whether the script holds a STARTSCREAM chain (park-resume capture; live audio is a reported gap).</summary>
+	/// <summary>Whether the script holds a STARTSCREAM chain (park resume starts it again from its operands).</summary>
 	internal bool HoldsScream => screamChain != null;
+	/// <summary>The held scream's STARTSCREAM band, level and script speed word (0 without a held scream).</summary>
+	internal int HeldScreamBand { get; private set; }
+	internal int HeldScreamLevel { get; private set; }
+	internal int HeldScreamSpeed { get; private set; }
 
-	/// <summary>Chains this effects object still owns (park-resume capture; live audio is a reported gap).</summary>
-	internal int OwnedScreamCount => ownedScreams.Count;
+	/// <summary>Live chains the script no longer holds (a refused STARTSCREAM leaves the held one screaming unreferenced).</summary>
+	internal int OwnedScreamCount
+	{
+		get
+		{
+			var count = 0;
+			foreach ( var chain in ownedScreams )
+				if ( !chain.IsStopped && !ReferenceEquals( chain, screamChain ) )
+					count++;
+			return count;
+		}
+	}
+
+	/// <summary>Park resume: starts the held scream again from its saved operands.</summary>
+	internal void RestoreHeldScream( int band, int level, int speed )
+	{
+		screamChain = GameAudio.StartScream( () => null, band, level, null, speed );
+		(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (band, level, speed);
+		if ( screamChain != null )
+			ownedScreams.Add( screamChain );
+	}
 	internal bool HasLiveEventLoops => ownedEventLoops.Any(voice => voice.Loops && !voice.IsFinished);
 
 	public int Perform( RideEffectCall call )
@@ -600,6 +632,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
 			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null, call.VM.SpeedBias );
+			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = screamChain != null ? (call.Argument( 0 ), call.Argument( 1 ), call.VM.SpeedBias) : (0, 0, 0);
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			if ( screamChain != null )
 				ownedScreams.Add( screamChain );
@@ -609,6 +642,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		{
 			screamChain?.Stop();
 			screamChain = null;
+			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (0, 0, 0);
+			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		if ( call.Opcode == Opcode.SINGLESCREAM )

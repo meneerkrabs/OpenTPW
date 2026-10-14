@@ -44,6 +44,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Research = new ParkResearch( settings, catalog );
 		Objectives = new ParkObjectives( settings, catalog );
 		EntranceFee = settings.InitialAdmissionFee;
+		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
 		Staff.CreateInitialPool( Random, 0 );
 	}
 

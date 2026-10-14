@@ -193,8 +193,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private Guest Create()
 	{
 		// [BIN:STP-PPC:0x100E7644 guest constructor] the starting values come from GuestStart (ORACLE.md F25): eight draws in the constructor's order
-		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord() );
+		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord(),
+			Settings.PrankeryLikelihood, nextId );
 		var guest = new Guest( nextId++, start.Type );
+		guest.PrankFlag = start.PrankFlag;
 		guest.Money = start.Money;
 		guest.Happiness = start.Happiness;
 		guest.Thirst = start.Thirst;
@@ -427,11 +429,13 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
 	/// enters the temporary history.
 	/// </summary>
-	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger, written by entertainers, toilets, vomit and guards through 0xd73a0) is not modelled, so those words are 0; neither are the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function — evidence needed: the region effect grid (PPC-guests, Phase 2) and the thought selection 0xe8c58
+	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger) has only the sources OpenTPW models (vomit and stinkbombs, ParkEnvironment): the entertainers, the clean and dirty toilets, guards, cameras and fireworks add nothing yet; neither are the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function — evidence needed: the RegionFX writers of the other sources and the thought selection 0xe8c58
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
-		var result = NeedsUpdate.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ), guest.ExitLevel, turn, guest.Id );
+		var cell = Litter?.Environment.At( guest.CellX, guest.CellY ) ?? default;
+		var result = NeedsUpdate.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ), guest.ExitLevel, turn, guest.Id,
+			cell.Happiness, cell.Illness, cell.Hunger );
 		(guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea) = result.Meters;
 		guest.ExitLevel = result.ExitLevel;
 		if ( result.ToiletSpeedTerm is { } term )
@@ -748,7 +752,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 		IRideVisitorBridge? choice = null;
 		var input = new GuestDecision.Input( turn, (uint)guest.InterludeTurn, (uint)guest.QueueStandingSinceTurn, guest.Happiness, guest.Nausea, guest.Litter,
-			guest.ExitLevel, Payments?.ParkClosed ?? false, random.NextWord() );
+			guest.ExitLevel, Payments?.ParkClosed ?? false, random.NextWord(), guest.PrankFlag, Settings.StinkbombLikelihood );
 		var outcome = GuestDecision.Decide( input, () =>
 		{
 			if ( SeekBin( guest ) )
@@ -763,7 +767,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 				return false;
 			guest.State = GuestState.LeavingPark;
 			return true;
-		}, () =>
+		}, ( prank, type ) => Prank( guest, prank, type ), () =>
 		{
 			UpdateMood( guest );
 			choice = ChooseAttraction( guest );
@@ -911,6 +915,25 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.BinId = 0;
 		guest.State = GuestState.DoingNothing;
 	}
+
+	/// <summary>
+	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
+	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
+	/// </summary>
+	// [APPROX:GUEST-007] OpenTPW's guests carry no balloons, so a balloon prankster (flag 102) never finds a victim, as in a park whose shops sell none; the prank message reaches no advisor line (0x7D..0x7F) and no guard (0x00508A30: the security word of the prankster's cell, then the nearest free guard chases and escorts it out), and the guest event 15 is not recorded — evidence needed: none (read); waits for balloons, the advisor's prank lines and the guards
+	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
+	{
+		if ( prank == GuestDecision.Prank.Balloon )
+			return false;
+		// A littering prank counts even when the cell already holds litter (the drop is lost; tp.exe sets the prank flag after 0x004D93B0 either way).
+		DropLitter( guest, type );
+		Pranked?.Invoke( guest, prank );
+		guest.Happiness = MeterMath.Add( guest.Happiness, 1f );
+		return true;
+	}
+
+	/// <summary>A prankster pranked (the stinkbomb's sound, the advisor and the guards listen to the original's prank message).</summary>
+	public event Action<Guest, GuestDecision.Prank>? Pranked;
 
 	/// <summary>Litter of <paramref name="type"/> on the guest's cell (lost when the cell already holds some).</summary>
 	private void DropLitter( Guest guest, LitterType type ) => Litter?.Drop( guest.CellX, guest.CellY, type );
@@ -1853,6 +1876,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Activity = guest.Activity,
 			Litter = guest.Litter,
 			BinId = guest.BinId,
+			PrankFlag = guest.PrankFlag,
 			QueueJoinHappiness = guest.QueueJoinHappiness,
 			QueueCellIndex = guest.QueueCellIndex,
 			QueueTargetIndex = guest.QueueTargetIndex,
@@ -2081,6 +2105,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Bounded( guest.Id, guest.Happiness, nameof( guest.Happiness ), 0, 100 );
 			Bounded( guest.Id, guest.Nausea, nameof( guest.Nausea ), 0, 100 );
 			Bounded( guest.Id, guest.Litter, nameof( guest.Litter ), 0, 100 );
+			if ( guest.PrankFlag is not (0 or 100 or 101 or 102) )
+				Error( $"Guest {guest.Id} prankery flag {guest.PrankFlag} is not 0, 100, 101 or 102." );
 			if ( guest.BinId < 0 || (guest.BinId != 0) != (guest.State == GuestState.ThrowingAwayLitter) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
@@ -2388,6 +2414,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.Activity = snapshot.Activity;
 		guest.Litter = snapshot.Litter;
 		guest.BinId = snapshot.BinId;
+		guest.PrankFlag = snapshot.PrankFlag;
 		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
 		guest.QueueCellIndex = snapshot.QueueCellIndex;
 		guest.QueueTargetIndex = snapshot.QueueTargetIndex;
@@ -2503,6 +2530,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( (byte)guest.Activity );
 			hash.Add( guest.Litter );
 			hash.Add( guest.BinId );
+			hash.Add( guest.PrankFlag );
 			hash.Add( guest.QueuePosition );
 			hash.Add( guest.QueueJoinTurn );
 			hash.Add( guest.LastQueueWaitTurns );
@@ -2567,6 +2595,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			AddFloat( guest.Nausea );
 			AddFloat( guest.Litter );
 			Add( guest.BinId );
+			Add( guest.PrankFlag );
 			AddFloat( guest.Happiness );
 			Add( guest.ExitLevel );
 			Add( guest.Money );

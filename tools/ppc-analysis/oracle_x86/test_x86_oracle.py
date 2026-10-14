@@ -99,6 +99,8 @@ EXPECTED = {
     ('tpw-exe-litter-drop', 'plan'): AGREE,
     # X21 (state 9, the walk to a bin 0x4fff20, GUEST-005): the bin's sound on arrival, else litter on the cell; the meter empties.
     ('tpw-exe-bin-walk', 'plan'): AGREE,
+    # X22 (region effect writer 0x4d8480, GUEST-006): ParkEnvironment.Apply, square radius, Manhattan divisor, wrapping words.
+    ('tpw-exe-region-effect', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -807,6 +809,10 @@ class Oracle(CoastTests, unittest.TestCase):
 
     def test_bin_walk_bins_or_drops_the_litter(self):
         self.check(('tpw-exe-bin-walk', 'plan'))
+
+    # ------------------------------------------------------------------ X22: region effects
+    def test_region_effect_spreads_like_the_environment_grid(self):
+        self.check(('tpw-exe-region-effect', 'plan'))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

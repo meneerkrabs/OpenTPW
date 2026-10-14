@@ -301,8 +301,9 @@ between deciding (state 6, `DoingNothing`) and walking to a wander destination (
 2. **Vomiting** when its illness byte is 100 and R % 3 is 0: illness drops to 0 and vomit stays on its cell ([below](#litter)).
 3. **Litter** when its litter meter byte is at least 90: it walks to a bin in reach, or drops its litter on its cell and goes on ([below](#litter)).
 4. **Leaving** by the [lifecycle](#lifecycle) test.
-5. **R % 3 = 0:** a major decision, if more than 30 turns have passed since the decision stamp (the turn it last entered a queue or last failed a decision). It picks an attraction (state 10), or it pauses ("can't decide"), loses `SmallHappinessChange` and stamps the turn.
-6. **R % 3 = 1:** a wander. The guest takes R′ % 5 + 1 random steps along the path links (never straight back while another way is open, one more step if it ends where it started) and walks the shortest route to a random point in the first quarter of the last cell. If there is no destination, it stamps the turn.
+5. **Pranks** when the guest is a prankster and unhappy ([below](#pranks)); the decision goes on either way.
+6. **R % 3 = 0:** a major decision, if more than 30 turns have passed since the decision stamp (the turn it last entered a queue or last failed a decision). It picks an attraction (state 10), or it pauses ("can't decide"), loses `SmallHappinessChange` and stamps the turn.
+7. **R % 3 = 1:** a wander. The guest takes R′ % 5 + 1 random steps along the path links (never straight back while another way is open, one more step if it ends where it started) and walks the shortest route to a random point in the first quarter of the last cell. If there is no destination, it stamps the turn.
 
 An activity (cheering, vomiting, can't decide) holds the guest for ten park turns (the original's state 8). On arriving, a walking guest picks another destination with a chance of one in four, otherwise it decides again. A new park's guests make their first major decision at turn 31.
 
@@ -317,6 +318,19 @@ kinds) and decides on. Either way the meter empties. Vomit lies on the cell wher
 A cell holds one item of litter: what falls on a littered cell is lost. Litter stays until a handyman sweeps it; it does not decay or spread. An online visit
 drops none. The handymen strike over litter when the littered cells exceed 0.2 of the path and queue cells. Handymen have no position yet (ECON-022): a free
 handyman takes the first unclaimed littered cell, scanning columns from the left, and sweeps it for `WorkDuration` park turns.
+
+### Pranks
+
+Traced and executed (x86 findings X18 and X22, [ORACLE.md](reverse/ORACLE.md) section 7.16; [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PeepInfo.PrankeryLikelihood`
+guests in 100 (5 in the shipped balance) are pranksters, of one of three kinds by their id: stinkbombs, litter or balloons. In state 6 a prankster whose
+happiness byte is below 15 pranks when its flag beats a draw modulo 101: a stinkbomb on its cell (`StinkbombLikelihood` percent of the time, 25),
+litter on its cell, or another guest's balloon burst. Each prank cheers the prankster up by 1. OpenTPW's guests carry no balloons, so balloon
+pranksters never find a victim, and the advisor's prank lines and the guards who chase pranksters are not modelled yet (GUEST-007).
+
+Vomit and stinkbombs spread their `RegionFX` row around their cell while they lie: every cell within the row's square radius gets the row's
+happiness, illness and hunger divided by its distance + 1, and a guest's needs phase adds those of its own cell (vomit: −1 happiness, +1 illness,
+−1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). The other sources (entertainers, toilets, guards,
+cameras, fireworks) are not modelled yet (GUEST-006).
 
 ### Walking
 

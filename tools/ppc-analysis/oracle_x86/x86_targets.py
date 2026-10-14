@@ -1197,7 +1197,12 @@ STATE6_CALLS = {
     'wander': 0x4F9490,        # thiscall (guest): the wander destination (target tpw-exe-wander-destination); from the input; recorded
     'state': 0x501DB0,         # thiscall (guest, state), ret 4: the state setter; recorded
     'guest_id': 0x50B350,      # thiscall (guest, out), ret 4: the guest's thing id
+    'message': 0x40FB10,       # thiscall (bus, message), ret 4: the message bus; the prank message (type 14) is recorded
+    'burst': 0x4FE950,         # thiscall (victim): the balloon burst; recorded
 }
+STATE6_BUS = 0x788D3C          # the message bus, built on first use; pre-set so the run never allocates it
+STATE6_STINKBOMB = 0x7850E0    # PeepInfo.StinkbombLikelihood
+STATE6_SELF_ID = 7             # the guest's thing id (0x50b350 stub)
 STATE6_CELLS = 0x8023A0        # global: the map's cell records (0x44 bytes each, id = y * 128 + x + 1)
 STATE6_STATE = type('State6State', (), {})()
 
@@ -1288,10 +1293,20 @@ def state6_stubs(target: Target) -> dict:
         return 0, 4
 
     def guest_id(sb):
-        sb.write(sb.arg(0), 'H', 7)
+        sb.write(sb.arg(0), 'H', STATE6_SELF_ID)
         return sb.arg(0), 4
 
-    return {c['rand']: rand, c['activity']: activity, c['litter']: litter, c['event']: event, c['sound']: sound,
+    def message(sb):
+        thiscall_check(sb, state.bus, '0x40fb10')
+        msg = sb.arg(0)
+        target.log.append(('message', sb.read(msg, 'I'), sb.read(msg + 8, 'H'), sb.read(msg + 0xC, 'I')))
+        return 0, 4
+
+    def burst(sb):
+        target.log.append(('burst', state.things.get(sb.reg('ecx'))))
+        return 0, 0
+
+    return {c['message']: message, c['burst']: burst, c['rand']: rand, c['activity']: activity, c['litter']: litter, c['event']: event, c['sound']: sound,
             c['bin']: bin_search, c['happiness']: happiness, c['closed']: closed, c['gate_prep']: gate_prep,
             c['gate_cell']: gate_cell, c['route']: route, c['show']: show, PARK_OF_GAME: park, c['performers']: performers,
             c['choice']: choice, c['wander']: wander, c['state']: set_state, c['guest_id']: guest_id}
@@ -1306,11 +1321,28 @@ def state6_binary(sb: Sandbox, x: dict, log) -> tuple:
     state.game = bind_game(sb, fields={WORLD_RNG + 4: ('I', x['turn'] & MASK32)})
     state.park = sb.object(16)
     sb.write(STATE6_CELLS, 'I', sb.object(0x44 * 0x80 * 0x40))
+    state.bus = sb.object(16)
+    sb.write(STATE6_BUS, 'I', state.bus)
+    sb.write(STATE6_STINKBOMB, 'I', x['stink'])
     g = STATE6_GUEST
     state.guest = sb.object(0x400, {g['x']: ('B', 20), g['y']: ('B', 30), g['happiness']: ('f', x['happiness']),
                                     g['illness']: ('f', x['illness']), g['litter']: ('f', x['litter']), g['exit']: ('i', x['exit']),
-                                    g['prank']: ('B', 0), g['decision']: ('I', x['decision'] & MASK32),
+                                    g['prank']: ('B', x['prank']), g['decision']: ('I', x['decision'] & MASK32),
                                     g['activity']: ('I', x['activity'] & MASK32), g['state']: ('I', 6)})
+    # the guest's cell (20, 30) holds the things of x['things'] in list order: 'self', or (type byte, balloon) for another thing
+    state.things = {}
+    indices = [STATE6_SELF_ID if thing == 'self' else 40 + n for n, thing in enumerate(x['things'])]
+    for n, (thing, index) in enumerate(zip(x['things'], indices)):
+        next_index = indices[n + 1] if n + 1 < len(indices) else 0
+        if thing == 'self':
+            address = state.guest
+            sb.write(address + 2, 'B', 1)
+        else:
+            address = sb.object(0x400, {2: ('B', thing[0]), 0x210: ('I', thing[1])})
+        sb.write(address + 0xA, 'H', next_index)
+        sb.write(POINTS_THINGS + 20 * index, 'I', address)
+        state.things[address] = index
+    sb.write(state.game + 0x2B8 + 0x44 * (30 * 128 + 20 + 1), 'H', indices[0] if indices else 0)
     sb.set_fpcw(X87_CONTROL_WORD)
     result = sb.call(STATE6_ENTRY, this=state.guest)
     if result.esp_delta != 0:
@@ -1329,7 +1361,7 @@ def state6_binary(sb: Sandbox, x: dict, log) -> tuple:
             effects.append(entry)
     effects = tuple(effects)
     return (effects, sb.read(state.guest + g['decision'], 'I'), sb.read(state.guest + g['illness'], 'I'), sb.read(state.guest + g['litter'], 'I'),
-            sb.read(state.guest + g['ride'], 'H'))
+            sb.read(state.guest + g['ride'], 'H'), sb.read(state.guest + g['happiness'], 'I'))
 
 
 def _f32_bits(value: float) -> int:
@@ -1345,9 +1377,10 @@ def state6_plan(x: dict) -> tuple:
     turn, r = x['turn'] & MASK32, x['r']
     decision, illness, litter, ride = x['decision'] & MASK32, _f32_bits(x['illness']), _f32_bits(x['litter']), 0
     happiness = _byte(x['happiness'])
+    happiness_bits = _f32_bits(x['happiness'])
 
     def result(effects):
-        return tuple(effects), decision, illness, litter, ride
+        return tuple(effects), decision, illness, litter, ride, happiness_bits
     if (turn - x['activity']) & MASK32 > 100 and happiness > 80:
         return result([('activity', 5)])
     ill = _byte(x['illness'])
@@ -1366,6 +1399,26 @@ def state6_plan(x: dict) -> tuple:
         effects += [('gate',), ('happiness', 2)]
         if x['way_out']:
             return result(effects + [('state', 18)])
+    # pranks (GuestDecision): happiness byte below 15 and the flag above R % 101
+    if happiness < 15 and x['prank'] > r % 101:
+        pranked = False
+        if x['prank'] == 100:
+            if r % 100 < x['stink']:
+                effects += [('litter', 8), ('sound', 0xCF)]
+                pranked = True
+        elif x['prank'] == 101:
+            effects.append(('litter', r % 5 + 1))
+            pranked = True
+        elif x['prank'] == 102:
+            for n, thing in enumerate(x['things']):
+                if thing != 'self' and thing[0] == 1 and thing[1]:
+                    effects.append(('burst', 40 + n))
+                    pranked = True
+                    break
+        if pranked:
+            effects += [('event', 0xF), ('message', 0x7007A8, STATE6_SELF_ID, STATE6_SELF_ID % 3)]
+            value = struct.unpack('<f', struct.pack('<f', x['happiness']))[0] + 1.0
+            happiness_bits = _f32_bits(100.0 if value > 100.0 else 0.0 if value < 0.0 else value)
     if r % 3 == 0:
         if (decision + 30) & MASK32 < turn:
             effects.append(('choice',))
@@ -1394,11 +1447,13 @@ def state6_inputs(rng: random.Random, n: int) -> list:
              'activity': rng.choice([(turn - rng.randrange(0, 200)) & MASK32, turn, (turn + 5) & MASK32, rng.randrange(0, 1 << 32)]),
              'decision': rng.choice([(turn - rng.randrange(0, 60)) & MASK32, (turn - 30) & MASK32, (turn - 31) & MASK32, 0,
                                      rng.randrange(0, 1 << 32)]),
-             'happiness': meter([0.0, 0.5, 1.0, 14.9, 50.0, 80.0, 80.99, 81.0, 100.0]),
+             'happiness': meter([0.0, 0.5, 1.0, 14.9, 14.99, 15.0, 10.0, 50.0, 80.0, 80.99, 81.0, 100.0]),
              'illness': meter([0.0, 80.0, 99.99, 100.0, 100.0]),
              'exit': rng.choice([0, 0, -1, 1, 50, rng.randrange(-100, 300)]),
              'closed': rng.random() < 0.1, 'r': rng.randrange(0, 1 << 31), 'r2': rng.randrange(0, 1 << 31),
              'litter': rng.choice([0.0, 0.0, 89.99, 90.0, 95.5, 100.0, rng.uniform(0, 100)]), 'bin': rng.choice([0, 0, 5, 0x77]),
+             'prank': rng.choice([0, 0, 100, 101, 102, 99]), 'stink': rng.choice([0, 25, 100, rng.randrange(0, 101)]),
+             'things': rng.choice([[], ['self'], ['self', (1, 0x5150)], [(1, 0), (2, 0x5150), 'self', (1, 0x6160)], [(1, 0x5150)]]),
              'way_out': rng.random() < 0.7, 'ride': rng.choice([0, 0, 3, 0x1234]), 'wander': rng.random() < 0.7}
         x.update(kw)
         return x
@@ -1409,6 +1464,9 @@ def state6_inputs(rng: random.Random, n: int) -> list:
               for t in (130, 131) for r in (0, 1, 2)]
     edges += [make(litter=m, bin=b, r2=r2, happiness=50.0, illness=0.0, activity=0, turn=50, exit=50, closed=False, r=2)
               for m in (89.99, 90.0) for b in (0, 5) for r2 in (4, 5)]
+    edges += [make(prank=flag, stink=s, r=r, happiness=h, litter=0.0, illness=0.0, activity=0, turn=50, exit=50, closed=False,
+                   things=['self', (2, 1), (1, 0), (1, 0x4242)])
+              for flag in (100, 101, 102) for s in (0, 25) for r in (24, 25, 100, 202) for h in (14.99, 15.0)]
     return edges + [make() for _ in range(n)]
 
 
@@ -1419,8 +1477,10 @@ STATE6_TARGET = Target(
            '0x4fc800, litter 0x4d93b0, events 0x50c100, sound 0x4faa00, the happiness change 0x4fea70, the closed word '
            '0x51a280, the gate cells 0x4d86d0 and routes 0x4fa530, the presentation look-ups 0x501020 / 0x4c8eb0 (none), '
            'the choice 0x4fcb10 (+0x1dc from the input), the wander 0x4f9490 and the state setter 0x501db0, all recorded. '
-           'The bin search 0x500dc0 is stubbed (radius recorded, +0x1dc from the input). The prank byte (+0x1c0) is 0, so step 7 is '
-           'passed over; the routes are reduced to one "gate" entry. x87 control word 0x27F.'])
+           'The bin search 0x500dc0 is stubbed (radius recorded, +0x1dc from the input); the prank step runs on the input flag, with '
+           'the cell\'s thing list (game +0x2b8 + 0x44 × cell id, next word at +0xa, the thing table 0x7cfb90), the balloon burst '
+           '0x4fe950 and the message bus 0x40fb10 (pre-set at 0x788d3c) recorded. The routes are reduced to one "gate" entry. '
+           'x87 control word 0x27F.'])
 
 
 # ============================================================================== tp.exe wander destination 0x4f9490 (GUEST-010)
@@ -1806,6 +1866,92 @@ BIN_WALK_TARGET = Target(
     notes=['Executed: 0x4fff20 and the debug print. Stubs: the walk step 0x4fa2a0 (0 arrived, 1 walking, 2 stuck, from the input), '
            'the bin sound look-up 0x55a070 and player 0x55a0b0, the draw, the litter drop 0x4d93b0 (type and cell recorded) and '
            'the state setter 0x501db0. The bin is a synthetic thing in the thing table 0x7cfb90 with its sound handle at +0x24.'])
+
+# ============================================================================== tp.exe region effect writer 0x4d8480 (GUEST-006)
+REGION_ENTRY = 0x4D8480        # thiscall (cell manager, add flag, effect index, cell id), ret 0xc
+REGION_RANGES = [(0x4D8480, 0x4D8608)]
+REGION_TABLE = 0x1D9104        # cell manager + 12 × index: five signed words and the radius byte at +10
+REGION_GRID = 0x1B1104         # cell manager + 10 × (cell id − 1): five signed words per cell
+REGION_WINDOW = 9              # the words read back: a 19 × 19 window around the source (radius up to 9)
+
+
+def region_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """The words of the window around the source after the call, row by row (cells off the map are skipped)."""
+    manager = sb.object(REGION_TABLE + 12 * RegionTableRows + 16)
+    for index, (radius, coefficients) in enumerate(x['table']):
+        for component, value in enumerate(coefficients):
+            sb.write(manager + REGION_TABLE + 12 * index + 2 * component, 'h', value)
+        sb.write(manager + REGION_TABLE + 12 * index + 10, 'B', radius)
+    cx, cy = x['cell']
+    for (wx, wy), words in x['grid']:
+        for component, value in enumerate(words):
+            sb.write(manager + REGION_GRID + 10 * (wy * 128 + wx) + 2 * component, 'h', value)
+    result = sb.call(REGION_ENTRY, args=(int(x['add']), x['index'], cy * 128 + cx + 1), this=manager)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    words = []
+    for wy in range(cy - REGION_WINDOW, cy + REGION_WINDOW + 1):
+        for wx in range(cx - REGION_WINDOW, cx + REGION_WINDOW + 1):
+            if 0 <= wx < 128 and 0 <= wy < 128:
+                words.append(tuple(sb.read(manager + REGION_GRID + 10 * (wy * 128 + wx) + 2 * c, 'h') for c in range(5)))
+    return tuple(words)
+
+
+RegionTableRows = 8
+
+
+def region_plan(x: dict) -> tuple:
+    """ParkEnvironment.Apply: each cell of the square radius, clipped to 0..127, gains sign × coefficient / (|dx| + |dy| + 1), truncated
+    toward zero, as a wrapping signed word."""
+    cx, cy = x['cell']
+    grid = {cell: list(words) for cell, words in x['grid']}
+    radius, coefficients = x['table'][x['index']]
+    sign = 1 if x['add'] else -1
+    for wx in range(max(0, cx - radius), min(127, cx + radius) + 1):
+        for wy in range(max(0, cy - radius), min(127, cy + radius) + 1):
+            words = grid.setdefault((wx, wy), [0] * 5)
+            divisor = abs(wx - cx) + abs(wy - cy) + 1
+            for c in range(5):
+                words[c] = s16(words[c] + trunc_div(sign * coefficients[c], divisor))
+    out = []
+    for wy in range(cy - REGION_WINDOW, cy + REGION_WINDOW + 1):
+        for wx in range(cx - REGION_WINDOW, cx + REGION_WINDOW + 1):
+            if 0 <= wx < 128 and 0 <= wy < 128:
+                out.append(tuple(grid.get((wx, wy), [0] * 5)))
+    return tuple(out)
+
+
+def s16(value: int) -> int:
+    value &= 0xFFFF
+    return value - 0x10000 if value & 0x8000 else value
+
+
+def region_inputs(rng: random.Random, n: int) -> list:
+    def coefficient() -> int:
+        return rng.choice([0, 1, -1, 2, -3, 3, 10, 20, -32768, 32767, rng.randrange(-40, 41)])
+
+    def make(**kw) -> dict:
+        table = [(rng.choice([0, 1, 3, 5, 6, rng.randrange(0, 10)]), tuple(coefficient() for _ in range(5))) for _ in range(RegionTableRows)]
+        cell = rng.choice([(rng.randrange(0, 128), rng.randrange(0, 128)), (0, 0), (127, 127), (1, 126), (64, 64)])
+        grid = [((min(127, max(0, cell[0] + rng.randrange(-6, 7))), min(127, max(0, cell[1] + rng.randrange(-6, 7)))),
+                 tuple(rng.choice([0, 0, 5, -5, 32767, -32768, rng.randrange(-200, 201)]) for _ in range(5))) for _ in range(rng.randrange(0, 6))]
+        # one write per cell
+        seen, unique = set(), []
+        for item in grid:
+            if item[0] not in seen:
+                seen.add(item[0])
+                unique.append(item)
+        x = {'table': table, 'index': rng.randrange(0, RegionTableRows), 'cell': cell, 'add': rng.random() < 0.6, 'grid': unique}
+        x.update(kw)
+        return x
+    return [make() for _ in range(n + 20)]
+
+
+REGION_TARGET = Target(
+    'tpw-exe-region-effect', 'tpw', 'tp.exe region effect writer 0x4d8480', 'PPC-guests phase 2 / ParkEnvironment.Apply (GUEST-006)',
+    REGION_ENTRY, REGION_RANGES, lambda t: {}, region_binary, region_plan, region_inputs,
+    notes=['No stubs: the writer calls nothing. A synthetic cell manager holds the effect table at +0x1d9104 (12 bytes a row) and '
+           'the grid at +0x1b1104 (10 bytes a cell); the 19 × 19 window around the source is read back.'])
 
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
@@ -2426,5 +2572,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

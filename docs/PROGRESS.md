@@ -324,6 +324,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Pranksters prank, as in the original (tp.exe `0x4fb114`, `0x4ff0f5`, `0x4d8480`; ORACLE.md 7.16, X18 and X22; GUEST-007, GUEST-006;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PrankeryLikelihood` guests in 100 (5 in the shipped balance) are pranksters for life; when
+  unhappy they drop stinkbombs or litter on their cell and cheer up a little. Vomit and stinkbombs now spread their `RegionFX` on the
+  cell environment grid: guests standing in a stinkbomb's cloud lose happiness and grow ill. Balloons, the advisor's prank lines and the
+  guards who chase pranksters are not modelled yet. Guest schema 5, world hash schema 16; the fixed-run, Jungle and cross-grid hashes moved.
 - Litter now lies on map cells, as in the original (tp.exe `0x4d93b0`, `0x500dc0`, `0x4fff20`; ORACLE.md 7.15, X20 and X21; ECON-020,
   GUEST-005; [WANDER-plan.md](reverse/WANDER-plan.md) §6). A purchase fills the buyer's litter meter instead of a park-wide count; at 90
   the guest walks to a litter bin less than 3 cells away or drops its litter on its cell, and vomit stays where the guest was sick. A

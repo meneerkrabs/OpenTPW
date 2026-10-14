@@ -67,7 +67,7 @@ public sealed partial class OriginalObjectRuntime
 
 	/// <summary>Completed tier metadata only: no live VM, queue/rider/head, animator or scheduler mutation.</summary>
 	// [APPROX:QUEUE-011] exact completed economy tiers drive factory-owned catalogue defaults; live CAP/DUR stay authored, and native completion reset/performance behavior remains unverified.
-	internal bool TryApplyCatalogueTierDefaults( int tier, out string reason )
+	internal bool TryApplyCatalogueTierDefaults( int tier, out string reason, bool completion = false )
 	{
 		if ( !CanConfigureCatalogue( out reason ) ) return false;
 		if ( CatalogueTier is int current && tier < current )
@@ -75,6 +75,9 @@ public sealed partial class OriginalObjectRuntime
 		if ( !ResolveCatalogueTier( tier, out var row, out var parameters, out reason ) ) return false;
 		if ( catalogueInitialized && CatalogueTier == tier ) return true;
 		ApplyCatalogueMetadata( tier, row, parameters );
+		// [BIN:TPW-EXE:0x4df8f0 upgrade completion speed] completing an upgrade sets the script speed bias to the new level's InitSpeed (Upgrades[level] at def+0x180+level·0x40, +0x28) when above 0, the same three steps as the ride-settings setter 0x4dd6e0 (bias 0x55a300, ride+0x58, log line); the same routine sets capacity from +0x198 (0x4dd7f0) and duration from +0x1a0 (QUEUE-011 keeps those authored)
+		if ( completion && row.GetInt( "InitSpeed" ) is > 0 and var speed )
+			Script!.SpeedBias = speed;
 		return true;
 	}
 

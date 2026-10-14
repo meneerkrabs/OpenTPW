@@ -39,7 +39,7 @@ public partial class Level
 		if ( owners.Length != 1 ) { Log.Warning( $"Catalogue tier completion refused for instance {instance}: no unique owner." ); return; }
 		var owner = owners[0];
 		if ( !CatalogueOwner( owner, instance, out var state, out var reason )
-			|| !owner.Runtime.TryApplyCatalogueTierDefaults( state.Level, out reason ) )
+			|| !owner.Runtime.TryApplyCatalogueTierDefaults( state.Level, out reason, completion: true ) )
 			Log.Warning( $"Catalogue tier completion refused for instance {instance}: {reason}." );
 	}
 	private void RequireResumableCatalogueDefaults()

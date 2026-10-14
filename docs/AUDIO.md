@@ -291,8 +291,8 @@ Traced in the binary but not triggered yet:
   (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
   activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
   activation; it has no separate status panel (UI-910) and no map markers or strip yet.
-* Global lobby effects (`cat_globallobbysfx` 1 thunder with the lobby lightning flash `0x1009533C`, 4 at
-  `0x10183DA4`, 2/3 in the online globe `0x100923A8`): the lobby has no lightning or globe to trigger them.
+* Global lobby effects now play (see "Lobby effects" below): the thunder (`cat_globallobbysfx` 1) with the lobby's
+  lightning, the globe's music and ambience (2, 3) and the enter-park sound (4).
 * The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and
   198/0xC6 (`0x100075DC`): which advisor state plays them is not traced.
 * The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap
@@ -300,6 +300,30 @@ Traced in the binary but not triggered yet:
 * `cat_ui` 0xBD: a control whose flag word (read at `0x1017F618`) has a bit set outside
   bits 24–26 plays 0xBD instead of 0x1F (`0x10138030`); no OpenTPW control maps those bits
   (AUDIO-004).
+
+## Lobby effects
+
+The front end's island effects follow the original's islands update (`CLBScreenComponentIslands::vf2`, `0x10094474`),
+stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per rendered frame):
+
+* **The nearest island** to the camera drives everything, not the selected one.
+* **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, the full state returned, `0x100904A8`), seeded once from
+  the clock (`0x1008CDBC`). The original's flying meshes and camera wander draw from it too; OpenTPW has neither yet, so
+  the rhythm of strikes and one-shots differs (UI-941).
+* **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(state & LIGHTNING) == 1` strikes; four draws place the top
+  within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
+  flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt and
+  the flash are stepped but not drawn yet.
+* **Rain**: 10^17 / (mean squared distance from the camera to the rainy islands)^4 drops, none below 20, at most 400
+  (`0x10094F8C`): about 173 at the orbit radius around hallow. Stepped, not drawn yet.
+* **Island one-shots**: a draw with `(state & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
+  `cat_locallobbysfx` (`0x10095340`), replacing OpenTPW's earlier 5–15 s timer (AUDIO-017 is resolved).
+* **Sky**: one flat colour eased 1/16 of the way toward the island's `SKYCOLOUR` each tick (`0x1008FAA0`, tp.exe
+  `0x5D96C0`). Both builds ease the red channel toward the blue target, and two settings flags gate the eased sky; neither
+  is reproduced before a capture confirms it (UI-018).
+* **The globe** (`0x100923A8`) sets the rain to 0 and the sky target to (243, 203, 191) and starts its music
+  (`cat_globallobbysfx` 2) and ambience (3), stopped when it closes; OpenTPW stops the lobby's own music meanwhile (UI-942).
+* **Entering a park** (`0x10183CC0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2 (UI-942).
 
 ## Weather visuals
 

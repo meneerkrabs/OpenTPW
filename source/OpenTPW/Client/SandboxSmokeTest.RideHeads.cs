@@ -27,7 +27,7 @@ internal sealed partial class SandboxSmokeTest
 		{
 			var candidate = level.Objects.Objects.Where( ride => !ride.IsDeleted && ride.IsAnimating
 				&& objectMotion.TryGetValue( ride, out var motion ) && motion.MovedFrames >= 10 )
-				.SelectMany( ride => (ride.Visitors.Heads?.Hung() ?? Enumerable.Empty<(int Visitor, int Node)>())
+				.SelectMany( ride => ride.Visitors.HungHeads()
 					.Where( head => RideHeadRenderer.CanDraw( level.Guests.Find( head.Visitor ), ride.Visitors.AttractionId ) )
 					.Select( head => (Ride: ride, Head: head)) ).FirstOrDefault();
 			if ( candidate.Ride == null )

@@ -28,6 +28,7 @@ internal static class EconomyTestData
 			text.Append( $"PerGradeStaffConsts[{grade}].HappinessRecuperationRate\t{new[] { 1, 2, 2, 3, 3 }[grade]}\t\t// Grade {grade}\n" );
 			text.Append( $"PerGradeStaffConsts[{grade}].IdleDuration\t{new[] { 40, 30, 20, 10, 5 }[grade]}\n" );
 			text.Append( $"HandymanConstsPerGrade[{grade}].DetectionRange\t{new[] { 2, 3, 3, 4, 5 }[grade]}\n" );
+			text.Append( $"EntertainerConstsPerGrade[{grade}].ActivationDistance\t{new[] { 3, 3, 4, 4, 5 }[grade]}\n" );
 			text.Append( $"ResearcherConstsPerGrade[{grade}].ResearchAbility\t{ability[grade]}\n" );
 			text.Append( $"ResearchTech[{grade}].PercentageForThisTech\t{tech[grade]}\n" );
 		}

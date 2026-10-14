@@ -15,6 +15,18 @@ public partial class Level
 		StaffWorld = new StaffWorldSimulation( Guests.Grid, () => Park.Economy.Staff.Members, StaffJobAccess,
 			lane is { Length: > 0 } ? lane[^1] : null );
 		StaffWorld.Toilets = ToiletSites;
+		// the guards' pranksters and the entertainers' audience; a prank reaches the staff HQ's guard choice at once (StaffWorldSimulation.ReportPrank)
+		StaffWorld.Guests = Guests;
+		// the rest areas, the gates a striker walks out through, and the staff room's count of resting staff
+		StaffWorld.RestAreas = RestSites;
+		StaffWorld.GatesOpen = () => Gate?.GateStatusIsOpen == true;
+		StaffWorld.RestingStaff = SetRestingStaff;
+		Guests.IsEscorted = StaffWorld.IsEscorting;
+		Guests.Pranked += ( guest, _ ) =>
+		{
+			if ( Park != null )
+				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
+		};
 		AttachStaffWorld();
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsPathBlocked );
 		if ( OriginalPark != null )
@@ -32,7 +44,33 @@ public partial class Level
 		if ( Park == null || StaffWorld == null )
 			return;
 		Park.Economy.MechanicJobWorld = StaffWorld;
-		Park.Economy.HandymanWorld = StaffWorld;
+		Park.Economy.StaffWorld = StaffWorld;
+	}
+
+	/// <summary>The staff's rest areas: objects with <c>UsageInfo.ChillsYouOut</c> and an economy instance, their cell and the path cell in front of them.</summary>
+	// [DATA:<object>.sam:UsageInfo.ChillsYouOut] type record +0xFC, the object flag +0x32 bit 1 the rest finder 0x00506910 tests (the Staff Room of each theme)
+	private IReadOnlyList<RestSite> RestSites()
+	{
+		var sites = new List<RestSite>();
+		if ( Guests == null )
+			return sites;
+		foreach ( var item in Objects.Objects )
+		{
+			if ( item.IsDeleted || !item.Entry.Settings.GetBool( "UsageInfo.ChillsYouOut" ) || !economyInstances.TryGetValue( item, out var instance ) )
+				continue;
+			if ( AccessCell( item, Guests.Grid ) is { } access )
+				sites.Add( new RestSite( instance, (item.Placement.X, item.Placement.Y), access ) );
+		}
+		return sites;
+	}
+
+	/// <summary>The staff room's <c>VAR_STAFFIN</c> (its script's only variable, index 0 in every theme): the members resting in it.</summary>
+	// [BIN:TPW-EXE:0x00505FE0 rest area count] the arrival adds 1 to the rest area's script variable 0 (0x0055A0B0), the rest's end (0x00506D10) takes 1 away
+	private void SetRestingStaff( IReadOnlyDictionary<int, int> counts )
+	{
+		foreach ( var (item, id) in economyInstances )
+			if ( !item.IsDeleted && item.Entry.Settings.GetBool( "UsageInfo.ChillsYouOut" ) )
+				item.Runtime.SetVariable( "VAR_STAFFIN", counts.GetValueOrDefault( id ) );
 	}
 
 	/// <summary>The toilets for the handymen: relief objects with an economy instance, their cell and the path cell in front of them.</summary>
@@ -44,7 +82,7 @@ public partial class Level
 			if ( item.IsDeleted || !item.Runtime.Visitors.ProvidesRelief || !item.Runtime.Visitors.HasCells )
 				continue;
 			var access = item.Runtime.Visitors.JoinCell ?? item.Runtime.Visitors.EntranceCell;
-			// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateHandymen): a toilet's access cell (thing +0x36) is its queue's join cell or the path cell in front of its entrance, as for the mechanics' arrival
+			// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): a toilet's access cell (thing +0x36) is its queue's join cell or the path cell in front of its entrance, as for the mechanics' arrival
 			if ( Guests!.Grid.IsWalkable( access.X, access.Y ) )
 				sites.Add( new ToiletSite( instance, (item.Placement.X, item.Placement.Y), access ) );
 		}

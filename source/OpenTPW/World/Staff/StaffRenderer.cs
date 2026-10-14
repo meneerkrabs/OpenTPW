@@ -82,8 +82,8 @@ public sealed class StaffRenderer : Entity
 		if ( atlasIndex < 0 || atlasIndex >= textures.Count )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
-		// a handyman steers continuously; the others are moved one cell per second by the world, so their steps are further apart
-		var moving = now - view.MovedAt < (member.Type == StaffType.Handyman ? 0.6f : 1.3f);
+		// the world-driven roles steer continuously; mechanics are moved one cell per second, so their steps are further apart
+		var moving = now - view.MovedAt < (member.Type == StaffType.Mechanic ? 1.3f : 0.6f);
 		if ( StaffSpriteRules.SelectClip( member, moving, atlas.Animations.Animations ) is not { } clip )
 			return null;
 		var key = clip.Script << 8 | clip.Slot;

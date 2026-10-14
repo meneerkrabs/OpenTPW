@@ -53,23 +53,23 @@ public class StaffSpriteTests
 	public void HandymenPlayTheirScriptsByJob()
 	{
 		var handyman = Member( StaffType.Handyman );
-		StaffClip? Clip( HandymanJob job, bool moving, StaffState state = StaffState.Working )
+		StaffClip? Clip( StaffJob job, bool moving, StaffState state = StaffState.Working )
 		{
 			handyman.Job = job;
 			handyman.State = state;
 			return StaffSpriteRules.SelectClip( handyman, moving );
 		}
-		Assert.AreEqual( StaffSpriteRules.Stand, Clip( HandymanJob.Idle, false, StaffState.Idle ) );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( HandymanJob.Patrol, true, StaffState.Patrolling ), "the patrol walks at half rate (script 9)" );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( HandymanJob.ToLitter, true ) );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( HandymanJob.ToToilet, true ) );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( HandymanJob.ToStrike, true ) );
-		Assert.AreEqual( StaffSpriteRules.Stand, Clip( HandymanJob.Patrol, false, StaffState.Patrolling ), "between two walks" );
-		Assert.AreEqual( StaffSpriteRules.Sweep, Clip( HandymanJob.Sweeping, false ) );
-		Assert.AreEqual( StaffSpriteRules.Sweep, Clip( HandymanJob.Cleaning, false ) );
-		Assert.AreEqual( StaffSpriteRules.Strike, Clip( HandymanJob.Striking, false, StaffState.OnStrike ) );
-		Assert.IsNull( Clip( HandymanJob.Resting, false, StaffState.Resting ), "a resting member has no sprite (state 3)" );
-		Assert.IsNull( Clip( HandymanJob.PickedUp, false, StaffState.PickedUp ), "a carried member is the dangling sprite instead" );
+		Assert.AreEqual( StaffSpriteRules.Stand, Clip( StaffJob.Idle, false, StaffState.Idle ) );
+		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.Patrol, true, StaffState.Patrolling ), "the patrol walks at half rate (script 9)" );
+		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.ToLitter, true ) );
+		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.ToToilet, true ) );
+		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.ToStrike, true ) );
+		Assert.AreEqual( StaffSpriteRules.Stand, Clip( StaffJob.Patrol, false, StaffState.Patrolling ), "between two walks" );
+		Assert.AreEqual( StaffSpriteRules.Sweep, Clip( StaffJob.Sweeping, false ) );
+		Assert.AreEqual( StaffSpriteRules.Sweep, Clip( StaffJob.Cleaning, false ) );
+		Assert.AreEqual( StaffSpriteRules.Strike, Clip( StaffJob.Striking, false, StaffState.OnStrike ) );
+		Assert.IsNull( Clip( StaffJob.Resting, false, StaffState.Resting ), "a resting member has no sprite (state 3)" );
+		Assert.IsNull( Clip( StaffJob.PickedUp, false, StaffState.PickedUp ), "a carried member is the dangling sprite instead" );
 		Assert.AreEqual( 5, StaffSpriteRules.Strike.Slot );
 		Assert.AreEqual( 4, StaffSpriteRules.Sweep.Slot );
 		Assert.AreEqual( 1, StaffSpriteRules.WalkHalf.Slot );
@@ -91,15 +91,19 @@ public class StaffSpriteTests
 		Assert.AreEqual( 8, StaffSpriteRules.Repair.MaxFrames );
 
 		var researcher = Member( StaffType.Researcher );
+		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( researcher, false ) );
+		researcher.Job = StaffJob.Researching;
 		Assert.AreEqual( StaffSpriteRules.Research, StaffSpriteRules.SelectClip( researcher, false ), "researching: slot 4, 4 frames then hold" );
 		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( researcher, true ) );
 		Assert.AreEqual( StaffPlayback.OnceThenHold, StaffSpriteRules.Research.Playback );
 
 		var guard = Member( StaffType.Guard );
 		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( guard, false ) );
-		guard.Escorting = true;
+		guard.Job = StaffJob.Escorting;
 		Assert.AreEqual( StaffSpriteRules.CatchAndCarry, StaffSpriteRules.SelectClip( guard, false ), "slot 7 once, then slot 8 looping" );
-		guard.Escorting = false;
+		guard.Job = StaffJob.Chasing;
+		Assert.AreEqual( StaffSpriteRules.Run, StaffSpriteRules.SelectClip( guard, true ), "a chasing guard runs (script 2)" );
+		guard.Job = StaffJob.Idle;
 		guard.State = StaffState.OnStrike;
 		Assert.AreEqual( StaffSpriteRules.Strike, StaffSpriteRules.SelectClip( guard, false ) );
 		guard.State = StaffState.Resting;
@@ -111,7 +115,7 @@ public class StaffSpriteTests
 	{
 		var entertainer = Member( StaffType.Entertainer );
 		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( entertainer, false ) );
-		entertainer.State = StaffState.Working;
+		entertainer.Job = StaffJob.Performing;
 		var bank = new[]
 		{
 			new SpriteAnimation( 0, 0, 1, 5 ), new SpriteAnimation( 1, 5, 8, 5 ), new SpriteAnimation( 2, 0, 0, 0 ), new SpriteAnimation( 3, 45, 1, 5 ),

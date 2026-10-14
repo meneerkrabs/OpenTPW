@@ -105,36 +105,33 @@ public static class StaffSpriteRules
 	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="animations"/> (the bank's slots) lets an entertainer pick a
 	/// performance the bank has.
 	/// </summary>
-	// [APPROX:GUEST-015] an entertainer performs a random one of the scripts 13-16, whose entries (0-3) the original resolves per bank (0x540c70, untraced): OpenTPW picks, per member, one of the bank's multi-frame slots 4, 10, 3, 11, and entertainers perform unless idle or walking
+	// [APPROX:GUEST-015] an entertainer performs a random one of the scripts 13-16, whose entries (0-3) the original resolves per bank (0x540c70, untraced): OpenTPW picks, per member, one of the bank's multi-frame slots 4, 10, 3, 11 while it performs (state 14)
 	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpriteAnimation>? animations = null )
 	{
-		if ( member.State is StaffState.Resting or StaffState.PickedUp
-			|| (member.Type == StaffType.Handyman && member.Job is HandymanJob.Resting or HandymanJob.PickedUp) )
+		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
+		if ( member.State is StaffState.Resting or StaffState.PickedUp || member.Job is StaffJob.Resting or StaffJob.PickedUp )
 			return null;
-		var handyman = member.Type == StaffType.Handyman;
-		if ( handyman && member.Job == HandymanJob.ToStrike )
+		if ( member.Job == StaffJob.ToStrike )
 			return moving ? WalkHalf : Stand;
-		if ( member.State == StaffState.OnStrike || handyman && member.Job == HandymanJob.Striking )
+		if ( member.State == StaffState.OnStrike || member.Job == StaffJob.Striking )
 			return Strike;
 		switch ( member.Type )
 		{
 			case StaffType.Handyman:
 				return member.Job switch
 				{
-					HandymanJob.Sweeping or HandymanJob.Cleaning => Sweep,
-					HandymanJob.Patrol or HandymanJob.ToLitter or HandymanJob.ToToilet or HandymanJob.ToStrike => moving ? WalkHalf : Stand,
+					StaffJob.Sweeping or StaffJob.Cleaning => Sweep,
+					StaffJob.Patrol or StaffJob.ToLitter or StaffJob.ToToilet => moving ? WalkHalf : Stand,
 					_ => moving ? Walk : Stand
 				};
 			case StaffType.Mechanic:
 				return member.BusyTicks > 0 && !member.AwaitingJobArrival && !moving ? Repair : moving ? Walk : Stand;
 			case StaffType.Researcher:
-				return moving ? Walk : Research;
+				return member.Job == StaffJob.Researching && !moving ? Research : moving ? Walk : Stand;
 			case StaffType.Guard:
-				return member.Escorting ? CatchAndCarry : moving ? Walk : Stand;
+				return member.Job == StaffJob.Escorting ? CatchAndCarry : moving ? (member.Job == StaffJob.Chasing ? Run : Walk) : Stand;
 			default:
-				if ( moving )
-					return Walk;
-				return member.State == StaffState.Idle ? Stand : Perform( member.Id, animations );
+				return member.Job == StaffJob.Performing && !moving ? Perform( member.Id, animations ) : moving ? Walk : Stand;
 		}
 	}
 

@@ -508,15 +508,15 @@ public static class GameAudio
 	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn with an independent host stream.
 	/// </summary>
 	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer handler draws the world random at each walking/idle turn and plays at (draw & 0xF) == 0 — the gate is traced for all roles (0x100D5EAC, 0x100D6434, 0x100D9BAC, 0x100D9F10, 0x100D2DDC, 0x100D2E44, 0x100D4EF0, 0x100D4E18, 0x100F0460, 0x100F0630)
-	// [APPROX:AUDIO-024] except the handymen (whose state machine draws their voices, PlayStaffVoices), the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the other roles' state machines (their handlers' turn boundary and world draw order)
-	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn, bool handymenDrawOwnVoices = false )
+	// [APPROX:AUDIO-024] for the mechanics only (the other roles' state machines draw their voices, PlayStaffVoices), the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the other roles' state machines (their handlers' turn boundary and world draw order)
+	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn, bool worldDrawsVoices = false )
 	{
 		if ( events == null || turn == staffTurn )
 			return;
 		staffTurn = turn;
 		foreach ( var member in staff )
 		{
-			if ( handymenDrawOwnVoices && member.Type == StaffType.Handyman )
+			if ( worldDrawsVoices && member.Type != StaffType.Mechanic )
 				continue;
 			if ( staffRandom.Next( 16 ) != 0 )
 				continue;
@@ -534,7 +534,13 @@ public static class GameAudio
 	public static void PlayStaffVoices( IReadOnlyList<StaffVoice> voices )
 	{
 		foreach ( var voice in voices )
-			PlayStaffSound( voice.Type, voice.Walking, new Vector3( voice.CellX * 10, 0, voice.CellY * 10 ) );
+		{
+			var position = new Vector3( voice.CellX * 10, 0, voice.CellY * 10 );
+			if ( voice.Event == 0 )
+				PlayStaffSound( voice.Type, voice.Walking, position );
+			else
+				events?.PlayAt( voice.Kids ? Kids : Staff, voice.Event, AudioChannel.Effects, position );
+		}
 	}
 
 	/// <summary>The cat_staff event of a role's walking or idle turn, or null when none is traced.</summary>

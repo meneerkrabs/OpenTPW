@@ -28,7 +28,7 @@ public class StaffPlacementTests
 			Park.OpenPark();
 			Park.Litter.Cells = Grid.Cells;
 			World = new StaffWorldSimulation( Grid, () => Park.Staff.Members, _ => null, (0, 5) );
-			Park.HandymanWorld = World;
+			Park.StaffWorld = World;
 			Placement = new StaffPlacement( () => Park, () => Grid.Cells, ( x, y ) => Occupied.Contains( (x, y) ) );
 		}
 
@@ -132,7 +132,7 @@ public class StaffPlacementTests
 		var f = new Fixture();
 		var member = f.Hire( StaffType.Handyman );
 		member.PatrolArea = (2, 3, 8, 9);
-		member.Job = HandymanJob.ToLitter;
+		member.Job = StaffJob.ToLitter;
 		member.LitterCell = (4, 5);
 		member.ToiletId = 11;
 		member.IdleStamp = 77;
@@ -150,7 +150,7 @@ public class StaffPlacementTests
 		Assert.IsNull( member.LitterCell );
 		Assert.AreEqual( 0, member.ToiletId );
 		Assert.AreEqual( 0L, member.IdleStamp );
-		Assert.AreEqual( HandymanJob.Idle, member.Job );
+		Assert.AreEqual( StaffJob.Idle, member.Job );
 		Assert.AreEqual( (2, 3, 8, 9), member.PatrolArea, "a drop never touches the patrol rectangle" );
 		Assert.IsFalse( f.Placement.IsActive );
 	}
@@ -192,6 +192,7 @@ public class StaffPlacementTests
 		var member = f.Hire( StaffType.Entertainer );
 		(member.CellX, member.CellY) = (4.2f, 5.9f);
 		member.ToiletId = 3;
+		member.OffGridLeg = [(1, 1, 0x80, 0x80)];
 		Assert.IsTrue( f.Placement.PickUp( member ) );
 		Assert.AreEqual( (4, 5), f.Placement.Origin );
 		f.Placement.Hover( 9, 9 );
@@ -200,6 +201,7 @@ public class StaffPlacementTests
 		Assert.AreEqual( (4.5f, 5.5f), (member.CellX, member.CellY) );
 		Assert.AreEqual( StaffState.Idle, member.State );
 		Assert.AreEqual( 0, member.ToiletId );
+		Assert.AreEqual( 0, member.OffGridLeg.Count, "the road leg outside the park is cleared" );
 	}
 
 	[TestMethod]
@@ -225,15 +227,15 @@ public class StaffPlacementTests
 		member.State = StaffState.OnStrike;
 		Assert.IsFalse( f.Placement.PickUp( member ), "on strike (states 4, 5)" );
 		member.State = StaffState.Idle;
-		member.Escorting = true;
-		Assert.IsFalse( f.Placement.PickUp( member ), "escorting (states 13, 18)" );
-		member.Escorting = false;
+		member.Job = StaffJob.Escorting;
+		Assert.IsFalse( f.Placement.PickUp( member ), "escorting (state 18)" );
+		member.Job = StaffJob.Idle;
 		var handyman = f.Hire( StaffType.Handyman );
-		handyman.Job = HandymanJob.Striking;
+		handyman.Job = StaffJob.Striking;
 		Assert.IsFalse( StaffPlacementRules.CanBePickedUp( handyman, f.Grid.Cells ), "a handyman's own striking state" );
-		handyman.Job = HandymanJob.ToStrike;
+		handyman.Job = StaffJob.ToStrike;
 		Assert.IsFalse( StaffPlacementRules.CanBePickedUp( handyman, f.Grid.Cells ), "walking to the strike" );
-		handyman.Job = HandymanJob.Idle;
+		handyman.Job = StaffJob.Idle;
 		Assert.IsTrue( f.Placement.PickUp( member ) );
 		Assert.IsFalse( StaffPlacementRules.CanBePickedUp( member, f.Grid.Cells ), "already in hand (state 7)" );
 		f.Placement.Cancel();

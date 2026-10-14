@@ -53,12 +53,13 @@ public static class StaffPlacementRules
 
 	/// <summary>
 	/// The pick-up button's enable rule (tp.exe <c>CanBePickedUp</c> 0x505bd0): refused while the member is on strike or walking to one
-	/// (states 4 and 5), already picked up (7) or escorting (13, 18), and when the member's own cell is not of a pick-up type.
+	/// (states 4 and 5), already picked up (7) or escorting (18; the state 13 has no job here), and when the member's own cell is not of a pick-up type.
 	/// </summary>
+	// [APPROX:ECON-052] the original also refuses staff state 13 and plays script 0x14 for state 6: StaffJob has neither, so only the jobs it has are refused — evidence needed: what the staff states 6 and 13 are
 	public static bool CanBePickedUp( StaffMember member, ParkCellMap cells )
 	{
-		if ( member.State is StaffState.OnStrike or StaffState.PickedUp || member.Escorting
-			|| member.Job is HandymanJob.ToStrike or HandymanJob.Striking or HandymanJob.PickedUp )
+		if ( member.State is StaffState.OnStrike or StaffState.PickedUp
+			|| member.Job is StaffJob.ToStrike or StaffJob.Striking or StaffJob.PickedUp or StaffJob.Escorting )
 			return false;
 		return CellOf( member ) is { } cell && cells.InBounds( cell.X, cell.Y ) && IsPickUpCellType( cells.RawTypeAt( cell.X, cell.Y ) );
 	}
@@ -280,19 +281,16 @@ public sealed class StaffPlacement
 		member.TravelSeconds = 0;
 		member.Navigation = null;
 		member.State = StaffState.Idle;
-		member.Escorting = false;
 		member.SpeedBonus = 0;
-		if ( member.Type == StaffType.Handyman )
-		{
-			member.Job = HandymanJob.Idle;
-			member.IdleStamp = 0;
-		}
+		member.Job = StaffJob.Idle;
+		member.IdleStamp = 0;
+		member.OffGridLeg.Clear();
 	}
 
 	/// <summary>
 	/// Clears the job a member holds: a handyman's litter and toilet claims, a mechanic's ride assignment (so the dispatch runs again).
 	/// </summary>
-	// [BIN:TPW-EXE:0x4dad20 drop mechanic] a dropped mechanic loses its ride assignment, then 0x4da5b0 dispatches again; the handyman's LitterCell and ToiletId are cleared (OffGridLeg belongs to the staff state machines' branch, not to this tree)
+	// [BIN:TPW-EXE:0x4dad20 drop mechanic] a dropped mechanic loses its ride assignment, then 0x4da5b0 dispatches again; the handyman's LitterCell and ToiletId are cleared (OffGridLeg is the road leg outside the park)
 	private static void ReleaseAssignments( ParkEconomy park, StaffMember member )
 	{
 		if ( member.LitterCell is { } litter )

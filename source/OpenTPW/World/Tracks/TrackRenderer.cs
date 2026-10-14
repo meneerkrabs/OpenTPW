@@ -23,6 +23,7 @@ public sealed class TrackRenderer : IDisposable
 	private readonly Dictionary<int, PieceGeometry> pieces = new();
 	private readonly List<ModelEntity> tiles = new();
 	private readonly List<List<ModelEntity>> boats = new();
+	private readonly List<BumpVehicle> wanted = new();
 	private PieceGeometry? boat;
 	private int version = -1;
 	private bool disposed;
@@ -95,21 +96,27 @@ public sealed class TrackRenderer : IDisposable
 
 	private void UpdateBoats( TrackCellLayer layer, IEnumerable<BumpController> controllers )
 	{
-		var wanted = controllers.SelectMany( controller => controller.Vehicles ).ToArray();
-		while ( boats.Count > wanted.Length )
+		// one reused list: the boats of every controller in order, without a new array per update
+		wanted.Clear();
+		foreach ( var controller in controllers )
+		{
+			foreach ( var vehicle in controller.Vehicles )
+				wanted.Add( vehicle );
+		}
+		while ( boats.Count > wanted.Count )
 		{
 			foreach ( var entity in boats[^1] )
 				entity.Delete();
 			boats.RemoveAt( boats.Count - 1 );
 		}
-		if ( wanted.Length > 0 && boat == null )
+		if ( wanted.Count > 0 && boat == null )
 			boat = BuildBoat();
 		if ( boat == null )
 			return;
-		while ( boats.Count < wanted.Length )
+		while ( boats.Count < wanted.Count )
 			boats.Add( boat.Models.Select( model => new ModelEntity { Model = model, Name = "boat" } ).ToList() );
 		var origin = gridOrigin();
-		for ( var index = 0; index < wanted.Length; index++ )
+		for ( var index = 0; index < wanted.Count; index++ )
 		{
 			var vehicle = wanted[index];
 			var (x, y) = (vehicle.X / UnitsPerModelUnit, vehicle.Y / UnitsPerModelUnit);

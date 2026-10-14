@@ -151,9 +151,19 @@ public sealed class BumpController
 		ArgumentNullException.ThrowIfNull( circuit );
 		EjectAll();
 		Close();
-		IsTrackValid = circuit.IsValid;
 		var result = TrackSections.Build( circuit.IsValid ? circuit.Steps : Array.Empty<TrackStep>(), Template.Slack, CloneStation() );
-		Adopt( result );
+		// [APPROX:TRACK-020] a circuit that overflows the section, collision-object or buoy pool is not a ride: the walk's verdict is overridden to invalid and the geometry is dropped, so no boat runs on a partial track — evidence needed: what the original does at the pool limits (0x0054B2F0 refuses duplicates, its overflow path is untraced)
+		if ( result.Truncated )
+		{
+			Log?.Warning( $"A track circuit of {circuit.Steps.Count} tiles overflows the section pools; the ride is invalid." );
+			IsTrackValid = false;
+			Adopt( TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation() ) );
+		}
+		else
+		{
+			IsTrackValid = circuit.IsValid;
+			Adopt( result );
+		}
 		foreach ( var vehicle in vehicles )
 			vehicle.ObjectIndex = -1;
 	}
@@ -406,8 +416,9 @@ public sealed class BumpController
 	/// <summary>Every boat leaves the ride; its guests go to the leaving list.</summary>
 	public void EjectAll()
 	{
-		foreach ( var vehicle in vehicles.ToArray() )
-			Retire( vehicle );
+		// forward order: each retired boat's guests go to the front of the leaving list in turn
+		while ( vehicles.Count > 0 )
+			Retire( vehicles[0] );
 	}
 
 	/// <summary>Removes a boat: its guests go to the front of the leaving list one by one and the boat count falls.</summary>
@@ -499,6 +510,8 @@ public sealed class BumpController
 	/// <summary>Advances the controller by <paramref name="deltaSeconds"/>: whole 1/30 s ticks run, the rest carries over.</summary>
 	public void Advance( double deltaSeconds )
 	{
+		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds <= 0 )
+			return;
 		tickRemainder += deltaSeconds;
 		while ( tickRemainder >= TickSeconds - 1e-9 )
 		{
@@ -516,20 +529,25 @@ public sealed class BumpController
 	public void Tick()
 	{
 		TickCount++;
-		foreach ( var vehicle in vehicles.ToArray() )
+		// a boat that reaches the unload point retires itself during its own step, so the index only advances while the list still holds it there
+		for ( var index = 0; index < vehicles.Count; )
 		{
+			var vehicle = vehicles[index];
 			vehicle.Flags &= ~BumpVehicle.Crunched;
 			Step( vehicle );
 			if ( vehicle.IsLive )
 				Integrate( vehicle );
+			if ( index < vehicles.Count && vehicles[index] == vehicle )
+				index++;
 		}
-		foreach ( var vehicle in vehicles.ToArray() )
+		// nothing below adds or removes boats, so the list is walked in place
+		foreach ( var vehicle in vehicles )
 		{
 			if ( !vehicle.IsLive )
 				continue;
 			if ( ((ObjectOf( vehicle )?.Flags ?? 0) & CollisionObject.Crossing) == 0 && (vehicle.Flags & 0x200) == 0 )
 			{
-				foreach ( var other in vehicles.ToArray() )
+				foreach ( var other in vehicles )
 					Collide( vehicle, other );
 			}
 			StuckCheck( vehicle );
@@ -1048,12 +1066,39 @@ public sealed class BumpController
 			hash.Add( vehicle.Spin );
 			hash.Add( vehicle.TargetBuoy );
 			hash.Add( vehicle.Laps );
+			hash.Add( vehicle.Variant );
+			hash.Add( vehicle.VX0 );
+			hash.Add( vehicle.VY0 );
+			hash.Add( vehicle.Speed );
+			hash.Add( vehicle.Roll );
+			hash.Add( vehicle.Radius );
+			hash.Add( vehicle.AccelBonus );
+			hash.Add( vehicle.TargetX );
+			hash.Add( vehicle.TargetY );
+			hash.Add( vehicle.JitterX );
+			hash.Add( vehicle.JitterY );
+			hash.Add( vehicle.BuoyCountdown );
+			hash.Add( vehicle.Age );
+			hash.Add( vehicle.ObjectIndex );
+			hash.Add( vehicle.WallHits );
+			hash.Add( vehicle.WallWindow );
+			hash.Add( vehicle.Sprays );
 			hash.Add( vehicle.Riders.Count );
+			foreach ( var rider in vehicle.Riders )
+				hash.Add( rider );
 		}
 	}
 
 	internal void Restore( BumpControllerSaveData data )
 	{
+		// the walked circuit decides how many buoys and collision objects exist, so the boats' indexes are checked against it before anything changes
+		foreach ( var saved in data.Vehicles )
+		{
+			if ( saved.TargetBuoy >= buoys.Count || saved.ObjectIndex >= objects.Count || saved.Slot is < 0 or >= VehiclePool )
+				throw new InvalidDataException( $"A saved boat aims at buoy {saved.TargetBuoy} or sits in object {saved.ObjectIndex}, but the walked circuit has {buoys.Count} buoys and {objects.Count} objects." );
+		}
+		if ( !double.IsFinite( data.TickRemainder ) || data.TickRemainder < 0 || data.TickRemainder >= TickSeconds )
+			throw new InvalidDataException( "A saved controller's tick remainder is outside one tick." );
 		Laps = data.Laps;
 		SetPerformance( data.Performance );
 		Phase = data.Phase;

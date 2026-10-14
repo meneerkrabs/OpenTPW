@@ -56,34 +56,16 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Removes the track of a station: every tile connected to its station tiles through the arms, then the station tiles. Nothing is charged or refunded.
+	/// Removes the track of a station: every tile laid for its ride (TRACK-021), then the station tiles. Nothing is charged or refunded.
 	/// </summary>
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
-	// [APPROX:TRACK-007] the demolition clears every tile connected to the station through the arms and pays nothing: the original's one Spend (2 × the cell cost scaled by a percentage) has an untraced sign and percentage — evidence needed: 0x100E2424 and the Spend's direction
+	// [APPROX:TRACK-007] the demolition clears the ride's own tiles and pays nothing: the original's one Spend (2 × the cell cost scaled by a percentage) has an untraced sign and percentage — evidence needed: 0x100E2424 and the Spend's direction
 	private void DemolishTrack( TrackStation station )
 	{
 		if ( waterTracks == null )
 			return;
-		var reached = new HashSet<(int X, int Y)>();
-		var pending = new Stack<(int X, int Y)>();
-		foreach ( var tile in station.Tiles )
-			pending.Push( tile );
-		while ( pending.Count > 0 )
-		{
-			var (x, y) = pending.Pop();
-			if ( !reached.Add( (x, y) ) )
-				continue;
-			var cell = waterTracks.Tracks.Get( x, y );
-			if ( !cell.IsOrigin )
-				continue;
-			foreach ( var heading in TrackHeading.All )
-			{
-				if ( (cell.Mask & heading) != 0 )
-					pending.Push( (x + TrackStation.TileCells * TrackHeading.Dx( heading ), y + TrackStation.TileCells * TrackHeading.Dy( heading )) );
-			}
-		}
-		foreach ( var (x, y) in reached )
-			waterTracks.RemoveTile( x, y );
+		// exactly the tiles laid for this ride go, so a neighbouring ride's circuit that touches it stays
+		waterTracks.RemoveOwned( waterTracks.OwnerOf( station ) );
 		waterTracks.RemoveStation( station );
 	}
 
@@ -118,7 +100,7 @@ public partial class Level
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
 			return false;
 		CellTool.Cancel();
-		CellTool.Enter( new TrackLineWriter( waterTracks, () => RewalkTrack( station ) ), layout.Exit );
+		CellTool.Enter( new TrackLineWriter( waterTracks, () => RewalkTrack( station ), waterTracks.OwnerOf( layout ) ), layout.Exit );
 		trackToolStation = station;
 		return true;
 	}
@@ -142,7 +124,7 @@ public partial class Level
 			LastActionMessage = "Cannot build a track here.";
 			return null;
 		}
-		var result = new TrackLineWriter( waterTracks, () => RewalkTrack( station ) ).Commit( from, to );
+		var result = new TrackLineWriter( waterTracks, () => RewalkTrack( station ), waterTracks.OwnerOf( trackStations[station] ) ).Commit( from, to );
 		LastActionMessage = result.Completed ? $"Built {result.Built.Count} track tiles for ${result.Charged}." : $"Cannot build a track here: {result.StoppedBy}.";
 		return result;
 	}
@@ -220,7 +202,10 @@ public partial class Level
 
 	/// <summary>The park-resume track part, or null when the park holds no track tile and no controller. Call between simulation ticks.</summary>
 	internal TrackWorldSaveData? CaptureTracksSnapshot() => Guests == null ? null : TrackSave.Capture( Guests.Grid.Cells, Objects.ScriptWorld.Bumpers,
-		Objects.Objects.Where( item => item.Runtime.Bump != null ).Select( item => (item.Runtime.AttractionId, item.Runtime.Bump!) ) );
+		LiveWaterRides().Select( item => (item.Runtime.AttractionId, item.Runtime.LiveBump!) ) );
+
+	/// <summary>The placed rides that carry a live controller: the one rule the track capture and restore share (a faulted or removed ride has none).</summary>
+	private IEnumerable<OriginalObject> LiveWaterRides() => Objects.Objects.Where( item => !item.IsDeleted && item.Runtime.LiveBump != null );
 
 	/// <summary>
 	/// Restores the saved tracks into this candidate level, after the objects were placed and their runtimes restored: the cells go back into the layer, each
@@ -229,10 +214,10 @@ public partial class Level
 	/// </summary>
 	internal void RestoreTracksSnapshot( TrackWorldSaveData? saved )
 	{
-		var controllers = Objects.Objects.Where( item => item.Runtime.Bump != null && !item.IsDeleted ).ToList();
+		var controllers = LiveWaterRides().ToList();
 		if ( saved == null )
 		{
-			if ( controllers.Any( item => item.Runtime.Bump!.Vehicles.Count > 0 ) )
+			if ( controllers.Any( item => item.Runtime.LiveBump!.Vehicles.Count > 0 ) )
 				throw new InvalidDataException( "The park holds boats but the save carries no track part." );
 			return;
 		}

@@ -774,8 +774,18 @@ internal static class ParkResumeSaveFile
 			Require( (cell.Mask & ~0x55) == 0, $"track cell ({cell.X}, {cell.Y}) has connection bits 0x{cell.Mask:X}, outside 0x55" );
 			Require( cell.Type != TrackCellTypes.Extension || (uint)cell.Parent < (uint)(width * height), $"track extension cell ({cell.X}, {cell.Y}) names parent {cell.Parent}, outside the cell map" );
 			Require( mapTypes.TryGetValue( (cell.X, cell.Y), out var mapType ) && mapType == cell.Type, $"track cell ({cell.X}, {cell.Y}) of type {cell.Type} is not that type in the saved cell map" );
+			Require( (cell.Link & ~0x55) == 0 && (cell.Family is 0 or (int)TrackFamily.Kart or (int)TrackFamily.Water) && cell.Piece is >= 0 and < TrackPieceSelector.WaterPieceCount
+				&& cell.Rotation is 0 or 90 or 180 or 270 && cell.Overlap >= 0 && cell.Segment >= 0 && (uint)cell.Owner <= (uint)(width * height),
+				$"track cell ({cell.X}, {cell.Y}) holds a link, piece, rotation, overlap, segment or owner outside the layer's ranges" );
 		}
 		var placedAttractions = snapshot.Layout.Objects!.Select( record => record!.AttractionId ).ToHashSet();
+		var guestIds = snapshot.Guests!.Guests!.Select( guest => guest!.Id ).ToHashSet();
+		var listedGuests = new HashSet<int>();
+		// positions and targets lie in the park's footprint in section units, plus one tile of margin for a boat pressed against the edge
+		var limitX = (long)width * TrackStation.CellUnits + 0x1800;
+		var limitY = (long)height * TrackStation.CellUnits + 0x1800;
+		bool Inside( int x, int y ) => x >= -0x1800L && x <= limitX && y >= -0x1800L && y <= limitY;
+		bool Small( int value, int limit ) => value >= -limit && value <= limit;
 		var previous = 0;
 		foreach ( var controller in tracks.Controllers )
 		{
@@ -786,16 +796,25 @@ internal static class ParkResumeSaveFile
 			Require( controller.Sections.Count <= TrackSave.MaximumSections, $"track controller {controller.AttractionId} holds {controller.Sections.Count} sections" );
 			Require( controller.Phase is >= 0 and <= 3 && controller.State is >= 0 and <= 2, $"track controller {controller.AttractionId} has phase {controller.Phase} or state {controller.State} out of range" );
 			Require( controller.Performance is >= 0 and <= 100, $"track controller {controller.AttractionId} has performance {controller.Performance} outside 0..100" );
-			Require( controller.TickCount >= 0 && double.IsFinite( controller.TickRemainder ) && controller.TickRemainder >= 0, $"track controller {controller.AttractionId} has a bad tick clock" );
-			Require( controller.Pending.Count + controller.Leaving.Count <= TrackSave.MaximumGuests && controller.Pending.Concat( controller.Leaving ).All( guest => guest > 0 ),
-				$"track controller {controller.AttractionId} holds an invalid guest list" );
+			Require( controller.TickCount >= 0 && double.IsFinite( controller.TickRemainder ) && controller.TickRemainder >= 0 && controller.TickRemainder < BumpController.TickSeconds, $"track controller {controller.AttractionId} has a bad tick clock" );
+			Require( controller.Pending.Count + controller.Leaving.Count <= TrackSave.MaximumGuests && controller.Pending.Concat( controller.Leaving ).All( guest => guestIds.Contains( guest ) && listedGuests.Add( guest ) ),
+				$"track controller {controller.AttractionId} holds a guest list with a guest the park does not hold, or one listed twice" );
+			Require( controller.Laps is >= -1000 and <= 1000, $"track controller {controller.AttractionId} has laps {controller.Laps} out of range" );
 			var slots = new HashSet<int>();
 			foreach ( var vehicle in controller.Vehicles )
 			{
 				Require( vehicle != null && vehicle.Slot is >= 0 and < BumpController.VehiclePool && slots.Add( vehicle.Slot ), $"track controller {controller.AttractionId} holds a boat with a bad or repeated slot" );
-				Require( vehicle.Heading is >= 0 and < BumpMath.Turn && vehicle.Riders.Count <= TrackSave.MaximumGuests && vehicle.Riders.All( guest => guest > 0 ),
-					$"a boat of track controller {controller.AttractionId} has a bad heading or rider list" );
+				Require( vehicle.Heading is >= 0 and < BumpMath.Turn && vehicle.Riders.Count <= TrackSave.MaximumGuests && vehicle.Riders.All( guest => guestIds.Contains( guest ) && listedGuests.Add( guest ) ),
+					$"a boat of track controller {controller.AttractionId} has a bad heading or a rider the park does not hold, or one listed twice" );
 				Require( vehicle.ObjectIndex >= -1 && vehicle.TargetBuoy >= -1, $"a boat of track controller {controller.AttractionId} has a negative object or buoy index" );
+				Require( (vehicle.Flags & BumpVehicle.Live) != 0, $"a boat of track controller {controller.AttractionId} is not live" );
+				Require( Inside( vehicle.X, vehicle.Y ) && Inside( vehicle.TargetX, vehicle.TargetY ), $"a boat of track controller {controller.AttractionId} lies outside the park" );
+				Require( Small( vehicle.VX, 0x10000 ) && Small( vehicle.VY, 0x10000 ) && Small( vehicle.VX0, 0x10000 ) && Small( vehicle.VY0, 0x10000 ) && Small( vehicle.Speed, 0x100000 ),
+					$"a boat of track controller {controller.AttractionId} has a velocity out of range" );
+				Require( Small( vehicle.Spin, 0x100000 ) && Small( vehicle.Roll, 0x100000 ) && Small( vehicle.AccelBonus, 0x100000 ) && Small( vehicle.JitterX, 0x10000 ) && Small( vehicle.JitterY, 0x10000 )
+					&& vehicle.Radius is >= 0 and <= 0x10000 && Small( vehicle.Laps, 1000 ) && vehicle.Variant is >= 0 and < 256 && vehicle.Age >= 0 && vehicle.WallHits >= 0 && vehicle.WallWindow >= 0 && vehicle.Sprays >= 0
+					&& Small( vehicle.BuoyCountdown, 0x10000 ),
+					$"a boat of track controller {controller.AttractionId} has a scalar out of range" );
 			}
 		}
 	}

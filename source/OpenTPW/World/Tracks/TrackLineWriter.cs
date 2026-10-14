@@ -9,9 +9,12 @@ public sealed class TrackLineWriter : ICellLineWriter
 {
 	private readonly TrackBuilder builder;
 	private readonly Action? changed;
+	private readonly int owner;
 
-	public TrackLineWriter( TrackBuilder builder, Action? changed = null )
+	/// <param name="owner">The ride the tiles are laid for (<see cref="TrackBuilder.OwnerOf"/>), or 0 for none.</param>
+	public TrackLineWriter( TrackBuilder builder, Action? changed = null, int owner = 0 )
 	{
+		this.owner = owner;
 		this.builder = builder ?? throw new ArgumentNullException( nameof( builder ) );
 		this.changed = changed;
 	}
@@ -85,7 +88,7 @@ public sealed class TrackLineWriter : ICellLineWriter
 		{
 			var (x, y) = line[index];
 			var cost = builder.TileCost;
-			var result = write ? builder.PlaceTile( x, y ) : builder.CheckTile( x, y, charged );
+			var result = write ? builder.PlaceTile( x, y, owner ) : builder.CheckTile( x, y, charged, owner );
 			if ( result == CellBuildResult.Existing )
 			{
 				existing.Add( (x, y) );

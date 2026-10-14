@@ -207,13 +207,21 @@ along the facing and across it, each the highest surface triangle under the poin
 height), else the terrain; the mean is the height, the front/back and right/left differences the pitch and roll. The original's surface-face flag (bit 0x8000 of the
 face's first u16) is not decoded (TRACK-001). The pieces are static (TRACK-018). `--debug-water-track` (Debug builds) places a ride with a circuit for captures.
 
+## Rides side by side, pools and demolition
+
+Every tile records the ride it was laid for (`TrackCell.Owner`: the station's first-tile cell index plus one, saved and hashed; TRACK-021). A tile of one ride never
+connects to, links to or overwrites a tile of another, so two water rides can touch without sharing a circuit, and a demolition removes exactly the ride's own tiles
+and station. A circuit that overflows the section, collision-object or buoy pool (1024, 2048, 1024) is invalid whatever the walk said, with no geometry and no boats
+(TRACK-020). A controller counts as live while its runtime is not stopped and it is in the park's controller list; the park-resume capture and restore both use that
+one rule, so a faulted or removed ride is skipped by both.
+
 ## Saves and determinism
 
 The envelope's optional `Tracks` part holds the cell layer, every controller (scalars, tick clock, waiting and leaving guests, the sections for
 verification, every boat field and its riders) joined by attraction id, and the cosmetic generator. On load the cells are restored, each circuit is walked again
-and must reproduce the saved validity and sections, then the controller state is restored. The collision objects and buoys are rebuilt, not saved (as in the
+and must reproduce the saved validity and sections, then the controller state is restored. The shape check refuses a save whose guests are not the park's (or are listed twice), whose boats lie outside the park or carry velocities and scalars outside fixed bounds, whose tick remainder is not within one tick, or whose cells carry a piece, rotation, link or owner the layer cannot hold; the restore refuses boats that aim at a buoy or sit in an object the walked circuit does not have. The collision objects and buoys are rebuilt, not saved (as in the
 original). A park without a track and a controller writes no part and hashes as before: the track layer and the controllers join the canonical hash only while they
-exist (the hash schema stays at 14). Boats draw jitter from the park's seeded world stream, which therefore advances with boats.
+exist (the hash schema stays at 14). The digest covers every restored boat field (targets, jitter, velocities before collision, object index, wall counters, riders), the tick clock and each tile's owner. Boats draw jitter from the park's seeded world stream, which therefore advances with boats.
 
 ## Tests
 
@@ -228,4 +236,4 @@ The golden values freeze this implementation of the traced rules; they are not c
 - Kart controllers (grid start, races, followers, kart sounds), jumps and tunnels, the water animation and arm masks, boat particles and sounds, the
   advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
-- The script performance value reads the ride's speed bias once `RideVM.SpeedBias` is on the main branch; until then every water ride runs at 50.
+- The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.

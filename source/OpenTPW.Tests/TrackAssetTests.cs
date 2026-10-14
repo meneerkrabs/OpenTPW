@@ -128,6 +128,7 @@ public class TrackAssetTests
 		var runtime = new OriginalObjectRuntime( entry, world, seed: 5, open: true );
 		var bump = runtime.Bump;
 		Assert.IsNotNull( bump, "Splish Splash has a controller" );
+		Assert.AreSame( bump, runtime.LiveBump, "a running ride's controller is live" );
 		Assert.AreEqual( -5, bump.Type );
 		Assert.IsFalse( bump.IsTrackValid );
 		Assert.IsNotNull( runtime.Visitors.ExcitementBase, "the controller feeds the ride's excitement" );
@@ -174,6 +175,8 @@ public class TrackAssetTests
 		Assert.IsTrue( bump.WaterRunning, "after the repair BUMP 17 with 0 starts the water again" );
 		runtime.Stop();
 		Assert.AreEqual( 0, world.Bumpers.Controllers.Count, "a removed water ride leaves the world" );
+		Assert.IsNull( runtime.LiveBump, "a stopped ride has no live controller, so the park-resume capture and restore both skip it" );
+		Assert.IsNotNull( runtime.Bump );
 		GC.KeepAlive( rig );
 	}
 

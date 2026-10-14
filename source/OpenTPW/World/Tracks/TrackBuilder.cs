@@ -57,13 +57,20 @@ public sealed class TrackBuilder
 	/// <summary>Every tile origin in row order.</summary>
 	public IEnumerable<(int X, int Y)> Tiles() => Tracks.Cells().Where( item => item.Cell.IsOrigin ).Select( item => (item.X, item.Y) );
 
+	/// <summary>The owner id of the ride whose station is <paramref name="station"/> (TRACK-021): its first tile's origin-cell index plus one.</summary>
+	// [APPROX:TRACK-021] OpenTPW tags every tile with its ride so rides side by side stay separate; the original's 40-byte cell has no such field and relies on the masks — evidence needed: how the original keeps two adjacent rides' circuits apart (0x0052A970 and the demolition at 0x100748A0)
+	public int OwnerOf( TrackStation station ) => Tracks.IndexOf( station.First.X, station.First.Y ) + 1;
+
+	/// <summary>Whether tiles of the two owners may connect: the same ride, or a tile laid without a ride (owner 0).</summary>
+	private static bool Compatible( int a, int b ) => a == b || a == 0 || b == 0;
+
 	// ---- Validation and writing --------------------------------------------------------------------
 
 	/// <summary>Whether a tile can be laid with its origin at (x, y) right now (no writes).</summary>
-	public CellBuildResult CheckTile( int x, int y ) => Validate( x, y, pending: 0 );
+	public CellBuildResult CheckTile( int x, int y, int owner = 0 ) => Validate( x, y, pending: 0, owner );
 
 	/// <param name="pending">The preview's line cost before this tile; null for a commit, whose money test is the spend's.</param>
-	private CellBuildResult Validate( int x, int y, long? pending )
+	private CellBuildResult Validate( int x, int y, long? pending, int owner )
 	{
 		var existing = 0;
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
@@ -75,7 +82,7 @@ public sealed class TrackBuilder
 			{
 				(int X, int Y) origin = track.IsExtension ? Tracks.CellOf( track.Parent ) : (cx, cy);
 				var originCell = Tracks.Get( origin.X, origin.Y );
-				if ( origin != (x, y) || originCell.Type != OriginType && originCell.Type != StartType )
+				if ( origin != (x, y) || originCell.Type != OriginType && originCell.Type != StartType || !Compatible( originCell.Owner, owner ) )
 					return CellBuildResult.Occupied;
 				existing++;
 				continue;
@@ -113,7 +120,7 @@ public sealed class TrackBuilder
 	}
 
 	/// <summary>Validates a tile for the preview with the line's pending cost.</summary>
-	internal CellBuildResult CheckTile( int x, int y, long pending ) => Validate( x, y, pending );
+	internal CellBuildResult CheckTile( int x, int y, long pending, int owner = 0 ) => Validate( x, y, pending, owner );
 
 	/// <summary>
 	/// Lays the tile with its origin at (x, y): clears the path cells under it, writes the origin (type 11/16) and the three extension cells
@@ -121,9 +128,9 @@ public sealed class TrackBuilder
 	/// A tile that exists only bumps its overlap counter, free of charge. Returns the validation result (<see cref="CellBuildResult.Ok"/> when written).
 	/// </summary>
 	// [BIN:STP-PPC:0x10088CB8 track tile write] a tile over four path or empty cells clears the paths and writes the origin and three type-12 extension cells (the origin recorded in +0x10)
-	public CellBuildResult PlaceTile( int x, int y )
+	public CellBuildResult PlaceTile( int x, int y, int owner = 0 )
 	{
-		var check = Validate( x, y, pending: null );
+		var check = Validate( x, y, pending: null, owner );
 		if ( check == CellBuildResult.Existing )
 		{
 			var tile = Tracks.Get( x, y );
@@ -148,11 +155,12 @@ public sealed class TrackBuilder
 			{
 				Type = origin ? OriginType : TrackCellTypes.Extension,
 				Parent = origin ? -1 : originIndex,
-				Flags = origin && overPath ? FlagOverPath : (byte)0
+				Flags = origin && overPath ? FlagOverPath : (byte)0,
+				Owner = owner
 			} );
 		}
 		park?.TrySpendCell( Purchase );
-		ConnectDangling( x, y );
+		ConnectDangling( x, y, owner );
 		Refresh( x, y );
 		return CellBuildResult.Ok;
 	}
@@ -181,6 +189,7 @@ public sealed class TrackBuilder
 	/// <summary>Writes the two station tiles of a ride (type 13 or 18 origins and type 12 extensions), each with its flow axis connected both ways.</summary>
 	public void PlaceStation( TrackStation station )
 	{
+		var owner = OwnerOf( station );
 		var axis = (byte)(station.Heading | TrackHeading.Opposite( station.Heading ));
 		foreach ( var (x, y) in station.Tiles )
 		{
@@ -190,7 +199,7 @@ public sealed class TrackBuilder
 				ClearPath( cx, cy );
 				var origin = (cx, cy) == (x, y);
 				Cells.SetType( cx, cy, origin ? StartType : TrackCellTypes.Extension );
-				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Parent = origin ? -1 : originIndex } );
+				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner } );
 			}
 		}
 	}
@@ -227,13 +236,22 @@ public sealed class TrackBuilder
 		{
 			var (nx, ny) = (x + TrackStation.TileCells * TrackHeading.Dx( heading ), y + TrackStation.TileCells * TrackHeading.Dy( heading ));
 			var neighbour = Tracks.Get( nx, ny );
-			if ( !neighbour.IsOrigin || TrackCellTypes.IsStation( neighbour.Type ) )
+			if ( !neighbour.IsOrigin || TrackCellTypes.IsStation( neighbour.Type ) || !Compatible( neighbour.Owner, tile.Owner ) )
 				continue;
 			neighbour.Mask &= (byte)~TrackHeading.Opposite( heading );
 			Tracks.Set( nx, ny, neighbour );
 			Refresh( nx, ny );
 		}
 		return true;
+	}
+
+	/// <summary>Removes every laid (non-station) tile that belongs to <paramref name="owner"/>, whatever it is connected to; returns how many went.</summary>
+	public int RemoveOwned( int owner )
+	{
+		if ( owner == 0 )
+			return 0;
+		var tiles = Tracks.Cells().Where( item => item.Cell.IsOrigin && !TrackCellTypes.IsStation( item.Cell.Type ) && item.Cell.Owner == owner ).Select( item => (item.X, item.Y) ).ToList();
+		return RemoveCircuit( tiles );
 	}
 
 	/// <summary>Removes every laid (non-station) tile of the layer's connected circuit pieces that <paramref name="tiles"/> names.</summary>
@@ -254,7 +272,7 @@ public sealed class TrackBuilder
 	public bool Link( (int X, int Y) a, (int X, int Y) b )
 	{
 		var heading = HeadingBetween( a, b );
-		if ( heading == 0 || !IsTile( a.X, a.Y ) || !IsTile( b.X, b.Y ) )
+		if ( heading == 0 || !IsTile( a.X, a.Y ) || !IsTile( b.X, b.Y ) || !Compatible( Tracks.Get( a.X, a.Y ).Owner, Tracks.Get( b.X, b.Y ).Owner ) )
 			return false;
 		AddArm( a, heading );
 		AddArm( b, TrackHeading.Opposite( heading ) );
@@ -285,13 +303,13 @@ public sealed class TrackBuilder
 	}
 
 	/// <summary>A new tile takes the arm toward every neighbour whose arm already points at it (the station's open ends, the end of an earlier line).</summary>
-	private void ConnectDangling( int x, int y )
+	private void ConnectDangling( int x, int y, int owner )
 	{
 		foreach ( var heading in TrackHeading.All )
 		{
 			var (nx, ny) = (x + TrackStation.TileCells * TrackHeading.Dx( heading ), y + TrackStation.TileCells * TrackHeading.Dy( heading ));
 			var neighbour = Tracks.Get( nx, ny );
-			if ( neighbour.IsOrigin && (neighbour.Mask & TrackHeading.Opposite( heading )) != 0 )
+			if ( neighbour.IsOrigin && (neighbour.Mask & TrackHeading.Opposite( heading )) != 0 && Compatible( neighbour.Owner, owner ) )
 				AddArm( (x, y), heading );
 		}
 	}

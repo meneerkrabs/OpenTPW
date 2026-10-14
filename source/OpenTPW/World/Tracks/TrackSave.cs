@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>One saved track cell: the map position and the layer record's fields (the cell index and the mesh instance are not saved).</summary>
-internal sealed record TrackCellSaveData( int X, int Y, byte Type, byte Mask, byte Link, byte Flags, int Parent, int Family, int Piece, int Rotation, short Overlap, short AltMask, int Segment );
+internal sealed record TrackCellSaveData( int X, int Y, byte Type, byte Mask, byte Link, byte Flags, int Parent, int Family, int Piece, int Rotation, short Overlap, short AltMask, int Segment, int Owner = 0 );
 
 /// <summary>One saved section (the circuit walk rebuilds the sections, so they are verified against the walk on load, never trusted).</summary>
 internal sealed record TrackSectionSaveData( int Kind, bool NoBuoy, int X, int Y, int Segment );
@@ -45,7 +45,7 @@ internal static class TrackSave
 		if ( controllers.Count != live.Count )
 			throw new InvalidOperationException( $"The park holds {live.Count} bump controllers but {controllers.Count} placed kart or water stations; a controller lost its station." );
 		var tiles = cells.Tracks.Cells().Select( item => new TrackCellSaveData( item.X, item.Y, item.Cell.Type, item.Cell.Mask, item.Cell.Link, item.Cell.Flags, item.Cell.Parent,
-			item.Cell.Family, item.Cell.Piece, item.Cell.Rotation, item.Cell.Overlap, item.Cell.AltMask, item.Cell.Segment ) ).ToList();
+			item.Cell.Family, item.Cell.Piece, item.Cell.Rotation, item.Cell.Overlap, item.Cell.AltMask, item.Cell.Segment, item.Cell.Owner ) ).ToList();
 		if ( tiles.Count == 0 && controllers.Count == 0 )
 			return null;
 		return new TrackWorldSaveData { Cells = tiles, Controllers = controllers, CosmeticState = world.CosmeticState };
@@ -67,7 +67,7 @@ internal static class TrackSave
 			cells.Tracks.Set( item.X, item.Y, new TrackCell
 			{
 				Type = item.Type, Mask = item.Mask, Link = item.Link, Flags = item.Flags, Parent = item.Parent, Family = item.Family, Piece = item.Piece,
-				Rotation = item.Rotation, Overlap = item.Overlap, AltMask = item.AltMask, Segment = item.Segment
+				Rotation = item.Rotation, Overlap = item.Overlap, AltMask = item.AltMask, Segment = item.Segment, Owner = item.Owner
 			} );
 		}
 	}

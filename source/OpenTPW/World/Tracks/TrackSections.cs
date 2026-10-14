@@ -139,7 +139,12 @@ public static class TrackSections
 				objects.Add( item );
 				section.Objects.Add( item );
 			}
-			if ( made.Buoy is { } point && !noBuoy && buoys.Count < MaximumBuoys )
+			if ( made.Buoy != null && !noBuoy && buoys.Count >= MaximumBuoys )
+			{
+				truncated = true;
+				break;
+			}
+			if ( made.Buoy is { } point && !noBuoy )
 			{
 				point.Object = section.Objects.FirstOrDefault();
 				section.Buoy = point;

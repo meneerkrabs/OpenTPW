@@ -431,4 +431,116 @@ public class BumpControllerTests
 		other.Controller.AddCanonicalState( hashB );
 		Assert.AreEqual( hashA.Value, hashB.Value );
 	}
+
+	// ---- Review fixes ------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void ACircuitBeyondThePoolsIsInvalidAndBuildsNoGeometry()
+	{
+		var loop = new Loop();
+		Assert.IsTrue( loop.Controller.IsTrackValid );
+		var baseline = loop.Controller.Buoys.Count;
+		Assert.IsTrue( baseline > 1 );
+		// 1100 distinct straights overflow the 1024-section pool
+		var steps = Enumerable.Range( 0, 1100 ).Select( index => new TrackStep( 2 * index, 0, TrackHeading.PosX, TrackHeading.PosX, 0x44, index + 1, false ) ).ToList();
+		var result = TrackSections.Build( steps, loop.Controller.Template.Slack, Array.Empty<Buoy>() );
+		Assert.IsTrue( result.Truncated );
+		loop.Controller.Rebuild( new TrackCircuit( true, steps, null ) );
+		Assert.IsFalse( loop.Controller.IsTrackValid, "the walk said valid, the pools said no" );
+		Assert.AreEqual( 0, loop.Controller.Sections.Count );
+		Assert.AreEqual( 0, loop.Controller.Objects.Count );
+		Assert.AreEqual( 0, loop.Controller.VehicleCount );
+		// an ordinary circuit rebuilds as valid again
+		loop.Controller.Rebuild( loop.Circuit );
+		Assert.IsTrue( loop.Controller.IsTrackValid );
+		Assert.AreEqual( baseline, loop.Controller.Buoys.Count );
+	}
+
+	[TestMethod]
+	public void AdvanceIgnoresNegativeAndNonFiniteTimeAndKeepsTheRemainderBelowOneTick()
+	{
+		var loop = new Loop();
+		var start = loop.Controller.TickCount;
+		loop.Controller.Advance( double.NaN );
+		loop.Controller.Advance( double.PositiveInfinity );
+		loop.Controller.Advance( -5 );
+		Assert.AreEqual( start, loop.Controller.TickCount );
+		Assert.AreEqual( 0, loop.Controller.TickRemainder );
+		loop.Controller.Advance( 0.1 );
+		Assert.AreEqual( start + 3, loop.Controller.TickCount );
+		Assert.IsTrue( loop.Controller.TickRemainder >= 0 && loop.Controller.TickRemainder < BumpController.TickSeconds );
+	}
+
+	[TestMethod]
+	public void BoatsThatReachTheUnloadPointRetireTogetherWithoutSkippingNeighbours()
+	{
+		var loop = new Loop();
+		var bump = loop.Controller;
+		bump.Open();
+		for ( var count = 0; count < 3; count++ )
+		{
+			Assert.IsTrue( bump.AddGuest( 100 + count ) );
+			Assert.IsTrue( bump.Launch() );
+		}
+		Assert.AreEqual( 3, bump.VehicleCount );
+		foreach ( var vehicle in bump.Vehicles )
+		{
+			vehicle.X = bump.UnloadX;
+			vehicle.Y = bump.UnloadY;
+			vehicle.Flags = BumpVehicle.Live | BumpVehicle.ToUnload | BumpVehicle.Retarget | BumpVehicle.Steerable;
+		}
+		bump.Tick();
+		Assert.AreEqual( 0, bump.VehicleCount, "each boat retired in its own step; none was skipped by the list shrinking" );
+		Assert.AreEqual( 3, bump.CompletedRuns );
+		Assert.AreEqual( 0, bump.Vehicles.Count );
+		CollectionAssert.AreEquivalent( new[] { 100, 101, 102 }, bump.Leaving.ToArray() );
+	}
+
+	[TestMethod]
+	public void TheCanonicalStateCoversEveryRestoredBoatField()
+	{
+		var loop = new Loop();
+		var bump = loop.Controller;
+		bump.Open();
+		bump.AddGuest( 21 );
+		bump.Launch();
+		loop.Run( 40 );
+		var boat = bump.Vehicles.First();
+		ulong Hash() { var hash = new StateHasher(); bump.AddCanonicalState( hash ); return hash.Value; }
+		var reference = Hash();
+		var changes = new Dictionary<string, Action>
+		{
+			["Variant"] = () => boat.Variant++, ["VX0"] = () => boat.VX0++, ["VY0"] = () => boat.VY0++, ["Speed"] = () => boat.Speed++, ["Roll"] = () => boat.Roll++,
+			["Radius"] = () => boat.Radius++, ["AccelBonus"] = () => boat.AccelBonus++, ["TargetX"] = () => boat.TargetX++, ["TargetY"] = () => boat.TargetY++,
+			["JitterX"] = () => boat.JitterX++, ["JitterY"] = () => boat.JitterY++, ["BuoyCountdown"] = () => boat.BuoyCountdown++, ["Age"] = () => boat.Age++,
+			["ObjectIndex"] = () => boat.ObjectIndex++, ["WallHits"] = () => boat.WallHits++, ["WallWindow"] = () => boat.WallWindow++, ["Sprays"] = () => boat.Sprays++,
+			["Rider"] = () => boat.Riders[0]++
+		};
+		foreach ( var (name, change) in changes )
+		{
+			change();
+			var changed = Hash();
+			Assert.AreNotEqual( reference, changed, $"{name} is part of the digest" );
+			reference = changed;
+		}
+	}
+
+	[TestMethod]
+	public void RestoreRefusesBoatsThatAimAtBuoysOrObjectsTheWalkDoesNotHave()
+	{
+		var loop = new Loop();
+		var bump = loop.Controller;
+		bump.Open();
+		bump.AddGuest( 21 );
+		bump.Launch();
+		loop.Run( 10 );
+		var saved = TrackSave.CaptureController( bump, 1 );
+		bump.Restore( saved );
+		var badBuoy = saved with { Vehicles = saved.Vehicles.Select( vehicle => vehicle with { TargetBuoy = bump.Buoys.Count } ).ToList() };
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => bump.Restore( badBuoy ) );
+		var badObject = saved with { Vehicles = saved.Vehicles.Select( vehicle => vehicle with { ObjectIndex = bump.Objects.Count } ).ToList() };
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => bump.Restore( badObject ) );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => bump.Restore( saved with { TickRemainder = BumpController.TickSeconds } ) );
+		Assert.AreEqual( 1, bump.VehicleCount, "a refused restore left the boats alone" );
+	}
 }

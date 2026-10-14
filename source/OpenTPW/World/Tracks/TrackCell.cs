@@ -104,6 +104,11 @@ public struct TrackCell
 	public short AltMask;
 	/// <summary>Segment number the circuit walk wrote (+0x24); 0 outside a valid walk.</summary>
 	public int Segment;
+	/// <summary>
+	/// The ride the tile belongs to: the origin-cell index of its station's first tile plus one, 0 for a tile laid without a ride (OpenTPW's own field, TRACK-021).
+	/// Extension cells carry their origin's owner. Two tiles of different rides never connect and a demolition removes exactly its ride's tiles.
+	/// </summary>
+	public int Owner;
 
 	public readonly bool IsEmpty => Type == 0;
 	public readonly bool IsExtension => Type == TrackCellTypes.Extension;
@@ -180,6 +185,7 @@ public sealed class TrackCellLayer
 			hash.Add( cell.Rotation );
 			hash.Add( cell.Overlap | cell.AltMask << 16 );
 			hash.Add( cell.Segment );
+			hash.Add( cell.Owner );
 		}
 	}
 }

@@ -178,4 +178,58 @@ public class TrackSaveTests
 		scripts.Bumpers.Remove( controller );
 		Assert.AreEqual( before, WorldStateHash.Compute( new WorldStateSources { Scripts = scripts } ), "a world without controllers hashes as before" );
 	}
+
+	[TestMethod]
+	public void BoatsGuestsAndScalarsOutsideTheParkAreRefused()
+	{
+		BumpControllerSaveData Boats( BumpControllerSaveData controller, params BumpVehicleSaveData[] vehicles ) => controller with { Vehicles = vehicles.ToList() };
+		ParkResumeSnapshot With( Func<BumpControllerSaveData, BumpControllerSaveData> change ) => WithTracks( part => part with { Controllers = part.Controllers.Select( change ).ToList() } );
+		Rejects( With( controller => controller with { Pending = new List<int> { 99999 } } ), "guest list" );
+		Rejects( With( controller => controller with { Pending = new List<int> { 4, 4 } } ), "listed twice" );
+		Rejects( With( controller => controller with { Pending = new List<int> { 5 } } ), "listed twice" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { Riders = new List<int> { 5, 5 } } ) ), "listed twice" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { Riders = new List<int> { 99999 } } ) ), "rider the park does not hold" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { X = int.MinValue } ) ), "outside the park" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { TargetY = int.MaxValue } ) ), "outside the park" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { VX = int.MinValue } ) ), "velocity" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { VY0 = int.MaxValue } ) ), "velocity" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { Spin = int.MinValue } ) ), "scalar" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { Radius = -1 } ) ), "scalar" );
+		Rejects( With( controller => Boats( controller, Vehicle( 3, 1 ) with { Flags = 0 } ) ), "not live" );
+		Rejects( With( controller => controller with { TickRemainder = 1.0 } ), "tick clock" );
+		Rejects( With( controller => controller with { TickRemainder = -0.5 } ), "tick clock" );
+		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.X == 4 && cell.Y == 2 ? cell with { Rotation = 45 } : cell ).ToList() } ), "ranges" );
+		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.X == 4 && cell.Y == 2 ? cell with { Piece = 4000 } : cell ).ToList() } ), "ranges" );
+		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.X == 4 && cell.Y == 2 ? cell with { Owner = -1 } : cell ).ToList() } ), "ranges" );
+		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.X == 4 && cell.Y == 2 ? cell with { Overlap = -3 } : cell ).ToList() } ), "ranges" );
+		ParkResumeSaveFile.ValidateShape( With( controller => Boats( controller, Vehicle( 3, 1 ) with { Riders = new List<int> { 5, 6 } } ) ) );
+	}
+
+	[TestMethod]
+	public void TheOwnerOfATileSurvivesTheCodecAndTheDigest()
+	{
+		var cells = new ParkCellMap( 40, 40 );
+		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new FlatGrid() );
+		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		builder.PlaceStation( station );
+		var owner = builder.OwnerOf( station );
+		new TrackLineWriter( builder, owner: owner ).Commit( (14, 10), (14, 12) );
+		var saved = TrackSave.Capture( cells, new BumpWorld(), Array.Empty<(int, BumpController)>() )!;
+		Assert.IsTrue( saved.Cells.All( cell => cell.Owner == owner ), "tiles and extension cells carry the ride" );
+		var back = ParkResumeJson.Deserialize<TrackWorldSaveData>( ParkResumeJson.Serialize( saved ) );
+		var restored = new ParkCellMap( 40, 40 );
+		foreach ( var item in cells.Tracks.Cells() )
+			restored.SetType( item.X, item.Y, item.Cell.Type );
+		TrackSave.RestoreCells( restored, back );
+		Assert.IsTrue( restored.Tracks.Cells().All( item => item.Cell.Owner == owner ) );
+		var (hashA, hashB, hashC) = (new StateHasher(), new StateHasher(), new StateHasher());
+		cells.AddCanonicalState( hashA );
+		restored.AddCanonicalState( hashB );
+		Assert.AreEqual( hashA.Value, hashB.Value );
+		var cell = restored.Tracks.Get( 14, 10 );
+		cell.Owner = owner + 1;
+		restored.Tracks.Set( 14, 10, cell );
+		restored.AddCanonicalState( hashC );
+		Assert.AreNotEqual( hashA.Value, hashC.Value, "the owner is part of the digest" );
+	}
 }

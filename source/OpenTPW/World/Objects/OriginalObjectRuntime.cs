@@ -116,6 +116,11 @@ public sealed partial class OriginalObjectRuntime
 	public CoasterRide? Coaster { get; }
 	/// <summary>The bump-ride controller of a water ride (<c>Bumper.WhichTrackType 2</c>), else null (docs/TRACKS.md).</summary>
 	public BumpController? Bump { get; }
+	/// <summary>
+	/// <see cref="Bump"/> while the ride is live: not stopped (a faulted or removed ride released it) and still in the park's controller list.
+	/// The park-resume capture and restore use this one rule, so they agree on which rides carry a controller.
+	/// </summary>
+	public BumpController? LiveBump => Bump != null && !stopped && scriptWorld.Bumpers.Controllers.Contains( Bump ) ? Bump : null;
 	public ModelFile Model { get; }
 	public ObjectAnimator Animator { get; }
 	/// <summary>The object's original script, or null for the few objects without one.</summary>

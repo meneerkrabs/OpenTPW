@@ -324,4 +324,55 @@ public class TrackCircuitTests
 		Assert.AreEqual( 11, lone.Cells.Tracks.Get( 30, 30 ).Piece, "the middle tile replaced a path cell: a bridge straight" );
 		Assert.AreEqual( 1, lone.Cells.Tracks.Get( 28, 30 ).Piece, "a stub end stays the plain end piece" );
 	}
+
+	// ---- Ownership (TRACK-021) -----------------------------------------------------------------------
+
+	[TestMethod]
+	public void TwoAdjacentRidesNeverConnectAndADemolitionRemovesOnlyItsOwnTiles()
+	{
+		var rig = new Rig();
+		var other = TrackStation.FromPlacement( 10, 14, 0 );
+		rig.Builder.PlaceStation( other );
+		var (ownerA, ownerB) = (rig.Builder.OwnerOf( rig.Station ), rig.Builder.OwnerOf( other ));
+		Assert.AreNotEqual( ownerA, ownerB );
+		var writerA = new TrackLineWriter( rig.Builder, owner: ownerA );
+		var writerB = new TrackLineWriter( rig.Builder, owner: ownerB );
+		Assert.IsTrue( writerA.Commit( (14, 10), (14, 12) ).Completed );
+		Assert.IsTrue( writerB.Commit( (14, 14), (14, 16) ).Completed );
+		var tracks = rig.Cells.Tracks;
+		Assert.AreEqual( 0, tracks.Get( 14, 12 ).Mask & TrackHeading.PosY, "ride A's last tile does not reach into ride B's tile two cells away" );
+		Assert.AreEqual( 0, tracks.Get( 14, 14 ).Mask & TrackHeading.NegY, "ride B's first tile does not take ride A's tile as a neighbour" );
+		Assert.IsFalse( rig.Builder.Link( (14, 12), (14, 14) ), "an explicit link between the two rides is refused" );
+		// a line of ride A that runs onto a tile of ride B stops there
+		var onto = writerA.Commit( (14, 12), (14, 14) );
+		Assert.IsFalse( onto.Completed );
+		Assert.AreEqual( CellBuildResult.Occupied, onto.StoppedBy );
+		Assert.AreEqual( ownerB, tracks.Get( 14, 14 ).Owner );
+		// removing ride A's tiles leaves ride B's and its station
+		var removed = rig.Builder.RemoveOwned( ownerA );
+		Assert.AreEqual( 2, removed );
+		Assert.IsFalse( tracks.Get( 14, 10 ).IsOrigin );
+		Assert.IsTrue( tracks.Get( 14, 14 ).IsOrigin && tracks.Get( 14, 16 ).IsOrigin );
+		Assert.AreEqual( TrackHeading.PosY, tracks.Get( 14, 14 ).Mask & TrackHeading.PosY );
+		Assert.IsTrue( tracks.Get( 10, 14 ).IsOrigin && TrackCellTypes.IsStation( tracks.Get( 10, 14 ).Type ) );
+		Assert.AreEqual( 0, rig.Builder.RemoveOwned( 0 ), "tiles laid without a ride are nobody's" );
+	}
+
+	[TestMethod]
+	public void ARideWalksOnlyItsOwnLineEvenWhenAnotherRideTouchesIt()
+	{
+		var rig = new Rig();
+		var other = TrackStation.FromPlacement( 10, 14, 0 );
+		rig.Builder.PlaceStation( other );
+		var writerA = new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( rig.Station ) );
+		var writerB = new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( other ) );
+		Assert.IsTrue( writerA.Commit( (14, 10), (14, 12) ).Completed );
+		Assert.IsTrue( writerA.Commit( (14, 12), (8, 12) ).Completed );
+		Assert.IsTrue( writerA.Commit( (8, 12), (8, 10) ).Completed );
+		// ride B's line runs right beside ride A's top row; no arm joins them
+		Assert.IsTrue( writerB.Commit( (14, 14), (8, 14) ).Completed );
+		var circuit = rig.Walk();
+		Assert.IsTrue( circuit.IsValid, circuit.Failure );
+		Assert.AreEqual( 8, circuit.Steps.Count );
+	}
 }

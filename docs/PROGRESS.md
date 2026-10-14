@@ -875,6 +875,16 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Water ride tracks, phase 1 (October 14):** one water ride, Splish Splash on the Jungle level, works end to end on the traced original rules
+  ([TRACKS.md](TRACKS.md)). The track layer mirrors the original's 40-byte cell record (origin type 16, three type-12 extension cells), the
+  Q1 piece tables and adjustments, the 14 controller templates and the `.hmp` height profiles (`HmpFile`) are ported, and the water track tool lays
+  two-click lines in two-cell tile steps, charged `Costs.WaterTrackCell` per tile, clearing paths and marking bridges. The circuit walk
+  (`0x52A970`) writes the attraction's validity word (the PC's +0x2C, which the park points read) and the segment numbers; the sections, collision
+  objects and buoys are built in the original's fixed-point units. `Wateride.RSE` drives a `BumpController` through `BUMP` 1-14, 16 and 17 (the PC
+  dispatch shows BUMP 5 is the validity read and BUMP 17 with 0 starts the water): integer steering, integration, walls, keep-out circles, boat
+  collisions, laps and unload at 30 ticks per second, the sine table regenerated from the start-up code. Pieces and boats are drawn from the ride's
+  meshes, and the cells, controller and boats are saved in the park-resume envelope. Kart controllers, jumps, tunnels and the water animation stay
+  open; TRACK-001 to 019 are registered, QUEUE-004 is narrowed to karts and ARRIVAL-003 applies the water ride's track word.
 - **Audio register round (October 14):** the storm's thunder follows the original countdown (`0x101033CC`/`0x101034D8`):
   a bolt starts the countdown only when none is running, at `ThunderStartsThisFarAway` minus the storm's bolts so far plus a
   random term, and the thunder rings when the countdown steps from 1 to 0 (a computed 0 never rings), at the last bolt's top;

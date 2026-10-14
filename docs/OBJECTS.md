@@ -201,7 +201,7 @@ scripted objects, every theme in one shared world, 60 s at 60 Hz: no faults,
 258 played original clips (1,451 plays). EVENT and REPAIREFFECT play their
 original sounds ([AUDIO.md](AUDIO.md)); their other effects stay unimplemented
 (the unimplemented-effect hook still records them): ADDOBJ/KILLOBJ particles and
-objects, TOUR/BUMP/COAST controllers, park clock, screams, reverb, light opcodes.
+objects, TOUR and kart BUMP controllers (a water ride's BUMP goes to its controller, [TRACKS.md](TRACKS.md)), park clock, screams, reverb, light opcodes.
 
 ## Building (`ParkObjects`)
 
@@ -287,8 +287,8 @@ bonus root is set (observed: Dizzy Dinos animating).
 ## Remaining gates
 
 The 12-byte vertex block (0x4000), path parameters and texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
-TOUR/BUMP/COAST controllers and track building (coasters, karts, water rides,
-track upgrades); visitor simulation behind the bridge; `.hmp` ground deformation;
+TOUR controllers, kart controllers and track building (karts, water ride jumps and
+tunnels; Splish Splash runs its BUMP controller on a built circuit, [TRACKS.md](TRACKS.md)); visitor simulation behind the bridge; `.hmp` ground deformation;
 original build rules and costs; animation tick rate; the meaning of `W`, `N`,
 `E`, `<`, `>`; the object-list update route and idle restart (RIDES-032, RIDES-034).
 

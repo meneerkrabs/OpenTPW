@@ -197,6 +197,15 @@ upgrade's DurationOfUpgrade × WorkDuration, else (100 − the repair byte) × W
 it clears its ride and searches. State 13 `0x4da830` drains as work, counts the timer down, waits for a broken ride's fix animation, then
 `0x4df8f0` repairs fully (gauge 100, the claim and the request cleared) or installs the upgrade, and searches.
 
+The player's controls (2026-10-14). The ride panel's call button (`0x48ce50`; art `b_callmech`, `b_callhandy`) runs `0x4dfe30`: a call sets
+`mRequestedService` (`+0x64`) and closes the ride (`mCanLoad` 0, script variable 6 = 1); the mechanics' finder takes a requested ride that is no
+toilet, the handymen's toilet search a requested toilet at any distance (closer than the best so far); the repair (`0x4df8f0`) or the clean
+(`0x4dfd80`) clears it, and a cancel reopens the ride when the reopen guard allows. The employee panel's patrol buttons (`0x4b5b50`) clear the
+rectangle (`0x506e90`: cells (0, 0) and (127, 127), the constructor's default) or start mouse mode 0x36: the first map click stores a corner,
+the second orders the two and sets `+0x20a`/`+0x20c` (`0x506e50`, from the click handler `0x524960`). The wander keeps a member inside it: from
+outside, up to 30 random cells of the rectangle (two draws each) that a route reaches (`0x506f30`), else the wander without it ("I can't
+reach my patrol area"); inside, the steps that leave it are removed, and with none left `0x506f30` runs again.
+
 ## 5. Plan
 
 - **Phase 2 (GUEST-010), done.** `GuestSimulation` runs the guest states 6 and 7 per park turn as above (`GuestDecision`,
@@ -220,6 +229,8 @@ it clears its ride and searches. State 13 `0x4da830` drains as work, counts the 
   every world-driven role walks to the Staff Room to rest and out through the gate to the strike area (§4).
 - **Phase 7 (ECON-021, ECON-022), done.** The mechanics run their state machine in a level: from where they stand they take the nearest
   broken or upgrading ride, walk to it and repair or upgrade it from their arrival (§4). Every staff role now walks.
+- **Phase 8 (ECON-049, ECON-022), done.** The player calls a mechanic or a handyman from the ride panel and draws an employee's patrol
+  area with two clicks; the wander keeps staff inside it (§4).
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

@@ -261,7 +261,25 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Whether a ride needs a mechanic (tp.exe <c>0x004DAA90</c> and the arrival <c>0x004DA740</c>): broken down (state 1, <c>0x004E0370</c>) or being
 	/// upgraded (state 2, <c>0x004E03E0</c>); the maintenance request (<c>+0x64</c>, <c>0x004E03D0</c>) has no control in OpenTPW (ECON-049).
 	/// </summary>
-	internal bool NeedsMechanic( int instanceId ) => objects.TryGetValue( instanceId, out var item ) && item.Kind == ParkObjectKind.Ride && JobRank( item ) is 0 or 1;
+	internal bool NeedsMechanic( int instanceId ) => objects.TryGetValue( instanceId, out var item ) && (item.Kind == ParkObjectKind.Ride && JobRank( item ) is 0 or 1
+		|| item.MaintenanceRequested && !(Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief));
+
+	/// <summary>
+	/// The player calls a mechanic to an object or cancels the call (tp.exe <c>0x004DFE30</c>, from the ride panel's button <c>0x0048CE50</c>): the call sets
+	/// <c>mRequestedService</c> and closes a ride; the cancel clears it, and the ride reopens when its state allows (<see cref="RideOpening.MayOpen"/>).
+	/// A toilet's call brings a handyman instead. False when there is no such object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DFE30 request maintenance] on: nothing when +0x64 is set; else +0x64 = 1, the ride closes (mCanLoad +0x68 = 0, the guest being loaded +0x6C dropped, script variable 6 = 1) and its panel shows the call; off: +0x64 = 0, and unless the ride is broken down, condemned or upgrading (states 1, 4, 2), its queue is cut off (0x004DE4A0) or a track ride's circuit is broken, it opens (+0x68 = 1, variable 6 = 0, 0x004E0E60(0))
+	public bool RequestMaintenance( int instanceId, bool on )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return false;
+		if ( item.MaintenanceRequested == on )
+			return true;
+		item.MaintenanceRequested = on;
+		Raise( on ? ParkEventKind.MaintenanceRequested : ParkEventKind.MaintenanceCancelled, 0, item.Id, item.InfoId );
+		return true;
+	}
 
 	/// <summary>The rides in object order that need a mechanic and are claimed by nobody or by <paramref name="mechanic"/>, with their cells' ids.</summary>
 	internal IEnumerable<ParkObjectState> RidesNeedingMechanic( int mechanic ) =>
@@ -337,7 +355,9 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			item.Repair = RideRepair.FullGauge;
 			item.MechanicId = 0;
-			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+			var called = item.MaintenanceRequested;
+			item.MaintenanceRequested = false;
+			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
 		}
 		member.ToiletId = 0;
 	}
@@ -507,9 +527,13 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			// [BIN:TPW-EXE:0x004DFD80 toilet cleaned] the end of the handyman's state 11 sets the gauge back to 100.0 and clears the ride's mRequestedService (+0x64) and assigned staff (+0x5E)
 			item.Repair = RideRepair.FullGauge;
-			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+			var called = item.MaintenanceRequested;
+			item.MaintenanceRequested = false;
+			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
 			return;
 		}
+		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E)
+		item.MaintenanceRequested = false;
 		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
@@ -588,7 +612,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		RideObjectStates.BrokenDown when item.IsBrokenDown => 0,
 		RideObjectStates.Upgrading => 1,
-		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && item.StateOfRepair < WornStateOfRepair => 2,
+		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && (item.StateOfRepair < WornStateOfRepair || item.MaintenanceRequested) => 2,
 		_ => -1,
 	};
 

@@ -28,8 +28,16 @@ public static class GuestWander
 	/// its own centre; null when the start is no path cell or its links lead to no path cell (stranded).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810; fewer than two left: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
-	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea = null )
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea = null ) =>
+		Pick( grid, start, draw, inArea, out _ );
+
+	/// <summary>
+	/// <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?)"/>; <paramref name="areaBlocked"/> is true when a step had
+	/// candidates but <paramref name="inArea"/> removed them all (a staff member at its patrol rectangle's edge; the original then looks for a cell inside it).
+	/// </summary>
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool areaBlocked )
 	{
+		areaBlocked = false;
 		var remaining = draw() % 5;
 		// [APPROX:GUEST-010] off the linked paths the original searches the eight directions at distances 0..3 for a path cell a route reaches (centre point, 0x80), then five random cells within ±5; the search meets the own cell first, so a path cell without links gives its own centre, which is all OpenTPW models: a guest on a cell that is no path cell finds no destination; a stranded guest is not marked (+0x198, animation 0x11), so it draws again on its next try — evidence needed: none (read); OpenTPW's routes start on path cells
 		if ( !grid.IsWalkable( start.X, start.Y ) )
@@ -42,6 +50,7 @@ public static class GuestWander
 		while ( true )
 		{
 			var count = 0;
+			var outside = 0;
 			var links = grid.Cells.LinksAt( cell.X, cell.Y );
 			for ( var index = 0; index < 4; index++ )
 			{
@@ -49,9 +58,10 @@ public static class GuestWander
 				var (dx, dy) = GuestPathGrid.Directions[direction];
 				// [APPROX:GUEST-010] a candidate is a link of the current cell to a path cell; the original keeps every link except to queue cells (removed on a path cell, 0x00536310 / 0x00536320), its own queue link's direction on a queue cell (0x00522850), cell type 10 (0x00536350) and, for staff, cells outside the patrol rectangle (0x00506ED0); OpenTPW's maps link path cells only to path cells (ParkPathBuilder, saves), and it has no type 10 cells and no wandering staff yet (ECON-022) — evidence needed: none for guests on path cells
 				// staff keep to their patrol rectangle (0x00506ED0 removes the candidates outside it)
-				candidates[index] = (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( cell.X + dx, cell.Y + dy )
-					&& (inArea == null || inArea( cell.X + dx, cell.Y + dy )) ? direction : -1;
+				var linked = (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( cell.X + dx, cell.Y + dy );
+				candidates[index] = linked && (inArea == null || inArea( cell.X + dx, cell.Y + dy )) ? direction : -1;
 				count += candidates[index] >= 0 ? 1 : 0;
+				outside += linked && candidates[index] < 0 ? 1 : 0;
 			}
 			int chosen;
 			if ( count < 2 )
@@ -59,7 +69,10 @@ public static class GuestWander
 				// Fewer than two: the first in order, even the way back. None: stranded, as a path cell whose links lead only to queue cells.
 				chosen = candidates.IndexOfAnyExcept( -1 );
 				if ( chosen < 0 )
+				{
+					areaBlocked = outside > 0;
 					return null;
+				}
 			}
 			else
 			{

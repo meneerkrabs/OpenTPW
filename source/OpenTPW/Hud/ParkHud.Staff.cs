@@ -30,6 +30,8 @@ public sealed partial class ParkHud
 	private UiScreen? staffScreen;
 	private UiButton? dismissStaffButton;
 	private UiButton? pickUpStaffButton;
+	private UiButton? setPatrolButton;
+	private UiButton? clearPatrolButton;
 	private StaffType? staffFilter = StaffType.Handyman;
 	private bool showingEmployedStaff;
 	private bool staffSortByWage;
@@ -176,6 +178,33 @@ public sealed partial class ParkHud
 		return true;
 	}
 
+	/// <summary>Whether the selected employee's patrol area may be set or cleared now.</summary>
+	public bool CanSetPatrolArea => showingEmployedStaff && !level.IsReadOnlyVisit && SelectedStaff != null && level.PatrolTool != null;
+
+	/// <summary>The set button: the window closes and the patrol tool starts for the selected employee (tp.exe <c>0x004B5B50</c> with 1, mouse mode 0x36).</summary>
+	// [BIN:TPW-EXE:0x004B5B50 patrol buttons] 0 clears the area (0x00506E90); 1 builds the tool's state, sets mouse mode 0x36 (0x0046C580) and closes the window
+	public bool SetSelectedStaffPatrolArea()
+	{
+		if ( !CanSetPatrolArea || RejectReadOnlyAction() || SelectedStaff is not { } member || level.PatrolTool is not { } tool )
+			return false;
+		level.EndBuildTools();
+		level.StaffPlacement?.Cancel();
+		if ( !tool.Begin( member ) )
+			return false;
+		PostMessage( strings.Extra( OpenTpwText.PatrolAreaHint ) );
+		CloseStaffWindow();
+		return true;
+	}
+
+	/// <summary>The clear button: the selected employee patrols the whole park again (tp.exe <c>0x00506E90</c>).</summary>
+	public bool ClearSelectedStaffPatrolArea()
+	{
+		if ( !CanSetPatrolArea || RejectReadOnlyAction() || SelectedStaff is not { } member )
+			return false;
+		member.ClearPatrolArea();
+		return true;
+	}
+
 	/// <summary>Dismisses the selected employee through the existing park economy operation.</summary>
 	public bool DismissSelectedStaff()
 	{
@@ -228,6 +257,10 @@ public sealed partial class ParkHud
 			dismissStaffButton.Enabled = showingEmployedStaff && selectedStaffId != 0;
 		if ( pickUpStaffButton != null )
 			pickUpStaffButton.Enabled = CanPickUpSelectedStaff;
+		if ( setPatrolButton != null )
+			setPatrolButton.Enabled = CanSetPatrolArea;
+		if ( clearPatrolButton != null )
+			clearPatrolButton.Enabled = CanSetPatrolArea && SelectedStaff is { HasPatrolArea: true };
 	}
 
 	private string StaffName( StaffMember member ) => StaffName( member.Type, member.NameIndex, member.Id );
@@ -378,6 +411,13 @@ public sealed partial class ParkHud
 			Clicked = () => PickUpSelectedStaff(), Font = fonts => fonts.Label, Enabled = false, Visible = true,
 			Bounds = Rect( 770, 300, 990, 400 ), Anchor = UiAnchor.Center };
 		screen.Add( pickUpStaffButton );
+		// Approximation (UI-098, registered at the pick-up button): the employee window's patrol buttons (UIHELPTEXT 86 set, 87 clear) sit on the left of the portrait with OpenTPW labels; their models and rectangles are untraced
+		setPatrolButton = new UiButton { Id = "setPatrol", Text = () => strings.Extra( OpenTpwText.SetPatrolArea ), Help = strings.Help( 86 ),
+			Clicked = () => SetSelectedStaffPatrolArea(), Font = fonts => fonts.Label, Enabled = false, Bounds = Rect( 259, 190, 470, 290 ), Anchor = UiAnchor.Center };
+		screen.Add( setPatrolButton );
+		clearPatrolButton = new UiButton { Id = "clearPatrol", Text = () => strings.Extra( OpenTpwText.ClearPatrolArea ), Help = strings.Help( 87 ),
+			Clicked = () => ClearSelectedStaffPatrolArea(), Font = fonts => fonts.Label, Enabled = false, Bounds = Rect( 259, 300, 470, 400 ), Anchor = UiAnchor.Center };
+		screen.Add( clearPatrolButton );
 		// [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles.
 		Model( "staffLocateFrame", "!f_plain", Rect( 526, 1191, 893, 1439 ) );
 		Model( "visitorLocateFrame", "!f_plain", Rect( 12, 1191, 379, 1439 ) );

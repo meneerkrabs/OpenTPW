@@ -431,13 +431,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
 		} );
 		Wait( "game mode opens", 3 );
-		Do( "choose game mode", () =>
-		{
-			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "Enter on the focused enter-park button asks for the game mode" );
-			VerifyText( CaptureFrame( "game-mode.png" ), flow.Strings[UIStrings.InstantAction], "Instant Action button" );
-			Click( flow.Menu.Stack.Top!, "fullSimulation" );
-		} );
-		Wait( "park loads", 40 );
+		PlanFullSimulationStart( () => VerifyText( CaptureFrame( "game-mode.png" ), flow.Strings[UIStrings.InstantAction], "Instant Action button" ) );
 		Do( "park loaded", () =>
 		{
 			Require( flow.Level?.OriginalPark?.LevelName == "jungle" && flow.Hud != null, "menu loads the original jungle level with the HUD" );

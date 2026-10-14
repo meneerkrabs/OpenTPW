@@ -6,6 +6,33 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Application-owned progress entry and smoke repair (October 14, 2026)
+
+New Full Simulation checks the selected theme's explicit entry cost against
+application-owned ticket history before constructing a park. Missing history
+opens a starter-key consent screen; only confirmation can stage a new ledger
+with one extra key before activation. The model still defaults to zero keys.
+Known zero-key or incompatible history is not reset to make entry succeed.
+Instant Action creates no progress file, and manual Continue/Load retain their
+existing saved-mode behavior without a new-entry key gate. See
+[player progress entry and lifetime](PLAYER-PROGRESS-INGRESS.md) for storage,
+precommit failure, tracking and retirement qualifications.
+
+The front-end smoke uses a fresh temporary save directory. Its plan now asserts
+that `newProgress` is a `ProgressChoiceScreen` and that the progress file is absent
+before injecting the actual starter-consent button click. It then uses the
+existing 40-frame park-load wait; the timeout is not enlarged and no history is
+preseeded. CPU regression controls drive those actual queued smoke steps and
+menu/admission callbacks with synthetic theme metadata, checking successful
+consent, Back cancellation and preservation of known zero-key history.
+
+The original native smoke objection is not counted as a successful native rerun.
+These CPU controls do not exercise native text readback, the GPU/window, original
+Jungle assets or graphical park construction. A native run must observe the
+consent screen, accept it, load Jungle and finish the existing complete smoke
+without resetting history. Earlier native smoke results below belong to their
+older source snapshots, not this progress-entry change.
+
 ## Native smokes on a 120 Hz arm64 Mac (October 13, 2026)
 
 - **Retail WCT textures decode again.** The WCT bounds audit (`docs/WCT-ROBUSTNESS.md`) was written

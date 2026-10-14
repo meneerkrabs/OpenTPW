@@ -333,4 +333,31 @@ public class StaffPlacementTests
 		f.Placement.Reconcile();
 		Assert.AreEqual( StaffState.PickedUp, member.State, "the member the tool carries stays in hand" );
 	}
+
+	[TestMethod]
+	public void AMechanicDroppedOffThePathNetworkIsNotDispatchedAndHoldsNoRide()
+	{
+		var extra = string.Concat( Enumerable.Range( 0, 5 ).Select( grade => $"MechanicConstsPerGrade[{grade}].WorkDuration 40\n" ) );
+		foreach ( var (cellType, onPath) in new[] { ((byte)0, false), ((byte)3, false), ((byte)1, true) } )
+		{
+			var park = new ParkEconomy( EconomyTestData.Settings( extra: extra ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+			var grid = new GuestPathGrid( 8, 4 );
+			for ( var x = 0; x < 8; x++ )
+				grid.SetPath( x, 1, true );
+			grid.Cells.SetType( 3, 3, cellType );
+			var ride = park.RegisterExisting( 1100 );
+			var world = new StaffWorldSimulation( grid, () => park.Staff.Members, id => id == ride.Id ? (7, 1) : null, (0, 1) );
+			park.MechanicJobWorld = world;
+			var placement = new StaffPlacement( () => park, () => grid.Cells, ( _, _ ) => false );
+			var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+			world.Synchronize();
+			Assert.IsTrue( placement.PickUp( mechanic ) );
+			Assert.AreEqual( StaffClickResult.Dropped, placement.Click( 3, 3 ), $"type {cellType} is a valid drop cell" );
+			ride.Repair = 0;
+			ride.IsBrokenDown = true;
+			EconomyTestData.AdvanceToTurn( park, park.Turn + 2 );
+			Assert.AreEqual( onPath ? mechanic.Id : 0, ride.MechanicId, onPath ? "a path cell dispatches" : $"type {cellType}: no reservation that could never arrive" );
+			Assert.AreEqual( onPath ? ride.Id : 0, mechanic.AssignedInstanceId );
+		}
+	}
 }

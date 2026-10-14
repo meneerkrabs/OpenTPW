@@ -38,6 +38,16 @@ public partial class Level
 		}
 	}
 
+	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
+	public void EndBuildTools()
+	{
+		CellTool.Cancel();
+		ExitCoasterTool();
+		BuildEntry = null;
+		IsPlacing = false;
+		IsRemovingObjects = false;
+	}
+
 	/// <summary>The economy's staff worlds; a park load replaces the economy, so it runs again then.</summary>
 	private void AttachStaffWorld()
 	{

@@ -66,6 +66,42 @@ public sealed class StaffRenderer : Entity
 			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
+		TexturePackSwitch.PackChanged += ReloadAtlases;
+		TexturePackSwitch.FilesAvailable += ReloadAtlases;
+	}
+
+	private void ReloadAtlases() => ReloadAtlases( null );
+
+	/// <summary>[EXT:texture-pack] Rebuilds the atlas textures after a pack change or a lazy download (all of them, or those the paths name), as the guests' do.</summary>
+	private void ReloadAtlases( IReadOnlyList<string>? paths )
+	{
+		if ( deleted || material == null || textures.Count == 0 )
+			return;
+		var keys = paths?.Select( TexturePack.RelativeFileName ).ToHashSet( StringComparer.Ordinal );
+		var old = new List<Texture>();
+		for ( var index = 0; index < textures.Count; index++ )
+		{
+			if ( keys != null && !keys.Contains( TexturePack.RelativeFileName( sprites.Atlases[index].PackKey ) ) )
+				continue;
+			old.Add( textures[index] );
+			textures[index] = GuestRenderer.LoadAtlas( sprites.Atlases[index] );
+		}
+		if ( old.Count == 0 )
+			return;
+		var slots = new Texture[8];
+		for ( var index = 0; index < slots.Length; index++ )
+			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
+		material.Set( "Color", slots );
+		foreach ( var texture in old )
+			Asset.All.Remove( texture );
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			foreach ( var texture in old )
+			{
+				texture.NativeTextureView.Dispose();
+				texture.NativeTexture.Dispose();
+			}
+		} );
 	}
 
 	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
@@ -258,6 +294,8 @@ public sealed class StaffRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		TexturePackSwitch.PackChanged -= ReloadAtlases;
+		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var ownedTextures = textures.ToArray();
 		textures.Clear();
 		foreach ( var texture in ownedTextures )

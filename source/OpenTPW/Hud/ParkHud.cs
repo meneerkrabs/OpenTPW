@@ -654,7 +654,7 @@ public sealed partial class ParkHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
-		var staffToolClick = !rideOwnsInput && UpdateStaffTool( input, inPark );
+		var staffToolClick = !rideOwnsInput && UpdateStaffTool( input, inPark && !mouseCaptured.Value );
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
 			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
@@ -696,6 +696,7 @@ public sealed partial class ParkHud
 		}
 		staffCursorSet = true;
 		Input.CursorType = Input.CursorTypes.Carry;
+		// the same capture gate as the visitor selection: a press on an ImGui overlay is not a park click
 		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
 		{
 			tool.Cancel();

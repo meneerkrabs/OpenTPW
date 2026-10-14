@@ -62,6 +62,10 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 		return grid.Distance( x, y, target.X, target.Y ) >= 0;
 	}
 
+	/// <summary>A positioned member must stand on a path cell to be given a job; an unpositioned one is placed first.</summary>
+	public bool CanStartJobs( StaffMember member ) =>
+		member.CellX is not { } x || member.CellY is not { } y || grid.IsWalkable( (int)MathF.Floor( x ), (int)MathF.Floor( y ) );
+
 	/// <summary>Only this world's current employee at its reachable assigned access cell has arrived.</summary>
 	public bool HasArrived( StaffMember member ) => members().Any( current => ReferenceEquals( current, member ) )
 		&& CanTravel( member, out var target, out var x, out var y ) && (x, y) == target;

@@ -148,6 +148,7 @@ public sealed partial class ParkHud
 		{
 			if ( !placement.BeginHire( candidate.Id ) )
 				return false;
+			level.EndBuildTools();
 			PostMessage( strings.Extra( OpenTpwText.PlaceStaff ) );
 			CloseStaffWindow();
 		}
@@ -170,6 +171,7 @@ public sealed partial class ParkHud
 			return false;
 		if ( !placement.PickUp( member ) )
 			return false;
+		level.EndBuildTools();
 		CloseStaffWindow();
 		return true;
 	}

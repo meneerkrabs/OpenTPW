@@ -565,7 +565,7 @@ internal static class Game
 			: GamePathResolution.Resolve( commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), new( null, null ), null, () => Array.Empty<string>() );
 		if ( resolved == null && !args.Contains( "--setup" ) )
 		{
-			foreach ( var (path, source) in new[] { (saved.GamePath, GamePathSource.Saved), (Settings.Default.GamePath, GamePathSource.Legacy) } )
+			foreach ( var (path, source) in new[] { (saved.GamePath, GamePathSource.Saved), (LegacySettings.GamePath, GamePathSource.Legacy) } )
 			{
 				if ( string.IsNullOrWhiteSpace( path ) ) continue;
 				var inspected = InstallationDiscovery.InspectAsync( path ).GetAwaiter().GetResult();

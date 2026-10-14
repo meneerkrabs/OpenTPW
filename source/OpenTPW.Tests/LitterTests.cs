@@ -102,6 +102,9 @@ public class LitterTests
 		var json = ParkSaveFile.Serialize( park ).Replace( $"\"Collector\": {handyman.Id}", "\"Collector\": 99" );
 		Assert.IsTrue( json.Contains( "\"Collector\": 99" ) );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ) );
+		// A sweep whose time has run out cannot hold a claim either: nothing would end it.
+		var idle = System.Text.RegularExpressions.Regex.Replace( ParkSaveFile.Serialize( park ), "\"BusyTurns\": \\d+", "\"BusyTurns\": 0" );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( idle ) ) );
 	}
 
 	[TestMethod]

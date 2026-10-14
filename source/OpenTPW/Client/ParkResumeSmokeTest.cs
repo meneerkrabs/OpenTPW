@@ -246,6 +246,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		Require( level.Coasters.Count == 0, "the resumed park carries no coaster state" );
 		VerifyWaterRestored();
 		VerifyTourRestored();
+		VerifyBumperRestored();
 		if ( PrototypeVariant )
 		{
 			var totem = level.PlacedRide;

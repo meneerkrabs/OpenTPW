@@ -213,6 +213,10 @@ public sealed class ParkObjectState
 	/// until the repair clears it (<see cref="ParkEconomy.RequestMaintenance"/>).
 	/// </summary>
 	public bool MaintenanceRequested { get; set; }
+	/// <summary>A fireworks object whose show has run (its script's <c>VAR_STATUS</c> reached 1): its <c>RegionFX</c> row 7 is gone for good (tp.exe <c>0x004E0B90</c>).</summary>
+	public bool FireworksSpent { get; set; }
+	/// <summary>The map cell the object's <c>RegionFX</c> row lies on while it stands (the level supplies it; not saved, a load puts the rows back).</summary>
+	internal (int X, int Y)? EffectCell { get; set; }
 	/// <summary>
 	/// Guests who have used the object since it was built, never reset: the original's object word +412, which the
 	/// use-finished handler raises (0xEAA00 calls 0xE1B44) and only the object constructor clears. The scrap value's

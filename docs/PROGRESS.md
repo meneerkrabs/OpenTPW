@@ -324,6 +324,21 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Guests now think as in the original (tp.exe `0x4fc8a0`, `0x50be80`, `0x50be40`; GUEST-006, GUEST-009 narrowed, ARRIVAL-006;
+  [GUESTS.md](GUESTS.md) "Thoughts"). On one needs phase in ten a guest picks from its needs, the litter around it ("Too messy", new) and its
+  happiness, and keeps its thought otherwise. Rides and shops no longer set "Pleased" or "Dissatisfied" (only sideshows do), and the
+  invented thresholds ("Super happy", "Okay", level 70) are gone. Each thought times a bubble: 12 turns, and a gap of 0 to 60 turns before
+  the next by the thought's priority (not drawn yet). The fixed-run, Jungle and cross-grid hashes moved; guest snapshots move to schema 7.
+- Toilets, security cameras and fireworks now act on the cells around them, as in the original (tp.exe `0x4db090`, `0x4dd0a0`,
+  `0x4e2440`, `0x4dfd80`, `0x4e0b90`; GUEST-006, GUEST-001 retired; [GUESTS.md](GUESTS.md) "The environment grid"). A clean toilet makes
+  guests nearby a little ill and less hungry, and more so once it is dirty, until a handyman cleans it. A camera spreads security over five
+  cells, so a prank there brings a guard. A Firework Show or Laser Show cheers guests up around it and changes how attractive the rides
+  beside it look, until its show has run. All eight original region sources are now modelled.
+- Balloons and costumes are drawn, as in the original (tp.exe `0x4fa030`, `0x4f9f00`, `0x4fe950`; GUEST-017; [GUESTS.md](GUESTS.md)
+  "Rendering"). A guest in costume walks in the theme's costume (Jungle's tiger, Fantasy's knight, and so on), and riders in costume show
+  the costume head where the theme has one. Balloons in four colours hang over their guests, trail behind and dip while they walk, bob, and
+  show their burst frame when they pop. The texture pack builder now includes the balloon and costume sprites, and
+  `--debug-guest-looks` dresses guests for captures.
 - Guests now buy balloons and costumes, as in the original (tp.exe `0x4fe1e0`, `0x501650`, `0x501db0`; ECON-044, GUEST-007;
   [GUESTS.md](GUESTS.md) "Balloons and costumes"). A balloon shop gives a balloon that lives 127 needs phases (about two minutes) at the
   build's quality of goods; a ride puts it away and gives it back. A costume shop puts a costume on, and a second visit returns it. Balloon
@@ -929,6 +944,9 @@ research batch was included in this merge.
   cars with no track: a car lifts off from the ride's launch pad, flies a terrain-avoiding lattice walk for the ride's duration, returns, circles until the landing slot is
   free and lands, where the script unloads and loads the next riders. Real-script asset tests run each theme with 16 guests for ten minutes (boarded equals released,
   nobody left Using); saves carry an optional `Tours` part, older saves restore with fresh controllers. See [tours](TOURS.md).
+- **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
+  first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy
+  `[EXT:explicit-world-seed]`.
 - **Server tests no longer hang on macOS (October 14):** `ServerProgram.Build` turns off appsettings.json reload-on-change
   (`--hostBuilder:reloadConfigOnChange=false`, which a later argument can override). The server binds its options once, so the
   watcher did nothing, and on macOS starting it calls `sync(2)`, which never returns while a mounted volume (here a stalled SMB
@@ -986,7 +1004,8 @@ research batch was included in this merge.
   and every car counts down the duration the script set with `BUMP 13`; at 0 each car hands its riders to the leaving list, and with nobody left the ride goes back to loading
   while the cars stay. Closing, breakdown and `BUMP 16` follow the traced routines. Cars wander between the buoys on the shared integer physics. The real script of all four
   rides board, run and release 16 guests over several cycles in `BumperCarAssetTests`. A save from before the controller restores the ride freshly and hands its riders to
-  the leaving list. TRACK-015 narrowed; TRACK-029 (no chase yet), 030 (arena centre) and 031 (cars not drawn, no effects) added.
+  the leaving list. The cars chase one another as traced (a random other car for 90 ticks), crash with the traced code 5 (silent in the jungle), throw sparks and run the first car's engine voice, and are
+drawn from the ride's own car meshes with their riders' heads; bumper state is saved and hashed only for parks with a bumper ride. TRACK-015 retired; TRACK-030 (arena centre) and 031 (look and sound ids) added.
 - **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
   advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
   request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),

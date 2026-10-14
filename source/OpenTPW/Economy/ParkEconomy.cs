@@ -341,6 +341,64 @@ public sealed class ParkEconomy : IParkEconomy
 				Litter.Environment.Apply( row, cell.X, cell.Y, add: true );
 	}
 
+	/// <summary>
+	/// The <c>RegionFX</c> row a placed object spreads where it stands (tp.exe constructor <c>0x004DB090</c>): a toilet its clean row 1 or, below the
+	/// dirty gauge, row 6; a security camera row 4; a fireworks object row 7 until its show has run. Null for every other object.
+	/// </summary>
+	internal int? ObjectEffectRow( ParkObjectState item )
+	{
+		if ( !Catalog.TryGet( item.InfoId, out var info ) )
+			return null;
+		if ( info.ProvidesRelief )
+			return IsDirtyToilet( item ) ? RegionEffect.DirtyToilet : RegionEffect.CleanToilet;
+		if ( info.ProvidesSecurity )
+			return RegionEffect.Camera;
+		return info.IsFireworks && !item.FireworksSpent ? RegionEffect.Fireworks : null;
+	}
+
+	/// <summary>
+	/// The level placed (or, after a load, linked again) the object on <paramref name="cell"/>: its <c>RegionFX</c> row goes on that cell, once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB3EE object constructor] the relief flag adds row 1, ProvidesSecurity row 4 (0x004DB458) and IsFireworks row 7 (0x004DB48C) at the thing's cell through 0x004D8440
+	// Approximation (GUEST-006, registered at UpdateNeedsTurn): a load puts back the row the object's saved state implies (a dirty toilet its row 6, a spent show none), where the original's constructor always adds the clean, camera or fireworks row
+	public void PlaceObjectEffects( int instanceId, (int X, int Y) cell )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) || item.EffectCell != null || ObjectEffectRow( item ) is not { } row )
+			return;
+		Litter.Environment.Apply( row, cell.X, cell.Y, add: true );
+		item.EffectCell = cell;
+	}
+
+	/// <summary>The object leaves the park (tp.exe destructor <c>0x004DD0A0</c>): its row comes off its cell.</summary>
+	// [BIN:TPW-EXE:0x004DD0A0 object destructor] row 4 for a camera, row 7 for fireworks while their script variable 0 is below 2, and for a toilet row 1 at a gauge of 25 or more, else row 6 (0x004D8460)
+	private void RemoveObjectEffects( ParkObjectState item )
+	{
+		if ( item.EffectCell is not { } cell || ObjectEffectRow( item ) is not { } row )
+			return;
+		Litter.Environment.Apply( row, cell.X, cell.Y, add: false );
+		item.EffectCell = null;
+	}
+
+	/// <summary>A fireworks object's show has run (its script's variable 0 is 1): its row 7 comes off for good (tp.exe <c>0x004E0B90</c>). True when it changed.</summary>
+	// [BIN:TPW-EXE:0x004E0B90 fireworks] each object tick: with thing +0x32 bit 0x80 and script variable 0 (0x0055A070, 0x0055A390) equal to 1, row 7 comes off the thing's cell and the variable is set to 2 (0x0055A0B0)
+	public bool FireworksFired( int instanceId )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) || item.FireworksSpent || !Catalog.TryGet( item.InfoId, out var info ) || !info.IsFireworks )
+			return false;
+		RemoveObjectEffects( item );
+		item.FireworksSpent = true;
+		return true;
+	}
+
+	/// <summary>A toilet's row swaps when it turns dirty or is cleaned (tp.exe <c>0x004E2440</c>, <c>0x004DFD80</c>).</summary>
+	private void SwapToiletEffect( ParkObjectState item, int from, int to )
+	{
+		if ( item.EffectCell is not { } cell )
+			return;
+		Litter.Environment.Apply( from, cell.X, cell.Y, add: false );
+		Litter.Environment.Apply( to, cell.X, cell.Y, add: true );
+	}
+
 	/// <summary>A toilet's gauge byte is below <see cref="DirtyToiletGauge"/> (tp.exe <c>0x004E0390</c>).</summary>
 	internal static bool IsDirtyToilet( ParkObjectState item ) => (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
 
@@ -353,6 +411,9 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( objects.TryGetValue( member.ToiletId, out var item ) && item.MechanicId == member.Id )
 		{
+			// [BIN:TPW-EXE:0x004DFDC6 toilet cleaned] a gauge byte below 25 swaps the dirty row 6 back to the clean row 1 before the gauge goes to 100
+			if ( IsDirtyToilet( item ) )
+				SwapToiletEffect( item, RegionEffect.DirtyToilet, RegionEffect.CleanToilet );
 			item.Repair = RideRepair.FullGauge;
 			item.MechanicId = 0;
 			var called = item.MaintenanceRequested;
@@ -525,7 +586,9 @@ public sealed class ParkEconomy : IParkEconomy
 		item.MechanicId = 0;
 		if ( member.Type == StaffType.Handyman )
 		{
-			// [BIN:TPW-EXE:0x004DFD80 toilet cleaned] the end of the handyman's state 11 sets the gauge back to 100.0 and clears the ride's mRequestedService (+0x64) and assigned staff (+0x5E)
+			// [BIN:TPW-EXE:0x004DFD80 toilet cleaned] the end of the handyman's state 11 sets the gauge back to 100.0 and clears the ride's mRequestedService (+0x64) and assigned staff (+0x5E); a dirty toilet's row 6 turns back into row 1 first
+			if ( IsDirtyToilet( item ) )
+				SwapToiletEffect( item, RegionEffect.DirtyToilet, RegionEffect.CleanToilet );
 			item.Repair = RideRepair.FullGauge;
 			var called = item.MaintenanceRequested;
 			item.MaintenanceRequested = false;
@@ -633,7 +696,11 @@ public sealed class ParkEconomy : IParkEconomy
 		item.Repair = (float)(gauge > 100 ? 100 : gauge >= 0 ? gauge : 0);
 		var dirty = (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
 		if ( dirty && !wasDirty )
+		{
+			// [BIN:TPW-EXE:0x004E2610 toilet turns dirty] the clean row 1 comes off and the dirty row 6 goes on at the toilet's cell
+			SwapToiletEffect( item, RegionEffect.CleanToilet, RegionEffect.DirtyToilet );
 			Raise( ParkEventKind.ToiletDirty, 0, item.Id, item.InfoId );
+		}
 		return dirty && !wasDirty;
 	}
 
@@ -1084,6 +1151,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		var item = RequireObject( instanceId );
 		var value = ScrapValue( item );
+		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
 		ReleaseJobsOn( instanceId );
 		Post( LedgerCategory.OtherIncome, value );
@@ -1095,6 +1163,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public void Remove( int instanceId )
 	{
 		var item = RequireObject( instanceId );
+		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
 		ReleaseJobsOn( instanceId );
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );

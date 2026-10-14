@@ -134,7 +134,7 @@ public sealed class CoasterRide
 	public event Action<CoasterRide>? TrackChanged;
 
 	/// <summary>The guests' excitement of this ride (<c>0xdff70</c>): 0 without a controller, else trunc(½E + 50).</summary>
-	// [APPROX:COAST-013] the sickness rating is computed and kept but no guest reads it (no guest reader of controller +256 was found) — evidence needed: a reader of the coaster sickness getter in the guest code
+	// [BIN:TPW-EXE:0x4e0560 coaster guest rating] COAST-013 retired: the rating getter 0x43e0b0 returns controller +0x100 (sickness) and +0x104 (excitement), the final 0x43df90 writes both, and its only caller 0x4e0560 (the coaster branch of the per-ride guest rating) fetches the sickness and discards it, returning trunc(50 − (−0.5)·E) (constants 0x7005a4/0x7005b4) = Mac 6.1; guest code reaches a controller only through 0x55a4e0, the predicates 0x441910/0x441940/0x441970 and 0x4418f0 (ride-info stats getter 0x43e0e0), so no guest reads the sickness
 	public int GuestExcitement => Initialised ? CoasterRating.GuestExcitement( Rating?.Excitement ?? 0 ) : 0;
 
 	/// <summary>The speed cap of a speed setting (<c>0x3fb68</c>): MaxAtMin·(1 − s/100) + MaxAtMax·(s/100).</summary>
@@ -168,11 +168,18 @@ public sealed class CoasterRide
 	// [BIN:STP-PPC:0x100449F8 rebuild] node layout, tangents, angles, auto-bank and knots (0x10033398), knot links, sampling (0x10044FF4), then the rating pass (0x1003FC18)
 	internal void Rebuild()
 	{
+		PlaceTrains( RateTrack() );
+		TrackChanged?.Invoke( this );
+	}
+
+	/// <summary>Curve, rating pass, winch marks, counted sections and braking start for the current speed cap; returns the train count.</summary>
+	private int RateTrack()
+	{
 		var nodes = Track.Nodes;
 		var sampling = Curve.Sample( Track.BuildKnots( Site ), Definition.Curviness );
 		samples = sampling.Samples;
 		Spacing = sampling.Spacing;
-		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap );
+		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, nodes.Count - 1 );
 		winchSections = winch;
 		for ( var index = 0; index < nodes.Count; index++ )
 		{
@@ -183,8 +190,7 @@ public sealed class CoasterRide
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
 		BrakingStart = BrakingStartFor( samples.Length, samples[BrakingSpeedSample( samples, nodes.Count - 1 )].Speed, Spacing );
-		PlaceTrains( result.Trains );
-		TrackChanged?.Invoke( this );
+		return result.Trains;
 	}
 
 	/// <summary>
@@ -294,17 +300,17 @@ public sealed class CoasterRide
 	// ---- COAST commands ------------------------------------------------------------------------------
 
 	/// <summary>Performs a <c>COAST</c> command of the station script (PPC-rides command table, COAST-plan §5.3).</summary>
-	public int Perform( RideEffectCall call ) => Command( call.Argument( 0 ), call.OperandCount > 1 ? call.Argument( 1 ) : 0 );
+	public int Perform( RideEffectCall call ) => Command( call.Argument( 0 ), call.OperandCount > 1 ? call.Argument( 1 ) : 0, call.VM.SpeedBias );
 
 	/// <summary>One <c>COAST</c> command with its resolved parameter; returns the command's result.</summary>
-	public int Command( int command, int parameter )
+	public int Command( int command, int parameter, int speedBias = RideVM.DefaultSpeedBias )
 	{
 		switch ( command )
 		{
 			case 8:
 				// [BIN:STP-PPC:0x100B6DF4 COAST bridge] COAST 8 creates or looks up the controller (0x1003DAFC), stores it at script +224 and applies the script speed (0x1003DE68); the parameter is ignored
 				Initialised = true;
-				SpeedCap = SpeedCapFor( Definition, SpeedSetting );
+				ApplyScriptSpeed( speedBias );
 				return 0;
 			case 1:
 				// [BIN:STP-PPC:0x1003DBC0 coaster boarding] COAST 1 resolves the visitor and hands it to the controller's passenger slots
@@ -323,16 +329,55 @@ public sealed class CoasterRide
 				return 0;
 			case 5:
 				// [BIN:STP-PPC:0x1003DEC8 coaster close] COAST 5 closes (nonzero) or opens the controller
-				Closed = parameter != 0;
+				// [BIN:TPW-EXE:0x43b2f0 coaster close] gated: argument 0 opens (state → 4) only when state & 0xA (closed 8 or incomplete 2), a nonzero argument closes (→ 8) only when state & 4 (open), like the Mac; the bool Closed is state 8/2 versus 4, so each branch changes nothing when already there. Closing (4 → 8, 0x43b390) moves the admission ring (+0xB0) into the leaving ring (+0xD0) that COAST 3 (0x43b220) pops; OpenTPW has no admission ring (a guest is seated at once, see Board), so nothing waits to be released
+				if ( parameter == 0 )
+				{
+					if ( Closed )
+						Closed = false;
+				}
+				else if ( !Closed )
+					Closed = true;
 				return 0;
 			case 6:
 				// [BIN:STP-PPC:0x1003DF24 coaster capacity] COAST 6 takes MAX with the global value, then MIN with the definition and train bounds
-				// [APPROX:COAST-023] a train seats COAST 6's capacity (at least 1; uiMaxCars × 4 before the script sets it), split evenly over its cars; the speed setting stays 60 (COAST 8's script speed, read from script +192 by 0x1003DE68, is not modelled); a train departs at speed 0 when the release headway has passed since the last departure and it is full or has boarded for 5 s; an arriving train waits before the station while another train uses it; running trains do not collide — evidence needed: 0x1003DF24's bounds, the script speed of 0x1003DE68, the dispatch branches of tick 0x10040650 and the seat socket count per car
-				SeatsPerTrain = Math.Max( 1, parameter );
+				// [BIN:TPW-EXE:0x43b330 coaster capacity] min(max(request, 0), definition +0x318 (the fleet's seat socket total), the first train definition's +8); the lower bound is the literal 0 where the Mac reading takes a global (documented difference); a changed value is rebuilt through 0x43ba90 (seat allocation, not modelled)
+				// [APPROX:COAST-023] a train seats COAST 6's capacity (at least 0; uiMaxCars × 4 before the script sets it), split evenly over its cars; the two upper bounds (definition +0x318 and the first train definition's +8) are not applied because OpenTPW does not read the seat sockets or that train field; a train departs at speed 0 when the release headway has passed since the last departure and it is full or has boarded for 5 s; an arriving train waits before the station while another train uses it; running trains do not collide — evidence needed: the tick 0x10040650's dispatch branches and the seat socket count per car (definition +0x318, train definition +8)
+				SeatsPerTrain = Math.Max( 0, parameter );
 				return 0;
 			default:
 				return 0;
 		}
+	}
+
+	/// <summary>
+	/// The ride-script loop's speed setter (<c>0x43b2b0</c>): a changed setting becomes the controller's speed setting and the
+	/// speed cap lerp(maxAtMin, maxAtMax, s/100) (<c>0x43c3d0</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x43b2b0 coaster speed setter] the loop 0x5516b0 calls it every pass with the signed 16-bit script bias at script +0xC0 (50 at creation, 0x558c3c); applied via 0x43c3d0 (setting +0x30, cap +0x34 = fmadds-style lerp of definition +0x4C and +0x50 by s·0.01, dirty flags 0x1001, the per-node pass 0x43afa0 on flag 8) when it differs from the setting and money is off (0x785a2c set) or controller +0 bit 0x8000 is clear; bit 0x8000 and the money switch are not modelled (treated as clear), and since the script's bias (RideVM.SpeedBias, the ride's InitSpeed) is only written at ride init (RIDES-033) the first pass after COAST 8 is the only one that changes anything
+	internal void ApplyScriptSpeed( int bias )
+	{
+		if ( bias == SpeedSetting )
+			return;
+		SpeedSetting = bias;
+		SpeedCap = SpeedCapFor( Definition, bias );
+		// 0x43c3d0 marks the controller dirty (0x1001) and re-runs the per-node pass: a runnable track is re-rated at the
+		// new cap, as a park resume would derive it. The trains keep running when their count holds; otherwise they are
+		// taken off (riders wait for COAST 3) and placed again.
+		if ( !Track.IsRunnable )
+			return;
+		var count = RateTrack();
+		if ( count != trains.Count )
+		{
+			foreach ( var train in trains )
+				foreach ( var car in train.CarLists )
+				{
+					foreach ( var guest in car )
+						leaving.Enqueue( guest );
+					car.Clear();
+				}
+			PlaceTrains( count );
+		}
+		TrackChanged?.Invoke( this );
 	}
 
 	/// <summary>Free seats on the boarding train, 0 while closed, broken, not runnable or with no train at the station.</summary>
@@ -410,6 +455,9 @@ public sealed class CoasterRide
 			return;
 		foreach ( var train in trains )
 		{
+			// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown) — and in controller state 2, which OpenTPW does not model; an arriving train unloads open or closed and boarding needs state 4
+			if ( IsBroken && train.State != CoasterTrainState.Running )
+				continue;
 			switch ( train.State )
 			{
 				case CoasterTrainState.Unloading:
@@ -438,7 +486,7 @@ public sealed class CoasterRide
 		}
 	}
 
-	// [APPROX:COAST-012] closing (COAST 5) stops boarding and departures while moving trains finish their lap to the station, and COAST 5 always takes effect (the original changes state only under controller +8 & 4 to close and & 0xA to open); a breakdown (COAST 4 argument 1, mode 64) also stops boarding and departures, and its power factor 0 is traced, so moving trains coast to a stop; mode 32 (argument 2) has no modelled effect — evidence needed: the close/open branches of 0x1003DEC8 and the controller +8 writers, the station side of mode 64 and what mode 32 changes in 0x10038250 and the tick 0x10040650
+	// [APPROX:COAST-012] departures stop while the ride is closed or broken (the original tests boarding only in state 4, 0x43b7e0/0x43b600; whether a full or boarded train still departs while closed is the departure gating of the station step, not traced), and the writers of controller states 1 and 2 (callers of the mode setter 0x435730: 0x435570, 0x4368f0, 0x437b60, 0x442c70, 0x446740, 0x447520) are not traced; COAST 4 (0x43b270: 0/1/2 → 16/64/32), the gated COAST 5, mode 32 treated exactly like 16 by the setter (nothing tests it) and the skipped station step in mode 64 are the traced PC rules (COAST 4 argument 1, mode 64, power factor 0 so moving trains coast to a stop)
 	private bool CanDispatch( CoasterTrain train )
 	{
 		if ( !Initialised || Closed || IsBroken || PowerFactor == 0 )

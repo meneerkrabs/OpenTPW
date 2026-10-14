@@ -68,7 +68,7 @@ public sealed class CoasterPylonControl
 /// unconditionally (absent = 0). No PC <c>.sam</c> sets a motion, distance, angle or rating key, so the PC game
 /// runs on these defaults.
 /// </summary>
-// [APPROX:COAST-014] every coaster rule (defaults, validator, cost, rating, motion) is traced in the Mac PowerPC binary; the Windows build is assumed to match, and the PC data only confirms the inputs — evidence needed: the same routines in the Windows tp.exe
+// [APPROX:COAST-014] the coaster rules are traced in the Mac PowerPC binary and their Windows twins in tp.exe (TPW-EXE) agree for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330), the mode setter 0x435730, the speed setter 0x43b2b0, the guest predicates, the excitement to guests and the debit 0x4d01f0; differences: COAST 6's literal 0 floor (the Mac reading takes a global) and the x87 lookup-table trigonometry of the swing; the validator, cost, curve sampler and hop are not compared — evidence needed: those routines in tp.exe
 public sealed class CoasterDefinition
 {
 	/// <summary><c>Bumper.WhichTrackType</c> of a coaster (<c>0xe2fe4</c>: type record +156 == 3).</summary>

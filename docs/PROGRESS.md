@@ -875,6 +875,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
+  (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0
+  instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
+  mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
+  narrowed to what remains. No determinism or coaster pin moved.
 - **Ride particles (October 14):** RSE EVENT types 1 and 2 now create, simulate and draw particles of the original system
   (docs/PARTICLES.md). `Data/Particle/Tp2.plb` (105 templates, 20 effectors) is read by `ParticleTemplateFile`; `ParticleSystem`
   mirrors the traced pool (120 emitter slots, 2048 particles, private LCG seeded 1, 31 ms ticks, bursts, per-quarter rates,

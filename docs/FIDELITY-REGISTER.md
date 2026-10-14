@@ -1135,7 +1135,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1502` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
 | live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1573` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
 | live-language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:356` | [EXT:live-language] the original read its language once; OpenTPW switches in the front end, and after the park |
-| low-detail-texture-fallback | `source/OpenTPW/World/Objects/ObjectAssets.cs:145` | [EXT:low-detail-texture-fallback] the low sets are searched first, then the full folders: a few objects name textures that exist only in &#96;textures&#96; |
+| low-detail-texture-fallback | `source/OpenTPW/World/Objects/ObjectAssets.cs:153` | [EXT:low-detail-texture-fallback] the low sets are searched first, then the full folders: a few objects name textures that exist only in &#96;textures&#96; |
 | maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3) | `source/OpenTPW/Hud/ParkHud.Management.cs:92` | the door routine with the switch's new state. [EXT:maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3)] |
 | maexah/OpenTPW park-engine.md | `source/OpenTPW/Hud/ParkHud.cs:611` | [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410) |
 | maexah/OpenTPW park-gate.md | `source/OpenTPW/World/ParkGate.cs:30` | [EXT:maexah/OpenTPW park-gate.md] led this port; the Mac addresses above were verified in |

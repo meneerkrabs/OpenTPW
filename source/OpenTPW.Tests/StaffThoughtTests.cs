@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -89,5 +90,17 @@ public class StaffThoughtTests
 		Assert.IsTrue( json.Contains( "\"BubbleThought\": 20" ) || json.Contains( "\"BubbleThought\":20" ), "the bubble is in the save" );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog );
 		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ), "the thought and its bubble are saved" );
+	}
+
+	[TestMethod]
+	public void AThoughtIsSavedForAnIdleMemberWithoutAWalk()
+	{
+		var park = EconomyTestData.Park();
+		var member = EconomyTestData.HireBest( park, StaffType.Handyman );
+		(member.Thought, member.BubbleThought, member.BubbleTurn) = (StaffThoughts.Tired, StaffThoughts.Tired, 7);
+		Assert.AreEqual( (StaffJob.Idle, (GuestNavigation?)null), (member.Job, member.Navigation), "as just after a drop" );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), park.Settings, park.Catalog );
+		var copy = restored.Staff.Members.Single( item => item.Id == member.Id );
+		Assert.AreEqual( (StaffThoughts.Tired, StaffThoughts.Tired, 7L), (copy.Thought, copy.BubbleThought, copy.BubbleTurn ) );
 	}
 }

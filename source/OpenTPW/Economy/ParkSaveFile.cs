@@ -497,7 +497,8 @@ public static class ParkSaveFile
 					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
 					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
-					WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea) ? StaffWorldData.Capture( member ) : null,
+					WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
+						|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0) ? StaffWorldData.Capture( member ) : null,
 					CellX = member.CellX,
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds

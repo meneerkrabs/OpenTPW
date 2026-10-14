@@ -410,6 +410,8 @@ public sealed partial class OriginalObjectRuntime
 			Parameters = CreateQueueParameters( entry ),
 			// [DATA:<object>.sam:UsageInfo.SpecialIngredient] type +344: 0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar (the ice cream shops); only Sugar changes a guest here (the speed boost)
 			SpecialIngredient = settings.GetInt( "UsageInfo.SpecialIngredient" ),
+			// [DATA:<object>.sam:UsageInfo.AppearanceEffect] type +0x15C: "1 = Balloon, 2 = Costume" (Shops.sam); the use routine tp.exe 0x004FE1E0 switches on it
+			AppearanceEffect = settings.GetInt( "UsageInfo.AppearanceEffect" ),
 			// [DATA:<object>.sam:UsageInfo.ThirstEffect/HungerEffect/VomitEffect/HappinessEffect/GoldenTicketCost/ISIndoors, Upgrades[0].CostOfUpgrade, Info.Id] the type words the attraction score and the visit effects read (type +324/+328/+332/+336/+196/+276/+440, ORACLE.md F24)
 			ThirstEffect = settings.GetInt( "UsageInfo.ThirstEffect" ),
 			HungerEffect = settings.GetInt( "UsageInfo.HungerEffect" ),

@@ -233,7 +233,7 @@ The golden values freeze this implementation of the traced rules; they are not c
 
 ## Open points
 
-- Jumps and tunnels, the bumper-car controller types (TRACK-015), the water animation and arm masks, the boats' spray particles (TRACK-016), the
+- Jumps and tunnels, the bumper cars' chase mode, effects and drawing (TRACK-015, 029, 030, 031), the water animation and arm masks, the boats' spray particles (TRACK-016), the
   kart sounds' catalogue ids and the engine pitch (TRACK-025), the advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
@@ -314,3 +314,42 @@ The trace's corrections: `BUMP 5` reads the track-valid flag, `BUMP 8` has no re
 object lacks all four quadrant bits. The lap count of a kart script is `VAR_DURATION`, which the ride's `InitDuration` (3) sets at creation
 (`[TPW-EXE:0x4db565]`). Still open: the `cat_rides` catalogue ids, the add-on handler `0x548E80` (jumps, tunnels), what else besides `BUMP 9` sets the worn state, and whether
 the late-to-grid extra lap is observable (the code reproduces it as written).
+
+## Bumper cars (October 14)
+
+Source: `[TPW-EXE:0x544840, 0x544A10, 0x544F90, 0x544B50, 0x549B80, 0x549DB0, 0x549C60, 0x54A040, 0x5474B0, 0x54AC70, 0x54AD90, 0x54AE50, 0x545890]`. The bumper rides
+are `jungle/rides/bumper` (type −1), `hallow/rides/bumper` (−6), `space/rides/bumper` (−14) and `fantasy/rides/bbugs` (Bumble Bugs, −11): `Bumper.WhichTrackType` 0
+with a negative `Bumper.BumperType`. They have no track; `BumperTemplates.ForRide` gives them a `BumpController` (`BumperTemplate.IsBumper`, `BumpController.HasTrack`
+false, `IsTrackValid` true as the attraction's constructor leaves it). Before this controller existed the four `bumper.RSE` scripts boarded their guests with `BUMP 1`
+and `BUMP 12` and then waited for `BUMP 2` for ever: a headless probe of the jungle ride boarded 16 guests and released none.
+
+**The script cycle** (all four scripts; Bumble Bugs differs in detail): `BUMP 7` opens; a loop keeps `VAR_CARS` equal to `VAR_CAPACITY` (`BUMP 4` makes a car, `BUMP 16`
+unloads an empty one, never when every car holds a guest); each boarding guest is `BUMP 1 VAR_LETMEON` (pending list) followed by `BUMP 12` (the pending guest goes into the
+first car without riders); when the cars are full or ten seconds passed after the last boarding, `BUMP 13 VAR_DURATION` stores seconds × 30 in the controller's duration,
+`BUMP 3` starts; then the script loops on `BUMP 2 VAR_LETMEOFF` until `VAR_ONRIDE` is 0, handling breakdown (`BUMP 8`), wear (`BUMP 9`) and closing (`BUMP 6`) on the way.
+
+**Controller rules** (all traced):
+
+- Open (`0x544840`): phase 1 whatever it was. Close (`0x544A10`): pending guests to the leaving list, phase 0, every car gets laps 0 and flags `(flags & 0xFFFFBFA1) | 0x10020`.
+- Create (`0x549DB0`, `BUMP 4`): needs a phase ≠ 0 and fewer cars than the type's maximum (8); the car carries `0x4000` until its first launch, the mesh is
+  `count % ModelCount + ModelBase`. The first launch (`0x54A040`) draws up to 100 random spots (radius = `rand % arena radius`, a random angle) around the station until no car overlaps,
+  clears `0x4000` (an empty car neither steers nor thrusts), takes a random heading and sets the wall-stuck counter to −1.
+- Load (`0x549B80`, `BUMP 12`): the first car without riders takes the pending guests, flags `0x84000` (carrying, slowed: no thrust) and the controller's duration.
+- Start (`0x544F90`): phase 1 → 2; every car clears `0x80000|0x40`, takes the duration as its counter and is relaunched. The jungle type also switches carrying cars to animation 5.
+- Arena (`0x545890`): one full keep-in circle at the station centre (radius 0x1200 jungle, 0x1100 fantasy, 0x1600 hallow and space) and eight buoys on a ring (radius 0xC00, 0xB00,
+  0x1000) turned 45° at a time with the 8-bit sine factors. No sections, no finish buoy.
+- Wandering (relaunch): flags `(flags & 0xFFFBFF89) | 0x10008 | 0x8000`; the target is a random buoy, or one time in four (rand & 0xF ≤ 3, only when already wandering) the buoy after the current;
+  buoy countdown 3, so a car changes its mind after three captures. The shared steering, walls and car-car collisions of the other controllers apply.
+- **Session end** (`0x5474B0`): the duration counts down one per tick while the ride runs (phase 2) and is not broken; at 0 a car drops `0x4000` and gets flags `0x10020`. A car with
+  `0x20` hands **every rider** to the front of the leaving list at once (`0x54AC70`); when no rider is left anywhere in the controller the phase becomes 1 ("loading"), the car's flags
+  `&= 0xFFFFFF81` and its animation 12. The cars are not unloaded: they stay, ready for the next session. `BUMP 2` then returns the guests one by one.
+- `BUMP 16` (`0x54AD90` is called with its flag constant 1: the first empty car, else the first car) retires a car at once; the last one going back sets the phase to 1, as for karts.
+- The ride's excitement uses the controller formula like karts and water (level × 60 % plus the piece terms, which are 0 here).
+
+**Saves**: a bumper controller is saved like a kart's (phase, state, duration, guest lists, cars); it has no sections. A park-resume save from before the controller restores
+the ride freshly (TRACK-027) and hands the riders it still held to the new leaving list.
+
+**Open**: chase mode (TRACK-029), the arena centre (TRACK-030), drawing and effects (TRACK-031).
+
+**Tests**: `BumperCarAssetTests` (with `OPENTPW_GAME_PATH`): each theme's real script with 16 guests for ten simulated minutes: every guest boards and is released, the ride cycles at least twice,
+nobody stays in `GuestState.Using`, the phase returns to loading after each session; `BumpControllerTests` pins the arena, the duration countdown and the release.

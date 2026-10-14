@@ -205,6 +205,47 @@ public class HandymanTests
 	}
 
 	[TestMethod]
+	public void ACalledHandymanCleansAToiletBeyondHisRange()
+	{
+		var f = new Fixture();
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, f.Park.TryBuild( 1402, out var toilet ) );
+		toilet!.Repair = 90;
+		f.Toilets.Add( new ToiletSite( toilet.Id, (15, 6), (15, 5) ) );
+		f.Turns( 20 );
+		Assert.AreEqual( 0, toilet.MechanicId, "clean and far: nobody comes" );
+		f.Park.RequestMaintenance( toilet.Id, true );
+		var answered = false;
+		f.Park.EventRaised += item => answered |= item.Kind == ParkEventKind.ToiletCleaned && item.Amount == 1;
+		var cleaned = false;
+		f.Turns( 600, () => cleaned |= toilet.Repair == 100 && !toilet.MaintenanceRequested );
+		Assert.IsTrue( cleaned, "the call brings a handyman at any distance (0x004D7880) and his clean clears it" );
+		Assert.IsTrue( answered, "the clean reports that it answered the call (the level reopens the toilet)" );
+	}
+
+	[TestMethod]
+	public void AHandymanWalksIntoHisPatrolAreaAndStaysThere()
+	{
+		var f = new Fixture();
+		f.Handyman.SetPatrolArea( (12, 7), (8, 0) );
+		Assert.AreEqual( (8, 0, 12, 7), f.Handyman.PatrolArea, "the corners are ordered" );
+		var inside = 0;
+		var outsideAfterEntry = 0;
+		f.Turns( 400, () =>
+		{
+			var (x, y) = f.Cell;
+			var isInside = x is >= 8 and <= 12 && y is >= 0 and <= 7;
+			if ( isInside )
+				inside++;
+			else if ( inside > 0 && f.Handyman.Job == StaffJob.Patrol )
+				outsideAfterEntry++;
+		} );
+		Assert.IsTrue( inside > 100, $"he walked in ({inside} turns inside)" );
+		Assert.AreEqual( 0, outsideAfterEntry, "and patrolled only inside" );
+		f.Handyman.ClearPatrolArea();
+		Assert.IsFalse( f.Handyman.HasPatrolArea );
+	}
+
+	[TestMethod]
 	public void DismissingAHandymanFreesEveryClaim()
 	{
 		var f = new Fixture();

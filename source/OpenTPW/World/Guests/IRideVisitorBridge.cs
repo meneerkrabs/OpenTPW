@@ -145,6 +145,8 @@ public interface IRideVisitorBridge
 	int Price { get; }
 	/// <summary>.sam <c>UsageInfo.SpecialIngredient</c> (type <c>+344</c>): 0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar. Only Sugar changes a guest here: it raises the walk speed boost (<see cref="GuestSpeed.RaiseBoost"/>).</summary>
 	int SpecialIngredient => 0;
+	/// <summary>.sam <c>UsageInfo.AppearanceEffect</c> (tp.exe type <c>+0x15C</c>): 0 none, 1 a balloon, 2 a costume (the balloon and costume shops).</summary>
+	int AppearanceEffect => 0;
 	/// <summary>The amount of the special ingredient (ride <c>+404</c> byte, 0..255); the ride build sets 50.</summary>
 	int IngredientAmount => GuestSpeed.DefaultIngredientAmount;
 	/// <summary>Walkable path cell where guests join the queue.</summary>

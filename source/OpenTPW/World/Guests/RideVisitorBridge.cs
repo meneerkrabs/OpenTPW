@@ -202,6 +202,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int Price { get; }
 	/// <summary>The type's <c>UsageInfo.SpecialIngredient</c> (<c>+344</c>); 4 (Sugar) makes a visit raise the guest's speed boost.</summary>
 	public int SpecialIngredient { get; set; }
+	/// <summary>The type's <c>UsageInfo.AppearanceEffect</c> (tp.exe <c>+0x15C</c>): 1 gives the guest a balloon, 2 puts on or returns a costume.</summary>
+	public int AppearanceEffect { get; set; }
 	/// <summary>The ride's amount of the special ingredient (<c>+404</c>), 50 when the ride is built.</summary>
 	// [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (a Sugar visit adds 3): the original's shop screen can change it (ride +404, saved as mAmountOfSpecialIngredient) and OpenTPW has neither that control nor the saved field — evidence needed: the screen that sets +404 (handlers 0x1685b4 and 0x168640), its range and the save field
 	// Only tests change it: nothing in play sets +404 and it is neither saved nor hashed, so a public setter would make state the save loses.

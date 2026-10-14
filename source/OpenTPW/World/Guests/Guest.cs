@@ -97,6 +97,15 @@ public sealed class Guest
 	public int BinId { get; internal set; }
 	/// <summary>The prankery flag (guest <c>+0x1c0</c>, <c>mPrankeryIndex</c>): 0, or 100 (stinkbombs), 101 (litter) or 102 (balloons) for a prankster.</summary>
 	public int PrankFlag { get; internal set; }
+	/// <summary>
+	/// The balloon's remaining life (guest <c>+0x214</c>, <c>mRemainingBalloonLife</c>): set by a balloon shop, one less on every needs phase while the guest is in
+	/// the park and neither on a ride nor held; the balloon goes at 0. It is not cleared when the balloon bursts, so a burst balloon comes back after the next ride.
+	/// </summary>
+	public int BalloonLife { get; internal set; }
+	/// <summary>Whether the guest holds a balloon (guest <c>+0x210</c>, the balloon's model <c>mBalloonScript</c>): put away on a ride, back after it while it has life.</summary>
+	public bool HasBalloon { get; internal set; }
+	/// <summary>Whether the guest wears a costume (guest <c>+0x24</c> == 2): a costume shop puts one on, and the next visit to one returns it.</summary>
+	public bool InCostume { get; internal set; }
 	public int Money { get; internal set; }
 	/// <summary>
 	/// The exit counter (guest <c>+444</c>, saved as <c>mExitLevel</c>): <c>PeepInfo.ExitLevel</c> plus a draw within ±<c>ExitLevelVar</c> at creation, one less on every

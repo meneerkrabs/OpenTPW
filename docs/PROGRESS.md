@@ -883,7 +883,8 @@ research batch was included in this merge.
   letter table is the original's twelve (C D I L S M E U W B R O by AnimID), numbered clips load up to the first gap and the
   unnumbered one only without number 1 (RIDES-008 retired). RIDES-001 and RIDES-034 are retired with PC citations (30 frames
   a second; placed rides never take the idle restart); RIDES-022, 032, 036, 038, 043 and 044 are rewritten around what the
-  PC shows.
+  PC shows. WAIT is divided by the script speed as well (`0xb0658`), screams use the script's speed word (AUDIO-016
+  retired), and the M3 gate's boarding period follows the scaled WAIT (Belly Bounce: P 3, H 55).
 - **Audio register round (October 14):** the storm's thunder follows the original countdown (`0x101033CC`/`0x101034D8`):
   a bolt starts the countdown only when none is running, at `ThunderStartsThisFarAway` minus the storm's bolts so far plus a
   random term, and the thunder rings when the countdown steps from 1 to 0 (a computed 0 never rings), at the last bolt's top;

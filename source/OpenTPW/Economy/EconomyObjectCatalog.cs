@@ -50,7 +50,9 @@ public sealed record EconomyObjectInfo(
 	bool IsChoosable = true,
 	bool ChillsYouOut = false,
 	int WhichUIType = -1,
-	bool ProvidesRelief = false )
+	bool ProvidesRelief = false,
+	bool ProvidesSecurity = false,
+	bool IsFireworks = false )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -154,7 +156,11 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			// [DATA:<object>.sam:Info.WhichUIType] type record +1960, which 0xc7b24 counts objects by
 			settings.GetInt( "Info.WhichUIType", -1, optional: true ),
 			// [DATA:<object>.sam:UsageInfo.ProvidesRelief] the relief flag (thing +0x32 bit 0 on the PC): the toilet's gauge wears with every use and handymen clean it (tp.exe 0x004E2440, 0x004D7880)
-			settings.GetInt( "UsageInfo.ProvidesRelief", 0, optional: true ) != 0 );
+			settings.GetInt( "UsageInfo.ProvidesRelief", 0, optional: true ) != 0,
+			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.ProvidesSecurity (type +0xF0, thing +0x32 bit 0x10) adds RegionFX row 4 at the object's cell: the security cameras of all four themes
+			settings.GetInt( "UsageInfo.ProvidesSecurity", 0, optional: true ) != 0,
+			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.IsFireworks (type +0x110, thing +0x32 bit 0x80) adds RegionFX row 7: Hallow's Firework Show and Space's Laser Show
+			settings.GetInt( "UsageInfo.IsFireworks", 0, optional: true ) != 0 );
 	}
 
 	/// <summary>

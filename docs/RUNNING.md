@@ -181,8 +181,10 @@ hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted 
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
 Theme Park Inc data given to any other start (no `--load-original-level`, a Theme Park World level,
 `--sandbox`, `--front-end`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
-`--visit-park`) is refused with a message that points here. The setup window and the saved game
-folder still reject it, and so does the browser: its front end needs Theme Park World data. Adding
+`--visit-park`) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
+chooser is reviewed in PR #146 for a future release; the browser already offers explicit experimental
+TPI world selection. See the [static TPI launch guide](https://opentpw.io/theme-park-inc.html) for
+build availability, setup steps and limitations. Adding
 `--tpi-smoke-test` (best on `science`) drives the slice's whole HUD user flow with injected input —
 build window, place, queue tool, Escape ordering, pause and the pause menu's Quit — and fails loudly
 if any of it breaks; on Theme Park World data it is refused. See
@@ -272,6 +274,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
+| `--debug-guest-looks` | For captures: gives every second guest a balloon and every third a costume as they appear (`[EXT:debug-guest-looks]`, docs/GUESTS.md "Rendering"). |
 | `--capture-interface` | With `--capture-world`: writes the composed output (world plus the original-style interface, no ImGui) instead of the world alone. |
 | `--capture-camera x,y,height,yaw` | With `--capture-world`: holds the park camera at that ground target, height and yaw (degrees) for the last 30 frames before the capture, so a smoke test or park start keeps its own camera until then. The capture log prints the pose. |
 | `--capture-sequence count,interval` | With `--capture-world`: writes `count` numbered images (`shot-0000.png`, ...) one every `interval` frames, then exits; for clips and for finding a moment in a smoke run. |
@@ -383,3 +386,5 @@ These packages require a matching .NET 10 runtime and legally obtained external
 game assets. Build the arm64 dependency before publishing that RID. Successful
 cross-publication is not successful execution on the target platform.
 Current verification and remaining release blockers are recorded in PROGRESS.md.
+
+The CPU-only `--inspect-tpi-mission /local/mission.sam` command checks explicitly selected retained TPI mission bounds and reports parser omissions. See [static mission inspection](TPI-MISSION-INSPECTION.md) for its modified-NoCD evidence and lexical/runtime limits.

@@ -16,6 +16,6 @@
     {"text": "See other players or share a park together: a shared park is a snapshot, visits are read-only.", "href": "docs/ONLINE.html"},
     {"text": "Rely on the original's exact numbers everywhere: some rules still use a documented approximation.", "href": "docs/FIDELITY-REGISTER.html", "matrix": ["Visitors, needs, routing and queues", "Economy, shops, toilets and staffing"]}
   ],
-  "later": "Full Theme Park Inc (the 2001 sequel) support is a later goal. Development builds offer an experimental native slice with free building, a basic HUD and visitors. Campaign, economy, staff, advisor and saves remain unsupported; the browser refuses TPI data.",
+  "later": "Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. Campaign, economy, staff, advisor and native park saves remain unavailable. The new desktop edition chooser is a reviewed PR for a future release.",
   "later_href": "docs/THEME-PARK-INC.html"
 }

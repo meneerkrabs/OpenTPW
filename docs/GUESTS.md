@@ -251,7 +251,7 @@ Traced from the Mac binary and executed in the PowerPC oracle (finding F24, [ORA
 
 | Match | Rule |
 | --- | --- |
-| Distance | `100 − min(100, 100 · (dx² + dy²) / 450)`, squared cell displacement to the attraction's back-of-queue cell (divided by an environment word that OpenTPW lacks, GUEST-001) |
+| Distance | `100 − min(100, 100 · (dx² + dy²) / 450)`, squared cell displacement to the attraction's back-of-queue cell (divided by the environment's attraction word at that cell when it is nonzero: only fireworks write it, row 7) |
 | Queue | `100 − 100 · guests / (4 · queue cells)`, only within a squared distance of 8, **unclamped** (a queue above four per cell wraps) |
 | Excitement | `2 · (50 − min(50, abs(preferred − live excitement)))`; its weight counts only when the type's `ExcitementLevel` byte is nonzero |
 | Thirst, hunger | `trunc(sqrt(effect / 10) · need²)` with the shop's `ThirstEffect` / `HungerEffect` and the need in tens (the original's 11 × 11 table is this formula) |
@@ -264,7 +264,7 @@ attraction of the type used last scores 0 outright, so the divisors that matter 
 boring, too exciting) and forgets it after 80 park turns (a 0 is shifted in every 20 turns). The guest chooses the highest score of at least 10 (ties go to the later attraction on odd park turns), among open, unbroken
 attractions it can reach; there is no random bonus. A use gives happiness `PerfectRide` below 5 from the preferred excitement, `GoodRide` below 15, `OKRide` below 40 and nothing beyond (no penalty) and raises illness by
 `excitement / RideVomitDivisor · ((100 − hunger) / 20)`, so a hungry guest (81 and up) is not made sick.
-Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters, thought thresholds (`GUEST-001..005`).
+Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters, thought thresholds (`GUEST-002..005`).
 
 ### Needs and starting values
 
@@ -345,6 +345,27 @@ happiness, illness and hunger divided by its distance + 1, and a guest's needs p
 entertainer's `RegionFX[0]` adds 2 happiness on his cell and 1 beside it, a guard's `RegionFX[3]` the security above. The other sources (toilets,
 cameras, fireworks) are not modelled yet (GUEST-006).
 
+### The environment grid
+
+Every map cell carries five words (happiness, illness, hunger, security, attraction) that the original's region sources spread around them
+(`RegionFX[0..7]` in `levels/Standard.sam`, the writer `0x4d8480`: the row's coefficient divided by the Manhattan distance + 1, within its
+square radius). A guest's needs phase adds the first three words of its cell. The sources, all modelled:
+
+| Row | Source | When | Shipped row |
+| --- | --- | --- | --- |
+| 0 | entertainer | where it stands, moving with it | radius 3, happiness +2 |
+| 1 | clean toilet | from placement while the gauge is 25 or more | radius 3, illness +1, hunger −1 |
+| 2 | vomit | while it lies | radius 1, happiness −1, illness +1, hunger −1 |
+| 3 | guard | where he stands, moving with him | radius 3, security 10 |
+| 4 | security camera | from placement | radius 5, security 20 |
+| 5 | stinkbomb | while it lies | radius 3, happiness −3, illness +3, hunger −1 |
+| 6 | dirty toilet | from the use that takes the gauge below 25 until a handyman cleans it | radius 3, illness +2, hunger −2 |
+| 7 | fireworks (Hallow's Firework Show, Space's Laser Show) | from placement until the show's script sets `VAR_STATUS` to 1 | radius 6, happiness +2, attraction +10 |
+
+The security word is what a prank tests before a guard comes, so a camera guards its square as a guard does. The attraction word divides the
+distance match of an attraction whose back-of-queue cell lies under a show (`0xe9388`). The objects' rows come from the constructor `0x4db090`,
+the destructor `0x4dd0a0`, the toilet wear `0x4e2440`, the handyman's clean `0x4dfd80` and the fireworks tick `0x4e0b90`.
+
 ### Balloons and costumes
 
 Read in full in tp.exe (ECON-044). The use routine (`0x4fe1e0`) switches on the type's `UsageInfo.AppearanceEffect` (+0x15c) after the special
@@ -355,8 +376,8 @@ control, so the build's quality 50 gives 127. The life (`mRemainingBalloonLife`,
 
 A ride puts the balloon away (state 16, `0x501db0`) and gives it back after the visit when it still has life (state 15). A balloon prank or a
 guard's catch bursts the balloon but leaves its life, so it comes back after the guest's next ride. The challenge types 9 and 10 count the
-in-park guests holding a balloon or wearing a costume, as a truncated percentage of the in-park guests (`0x4d1746`). Balloons and costumes are
-not drawn yet.
+in-park guests holding a balloon or wearing a costume, as a truncated percentage of the in-park guests (`0x4d1746`). How they are drawn:
+see Rendering.
 
 ### Walking
 
@@ -698,7 +719,20 @@ with up to eight kid atlases (`GuestSpriteAtlas`, 1024-wide RGBA, built on the
 CPU from `.FPC`). Direction comes from the guest's heading relative to the
 camera; the walk frame advances 10 frames per cell walked. Sprite world size
 (0.045 engine units per pixel, ≈ one cell per kid height) is an approximation.
-Not drawn: costumes, balloons, thought bubbles, shadows, riders' bodies on a ride (their heads are drawn, see below).
+Not drawn: thought bubbles, shadows, riders' bodies on a ride (their heads are drawn, see below).
+
+**Costumes.** A guest in costume is drawn by a second `GuestRenderer` with the theme's costume set (`esprites.wad/<theme>/Costumes`: Jungle
+`SPR_TI`, Fantasy `SPR_BK`, Hallow `SPR_HK`, Space `SPR_SK`; one set per theme, so the original's draw among them, `0x541f70(2)`, always
+picks it). The sets share the kids' animation slots. On a ride, its head comes from the theme's costume heads (Jungle and Space; the other
+themes ship none, and the rider keeps its kid head).
+
+**Balloons.** `BalloonRenderer` draws each held balloon from `Generic/Balloons/SPR_BL`: four colours (red, green, blue, yellow), each a whole
+and a burst frame, the colour drawn anew whenever the balloon appears (after a purchase or a ride; `0x541fd0`). The placement follows
+`0x4fa030`: the balloon hangs at the guest's position 0.35 of a park turn behind (`0x4f9f00`), one unit up, lowered by twice the distance
+between that point and the guest in world units (ten per cell), and bobbing through a 20-entry table (0 to 0.2, scaled by 1.5). A
+balloon that bursts (its life ends, a prank, a guard's catch) shows its burst frame for a moment; one put away for a ride just goes.
+GUEST-017 lists what is approximated (the colour stream, the bob's pace, the burst's length and fade). The developer option
+`--debug-guest-looks` gives every second guest a balloon and every third a costume as they appear, for captures.
 
 ## Riders' heads
 

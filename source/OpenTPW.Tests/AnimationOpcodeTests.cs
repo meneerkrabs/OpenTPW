@@ -130,7 +130,7 @@ public class AnimationOpcodeTests
 	[DataRow( 266, int.MaxValue )]
 	public void WaitAnimConvertsUnsignedSoShortClipsWrap( int returned, int expected )
 	{
-		Assert.AreEqual( expected, RideAnimationTiming.WaitAnimDelay( returned, RideVM.ScriptSpeed ) );
+		Assert.AreEqual( expected, RideAnimationTiming.WaitAnimDelay( returned, RideVM.DefaultScriptSpeed ) );
 		var vm = Load( Idle( new Asm().I( Opcode.WAITANIM, 5, 0 ).I( Opcode.COPY, V( 0 ), 1 ) ), new Host { Result = _ => returned } );
 		Run( vm, 1 );
 		Assert.AreEqual( vm.TimeMilliseconds + expected, vm.WakeTimeMilliseconds, 1e-6 );
@@ -177,7 +177,7 @@ public class AnimationOpcodeTests
 	public void WaitAnimChannelWrapsAShortClipIntoThePast()
 	{
 		Assert.AreEqual( 4294967162u, RideAnimationTiming.WaitAnimChannelDelay( 166 ) );
-		Assert.AreEqual( int.MaxValue, RideAnimationTiming.WaitAnimDelay( 166, RideVM.ScriptSpeed ), "WAITANIM's fctiwz saturates" );
+		Assert.AreEqual( int.MaxValue, RideAnimationTiming.WaitAnimDelay( 166, RideVM.DefaultScriptSpeed ), "WAITANIM's fctiwz saturates" );
 
 		var host = new Host { Result = _ => 166 };
 		var vm = Load( Idle( new Asm().I( Opcode.WAIT, 10000 ).I( Opcode.WAITANIM_CH, 5, 0, 3 ).I( Opcode.COPY, V( 0 ), 1 ) ), host );
@@ -286,6 +286,22 @@ public class AnimationOpcodeTests
 		Assert.AreEqual( 0, bare.Variables[1], "no object behind the wrapper: the wait never ends (RIDES-037)" );
 		Assert.AreEqual( 300, bare.Variables[0], "no object: ret 0 gives 300" );
 		Assert.AreEqual( 7, bare.TriggerWaitToken );
+	}
+
+	/// <summary>Without an object the wait handlers compare the out operand's raw word + 1 with the token (RIDES-037, PC 0x5535c7): a literal 0x0000vvvv resumes once v is the triggered AnimID, any other literal and every variable never do.</summary>
+	[TestMethod]
+	public void TrigWaitAnimWithoutObjectResumesOnLiteralOutOperandMatchingTheAnimId()
+	{
+		RideVM Bare( int literal ) => Load( Idle( new Asm().I( Opcode.TRIGWAITANIM, 6, 0, literal ).I( Opcode.COPY, V( 1 ), 1 ) ),
+			new VisitorRideScriptEffects( new RideVisitorBridge( 7, "Bare", RideVisitorKind.Shop, 2, 0, 10 ), UnimplementedRideScriptEffects.Instance ) );
+		var matching = Bare( 6 );
+		Run( matching, 120 );
+		Assert.AreEqual( 1, matching.Variables[1], "literal 6 + 1 equals the token 7" );
+		Assert.AreEqual( 0, matching.TriggerWaitToken );
+		var other = Bare( 5 );
+		Run( other, 120 );
+		Assert.AreEqual( 0, other.Variables[1] );
+		Assert.AreEqual( 7, other.TriggerWaitToken );
 	}
 
 	/// <summary>

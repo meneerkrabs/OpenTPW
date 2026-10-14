@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// Draws the guests' balloons (<see cref="Guest.HasBalloon"/>) as camera-facing quads of the original balloon sprite
 /// (<c>esprites.wad/Generic/Balloons/SPR_BL</c>), the way <see cref="GuestRenderer"/> draws the kids: the balloon trails its guest, dips while the guest
 /// walks and bobs (tp.exe <c>0x004FA030</c>); a balloon that bursts shows its burst frame for a moment. Presentation only: nothing here touches the
-/// simulation, and the colours are drawn from a presentation generator.
+/// simulation, and the colours come from a presentation hash.
 /// </summary>
 public sealed class BalloonRenderer : Entity
 {
@@ -52,7 +52,8 @@ public sealed class BalloonRenderer : Entity
 	private readonly Dictionary<Guest, BalloonView> views = new( ReferenceEqualityComparer.Instance );
 	private readonly HashSet<Guest> seen = new( ReferenceEqualityComparer.Instance );
 	private readonly List<Guest> stale = new();
-	private readonly Random colours = new();
+	/// <summary>How many balloons have appeared, the presentation-only input of the colour pick.</summary>
+	private uint appearances;
 	private DeviceBuffer? vertexBuffer;
 	private Vertex[] vertices = Array.Empty<Vertex>();
 	private bool deleted;
@@ -111,13 +112,16 @@ public sealed class BalloonRenderer : Entity
 		return Rise - distance / DipDivisor + Bob[(int)((uint)(guestId + phase) % (uint)Bob.Length)] * BobScale;
 	}
 
+	/// <summary>A colour for a new balloon, from the guest's id and the count of balloons that appeared before it (a multiplicative hash; never the simulation's streams).</summary>
+	public static int ColourPick( int guestId, uint appearance, int colours ) => (int)((((uint)guestId + appearance) * 2654435761u >> 16) % (uint)colours);
+
 	protected override void OnRender()
 	{
 		DrawnBalloons = 0;
 		if ( !Visible || material == null || atlas == null || deleted )
 			return;
 		var now = Time.Now;
-		// [APPROX:GUEST-017] BALLOON AND COSTUME DRAWING: a balloon's colour is drawn from a presentation generator rather than the world stream (0x00541FD0, reseeded per guest, DET-014), the shared bob phase steps every 0.1 s and the balloon follows every frame where the original's phase steps once per ten placements of any balloon; the burst shows its frame for 13 sprite-script steps at 10 a second without the original's fading register; riders in costume in Fantasy and Hallow, which ship no costume heads, keep their kid head, and a guest who returns a costume keeps its kid set where the original draws a new one (0x004FE6A1, 0x00541F70(0)) — evidence needed: the sprite scripts' step rate and register 7's use
+		// [APPROX:GUEST-017] BALLOON AND COSTUME DRAWING: a balloon's colour comes from a presentation hash of the guest and the count of balloons so far rather than the world stream (0x00541FD0, reseeded per guest, DET-014), the shared bob phase steps every 0.1 s and the balloon follows every frame where the original's phase steps once per ten placements of any balloon; the burst shows its frame for 13 sprite-script steps at 10 a second without the original's fading register; riders in costume in Fantasy and Hallow, which ship no costume heads, keep their kid head, and a guest who returns a costume keeps its kid set where the original draws a new one (0x004FE6A1, 0x00541F70(0)) — evidence needed: the sprite scripts' step rate and register 7's use
 		var phase = (int)(now / BobStepSeconds) % Bob.Length;
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );
@@ -138,7 +142,7 @@ public sealed class BalloonRenderer : Entity
 			{
 				// A new balloon model (the shop, or back after a ride): a fresh colour (0x00541FD0) and no trail yet.
 				balloon.Held = true;
-				balloon.Slot = slots[colours.Next( slots.Length )];
+				balloon.Slot = slots[ColourPick( guest.Id, appearances++, slots.Length )];
 				balloon.LastX = float.NaN;
 			}
 			else if ( !guest.HasBalloon && balloon.Held )

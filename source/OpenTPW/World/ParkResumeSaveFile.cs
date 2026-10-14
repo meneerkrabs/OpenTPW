@@ -830,7 +830,7 @@ internal static class ParkResumeSaveFile
 					$"coaster {ride.AttractionId}'s open track holds a station end node" );
 			Require( ride.BreakdownState is >= 0 and <= 2, $"coaster {ride.AttractionId}'s breakdown state {ride.BreakdownState} is not 0, 1 or 2" );
 			Require( ride.SpeedSetting >= 0, $"coaster {ride.AttractionId}'s speed setting {ride.SpeedSetting} is negative" );
-			Require( ride.SeatsPerTrain >= 1, $"coaster {ride.AttractionId}'s trains seat {ride.SeatsPerTrain}" );
+			Require( ride.SeatsPerTrain >= 0, $"coaster {ride.AttractionId}'s trains seat {ride.SeatsPerTrain}" );
 			Require( float.IsFinite( ride.SpeedCap ) && ride.SpeedCap >= 0, $"coaster {ride.AttractionId}'s speed cap {ride.SpeedCap} is negative or not finite" );
 			Require( ride.PaidCost >= 0, $"coaster {ride.AttractionId} paid {ride.PaidCost} for its track" );
 			Require( double.IsFinite( ride.TimeSeconds ) && ride.TimeSeconds >= 0, $"coaster {ride.AttractionId}'s clock {ride.TimeSeconds}s is negative or not finite" );

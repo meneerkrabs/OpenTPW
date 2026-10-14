@@ -168,6 +168,13 @@ public sealed class CoasterRide
 	// [BIN:STP-PPC:0x100449F8 rebuild] node layout, tangents, angles, auto-bank and knots (0x10033398), knot links, sampling (0x10044FF4), then the rating pass (0x1003FC18)
 	internal void Rebuild()
 	{
+		PlaceTrains( RateTrack() );
+		TrackChanged?.Invoke( this );
+	}
+
+	/// <summary>Curve, rating pass, winch marks, counted sections and braking start for the current speed cap; returns the train count.</summary>
+	private int RateTrack()
+	{
 		var nodes = Track.Nodes;
 		var sampling = Curve.Sample( Track.BuildKnots( Site ), Definition.Curviness );
 		samples = sampling.Samples;
@@ -183,8 +190,7 @@ public sealed class CoasterRide
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
 		BrakingStart = BrakingStartFor( samples.Length, samples[BrakingSpeedSample( samples, nodes.Count - 1 )].Speed, Spacing );
-		PlaceTrains( result.Trains );
-		TrackChanged?.Invoke( this );
+		return result.Trains;
 	}
 
 	/// <summary>
@@ -354,6 +360,24 @@ public sealed class CoasterRide
 			return;
 		SpeedSetting = bias;
 		SpeedCap = SpeedCapFor( Definition, bias );
+		// 0x43c3d0 marks the controller dirty (0x1001) and re-runs the per-node pass: a runnable track is re-rated at the
+		// new cap, as a park resume would derive it. The trains keep running when their count holds; otherwise they are
+		// taken off (riders wait for COAST 3) and placed again.
+		if ( !Track.IsRunnable )
+			return;
+		var count = RateTrack();
+		if ( count != trains.Count )
+		{
+			foreach ( var train in trains )
+				foreach ( var car in train.CarLists )
+				{
+					foreach ( var guest in car )
+						leaving.Enqueue( guest );
+					car.Clear();
+				}
+			PlaceTrains( count );
+		}
+		TrackChanged?.Invoke( this );
 	}
 
 	/// <summary>Free seats on the boarding train, 0 while closed, broken, not runnable or with no train at the station.</summary>

@@ -433,7 +433,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
 	/// enters the temporary history.
 	/// </summary>
-	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger) has only the sources OpenTPW models (vomit, stinkbombs, the entertainers' and the guards' rows, ParkEnvironment): the clean and dirty toilets, cameras and fireworks add nothing yet; neither are the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function — evidence needed: the RegionFX writers of the other sources and the thought selection 0xe8c58
+	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger) has the original's sources: vomit and stinkbombs, the entertainers' row 0 and the guards' row 3 (security) as they move, and the toilets' clean or dirty row, the cameras' row 4 and the fireworks' row 7 where they stand (ParkEnvironment, tp.exe 0x004DB090); a load puts back the row the object's saved state implies, and a show loses its row when its script's VAR_STATUS reaches 1, which only the script writes in OpenTPW; the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function are not modelled — evidence needed: the thought pick 0x004FC8A0 and the bubble timer 0x0050BE40 (read); who sets a show's VAR_STATUS in the original
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -1119,7 +1119,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// guest's history (see <see cref="AttractionScore"/>). Unsigned, like the original; 0 for an attraction without a back-of-queue cell.
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
-	// [APPROX:GUEST-001] the environment record's component 4 at the attraction's cell (0xe9388, a divisor of the distance match) is not modelled: OpenTPW has no region effects (entertainers, vomit, guards), so it is 0 — evidence needed: the effect grid (PPC-guests, Phase 2) and what writes component 4
+	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
 	// [APPROX:GUEST-002] the attraction's back-of-queue cell (0xdd3f4) is the bridge's last queue cell and its queue count the guests in OpenTPW's queue list; a back cell that is not connected to a path (no join cell) is scored 0; the type's own thing-array order, tie rule on equal scores and the thing behind ride +36 follow the join gate's approximations (QUEUE-004)
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
@@ -1128,7 +1128,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
 		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
 		var back = attraction.QueueCells[^1];
-		var input = new AttractionScoreInput( guest.CellX, guest.CellY, back.X, back.Y, 0, attraction.QueueLength, attraction.QueueSizeInCells,
+		var modifier = Litter?.Environment.At( back.X, back.Y ).Attraction ?? 0;
+		var input = new AttractionScoreInput( guest.CellX, guest.CellY, back.X, back.Y, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
 			type.PreferredExcitement, attraction.LiveExcitement, (attraction.StaticExcitementLevel & 0xFF) != 0, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea,
 			attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays, WeatherDropsFalling?.Invoke() ?? false, attraction.IsIndoors,
 			attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.AttractionId, sameType, guest.UsedHistory, guest.TemporaryHistory );

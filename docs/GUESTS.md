@@ -251,7 +251,7 @@ Traced from the Mac binary and executed in the PowerPC oracle (finding F24, [ORA
 
 | Match | Rule |
 | --- | --- |
-| Distance | `100 − min(100, 100 · (dx² + dy²) / 450)`, squared cell displacement to the attraction's back-of-queue cell (divided by an environment word that OpenTPW lacks, GUEST-001) |
+| Distance | `100 − min(100, 100 · (dx² + dy²) / 450)`, squared cell displacement to the attraction's back-of-queue cell (divided by the environment's attraction word at that cell when it is nonzero: only fireworks write it, row 7) |
 | Queue | `100 − 100 · guests / (4 · queue cells)`, only within a squared distance of 8, **unclamped** (a queue above four per cell wraps) |
 | Excitement | `2 · (50 − min(50, abs(preferred − live excitement)))`; its weight counts only when the type's `ExcitementLevel` byte is nonzero |
 | Thirst, hunger | `trunc(sqrt(effect / 10) · need²)` with the shop's `ThirstEffect` / `HungerEffect` and the need in tens (the original's 11 × 11 table is this formula) |
@@ -264,7 +264,7 @@ attraction of the type used last scores 0 outright, so the divisors that matter 
 boring, too exciting) and forgets it after 80 park turns (a 0 is shifted in every 20 turns). The guest chooses the highest score of at least 10 (ties go to the later attraction on odd park turns), among open, unbroken
 attractions it can reach; there is no random bonus. A use gives happiness `PerfectRide` below 5 from the preferred excitement, `GoodRide` below 15, `OKRide` below 40 and nothing beyond (no penalty) and raises illness by
 `excitement / RideVomitDivisor · ((100 − hunger) / 20)`, so a hungry guest (81 and up) is not made sick.
-Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters, thought thresholds (`GUEST-001..005`).
+Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters, thought thresholds (`GUEST-002..005`).
 
 ### Needs and starting values
 
@@ -344,6 +344,27 @@ happiness, illness and hunger divided by its distance + 1, and a guest's needs p
 −1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). Entertainers and guards carry their rows with them: an
 entertainer's `RegionFX[0]` adds 2 happiness on his cell and 1 beside it, a guard's `RegionFX[3]` the security above. The other sources (toilets,
 cameras, fireworks) are not modelled yet (GUEST-006).
+
+### The environment grid
+
+Every map cell carries five words (happiness, illness, hunger, security, attraction) that the original's region sources spread around them
+(`RegionFX[0..7]` in `levels/Standard.sam`, the writer `0x4d8480`: the row's coefficient divided by the Manhattan distance + 1, within its
+square radius). A guest's needs phase adds the first three words of its cell. The sources, all modelled:
+
+| Row | Source | When | Shipped row |
+| --- | --- | --- | --- |
+| 0 | entertainer | where it stands, moving with it | radius 3, happiness +2 |
+| 1 | clean toilet | from placement while the gauge is 25 or more | radius 3, illness +1, hunger −1 |
+| 2 | vomit | while it lies | radius 1, happiness −1, illness +1, hunger −1 |
+| 3 | guard | where he stands, moving with him | radius 3, security 10 |
+| 4 | security camera | from placement | radius 5, security 20 |
+| 5 | stinkbomb | while it lies | radius 3, happiness −3, illness +3, hunger −1 |
+| 6 | dirty toilet | from the use that takes the gauge below 25 until a handyman cleans it | radius 3, illness +2, hunger −2 |
+| 7 | fireworks (Hallow's Firework Show, Space's Laser Show) | from placement until the show's script sets `VAR_STATUS` to 1 | radius 6, happiness +2, attraction +10 |
+
+The security word is what a prank tests before a guard comes, so a camera guards its square as a guard does. The attraction word divides the
+distance match of an attraction whose back-of-queue cell lies under a show (`0xe9388`). The objects' rows come from the constructor `0x4db090`,
+the destructor `0x4dd0a0`, the toilet wear `0x4e2440`, the handyman's clean `0x4dfd80` and the fireworks tick `0x4e0b90`.
 
 ### Balloons and costumes
 

@@ -774,6 +774,8 @@ public partial class Level : IDisposable
 		// The saved open state goes back into the running scripts; SyncObjectEconomy would otherwise overwrite it with the live one on the next tick (park points count only open rides, ARRIVAL-003).
 		foreach ( var (item, instance) in economyInstances )
 		{
+			// the replaced economy's environment grid holds the litter and the staff rows only: the standing objects put theirs back
+			Park?.Economy.PlaceObjectEffects( instance, (item.Placement.X, item.Placement.Y) );
 			if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.IsOpen == item.IsOpen )
 				continue;
 			if ( state.IsOpen )

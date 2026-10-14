@@ -234,6 +234,9 @@ reach my patrol area"); inside, the steps that leave it are removed, and with no
 - **Phase 9 (ECON-044, GUEST-007), done in the simulation.** Balloon and costume shops give guests a balloon with a life or a costume
   (`0x4fe1e0`); a ride puts the balloon away and gives it back, the life runs out on the needs phase, and balloon pranksters burst other
   guests' balloons (docs/GUESTS.md "Balloons and costumes"). Drawing balloons and costumes is the next step.
+- **Phase 10a (GUEST-006, GUEST-001), done.** The placed objects' RegionFX rows: toilets (clean row 1, dirty row 6), cameras (row 4) and
+  fireworks (row 7 until the show runs), with the attraction word feeding the attraction score's distance match (docs/GUESTS.md).
+  Phase 10b is the thoughts (the pick 0x4fc8a0 and the 22 setters of 0x50be80) and their bubbles.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

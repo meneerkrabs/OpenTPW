@@ -431,6 +431,7 @@ internal static class ParkResumeSaveFile
 		ValidateGuests( snapshot );
 		ValidateCoasters( snapshot );
 		ValidateTracks( snapshot );
+		ValidateTours( snapshot );
 
 		// Clock: the clock's own pure validator, on a fresh instance it never mutates.
 		new FixedStepClock().ValidateSnapshot( snapshot.Clock! );
@@ -819,6 +820,35 @@ internal static class ParkResumeSaveFile
 					&& vehicle.EffectRequest is >= 0 and <= 5 && vehicle.EffectLatch is >= 0 and <= 5 && float.IsFinite( vehicle.Height ) && Math.Abs( vehicle.Height ) < 1e6f,
 					$"a vehicle of track controller {controller.AttractionId} has a kart field out of range" );
 			}
+		}
+	}
+
+	/// <summary>
+	/// The tour part's pure consistency (null means no ride held a tour controller): controllers joined to placed attractions by strictly increasing attraction id,
+	/// each controller's words, cars and riders bounded and consistent, every rider a guest the park holds, listed once.
+	/// </summary>
+	private static void ValidateTours( ParkResumeSnapshot snapshot )
+	{
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"World save is inconsistent: {message}." );
+		}
+		if ( snapshot.Tours is not { } tours )
+			return;
+		Require( tours.Controllers != null, "the tour part holds no controller list" );
+		Require( tours.Controllers!.Count is > 0 and <= TourWorld.MaximumControllers, $"the tour part holds {tours.Controllers.Count} controllers" );
+		var placedAttractions = snapshot.Layout!.Objects!.Select( record => record!.AttractionId ).ToHashSet();
+		var guestIds = snapshot.Guests!.Guests!.Select( guest => guest!.Id ).ToHashSet();
+		var listedGuests = new HashSet<int>();
+		var previous = 0;
+		foreach ( var controller in tours.Controllers )
+		{
+			Require( controller != null, "a tour controller is missing" );
+			Require( controller.AttractionId > previous, $"tour controller {controller.AttractionId} does not follow {previous} in attraction order" );
+			Require( placedAttractions.Contains( controller.AttractionId ), $"the tour part names attraction {controller.AttractionId}, which the park does not place" );
+			previous = controller.AttractionId;
+			TourSave.Validate( controller, guestIds.Contains, listedGuests );
 		}
 	}
 

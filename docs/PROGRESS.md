@@ -907,6 +907,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Tour rides take and release riders (October 14):** the four original tour rides (Jurassic, Flightmare, Star and Tweety Tours) no longer
+  leave guests in the queue. Their scripts' `TOUR` commands, traced from tp.exe (the flying-car module `FLY_`), drive a controller of up to 20 free-flying
+  cars with no track: a car lifts off from the ride's launch pad, flies a terrain-avoiding lattice walk for the ride's duration, returns, circles until the landing slot is
+  free and lands, where the script unloads and loads the next riders. Real-script asset tests run each theme with 16 guests for ten minutes (boarded equals released,
+  nobody left Using); saves carry an optional `Tours` part, older saves restore with fresh controllers. See [tours](TOURS.md).
 - **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
   with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
   live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still

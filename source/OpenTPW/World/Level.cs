@@ -318,6 +318,7 @@ public partial class Level : IDisposable
 			{
 				SetupPaths();
 				SetupTracks();
+				SetupTours();
 			}
 			if ( OriginalTerrain != null && Guests != null )
 			{

@@ -920,7 +920,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-081 | `source/OpenTPW/Hud/ParkHud.Staff.cs:244` | [APPROX:UI-081] Applicant summary fields use the economy's expected monthly wage and grade-derived skill; the original candidate detail binding is not decoded. |
 | UI-082 | `source/OpenTPW/Hud/ParkHud.Staff.cs:286` | [APPROX:UI-082] The staff portrait content has no resolved per-role art; show the selected role and grade as text in f_staffpic. |
 | UI-083 | `source/OpenTPW/Hud/ParkHud.Staff.cs:396` | [APPROX:UI-083] Help 161 identifies hiring the selected applicant; Enter or a second row click activates it. |
-| UI-084 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:115` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
+| UI-084 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:135` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.Staff.cs:437` | [APPROX:UI-084] Repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:97` | [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
 | UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:197` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
@@ -947,9 +947,9 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-904 | `source/OpenTPW/Hud/ParkHud.ScreenShortcuts.cs:263` | [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S cycling order is not traced — evidence needed: the original staff-locator key handler |
 | UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:14` | [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry (no table is decoded for this window) — evidence needed: the original all-attractions window table |
 | UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:28` | [APPROX:UI-905] seven equal detail rows fill the stats frame's area (the sideshow category has |
-| UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:195` | [APPROX:UI-905] the staff/buy window frames at their authored rectangles; &#96;list_all&#96; is the shipped all-list frame art. |
-| UI-906 | `source/OpenTPW/Hud/OverviewRosters.cs:50` | [APPROX:UI-906] per-attraction monthly users, profit and customer satisfaction are not simulated; state of repair is the live wear gauge and excitement the bridge's live level — evidence needed: the original window's value bindings |
-| UI-906 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:67` | [APPROX:UI-906] the projected live values of one placed attraction (wear, queue, riders, excitement) — evidence needed: the original window's value bindings |
+| UI-905 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:227` | [APPROX:UI-905] the staff/buy window frames at their authored rectangles; &#96;list_all&#96; is the shipped all-list frame art. |
+| UI-906 | `source/OpenTPW/Hud/OverviewRosters.cs:50` | [APPROX:UI-906] ride monthly users, remaining life and customer satisfaction remain unavailable; the HUD supplies existing mapped shop/sideshow customer and profit counters; state of repair is the live wear gauge and excitement the bridge's live level — evidence needed: the original window's value bindings |
+| UI-906 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:87` | [APPROX:UI-906] the projected live values of one placed attraction (wear, queue, riders, excitement) — evidence needed: the original window's value bindings |
 | UI-907 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:12` | [APPROX:UI-907] window layout, list columns and detail placement follow the staff/buy table geometry (no table is decoded for this window) — evidence needed: the original all-visitors window table |
 | UI-907 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:18` | [APPROX:UI-907] six equal detail rows fill the stats frame's area (five original rows plus the live thought row). |
 | UI-907 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:158` | [APPROX:UI-907] the staff/buy window frames at their authored rectangles. |
@@ -957,8 +957,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-909 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:227` | [APPROX:UI-909] a text button above b_allstaff opens the All Attractions window (its rides tab, |
 | UI-909 | `source/OpenTPW/Hud/ParkHud.Staff.cs:332` | [APPROX:UI-909] the shipped b_svisit button art (the map window's visitors layer uses the same |
 | UI-909 | `source/OpenTPW/Hud/ParkHud.Staff.cs:340` | [APPROX:UI-909] a text button: the shipped b_allthinginfo art has no texture in ui.wad. |
-| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:128` | [APPROX:UI-910] activation selects the attraction and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler |
-| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:237` | [APPROX:UI-910] the select button selects the row's object in the park; the delete button sells it |
+| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:148` | [APPROX:UI-910] activation selects the attraction and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler |
+| UI-910 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:269` | [APPROX:UI-910] the select button selects the row's object in the park; the delete button sells it |
 | UI-910 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:110` | [APPROX:UI-910] activation locates the visitor and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler |
 | UI-910 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:195` | [APPROX:UI-910] the go-to button locates the selected visitor, like the row activation. |
 | UI-920 | `source/OpenTPW/Hud/ParkHud.Help.cs:8` | [APPROX:UI-920] Ctrl+H toggles the existing top-edge contextual popup instead of an untraced original help-bar layout — evidence needed: original help-bar geometry and toggle state lifetime |
@@ -1096,7 +1096,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:413` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:442` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
 | opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:592` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
-| overview | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:179` | [EXT:overview] queue length and riders are live OpenTPW rows with supplementary labels (no original label is decoded). |
+| overview | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:199` | [EXT:overview] queue length and riders are live OpenTPW rows with supplementary labels (no original label is decoded). |
 | overview | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:141` | [EXT:overview] the current thought is a live OpenTPW row with a supplementary label (no original label is decoded). |
 | park-build-over-frames | `source/OpenTPW/Client/GameFlow.ParkBuild.cs:7` | [EXT:park-build-over-frames] A park chosen in the front end (or loaded, or visited) is built over several frames while the |
 | park-build-over-frames | `source/OpenTPW/Client/GameFlow.cs:463` | [EXT:park-build-over-frames] while a park is built the live scene runs on without input |
@@ -1274,7 +1274,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:49` | [DATA:UITEXT.str:125-133] stats-frame labels per category (the enum names these by their other uses) |
 | UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:145` | [DATA:UITEXT.str:125-133] the labels per category (rides list five values, as the five rows of frame 493) |
 | UITEXT.str:364,365 | `source/OpenTPW/Hud/OverviewRosters.cs:24` | [DATA:UITEXT.str:364,365] the original status labels; which status the original list showed per state — evidence needed: the original all-attractions list |
-| UITEXT.str:392-395 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:160` | [DATA:UITEXT.str:392-395] the original delete confirmations name the category. |
+| UITEXT.str:392-395 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:180` | [DATA:UITEXT.str:392-395] the original delete confirmations name the category. |
 | UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:111` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | UITEXT.str:78-81 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:20` | [DATA:UITEXT.str:78-81] the four category titles of this window; the tab art is the buy window's. |
 | coaster.sam:asPylonControls[1] | `source/OpenTPW/World/Coasters/CoasterDefinition.cs:288` | [DATA:coaster.sam:asPylonControls[1]] only coasters whose settings name a second pylon control offer loop pylons (9 of the 12 PC coasters) |

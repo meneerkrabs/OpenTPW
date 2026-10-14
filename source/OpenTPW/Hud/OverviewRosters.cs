@@ -47,7 +47,7 @@ internal static class ParkAttractionRoster
 	/// labels: rides UITEXT 83/85/86, shops 88-91, sideshows 93-97 (features have none of their own).
 	/// Values are live simulation values where OpenTPW simulates them; null means "not simulated".
 	/// </summary>
-	// [APPROX:UI-906] per-attraction monthly users, profit and customer satisfaction are not simulated; state of repair is the live wear gauge and excitement the bridge's live level — evidence needed: the original window's value bindings
+	// [APPROX:UI-906] ride monthly users, remaining life and customer satisfaction remain unavailable; the HUD supplies existing mapped shop/sideshow customer and profit counters; state of repair is the live wear gauge and excitement the bridge's live level — evidence needed: the original window's value bindings
 	public static (UIStrings Label, string? Value)[] StatRows( in AttractionListRow row )
 	{
 		string? Percent( double value ) => $"{Math.Round( Math.Clamp( value, 0, 100 ) )}%";

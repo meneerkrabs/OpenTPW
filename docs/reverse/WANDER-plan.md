@@ -185,6 +185,18 @@ Read in full for the researcher and the shared states (2026-10-14):
   `0x506300` turns the heading on one draw in eight, ends the role's strike when the park is closed and empty, and once the flag is clear
   routes to entrance A (`0x7855bc`): state 1, else 0.
 
+Read in full for the mechanic (2026-10-14). The handler `0x4da490`: 0 idles (voice 163) until the turn passes IdleDuration + `+0x200`;
+1 patrols (voice 162, the walk drain); both end in the search `0x4da5b0`: the gate, too tired ("Too tired to fix rides"), then the ride finder
+`0x4daa90`. It walks the object list once from a cursor (on the manager at game `+0x1da71a`) that moves one object on per search, and takes
+rides broken down (state 1, `0x4e0370`), upgrading (state 2, `0x4e03e0`) or with `mRequestedService` (`+0x64`, `0x4e03d0`) that are no toilet,
+whose claim (`0x4e0220`: `+0x5e`, lapsing after 100 turns when the claimant is no longer on it) is free or his, by the smallest squared
+distance (strictly smaller replaces). A route to its access cell claims it (`0x4e01f0`: `+0x5e`, `+0x60` = the turn) and sets state 12 (no
+speed bonus; the advisor's "on the way" message for a ride neither requested nor upgrading); otherwise a wander or idle. State 12
+`0x4da740` checks the claim, walks, and on arrival at a ride that still needs him sets state 13 with the timer `+0x214` (`0x4da370`: an
+upgrade's DurationOfUpgrade × WorkDuration, else (100 − the repair byte) × WorkDuration / 100; MechanicConstsPerGrade at `0x78542c`); held,
+it clears its ride and searches. State 13 `0x4da830` drains as work, counts the timer down, waits for a broken ride's fix animation, then
+`0x4df8f0` repairs fully (gauge 100, the claim and the request cleared) or installs the upgrade, and searches.
+
 ## 5. Plan
 
 - **Phase 2 (GUEST-010), done.** `GuestSimulation` runs the guest states 6 and 7 per park turn as above (`GuestDecision`,
@@ -205,8 +217,9 @@ Read in full for the researcher and the shared states (2026-10-14):
 - **Phase 5 (ECON-022, GUEST-006, GUEST-007), done for entertainers and guards.** Entertainers patrol and perform for nearby guests
   and carry their RegionFX row; guards carry their security row and answer a prank with the chase, the catch and the escort (§4).
 - **Phase 6 (ECON-022, ECON-014), done for the researchers and the shared states.** Researchers wander and research where they stand;
-  every world-driven role walks to the Staff Room to rest and out through the gate to the strike area (§4). The mechanics' own state
-  machine follows.
+  every world-driven role walks to the Staff Room to rest and out through the gate to the strike area (§4).
+- **Phase 7 (ECON-021, ECON-022), done.** The mechanics run their state machine in a level: from where they stand they take the nearest
+  broken or upgrading ride, walk to it and repair or upgrade it from their arrival (§4). Every staff role now walks.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

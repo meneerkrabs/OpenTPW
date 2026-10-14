@@ -21,6 +21,9 @@ public partial class Level
 		StaffWorld.RestAreas = RestSites;
 		StaffWorld.GatesOpen = () => Gate?.GateStatusIsOpen == true;
 		StaffWorld.RestingStaff = SetRestingStaff;
+		// the mechanics' nearest-ride test measures to the ride's own cell (its thing's position)
+		StaffWorld.RideCells = instance => economyInstances.FirstOrDefault( pair => pair.Value == instance && !pair.Key.IsDeleted ).Key is { } ride
+			? (ride.Placement.X, ride.Placement.Y) : null;
 		Guests.IsEscorted = StaffWorld.IsEscorting;
 		Guests.Pranked += ( guest, _ ) =>
 		{

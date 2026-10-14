@@ -29,6 +29,10 @@ public enum StaffJob : byte
 	Sweeping = 9,
 	ToToilet = 10,
 	Cleaning = 11,
+	/// <summary>A mechanic walks to a ride that needs him (state 12).</summary>
+	ToRide = 12,
+	/// <summary>A mechanic repairs or upgrades the ride (state 13).</summary>
+	Repairing = 13,
 	/// <summary>An entertainer's performance (state 14).</summary>
 	Performing = 14,
 	/// <summary>A researcher at work (state 15).</summary>
@@ -95,6 +99,8 @@ public sealed class StaffMember
 	public int TargetGuestId { get; set; }
 	/// <summary>The cell where an entertainer's or a guard's <c>RegionFX</c> row lies [+0xcc], null before a world placed it.</summary>
 	public (int X, int Y)? EffectCell { get; set; }
+	/// <summary>The ride a mechanic walks to or works on [+0x218], 0 when none.</summary>
+	public int RideId { get; set; }
 	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
 	public int RestAreaId { get; set; }
 	/// <summary>

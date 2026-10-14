@@ -54,6 +54,15 @@ public sealed class CoasterPylonControl
 	/// <summary>Pylon mesh height at loft parameter t = 0 and t = 1 (+188/+192).</summary>
 	public float MeshHeightLow { get; internal set; }
 	public float MeshHeightHigh { get; internal set; }
+	/// <summary>How far above the track dummy of the pylon below the next pylon of a stack stands (+0xc4).</summary>
+	public float StackOffset { get; internal set; }
+	/// <summary>The loft clip's mapping of the height parameter (+0xd0..+0xdc): clip fraction = clamp(t · Multiplier + Add, StartCap, EndCap).</summary>
+	public float LoftStartCap { get; internal set; }
+	public float LoftEndCap { get; internal set; } = 1;
+	public float LoftMultiplier { get; internal set; } = 1;
+	public float LoftAdd { get; internal set; }
+	/// <summary>Whether the pylon model has set the mesh heights, the stack offset and the raised minimum (<see cref="CoasterDefinition.ApplyPylonModel"/>).</summary>
+	public bool HasModelHeights { get; internal set; }
 
 	public bool IsLoop => (Flags & CoasterPylonFlags.Loop) != 0;
 	public bool IsTrough => (Flags & CoasterPylonFlags.Trough) != 0;
@@ -206,7 +215,7 @@ public sealed class CoasterDefinition
 		return pylon;
 	}
 
-	// [APPROX:COAST-015] the pylon mesh heights at loft t = 0 and t = 1 (+188/+192) are taken as fMinHeight and fMaxHeight; the original reads them from the pylon MD2 loft animation — evidence needed: the loft animation reader that fills pylon +188/+192
+	// [APPROX:COAST-015] without the pylon model (no game data) the pylon mesh heights at loft t = 0 and t = 1 (+188/+192) are taken as fMinHeight and fMaxHeight; ApplyPylonModel replaces them with the model's track dummy heights h0 and h1 when the model is read
 	private static void SetMeshHeights( CoasterPylonControl pylon )
 	{
 		pylon.MeshHeightLow = pylon.MinHeight;
@@ -221,6 +230,41 @@ public sealed class CoasterDefinition
 	public static bool IsCoaster( ObjectSettings settings ) => settings.GetInt( "Bumper.WhichTrackType" ) == TrackType;
 
 	public static CoasterDefinition FromSettings( ObjectSettings settings ) => FromValues( settings.Values );
+
+	/// <summary>
+	/// The definition of a catalogue coaster with its pylon models read: the settings over the defaults, then each pylon's mesh heights h0 and h1, its
+	/// raised minimum and its stack offset from the model (<c>0x42fad0</c> → <c>0x430590</c>). A pylon model the archive lacks keeps the settings' heights.
+	/// </summary>
+	public static CoasterDefinition FromCatalogEntry( ObjectCatalogEntry entry )
+	{
+		ArgumentNullException.ThrowIfNull( entry );
+		var definition = FromSettings( entry.Settings );
+		using var assets = new CoasterAssets( entry, definition );
+		foreach ( var loop in new[] { false, true } )
+		{
+			if ( !loop || definition.HasLoopPylon )
+			{
+				if ( assets.GetPylon( loop ) is { } rig )
+					definition.ApplyPylonModel( loop, rig );
+			}
+		}
+		return definition;
+	}
+
+	/// <summary>
+	/// Takes a pylon's heights from its model (<c>0x430590</c>): h0 and h1 are the track dummy's heights at the two loft poses, fMinHeight is raised to h0
+	/// when it is below, and the stack offset is the stack dummy's height above h0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4309a4 pylon heights] pylon +0xbc = h0, +0xc0 = h1, +0x68 (fMinHeight) = max(fMinHeight, h0) (0x4309a4..0x4309bb), +0xc4 = stack dummy Y − h0 or 0
+	internal void ApplyPylonModel( bool loop, CoasterPylonRig rig )
+	{
+		var pylon = Pylon( loop );
+		pylon.MeshHeightLow = rig.TagLow;
+		pylon.MeshHeightHigh = rig.TagHigh;
+		pylon.MinHeight = MathF.Max( pylon.MinHeight, rig.TagLow );
+		pylon.StackOffset = rig.StackOffset;
+		pylon.HasModelHeights = true;
+	}
 
 	/// <summary>
 	/// Builds the definition from the (layered) settings keys: <c>sCoasterType.*</c>, <c>sTrainType.*</c> and
@@ -325,6 +369,11 @@ public sealed class CoasterDefinition
 		pylon.MaxHeight = Float( "fMaxHeight", pylon.MaxHeight );
 		pylon.MaxStackedPylons = Int( "uiMaxStackedPylons", pylon.MaxStackedPylons );
 		pylon.CollisionPossibleRadius = Float( "fCollisionPossibleRadius", pylon.CollisionPossibleRadius );
+		// [BIN:TPW-EXE:0x42ef05 loft keys] pylon +0xd0 = fLoftAnimStartCap, +0xd4 = fLoftAnimEndCap, +0xd8 = fLoftAnimMultiplier, +0xdc = fLoftAnimAdd, each copied from the settings (+0x3914..+0x3920) when nonzero; no PC coaster.sam sets them, so the defaults 0, 1, 1, 0 stand
+		pylon.LoftStartCap = Float( "fLoftAnimStartCap", pylon.LoftStartCap );
+		pylon.LoftEndCap = Float( "fLoftAnimEndCap", pylon.LoftEndCap );
+		pylon.LoftMultiplier = Float( "fLoftAnimMultiplier", pylon.LoftMultiplier );
+		pylon.LoftAdd = Float( "fLoftAnimAdd", pylon.LoftAdd );
 		pylon.StraightDotThreshold = Float( "fPylonStraightDotThreshold", pylon.StraightDotThreshold );
 		pylon.CostPerUnit = Rate( "fCostPerUnit" );
 		pylon.CostPer2DLength = Rate( "fCostPer2DLength" );

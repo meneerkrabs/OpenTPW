@@ -40,7 +40,7 @@ public struct CoasterSample
 /// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll, the
 /// node (section) it belongs to, on loop pylons the factor K, and whether the next node carries node flag 0x40.
 /// </summary>
-public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false );
+public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false );
 
 /// <summary>
 /// One cross-section slice of the drawn track mesh: the curve point at a parameter step of one knot pair, the yaw and
@@ -181,8 +181,9 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		{
 			var knot = knots[index];
 			// [BIN:STP-PPC:0x100326DC loop knot sides] with node flag 0x80 clear a loop pylon's back side always uses K and its forward side K when the next node has flag 0x40, else 1.7 (0x80 set mirrors this, 0x10032600..0x100326D8); plain knots use fCurviness
-			var backFactor = knot.LoopPylon ? knot.LoopSideFactor : curviness;
-			var forwardFactor = knot.LoopPylon ? knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent : curviness;
+			// the first pylon of a loop pair (node flag 0x80) mirrors the rule: its forward side always uses K and its back side K only after a loop node
+			var backFactor = knot.LoopPylon ? (knot.Reversed ? (knot.PreviousIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : knot.LoopSideFactor) : curviness;
+			var forwardFactor = knot.LoopPylon ? (knot.Reversed ? knot.LoopSideFactor : knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : curviness;
 			// [BIN:STP-PPC:0x10032990 knot chord] without a neighbour the chord is 1.0
 			var backChord = closed || index > 0 ? Chord( knots[(index - 1 + count) % count].Position, knot.Position ) : 1f;
 			var forwardChord = closed || index < count - 1 ? Chord( knot.Position, knots[(index + 1) % count].Position ) : 1f;

@@ -8,7 +8,8 @@ namespace OpenTPW;
 /// </summary>
 /// <param name="Flags">The <see cref="CoasterNodeFlags"/> as their raw uint (only <see cref="CoasterSave.KnownNodeFlags"/> bits are accepted).</param>
 /// <param name="Bank">The auto-bank the knots pass stores on the node (node <c>+216</c>).</param>
-internal sealed record CoasterNodeSaveData( int X, int Y, float Height, float T, bool LoopPylon, int StackIndex, bool IsStation, bool IsStationEnd, uint Flags, float Bank );
+/// <param name="LoopRotate">The loop-rotate parameter (node <c>+0xf8</c>); null in a save from before the loop pair (the old 0.5).</param>
+internal sealed record CoasterNodeSaveData( int X, int Y, float Height, float T, bool LoopPylon, int StackIndex, bool IsStation, bool IsStationEnd, uint Flags, float Bank, float? LoopRotate = null );
 
 /// <summary>
 /// One saved train: its front's position and speed, the riders of each car on the lap and, with the original's station rule,
@@ -65,7 +66,7 @@ internal static class CoasterSave
 	/// <summary>Bound on one train's cars in the saved part (the catalog check is exact: the definition's <c>uiMaxCars</c>, 6 for the largest shipped train).</summary>
 	public const int MaximumCarsPerTrain = 32;
 	/// <summary>The node flag bits a save may carry; anything else is a format this code does not know, and load refuses it.</summary>
-	public const uint KnownNodeFlags = (uint)(CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.Loop | CoasterNodeFlags.ZeroBank | CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid);
+	public const uint KnownNodeFlags = (uint)(CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.LoopMark | CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst | CoasterNodeFlags.ZeroBank | CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid);
 
 	/// <summary>
 	/// Captures the park's coasters: one entry per live coaster station in placement (attraction-id) order, or null when
@@ -104,7 +105,7 @@ internal static class CoasterSave
 	{
 		ArgumentNullException.ThrowIfNull( ride );
 		var track = ride.Track;
-		var nodes = track.Nodes.Select( node => new CoasterNodeSaveData( node.X, node.Y, node.Height, node.T, node.LoopPylon, node.StackIndex, node.IsStation, node.IsStationEnd, (uint)node.Flags, node.Bank ) ).ToList();
+		var nodes = track.Nodes.Select( node => new CoasterNodeSaveData( node.X, node.Y, node.Height, node.T, node.LoopPylon, node.StackIndex, node.IsStation, node.IsStationEnd, (uint)node.Flags, node.Bank, node.LoopRotate ) ).ToList();
 		var trains = ride.Trains.Select( train => new CoasterTrainSaveData( train.Position, train.Speed, CoasterRide.LegacyRunningState, 0, train.Cars.Select( car => car.ToList() ).ToList(),
 			(int)train.Flags, train.FirstBoardingCar, train.LastBoardingCar, train.BoardingCars.Select( car => car.ToList() ).ToList() ) ).ToList();
 		return new CoasterRideSaveData( attractionId,

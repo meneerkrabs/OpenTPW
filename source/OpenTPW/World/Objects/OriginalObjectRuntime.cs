@@ -45,7 +45,7 @@ public sealed partial class OriginalObjectRuntime
 		RememberCatalogueDefaults();
 		if ( CoasterDefinition.IsCoaster( entry.Settings ) )
 		{
-			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
+			Coaster = new CoasterRide( CoasterDefinition.FromCatalogEntry( entry ), world.Coasters, entry.DisplayName );
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
 		}
 		// A water ride (Bumper.WhichTrackType 2) or a go-kart ride (1) gets a bump-ride controller (docs/TRACKS.md).

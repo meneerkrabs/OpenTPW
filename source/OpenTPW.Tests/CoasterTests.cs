@@ -467,8 +467,8 @@ public class CoasterTests
 		var ends = builder.Track.Nodes.Where( node => node.IsStationEnd ).ToArray();
 		Assert.AreEqual( 1, ends.Length, "the loader always sets 0x20: one end node even without bVisibleEndPylon" );
 		Assert.AreEqual( (Return.X, Return.Y), (ends[0].X, ends[0].Y) );
-		Assert.AreEqual( (CoasterNodeFlags)0x144, ends[0].Flags & ~CoasterNodeFlags.Winch, "0x37e34: flags 0x144" );
-		Assert.AreEqual( new SVector3( 0, -1, 0 ), builder.Track.BuildKnots( builder.Site )[^1].Direction, "the 0x144 end node (0x40 set, 0x80 clear) points its knot down (0x32DFC)" );
+		Assert.AreEqual( CoasterNodeFlags.None, ends[0].Flags & ~CoasterNodeFlags.Winch, "0x435570 passes the creation parameters 0x144: node flags 0x80000 | 0x100000, no loop flag 0x40, no 0x4, no 0x100" );
+		Assert.AreEqual( new SVector3( 1, 0, 0 ), builder.Track.BuildKnots( builder.Site )[^1].Direction, "an end node without node flag 0x40 takes its neighbours' tangent (here straight along +x), not the vertical (0, −1, 0) of a loop node" );
 		Assert.IsFalse( builder.Ride.World.HasPylon( Return.X, Return.Y ), "the end node is no pylon" );
 		var settings = PcSettings();
 		settings["sCoasterType.bVisibleEndPylon"] = "1";
@@ -903,7 +903,8 @@ public class CoasterTests
 		Assert.AreEqual( 0f, yaw );
 		Assert.AreEqual( MathF.PI / 4, pitch, 1e-3f, "pitch = atan2(−T.y, T.z′)" );
 		Assert.IsTrue( builder.Track.Nodes.Where( node => !node.IsPylonless ).Any( node => node.Bank != 0 ), "auto-bank at the pylons" );
-		Assert.IsTrue( builder.Track.Nodes.Where( node => node.IsPylonless ).All( node => node.Bank == 0 ) );
+		// The station and end nodes bank like pylons (the PC build path sets no node flag 0x4); on the straight station row their turn is π and the bank is 0 up to rounding.
+		Assert.IsTrue( builder.Track.Nodes.Where( node => node.IsPylonless ).All( node => Math.Abs( node.Bank ) < 1e-6f ) );
 	}
 
 	[TestMethod]

@@ -28,7 +28,8 @@ public sealed class CoasterPylonRig
 	/// <param name="model">The pylon's geometry.</param>
 	/// <param name="loft">The loft clip (<c>&lt;pylon&gt;L.MD2</c>), or null.</param>
 	/// <param name="rotate">The rotate clip (<c>&lt;pylon&gt;R.MD2</c> or <c>R1</c>), or null.</param>
-	public CoasterPylonRig( ModelFile model, ModelAnimation? loft, ModelAnimation? rotate )
+	/// <param name="control">The pylon control whose loft caps, multiplier and add (<c>fLoftAnim*</c>) map the node's height parameter to the clip; null takes the defaults.</param>
+	public CoasterPylonRig( ModelFile model, ModelAnimation? loft, ModelAnimation? rotate, CoasterPylonControl? control = null )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
@@ -52,12 +53,58 @@ public sealed class CoasterPylonRig
 		rotateTracks = TracksByNode( rotate, count );
 		order = ParentFirst( model );
 		worlds = new Matrix4x4[count];
-		TagNode = FindTag( model, loftTracks );
+		// [BIN:TPW-EXE:0x430590 pylon track dummy] the track dummy is the dummy numbered by the first attribute record with bit 0x800000 (0x4306be..0x4306e9: record index +0x2c, dummy number − 1 at +0x30), the stack dummy the one of the first record with 0x100000 (0x430780..0x4307a6); the numbers count the model's dummy nodes from 1 in file order; a model without such a record falls back to the first dummy named Track* or animated by the loft clip
+		TagNode = DummyByAttribute( model, TrackDummyAttribute ) ?? FindTag( model, loftTracks );
+		StackNode = DummyByAttribute( model, StackDummyAttribute ) ?? -1;
 		Duration = loft?.Duration ?? 0;
-		var low = TagHeightAt( 0 );
-		var high = TagHeightAt( 1 );
+		if ( control != null )
+			(loftStartCap, loftEndCap, loftMultiplier, loftAdd) = (control.LoftStartCap, control.LoftEndCap, control.LoftMultiplier, control.LoftAdd);
+		// [BIN:TPW-EXE:0x430590 pylon heights] h0 = the track dummy's Y with the loft clip at clamp(fLoftAnimAdd, StartCap, EndCap) (0x430923..0x430990), h1 = its Y at clamp(fLoftAnimMultiplier + fLoftAnimAdd, StartCap, EndCap) (0x430a0b..0x430a92), the stack offset the stack dummy's Y at the first pose minus h0, or 0 without a stack dummy (0x4309be..0x430a01)
+		var first = LoftFraction( 0 );
+		var low = TagHeightAtFraction( first );
 		TagLow = low;
-		TagHigh = high;
+		TagHigh = TagHeightAtFraction( LoftFraction( 1 ) );
+		StackOffset = StackNode >= 0 ? NodeHeightAtFraction( StackNode, first ) - low : 0;
+	}
+
+	/// <summary>Attribute bit of the record that names a pylon's track dummy.</summary>
+	public const uint TrackDummyAttribute = 0x800000;
+	/// <summary>Attribute bit of the record that names a pylon's stack dummy.</summary>
+	public const uint StackDummyAttribute = 0x100000;
+	private const uint DummyNodeType = 0x200;
+
+	private float loftStartCap = 0, loftEndCap = 1, loftMultiplier = 1, loftAdd = 0;
+
+	/// <summary>The loft clip's fraction for a height parameter t: clamp(t · fLoftAnimMultiplier + fLoftAnimAdd, StartCap, EndCap) (<c>0x434060</c>).</summary>
+	public float LoftFraction( float t ) => Math.Clamp( t * loftMultiplier + loftAdd, loftStartCap, MathF.Max( loftStartCap, loftEndCap ) );
+
+	/// <summary>The dummy node numbered (from 1, in file order of the dummy nodes) by the first attribute record that has any of <paramref name="mask"/>, or null.</summary>
+	private static int? DummyByAttribute( ModelFile model, uint mask )
+	{
+		foreach ( var attribute in model.DummyAttributes )
+		{
+			if ( (attribute.Type & mask) == 0 )
+				continue;
+			var number = (int)attribute.Value - 1;
+			var dummies = model.Nodes.Where( node => (node.Type & DummyNodeType) != 0 ).ToList();
+			return number >= 0 && number < dummies.Count ? dummies[number].Index : null;
+		}
+		return null;
+	}
+
+	/// <summary>The node the stack dummy names, -1 when the model has none (the next pylon of a stack then stands at the track dummy).</summary>
+	public int StackNode { get; }
+	/// <summary>How far above the track dummy the next pylon of a stack stands (pylon <c>+0xc4</c>): the stack dummy's height at the lowest loft pose minus h0.</summary>
+	public float StackOffset { get; }
+
+	private float TagHeightAtFraction( float fraction ) => NodeHeightAtFraction( TagNode, fraction );
+
+	private float NodeHeightAtFraction( int node, float fraction )
+	{
+		if ( node < 0 || node >= worlds.Length )
+			return 0;
+		Worlds( fraction * Duration, 0, worlds );
+		return worlds[node].Translation.Y;
 	}
 
 	public ModelFile Model => model;
@@ -70,14 +117,11 @@ public sealed class CoasterPylonRig
 	public float TagHigh { get; }
 	public bool HasLoft => loft != null && TagHigh > TagLow;
 
-	/// <summary>The tag height at a loft parameter in [0, 1].</summary>
-	public float TagHeightAt( float loftParameter )
-	{
-		if ( TagNode < 0 )
-			return 0;
-		Worlds( loftParameter * Duration, 0, worlds );
-		return worlds[TagNode].Translation.Y;
-	}
+	/// <summary>The height above the pylon base of any node of the model at a clip fraction in [0, 1] (the node's world Y after the loft clip).</summary>
+	public float NodeHeightAt( int node, float loftParameter ) => NodeHeightAtFraction( node, loftParameter );
+
+	/// <summary>The tag height at a clip fraction in [0, 1].</summary>
+	public float TagHeightAt( float loftParameter ) => TagHeightAtFraction( loftParameter );
 
 	/// <summary>
 	/// How a pylon reaches a node height: the loft parameter (clamped to the clip), a vertical scale about the base when the height lies above the loft's
@@ -95,8 +139,12 @@ public sealed class CoasterPylonRig
 		return ((height - low) / (high - low), 1, 0);
 	}
 
-	/// <summary>The loft, scale and offset that put the track tag at <paramref name="height"/> above the base.</summary>
-	public (float Loft, float Scale, float Offset) Fit( float height ) => FitHeight( TagLow, TagHigh, height );
+	/// <summary>The loft clip fraction, scale and offset that put the track tag at <paramref name="height"/> above the base: the height parameter t of h0 + t(h1 − h0) goes through the loft mapping (<see cref="LoftFraction"/>).</summary>
+	public (float Loft, float Scale, float Offset) Fit( float height )
+	{
+		var (loft, scale, offset) = FitHeight( TagLow, TagHigh, height );
+		return (LoftFraction( loft ), scale, offset);
+	}
 
 	/// <summary>The height of the tag after <see cref="Fit"/> and posing (loft, then the vertical scale and offset): the node height itself.</summary>
 	public float PosedTagHeight( float height )

@@ -907,6 +907,8 @@ internal static class ParkResumeSaveFile
 				Require( float.IsFinite( saved.Height ) && float.IsFinite( saved.T ) && float.IsFinite( saved.Bank ),
 					$"coaster {ride.AttractionId}'s node {node} holds a height, parameter or bank that is not finite" );
 				Require( saved.T is >= 0 and <= 1, $"coaster {ride.AttractionId}'s node {node} height parameter {saved.T} is outside 0..1" );
+				Require( saved.LoopRotate is null || (float.IsFinite( saved.LoopRotate.Value ) && saved.LoopRotate.Value is >= 0 and <= 1),
+					$"coaster {ride.AttractionId}'s node {node} loop rotate {saved.LoopRotate} is outside 0..1" );
 				Require( saved.StackIndex >= 0, $"coaster {ride.AttractionId}'s node {node} stack index {saved.StackIndex} is negative" );
 				Require( (saved.Flags & ~CoasterSave.KnownNodeFlags) == 0,
 					$"coaster {ride.AttractionId}'s node {node} carries flag bits 0x{saved.Flags:X}, which this format does not know" );

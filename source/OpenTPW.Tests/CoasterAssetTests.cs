@@ -58,6 +58,55 @@ public class CoasterAssetTests
 		Assert.AreEqual( 12500, coasters[1190].BuildCost );
 	}
 
+	/// <summary>
+	/// The pylon heights come from the pylon models (<c>0x430590</c>): h0 and h1 are the heights of the track dummy the model's attribute record names,
+	/// fMinHeight is raised to h0, and the stack offset is the stack dummy's height above h0 (non-zero for two of the Space and Halloween standard pylons).
+	/// </summary>
+	[TestMethod]
+	public void PylonHeightsAndStackOffsetsComeFromTheModelsTrackAndStackDummies()
+	{
+		var seen = 0;
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			var plain = CoasterDefinition.FromSettings( entry.Settings );
+			using var assets = new CoasterAssets( entry, definition );
+			foreach ( var loop in new[] { false, true } )
+			{
+				if ( loop && !definition.HasLoopPylon )
+					continue;
+				var rig = assets.GetPylon( loop );
+				if ( rig == null )
+					continue;
+				var pylon = definition.Pylon( loop );
+				Assert.IsTrue( pylon.HasModelHeights, $"{entry.InfoId} loop {loop}" );
+				Assert.AreEqual( (rig.TagLow, rig.TagHigh, rig.StackOffset), (pylon.MeshHeightLow, pylon.MeshHeightHigh, pylon.StackOffset) );
+				Assert.AreEqual( MathF.Max( plain.Pylon( loop ).MinHeight, rig.TagLow ), pylon.MinHeight, $"{entry.InfoId}: fMinHeight raised to h0 (0x4309a4)" );
+				Assert.AreEqual( plain.Pylon( loop ).MaxHeight, pylon.MaxHeight );
+				seen++;
+			}
+		}
+		Assert.IsTrue( seen >= 20, $"{seen} pylon models read" );
+		CoasterPylonRig Rig( int id, bool loop )
+		{
+			var entry = PcCoasters().Single( candidate => candidate.InfoId == id );
+			var definition = CoasterDefinition.FromSettings( entry.Settings );
+			using var assets = new CoasterAssets( entry, definition );
+			return assets.GetPylon( loop )!;
+		}
+		var gorilla = Rig( 1190, false );
+		Assert.AreEqual( (15.558132f, 95.55653f), (gorilla.TagLow, gorilla.TagHigh), "the Gorilla Thrilla pylon: the doc's 15.56 and 95.56" );
+		Assert.AreEqual( "TrackDummyCentre", gorilla.Model.Nodes[gorilla.TagNode].Name );
+		var skull = Rig( 3190, false );
+		Assert.AreEqual( "TrackHeightDummy", skull.Model.Nodes[skull.TagNode].Name, "attribute 0x800000 names dummy number 1, not the TrackCentreDummy the name search would take" );
+		Assert.AreEqual( (30f, 120f), (MathF.Round( skull.TagLow, 3 ), skull.TagHigh) );
+		var spooky = Rig( 3185, false );
+		Assert.AreEqual( "STACK_DUMMY", spooky.Model.Nodes[spooky.StackNode].Name );
+		Assert.AreEqual( 7.776738f, spooky.StackOffset, 1e-3f, "stack dummy Y − h0" );
+		Assert.AreEqual( 3.7566833f, Rig( 3180, false ).StackOffset, 1e-3f );
+		Assert.AreEqual( 0f, Rig( 1180, false ).StackOffset, "the stack dummy of this model is dummy number 1, the track dummy's neighbour at the same height" );
+	}
+
 	/// <summary>Every PC coaster builds the same circuit on a flat site, completes, rates within [0, 100] and runs.</summary>
 	[TestMethod]
 	public void EveryPcCoasterBuildsRatesAndRuns()

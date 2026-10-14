@@ -28,8 +28,28 @@ public sealed class CoasterBuilder
 	public CoasterSite Site { get; }
 	public CoasterTrack Track => Ride.Track;
 	public ParkEconomy? Economy => economy();
-	/// <summary>The loop edit mode (bit 0x40): new pylons are LoopPylons.</summary>
-	public bool LoopMode { get; set; }
+	private bool loopMode;
+	private int loopPylonsLeft;
+
+	/// <summary>
+	/// The loop edit mode (bit 0x40): new pylons are LoopPylons, and they come in pairs: the mode begins with two pylons to place, the first gets loop
+	/// rotate 0 and node flag 0x80, the second loop rotate 0.5, and the mode ends after the second (counter 0x79c664).
+	/// </summary>
+	// [BIN:TPW-EXE:0x442cd0 loop mode] entering loop mode sets the counter 0x79c664 to 2; every placed pylon (0x435020) decrements it and the mode (0x79c658 bit 0x40) is left at 0
+	public bool LoopMode
+	{
+		get => loopMode;
+		set
+		{
+			if ( value == loopMode )
+				return;
+			loopMode = value;
+			loopPylonsLeft = value ? LoopPair : 0;
+		}
+	}
+
+	/// <summary>Loop pylons a loop edit mode places before it ends.</summary>
+	public const int LoopPair = 2;
 	/// <summary>The requested height of the next pylon (world units above the ground; clamped when placed).</summary>
 	// [DATA:coaster.sam:sCoasterType.fInitialPylonLoftHeight] the height a new pylon starts at (10 by default, 20 for several PC coasters)
 	public float Height
@@ -87,7 +107,10 @@ public sealed class CoasterBuilder
 			return result;
 		// [APPROX:COAST-028] the generic tool's affordability test (accumulator data:0x84ac4 against the balance, 0x1006F664 → global 0x7c50c) refuses nothing here: its consumers 0x10070DB0, 0x1007118C and 0x100712A8 are not traced — evidence needed: what those consumers do with 0x7c50c on a coaster click
 		Spend( CoasterTrack.Truncate( PreviewCost( x, y ) ), force: true );
-		Track.Append( Ride.World, Ride, x, y, Height, LoopMode );
+		var secondOfPair = LoopMode && loopPylonsLeft == 1;
+		Track.Append( Ride.World, Ride, x, y, Height, LoopMode, secondOfPair );
+		if ( LoopMode && --loopPylonsLeft <= 0 )
+			LoopMode = false;
 		Track.Revalidate( Site, Ride.World, Ride );
 		return result;
 	}

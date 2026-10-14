@@ -15,6 +15,8 @@ public enum BumpEffectKind
 	EngineParameter,
 	/// <summary>The engine voice stops (the unload plays EventMap slot 1 over it).</summary>
 	EngineStop,
+	/// <summary>The engine voice stops without the stop sound (the bumper cars: the retire routine only stops the voice).</summary>
+	EngineHalt,
 	/// <summary>The kart's animation clip changed (<see cref="BumpEffect.Id"/> 5 or 12).</summary>
 	Animation
 }
@@ -44,6 +46,8 @@ public static class BumpEffects
 	public const int RequestExhaust = 1;
 	public const int RequestToot = 2;
 	public const int RequestCrash = 3;
+	/// <summary>The bumper cars' crash request: the same CRUNCH sound as code 3 (global cat_rides 12), without the log line.</summary>
+	public const int RequestBumperCrash = 5;
 	/// <summary>A crash is loud above this impulse (0x82).</summary>
 	public const int CrashImpulse = 130;
 	/// <summary>The horn needs a speed above this (0xE6); the exhaust puff needs one above 0x50; the animation switches at 0x29.</summary>

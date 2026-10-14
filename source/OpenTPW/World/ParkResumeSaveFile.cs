@@ -799,20 +799,27 @@ internal static class ParkResumeSaveFile
 			Require( controller.TickCount >= 0 && double.IsFinite( controller.TickRemainder ) && controller.TickRemainder >= 0 && controller.TickRemainder < BumpController.TickSeconds, $"track controller {controller.AttractionId} has a bad tick clock" );
 			Require( controller.Pending.Count + controller.Leaving.Count <= TrackSave.MaximumGuests && controller.Pending.Concat( controller.Leaving ).All( guest => guestIds.Contains( guest ) && listedGuests.Add( guest ) ),
 				$"track controller {controller.AttractionId} holds a guest list with a guest the park does not hold, or one listed twice" );
-			Require( controller.Laps is >= -1000 and <= 1000, $"track controller {controller.AttractionId} has laps {controller.Laps} out of range" );
+			Require( controller.Laps is >= -1000 and <= 0x10000, $"track controller {controller.AttractionId} has laps {controller.Laps} out of range" );
 			var slots = new HashSet<int>();
+			// the engine voice belongs to one bumper car at most: the first carrying car of a running ride (never to a kart or boat)
+			var engines = controller.Vehicles.Where( car => car.Engine ).ToList();
+			Require( engines.Count == 0 || BumperTemplates.TryGet( controller.Type ) is { IsBumper: true } && engines.Count == 1 && controller.Phase == BumpController.PhaseRunning
+				&& (engines[0].Flags & (BumpVehicle.First | BumpVehicle.Steerable)) == (BumpVehicle.First | BumpVehicle.Steerable),
+				$"track controller {controller.AttractionId} holds an engine voice that no running bumper ride's first carrying car owns" );
 			foreach ( var vehicle in controller.Vehicles )
 			{
 				Require( vehicle != null && vehicle.Slot is >= 0 and < BumpController.VehiclePool && slots.Add( vehicle.Slot ), $"track controller {controller.AttractionId} holds a boat with a bad or repeated slot" );
 				Require( vehicle.Heading is >= 0 and < BumpMath.Turn && vehicle.Riders.Count <= TrackSave.MaximumGuests && vehicle.Riders.All( guest => guestIds.Contains( guest ) && listedGuests.Add( guest ) ),
 					$"a boat of track controller {controller.AttractionId} has a bad heading or a rider the park does not hold, or one listed twice" );
+				// a bumper car always sits in the arena's one object (the creation search finds it from the station, and nothing but the keep-in step changes it)
+				Require( BumperTemplates.TryGet( controller.Type ) is not { IsBumper: true } || vehicle.ObjectIndex == 0, $"a bumper car of track controller {controller.AttractionId} is not in the arena object" );
 				Require( vehicle.ObjectIndex >= -1 && vehicle.TargetBuoy >= -1, $"a boat of track controller {controller.AttractionId} has a negative object or buoy index" );
 				Require( (vehicle.Flags & BumpVehicle.Live) != 0, $"a boat of track controller {controller.AttractionId} is not live" );
 				Require( Inside( vehicle.X, vehicle.Y ) && Inside( vehicle.TargetX, vehicle.TargetY ), $"a boat of track controller {controller.AttractionId} lies outside the park" );
 				Require( Small( vehicle.VX, 0x10000 ) && Small( vehicle.VY, 0x10000 ) && Small( vehicle.VX0, 0x10000 ) && Small( vehicle.VY0, 0x10000 ) && Small( vehicle.Speed, 0x100000 ),
 					$"a boat of track controller {controller.AttractionId} has a velocity out of range" );
 				Require( Small( vehicle.Spin, 0x100000 ) && Small( vehicle.Roll, 0x100000 ) && Small( vehicle.AccelBonus, 0x100000 ) && Small( vehicle.JitterX, 0x10000 ) && Small( vehicle.JitterY, 0x10000 )
-					&& vehicle.Radius is >= 0 and <= 0x10000 && Small( vehicle.Laps, 1000 ) && vehicle.Variant is >= 0 and < 256 && vehicle.Age >= 0 && vehicle.WallHits >= 0 && vehicle.WallWindow >= 0 && vehicle.Sprays >= 0
+					&& vehicle.Radius is >= 0 and <= 0x10000 && Small( vehicle.Laps, 0x10000 ) && vehicle.Variant is >= 0 and < 256 && vehicle.Age >= 0 && vehicle.WallHits >= -1 && vehicle.WallWindow >= 0 && vehicle.ChaseTarget is >= -1 and < BumpController.VehiclePool && vehicle.Sprays >= 0
 					&& Small( vehicle.BuoyCountdown, 0x10000 ),
 					$"a boat of track controller {controller.AttractionId} has a scalar out of range" );
 				Require( vehicle.VisualHeading is >= 0 and < BumpMath.Turn && Small( vehicle.YawRate, 0x10000 ) && Small( vehicle.YawDelta, 0x10000 ) && vehicle.Animation is 0 or 5 or 12

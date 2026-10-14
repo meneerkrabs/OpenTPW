@@ -121,6 +121,9 @@ internal sealed partial class ParkResumeSmokeTest
 		// The water variant's bought Splish Splash with a closed circuit (OPENTPW_SMOKE_WATER=1, ParkResumeSmokeTest.Water.cs).
 		if ( WaterVariant )
 			PlaceWaterFixture( spineEnd );
+		// The bumper variant's bought bumper ride (OPENTPW_SMOKE_BUMPER=1, ParkResumeSmokeTest.Bumper.cs).
+		if ( BumperVariant )
+			PlaceBumperFixture( spineEnd );
 
 		// Staff for the staff world to travel.
 		foreach ( var type in new[] { StaffType.Mechanic, StaffType.Entertainer } )
@@ -359,7 +362,7 @@ internal sealed partial class ParkResumeSmokeTest
 	{
 		for ( var step = 0; step < PopulateAdvancesPerFrame; step++ )
 		{
-			if ( RichMoment() && WaterReady() )
+			if ( RichMoment() && WaterReady() && BumperReady() )
 			{
 				Log.Trace( $"Park-resume populate: rich state after {populateTicks} ticks ({DescribeGuests()})." );
 				stage = Stage.Save;

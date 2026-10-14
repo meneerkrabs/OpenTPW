@@ -191,25 +191,39 @@ arithmetic pinned to all 882 original Mac factors and the separately recorded
 
 ### CRC verification and de-emphasis (follow-up)
 
-October 11, 2026. Both remaining codec gaps are closed from the standards'
-published text (the same [ISO text copy](https://previewnorm.com/iec/ISO%20IEC%2011172-3-1993%20PDF.pdf)
-as the Layer I work; no external decoder implementation source was consulted).
+October 11, 2026: CRC verification and de-emphasis were added. October 14:
+protected-span coverage for supported nonjoint MPEG-2 LSF Layer II was corrected
+from the final [ISO text](https://previewnorm.com/iso/ISO%20IEC%2011172-3-1993%20PDF.pdf),
+§2.4.1.6 and Annex B Table B.5. No external decoder implementation was copied.
 
-**CRC** (ISO/IEC 11172-3 2.4.1.4/2.4.3.1; ISO/IEC 13818-3 2.4.2.4 defers Layers I
-and II to it): CRC-16 with G(x) = x¹⁶+x¹⁵+x²+1, all-ones start, MSB first, over
-header bits 16–31 (bit_rate_index through emphasis) and the first protected bits
-of audio_data. The protected count is fixed by Annex B Table 3-B.5: Layer I 128
-(single channel) or 256 (other modes) allocation bits; Layer II the allocation
-table's Σnbal plus 2×sblimit maximum scfsi bits — the MPEG-1 rows confirm the
-rule (B.2a 88+54=142, B.2b 94+60=154, B.2c 26+16=42, B.2d 38+24=62), and the only
-supported Layer II table, LSF Table B.1 (13818-3: sblimit 30, Σnbal 75), gives
-135/270. No table publishes the LSF row itself; the derivation applies the
-verified MPEG-1 rule, and the generated Layer II frames are self-consistent by
-construction — the external anchors are the catalogue check value, the Layer I
-rows and the four MPEG-1 rows, not the Layer II tests. A mismatch is counted
-(`Mp2Audio.CrcChecks`/`CrcFailures`) and the frame still decodes: 2.4.3.1 only
-*recommends* concealment (muting or repetition), and no shipped frame carries a
-CRC word at all, so the policy cannot regress the corpus (AUDIO-014).
+**CRC**: the existing CRC-16 polynomial (0x8005), all-ones start, MSB-first order
+and header bits 16–31 remain. Layer II then protects all transmitted allocation
+fields and only the SCFSI fields actually present for nonzero channel/subband
+allocations. It excludes scalefactors, sample codes and ancillary bits. The current
+LSF table has 75 allocation bits per channel; add two bits for every allocated
+channel/subband. One allocated band per channel therefore protects 77 mono or
+154 stereo bits; zero allocations protect 75/150, all thirty protect 135/270.
+The old fixed maximum counted nonexistent SCFSI fields and included unprotected
+payload bits. Its generated tests mirrored that maximum; they were not an
+independent oracle for coverage. The original corpus inventory below was not
+rerun for this correction.
+
+Layer I's existing 128/256-bit coverage—including its joint-mode behavior—is
+unchanged and is not newly qualified here. MPEG-1 Layer II and Layer II joint
+stereo remain unsupported. The stored checkword, CrcChecks/CrcFailures and
+count-and-continue mismatch policy (AUDIO-014) remain; no muting, playback or save
+policy changes. The WAV exporter still refuses failed checks and now accepts
+correctly protected Layer II entries through the existing decoder.
+
+`LayerTwoCrcSpanTests` emits explicit protected fields and builds its checksum
+without production ProtectedBits: zero/one/all allocations, unequal dual channels,
+protected header/allocation/SCFSI flips versus excluded valid scalefactor/ancillary
+flips, incomplete frames, unchanged PCM and cooperative decoding.
+`LayerTwoCrcWavExportTests` checks valid export PCM/source identity and failed-CRC
+refusal before output. The checksum builder also matches the published CRC-16/MPEG-2
+check value; no original assets, reference decoder or native execution was used.
+These are supported-format correctness controls, not full MPEG conformance or
+original audio parity claims. Existing synthesis/de-emphasis qualifications remain.
 
 **De-emphasis**: emphasis '01' (50/15 µs) and '11' (CCITT J.17) decode through a
 first-order shelving filter after synthesis, per channel, at the stream's sample

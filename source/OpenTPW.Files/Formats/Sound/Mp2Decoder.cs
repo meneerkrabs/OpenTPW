@@ -173,12 +173,13 @@ public static partial class Mp2Decoder
 	/// <summary>
 	/// ISO/IEC 11172-3 2.4.3.1: CRC-16 with G(x) = x¹⁶ + x¹⁵ + x² + 1, all-ones start,
 	/// over header bits 16-31 (bit_rate_index through emphasis) and the first
-	/// <see cref="ProtectedBits"/> audio_data bits after the check word. The counts are
-	/// fixed per layer and mode by Annex B Table 3-B.5; see <see cref="ProtectedBits"/>.
+	/// <see cref="ProtectedBits"/> audio_data bits after the check word. Layer II protects
+	/// its transmitted allocation/scfsi fields, not their maximum count;
+	/// see Annex B Table B.5 and <see cref="ProtectedBits"/>.
 	/// </summary>
 	private static bool VerifyCrc( ReadOnlySpan<byte> frame, Header header )
 	{
-		var protectedBits = ProtectedBits( header );
+		var protectedBits = ProtectedBits( frame, header );
 		if ( 48 + protectedBits > frame.Length * 8 )
 			throw new InvalidDataException( "MP2 frame is too short for its CRC-protected bits." );
 		var crc = 0xFFFF;
@@ -188,17 +189,26 @@ public static partial class Mp2Decoder
 	}
 
 	/// <summary>
-	/// ISO/IEC 11172-3 Annex B Table 3-B.5, protected audio_data bits. Layer I fixes
-	/// 128 (single channel) or 256 (other modes) allocation bits. Layer II is the
-	/// allocation table's Σnbal plus 2 × sblimit maximum scfsi bits - the four MPEG-1
-	/// rows confirm the rule (B.2a 88+54=142, B.2b 94+60=154, B.2c 26+16=42,
-	/// B.2d 38+24=62). The only supported Layer II table is MPEG-2 LSF (13818-3
-	/// Table B.1, sblimit 30, Σnbal 75), whose row no table publishes: 13818-3 2.4.2.4
-	/// defers Layers I and II to ISO/IEC 11172-3, whose table lists only the MPEG-1
-	/// allocation tables B.2a-d. 75 + 60 gives 135/270.
+	/// Layer I retains its existing 128/256-bit coverage. For supported nonjoint Layer II,
+	/// ISO/IEC 11172-3 B.5 protects allocation plus transmitted scfsi (2.4.1.6: only
+	/// nonzero allocations have scfsi). The LSF table uses 75 allocation bits per channel;
+	/// add two bits for each allocated channel/subband, excluding scalefactors and samples.
 	/// </summary>
-	private static int ProtectedBits( Header header ) =>
-		(header.Layer == 1 ? 128 : AllocationTable.Sum( row => row.Count * row.Bits ) + 2 * SubbandLimit) * header.Channels;
+	private static int ProtectedBits( ReadOnlySpan<byte> frame, Header header )
+	{
+		if ( header.Layer == 1 )
+			return 128 * header.Channels;
+		var bits = new Bits( frame, 48 );
+		var count = 0;
+		foreach ( var row in AllocationTable )
+			for ( var subband = 0; subband < row.Count; subband++ )
+				for ( var channel = 0; channel < header.Channels; channel++ )
+				{
+					count += row.Bits;
+					if ( bits.Read( row.Bits ) != 0 ) count += 2;
+				}
+		return count;
+	}
 
 	private static void StepCrc( ref int crc, ReadOnlySpan<byte> frame, int start, int count )
 	{

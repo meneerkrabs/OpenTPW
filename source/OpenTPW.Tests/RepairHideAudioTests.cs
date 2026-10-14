@@ -149,5 +149,54 @@ public class RepairHideAudioTests
 		var error = Assert.ThrowsException<ArgumentOutOfRangeException>( () => failed.Runtime.Simulate( FixedStepClock.TickDuration ) ); Assert.AreEqual( "range", error.ParamName ); var partial = mixer.Voices.Last(); Assert.AreEqual( looped, partial.Loops ); Assert.AreEqual( looped, partial.IsFinished ); failed.Script!.Abort( "Synthetic root containment after submission failure" ); failed.Runtime.Simulate( FixedStepClock.TickDuration );
 		Assert.AreEqual( looped, partial.IsFinished, "Only a looping first voice belongs to this pair cleanup." ); Assert.IsTrue( otherVoices.All( voice => !voice.IsFinished ) ); Assert.IsNotNull( failed.Runtime.CaptureSnapshot() ); Assert.ThrowsException<NotSupportedException>( () => other.Runtime.CaptureSnapshot() ); AudioListener.Update( otherVoices[0].Position!.Value, new Vector3( 0, 0, 1 ) ); Assert.IsTrue( mixer.Mix( 1 ).Any( sample => sample != 0 ) );
 	}
+	[TestMethod]
+	public void CurrentPlacedOriginIsReadAgainWithoutMovingAlreadySubmittedLoops()
+	{
+		var placed = new OriginalObject( entry, new ObjectPlacement( 1, 2, 0, System.Numerics.Vector2.Zero, 0 ) );
+		Repair( placed.Runtime ); var before = mixer.Voices.ToArray(); var original = before[0].Position;
+		var changed = new ObjectPlacement( 5, 6, 90, new System.Numerics.Vector2( 2, -3 ), 4 );
+		// A CPU seam changes the current placement record; this is not a claim about a UI move tool.
+		Set( placed, "Placement", changed ); Repair( placed.Runtime );
+		var expected = GameAudio.SoundPosition( System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, changed.ModelToEngine ) );
+		Assert.AreNotEqual( original, expected );
+		foreach ( var voice in before ) Assert.AreEqual( original, voice.Position );
+		foreach ( var voice in mixer.Voices.Skip( 2 ) ) Assert.AreEqual( expected, voice.Position );
+		placed.Delete(); Assert.IsTrue( mixer.Voices.All( voice => voice.IsFinished ) );
+	}
+	[TestMethod]
+	public void OutsideRangeIsSilentButItsOwnedLoopsStillRefuseCapture()
+	{
+		var owner = new OriginalObjectRuntime( entry ); Bind( owner, () => new Vector3( 1000, 0, 0 ) ); Repair( owner );
+		var outside = mixer.Voices.ToArray(); Assert.AreEqual( 2, outside.Length );
+		Assert.IsTrue( outside.All( voice => voice.Loops && !voice.IsFinished ) );
+		Assert.IsTrue( mixer.Mix( 8 ).All( sample => sample == 0 ) );
+		Assert.ThrowsException<NotSupportedException>( () => owner.CaptureSnapshot() );
+		var other = new OriginalObjectRuntime( entry ); Bind( other, () => Vector3.Zero ); Repair( other ); var audible = mixer.Voices.Skip( 2 ).ToArray();
+		owner.Stop(); Assert.IsTrue( outside.All( voice => voice.IsFinished ) ); Assert.IsTrue( audible.All( voice => !voice.IsFinished ) );
+		Assert.IsTrue( mixer.Mix( 1 ).Any( sample => sample != 0 ) ); other.Stop();
+	}
+	[TestMethod]
+	public void HideUsesGlobalRideCatalogueDespiteMatchingLevelEventIds()
+	{
+		var decoy = Empty<SoundCategory>(); var catalog = Empty<SoundCatalog>();
+		Set( catalog, "Events", GameAudio.Rides!.Catalog.Events ); Set( decoy, "Catalog", catalog ); AudioField( "<LevelRides>k__BackingField", decoy );
+		var decoded = (Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem ).GetField( "decoded", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( system )!;
+		decoded[(decoy, 1, 1)] = Pcm( 9000 ); decoded[(decoy, 2, 1)] = Pcm( 9000 );
+		var owner = new OriginalObjectRuntime( entry ); Bind( owner, () => Vector3.Zero ); Repair( owner );
+		using var reference = new AudioMixer( null ); reference.Play( Pcm( 1000 ), AudioChannel.Effects, 1, Vector3.Zero, 100 ); reference.Play( Pcm( 2000 ), AudioChannel.Effects, 1, Vector3.Zero, 100 );
+		CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) ); owner.Stop();
+	}
+	[TestMethod]
+	public void ActualChildHideInheritsPlacedOriginAndObjectLoopOwnership()
+	{
+		File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		File.WriteAllBytes( Path.Combine( root, "child.RSE" ), new RideVMTests.Asm().I( Opcode.REPAIREFFECT, 0 ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		var childEntry = new ObjectCatalogEntry( entry.Theme, entry.Category, entry.ArchivePath, entry.Settings, entry.Shape, entry.ModelPath, null, entry.ScriptPath, new[] { "/child.RSE" }, entry.Animations, entry.AuxiliaryModels, entry.Models, entry.FileSystem, null );
+		var placed = new OriginalObject( childEntry, new ObjectPlacement( 1, 2, 0, System.Numerics.Vector2.Zero, 0 ) );
+		placed.Script!.SpawnChild( "child.RSE", sound: false ); placed.Runtime.Simulate( FixedStepClock.TickDuration );
+		Assert.AreSame( placed.Script.Effects, placed.Script.Child!.Effects ); Assert.AreEqual( 1, placed.Script.Child.UnimplementedEffects[Opcode.REPAIREFFECT] );
+		Assert.AreEqual( 2, mixer.Voices.Count ); Assert.IsTrue( mixer.Voices.All( voice => voice.Position == new Vector3( 10, 0, 20 ) && voice.Loops ) );
+		Assert.ThrowsException<NotSupportedException>( () => placed.Runtime.CaptureSnapshot() ); placed.Delete(); Assert.IsTrue( mixer.Voices.All( voice => voice.IsFinished ) );
+	}
 
 }

@@ -4,6 +4,16 @@ using SVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
 
+/// <summary>The riders of the coasters as head sources of <see cref="RideHeadRenderer"/>.</summary>
+internal sealed class CoasterHeadSources : IHeadSourceProvider
+{
+	private readonly CoasterRenderer renderer;
+
+	public CoasterHeadSources( CoasterRenderer renderer ) => this.renderer = renderer;
+
+	public void Collect( List<HeadSource> sources, int? onlyAttraction ) => renderer.CollectHeads( sources, onlyAttraction );
+}
+
 /// <summary>
 /// Draws the park's coasters (presentation only): each coaster's track as its <c>coaster.sam</c> cross section extruded along the curve with the track textures,
 /// the pylon models stretched to the node heights, and the train cars posed on the samples. A track still being built is drawn as the curve through its placed
@@ -19,6 +29,7 @@ public sealed class CoasterRenderer : Entity
 	private readonly float scale;
 	private readonly Func<CoasterRide, ObjectCatalogEntry?> entryOf;
 	private readonly Func<CoasterRide, CoasterPreview?> previewOf;
+	private readonly Func<CoasterRide, int> attractionOf;
 	private readonly List<RideView> views = new();
 	private readonly Dictionary<ObjectCatalogEntry, CoasterAssets> assets = new();
 	private bool deleted;
@@ -28,8 +39,10 @@ public sealed class CoasterRenderer : Entity
 	/// <param name="scale">Engine units per original world unit (0.2).</param>
 	/// <param name="entryOf">The catalogue entry (archive) of a coaster's station, or null when it has none.</param>
 	/// <param name="previewOf">The build cursor of the coaster the tool edits, or null.</param>
-	public CoasterRenderer( Func<IReadOnlyList<CoasterRide>> coasters, Func<SVector2> origin, float scale, Func<CoasterRide, ObjectCatalogEntry?> entryOf, Func<CoasterRide, CoasterPreview?> previewOf )
+	/// <param name="attractionOf">The attraction id of a coaster's station (0 when it has none), which the riders' heads are matched against.</param>
+	public CoasterRenderer( Func<IReadOnlyList<CoasterRide>> coasters, Func<SVector2> origin, float scale, Func<CoasterRide, ObjectCatalogEntry?> entryOf, Func<CoasterRide, CoasterPreview?> previewOf, Func<CoasterRide, int> attractionOf )
 	{
+		this.attractionOf = attractionOf;
 		this.coasters = coasters;
 		this.origin = origin;
 		this.scale = scale;
@@ -115,6 +128,23 @@ public sealed class CoasterRenderer : Entity
 		public required float Offset { get; init; }
 		public required float YOffset { get; init; }
 		public required int Train { get; init; }
+		public required int Car { get; init; }
+		/// <summary>The car-to-world matrix of the last update (original axes).</summary>
+		public Matrix4x4 World { get; set; } = Matrix4x4.Identity;
+	}
+
+	/// <summary>
+	/// Appends the riders of every coaster's cars as heads: rider <c>j</c> of a car hangs from the car model's head socket <c>j</c> (<see cref="CoasterCarRig.Seats"/>),
+	/// in the MD2 axes and engine scale the head presentation works in.
+	/// </summary>
+	// [BIN:TPW-EXE:0x430130 car heads] each car type counts the head sockets of its model ("Car type %s can receive %d heads"); the riders of a car take them in order
+	// [APPROX:COAST-034] rider j takes socket j modulo the sockets of its car (the original's seat assignment is not traced)
+	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
+	{
+		var corner = origin();
+		var shift = Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateTranslation( corner.X, 0, corner.Y );
+		foreach ( var view in views )
+			view.CollectHeads( sources, onlyAttraction, attractionOf( view.Ride ), shift );
 	}
 
 	private sealed class RideView : IDisposable
@@ -265,7 +295,8 @@ public sealed class CoasterRenderer : Entity
 				var knot = knots[index];
 				var baseHeight = knot.Position.Y - definition.TrackHeightAdjust - lift;
 				var yaw = MathF.Atan2( knot.Direction.X, knot.Direction.Z );
-				var parts = rig.Pose( lift, yaw );
+				var stackedAbove = chain.Any( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
+				var parts = rig.Pose( lift, yaw, stackedAbove );
 				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );
 				for ( var part = 0; part < parts.Count; part++ )
 				{
@@ -375,7 +406,7 @@ public sealed class CoasterRenderer : Entity
 						parts[part] = new ModelEntity { Model = carModels[part], Name = "coaster car" };
 						carTriangles += rig.Parts[part].Indices.Length / 3;
 					}
-					cars.Add( new CarInstance { Rig = rig, Parts = parts, Offset = offsets[car], YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train } );
+					cars.Add( new CarInstance { Rig = rig, Parts = parts, Offset = offsets[car], YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
 				}
 			}
 		}
@@ -394,12 +425,30 @@ public sealed class CoasterRenderer : Entity
 					continue;
 				var coordinate = Ride.Trains[car.Train].Position - car.Offset / Ride.Spacing;
 				var pose = CoasterCarRig.PoseAt( Ride.Samples, coordinate );
-				var transform = ObjectPlacement.SwapAxes( CoasterCarRig.Matrix( pose, car.YOffset ) ) * engine;
+				car.World = CoasterCarRig.Matrix( pose, car.YOffset );
+				var transform = ObjectPlacement.SwapAxes( car.World ) * engine;
 				var position = new SVector3( transform.M41, transform.M42, transform.M43 );
 				foreach ( var part in car.Parts )
 				{
 					part.TransformOverride = transform;
 					part.Position = position;
+				}
+			}
+		}
+
+		public void CollectHeads( List<HeadSource> sources, int? onlyAttraction, int attraction, Matrix4x4 shift )
+		{
+			if ( disposed || !Ride.IsOperational || attraction == 0 || onlyAttraction is int only && only != attraction )
+				return;
+			foreach ( var car in cars )
+			{
+				if ( car.Train >= Ride.Trains.Count || car.Rig.Seats.Count == 0 || car.Car >= Ride.Trains[car.Train].Cars.Count )
+					continue;
+				var riders = Ride.Trains[car.Train].Cars[car.Car];
+				for ( var rider = 0; rider < riders.Count; rider++ )
+				{
+					var (node, local) = car.Rig.Seats[rider % car.Rig.Seats.Count];
+					sources.Add( new HeadSource( riders[rider], attraction, local * car.World * shift, car.Rig.Model.Nodes[node].Type ) );
 				}
 			}
 		}

@@ -24,7 +24,15 @@ public partial class Level
 			OnCoasterStationPlaced( item );
 		coasterSite = CoasterSite.FromGrid( Objects.Grid );
 		coasterRenderer = new CoasterRenderer( () => Coasters, () => Objects.Grid.Origin, ObjectPlacement.ModelScale, CoasterEntry,
-			ride => CoasterToolStation?.Runtime.Coaster == ride ? DemoPreview ?? CoasterPreview : null );
+			ride => CoasterToolStation?.Runtime.Coaster == ride ? DemoPreview ?? CoasterPreview : null,
+			ride => Objects.Objects.FirstOrDefault( item => !item.IsDeleted && ReferenceEquals( item.Runtime.Coaster, ride ) )?.Runtime.AttractionId ?? 0 );
+	}
+
+	/// <summary>The riders of the coasters as head sources, hung from the head sockets of the car models.</summary>
+	internal void AddCoasterHeads( RideHeadRenderer heads )
+	{
+		if ( coasterRenderer is { } renderer )
+			heads.AddSource( new CoasterHeadSources( renderer ) );
 	}
 
 	/// <summary>The build cursor the coaster tool shows: the track is drawn through a ghost pylon there. Set by the HUD each frame, null when the tool is off.</summary>

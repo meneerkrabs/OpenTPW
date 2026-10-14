@@ -13,7 +13,7 @@ public sealed record CoasterModelPart( string MeshName, string[] Textures, Verte
 /// </summary>
 // [BIN:TPW-EXE:0x42fad0 coaster model load] the TrackMaster loader opens the pylon models with the relative-animation flag 0x1013405 (the only caller to do so, with "GTexture" as the extra texture directory): a vertex key or position key is added to the stored mesh or node, not set
 // [BIN:TPW-EXE:0x430590 pylon model tags] the loft, rotate, incline and bank clips and the track and stack dummies are looked up on the loaded model by node attribute (0x2, 0x3, 0x9, 0xa, 0x1000000, 0x800000, 0x2000000, 0x100000, 0x80000) when the control is set up (0x42eb70)
-// [APPROX:COAST-033] a pylon is the geometry of its model with the loft clip (to the node height) and the rotate clip (to the knot yaw, yaw/2π of the clip) posed once per track change; the incline and bank clips (the tag's tilt and the pylon's bank lean) are not played, a ground-tile mesh under the pylon is skipped, and the pylon takes the node's height by scaling or sinking when the node lies outside the loft range (the node heights are still fMinHeight to fMaxHeight, COAST-015) — evidence needed: the pylon control setup 0x42eb70 and the pose routine that feeds node +232 to the clips
+// [APPROX:COAST-033] a pylon is the geometry of its model with the loft clip (to the node height) and the rotate clip (to the knot yaw, yaw/2π of the clip) posed once per track change; the incline and bank clips (the tag's tilt and the pylon's bank lean) are not played, a ground-tile mesh under the pylon is skipped, and the pylon takes the node's height by scaling or sinking when the node lies outside the loft range, and the bridge or stacker head above the track tag is drawn only when a pylon is stacked on it (an assumption: the loft clip moves it with the tag, and no node flag that hides it was found) (the node heights are still fMinHeight to fMaxHeight, COAST-015) — evidence needed: the pylon control setup 0x42eb70 and the pose routine that feeds node +232 to the clips
 public sealed class CoasterPylonRig
 {
 	private readonly ModelFile model;
@@ -106,17 +106,21 @@ public sealed class CoasterPylonRig
 	}
 
 	/// <summary>The pylon's mesh parts for a node height and a knot yaw (radians); positions relative to the cell corner.</summary>
-	public IReadOnlyList<CoasterModelPart> Pose( float height, float yaw )
+	public IReadOnlyList<CoasterModelPart> Pose( float height, float yaw, bool stackedAbove = false )
 	{
 		var (loftParameter, scale, offset) = Fit( height );
 		var turn = yaw / (2 * MathF.PI);
 		turn -= MathF.Floor( turn );
-		return Pose( loftParameter, turn, scale, offset );
+		return Pose( loftParameter, turn, scale, offset, stackedAbove );
 	}
 
-	/// <summary>The mesh parts at explicit clip parameters: loft in [0, 1], rotate in [0, 1) of the rotate clip.</summary>
-	public IReadOnlyList<CoasterModelPart> Pose( float loftParameter, float rotateParameter, float verticalScale, float verticalOffset )
+	/// <summary>
+	/// The mesh parts at explicit clip parameters: loft in [0, 1], rotate in [0, 1) of the rotate clip. A part that lies above the track tag (the bridge or
+	/// stacker head that carries a pylon stacked on this one) is left out unless <paramref name="stackedAbove"/>: a pylon ends at the track's underside.
+	/// </summary>
+	public IReadOnlyList<CoasterModelPart> Pose( float loftParameter, float rotateParameter, float verticalScale, float verticalOffset, bool stackedAbove = false )
 	{
+		var tagHeight = TagHeightAt( loftParameter ) * verticalScale + verticalOffset;
 		var loftTick = Math.Clamp( loftParameter, 0f, 1f ) * Duration;
 		var rotateTick = rotate == null ? 0 : Math.Clamp( rotateParameter, 0f, 1f ) * rotate.Duration;
 		var matrices = new Matrix4x4[model.Nodes.Count];
@@ -146,6 +150,19 @@ public sealed class CoasterPylonRig
 					// Engine axis order: Z is the model's up.
 					var position = vertices[index].Position.GetSystemVector3();
 					vertices[index].Position = new NVector3( position.X, position.Y, position.Z * verticalScale + verticalOffset );
+				}
+				if ( !stackedAbove && TagNode >= 0 && vertices.Length > 0 )
+				{
+					var low = float.MaxValue;
+					var high = float.MinValue;
+					foreach ( var vertex in vertices )
+					{
+						var z = vertex.Position.GetSystemVector3().Z;
+						low = MathF.Min( low, z );
+						high = MathF.Max( high, z );
+					}
+					if ( (low + high) / 2 > tagHeight + 0.01f )
+						continue;
 				}
 				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices ) );
 			}

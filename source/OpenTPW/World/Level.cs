@@ -369,6 +369,7 @@ public partial class Level : IDisposable
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
+		AddCoasterHeads( RideHeadRenderer );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 

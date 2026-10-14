@@ -104,6 +104,15 @@ public class CoasterPresentationAssetTests
 				}
 				foreach ( var height in new[] { rig.TagLow, (rig.TagLow + rig.TagHigh) / 2, rig.TagHigh, rig.TagHigh + 3 } )
 					Assert.AreEqual( height, rig.PosedTagHeight( height ), 1e-2f, $"{entry.InfoId} {name}: the posed tag stands at {height}" );
+				// The pylon ends at the track: no part floats above the node, and a bridge-type pylon's top is the node height.
+				foreach ( var height in new[] { MathF.Max( definition.Pylon( loop ).MinHeight, rig.TagLow ), 40f, 70f, MathF.Min( definition.Pylon( loop ).MaxHeight, rig.TagHigh ) } )
+				{
+					var posed = rig.Pose( height, 0.7f );
+					Assert.IsTrue( posed.All( part => part.Vertices.Min( vertex => vertex.Position.GetSystemVector3().Z ) <= height + 0.05f ), $"{entry.InfoId} {name}: no part above the node at {height}" );
+					if ( !loop && entry.InfoId is 1180 or 2180 or 3190 or 4180 or 4190 )
+						Assert.AreEqual( height, posed.SelectMany( part => part.Vertices ).Max( vertex => vertex.Position.GetSystemVector3().Z ), 1f, $"{entry.InfoId} {name}: the pylon's top meets the node at {height}" );
+					Assert.IsTrue( rig.Pose( height, 0.7f, stackedAbove: true ).Count >= posed.Count );
+				}
 				var parts = rig.Pose( (rig.TagLow + rig.TagHigh) / 2, 1.0f );
 				Assert.IsTrue( parts.Count > 0 && parts.All( part => part.Vertices.Length > 0 && part.Indices.Length % 3 == 0 ) );
 				var top = parts.SelectMany( part => part.Vertices ).Max( vertex => vertex.Position.GetSystemVector3().Z );

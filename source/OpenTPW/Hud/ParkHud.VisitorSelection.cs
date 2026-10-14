@@ -13,6 +13,7 @@ public sealed partial class ParkHud
 			return false;
 		OpenVisitorWindow();
 		SelectVisitor(VisitorRowIndex(guest.Id));
+		GameAudio.PlayVisitorClick();
 		toolPress = true; // Its release must not also select an object or finish a path click.
 		return true;
 	}

@@ -321,7 +321,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	}
 
 	/// <summary>Undo of a committed segment: removes the cells it built (newest first) and takes back its counter bumps. No refund.</summary>
-	// [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool
+	// [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund: an OpenTPW convenience — the original's Backspace (the "backtrack" key command, 0x10112430 / tp.exe 0x40BDA0) does nothing while the path tool is on and, with no tool on, removes the single path cell under the cursor (Level.BacktrackAt)
 	public void Undo( SegmentResult segment )
 	{
 		for ( var index = segment.Built.Count - 1; index >= 0; index-- )

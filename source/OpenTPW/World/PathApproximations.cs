@@ -10,7 +10,7 @@ public static class PathApproximations
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
 		("PATH-001", "PATH-ENTER: the path tool starts from a park-view click on an empty owned cell or a path cell (no menu button)"),
-		("PATH-002", "PATH-UNDO: Backspace pops the last vertex and removes the cells that segment built, without a refund"),
+		("PATH-002", "PATH-UNDO: Backspace in the path tool pops the last vertex and removes the cells that segment built, without a refund; the original's Backspace does nothing in the tool"),
 		("PATH-003", "PATH-ENDFLAG: a segment whose last cell lands on an existing path or queue cell ends the tool"),
 		("PATH-004", "PATH-CONNECT: a new path cell links to every cardinal path neighbour, on both sides"),
 		("PATH-005", "PATH-REMOVE: the remove tool clears a path cell by forced removal (a = b = 0), respecting NoModify"),

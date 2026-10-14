@@ -231,7 +231,12 @@ public sealed partial class ParkHud
 		public bool ArrowsSelect => true;
 		public void Select( int index ) => owner.SelectVisitor( index );
 		public void Scroll( int rows ) => owner.ScrollVisitors( rows );
-		public override void Activate() => owner.LocateSelectedVisitor();
+		// A row activation opens the visitor's status panel in the original, with its click (GameAudio.VisitorClickEvent).
+		public override void Activate()
+		{
+			GameAudio.PlayVisitorClick();
+			owner.LocateSelectedVisitor();
+		}
 		public override void Adjust( int direction ) => owner.SelectVisitor( Math.Max( 0, Selected ) + direction );
 		public int RowAt( UiCanvas canvas, NVector2 point )
 		{

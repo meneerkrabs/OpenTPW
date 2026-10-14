@@ -6,9 +6,10 @@ music and ambience, control clicks, the map/research drawer, error feedback, rid
 sounds (RSE EVENT and REPAIREFFECT), the crowd sentence and the advisor's speech play
 through the mixer. The park's weather plays its rain and thunder, the level's placed
 ambients (scape.omp) play with the mixer's distance law, ride screams play, the staff's
-walking and idle voices play, and the path tool's laying and refused clicks play. Still
-silent: the path tool's link-end and undo sounds, the visitor click and the lobby's
-global effects
+walking and idle voices play, the path tool's laying and refused clicks play, a queue joining a path
+plays `cat_ui` 139, Backspace over a path cell plays `cat_ui` 95 as it removes the cell, and opening a
+visitor's details plays the visitor click (`cat_kids` 129). Still silent: the second source of 139 (a
+laid path cell linking to a queue) and the lobby's global effects
 (see "Traced but not triggered"). No original data is in the repository.
 
 The integration regressions force a rainy storm, pass its rain level and due thunder
@@ -271,18 +272,25 @@ Traced in the binary but not triggered yet:
 * Staff chase (`cat_staff` 136, `0x100D49F8`), catch (137, `0x100D516C`), the researching turn (138,
   `0x100F05EC`) and a performance's end (135, `0x100D2D98`): the events are traced, but OpenTPW has no
   chase, catch, performance or per-turn research action to hang them on.
-* The path tool's link-end sound (`cat_ui` 139, `0x100711CC`, queue mode) and its undo: the trigger
-  is inferred; no undo sound was found on the Mac (AUDIO-023). The count-classed removal sounds
-  `cat_ui` 141–144 and 150–153 (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
+* `cat_ui` 139 is the sound of a queue joining a path, not a path-tool link-end. Its first source plays now: the queue tool's
+  commit when the line ends on a path cell, money on (`0x100711CC`, tp.exe `0x527587`; the validator `0x84154` returns code
+  8 for that line, which is also no longer treated as a refusal). Its second source is not played yet: a laid path cell
+  linking to a neighbouring queue cell whose link points back (`0x10082D6C`, tp.exe `0x5348D0`), because OpenTPW's path
+  linking has no queue-link check (PATH-004, AUDIO-023). The count-classed removal sounds `cat_ui` 141–144 and 150–153
+  (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
+* `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
+  a path cell under the cursor it plays at that cell, then that one cell is removed (ClearCell's path case), even when a fixed
+  cell stays. Inside the path tool the original's Backspace does nothing; OpenTPW keeps its segment undo there (PATH-002).
 * The weather's own visuals are drawn now, as unverified procedural approximations (AUDIO-900..904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW presentation whose wording
   and cadence are approximations (AUDIO-905..907), because the original's forecast message handler is
   not traced (AUDIO-031).
 * The placed records of type 3 (a sound that follows the listener in a rectangle) are counted, not
   played; a sentence-type placed effect plays its first sound once (AUDIO-020).
-* The visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and visitor
-  panel sounds (`cat_ui` 95 at `0x101125D8`) remain deferred: world visitor selection
-  now opens the existing roster, with no new visitor-specific audio trigger.
+* The visitor click (`cat_kids` 129, flat) plays whenever a visitor's details open: the status panel's open routine
+  (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
+  activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
+  activation; it has no separate status panel (UI-910) and no map markers or strip yet.
 * Global lobby effects (`cat_globallobbysfx` 1 thunder with the lobby lightning flash `0x1009533C`, 4 at
   `0x10183DA4`, 2/3 in the online globe `0x100923A8`): the lobby has no lightning or globe to trigger them.
 * The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and

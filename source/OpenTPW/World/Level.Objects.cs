@@ -73,6 +73,8 @@ public partial class Level
 	{
 		if ( Guests == null )
 			return;
+		Guests.Bins = LitterBins;
+		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
@@ -88,6 +90,55 @@ public partial class Level
 	{
 		if ( Guests != null )
 			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation );
+	}
+
+	/// <summary>
+	/// The litter bins for the guests' bin search: placed objects with <c>UsageInfo.HoldsLitter</c> (thing <c>+0x32</c> bit 0x40) that have an
+	/// economy instance, in placement order, each with the path cell guests walk to (its entrance's outside cell, else a path neighbour).
+	/// </summary>
+	// [DATA:<object>.sam:UsageInfo.HoldsLitter] type record +0xF8, which the object setup (tp.exe 0x004DB3FB) turns into flag +0x32 bit 0x40 (the Litter Bin of each theme)
+	private IReadOnlyList<LitterBin> LitterBins()
+	{
+		var bins = new List<LitterBin>();
+		if ( Guests == null )
+			return bins;
+		var grid = Guests.Grid;
+		foreach ( var item in Objects.Objects )
+		{
+			if ( item.IsDeleted || !item.Entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) || !economyInstances.TryGetValue( item, out var instance ) )
+				continue;
+			var cell = (item.Placement.X, item.Placement.Y);
+			(int X, int Y)? access = null;
+			foreach ( var point in item.AccessPoints )
+				if ( access == null && grid.IsWalkable( point.OutsideX, point.OutsideY ) )
+					access = (point.OutsideX, point.OutsideY);
+			for ( var direction = 0; access == null && direction < 4; direction++ )
+			{
+				var (dx, dy) = GuestPathGrid.Directions[direction];
+				if ( grid.IsWalkable( cell.X + dx, cell.Y + dy ) )
+					access = (cell.X + dx, cell.Y + dy);
+			}
+			// [APPROX:GUEST-005] a bin's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
+			if ( access is { } found )
+				bins.Add( new LitterBin( instance, cell, found ) );
+		}
+		return bins;
+	}
+
+	/// <summary>The bin's script variable a guest's litter sets (each theme's Litter Bin script declares only <c>VAR_TRIGGER</c>).</summary>
+	public const string BinTriggerVariable = "VAR_TRIGGER";
+
+	/// <summary>
+	/// A guest threw its litter into the bin with economy instance <paramref name="instance"/>: the bin's script variable 0 becomes 1, and the
+	/// script plays the bin's sound and animation.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FFF20 bin trigger] on arrival with a bin, state 9 looks up the bin thing's script (+0x24) through 0x0055A070 and sets its variable 0 to 1 through 0x0055A0B0 ("RSSE: Bad variable reference" when out of range)
+	// [DATA:<theme> Litter Bin .rse] VAR_TRIGGER is the script's only variable (index 0) in all four themes
+	private void TriggerBin( int instance )
+	{
+		foreach ( var (item, id) in economyInstances )
+			if ( id == instance && !item.IsDeleted )
+				item.Runtime.SetVariable( BinTriggerVariable, 1 );
 	}
 
 	/// <summary>

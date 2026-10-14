@@ -132,6 +132,43 @@ public class MechanicWorldTests
 	}
 
 	[TestMethod]
+	public void ACalledMechanicServicesAWorkingRideAndTheCallClosesItUntilThen()
+	{
+		var f = new Fixture();
+		var ride = f.Ride( (12, 6), (12, 5) );
+		var mechanic = f.Hire();
+		var events = new List<ParkEventKind>();
+		f.Park.EventRaised += item => events.Add( item.Kind );
+		ride.Repair = 70;
+		Assert.IsTrue( f.Park.RequestMaintenance( ride.Id, true ) );
+		Assert.IsTrue( ride.MaintenanceRequested );
+		CollectionAssert.Contains( events, ParkEventKind.MaintenanceRequested, "the level closes the ride" );
+		f.Until( () => mechanic.Job == StaffJob.Repairing, 300 );
+		Assert.AreEqual( ride.Id, mechanic.RideId, "a working ride with the call is a job (0x004E03D0)" );
+		f.Until( () => !ride.MaintenanceRequested, 300 );
+		Assert.AreEqual( 100.0, ride.Repair, 1e-6, "repaired fully" );
+		CollectionAssert.Contains( events, ParkEventKind.RideRepaired, "and reopened" );
+	}
+
+	[TestMethod]
+	public void CancellingTheCallReopensAndAsksNobody()
+	{
+		var f = new Fixture();
+		var ride = f.Ride( (12, 6), (12, 5) );
+		var events = new List<ParkEventKind>();
+		f.Park.EventRaised += item => events.Add( item.Kind );
+		f.Park.RequestMaintenance( ride.Id, true );
+		f.Park.RequestMaintenance( ride.Id, true );
+		f.Park.RequestMaintenance( ride.Id, false );
+		CollectionAssert.AreEqual( new[] { ParkEventKind.MaintenanceRequested, ParkEventKind.MaintenanceCancelled }, events, "a second call changes nothing" );
+		Assert.IsFalse( ride.MaintenanceRequested );
+		f.Park.RequestMaintenance( ride.Id, true );
+		var json = ParkSaveFile.Serialize( f.Park );
+		Assert.IsTrue( ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog )
+			.TryGetObject( ride.Id, out var restored ) && restored.MaintenanceRequested, "the call is saved" );
+	}
+
+	[TestMethod]
 	public void DismissingAMechanicFreesHisRide()
 	{
 		var f = new Fixture();

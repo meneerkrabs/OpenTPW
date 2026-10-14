@@ -53,7 +53,11 @@ public enum ParkEventKind
 	/// <summary>A toilet's gauge fell below 25 ("Toilet has become dirty and smelly", tp.exe 0x004E2440): <see cref="ParkEvent.InstanceId"/> the toilet.</summary>
 	ToiletDirty,
 	/// <summary>A handyman finished cleaning a toilet (tp.exe 0x004DFD80): <see cref="ParkEvent.InstanceId"/> the toilet.</summary>
-	ToiletCleaned
+	ToiletCleaned,
+	/// <summary>The player called a mechanic to the object (tp.exe 0x004DFE30): the ride closes. <see cref="ParkEvent.InstanceId"/> the object.</summary>
+	MaintenanceRequested,
+	/// <summary>The player cancelled the call (tp.exe 0x004DFE30): the ride reopens when its state allows. <see cref="ParkEvent.InstanceId"/> the object.</summary>
+	MaintenanceCancelled
 }
 
 /// <summary>
@@ -204,6 +208,11 @@ public sealed class ParkObjectState
 	public bool QueueHasRoom { get; set; } = true;
 	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
 	public int MechanicId { get; set; }
+	/// <summary>
+	/// The player called a mechanic (a handyman for a toilet) to the object: the original's <c>mRequestedService</c> (<c>+0x64</c> on the PC). It closes a ride
+	/// until the repair clears it (<see cref="ParkEconomy.RequestMaintenance"/>).
+	/// </summary>
+	public bool MaintenanceRequested { get; set; }
 	/// <summary>
 	/// Guests who have used the object since it was built, never reset: the original's object word +412, which the
 	/// use-finished handler raises (0xEAA00 calls 0xE1B44) and only the object constructor clears. The scrap value's

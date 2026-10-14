@@ -124,6 +124,9 @@ public static class ParkSaveFile
 		public double? LifeGauge { get; init; }
 		public required bool IsBrokenDown { get; init; }
 		public required int MechanicId { get; init; }
+		/// <summary>The player's call for a mechanic (<c>mRequestedService</c>); absent: none.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool MaintenanceRequested { get; init; }
 		/// <summary>Guests that have used the object; absent in older saves, which then use this and last month's customers.</summary>
 		public long? TimesUsed { get; init; }
 		public required long[] Statistics { get; init; }
@@ -443,6 +446,7 @@ public static class ParkSaveFile
 				LifeGauge = item.LifeGauge,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
+				MaintenanceRequested = item.MaintenanceRequested,
 				TimesUsed = item.TimesUsed,
 				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit }
 			} ).ToList(),
@@ -662,6 +666,7 @@ public static class ParkSaveFile
 				LifeGauge = item.LifeGauge ?? 100,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
+				MaintenanceRequested = item.MaintenanceRequested,
 				TimesUsed = item.TimesUsed ?? item.Statistics[0] + item.Statistics[1],
 				CustomersThisMonth = item.Statistics[0],
 				CustomersLastMonth = item.Statistics[1],

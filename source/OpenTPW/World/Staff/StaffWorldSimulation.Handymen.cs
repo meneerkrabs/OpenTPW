@@ -303,16 +303,18 @@ public sealed partial class StaffWorldSimulation
 			return null;
 		var range = DetectionRange( economy, member );
 		ToiletSite? found = null;
+		var best = uint.MaxValue;
 		foreach ( var toilet in economy.Toilets() )
 		{
 			if ( toilet.MechanicId != 0 && toilet.MechanicId != member.Id || sites.FirstOrDefault( item => item.Id == toilet.Id ) is not { Id: > 0 } site )
 				continue;
 			var dx = site.Cell.X - cell.X;
 			var dy = site.Cell.Y - cell.Y;
-			if ( !ParkEconomy.IsDirtyToilet( toilet ) || dx * dx + dy * dy >= range * range )
+			var distance = (uint)(dx * dx + dy * dy);
+			if ( !(toilet.MaintenanceRequested && distance < best || ParkEconomy.IsDirtyToilet( toilet ) && distance < (uint)(range * range)) )
 				continue;
 			if ( grid.FindPath( cell.X, cell.Y, site.Access.X, site.Access.Y ).Count > 0 )
-				found = site;
+				(found, best) = (site, distance);
 		}
 		return found;
 	}
@@ -324,14 +326,42 @@ public sealed partial class StaffWorldSimulation
 		member.ToiletId = 0;
 	}
 
-	/// <summary>A patrol destination (<see cref="GuestWander"/>, the staff's 0x004F9490): true when one is set.</summary>
+	/// <summary>
+	/// A patrol destination (<see cref="GuestWander"/>, the staff's 0x004F9490), kept inside the member's patrol rectangle: a member outside it walks to a
+	/// random reachable cell inside it, and one whose every step leaves it does the same. True when a destination is set.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F9490 staff patrol area] for staff (types 4..8) a cell outside the rectangle (0x00506ED0: +0x20A and +0x20C are its corners' cell ids, inclusive) first tries 0x00506F30; when that fails ("I can't reach my patrol area", message 0x16) the wander runs without the rectangle; inside it, the candidates outside it are removed, and when none is left 0x00506F30 runs ("I'm inside my patrol area but can't get anywhere else within it" when it fails)
 	private bool Patrol( ParkEconomy economy, StaffMember member, (int X, int Y) cell )
 	{
 		var area = member.PatrolArea;
-		if ( GuestWander.Pick( grid, cell, () => Draw( economy ),
-			( x, y ) => x >= area.X0 && x <= area.X1 && y >= area.Y0 && y <= area.Y1 ) is not { } destination )
-			return false;
-		return Route( member, destination.Cell, destination.ByteX, destination.ByteY );
+		bool InArea( int x, int y ) => x >= area.X0 && x <= area.X1 && y >= area.Y0 && y <= area.Y1;
+		var keepToArea = true;
+		if ( !InArea( cell.X, cell.Y ) )
+		{
+			if ( EnterPatrolArea( economy, member ) )
+				return true;
+			keepToArea = false;
+		}
+		if ( GuestWander.Pick( grid, cell, () => Draw( economy ), keepToArea ? InArea : null, out var areaBlocked ) is { } destination )
+			return Route( member, destination.Cell, destination.ByteX, destination.ByteY );
+		return areaBlocked && EnterPatrolArea( economy, member );
+	}
+
+	/// <summary>
+	/// A walk to a random cell of the patrol rectangle (tp.exe <c>0x00506F30</c>): up to 30 tries of two world draws (x, y) for a path cell a route reaches.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00506F30 into the patrol area] x = draw % (x1 − x0 + 1) + x0, y = draw % (y1 − y0 + 1) + y0; a path cell (0x004D8300, 0x00536310) that the route 0x004FA530 reaches ends the search; after 30 tries "Could not find or reach a destination" and message 0x16
+	private bool EnterPatrolArea( ParkEconomy economy, StaffMember member )
+	{
+		var area = member.PatrolArea;
+		for ( var tries = 0; tries < 30; tries++ )
+		{
+			var x = (int)(Draw( economy ) % (uint)(area.X1 - area.X0 + 1)) + area.X0;
+			var y = (int)(Draw( economy ) % (uint)(area.Y1 - area.Y0 + 1)) + area.Y0;
+			if ( grid.IsWalkable( x, y ) && Route( member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
+				return true;
+		}
+		return false;
 	}
 
 	/// <summary>Sets the member's walk to a point of <paramref name="cell"/> along the shortest route; false when none reaches it.</summary>

@@ -373,8 +373,10 @@ public partial class Level : IDisposable
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
-			else if ( item.Kind == ParkEventKind.UpgradeBought )
+			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
 				CloseForUpgrade( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
+				OpenAfterCancelledCall( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
 			{
 				ApplyCompletedCatalogueTier( item.InstanceId );
@@ -428,6 +430,13 @@ public partial class Level : IDisposable
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again
 	// [BIN:STP-PPC:0x100DF928 upgrade end] the upgrade's end leaves state 2 through SetState(0) like the repair (ORACLE.md F27, static): the same reopening, an incomplete coaster closed again
+	/// <summary>A cancelled call for a mechanic reopens the ride unless its state keeps it closed (tp.exe <c>0x004DFE30</c> off, the reopen guard).</summary>
+	private void OpenAfterCancelledCall( int instance )
+	{
+		if ( AttractionRuntimeOf( instance ) is { } runtime && Gate?.MayOpen( runtime ) == true )
+			runtime.Open();
+	}
+
 	private void OpenAfterRepair( int instance )
 	{
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )

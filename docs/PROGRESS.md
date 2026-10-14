@@ -950,6 +950,9 @@ research batch was included in this merge.
   invalid saved TPI folder or world (including a timed-out re-inspection) or `--setup` opens it. Options > Game files has an Edition button for switching
   on desktop, effective at the next start. The TPI/TPW world lists come from `GameEditions` instead of a copy. Tests cover direct TPW and TPI starts, the
   wizard cases and the edition switch persisting to `setup.json`.
+  Review fixes: a saved, old or detected folder holding Theme Park Inc data no longer passes as Theme Park World (the window opens instead of every start failing);
+  `--setup` with an explicit tool mode refuses before any window; a stale or timed-out choice keeps the window open with the typed folder and a reason; and
+  Options > Game files reports a timed-out check as such.
 - **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
   first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy
   `[EXT:explicit-world-seed]`.

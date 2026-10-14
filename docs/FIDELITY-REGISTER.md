@@ -1217,7 +1217,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:154` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:306` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:617` | [EXT:tpi-viewer] a saved experimental Theme Park Inc world starts directly; a stale folder or world opens the wizard. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:794` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:799` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:303` | [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world, |
 | tpi-viewer | `source/OpenTPW/Client/Setup/DesktopSetupSelection.cs:31` | [EXT:tpi-viewer] an experimental Theme Park Inc choice starts that world through the viewer slice |

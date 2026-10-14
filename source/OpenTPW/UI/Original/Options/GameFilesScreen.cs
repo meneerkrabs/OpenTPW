@@ -162,7 +162,7 @@ public static class GameFilesScreen
 			{
 				if ( inspection.IsCompletedSuccessfully && inspection.Result.Reports.FirstOrDefault() is { } report )
 					inspected?.Invoke( report );
-				else status = strings.Extra( OpenTpwText.FolderNotUsable );
+				else status = strings.Extra( inspection.IsCompletedSuccessfully && inspection.Result.TimedOut ? OpenTpwText.InspectionTimedOut : OpenTpwText.FolderNotUsable );
 				inspection = null;
 				inspected = null;
 			}
@@ -298,7 +298,7 @@ public static class GameFilesScreen
 			{
 				if ( inspection.IsCompletedSuccessfully && inspection.Result.Reports.FirstOrDefault() is { } report )
 					inspected?.Invoke( report );
-				else status = strings.Extra( OpenTpwText.ExperimentalNotUsable );
+				else status = strings.Extra( inspection.IsCompletedSuccessfully && inspection.Result.TimedOut ? OpenTpwText.InspectionTimedOut : OpenTpwText.ExperimentalNotUsable );
 				inspection = null;
 				inspected = null;
 			}

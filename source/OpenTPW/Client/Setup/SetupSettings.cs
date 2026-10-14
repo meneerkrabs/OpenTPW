@@ -71,7 +71,7 @@ public static class GamePathResolution
 	{
 		if ( string.IsNullOrWhiteSpace( path ) )
 			return null;
-		var report = GameInstallation.Inspect( path );
+		var report = GameInstallation.Inspect( path, GameEdition.ThemeParkWorld );
 		return report.IsUsable ? report.Path : null;
 	}
 

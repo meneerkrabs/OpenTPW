@@ -25,6 +25,7 @@ internal sealed class SetupWizard : IDisposable
 	private readonly CancellationTokenSource lifetime = new();
 	private Task<InstallationDiscoveryResult>? discovery;
 	private bool discoveryTimedOut;
+	private string? notice;
 	private Task<InstallationDiscoveryResult>? inspection;
 	private CancellationTokenSource? inspectionCancellation;
 	private string? pendingInspection;
@@ -57,6 +58,10 @@ internal sealed class SetupWizard : IDisposable
 		savedCd = saved.CdPath;
 		if ( gamePath.Length > 0 )
 			pendingInspection = gamePath;
+		// Reopened after a stale or timed-out choice: show the reason beside the player's typed folder.
+		notice = initialDiscovery?.Notice;
+		if ( notice != null )
+			page = Page.GameFolder;
 
 		window = new Window( 760, 560, "OpenTPW setup" );
 		SdlDisplay.SetMinimumSize( window.SdlWindow, MinimumWidth, MinimumHeight );
@@ -141,10 +146,14 @@ internal sealed class SetupWizard : IDisposable
 		}
 		if ( inspection is { IsCompleted: true } )
 		{
-			if ( inspection.IsCompletedSuccessfully && inspectionCancellation?.IsCancellationRequested == false )
+			if ( inspectionCancellation?.IsCancellationRequested == false )
 			{
-				var report = inspection.Result.Reports.FirstOrDefault() ?? new InstallationReport( gamePath, null,
-					Array.Empty<string>(), new[] { "This folder could not be inspected. Choose an available local folder or CD." }, Array.Empty<string>() );
+				// A faulted or timed-out inspection is an invalid folder, with its reason, not an unanswered one.
+				var result = inspection.IsCompletedSuccessfully ? inspection.Result : null;
+				var reason = result?.TimedOut == true ? "Checking this folder took too long. Try again, or choose a folder on a local drive."
+					: "This folder could not be inspected. Choose an available local folder or CD.";
+				var report = result?.Reports.FirstOrDefault() ?? new InstallationReport( gamePath, null,
+					Array.Empty<string>(), new[] { reason }, Array.Empty<string>() );
 				if ( selection.AcceptInspection( inspectionRevision, report ) )
 				{
 					gameReport = report;
@@ -236,6 +245,8 @@ internal sealed class SetupWizard : IDisposable
 		ImGui.TextWrapped( "Choose the folder that contains the game's Data folder: where it is installed, a copy of the CD or the CD drive. You can also drag the folder onto this window." );
 		ImGui.Spacing();
 		FolderField( "##game", ref gamePath, SetGamePath );
+		if ( notice != null )
+			Bad( notice );
 		Report( gameReport );
 		if ( selection.Edition == GameEdition.ThemeParkInc && gameReport is { IsUsable: true } )
 		{
@@ -283,6 +294,7 @@ internal sealed class SetupWizard : IDisposable
 		gamePath = path;
 		selection.Select( selection.Edition, path );
 		gameReport = null;
+		notice = null;
 		inspectionCancellation?.Cancel();
 		pendingInspection = path.Trim().Length > 0 ? path : null;
 	}

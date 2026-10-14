@@ -50,7 +50,6 @@ public class DesktopEditionStarterTests
 			Assert.IsFalse( GameInstallation.Inspect( root, (GameEdition)77 ).IsUsable );
 			Directory.Delete( Path.Combine( root, "Data/levels/jungle" ) ); File.Delete( Path.Combine( root, "Data/Ver.txt" ) );
 			Assert.IsFalse( GameInstallation.Inspect( root, GameEdition.ThemeParkInc ).IsUsable );
-			Assert.IsTrue( GameInstallation.Inspect( root ).IsUsable, "Legacy structural inspector stays unchanged." );
 			Assert.IsFalse( GameInstallation.Inspect( root, GameEdition.ThemeParkWorld ).IsUsable, "An ambiguous TPI theme cannot qualify as explicitly selected TPW." );
 		} );
 	}
@@ -76,6 +75,29 @@ public class DesktopEditionStarterTests
 		foreach ( var mode in new[] { "--headless", "--inspect-model", "--sandbox", "--front-end", "--load-original-level", "--no-autorun", "--advisor-say", "--advisor-response", "--visit-park", "--park-resume-file", "--capture-camera" } )
 			Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { mode } ) );
 		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { "--setup", "--m3-gate" } ) );
+		foreach ( var mode in new[] { "--sandbox", "--front-end", "--load-original-level", "--advisor-say", "--visit-park" } )
+			Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { "--setup", mode } ), mode );
+	}
+
+	[TestMethod]
+	public void SetupWithExplicitToolModeRefusesBeforeAnyWindow()
+	{
+		foreach ( var mode in new[] { "--sandbox", "--front-end", "--load-original-level", "--advisor-say", "--visit-park", "--m3-gate" } )
+			StringAssert.Contains( Assert.ThrowsException<ArgumentException>( () => Game.ResolveDesktopGameFolder( new[] { "--setup", mode }, null,
+				( _, _ ) => throw new AssertFailedException( "A conflicting tool mode must not open the wizard." ),
+				() => throw new AssertFailedException( "A conflicting tool mode must not search." ) ) ).Message, "--setup" );
+	}
+
+	[TestMethod]
+	public void SavedThemeParkWorldFolderWithThemeParkIncDataOpensWizardInsteadOfStartingAsTpw()
+	{
+		WithFolder( true, root => WithConfig( root, _ => new SetupSettings( root, null ).Save( SetupSettings.GetDefaultPath() ), resolve =>
+		{
+			Settings.Default.GamePath = "live-prior";
+			var (args, wizards) = resolve( Array.Empty<string>() );
+			Assert.AreEqual( 1, wizards, "A saved Theme Park Inc folder is not a usable Theme Park World folder." ); Assert.IsNull( args );
+			Assert.AreEqual( "live-prior", Settings.Default.GamePath );
+		}, ( _, _ ) => null ) );
 	}
 
 	/// <summary>Runs the real resolver against a throw-away configuration directory; the callbacks see every wizard and discovery call.</summary>
@@ -220,9 +242,18 @@ public class DesktopEditionStarterTests
 				Settings.Default.GamePath = "live-prior";
 				Assert.IsNull( Game.ResolveDesktopGameFolder( new[] { "--setup" }, null, ( _, _ ) => null ) );
 				Assert.AreEqual( "live-prior", Settings.Default.GamePath ); CollectionAssert.AreEqual( bytes, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );
-				Assert.ThrowsException<DirectoryNotFoundException>( () => Game.ResolveDesktopGameFolder( new[] { "--setup" }, null, ( _, _ ) => new( Path.Combine( root, "missing" ), null, GameEdition.ThemeParkInc, "science" ) ) );
+				// A stale choice keeps the player in the wizard, with their typed path and a reason, and never stops the app.
+				var asked = 0;
+				Assert.IsNull( Game.ResolveDesktopGameFolder( new[] { "--setup" }, null, ( offered, discovery ) =>
+				{
+					if ( asked++ == 0 ) return new( Path.Combine( root, "missing" ), null, GameEdition.ThemeParkInc, "science" );
+					Assert.AreEqual( GameEdition.ThemeParkInc, offered.SelectedEdition ); Assert.AreEqual( Path.Combine( root, "missing" ), offered.ThemeParkIncPath );
+					Assert.IsNotNull( discovery?.Notice );
+					return null;
+				} ) );
+				Assert.AreEqual( 2, asked );
 				Assert.AreEqual( "live-prior", Settings.Default.GamePath ); CollectionAssert.AreEqual( bytes, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );
-				Assert.ThrowsException<ArgumentException>( () => Game.ResolveDesktopGameFolder( new[] { "--setup", "--front-end" }, null, ( _, _ ) => new( root, null, GameEdition.ThemeParkInc, "science" ) ) );
+				Assert.ThrowsException<ArgumentException>( () => Game.ResolveDesktopGameFolder( new[] { "--setup", "--front-end" }, null, ( _, _ ) => throw new AssertFailedException( "No window for a conflicting mode." ) ) );
 				CollectionAssert.AreEqual( bytes, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );
 				var args = Game.ResolveDesktopGameFolder( new[] { "--setup" }, null, ( _, _ ) => new( root, null, GameEdition.ThemeParkInc, "science" ) );
 				CollectionAssert.AreEqual( new[] { "--load-original-level", "science" }, args );

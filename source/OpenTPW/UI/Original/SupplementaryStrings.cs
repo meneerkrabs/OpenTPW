@@ -82,6 +82,7 @@ public enum OpenTpwText
 	ExperimentalFolder,
 	ExperimentalWorld,
 	ExperimentalNotUsable,
+	InspectionTimedOut,
 	BonusFolder,
 	BonusNotFound,
 	EnhancedQuality,
@@ -260,6 +261,13 @@ public static class SupplementaryStrings
 			"Ce dossier ne contient pas de mondes Theme Park Inc.",
 			"Dieser Ordner enthält keine Theme Park Inc-Welten.",
 			"Den här mappen innehåller inga Theme Park Inc-världar." },
+		[OpenTpwText.InspectionTimedOut] = new[] {
+			"Checking this folder took too long. Try again, or choose a folder on a local drive.",
+			"Det tog for lang tid at tjekke denne mappe. Prøv igen, eller vælg en mappe på et lokalt drev.",
+			"Het controleren van deze map duurde te lang. Probeer het opnieuw of kies een map op een lokale schijf.",
+			"La vérification de ce dossier a pris trop de temps. Réessayez ou choisissez un dossier sur un disque local.",
+			"Die Prüfung dieses Ordners hat zu lange gedauert. Versuchen Sie es erneut oder wählen Sie einen Ordner auf einem lokalen Laufwerk.",
+			"Det tog för lång tid att kontrollera mappen. Försök igen eller välj en mapp på en lokal enhet." },
 		[OpenTpwText.BonusFolder] = new[] { "Bonus content:", "Bonusindhold:", "Bonusinhoud:", "Contenu bonus :", "Bonusinhalte:", "Bonusinnehåll:" },
 		[OpenTpwText.BonusNotFound] = new[] {
 			"No bonus content was found in this folder or zip file.",

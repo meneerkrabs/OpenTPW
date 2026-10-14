@@ -604,8 +604,8 @@ internal static class Game
 	internal static string[]? ResolveDesktopGameFolder( string[] args, string? commandLinePath, Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?> runWizard,
 		Func<InstallationDiscoveryResult>? searchOverride = null )
 	{
-		if ( args.Contains( "--setup" ) && DesktopSetupSelection.HasHeadlessGate( args ) )
-			throw new ArgumentException( "Choose --setup or a headless --m3-gate/--m4-gate command; setup cannot replace an explicit tool start." );
+		if ( args.Contains( "--setup" ) && DesktopSetupSelection.HasExplicitMode( args ) )
+			throw new ArgumentException( "Choose --setup or an explicit tool mode (such as --sandbox, --front-end, --load-original-level or --m3-gate); setup cannot replace an explicit tool start." );
 		var setupPath = SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( setupPath );
 		InstallationDiscoveryResult? discovery = null;
@@ -644,7 +644,8 @@ internal static class Game
 			foreach ( var (path, source) in new[] { (saved.GamePath, GamePathSource.Saved), (LegacySettings.GamePath, GamePathSource.Legacy) } )
 			{
 				if ( string.IsNullOrWhiteSpace( path ) ) continue;
-				var inspected = InstallationDiscovery.InspectAsync( path ).GetAwaiter().GetResult();
+				// As Theme Park World: a folder with Theme Park Inc data must not pass as TPW and then fail the edition check at start.
+				var inspected = InstallationDiscovery.InspectAsync( path, GameEdition.ThemeParkWorld ).GetAwaiter().GetResult();
 				if ( inspected.Reports.FirstOrDefault() is { IsUsable: true } report )
 				{
 					resolved = (report.Path, source);
@@ -690,9 +691,10 @@ internal static class Game
 	private static string[]? RunStarter( string[] args, SetupSettings saved, string setupPath, InstallationDiscoveryResult? discovery,
 		Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?> runWizard )
 	{
-		for ( var attempt = 0; ; attempt++ )
+		var offered = saved;
+		while ( true )
 		{
-			var chosen = runWizard( saved, discovery );
+			var chosen = runWizard( offered, discovery );
 			if ( chosen == null )
 			{
 				Log?.Trace( "Setup closed without choosing a game folder." );
@@ -704,10 +706,13 @@ internal static class Game
 			var check = InstallationDiscovery.InspectAsync( chosen.GamePath, chosen.Edition ).GetAwaiter().GetResult();
 			if ( check.Reports.FirstOrDefault() is not { } report || !selection.AcceptInspection( selection.Revision, report ) || !selection.CanStart )
 			{
-				// A timed-out or stale re-inspection asks again rather than stopping the app.
-				if ( attempt >= 2 )
-					throw new DirectoryNotFoundException( "The selected edition folder or world is no longer available." );
-				discovery = null;
+				// A timed-out or stale re-inspection keeps the player in the wizard, with the typed choice and a reason, rather than stopping the app.
+				var notice = check.TimedOut ? "Checking the selected folder took too long. Try again." : "The selected edition folder or world is no longer available.";
+				Log?.Warning( notice );
+				offered = chosen.Edition == GameEdition.ThemeParkInc
+					? saved with { SelectedEdition = chosen.Edition, ThemeParkIncPath = chosen.GamePath, ThemeParkIncWorld = chosen.World }
+					: saved with { SelectedEdition = chosen.Edition, GamePath = chosen.GamePath };
+				discovery = new InstallationDiscoveryResult( Array.Empty<InstallationReport>(), false, null ) { Notice = notice };
 				continue;
 			}
 			args = selection.LaunchArguments( args );

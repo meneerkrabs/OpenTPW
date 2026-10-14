@@ -12,7 +12,8 @@ saved choice, as before the edition choice existed. In this order; the first tha
 1. `--game-path <folder>` on the command line.
 2. `OPENTPW_GAME_PATH`.
 3. The saved choice in `setup.json` (below): for Theme Park World the saved `gamePath`,
-   which must still pass inspection; for the experimental Theme Park Inc the saved folder
+   which must still pass inspection as Theme Park World (a folder holding Theme Park Inc
+   data opens the window instead, as do the old setting and detected folders); for the experimental Theme Park Inc the saved folder
    and world, which start that world directly.
 4. The folder in the old application setting (`LegacySettings.GamePath`, read from the
    old settings file only, whose default is `C:\Program Files (x86)\Bullfrog\Theme Park World`).
@@ -29,7 +30,10 @@ opens only:
 - on a first start, when none of the above resolves a usable folder;
 - when the saved Theme Park Inc folder or world is missing or invalid (it asks again
   instead of stopping with an error), which includes a re-inspection that times out;
-- with `--setup`.
+- with `--setup`, which refuses with a message, before any window, when combined with an
+  explicit tool mode (`--sandbox`, `--front-end`, `--load-original-level`, `--m3-gate`, ...).
+  If the re-inspection after the choice fails or times out, the window stays open with the
+  typed folder and the reason instead of stopping.
 
 The first two are developer overrides and are used as given, so a wrong path still
 fails with the old message. Every other folder must pass `GameInstallation.Inspect`,

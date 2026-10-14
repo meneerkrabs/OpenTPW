@@ -4,7 +4,11 @@ using System.Text.Json;
 namespace OpenTPW;
 
 /// <summary>Setup operation metadata; dialog selections are inspected separately before use.</summary>
-internal sealed record InstallationDiscoveryResult( IReadOnlyList<InstallationReport> Reports, bool TimedOut, string? Error );
+internal sealed record InstallationDiscoveryResult( IReadOnlyList<InstallationReport> Reports, bool TimedOut, string? Error )
+{
+	/// <summary>A reason the setup window opens again (a stale or timed-out choice), shown above the folder choice.</summary>
+	public string? Notice { get; init; }
+}
 
 /// <summary>
 /// Filesystem probes can block inside the OS on an unavailable mounted drive. Isolate discovery
@@ -44,7 +48,8 @@ internal static class InstallationDiscovery
 		var count = 0;
 		foreach ( var path in paths )
 		{
-			var report = edition is { } selected ? GameInstallation.Inspect( path, selected ) : GameInstallation.Inspect( path );
+			// A search finds Theme Park World only: a Theme Park Inc folder must not be offered or saved as TPW.
+			var report = edition is { } selected ? GameInstallation.Inspect( path, selected ) : args[0] == SearchCommand ? GameInstallation.Inspect( path, GameEdition.ThemeParkWorld ) : GameInstallation.Inspect( path );
 			if ( args[0] == InspectCommand || report.IsUsable )
 			{
 				Console.WriteLine( JsonSerializer.Serialize( report ) );
@@ -124,7 +129,7 @@ internal static class InstallationDiscovery
 		{
 			return new( reports, !cancellation.IsCancellationRequested, cancellation.IsCancellationRequested ? "Search cancelled." : "Automatic search timed out." );
 		}
-		catch ( Exception exception ) when ( exception is System.ComponentModel.Win32Exception or IOException or InvalidOperationException or JsonException )
+		catch ( Exception exception ) when ( exception is System.ComponentModel.Win32Exception or IOException or InvalidOperationException or JsonException or InvalidDataException )
 		{
 			return new( reports, false, exception.Message );
 		}

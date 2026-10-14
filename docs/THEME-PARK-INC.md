@@ -59,6 +59,14 @@ no Theme Park Inc interface, front end, economy, rules or native save writing, a
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
+The browser setup also offers the same experimental route with an explicit Arabian,
+Science or Water choice and the player's own extracted `Data` folder. It imports the
+selected theme before checking the existing edition evidence, then enters the existing
+experimental world/HUD path without a Theme Park World lobby. Its capability restrictions
+are the same as the desktop slice. Synthetic startup/cache controls and a browser-project
+build cover the ingress; fresh original-data and browser rendering qualification are deferred.
+See [WEB.md](WEB.md#game-files-on-demand) for import retries and storage limits.
+
 **Edition capability policy.** `GameEditions.Capabilities` (Client/Setup/GameEdition.cs) is the one
 place that says what an edition's park runs. Theme Park World keeps every implemented system. The
 Theme Park Inc slice runs building and guests under an experimental HUD and refuses the systems whose

@@ -10,8 +10,8 @@ the interpreter. Sound plays through WebAudio, and saves, options, online files 
 stay in the browser between visits. Movies and the developer panels are not in the browser yet
 (see the end of this page).
 
-Nothing from the game is shipped or uploaded: the player chooses their own Theme Park World
-folder, and the page copies the files the front end needs into the runtime's memory.
+Nothing from the game is shipped or uploaded: the player chooses their own game
+folder, and the page copies the files needed for the selected start into the runtime's memory.
 
 ## Building and running
 
@@ -102,6 +102,44 @@ dotnet run --project tools/AssemblySurface -- path/to/OpenTPW.dll Veldrid
 ```
 
 ### Game files on demand
+
+The setup screen also offers an explicit **experimental Theme Park Inc** start in Arabian,
+Science or Water. Choose the extracted installation folder containing `Data`, then choose
+the theme before importing or pressing Play. That theme's complete browser-supported file
+set is copied at startup. The existing edition detector checks its identity or structure,
+and an edition/theme mismatch refuses before renderer creation. Before deferral,
+the complete source list retains the native detector's actual theme-directory witnesses.
+A structural Theme Park Inc list refuses the default Theme Park World choice immediately.
+Only observed directory names are preserved under the actual copied Data root before
+detection; no marker files, media bytes or loaded-theme flags are created for them.
+This also preserves mixed-source classification and the unchanged Standard.sam identity
+precedence. Up to seven real witness filenames may remain as metadata in the existing
+cache manifest when their media payload is excluded; they stay unread, unstored and
+unhashed. Secondary planning and cache reopening retain those full-source witnesses. No Theme Park World lobby
+is opened for Theme Park Inc. The browser calls the same `GameFlow.StartLevel` route as
+desktop `--load-original-level`, including its existing shipped-layout eligibility.
+The experimental HUD and capability policy stay unchanged: free building and guests, no
+economy, staff, research, missions, original game save writing, tickets or sharing. OpenTPW's own
+layout checkpoint is separate from an original game save.
+
+A failed setup import does not mark the selected theme loaded. Before a retry, only the
+runtime-owned `/game` staging tree and import readiness/speech tracking are reset; kept
+original files, `/save`, `/online` and `/config` are retained. Play requires every selected
+theme entry to be kept; missing or size-mismatched kept data still goes through the existing
+folder recovery reader. Already verified individual files can remain kept after a partial
+import, but that does not make the theme ready. Once a renderer has been created, choosing
+another installation or retrying startup requires a page reload, including after a later
+startup exception; this route does not dispose/recreate an active world.
+
+`BrowserStartupTests`, `test_web_startup.mjs` and the originals-store tests cover synthetic
+edition refusal, staging isolation, explicit dispatch, complete theme import, retry and
+cache reopening. Independent review also executes the actual page module and registered
+folder handler with synthetic DOM and runtime-export stubs, covering selected-theme dispatch,
+partial-copy retry, refusal before cache work and the unchanged TPW lobby route. The browser
+project compiles this route. These are CPU and handle-stub
+controls: no fresh original-data, actual browser gameplay, WebGL rendering or original-game
+parity qualification is claimed. The existing deferred Theme Park World park-copy failure
+behavior is outside this initial Theme Park Inc import path.
 
 The page copies the files the front end needs when the player chooses the folder, and keeps
 the theme folders below `levels` (about 10 MB each without sound) for later. Starting, loading

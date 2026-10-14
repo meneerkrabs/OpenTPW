@@ -104,7 +104,8 @@ internal sealed partial class SandboxSmokeTest
 				if ( tour == null || tour.Boarded == 0 || tour.Riders != 0 || tour.Released != tour.Boarded || ride.Visitors.BoardedTotal != ride.Visitors.ReleasedTotal || !tour.Cars.Any( car => car.State == TourCar.StateDocked ) )
 					return;
 				Require( ride.Visitors.BoardedTotal == ride.Visitors.ReleasedTotal, $"the guests were released ({ride.Visitors.BoardedTotal}/{ride.Visitors.ReleasedTotal})" );
-				Require( !run.Guests.Any( guest => guest.State == GuestState.Using ), "no spawned guest is stuck in Using" );
+				// a spawned guest that wandered off to another ride (for example Aztec Mayhem) is legitimately Using that one: only the tour ride's own guests count
+				Require( !run.Guests.Any( guest => guest.State == GuestState.Using && guest.AttractionId == ride.Runtime.AttractionId ), "no spawned guest is stuck in Using the tour ride" );
 				Require( ride.Runtime.Script!.UnimplementedEffects.GetValueOrDefault( Opcode.TOUR ) == 0, "every TOUR command reached the controller" );
 				level.Objects.Remove( ride );
 				Require( level.Objects.ScriptWorld.Tours.Controllers.Count == 0, "removing the ride removes its controller" );

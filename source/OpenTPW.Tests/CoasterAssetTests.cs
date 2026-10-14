@@ -150,7 +150,16 @@ public class CoasterAssetTests
 	/// deleting removes every pylon without a refund.
 	/// </summary>
 	[TestMethod]
-	public void GuestsRideACoasterBuiltHeadlesslyOnJungle()
+	public void GuestsRideACoasterBuiltHeadlesslyOnJungle() => RideScenario( deleteWhileRiding: false );
+
+	/// <summary>
+	/// Deleting a running coaster (and removing its station) while guests ride, sit seated at the station and wait on the admission ring releases every
+	/// one of them: nobody stays in the Using state and the bridge's boarded and released totals match.
+	/// </summary>
+	[TestMethod]
+	public void DeletingARunningCoasterReleasesItsRidersAndAdmittedGuests() => RideScenario( deleteWhileRiding: true );
+
+	private static void RideScenario( bool deleteWhileRiding )
 	{
 		var park = OriginalPark.Load( "jungle", readShippedSave: false );
 		var terrain = new OriginalParkGrid( park );
@@ -211,6 +220,27 @@ public class CoasterAssetTests
 			guest.State = GuestState.GoingToRide;
 			return guest;
 		} ).ToArray();
+
+		if ( deleteWhileRiding )
+		{
+			// Run until guests are on board or seated and others are admitted or queued, then take the coaster away mid-ride.
+			var cut = false;
+			for ( var tick = 0; tick < 240 * 60 && !cut; tick++ )
+			{
+				guests.Tick( Tick );
+				runtime.Simulate( Tick );
+				cut = ride.RidersOnBoard >= 2 && (ride.AdmissionCount > 0 || spawned.Any( guest => guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.GoingToRide ));
+			}
+			Assert.IsTrue( cut, "guests were riding while others waited" );
+			Assert.IsTrue( spawned.Any( guest => guest.State == GuestState.Using ), "a guest is using the coaster" );
+			builder.Delete();
+			runtime.Stop();
+			for ( var tick = 0; tick < 120 * 60; tick++ )
+				guests.Tick( Tick );
+			Assert.IsFalse( spawned.Any( guest => guest.State == GuestState.Using ), $"no guest stays in Using: {string.Join( ", ", spawned.Select( guest => guest.State ) )}" );
+			Assert.AreEqual( runtime.Visitors.BoardedTotal, runtime.Visitors.ReleasedTotal, "every boarded guest was released" );
+			return;
+		}
 
 		var peakRiders = 0;
 		var ranWithRiders = false;

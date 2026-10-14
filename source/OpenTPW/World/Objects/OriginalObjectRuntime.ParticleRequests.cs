@@ -8,9 +8,12 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>Only the latest EVENT1/2 attempt: polling diagnostics, not a retained queue or particle delivery interface.</summary>
 	public ParticleEventAttempt? LastParticleEventAttempt { get; private set; }
 
+	/// <summary>Raised for every prepared EVENT1/2 request (not for refusals), so a particle renderer can start the effect; null in headless hosts.</summary>
+	internal static event Action<ParticleEventRequest>? ParticleRequested;
+
 	internal void BindParticlePlacement(ObjectPlacement placement) => particlePlacement = placement;
 
-	// [APPROX:PTCL-901] one owner-local managed preparation snapshot is replaced at EVENT1/2 and cleared on Stop; not a native particle pool, lifetime, delivery stream or save state
+	// [APPROX:PTCL-908] only EVENT 1/2 start particles; a refusal (negative or unresolved key, scoped effect, headless runtime) starts nothing; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
 	internal void ObserveParticleEvent(RideEffectCall call)
 	{
 		if (stopped || call.Opcode != Opcode.EVENT || call.Argument(0) is not (1 or 2)) return;
@@ -33,6 +36,9 @@ public sealed partial class OriginalObjectRuntime
 					new ParticleEventRequest(AttractionId, call.VM.ScriptId, type, key, effect, 1000, pose.EnginePosition!.Value,
 						pose.EngineUnitDirection, pose.AttributeIndex, pose.NodeIndex));
 		}
+		// [BIN:STP-PPC:0x100AF9E8 EVENT dispatcher] fire and forget: the handle is discarded and the effect does not follow the node
+		if (LastParticleEventAttempt is { Request: { } request })
+			ParticleRequested?.Invoke(request);
 	}
 
 	private void ClearParticleRequests()

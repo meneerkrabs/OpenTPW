@@ -218,12 +218,12 @@ DUR ≤ 30 s. Every term is read at run time:
 | --- | --- | --- |
 | T | 248 ms | `ParkCalendar.TurnMilliseconds` |
 | CAP, DUR | 5, 30 s | the script's `VAR_CAPACITY`, `VAR_DURATION` |
-| P (loop period) | 1 + ⌈500 / 248⌉ = **4** | the operand of the loop WAIT, read from the script (speed 1, BOARD-plan A4) |
+| P (loop period) | 1 + ⌈454 / 248⌉ = **3** | the operand of the loop WAIT, read from the script, divided by the script speed as WAIT does (0xb0658): jungle Bouncy's `InitSpeed` 60 gives 0.5 + 60/100 = 1.1, so WAIT 500 lasts 454 ms (Rides register round, October 14; at speed 1 it was 4) |
 | R (slot hold) | **121** | the UNBOUNCE rule: polls P·j + 1 turns after the BOUNCE; free once deadline < now and (now − start) mod 1000 < 200. For 8 ≤ DUR ≤ 30 this is 4·DUR + 1; for DUR ≤ 7 it is 29 turns, so the gate uses the rule, not the closed form |
-| H₀ | 1 + 3 + 11 + 1 + 1 + P = **21** | removal, move-up wait and move, one interlude, call, notice, next admission slice (BOARD-plan §7.1; `GuestSimulation` constants) |
+| H₀ | 1 + 3 + 11 + 1 + 1 + P = **20** | removal, move-up wait and move, one interlude, call, notice, next admission slice (BOARD-plan §7.1; `GuestSimulation` constants) |
 | w | **20** | the original's state-13 walk from slot 0 to the stand point, from its traced steering ([WALK-plan.md](reverse/WALK-plan.md) §9, `tools/ppc-analysis/lanes/walk/walk_evidence.py`): 12 with slot 0 at the entrance edge, 20 with the slot axis reversed; the link compass is not pinned, so the larger |
 | w₂ | **15** | the original's state-12 move-up from slots 1–3 to slot 0 (WALK-plan §9) |
-| H | 21 + 20 + 15 = **56** | H₀ + w + w₂ |
+| H | 20 + 20 + 15 = **55** | H₀ + w + w₂ |
 | C | **9** per queue cell | one queue walk across k cells to a slot takes at most k × C + w₂ updates: the bounded enumeration of OpenTPW's port of the traced step (WALK-plan §15), `[APPROX:GATE-006]` |
 | J(p) | (N − cell of p) × 9 + 15 | the join walk from the join cell to the slot of position p: **69** turns at p = 0 for N = 6, 24 at p = 20 |
 
@@ -265,7 +265,9 @@ toilets, other ride types, RunsContinuously 0, DUR ≥ 31) are judged by the two
 rules only, and the row lists them with the reason.
 
 Reported: τ_max = CAP·H + R + 1 − (DUR + 1 s)/T = **277 turns = 68.696 s** (QUEUE-plan
-§9b form) and W_max = W(Qmax − 1) = 24 + 1,782 = **1,806 turns = 447.888 s**. The τ the run implies
+§9b form) and W_max = W(Qmax − 1) = 24 + 1,782 = **1,806 turns = 447.888 s**. These figures and the baseline
+below were taken at script speed 1 (P 4, H 56). Since the rides register round (October 14) the loop WAIT follows the
+ride's script speed, so Belly Bounce has P 3 and H 55, and τ_max is 272 turns = 67.456 s. The τ the run implies
 (`τ_measured`) is evidence, not a threshold. The walk terms w and w₂ come from WALK-plan
 §12 (the original's speed floor), and the GATE-003 tag (τ = 0) is gone. The two
 walk-related assumptions of review GATE-V4 (B1/B2) are retired by WALK-I:
@@ -311,10 +313,10 @@ least one park-hour update, because a turn is 3,750 park-clock seconds and an ho
   1 + rides × max `WorkDuration` turns of the hired mechanics' grades. For the gate's
   grade-1 mechanic: 1 + 1 × 60 = **61 turns** (~15 s). An event whose window ends after
   the run is reported as pending.
-- **Litter.** `ParkEconomy.CleanLitter` runs at every hour update with every available
-  handyman. Litter present at the end of a tick must therefore be smaller (or zero)
-  after the next turn boundary. Sales add litter earlier in the same tick, so this can
-  misfire only if one tick's sales exceed an hour of cleaning.
+- **Litter.** Litter lies on cells (ORACLE.md 7.15). At each turn's dispatch a free handyman
+  claims the first unclaimed littered cell and sweeps it for `WorkDuration[grade]` turns. Litter
+  left unclaimed while a handyman is free on two turn boundaries in a row is a violation; drops
+  and sweeps are counted per change through `ParkLitter.Changed`.
 
 **Hashes.** `GuestSimulation.ComputeStateHash` (raw guest hash) includes guest
 attraction ids. Since the DET node these are allocated per park by its

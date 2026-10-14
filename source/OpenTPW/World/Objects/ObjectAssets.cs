@@ -124,7 +124,7 @@ public static class ObjectAssets
 	private static bool IsFinite( System.Numerics.Vector3 value ) => float.IsFinite( value.X ) && float.IsFinite( value.Y ) && float.IsFinite( value.Z );
 
 	/// <summary>Directories searched for an object's textures: its archive, then the theme's shared textures (game data).</summary>
-	// [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order
+	// [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex. PC: 0x461a60 → 0x46e670 sets the model directory, <dir>\textures and <theme>\sharetex (0x46e650); the lookup 0x46ead0 tries <dir>\textures\<name> as .wct then .tga, then assigns sharetex without an existence check, else logs "Could not load texture…"; GTexture is only set by the coaster loader 0x42fad0; stexture/ssharete are picked in 0x54dcf0 from untraced globals 0x78d968, 0x785874 and 0x79d86c & 0x800 (low-detail sets unused here) — evidence needed: those three globals
 	public static IEnumerable<(BaseFileSystem FileSystem, string Directory)> TextureDirectories( ObjectCatalogEntry entry )
 	{
 		yield return (entry.FileSystem, $"{entry.ArchivePath}/textures");

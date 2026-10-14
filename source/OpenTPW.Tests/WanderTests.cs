@@ -95,13 +95,13 @@ public class WanderTests
 		Assert.AreEqual( new GuestWander.Destination( (2, 0), 7, 9 ), GuestWander.Pick( grid, (1, 0), Draws( 0, 7, 9 ) ) );
 	}
 
-	private static GuestDecision.Input Input( uint turn = 500, uint activity = 450, uint decision = 400, float happiness = 50, float illness = 0, int exit = 50, bool closed = false, uint draw = 2 ) =>
-		new( turn, activity, decision, happiness, illness, exit, closed, draw );
+	private static GuestDecision.Input Input( uint turn = 500, uint activity = 450, uint decision = 400, float happiness = 50, float illness = 0, int exit = 50, bool closed = false, uint draw = 2, float litter = 0 ) =>
+		new( turn, activity, decision, happiness, illness, litter, exit, closed, draw );
 
-	private static (GuestDecision.Outcome Outcome, string Calls) Decide( GuestDecision.Input input, bool wayOut = true, bool ride = true, bool wander = true )
+	private static (GuestDecision.Outcome Outcome, string Calls) Decide( GuestDecision.Input input, bool wayOut = true, bool ride = true, bool wander = true, bool bin = false )
 	{
 		var calls = "";
-		var outcome = GuestDecision.Decide( input, () => { calls += "L"; return wayOut; }, () => { calls += "C"; return ride; }, () => { calls += "W"; return wander; } );
+		var outcome = GuestDecision.Decide( input, () => { calls += "B"; return bin; }, () => { calls += "L"; return wayOut; }, ( _, _ ) => { calls += "P"; return true; }, () => { calls += "C"; return ride; }, () => { calls += "W"; return wander; } );
 		return (outcome, calls);
 	}
 
@@ -241,7 +241,7 @@ public class WanderTests
 		var park = new GuestSnapshotTests.Rig();
 		GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.Guests.Any( guest => guest.Activity != GuestActivity.None ), 0, 40_000 );
 		var snapshot = park.Simulation.CaptureSnapshot();
-		Assert.AreEqual( 3, snapshot.SchemaVersion );
+		Assert.AreEqual( GuestSimulationSnapshot.CurrentSchemaVersion, snapshot.SchemaVersion );
 		Assert.IsTrue( snapshot.Guests.Any( guest => guest.Activity != GuestActivity.None ) );
 		Assert.IsTrue( snapshot.Guests.All( guest => guest.DecisionTimer == null ), "schema 3 writes no decision timer" );
 		var loaded = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( snapshot ) );

@@ -35,7 +35,7 @@ public sealed partial class ParkHud
 			: new (UIStrings Label, Func<string> Value)[]
 			{
 				(UIStrings.PeopleInPark, () => (level.Guests?.GetStatistics().InPark ?? 0).ToString()),
-				(UIStrings.BankBalance, () => MoneyText),
+				(UIStrings.BankBalance, () => BalanceWithCurrency),
 				(UIStrings.ParkValue, () => (Status.EconomySource as ParkEconomy)?.ParkValue.ToString() ?? strings.Extra( OpenTpwText.NotAvailable )),
 				(UIStrings.ParkRating, () => (Status.EconomySource as ParkEconomy)?.ParkRating.ToString() ?? strings.Extra( OpenTpwText.NotAvailable )),
 				(UIStrings.AllStaff, () => (Status.EconomySource as ParkEconomy)?.Staff.Members.Count.ToString() ?? "0"),

@@ -49,7 +49,7 @@ range validation is a separate input/display failure: at the supported bound it
 can refuse a tick even though the gameplay digest excludes the counter. Hash
 equality alone does not establish that display metadata passes its range checks.
 
-Native visitor timing and display units remain untraced (`GUEST-920`, `UI-908`).
+Native visitor timing remains untraced (`GUEST-920`). The original visitors list's "Time In Park" column shows whole hours (ticks → seconds / 36e9); OpenTPW's detail row (`[EXT:overview-detail-rows]`) shows HH:MM:SS instead.
 `GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,
 known/unknown codec continuation, both validators, invalid/overflow rejection,
 the live UI model and hash exclusion using synthetic fixtures only. No original
@@ -236,7 +236,7 @@ home (21) → removed.
 | Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts from level 70 (GUEST-009) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
-| Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step, pranks and the presentation turns are not modelled (GUEST-010, GUEST-007) |
+| Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
 | Boredom | `BoredomThreshold` read as seconds since the last ride |
 | Ride outcome | the original's bands and illness gain (oracle F24); a ride does not extend the exit counter |
 | Queues | traced; see [Queues](#queues) and its `QUEUE-NNN` register |
@@ -274,7 +274,7 @@ happiness **50**, thirst and hunger a random 0..49, toilet 0..29, illness and li
 its thing id (OpenTPW: its guest id, WALK-010):
 
 - the exit counter loses 1 (so one count is 4 park turns = 0.992 s, in every state, and it runs negative after 0);
-- the cell's environment words move happiness, illness and hunger (not modelled: 0, GUEST-006);
+- the cell's environment words move happiness, illness and hunger (vomit, stinkbombs, entertainers and guards so far, [Pranks](#pranks); GUEST-006);
 - on a turn that is also a multiple of 16, toilet +1, hunger +2 and thirst +2 (all clamped to 0..100). A multiple of 16 has its low two bits 0, so **only a guest whose id is a multiple of four ever grows**;
   three in four guests keep the needs they started with unless they use something;
 - each of illness, hunger, thirst and toilet at a truncated byte of exactly 100 costs 1 happiness;
@@ -282,7 +282,7 @@ its thing id (OpenTPW: its guest id, WALK-010):
 
 Using an attraction then applies its own effects after the outcome of [Attraction choice](#attraction-choice): thirst and hunger fall by the type's `ThirstEffect` / `HungerEffect`, illness and happiness rise by
 `VomitEffect` / `HappinessEffect` (clamped); a toilet sets the toilet meter to 0 (GUEST-005). Illness has no decay of its own. A guest at hunger 80 at a shop with a hunger effect of 50 goes to 30.
-Open: the thought selection (hunger and thirst above 90, a single need above 99, happiness above 99 or below 10; GUEST-009), the pranksters (GUEST-007), the draws (OpenTPW's own stream, DET-014).
+Open: the thought selection (hunger and thirst above 90, a single need above 99, happiness above 99 or below 10; GUEST-009), the draws (OpenTPW's own stream, DET-014).
 
 ### Lifecycle
 
@@ -298,12 +298,52 @@ Traced and executed (x86 findings X18, X19, [ORACLE.md](reverse/ORACLE.md) secti
 between deciding (state 6, `DoingNothing`) and walking to a wander destination (state 7, `WalkingAround`). Once per park turn in state 6 it draws one number R and acts on the first test that applies:
 
 1. **Cheering** when more than 100 turns have passed since its last activity and its happiness byte is above 80.
-2. **Vomiting** when its illness byte is 100 and R % 3 is 0: illness drops to 0.
-3. **Leaving** by the [lifecycle](#lifecycle) test.
-4. **R % 3 = 0:** a major decision, if more than 30 turns have passed since the decision stamp (the turn it last entered a queue or last failed a decision). It picks an attraction (state 10), or it pauses ("can't decide"), loses `SmallHappinessChange` and stamps the turn.
-5. **R % 3 = 1:** a wander. The guest takes R′ % 5 + 1 random steps along the path links (never straight back while another way is open, one more step if it ends where it started) and walks the shortest route to a random point in the first quarter of the last cell. If there is no destination, it stamps the turn.
+2. **Vomiting** when its illness byte is 100 and R % 3 is 0: illness drops to 0 and vomit stays on its cell ([below](#litter)).
+3. **Litter** when its litter meter byte is at least 90: it walks to a bin in reach, or drops its litter on its cell and goes on ([below](#litter)).
+4. **Leaving** by the [lifecycle](#lifecycle) test.
+5. **Pranks** when the guest is a prankster and unhappy ([below](#pranks)); the decision goes on either way.
+6. **R % 3 = 0:** a major decision, if more than 30 turns have passed since the decision stamp (the turn it last entered a queue or last failed a decision). It picks an attraction (state 10), or it pauses ("can't decide"), loses `SmallHappinessChange` and stamps the turn.
+7. **R % 3 = 1:** a wander. The guest takes R′ % 5 + 1 random steps along the path links (never straight back while another way is open, one more step if it ends where it started) and walks the shortest route to a random point in the first quarter of the last cell. If there is no destination, it stamps the turn.
 
 An activity (cheering, vomiting, can't decide) holds the guest for ten park turns (the original's state 8). On arriving, a walking guest picks another destination with a chance of one in four, otherwise it decides again. A new park's guests make their first major decision at turn 31.
+
+### Litter
+
+Traced and executed (x86 findings X18, X20, X21, [ORACLE.md](reverse/ORACLE.md) section 7.15; [WANDER-plan.md](reverse/WANDER-plan.md) §6); implemented in `ParkLitter` and
+`GuestSimulation`. Every use of an attraction adds its `UsageInfo.LitterEffect` to the guest's litter meter (0..100; drinks and burgers 50, ice cream 25). In
+state 6 a guest whose meter byte is at least 90 looks for a litter bin (`UsageInfo.HoldsLitter`) less than 3 cells away (squared distance below 9) that a
+route reaches, the nearest first. It walks there (state 9) and throws its litter away, which sets the bin script's `VAR_TRIGGER` to 1
+(the bin's own sound and animation); with no bin in reach it drops its litter on its own cell (one of five
+kinds) and decides on. Either way the meter empties. Vomit lies on the cell where the guest was sick.
+
+A cell holds one item of litter: what falls on a littered cell is lost. Litter stays until a handyman sweeps it; it does not decay or spread. An online visit
+drops none. The handymen strike over litter when the littered cells exceed 0.2 of the path and queue cells. In a level the handymen patrol
+the paths and take the nearest unclaimed litter within their `DetectionRange` (2 to 5 cells by grade); each walks there and sweeps it for `WorkDuration`
+park turns from his arrival (ORACLE.md X23, WANDER-plan.md §4). A headless economy without a map takes the first unclaimed littered cell, scanning columns
+from the left.
+
+### Pranks
+
+Traced and executed (x86 findings X18 and X22, [ORACLE.md](reverse/ORACLE.md) section 7.16; [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PeepInfo.PrankeryLikelihood`
+guests in 100 (5 in the shipped balance) are pranksters, of one of three kinds by their id: stinkbombs, litter or balloons. In state 6 a prankster whose
+happiness byte is below 15 pranks when its flag beats a draw modulo 101: a stinkbomb on its cell (`StinkbombLikelihood` percent of the time, 25),
+litter on its cell, or another guest's balloon burst. A stinkbomb plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. OpenTPW's guests carry no balloons, so balloon
+pranksters never find a victim, and the advisor's prank lines are not modelled yet (GUEST-007).
+
+A prank calls the guards (tp.exe `0x508a30`, WANDER-plan.md §4), but only on a cell with security: a guard spreads `RegionFX[3]` (security 10,
+radius 3) where he stands, so a prankster within three cells of a guard is seen. Then the free guard (idle or patrolling) **nearest the staff HQ**
+is sent, and the HQ always sits at map cell (0, 0), so the guard nearest the map's corner goes, however far he is from the prankster. He walks
+to the prankster (cat_staff 136) and chases it for `GuardConstsPerGrade.WorkDuration` turns (10 to 75 by grade), re-routing when he arrives where
+it no longer is. On its cell he catches it if it is deciding, wandering, taking litter to a bin or walking to a ride (cat_staff 137): he carries it,
+out of sight, to the ticket booth (in OpenTPW the park entrance, as the booth lies off the paths) and sets it down there (cat_kids 128), and it
+heads for the exit. Like any leaving guest it is recalled on its next turn while its exit counter and happiness are above 0 and the park is
+open (the leaving handler `0x500a50`), so the guard's escort sends home only a guest that wanted to go anyway. A carried guest whose guard is dismissed or abandons the escort is removed from the park, as in the original.
+
+Vomit and stinkbombs spread their `RegionFX` row around their cell while they lie: every cell within the row's square radius gets the row's
+happiness, illness and hunger divided by its distance + 1, and a guest's needs phase adds those of its own cell (vomit: −1 happiness, +1 illness,
+−1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). Entertainers and guards carry their rows with them: an
+entertainer's `RegionFX[0]` adds 2 happiness on his cell and 1 beside it, a guard's `RegionFX[3]` the security above. The other sources (toilets,
+cameras, fireworks) are not modelled yet (GUEST-006).
 
 ### Walking
 
@@ -653,28 +693,24 @@ A ride whose script runs `ADDHEAD` shows each rider as a head hung on the model.
 Traced from the Feral Mac binary (`SimThemePark`, PowerPC):
 
 - `ADDHEAD` is `0x100B0E9C` and `DELHEAD` `0x100B0F90`, read from the RSE opcode table (`0x2F58` → `0x3F2A4`, 106 entries, [RSE-VM.md](RSE-VM.md)). `ADDHEAD` takes the script's head table (script +48, null: nothing) of length +76, draws a random slot until one holds 0 (none free: nothing), stores the visitor and hangs the head of head id slot + 1. `DELHEAD` zeroes every slot holding the visitor and takes its head down. [BIN:STP-PPC:0x100B0E9C] [BIN:STP-PPC:0x100B0F90]
-- A head id is the value of a dummy attribute record of the model whose type has flag `0x80`: `0x1019B298(model, mask, id)` returns the index of the record with that value and flag, or -1; `0x1019B56C` hangs the head on that record (record flag `0x2`, a sprite handle). The table length is the run of ids from 1, following the MIT fork's reported PC sizing rule (its `FUN_0044b220(thing, 0x80, id)` takes the ids upwards until -1; the MIT fork's docs, `maexah/OpenTPW` `docs/exe/park.md`, "The head table"). [BIN:STP-PPC:0x1019B298] [BIN:STP-PPC:0x1019B56C]
+- A head id is the value of an attribute record of the model whose type has flag `0x80`: `0x1019B298(model, mask, id)` returns the index of the FIRST record with that value and flag, or -1; `0x1019B56C` hangs the head on that record (record flag `0x2`, a sprite handle). [BIN:STP-PPC:0x1019B298] [BIN:STP-PPC:0x1019B56C]
+- **Record to node:** attribute record `i` belongs to node `header+0x46 + i` (`Unknown46 + i`, the rule the particle key resolver uses too); below the mesh count (`+0x44`) it is a mesh record, else a dummy record. Every shipped head record has type `0xb1`/`0xf1`, so it has flag `0x30` and a world matrix. The node name is irrelevant (the old `headNN`/`HeadN`/`Kid_NN`/`spriteposition NN` name rule is gone). Known data: `monkey.MD2` id 3 is node 10 `Head02` and id 5 `Head06`; `Bird.MD2` id 9 is node 2 `Head03`. [BIN:STP-PPC:0x1019AE64] [BIN:STP-PPC:0x1019B7CC]
+- **Per-script table:** the script init `0x100B2BA0` counts head ids from 1 until the lookup returns -1, allocates 4 bytes per id at script `+0x30` and stores the count at `+0x4C`. The init also runs for `SPAWNCHILD` (63) and `SPAWNSOUND` (64), so every script (root, child, sound) has its own table. [BIN:STP-PPC:0x100B2BA0] [BIN:STP-PPC:0x100B32D4]
+- **Slot draw:** `ADDHEAD` repeats `labs(worldRand() >> 1) % length` until a slot is free; the world generator `0x10105328` is `s * 1664525 + 1013904223` with `labs`. [BIN:STP-PPC:0x100B0E9C] [BIN:STP-PPC:0x10105328]
 - The table of a car type is sized by the same records: `0x100303A8` counts the flagged records (`0x1019B354`), prints "Car type %s can receive %d heads" and fills its node table (`0x1019B300`). [BIN:STP-PPC:0x100303A8] [BIN:STP-PPC:0x1019B354]
-- The head art is `esprites/Generic/Kidsheads` (the kid set's string `kidsheads` is loaded at `0x10069A70`). [BIN:STP-PPC:0x10069A70]
+- **Drawing** (`0x1019B6F8`): the head is hidden when its node has flag `0x8000` (frame -1); with node flag `0x400` rows 0 and 2 of the matrix are negated; the position is exactly the node's world translation (no offset). The direction is the camera expressed in the node's frame (general inverse, times the camera matrix), normalised and binned to the nearest of 7 elevation rows (30 degree steps from the local +Y pole) by 8 azimuths (45 degree steps); frame = 8 * row + column, the column forced to 0 at rows 0 and 6. The roll is `atan2(-m10, m11)` of the remaining rotation / 2 pi, so the sprite rotates and heads tilt with the seat or car. The scale property is 0.685 (default 1.0) and there is no animation. The art is `kidsheads`, or `costumeheads` when the visitor's `+0x24` is 2 (set index `+0x20`) [BIN:STP-PPC:0x100E8F70]. [BIN:STP-PPC:0x1019B6F8]
+- The head art is `esprites/Generic/Kidsheads` (the kid set's string `kidsheads` is loaded at `0x10069A70`). Each set's ESP slot 0 has 7 directions of 8 frames, direction-major (frame = direction * 8 + step; 56 frames, one set stores 55 because row 6 column 7 is never selected), so the original's 7 x 8 binning is exactly direction = elevation row and step = azimuth column. [BIN:STP-PPC:0x10069A70]
 
 Corpus facts (`RideHeadsCorpusTests`): all 308 associated scripts in the four-theme catalog are inspected (262 roots and 46 child/sound scripts); only the roots contain head commands. 31 scripts run `ADDHEAD`/`DELHEAD` in four themes (fantasy 8, hallow 9, jungle 6, space 8).
 Jungle head runs: Sun God 32, Crazy Ape 16, Mumbo 5, Rocky Racers 8, Tom Tom Twister 40, Eruption 16; the ferry 1, Inca Totem 13 and
 Aztec Mayhem 27 carry runs without `ADDHEAD`. Tubes Of Zob runs `ADDHEAD` but its model has no head id 1, so its table is null.
-Coaster and tour car models with head records: `CrocCar` 6, `ape` 2 (coaster3), `cart` 6 (minecart), `Bird` 9 and `Balloon` 9 (tourride).
+Coaster and tour car models with head records: `CrocCar` 6, `ape` 2 (coaster3), `cart` 6 (minecart), `Bird` 9 and `Balloon` 9 (tourride). Every head record in the ride and car models has flag `0x30` and a node inside its model.
 
-The PC sizing rule and reported measurements above are fork leads, not an independent decode of the current packed `tp.exe`. The Mac handlers were independently read; the record-to-node link and script-table allocation remain untraced.
+OpenTPW (`RideHeadSpace`, `HeadPresentation`, `RideHeadRenderer`): each script keeps its own head table over the model's records (the root's on the ride, child and sound scripts' on their first head opcode); `ADDHEAD` and `DELHEAD` update it through `RideVisitorBridge`. `RideHeadRenderer` draws from a list of head sources (visitor, node world matrix, node flags); the flat-ride source yields every table's hung heads. A rider is drawn only when its state is Using, its attraction id matches that ride and its head is up, as a kid head sprite (the rider's kid set, `GuestSpriteAtlas.LoadKidHeads`, TPC banks) at the node's world translation. `HeadPresentation` (GPU-free, unit-tested) computes the frame, roll and scale from the node matrix (in MD2 axes) and the camera; the quad is rotated by the roll. The rider's body is not drawn on the ride. Normal guest release removes its old slots; forced teardown clears every slot, including orphaned ids. This is host-owned presentation cleanup, not a traced original destructor rule. The coaster seats are a separate follow-up: a coaster head source can be added to the renderer's list.
 
-OpenTPW (`RideHeadSpace`, `RideHeadRenderer`): each attraction keeps a shared head table; `ADDHEAD` and `DELHEAD` update it through
-`RideVisitorBridge`; the renderer draws a rider only when its state is Using, its attraction id matches that ride, and its head is up as a kid head sprite
-(the rider's kid set, `GuestSpriteAtlas.LoadKidHeads`, TPC banks) at the position of the model node named after the head id
-(`headNN`, `HeadN`, `Kid_NN`, `spriteposition NN`). The rider's body is not drawn on the ride. Normal guest release removes its old slots; forced teardown clears every slot, including orphaned ids. This is host-owned presentation cleanup, not a traced original destructor rule.
+The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. This establishes visible OpenTPW head geometry, not original visual equivalence.
 
-The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. A native jungle run identified Crazy Ape, attraction 17, visitor 16, node 20, with 10 moving frames before freeze: one submitted quad changed 2,478 pixels. The captures show the rider head at the left seat below the Ape's left arm. This establishes visible OpenTPW head geometry, not original visual equivalence.
-
-Approximations ([HEADS register](FIDELITY-REGISTER.md)): the slot draw uses a per-ride generator (HEADS-001); the head's node is
-the node named after its id, because the original's link from a head record to its node is not traced, and Flower Power,
-Phantom, Eruption, Hover Bot Havoc and Rock 'n Roll name no node for some ids (HEADS-002); the record = attribute and
-table-length correspondences use the Mac lookup code and the fork-reported PC rule (HEADS-003). Presentation reuses the pre-boarding guest heading, body five-direction selector, stand frame 0 and body pixel scale for the seven-direction head art; the seat node contributes translation only (HEADS-004). Root and resolved child/sound VMs share the attraction table, whereas the Mac handler reads the calling script's table; child allocation/binding is untraced, though no associated child/sound script in this shipped corpus uses a head command (HEADS-005).
+Approximations ([HEADS register](FIDELITY-REGISTER.md)): the slot draw uses the original formula on a per-ride generator, not the shared world stream (HEADS-001; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). Whether a child script takes its parent's thing id (`+0xAC`) is untraced, and a child's table is dropped with its script, joins the canonical state while it exists, and makes the park-resume snapshot refuse while it holds a head (HEADS-005); no associated child/sound script in this shipped corpus uses a head command.
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not
@@ -727,7 +763,7 @@ which `PeepTypes` entry uses which kid set.
 
 ### Catalogue upgrade defaults
 
-Ordinary scripted Theme Park World rides now resolve the exact SAM `Upgrades[L]` row of their mapped economy instance. Fresh/imported construction seeds that tier before execution. Completion updates catalogue queue metadata and fallback capacity only; it leaves all current VM variables, flags, waits, rider/queue lists and head slots intact. A positive current `VAR_CAPACITY` remains authoritative for admission, so CAP1 intentionally stays1 even when the tier's fallback default becomes3. `InitSpeed` remains a queue/default input and never changes `RideVM.ScriptSpeed`, animations or controller coefficients. This is the conservative host contract qualified by QUEUE-011, not native reset or full performance parity.
+Ordinary scripted Theme Park World rides now resolve the exact SAM `Upgrades[L]` row of their mapped economy instance. Fresh/imported construction seeds that tier before execution. Completion updates catalogue queue metadata and fallback capacity only; it leaves all current VM variables, flags, waits, rider/queue lists and head slots intact. A positive current `VAR_CAPACITY` remains authoritative for admission, so CAP1 intentionally stays1 even when the tier's fallback default becomes3. `InitSpeed` of the tier a ride is created at (or seeded to before execution) is also its script speed bias (`RideVM.ScriptSpeed` = 0.5 + bias / 100, RIDES-033); a live completion leaves the bias, animations and controller coefficients alone. This is the conservative host contract qualified by QUEUE-011, not native reset or full performance parity.
 
 Whole-park resume already saves the economy's `Level`; staged binding derives the tier before runtime/script-world/guest restoration. Saved VM values overwrite fresh seeds afterward. No new schema or write-provenance state is added. Exact instance/object identity, factory parameter-record ownership, sparse/missing rows, duplicate completions, stopped/removed owners and no-economy/read-only/TPI boundaries are checked. Nonzero imported/resumed tiers that cannot resolve a row fail reconstruction rather than use tier0. A legacy tier0 entry without its row reports an explicit refusal and keeps prior construction semantics. Coasters and developer prototypes keep their existing controllers and receive no catalogue-tier mutation. A custom public queue record cannot be overwritten, even when its values equal the factory record.
 

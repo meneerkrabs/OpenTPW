@@ -25,13 +25,21 @@ public enum ScrollMode { Pushscroll, RightButton }
 public sealed class GameOptions
 {
 	public const string FileName = "opentpw-options.json";
-	public const int MaximumVolume = 10;
+	/// <summary>Volumes are percentages, 0..100 ({on, percent} pairs in the original, shown as " %d %%").</summary>
+	public const int MaximumVolume = 100;
+	/// <summary>Options files written before the volumes became percentages (0..10 steps) carry no <see cref="VolumeFormat"/>.</summary>
+	public const int PercentVolumeFormat = 2;
 
-	// [APPROX:UI-030] 0..10 volume steps, default 8; the original copies its volume defaults from fields +0x38..+0x44 of the object at 0x101EC828 (0x10125B7C) — evidence needed: that object's initializer
-	public int SoundEffectsVolume { get; set; } = 8;
-	public int MusicVolume { get; set; } = 8;
-	public int SpeechVolume { get; set; } = 8;
-	public int MovieVolume { get; set; } = 8;
+	/// <summary>Written with every save so a later load knows the volumes are percentages; an absent value marks the old 0..10 steps.</summary>
+	public int VolumeFormat { get; set; } = PercentVolumeFormat;
+
+	// [BIN:TPW-EXE:sound.sam DefaultVolume] defaults SFX 75, Music 60, Speech 75, Movie 100 (percent). The globals holding them are medium confidence.
+	// The movie volume is scaled by 1023 / 100 for the movie device.
+	// [APPROX:UI-030] the slider's step granularity within 0..100 (the original slider travel is not traced; OpenTPW steps 1 %).
+	public int SoundEffectsVolume { get; set; } = 75;
+	public int MusicVolume { get; set; } = 60;
+	public int SpeechVolume { get; set; } = 75;
+	public int MovieVolume { get; set; } = 100;
 	// [BIN:STP-PPC:0x10125B7C options defaults] TooltipsOn (+0x36), AdvisorOn (+0x34), TutorialOn (+0x35), ConfirmDeleteOn (+0x37) and RMBCancelOn (+0x39) are set to 1, RMBScrollOn (+0x38) to 0 (names from the serializer 0x1012653C)
 	public bool PopupHelp { get; set; } = true;
 	/// <summary>Mute toggles next to the four volume sliders; off means silent whatever the volume.</summary>
@@ -39,7 +47,7 @@ public sealed class GameOptions
 	public bool MusicOn { get; set; } = true;
 	public bool SpeechOn { get; set; } = true;
 	public bool MovieOn { get; set; } = true;
-	// [APPROX:UI-030] rotation 90 degs (as in the supplied capture; the defaults set IsometricOn +0x3A to 1, not proven to be this option)
+	// [BIN:TPW-EXE:IsometricOn rotation] rotation 0 is " Smooth", 1 is " 90 degs", default 1 (Ninety).
 	public bool Advisor { get; set; } = true;
 	public bool Tutorial { get; set; } = true;
 	public bool Confirmations { get; set; } = true;
@@ -90,7 +98,14 @@ public sealed class GameOptions
 		{
 			if ( !File.Exists( path ) )
 				return new GameOptions();
-			return JsonSerializer.Deserialize<GameOptions>( File.ReadAllText( path ) )?.Normalized() ?? new GameOptions();
+			var text = File.ReadAllText( path );
+			var loaded = JsonSerializer.Deserialize<GameOptions>( text );
+			if ( loaded == null )
+				return new GameOptions();
+			using ( var document = JsonDocument.Parse( text ) )
+				if ( document.RootElement.ValueKind == JsonValueKind.Object && !document.RootElement.TryGetProperty( nameof( VolumeFormat ), out _ ) )
+					loaded.MigrateStepVolumes( document.RootElement );
+			return loaded.Normalized();
 		}
 		catch ( Exception exception ) when ( exception is JsonException or IOException or UnauthorizedAccessException )
 		{
@@ -106,8 +121,21 @@ public sealed class GameOptions
 		File.Move( temporary, path, true );
 	}
 
+	/// <summary>Old files stored 0..10 steps of 10 %: every volume present in the file becomes its percentage; absent ones keep their defaults.</summary>
+	private void MigrateStepVolumes( JsonElement root )
+	{
+		int Percent( string name, int current ) =>
+			root.TryGetProperty( name, out var value ) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32( out var steps )
+				? Math.Clamp( steps, 0, 10 ) * 10 : current;
+		SoundEffectsVolume = Percent( nameof( SoundEffectsVolume ), SoundEffectsVolume );
+		MusicVolume = Percent( nameof( MusicVolume ), MusicVolume );
+		SpeechVolume = Percent( nameof( SpeechVolume ), SpeechVolume );
+		MovieVolume = Percent( nameof( MovieVolume ), MovieVolume );
+	}
+
 	public GameOptions Normalized()
 	{
+		VolumeFormat = PercentVolumeFormat;
 		SoundEffectsVolume = Math.Clamp( SoundEffectsVolume, 0, MaximumVolume );
 		MusicVolume = Math.Clamp( MusicVolume, 0, MaximumVolume );
 		SpeechVolume = Math.Clamp( SpeechVolume, 0, MaximumVolume );

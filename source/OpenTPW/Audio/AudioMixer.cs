@@ -233,7 +233,7 @@ public sealed class AudioMixer : IDisposable
 			if ( voice.StartOutputFrame < 0 )
 				voice.StartOutputFrame = mixedFrames + offset;
 			var gain = channelGains[(int)voice.Channel];
-			// [APPROX:AUDIO-001] the second user volume the original ducks is the effects channel — evidence needed: the names of the TbSysCommand volume commands at 0x100BB18C
+			// [BIN:STP-PPC:0x100BB18C speech ducking] while speech plays, Music = settings+0x20 × duck / 100 and User2 = settings+0x1C × duck / 100 (TbSysCommand::SetMusicVolume / SetUser2Volume); +0x1C is fed from the SFX slider (profile +0x10, PC serializer 0x423E90), so the ducked second volume is the effects channel; master and speech stay
 			if ( speaking && voice.Channel != AudioChannel.Speech )
 				gain *= DuckingLevel;
 			var used = voice.MixInto( buffer[(offset * 2)..], frames - offset, gain );

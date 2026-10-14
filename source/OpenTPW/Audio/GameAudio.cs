@@ -70,6 +70,9 @@ public static class GameAudio
 	/// <summary>The visitor click: <c>cat_kids</c> 129, flat, every time the visitor status panel is opened.</summary>
 	// [BIN:STP-PPC:0x1010B808 visitor status panel open] stores the visitor, builds its dialog, plays cat_kids 129 (mode 0, no position) unconditionally and shows the panel; called by a park-view click on a visitor, a roster row activation, the map's visitor markers and the selection strip; [BIN:TPW-EXE:0x4B79B0] the same
 	public const uint VisitorClickEvent = 129;
+	/// <summary>A prankster's stinkbomb: <c>cat_kids</c> 207 at the prankster.</summary>
+	// [BIN:TPW-EXE:0x004FF289 stinkbomb sound] after the stinkbomb's litter (0x004D93B0, type 8) the prank plays bank 0x00803A24 (cat_kids, loaded at 0x0051EBFE) event 0xCF through 0x004FAA00, which places it at the thing's model position (+0xC)
+	public const uint StinkbombEvent = 207;
 	private static SoundEventSystem? events;
 	private static SoundSentence? music;
 	private static SoundSentence? crowd;
@@ -428,8 +431,8 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x100ACB7C scream parameter] parameter = (level + speed) / 2 clamped to 0..100 (signed shift); the speed is the ride VM's word at +192, default 50 (0x100B3154, 0x100B318C)
 	// [BIN:STP-PPC:0x100B19DC refusal] a ride already holding a scream handle refuses: the engine logs "Started screaming without stopping first." and overwrites the handle with 0, so the held chain screams on unreferenced
 	// [APPROX:AUDIO-032] the scream's place is the ride's box middle in the original (0x100AC71C, midpoints of two floats and the object's height at +68); OpenTPW plays it flat — evidence needed: the box-middle mapping onto OpenTPW's ride objects
-	// [APPROX:AUDIO-016] OpenTPW has no per-script speed word; the loader's default 50 stands — evidence needed: the RSE loader's speed field beside RideVM's timing
-	public static SoundChain? StartScream( Func<SoundChain?> held, int band, int level, Vector3? position )
+	// [BIN:TPW-EXE:0x5516b0 script speed word] the speed word is the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; default 50 at 0x558c3c), the same short the script loop pushes to the ride every pass
+	public static SoundChain? StartScream( Func<SoundChain?> held, int band, int level, Vector3? position, int scriptSpeed = 50 )
 	{
 		if ( events == null || held() != null )
 		{
@@ -439,7 +442,7 @@ public static class GameAudio
 		}
 		if ( ScreamBandEvent( band ) is not { } eventId )
 			return null;
-		var parameter = ScreamParameter( level );
+		var parameter = ScreamParameter( level, scriptSpeed );
 		var chain = events.StartChain( Kids, eventId, AudioChannel.Effects, parameter, position );
 		if ( chain != null )
 			Log.Trace( $"Sound: scream chain started (cat_kids {eventId}, parameter {parameter})." );
@@ -449,8 +452,7 @@ public static class GameAudio
 	/// <summary>The held-chain event a scream's band operand picks (Mac <c>0x100ACA38</c>: 0 nothing, 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74), or null for band 0.</summary>
 	public static uint? ScreamBandEvent( int band ) => band == 0 ? null : band == 1 ? 71u : band >= 8 ? 74u : band >= 4 ? 73u : 72u;
 
-	/// <summary>A scream's parameter: (level + script speed) / 2 clamped to 0..100 (Mac <c>0x100ACB7C</c>; the speed word's default 50).</summary>
-	// [APPROX:AUDIO-016] OpenTPW keeps no per-script speed word, so the default 50 stands for every ride
+	/// <summary>A scream's parameter: (level + script speed) / 2 clamped to 0..100 (Mac <c>0x100ACB7C</c>; the speed word is the script's speed bias, default 50).</summary>
 	public static int ScreamParameter( int level, int scriptSpeed = 50 ) => Math.Clamp( (level + scriptSpeed) / 2, 0, 100 );
 
 	/// <summary>
@@ -506,14 +508,16 @@ public static class GameAudio
 	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn with an independent host stream.
 	/// </summary>
 	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer handler draws the world random at each walking/idle turn and plays at (draw & 0xF) == 0 — the gate is traced for all roles (0x100D5EAC, 0x100D6434, 0x100D9BAC, 0x100D9F10, 0x100D2DDC, 0x100D2E44, 0x100D4EF0, 0x100D4E18, 0x100F0460, 0x100F0630)
-	// [APPROX:AUDIO-024] the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the handlers' turn boundary and world draw order
-	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn )
+	// [APPROX:AUDIO-024] for the mechanics only (the other roles' state machines draw their voices, PlayStaffVoices), the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the other roles' state machines (their handlers' turn boundary and world draw order)
+	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn, bool worldDrawsVoices = false )
 	{
 		if ( events == null || turn == staffTurn )
 			return;
 		staffTurn = turn;
 		foreach ( var member in staff )
 		{
+			if ( worldDrawsVoices && member.Type != StaffType.Mechanic )
+				continue;
 			if ( staffRandom.Next( 16 ) != 0 )
 				continue;
 			if ( !staffVoiceLogged )
@@ -522,6 +526,20 @@ public static class GameAudio
 				Log.Trace( "Sound: staff voices playing (cat_staff walking and idle, 1 in 16 per member per turn)." );
 			}
 			PlayStaffSound( member.Type, member.Travelling, new Vector3( member.CellX * 10, 0, member.CellY * 10 ) );
+		}
+	}
+
+	/// <summary>The voices a staff state machine drew (the handymen's states 0 and 1, tp.exe <c>0x004D73C0</c>), each at the member's cell.</summary>
+	// [BIN:TPW-EXE:0x004D73C0 handyman voices] states 0 and 1 draw the world generator on every update and at (draw & 0xF) == 0 play bank 0x00803A30 (cat_staff) 161 (idle) or 160 (walking) through 0x004FAA00
+	public static void PlayStaffVoices( IReadOnlyList<StaffVoice> voices )
+	{
+		foreach ( var voice in voices )
+		{
+			var position = new Vector3( voice.CellX * 10, 0, voice.CellY * 10 );
+			if ( voice.Event == 0 )
+				PlayStaffSound( voice.Type, voice.Walking, position );
+			else
+				events?.PlayAt( voice.Kids ? Kids : Staff, voice.Event, AudioChannel.Effects, position );
 		}
 	}
 
@@ -553,6 +571,13 @@ public static class GameAudio
 	{
 		var voice = events?.PlayAt( Ui, eventId, AudioChannel.Effects, position );
 		Log.Trace( $"Sound: cat_ui {eventId} at a cell {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>A stinkbomb's sound (<see cref="StinkbombEvent"/>) at a park position.</summary>
+	public static void PlayStinkbomb( Vector3 position )
+	{
+		var voice = events?.PlayAt( Kids, StinkbombEvent, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: stinkbomb cat_kids {StinkbombEvent} {(voice == null ? "not available" : "played")}." );
 	}
 
 	/// <summary>The visitor click (<see cref="VisitorClickEvent"/>), played whenever a visitor's details are opened.</summary>

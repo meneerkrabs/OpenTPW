@@ -156,7 +156,7 @@ have no member: fantasy `royaloo`, `fries`, `icecream` (5/0), `purse` (2/0, 5/0)
 space `crys_b` (5/0) — those archives do not ship the clip.
 
 Playback (`ObjectAnimator`) follows the channel records of the Feral Mac build
-(docs/reverse/ANIM-plan.md §8, §13): 30 ticks/s (the Mac formula; RIDES-001);
+(docs/reverse/ANIM-plan.md §8, §13): 30 ticks/s (the Mac formula, and the PC frame (u32)(now − start) · speed · 0.03f on x87, 0x473490/0x4735d0; ride channels read the scaled clock 0x7b496c, the advisor the unscaled 0x7b4974);
 plain opcodes use channel 0, `_CH` opcodes the channel in their operand
 (sideshows use 0–2, the Totem 1–3). Channels update in ascending index, so for
 each node component (translation, rotation, scale, mesh positions, texture
@@ -190,8 +190,8 @@ as stored: the 12-byte block (0x4000, RIDES-041); not applied: path parameters
 scripts from the same archive, and one `RideScriptWorld` per park
 (`ParkObjects.ScriptWorld`) so FINDSCRIPTRAND/REMOTEVAR work across objects (bus →
 traffic lights). Initial variables from the .sam layers: `VAR_CAPACITY` =
-`Upgrades[0].InitCapacity`, `VAR_DURATION` = `Upgrades[0].InitDuration` (raw;
-unit per `Info.DurationUnit`, Totem.RSE uses it as cycle count),
+`Upgrades[0].InitCapacity`, `VAR_DURATION` = `Upgrades[0].InitDuration` (written only when above 0: its low byte clamped to
+`UsageInfo.MinDuration..MaxDuration`, 0x4db565..0x4db64f; `Info.DurationUnit` is never used, Totem.RSE uses it as cycle count),
 `VAR_RIDECLOSED` 0 (built and imported objects open; the saved ride state is not
 decoded) — the sandbox Totem starts closed. Variables are written by name since
 scripts declare different subsets.
@@ -201,7 +201,7 @@ scripted objects, every theme in one shared world, 60 s at 60 Hz: no faults,
 258 played original clips (1,451 plays). EVENT and REPAIREFFECT play their
 original sounds ([AUDIO.md](AUDIO.md)); their other effects stay unimplemented
 (the unimplemented-effect hook still records them): ADDOBJ/KILLOBJ particles and
-objects, TOUR/BUMP/COAST controllers, park clock, screams, reverb, light opcodes.
+objects, TOUR and kart BUMP controllers (a water ride's BUMP goes to its controller, [TRACKS.md](TRACKS.md)), park clock, screams, reverb, light opcodes.
 
 ## Building (`ParkObjects`)
 
@@ -287,10 +287,10 @@ bonus root is set (observed: Dizzy Dinos animating).
 ## Remaining gates
 
 The 12-byte vertex block (0x4000), path parameters and texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
-TOUR/BUMP/COAST controllers and track building (coasters, karts, water rides,
-track upgrades); visitor simulation behind the bridge; `.hmp` ground deformation;
+TOUR controllers, kart controllers and track building (karts, water ride jumps and
+tunnels; Splish Splash runs its BUMP controller on a built circuit, [TRACKS.md](TRACKS.md)); visitor simulation behind the bridge; `.hmp` ground deformation;
 original build rules and costs; animation tick rate; the meaning of `W`, `N`,
-`E`, `<`, `>`; the object-list update route and idle restart (RIDES-032, RIDES-034).
+`E`, `<`, `>`; the object-list update route (RIDES-032).
 
 ## Approximation register
 
@@ -301,9 +301,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| RIDES-001 | Mac channel rate 30 is proved; Windows rate and native scaled/unscaled channel-clock selection remain unverified | qualify target-PC rate and connect the correct original clock input before claiming runtime equivalence |
 | RIDES-003 | World/Objects/ObjectAnimator.cs | Finished clip holds its last pose (AnimID 14 path traced: 0xa7498, 0xa68ac, 0xa694c); the next trigger restores against the ended clip, while the original passes the AnimID-14 slot as the old clip (0xa692c–0xa6948) | Capture after a clip ends; the object's AnimID-14 table slot; the ride-data sources of object flags 0x8 (stop) and 0x10 (hold) |
-| RIDES-008 | World/Objects/ObjectAnimations.cs:28 | ANIM_* → letter, variant v → number v+1 | Binary member lookup |
 | RIDES-009 | World/Objects/ObjectCatalog.cs:381 | shared (non-Info.Id) .sam files sit between category defaults and the object file; `Easy_<file>` is layered last in Instant Action (traced, STP-PPC 0x10119328) | which base file the binary's object loader is given |
 | RIDES-010 | World/Objects/ObjectCatalog.cs:451 | OBJECT_NAMES index by English name equality | Binary name-index table |
 | RIDES-011 | World/Objects/ObjectShape.cs:74 | Shape symbols N/E exit, `<`/`>` station ends, `+` upgrade, `W` occupied | Saves/captures with these objects |
@@ -311,12 +309,11 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-013 | World/Objects/ObjectShape.cs:103 | 180° and non-square rotations follow the rigid rotation | Save with such objects |
 | RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
 | RIDES-015 | World/Objects/ParkObjects.cs:190 | Imported and built objects start open | TPWS ride state, original build behaviour |
-| RIDES-016 | World/Objects/OriginalObjectRuntime.cs:62 | VAR_DURATION = raw `Upgrades[0].InitDuration` | Binary conversion by `Info.DurationUnit` (QUEUE-plan §7: the native host writes it raw, clamped to `UsageInfo.Min/MaxDuration`; `InitDuration` is type record +416, while +436 is `QueueWaitTimeConstant`) |
 | RIDES-017 | World/Objects/ObjectCatalog.cs:124 | Buildable = WhichUIType 0–3, not fixed/tool/upgrade | Original build-menu contents |
 | RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
 | RIDES-019 | World/Objects/ParkObjects.cs:209 | Levels without save get Gates, Lights, Bus | Original fixed-item spawning |
 | RIDES-021 | World/Level.Objects.cs:46 | Build centred on clicked cell; cursor ray hits Z = 0 | Original build cursor behaviour |
-| RIDES-022 | World/Objects/ObjectAssets.cs:119 | Texture search archive textures → gtexture → sharetex | Binary texture lookup order |
+| RIDES-022 | World/Objects/ObjectAssets.cs | Texture search archive textures → gtexture → sharetex. PC (tp.exe): 0x461a60 → 0x46e670 sets the model directory, `<dir>\textures` and `<theme>\sharetex` (0x46e650); lookup 0x46ead0 tries `<dir>\textures\<name>` as .wct then .tga, then assigns sharetex without an existence check, else logs "Could not load texture…"; GTexture only in the coaster loader 0x42fad0 | The globals 0x78d968, 0x785874 and 0x79d86c & 0x800 that 0x54dcf0 uses to pick stexture/ssharete |
 | RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |
 | RIDES-024 | World/Objects/ObjectCatalog.cs:276 | Bonus archives merge; Info.Id collision skips the bonus entry | Original behaviour with dropped-in WADs |
 | RIDES-025 | World/Objects/ObjectCatalog.cs:545 | Bonus name: language file → English → .sam name | Original bonus-name lookup |
@@ -325,18 +322,16 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |
 | RIDES-030 | World/Objects/ObjectAssets.cs | Non-finite texture coordinates (10 vertices of the Theme Park Inc `natnav` "subtank" mesh) are drawn as (0, 0) | The original renderer's handling of them |
 | RIDES-031 | World/Objects/ObjectShape.cs | Shape symbol `@` (only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`") is an occupied cell | TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
-| RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route (0xa7960, r4 = 1); the object-list route (no posing, no-reset replay) is not modelled | The engine's call condition for the render-record callback (0x5a3bc) and the setter of object flag 0x00400000 |
-| RIDES-033 | VM/RideVM.cs | Script speed 1.0 (creation bias 50) | What the native bias writers 0xb2a34/0xb5b18 store |
-| RIDES-034 | World/Objects/ObjectAnimator.cs | No idle restart of AnimID 5/0 (0xa798c) | Which placed objects keep +4 & 0x8004 clear |
+| RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route. PC: render callback 0x463030 (model record +0x140, set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 updates instances without it via 0x473c70(inst, 0, 8) without posing and clears it on the others; object flag 0x00400000 is set at 0x4737e8 when a non-looping clip ends with nothing deferred, flags & 0x10 set and & 0x8 clear (also sets 0x40000000, holds the last frame). The list-pass route is not modelled | The renderer's call site of the +0x140 callback |
+| RIDES-033 | VM/RideVM.cs | Script speed = 0.5 + bias / 100 (0x551769); the bias is the ride's SPEED: ride init `Upgrades[0].InitSpeed` when above 0 (0x4db51c..0x4db54c), children copy the parent's (0x551888), creation default 50 (0x558c3c), setter 0x55a300. Not modelled: ride-settings apply (0x4af440 → 0x4dd6e0) and upgrade completion `Upgrades[level].InitSpeed` (0x4df8f0), as live upgrades keep the authored values (QUEUE-011) | The host's ride-settings change flow |
 | RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks apply to rendering (MD2-900..902); the original's draw-path reader of a slot's current frame is not traced, so the binding follows this port's material-slot mapping | The reader of a texture slot's current frame |
-| RIDES-036 | World/Objects/ObjectAnimator.cs | The UV pass always runs: global option +16396 bit 0x10 and node bit 0x4000 (gate 0xa5698–0xa56b8) taken as clear | The writers of option bit 0x10 and node bit 0x4000 |
-| RIDES-037 | VM/Handlers/Animation.cs | TRIGWAITANIM(_CH) without an object never resumes; for a literal out operand this assumes its in-memory code word, like a variable's (tag 0xC0), never equals the token | The RSE loader's in-memory literal operand encoding |
-| RIDES-038 | VM/Handlers/Animation.cs | TRIGANIMSPEED with a speed operand below 0 faults (0 is undefined `divw`) | The channel update with a negative speed (0xa6484, 0xa7190) |
+| RIDES-036 | World/Objects/ObjectAnimator.cs | The UV pass always runs. PC: option word 0x7b4980 has one write (0x4740d0, called once with 0 from 0x457a90), so bit 0x10 is always clear (gate 0x47219a); node bit 0x4000 is taken as clear | The writers of node bit 0x4000 |
+| RIDES-038 | VM/Handlers/Animation.cs | TRIGANIMSPEED with a speed operand of 0 or below faults. PC 0x552f2e..0x552feb: operand stored at +0xe4 as 16 bits, deadline `idiv` by the full operand (0 is a divide fault); a negative speed gives a decreasing frame whose end test in 0x4735d0 never fires | Pose sampling at negative frames |
 | RIDES-040 | World/Objects/ParkObjects.cs | Theme Park Inc fixed scene records saved at (0, 0) use their local model origin | The original fixed-scene transform fields and a game capture |
 | RIDES-041 | World/Objects/ObjectAnimator.cs | 12-byte vertex block (record flag 0x4000) parsed, stored mesh shown | A reader of the record +40 floats or of node bit 0x800 |
 | RIDES-042 | World/Objects/ObjectAnimator.cs | Node-state bit 0x10 (node lists at clip start, toggles ≤ 0) hides the node's mesh | The draw-path reader of node bit 0x10, or captures |
-| RIDES-043 | World/Objects/ObjectAnimator.cs | Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load strips the flag (with it, both add: 0xa4a58/0xa4f68, UV 0xa56d4/0xa8420) | The ride-data source of the 0x594c8 flag word allowing 0x20000 |
-| RIDES-044 | VM/RideVM.cs | The shared scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read starts at 0 when the park's script world is created and advances with the script ticks | The original scheduler clock's (0x10e844 on the global r30) value when a placed object's script starts, and whether a save stores it |
+| RIDES-043 | World/Objects/ObjectAnimator.cs | Relative-animation models (header flag 0x4) play vertex and UV tracks in set mode, as the PC object loader does: 0x461f10 keeps flag 4 only with inner argument bit 0x20000 (else logs "Ride %s has relative animation incorrectly set" and strips it); 0x4629d0 maps outer 0x1000000 to inner 0x20000; only the TrackMaster loader 0x42fad0 passes it (0x1013405), the object loader 0x413c10 passes 0x50c00/0x450c00/0xb24a9/0x4b24a9/0xc0. Add mode for TrackMaster coaster models is not modelled | A TrackMaster coaster model with header flag 4 |
+| RIDES-044 | VM/RideVM.cs | The shared scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read starts at 0 when the park's script world is created and advances with the script ticks. PC: script deadlines use the scaled timer 0x785970 (0x402d70 → 0x4031e0) plus +0x44/+0x48; saves store it ('SSEM' at 0x41555a, read into +0x4c by 0x402e30) | The timer value when a new park starts (needs a capture) and GETTIME's PC handler |
 | MD2-900 | World/Objects/ObjectAnimator.cs | A texture-frame slot mixes like the node components: ascending channels and tracks, the last non-null frame wins (hyenasm1 carries two tracks on one slot; the constant 0 loses to the face cycle), null before the first key keeps the previous frame (initially 0), and a slot no clip addresses shows frame 0 again; the fixed-item pose hold is not extended to frames | The original draw-path reader of a slot's current frame (the clip update 0xa56f8 only writes it) |
 | MD2-901 | World/Objects/ObjectAnimator.cs | Texture-frame keys naming a frame outside the slot's frame names, or a slot the model does not have (Pmegacostm slot 12), are ignored | The original's behaviour on an out-of-range frame or slot |
 | MD2-902 | World/Objects/OriginalObject.cs | A frame whose art no searched texture directory has (including Theme Park Inc `tvsim` slot 39 frame 3, `lt1.tga`) keeps the effective selected frame; the renderer registers decoded-art availability with the animator so save history retains that visible frame | The original's fallback for a missing frame file |

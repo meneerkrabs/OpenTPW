@@ -73,6 +73,8 @@ public partial class Level
 	{
 		if ( Guests == null )
 			return;
+		Guests.Bins = LitterBins;
+		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
@@ -88,6 +90,60 @@ public partial class Level
 	{
 		if ( Guests != null )
 			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation );
+	}
+
+	/// <summary>
+	/// The litter bins for the guests' bin search: placed objects with <c>UsageInfo.HoldsLitter</c> (thing <c>+0x32</c> bit 0x40) that have an
+	/// economy instance, in placement order, each with the path cell guests walk to (its entrance's outside cell, else a path neighbour).
+	/// </summary>
+	// [DATA:<object>.sam:UsageInfo.HoldsLitter] type record +0xF8, which the object setup (tp.exe 0x004DB3FB) turns into flag +0x32 bit 0x40 (the Litter Bin of each theme)
+	private IReadOnlyList<LitterBin> LitterBins()
+	{
+		var bins = new List<LitterBin>();
+		if ( Guests == null )
+			return bins;
+		var grid = Guests.Grid;
+		foreach ( var item in Objects.Objects )
+		{
+			if ( item.IsDeleted || !item.Entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) || !economyInstances.TryGetValue( item, out var instance ) )
+				continue;
+			if ( AccessCell( item, grid ) is { } found )
+				bins.Add( new LitterBin( instance, (item.Placement.X, item.Placement.Y), found ) );
+		}
+		return bins;
+	}
+
+	/// <summary>An object's access cell (thing <c>+0x36</c>) for bins and rest areas: its entrance's outside cell on a path, else its first path neighbour.</summary>
+	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
+	private static (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
+	{
+		var cell = (item.Placement.X, item.Placement.Y);
+		foreach ( var point in item.AccessPoints )
+			if ( grid.IsWalkable( point.OutsideX, point.OutsideY ) )
+				return (point.OutsideX, point.OutsideY);
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			if ( grid.IsWalkable( cell.X + dx, cell.Y + dy ) )
+				return (cell.X + dx, cell.Y + dy);
+		}
+		return null;
+	}
+
+	/// <summary>The bin's script variable a guest's litter sets (each theme's Litter Bin script declares only <c>VAR_TRIGGER</c>).</summary>
+	public const string BinTriggerVariable = "VAR_TRIGGER";
+
+	/// <summary>
+	/// A guest threw its litter into the bin with economy instance <paramref name="instance"/>: the bin's script variable 0 becomes 1, and the
+	/// script plays the bin's sound and animation.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FFF20 bin trigger] on arrival with a bin, state 9 looks up the bin thing's script (+0x24) through 0x0055A070 and sets its variable 0 to 1 through 0x0055A0B0 ("RSSE: Bad variable reference" when out of range)
+	// [DATA:<theme> Litter Bin .rse] VAR_TRIGGER is the script's only variable (index 0) in all four themes
+	private void TriggerBin( int instance )
+	{
+		foreach ( var (item, id) in economyInstances )
+			if ( id == instance && !item.IsDeleted )
+				item.Runtime.SetVariable( BinTriggerVariable, 1 );
 	}
 
 	/// <summary>
@@ -616,6 +672,8 @@ public partial class Level
 			state.IsOpen = item.IsOpen;
 			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
+			// a water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
+			state.TrackValid = item.Runtime.Bump?.IsTrackValid ?? true;
 			// the park points counts-test needs real queue cells from the entrance and room in them (0x004DE130, 0x004DDF50)
 			if ( Guests is { } guests )
 				state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, guests.Grid );

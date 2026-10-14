@@ -15,6 +15,7 @@ public sealed partial class OriginalObjectRuntime
 	private bool wasRunning;
 	private bool stopped;
 	private readonly OriginalObjectEffects effects;
+	private readonly RideScriptWorld scriptWorld;
 
 	/// <param name="world">The park's script world; it also allocates the attraction id. Null: a world of its own.</param>
 	public OriginalObjectRuntime( ObjectCatalogEntry entry, RideScriptWorld? world = null, int? seed = null, bool open = true )
@@ -32,6 +33,7 @@ public sealed partial class OriginalObjectRuntime
 		ArgumentNullException.ThrowIfNull( entry );
 		Entry = entry;
 		world ??= new RideScriptWorld();
+		scriptWorld = world;
 		if ( attractionId is { } restored )
 		{
 			AttractionId = restored;
@@ -45,6 +47,15 @@ public sealed partial class OriginalObjectRuntime
 		{
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
+		}
+		// A water ride (Bumper.WhichTrackType 2) or a go-kart ride (1) gets a bump-ride controller (docs/TRACKS.md).
+		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
+		{
+			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers ) { AttractionId = AttractionId };
+			world.Bumpers.Add( Bump );
+			if ( template.IsKart )
+				Bump.Effect += OnBumpEffect;
+			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
@@ -64,15 +75,40 @@ public sealed partial class OriginalObjectRuntime
 				SourceName = entry.ScriptPath,
 				ResolveScript = ResolveChildScript
 			} );
-			// Upgrade level 0 values from the .sam layers; units of InitDuration follow Info.DurationUnit (not verified).
+			// Upgrade level 0 values from the .sam layers.
 			// [DATA:<object>.sam:Upgrades[0].InitCapacity]
 			SetVariable( nameof( RideVariables.VAR_CAPACITY ), entry.InitialCapacity );
-			// [DATA:<object>.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration
-			SetVariable( nameof( RideVariables.VAR_DURATION ), entry.Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "InitDuration" ) ?? 0 );
+			var level0 = entry.Upgrades.FirstOrDefault( level => level.Level == 0 );
+			// [BIN:TPW-EXE:0x4db565 ride init duration] [DATA:<object>.sam:Upgrades[0].InitDuration] written only when above 0: the low byte, clamped to [UsageInfo.MinDuration, UsageInfo.MaxDuration] (type +0x12c/+0x130), into script variable 3 and ride +0x5c; DurationUnit is never read. The same clamp runs at ride settings (0x4dd720) and upgrade (0x4df8f0).
+			if ( ClampInitDuration( entry.Settings, level0?.GetInt( "InitDuration" ) ?? 0 ) is { } duration )
+				SetVariable( nameof( RideVariables.VAR_DURATION ), duration );
+			// [BIN:TPW-EXE:0x4db51c ride init speed] [DATA:<object>.sam:Upgrades[0].InitSpeed] the script speed bias, written only when above 0 (setter 0x55a300).
+			if ( level0?.GetInt( "InitSpeed" ) is > 0 and var speed )
+				Script.SpeedBias = speed;
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
-			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the callers of the completion predicates 0x10045DA4/0x10045EAC in the guest and queue code are not traced — evidence needed: what 0x100DC834, 0x100DE654 and 0x100ED244 do with 0x10045EAC
-			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) );
+			// [BIN:TPW-EXE:0x441970 guest predicate twin] the controller exists, +0x140 == 0, +0x3C bit 0 set and bit 1 clear, and it is not the coaster being edited (0x790fec); callers: 0x4dd920 counts test (Mac 0xdc834, X15), 0x4df290 reopen guard (0xde654), 0x4ffff0 queue state 11 (0xed244: a coaster (track type 3, 0x4e2b50) failing it gets 0x50be80(13), unlink 0x4ddd20, dismissal 0x5012f0, state 6); the open routine 0x4df390 logs "Opening non-openable ride" up to 5 times and opens anyway
+			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the +0x140 == 0 test and the not-being-edited exclusion are not modelled (OpenTPW has no such state: an edit un-completes the track) and the state 11 thought-13 exit (GUESTS.md) belongs to the guest and queue owner
+			// A water ride takes guests only while its circuit is valid (the original's counts-test reads the track word the walk writes, TRACK-005).
+			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) && (Bump?.IsTrackValid ?? true) );
 		}
+	}
+
+	/// <summary>
+	/// The ride-init duration rule (0x4db565..0x4db64f): null when <paramref name="initDuration"/> is not above 0 (nothing is written),
+	/// else its low byte clamped to [MinDuration, MaxDuration] of the object type (a byte below the minimum takes the minimum, one above the maximum the maximum).
+	/// </summary>
+	internal static int? ClampInitDuration( ObjectSettings settings, int initDuration )
+	{
+		if ( initDuration <= 0 )
+			return null;
+		var value = initDuration & 0xFF;
+		var min = settings.GetInt( "UsageInfo.MinDuration" );
+		var max = settings.GetInt( "UsageInfo.MaxDuration" );
+		if ( value < min )
+			return min & 0xFF;
+		if ( max < value )
+			return max & 0xFF;
+		return value;
 	}
 
 	public ObjectCatalogEntry Entry { get; }
@@ -80,6 +116,13 @@ public sealed partial class OriginalObjectRuntime
 	public int AttractionId { get; }
 	/// <summary>The coaster controller of a coaster station (<c>Bumper.WhichTrackType 3</c>), else null.</summary>
 	public CoasterRide? Coaster { get; }
+	/// <summary>The bump-ride controller of a water ride (<c>Bumper.WhichTrackType 2</c>), else null (docs/TRACKS.md).</summary>
+	public BumpController? Bump { get; }
+	/// <summary>
+	/// <see cref="Bump"/> while the ride is live: not stopped (a faulted or removed ride released it) and still in the park's controller list.
+	/// The park-resume capture and restore use this one rule, so they agree on which rides carry a controller.
+	/// </summary>
+	public BumpController? LiveBump => Bump != null && !stopped && scriptWorld.Bumpers.Controllers.Contains( Bump ) ? Bump : null;
 	public ModelFile Model { get; }
 	public ObjectAnimator Animator { get; }
 	/// <summary>The object's original script, or null for the few objects without one.</summary>
@@ -160,6 +203,12 @@ public sealed partial class OriginalObjectRuntime
 			return;
 		}
 		Coaster?.Advance( deltaSeconds );
+		if ( Bump != null )
+		{
+			// the script speed bias is pushed to the controller as its performance on every script tick ([BIN:TPW-EXE:0x005516B0 RSSE tick] 0x00545180)
+			Bump.SetPerformance( ScriptPerformance );
+			Bump.Advance( deltaSeconds );
+		}
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
 		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
@@ -180,9 +229,25 @@ public sealed partial class OriginalObjectRuntime
 			Coaster.ClearTrains();
 			Coaster.World.Remove( Coaster );
 		}
+		StopBumpEffects();
+		ReleaseBump();
 		Script?.Stop();
 		Animator.StopAll();
 	}
+
+	/// <summary>The boats leave and the controller leaves the world (a removed or faulted water ride).</summary>
+	private void ReleaseBump()
+	{
+		if ( Bump == null )
+			return;
+		Bump.EjectAll();
+		scriptWorld.Bumpers.Remove( Bump );
+	}
+
+	/// <summary>The performance (0..100) the script's speed bias gives the controller; the creation bias is 50.</summary>
+	// [BIN:TPW-EXE:0x005516B0 RSSE tick] every script tick pushes the script performance (+0x30, 0..100, default 50) to the controller (0x00545180); the ride's InitSpeed bias is the same word (RIDES-033)
+	// [BIN:TPW-EXE:0x5516b0 bumper performance] the script loop pushes the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; 50 at creation) to the bumper controller every pass (0x545180)
+	internal int ScriptPerformance => Script?.SpeedBias ?? RideVM.DefaultSpeedBias;
 
 	// ---- Park-resume snapshot ----
 
@@ -207,6 +272,9 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
 	{
+		// [APPROX:HEADS-005] child/sound head tables are not saved; refuse rather than lose a rider's head
+		if ( Visitors.ChildHeadsOccupied() )
+			throw new InvalidOperationException( $"'{Entry.ArchivePath}': a child or sound script holds a rider head, which the park-resume snapshot cannot store." );
 		if (effects.HasLiveEventLoops)
 			throw new NotSupportedException("An attraction is still playing a looping EVENT or repair-hide sound. Live audio cannot be saved; stop the owning object or sound first.");
 		return new OriginalObjectRuntimeSnapshot
@@ -225,6 +293,9 @@ public sealed partial class OriginalObjectRuntime
 			AnimationsPlayed = AnimationsPlayed,
 			UnresolvedAnimations = unresolvedAnimations.ToArray(),
 			HeldScream = effects.HoldsScream,
+			HeldScreamBand = effects.HeldScreamBand,
+			HeldScreamLevel = effects.HeldScreamLevel,
+			HeldScreamSpeed = effects.HeldScreamSpeed,
 			OwnedScreamCount = effects.OwnedScreamCount,
 			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null
 		};
@@ -266,6 +337,7 @@ public sealed partial class OriginalObjectRuntime
 				Coaster.ClearTrains();
 				Coaster.World.Remove( Coaster );
 			}
+			ReleaseBump();
 			Script?.Stop();
 			Animator.StopAll();
 			if ( snapshot.StoppedScriptFault is { } fault )
@@ -280,10 +352,13 @@ public sealed partial class OriginalObjectRuntime
 		if ( snapshot.Heads != null )
 			Visitors.Heads!.RestoreSnapshot( snapshot.Heads );
 		Animator.RestoreSnapshot( snapshot.Animator, ResolveSnapshotClip );
+		// Screams are presentation: a held scream starts again from its STARTSCREAM operands (the script still holds a handle,
+		// so its STOPSCREAM and a refused second STARTSCREAM behave as before); chains the script had lost track of are not
+		// carried over, the original's own unreferenced chains end with the program too.
 		if ( snapshot.HeldScream )
-			gaps.Add( $"{Entry.ArchivePath}: the script held a STARTSCREAM chain at capture; live audio cannot cross a restart, the handle is cleared" );
+			effects.RestoreHeldScream( snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed );
 		if ( snapshot.OwnedScreamCount > 0 )
-			gaps.Add( $"{Entry.ArchivePath}: {snapshot.OwnedScreamCount} owned scream chain(s) at capture; live audio cannot cross a restart, they are dropped" );
+			Log.Trace( $"{Entry.ArchivePath}: {snapshot.OwnedScreamCount} unreferenced scream chain(s) at capture are not resumed." );
 		return gaps;
 	}
 
@@ -334,6 +409,8 @@ public sealed partial class OriginalObjectRuntime
 			HungerEffect = settings.GetInt( "UsageInfo.HungerEffect" ),
 			VomitEffect = settings.GetInt( "UsageInfo.VomitEffect" ),
 			HappinessEffect = settings.GetInt( "UsageInfo.HappinessEffect" ),
+			// [DATA:<object>.sam:UsageInfo.LitterEffect] type +0x154, added to the guest's litter meter by the use routine (tp.exe 0x004FE1E0)
+			LitterEffect = settings.GetInt( "UsageInfo.LitterEffect" ),
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods] type +320, the price test's base (tp.exe 0x004FDE50; the key table order InitCostOfGoods, ThirstEffect, HungerEffect, VomitEffect, HappinessEffect)
 			InitCostOfGoods = settings.Has( "UsageInfo.InitCostOfGoods" ) ? settings.GetInt( "UsageInfo.InitCostOfGoods" ) : 0,
 			GoldenTicketCost = settings.GetInt( "UsageInfo.GoldenTicketCost" ),
@@ -468,11 +545,34 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		screamChain = null;
 	}
 
-	/// <summary>Whether the script holds a STARTSCREAM chain (park-resume capture; live audio is a reported gap).</summary>
+	/// <summary>Whether the script holds a STARTSCREAM chain (park resume starts it again from its operands).</summary>
 	internal bool HoldsScream => screamChain != null;
+	/// <summary>The held scream's STARTSCREAM band, level and script speed word (0 without a held scream).</summary>
+	internal int HeldScreamBand { get; private set; }
+	internal int HeldScreamLevel { get; private set; }
+	internal int HeldScreamSpeed { get; private set; }
 
-	/// <summary>Chains this effects object still owns (park-resume capture; live audio is a reported gap).</summary>
-	internal int OwnedScreamCount => ownedScreams.Count;
+	/// <summary>Live chains the script no longer holds (a refused STARTSCREAM leaves the held one screaming unreferenced).</summary>
+	internal int OwnedScreamCount
+	{
+		get
+		{
+			var count = 0;
+			foreach ( var chain in ownedScreams )
+				if ( !chain.IsStopped && !ReferenceEquals( chain, screamChain ) )
+					count++;
+			return count;
+		}
+	}
+
+	/// <summary>Park resume: starts the held scream again from its saved operands.</summary>
+	internal void RestoreHeldScream( int band, int level, int speed )
+	{
+		screamChain = GameAudio.StartScream( () => null, band, level, null, speed );
+		(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (band, level, speed);
+		if ( screamChain != null )
+			ownedScreams.Add( screamChain );
+	}
 	internal bool HasLiveEventLoops => ownedEventLoops.Any(voice => voice.Loops && !voice.IsFinished);
 
 	public int Perform( RideEffectCall call )
@@ -496,19 +596,19 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			case Opcode.TRIGANIM:
 			case Opcode.WAITANIM:
 			case Opcode.TRIGWAITANIM:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, call.VM.ScriptSpeed );
 			case Opcode.TRIGANIMSPEED:
 				// [BIN:STP-PPC:0x100AFFC4 TRIGANIMSPEED] the clip runs at script speed × operand / 1000 (0x100B003C–0x100B0070); the handler also keeps the operand at script +228, whose reader is not traced
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideAnimationTiming.SpeedOperand( RideVM.ScriptSpeed, call.Argument( 3 ) ) );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideAnimationTiming.SpeedOperand( call.VM.ScriptSpeed, call.Argument( 3 ) ) );
 			case Opcode.LOOPANIM:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: true, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: true, call.VM.ScriptSpeed );
 			case Opcode.TRIGANIM_CH:
 			case Opcode.TRIGWAITANIM_CH:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 3 ), loop: false, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 3 ), loop: false, call.VM.ScriptSpeed );
 			case Opcode.WAITANIM_CH:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: false, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: false, call.VM.ScriptSpeed );
 			case Opcode.LOOPANIM_CH:
-				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: true, RideVM.ScriptSpeed );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: true, call.VM.ScriptSpeed );
 			case Opcode.GETANIM:
 				return ride.Animator.GetAnimation( MainChannel );
 			case Opcode.GETANIM_CH:
@@ -522,13 +622,17 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.COAST && ride.Coaster != null )
 			return ride.Coaster.Perform( call );
+		// The water ride's BUMP commands go to its controller (docs/TRACKS.md); the visitor opcodes keep the guest protocol (BUMP 1 and 2 only move guest ids).
+		if ( call.Opcode == Opcode.BUMP && ride.Bump is { } bump )
+			return bump.Command( call.Argument( 0 ), call.OperandCount > 1 ? call.Argument( 1 ) : 0 );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
 		// Routed EVENT and repair-hide sounds can use the placed origin; scream/show placement and reverb remain unimplemented.
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
-			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null );
+			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null, call.VM.SpeedBias );
+			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = screamChain != null ? (call.Argument( 0 ), call.Argument( 1 ), call.VM.SpeedBias) : (0, 0, 0);
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			if ( screamChain != null )
 				ownedScreams.Add( screamChain );
@@ -538,11 +642,13 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		{
 			screamChain?.Stop();
 			screamChain = null;
+			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (0, 0, 0);
+			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		if ( call.Opcode == Opcode.SINGLESCREAM )
 		{
-			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null );
+			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null, call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		if ( call.Opcode == Opcode.EVENT )

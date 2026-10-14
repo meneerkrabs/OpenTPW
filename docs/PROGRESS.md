@@ -324,6 +324,38 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Researchers now wander and research as in the original (tp.exe `0x5029f0`; ECON-022): a spell of `WorkDuration` turns where they stand
+  (cat_staff 138 now and then), then they wander on; their points still come every 20th turn. Every staff role a level drives now walks
+  to rest and to strike (`0x506a40`, `0x505fe0`, `0x5061d0`, `0x506300`; [WANDER-plan.md](reverse/WANDER-plan.md) §4): a tired member
+  walks to the nearest Staff Room and rests there until its energy is full (the room's `VAR_STAFFIN` counts it), and while its role
+  strikes and the gates are open it walks out past the ticket booth to the strike area and back in when the strike ends. Without a
+  rest area a tired member loses happiness now and then, as before.
+- Entertainers and guards now walk the park as in the original (tp.exe `0x4d4810`, `0x4d6410`, `0x508a30`; ECON-022, GUEST-006, GUEST-007;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). An entertainer patrols and, when guests stand within his `ActivationDistance` (3 to 5
+  cells), performs for `WorkDuration` turns (cat_staff 135 at the end); wherever he stands he cheers the cells around him (`RegionFX[0]`).
+  A guard spreads security (`RegionFX[3]`) around him; a prank within three cells of a guard sends the free guard nearest the staff HQ
+  (map cell (0, 0); x86 finding X24, ORACLE.md 7.18), who chases the prankster (136), catches it (137), carries it to the gate and sets it down there (cat_kids 128); as in the original, a
+  prankster that still wants to stay walks back in.
+  Their idle and walking voices come from their state machines (AUDIO-024 narrowed); the park save keeps their state, target and rows.
+- A guest's litter going into a bin now fires the bin's script trigger (variable 0, `VAR_TRIGGER` in every theme; tp.exe `0x4fff20`,
+  `0x55a0b0`), so the bin plays its own sound, and a stinkbomb plays `cat_kids` 207 at the prankster (`0x4ff289`).
+- Handymen now walk and search as in the original (tp.exe `0x4d73c0`, `0x4d7100`, `0x4c8ed0`; ORACLE.md 7.17, X23; ECON-022;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level each handyman patrols the paths, looks for litter within his DetectionRange
+  (2 to 5 cells by grade) and, only when there is none, for a dirty toilet in reach; he walks there, faster than on patrol, and sweeps or
+  cleans for WorkDuration turns from his arrival. An idle handyman looks again every IdleDuration turns. His idle and walking voices come
+  from his own state machine (AUDIO-024 narrowed). The park save keeps his state and walk. Rest and strike still need no walk.
+- Pranksters prank, as in the original (tp.exe `0x4fb114`, `0x4ff0f5`, `0x4d8480`; ORACLE.md 7.16, X18 and X22; GUEST-007, GUEST-006;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PrankeryLikelihood` guests in 100 (5 in the shipped balance) are pranksters for life; when
+  unhappy they drop stinkbombs or litter on their cell and cheer up a little. Vomit and stinkbombs now spread their `RegionFX` on the
+  cell environment grid: guests standing in a stinkbomb's cloud lose happiness and grow ill. Balloons, the advisor's prank lines and the
+  guards who chase pranksters are not modelled yet. Guest schema 5, world hash schema 16; the fixed-run, Jungle and cross-grid hashes moved.
+- Litter now lies on map cells, as in the original (tp.exe `0x4d93b0`, `0x500dc0`, `0x4fff20`; ORACLE.md 7.15, X20 and X21; ECON-020,
+  GUEST-005; [WANDER-plan.md](reverse/WANDER-plan.md) §6). A purchase fills the buyer's litter meter instead of a park-wide count; at 90
+  the guest walks to a litter bin less than 3 cells away or drops its litter on its cell, and vomit stays where the guest was sick. A
+  cell holds one item, and only handymen remove it: litter comes before toilets, and a free handyman sweeps the first unclaimed
+  littered cell for WorkDuration turns (still without a position, ECON-022). The handymen strike when more than a fifth of the path is
+  littered. Saves keep the littered cells and the guests' meters (guest schema 4; older saves load clean), the world hash schema
+  moves to 15, and the fixed-run, Jungle and cross-grid hashes moved.
 - Guests now decide and wander as the original does (tp.exe `0x4fec90` and `0x4f9490`, ORACLE.md 7.14, X18 and X19, GUEST-010;
   [WANDER-plan.md](reverse/WANDER-plan.md)). Once per park turn a guest standing on the paths (state 6) cheers, vomits, leaves, makes a
   major choice at most every 30 turns, or picks a wander destination one to five cells away and walks there (state 7); the 3-second
@@ -875,6 +907,107 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
+  with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
+  live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
+  playing a scream" after the first ride cycle).
+- **Browser options no longer stop the game (October 14):** the browser has no .NET configuration system, so opening
+  Options → Game files read the old `Settings.Default` and stopped the game with "Configuration system failed to
+  initialize". The browser chooses its game folder on the page, so it no longer shows that button, and the old settings are
+  read through `LegacySettings`, which returns nothing in the browser or when a damaged user.config cannot be read.
+- **Water ride tracks, phase 1 (October 14):** one water ride, Splish Splash on the Jungle level, works end to end on the traced original rules
+  ([TRACKS.md](TRACKS.md)). The track layer mirrors the original's 40-byte cell record (origin type 16, three type-12 extension cells), the
+  Q1 piece tables and adjustments, the 14 controller templates and the `.hmp` height profiles (`HmpFile`) are ported, and the water track tool lays
+  two-click lines in two-cell tile steps, charged `Costs.WaterTrackCell` per tile, clearing paths and marking bridges. The circuit walk
+  (`0x52A970`) writes the attraction's validity word (the PC's +0x2C, which the park points read) and the segment numbers; the sections, collision
+  objects and buoys are built in the original's fixed-point units. `Wateride.RSE` drives a `BumpController` through `BUMP` 1-14, 16 and 17 (the PC
+  dispatch shows BUMP 5 is the validity read and BUMP 17 with 0 starts the water): integer steering, integration, walls, keep-out circles, boat
+  collisions, laps and unload at 30 ticks per second, the sine table regenerated from the start-up code. Pieces and boats are drawn from the ride's
+  meshes, and the cells, controller and boats are saved in the park-resume envelope. Jumps, tunnels and the water animation stay
+  open; TRACK-001 to 021 are registered, QUEUE-004 is narrowed to karts and ARRIVAL-003 applies the water ride's track word.
+  Review round: every tile records its ride (TRACK-021), so rides side by side never connect and a demolition removes only its own tiles; a circuit
+  that overflows the section, object or buoy pool is invalid (TRACK-020); the park-resume capture and restore share one live-controller rule; the
+  resume check bounds guests, positions, velocities and the tick clock and the restore checks boat indexes against the walked circuit; the canonical state
+  covers every restored boat field; the tick and the renderer no longer copy the boat list.
+- **Go-kart tracks, phase 2 (October 14):** the go-karts of all four themes run on the shared controller, end to end for the Jungle's Dino Karts (`GoKarts.RSE`
+  drives a real race in the tests and the native smoke). From `tp.exe`: the grid (eight flag-2 buoys in a staggered pair of columns, then the finish buoy,
+  oriented by the orientation bits), the n-th kart aiming at the n-th grid slot and parking there, `BUMP 3` starting the race with a per-lap thrust bias from the
+  world generator, laps and the race over (the first finisher sets phase 3, the others leave at their next crossing, the last kart out resets to loading),
+  broken karts coasting, and the effects: crash (`cat_rides` 12), horn (EventMap slot 3 on the module LCG), exhaust (particles 1 and 10, `cat_rides` 24), the engine
+  voice, particle 15 at spawn and unload, the speed-40 animation switch. Karts are drawn with the four-probe pose over the piece's `.hmp` profile (the hover karts
+  of space and fantasy with a bob, a bank and a shadow instance), their riders as head sprites at the kart's head dummies, and the kart fields join the saves
+  and the digest of kart parks only. `BUMP 8` returns nothing. TRACK-015 and 016 are narrowed (bumper cars; water spray), TRACK-023 to 026 added; QUEUE-004 now
+  covers neither water nor kart rides. `--debug-kart-track` places the ride for captures.
+- **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
+  advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
+  request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),
+  generated sequences are built by the original's rule (`AdvisorSequences`, clip lengths from the advisor clip trailers; the
+  clips themselves are still not drawn, ADVISOR-006 narrowed), the response span is the sequence sum + 1000 + clip 15 (counted
+  twice for generated sequences; fixed sequences keep the estimate, ADVISOR-016 narrowed), and the model stays shown until
+  "Kill advisor" (level exit), not until the speech ends (ADVISOR-018 narrowed). The advisor material draws both faces as the
+  original's device does (ADVISOR-007 narrowed). ADVISOR-014 (synthesis window equals the table at `0x70BD08`) and ADVISOR-019
+  (balance fields +0x18/+0x1C are never read) are retired; ADVISOR-011/017/020 are narrowed to the traced rules and ADVISOR-024 is
+  an extension. Sign text: the `.sgn` slot percent now scales each character's width (COMPAT-005 retired; the composed-sign
+  baseline hashes of 71 of 75 signs were re-pinned), object sign lines keep 32 characters and line 1 loses a trailing "--"
+  (COMPAT-017 narrowed), COMPAT-006 now names Uniscribe instead of GDI TextOut, COMPAT-008 and COMPAT-013 are extensions, COMPAT-011/012
+  are narrowed. 392 to 384 unresolved IDs.
+- **UI register round (October 14):** findings from the Windows `tp.exe` land. The hire window's control 9366 is the plain
+  cash label ("Cash $ N", UITEXT `0x1ca`/`0x1cb`); the applicant/employee toggle is now a labelled extension button
+  (UI-090 retired). The map zoom is 1.0–3.0 in half steps and a pan moves the centre one map cell whatever the zoom (UI-087
+  retired); each map category button toggles its own layer, not an exclusive filter (UI-086 keeps only the colours). A list
+  column press toggles that column's direction, a new column starts ascending and column 0 starts ascending, so the first
+  press on it descends (UI-084 keeps the per-list initial state). The HUD cash shows the bare balance in the original's
+  red-to-white colour steps (table `0x752e30`), without grouping or prefix (UI-021 keeps the control 47 placement). The
+  volume options are percentages (defaults 75/60/75/100) and old 0–10 options files migrate ×10 (UI-030 keeps the slider
+  step). Before each start-up movie the game waits until Esc, Space and all three mouse buttons are released (UI-035
+  retired; the letterbox is `[EXT:movie-letterbox]`). UI-019 and UI-062 are retired (the shipped lobby and `LOANNAMES.str` are
+  complete; data tests added) and UI-023 (test fixture). Widescreen anchors, HiDPI glyphs, the fixed options rows, the
+  autorun focus rectangle, the speed buttons and time keys, the sandbox map and the overview detail rows are now documented
+  `[EXT:...]` design decisions (UI-001, 038, 040, 043, 022, 902, 089, 906, 908 retired). The staff, locator, hire, dismissal,
+  overview, camera-button, slider, fluid and key-table items are narrowed to what the executable leaves open (UI.md).
+
+- **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
+  (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0
+  instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
+  mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
+  narrowed to what remains. No determinism or coaster pin moved.
+- **Ride particles (October 14):** RSE EVENT types 1 and 2 now create, simulate and draw particles of the original system
+  (docs/PARTICLES.md). `Data/Particle/Tp2.plb` (105 templates, 20 effectors) is read by `ParticleTemplateFile`; `ParticleSystem`
+  mirrors the traced pool (120 emitter slots, 2048 particles, private LCG seeded 1, 31 ms ticks, bursts, per-quarter rates,
+  chained and death effects, the type-2 direction, the control scale); `ParticleRenderer` draws camera-facing sprites from the
+  `particles` set (`esprites.wad` SPR_PA/PB) with the template's blend, as a weather-style entity with a precompiled web shader
+  and a new one-plus-one material flag. A prepared request is converted back to native units and handed to the pool
+  (fire and forget, no save state, outside the determinism hash). PTCL-901 is retired for PTCL-902 to PTCL-908 (arithmetic,
+  effectors, sprite scale, draw order, settings and ground callback, the PART save block, the callers not wired); PTCL-900 is
+  narrowed. In the shipped jungle the Aztec Mayhem torches already fire EVENT 2.
+- **Allocation test made sturdy (October 14):** `PerFrameExactTierLookupAddsNoDefaultParameterAllocations` keeps the
+  smallest of three measured passes per loop, so a one-off runtime allocation on the thread (seen once on ubuntu Release,
+  48 bytes) no longer fails it while a per-call allocation still does.
+- **Rides register round (October 14):** the rides register is read against the decrypted Windows tp.exe. Ride init writes
+  `InitDuration` only when above 0, as its low byte clamped to `UsageInfo.MinDuration..MaxDuration` (also the tier seed;
+  RIDES-016 retired), and the script speed is now `0.5 + bias / 100` with the bias from the ride's `Upgrades[0].InitSpeed`
+  (children copy it; jungle Bouncy runs at 1.1, RIDES-033 narrowed to the settings/upgrade writers). A literal TRIGWAITANIM
+  out operand resumes a script without an object once its value equals the triggered AnimID (RIDES-037 retired). The member
+  letter table is the original's twelve (C D I L S M E U W B R O by AnimID), numbered clips load up to the first gap and the
+  unnumbered one only without number 1 (RIDES-008 retired). RIDES-001 and RIDES-034 are retired with PC citations (30 frames
+  a second; placed rides never take the idle restart); RIDES-022, 032, 036, 038, 043 and 044 are rewritten around what the
+  PC shows. WAIT is divided by the script speed as well (`0xb0658`), screams use the script's speed word (AUDIO-016
+  retired), and the M3 gate's boarding period follows the scaled WAIT (Belly Bounce: P 3, H 55).
+- **Riders' heads on their traced seats (October 14):** a head is now attached through the model's own records, traced in
+  the Mac binary: attribute record `i` belongs to node `Unknown46 + i`, a head id is the first record with flag `0x80` and
+  that value, and the node-name guess is gone (Eruption's `Head1a` and the other previously unresolved ids now draw;
+  `monkey.MD2` id 3 is node 10 `Head02`, `Bird.MD2` id 9 is node 2 `Head03`). The head is drawn the way `0x1019B6F8` does:
+  at exactly the node's world position, hidden for node flag `0x8000`, the camera binned in the node's frame to the 7 x 8
+  frames of the kids' head art (direction row times 8 plus azimuth column), and the sprite rolled with the seat
+  (`atan2(-m10, m11)`), at scale 0.685. The new GPU-free `HeadPresentation` is unit-tested and `RideHeadRenderer` draws from
+  a list of head sources, ready for the coaster seats. Every script (root, child, sound) has its own head table, as the
+  script init allocates one for each, and the slot draw uses the original `labs(rand >> 1) % length` formula on the ride's
+  own stream. Register: HEADS-002 and HEADS-003 retired, HEADS-001/004/005 narrowed.
+- **Audio register round (October 14):** the storm's thunder follows the original countdown (`0x101033CC`/`0x101034D8`):
+  a bolt starts the countdown only when none is running, at `ThunderStartsThisFarAway` minus the storm's bolts so far plus a
+  random term, and the thunder rings when the countdown steps from 1 to 0 (a computed 0 never rings), at the last bolt's top;
+  AUDIO-029 is retired. Speech ducking (AUDIO-001) is retired with its Mac citation (`0x100BB18C`); AUDIO-002, 005, 019,
+  025 and 033 are narrowed to what the PC and Mac traces leave open (AUDIO.md).
 - **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
   (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
   the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points
@@ -908,6 +1041,10 @@ research batch was included in this merge.
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.
+- **A fairground setup screen (October 14):** the browser's start screen now looks like the original's front end: a night sky
+  with bunting and balloons, a yellow-outlined logo, a gold-rimmed panel and chunky gold buttons (Play leads once game files are
+  kept; choosing another folder turns blue). CSS and inline SVG only: no original art and no web fonts (the content security
+  policy allows none); it fits a phone and keeps still for reduced motion.
 - **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
   write's bytes can no longer end up under another's hash; writes to different files stay independent.
 - **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),

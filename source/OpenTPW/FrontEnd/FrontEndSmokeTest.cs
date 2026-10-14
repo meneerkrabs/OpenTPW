@@ -559,7 +559,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( flow.Level!.Park!.Economy.Staff.Members.Any( member => member.Id == smokeStaffId ), "clicking the selected applicant hires through the staff window" );
-			Click( hud.Stack.Top!, "staffView" );
+			Click( hud.Stack.Top!, "staffViewExt" );
 		} );
 		Wait( "employed staff view opens", 3 );
 		Do( "dismiss smoke employee", () =>
@@ -622,13 +622,13 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( flow.Hud.Stack.Top!, "headerNumber" );
 		} );
 		Wait( "visitors header chosen", 3 );
-		Do( "visitors header pressed again", () => Click( flow.Hud!.Stack.Top!, "headerNumber" ) );
+		Do( "visitors header sorted once", () => Require( flow.Hud!.VisitorItems.Count > 0, "the sorted visitor list is not empty" ) );
 		Wait( "visitors sorted", 3 );
 		Do( "visitors header sorted", () =>
 		{
 			var rows = flow.Hud!.VisitorItems;
 			Require( rows.Count >= ParkHud.StaffVisibleRows && rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderByDescending( id => id ) ),
-				"a repeated header press lists the visitor numbers backwards" );
+				"the first press on the initial column (ascending) lists the visitor numbers backwards" );
 		} );
 		Do( "click a visitor row", () =>
 		{
@@ -1309,7 +1309,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( hud.Stack.Top!, "headerName" );
 		} );
 		Wait( "visit attractions header chosen", 3 );
-		Do( "visit attractions header pressed again", () => Click( flow.Hud!.Stack.Top!, "headerName" ) );
+		Do( "visit attractions header sorted once", () => Require( flow.Hud!.AttractionItems.Count > 0, "the sorted attraction list is not empty" ) );
 		Wait( "visit attractions sorted", 3 );
 		Do( "visit attractions sorted", () =>
 		{
@@ -1317,7 +1317,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var names = hud.AttractionItems.Select( row => row.Name ).ToArray();
 			Require( visitRowNames.Distinct().Count() == visitRowNames.Length
 				? names.SequenceEqual( visitRowNames.Reverse() )
-				: string.CompareOrdinal( names[0], names[^1] ) >= 0, "a repeated header press reverses the list order" );
+				: string.CompareOrdinal( names[0], names[^1] ) >= 0, "the first header press on the initial column reverses the list order" );
 			Click( hud.Stack.Top!, "scrollDown" );
 		} );
 		Wait( "visit attractions scrolled", 3 );

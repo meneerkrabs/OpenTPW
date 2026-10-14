@@ -315,7 +315,10 @@ public partial class Level : IDisposable
 				SetupGuests( OriginalPark );
 			yield return 0.9f;
 			using ( LoadProfile.Measure( "paths" ) )
+			{
 				SetupPaths();
+				SetupTracks();
+			}
 			if ( OriginalTerrain != null && Guests != null )
 			{
 				var cells = Guests.Grid.Cells;
@@ -351,6 +354,7 @@ public partial class Level : IDisposable
 			sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
+		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 
@@ -711,6 +715,7 @@ public partial class Level : IDisposable
 	public void LoadPark( string path )
 	{
 		Streams.LoadPark( path );
+		AttachStaffWorld();
 		// The gate holds the economy it was built over; the load replaced it.
 		if ( Park != null && Gate != null )
 			BuildParkGate();
@@ -739,6 +744,9 @@ public partial class Level : IDisposable
 		ExitRideView();
 		ExitFreeWalk();
 		onlinePanel?.Dispose();
+		foreach ( var renderer in trackRenderers.Values )
+			renderer.Dispose();
+		trackRenderers.Clear();
 		DetachOverlay();
 		TextOverlay?.Dispose();
 	}

@@ -91,10 +91,24 @@ EXPECTED = {
                                                    'e_happy': 10, 'product': 2, 'extra': 0, 'type_word': 0}),
     # X18 (guest state 6 0x4fec90, GUEST-010): the decision order of WANDER-plan §2, every branch's effects included.
     ('tpw-exe-guest-state6', 'plan'): AGREE,
+    # The prank test reads happiness after a leaving gate without a way out took the big change; with the earlier value 2 differ.
+    ('tpw-exe-guest-state6', 'prank-before-gate-change'): (2, {'turn': 50, 'activity': 0, 'decision': 3645728797, 'happiness': 30.0, 'illness': 0.0,
+                                                             'exit': 0, 'closed': False, 'r': 4, 'r2': 2096108995, 'litter': 0.0, 'bin': 0,
+                                                             'prank': 101, 'stink': 25, 'things': ['self', (1, 20816)], 'way_out': False,
+                                                             'ride': 0, 'wander': False}),
     # X19 (wander destination 0x4f9490, GUEST-010): GuestWander's steps, draws and sub-cell bytes on synthetic cells.
     ('tpw-exe-wander-destination', 'plan'): AGREE,
     # The rule a step reads is the current cell's own link; with links on either side 164 differ (inputs with one-sided links).
     ('tpw-exe-wander-destination', 'either-side-links'): (164, ((24, 31), 1062577813)),
+    # X20 (littering a cell 0x4d93b0, ECON-020): one item per cell, nothing online, the sprite offset from the cell-id reseed.
+    ('tpw-exe-litter-drop', 'plan'): AGREE,
+    # X21 (state 9, the walk to a bin 0x4fff20, GUEST-005): the bin's sound on arrival, else litter on the cell; the meter empties.
+    ('tpw-exe-bin-walk', 'plan'): AGREE,
+    # X22 (region effect writer 0x4d8480, GUEST-006): ParkEnvironment.Apply, square radius, Manhattan divisor, wrapping words.
+    ('tpw-exe-region-effect', 'plan'): AGREE,
+    # X23 (the handyman's litter finder 0x4c8ed0, ECON-022): StaffWorldSimulation.FindLitter, range square, claims, Manhattan, first on a tie.
+    ('tpw-exe-litter-finder', 'plan'): AGREE,
+    ('tpw-exe-guard-choice', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -791,11 +805,46 @@ class Oracle(CoastTests, unittest.TestCase):
 
     # ------------------------------------------------------------------ X18 / X19: guest states 6 and 7
     def test_state_six_runs_the_planned_order(self):
-        self.check(('tpw-exe-guest-state6', 'plan'))
+        for side in ('plan', 'prank-before-gate-change'):
+            self.check(('tpw-exe-guest-state6', side))
 
     def test_wander_destination_follows_guest_wander(self):
         for side in ('plan', 'either-side-links'):
             self.check(('tpw-exe-wander-destination', side))
+
+    # ------------------------------------------------------------------ X20 / X21: litter
+    def test_litter_drop_keeps_one_item_per_cell(self):
+        self.check(('tpw-exe-litter-drop', 'plan'))
+
+    def test_bin_walk_bins_or_drops_the_litter(self):
+        self.check(('tpw-exe-bin-walk', 'plan'))
+
+    # ------------------------------------------------------------------ X22: region effects
+    def test_region_effect_spreads_like_the_environment_grid(self):
+        self.check(('tpw-exe-region-effect', 'plan'))
+
+    # ------------------------------------------------------------------ X23: the handyman's litter finder
+    def test_litter_finder_takes_the_nearest_unclaimed_cell(self):
+        self.check(('tpw-exe-litter-finder', 'plan'))
+
+    def test_guard_choice_measures_from_the_staff_hq(self):
+        self.check(('tpw-exe-guard-choice', 'plan'))
+
+    def test_guard_choice_is_sharp(self):
+        # Measuring from the prankster (the routine's own cell argument) or letting a tie go to the later guard both disagree.
+        def from_prankster(x):
+            return targets.guard_plan(dict(x, origin=x['prankster']))
+
+        def ties_last(x):
+            best, chosen = None, 0
+            for i, (state, gx, gy) in enumerate(x['guards']):
+                d = (gx - x['origin'][0]) ** 2 + (gy - x['origin'][1]) ** 2
+                if state in (0, 1) and (best is None or d <= best):
+                    best, chosen = d, i + 1
+            return chosen
+        for plan in (from_prankster, ties_last):
+            [comparison] = [c for c in compare(targets.GUARD_TARGET, self.image, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, plan.__name__)
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

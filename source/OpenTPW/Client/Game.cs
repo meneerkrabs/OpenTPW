@@ -324,6 +324,22 @@ internal static class Game
 			Render.PostUpdate += new WorldCapture( capturePath, frames, args.Contains( "--capture-interface" ), pose, sequence.Count, sequence.Interval ).Update;
 		}
 #if DEBUG
+		// [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the
+		// park's paths and points the camera at it, so captures show the track tiles and a boat (docs/TRACKS.md).
+		if ( args.Contains( "--debug-water-track" ) || args.Contains( "--debug-kart-track" ) )
+		{
+			var demoFrames = 0;
+			var demoType = args.Contains( "--debug-kart-track" ) ? 1 : 2;
+			Render.PostUpdate += BuildTrackDemo;
+			void BuildTrackDemo()
+			{
+				if ( flow.Level is not { WaterTracks: not null } demoLevel || ++demoFrames < 30 )
+					return;
+				Render.PostUpdate -= BuildTrackDemo;
+				if ( demoLevel.BuildDemoTrackRide( demoType ) == null )
+					Log.Warning( "--debug-water-track / --debug-kart-track: no site with room for a track ride and its circuit." );
+			}
+		}
 		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
 		// converter as soon as the park's weather exists, so captures can show rain/snow/lightning without waiting
 		// for the season's rolls. The drops, bolts and thunder still come from ParkWeather's normal machinery;
@@ -549,7 +565,7 @@ internal static class Game
 			: GamePathResolution.Resolve( commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), new( null, null ), null, () => Array.Empty<string>() );
 		if ( resolved == null && !args.Contains( "--setup" ) )
 		{
-			foreach ( var (path, source) in new[] { (saved.GamePath, GamePathSource.Saved), (Settings.Default.GamePath, GamePathSource.Legacy) } )
+			foreach ( var (path, source) in new[] { (saved.GamePath, GamePathSource.Saved), (LegacySettings.GamePath, GamePathSource.Legacy) } )
 			{
 				if ( string.IsNullOrWhiteSpace( path ) ) continue;
 				var inspected = InstallationDiscovery.InspectAsync( path ).GetAwaiter().GetResult();

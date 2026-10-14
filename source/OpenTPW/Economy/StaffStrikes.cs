@@ -85,7 +85,7 @@ public sealed class StaffStrikeBoard
 	/// <param name="forced">The manager's forced-strike word (a debug flag) is set: a grievance without looking.</param>
 	/// <param name="litter">Handymen only: the two analyser sums; a quotient above 0.2f is a grievance (null: not known).</param>
 	// [BIN:STP-PPC:0x100F8410 strike test] more than three members whose truncated low-byte energies (+504) average below 15 (unsigned floor of the sum over the count), or whose happinesses (+500) do; handymen first test the analyser ratio above the single 0.2
-	// Approximation (ECON-014, registered at ParkEconomy.UpdateStaffVitals): the handymen's two analyser statistics (0x100C21F4 / 0x100C2264, a sum over 1024 history records each) are not modelled: OpenTPW passes none, so the litter grievance never applies
+	// The handymen's two analyser statistics (0x100C21F4 / 0x100C2264) are sums over the analyser's 1024 blocks of 4 × 4 cells: littered cells and path, queue and type-9 cells (tp.exe 0x004C8180 / 0x004C8150); ParkLitter.Statistic supplies them
 	public static bool Grievance( StaffType role, IReadOnlyList<StaffVital> members, bool forced = false, LitterStatistic? litter = null )
 	{
 		if ( forced )

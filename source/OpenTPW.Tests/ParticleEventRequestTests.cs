@@ -83,6 +83,22 @@ public class ParticleEventRequestTests
 		var invalid = new OriginalObject(entry, new ObjectPlacement(3, 4, 0, new N.Vector2(float.NaN, 0), 0)); Emit(invalid.Runtime, 2);
 		Assert.AreEqual(ParticleKeyStatus.InvalidTransform, invalid.Runtime.LastParticleEventAttempt!.Value.KeyStatus); Assert.IsNull(invalid.Runtime.LastParticleEventAttempt.Value.Request);
 	}
+	[TestMethod]
+	public void PreparedRequestsAreAnnouncedToTheParticleSystemButRefusalsAreNot()
+	{
+		var received = new List<ParticleEventRequest>(); Action<ParticleEventRequest> handler = received.Add;
+		OriginalObjectRuntime.ParticleRequested += handler;
+		try
+		{
+			var placed = Placed(); Emit(placed.Runtime, 1); Emit(placed.Runtime, 2, 99); Emit(placed.Runtime, 2, 7, 105); Emit(placed.Runtime, 1, 7, 0x8001); Emit(placed.Runtime, 2);
+			Assert.AreEqual(2, received.Count, "one request per prepared EVENT 1/2; refusals start nothing");
+			Assert.AreEqual((1, 43), (received[0].Type, received[0].EffectId)); Assert.IsNull(received[0].EngineUnitDirection);
+			Assert.AreEqual(2, received[1].Type); Assert.IsNotNull(received[1].EngineUnitDirection);
+			Assert.AreEqual(placed.Runtime.LastParticleEventAttempt!.Value.Request, received[1]);
+			Emit(placed.Runtime, 4); Assert.AreEqual(2, received.Count, "other EVENT types are not particle requests");
+		}
+		finally { OriginalObjectRuntime.ParticleRequested -= handler; }
+	}
 	[DataTestMethod]
 	[DataRow(0)][DataRow(104)]
 	public void DirectEffectBoundariesOnlyPrepareMetadata(int effect)
@@ -157,7 +173,7 @@ public class ParticleEventRequestTests
 		Assert.IsNull(first.Runtime.LastParticleEventAttempt); Assert.IsTrue(ownLoop.IsFinished); Assert.IsFalse(otherLoop.IsFinished);
 		Assert.AreEqual(otherAttempt, other.Runtime.LastParticleEventAttempt); Assert.IsTrue(mixer.Mix(4).Any(value => value != 0));
 		foreach (var name in new[] { "particlePlacement", "particleKeys", "eventOrigin" }) Assert.IsNull(typeof(OriginalObjectRuntime).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(first.Runtime), name);
-		var stopped = first.Runtime.CaptureSnapshot(); Level.RequireResumableAudio(stopped); Assert.AreEqual("integration particle-owner fault", stopped.StoppedScriptFault);
+		var stopped = first.Runtime.CaptureSnapshot(); Assert.AreEqual("integration particle-owner fault", stopped.StoppedScriptFault);
 		StringAssert.Contains(Assert.ThrowsException<NotSupportedException>(() => other.Runtime.CaptureSnapshot()).Message, "looping EVENT");
 		first.Runtime.Simulate(FixedStepClock.TickDuration); Emit(first.Runtime, 2); Assert.IsNull(first.Runtime.LastParticleEventAttempt); Assert.IsFalse(otherLoop.IsFinished);
 		Assert.AreEqual(ParticleEventPreparationStatus.Prepared, retained.Status); Assert.IsNotNull(retained.Request);

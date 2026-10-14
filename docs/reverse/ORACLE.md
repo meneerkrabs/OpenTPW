@@ -148,7 +148,7 @@ Mutation checks (`test_oracle.py`):
 | `queue-ride-update` | `0xe0a8c` (the ride update: dispatch on the ride state `+408`, the head-guest step of states 1, 2 and 4) | the calls it makes are recorded, not run: `0xe1864` admission, `0xdcebc` remove from queue (ride and the u16 head id in the high half of r4 checked), `0xee804` dismiss, `0xeda04` force aboard, `0xe1758` script release; plus `0xb5758`/`0xb5be0` (VAR_LETMEON), `0xb678` assertion (logged when the condition is 0), `0xfa9a4` and `0x5fbcc` | 510 | **F15**: **agree** 510/510 (states 0..6 and −1, heads that wait or were taken, state 14 or not; `test_queue_ride_update_reading_is_sharp`) | no hook (CSHARP_PENDING): C# has the VAR_BROKEN reading only (`RideVisitorBridge.DismissHead`, `QueueTests`) |
 | `queue-join-difference` | `0xe9a84`, `0xdfe34`, `0xeb7e4` (guest preference), `0xe02ec` (excitement), `0xdff70` (its formulas), `0xe1f70`/`0xe1f78`/`0xe2364` (sideshow words), `0xe2fe4` (track type 3), `0x41a14` (coaster getter, controller table built) | `0x118018` type record (registry and type id checked), `0xb5e24` script controller (script `+32` checked), `0x1ea40` pieces behind ride `+36` (the `+36` word and four distinct outputs checked), import `sqrt` (IEEE double square root, argument checked non-negative). The settings word `+164 + 12 · type` is written in the data block | 524 | **F16** (fixed in C#): 387 differ from the old claim ("ride minus preferred", `plan-static`). The plan now says the routine reading: **agree** 524/524 | `RideVisitorBridge.JoinDifference` through `queue_join_difference`: **agree** except 46 inputs that have a thing behind ride `+36` (QUEUE-004; with the thing removed from the inputs **agree** 524/524) |
 | `queue-join-gate` | the fragment `0xecd6c..0xecdb0` / `0xeced0..0xecf34` of the state-10 handler `0xeccb0` (the `0xe9a84` call, `0xe02ec(ride, 1)`, the 45 test and the refusal) plus the callees above | the callees' stubs, plus `0x5fbcc` log (the message text is read from memory), `0xfb7b4` reason and `0xfb54c` thought (guest `+48` object, id and thought checked) | 524 | **F16** (fixed in C#): 155 differ in outcome from the old claim (`plan-static`). The plan now says the routine reading: **agree** 524/524 (outcome and difference) | `RideVisitorBridge.ExcitementRefusal` and `JoinDifference` through `queue_join_gate`: **agree** except 61 inputs with a thing behind ride `+36` (the same cause) |
-| `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `ParkEconomy.TryBuy` through `shop_sale_litter` (delta of `LitterScaled`): the same 213 (C# has no guest meter, so its delta is added to the oracle's meter); `UseEffects.Apply` through `shop_sale_meters` (the four guest meters): **agree** 526/526 |
+| `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `MeterMath.Add` through `shop_sale_litter` (the guest's litter meter, `GuestSimulation.ApplyVisit` since §7.15): **agree** 526/526 (before §7.15 the park-wide store gave the same 213); `UseEffects.Apply` through `shop_sale_meters` (the four guest meters): **agree** 526/526 |
 | `guest-litter-trigger` | the first lines of the litter test in the guest update (`0xebd20..0xebd3c`) | none | 521 | no plan side. **Agree** 521/521 with the routine reading: the meter truncated, taken as a byte, `>= 90` | no hook (CSHARP_PENDING): OpenTPW has no guest litter meter |
 | `staff-training-split` | `0xfc1c4` (the month-end training split), the list walkers `0x10507c` / `0x1050a4` / `0xfa9a4`, `0xf3588` (train one member), `0x108424` / `0x1082b4` (bank and park things of the game) and the debit `0xcbfdc` with its statistics | `0xb678` assertion (a zero condition fails the run) and the debug print `0x5fbcc` (logged) | 507 | **F17**: 358 differ from the former rule (the plan). **Agree** 507/507 with the routine reading | `ParkStaff.Train` through `staff_training`: **agree** (358 differed before the fix) |
 | `ride-repair-duration` | `0xd9c0c` (the mechanic's repair-state entry), `0xdfe0c`/`0xdfe88`/`0xdfe90` (ride state 1, maintenance word `+96`, state 2), `0xd2290` (sub-state setter) | `0xfa9a4` thing id, `0xdfb94` the ride's mechanic id, `0xe6454` arrival state (chosen), `0xdc320` type record (the word at `+508 + 64 · level` chosen), `0xd99ac` release (recorded), `0xb678` assertion and `0x5fbcc` log (recorded); the balance block word `+1004 + 8 · grade` is `WorkDuration` | 529 jobs | **F19** (fixed in C#): 396 differ from the old claim (a flat `WorkDuration`, `plan`; the same without the upgrade factor, `flat-repair`, differs on 352). The routine reading **agrees** 529/529 | `ParkEconomy.RepairTimer` through `repair_timer`: **agree** 529/529 |
@@ -910,7 +910,7 @@ drop, one item per two sales: the same 0.5 per sale on average. The differences 
 leaves with 80 never drops it), a surplus above 100 is lost (a guest at 60 buying a burger gets 100, not 110), a mixed basket drops
 at 90 or more (a burger and an ice cream and another ice cream: 50 + 25 + 25 = 100), and the drop needs the right guest state and, probably, no bin in reach.
 
-C# is **not changed**, deliberately. `ParkEconomy` keeps a park-wide store (`LitterScaled`, 1/100 item) and `TryBuy` has no guest, so the
+(Superseded: section 7.15 gives the guests the litter meter, the bin search and litter by cell; the C# hook now agrees.) At the time C# was **not changed**, deliberately. `ParkEconomy` keeps a park-wide store (`LitterScaled`, 1/100 item) and `TryBuy` has no guest, so the
 meter, the clamp, the 90 threshold and the bin search have no home there; the guests slice has no litter meter and its needs (`Hunger`,
 `Thirst`, `Toilet`) are set to 0 by `ApplyVisit` when the shop satisfies them, rather than moved by the shop's effects (so thirst, hunger and vomit
 effects are also still approximations). Modelling it means a guest litter field with a snapshot and save change and a drop
@@ -1600,8 +1600,13 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-counts-test` | tp.exe `0x4dd920`..`0x4dda1f` (thiscall, `ecx` = thing; the Mac `0xdc834`) | `0x4de130` back of queue (chosen, checked for the thing), `0x4ddf50` list length (checked to be asked for guest 0), `0x412e90` type record (track type chosen), `0x441970` coaster controller test (cdecl, chosen); stack balance checked | 515 (15 edges, one per condition, 500 random) | **X15**: **agree** 515/515 with the routine reading | the C# rule transcribed (`CountsForParkPoints` with `QueueCountsForParkPoints`): 29 differ, all coasters, karts and water rides (ARRIVAL-003); for every other track type **agree**. The back cell and list length are stubbed, so this checks the routine's logic, not OpenTPW's queue geometry |
 | `tpw-exe-toilet-wear` | tp.exe `0x4e2440`..`0x4e2646` (thiscall, `ecx` = the relief object, argument the guest's toilet byte), offline game type, and `_ftol` | `0x4d8460` / `0x4d8440` dirty-toilet messages (recorded with their cell), `0x5da3c0` log (counted); the GameType object marked constructed; stack balance checked; x87 control word `0x27F` | 528 (28 edges around gauge 25 and 0, 500 random) | **X17**: **agree** 528/528 (the stored single, the messages and the log); with a double −0.05 one input differs in the last bit | `ParkEconomy.UseRelief`, unit-tested (`ToiletTests`) |
 | `tpw-exe-price-test` | tp.exe `0x4fde50`..`0x4fe181` (thiscall, `ecx` = guest, argument the ride), the price, cost-of-goods and win-byte getters and `_ftol` | `0x4dd4e0` type record (synthetic), `0x4e2740` park type record (word `+0xc` chosen), `0x519510` park, `0x4c74b0` statistic (recorded); stack balance checked; x87 control word `0x27F` | 530 (30 boundary inputs, among them meters that round to the next integer as float32; 500 random) | **X16**: **agree** 530/530 with the reading, decision and price statistics; without the money test 56 differ | `QueueJoinRules.TooExpensive` / `WillingnessToPay`: unit-tested on seven willingness values the routine produced (`PriceTestTests`) |
-| `tpw-exe-guest-state6` | tp.exe `0x4fec90`..`0x4ff4d7` (thiscall, `ecx` = guest; its SEH frame through `fs`), `_ftol` and the debug print | the draw (scripted), `0x4fc800` activity, `0x4d93b0` litter, `0x50c100` event, `0x4faa00` sound, `0x4fea70` happiness change, `0x51a280` closed word, `0x4d86d0` gate cells, `0x4fa530` gate route, `0x501020` / `0x4c8eb0` presentation look-ups (none), `0x4fcb10` choice (`+0x1dc` chosen), `0x4f9490` wander (chosen), `0x501db0` state (all recorded and checked for their object); stack balance checked; x87 control word `0x27F` | 518 (18 edges at the cheering, vomiting and 30-turn boundaries, 500 random; litter meter and prank byte 0) | **X18**: **agree** 518/518 with WANDER-plan §2 as `GuestDecision` runs it, each branch's original effects included | (the plan is the routine reading) |
+| `tpw-exe-guest-state6` | tp.exe `0x4fec90`..`0x4ff4d7` (thiscall, `ecx` = guest; its SEH frame through `fs`), `_ftol` and the debug print | the draw (scripted), `0x4fc800` activity, `0x4d93b0` litter, `0x50c100` event, `0x4faa00` sound, `0x4fea70` happiness change, `0x51a280` closed word, `0x4d86d0` gate cells, `0x4fa530` gate route, `0x501020` / `0x4c8eb0` presentation look-ups (none), `0x4fcb10` choice (`+0x1dc` chosen), `0x4f9490` wander (chosen), `0x500dc0` bin search (`+0x1dc` chosen), `0x501db0` state (all recorded and checked for their object); stack balance checked; x87 control word `0x27F` | 526 (78 edges at the cheering, vomiting, litter-meter, prank and 30-turn boundaries, 500 random) | **X18**: **agree** 578/578 with WANDER-plan §2 as `GuestDecision` runs it, each branch's original effects included (the litter step since §7.15, the pranks since §7.16) | (the plan is the routine reading) |
 | `tpw-exe-wander-destination` | tp.exe `0x4f9490`..`0x4f9e3d` (thiscall, `ecx` = guest; SEH frame), the cell readers `0x522770` / `0x522810` / `0x522850` / `0x536310`..`0x53635b`, the map bounds test `0x4d8300`, the counter `0x4d8c50` | the draw (scripted), `0x4fa670`, `0x510100` route request (on the steering state `+0xd4`; always found, its point recorded), `0x50be80` stranded animation, `0x50b350` thing id; the staff calls `0x506ed0` / `0x506f30` and the stranded test `0x4fa770` must not run. Synthetic cell records (`[0x8023a0]`, type `+8`, links `+0xc`, queue link `+0xd`) and the direction table as `0x4d9a65` writes it | 527 (7 corridors, 20 sparse grids with unlinked or queue-only starts, 500 random 7 × 7 patches, some links one-sided) | **X19**: **agree** 527/527 with `GuestWander.Pick`: cell, sub-cell bytes and the number of draws | a step that also follows a neighbour's link back (OpenTPW's `AreConnected`): 164 differ |
+| `tpw-exe-litter-drop` | tp.exe `0x4d93b0`..`0x4d95d0` (thiscall, `ecx` = cell record, argument the type), the world generator step `0x516330` and reseed `0x516370`, `_ftol` | `0x475a10` sprite (descriptor and bank recorded), `0x475480` placement (x, z recorded), `0x4d8440` RegionFX add, `0x521e60` particle; the GameType object marked constructed, word 0 from the input | 526 (26 edges: every type on three cells, an occupied cell, an online park; 500 random) | **X20**: **agree** 526/526 with `ParkLitter.Drop` and `SpriteOffset` (type, collector, sprite offset, the generator's state after the reseed) | (the plan is the routine reading) |
+| `tpw-exe-bin-walk` | tp.exe `0x4fff20`..`0x4fffe4` (thiscall, `ecx` = guest) | the walk step `0x4fa2a0` (0, 1 or 2 chosen), the bin sound `0x55a070` / `0x55a0b0`, the draw, the litter drop `0x4d93b0` (type and cell recorded), `0x501db0` state | 518 (18 edges, 500 random) | **X21**: **agree** 518/518 with the state-9 handler of `GuestSimulation` | (the plan is the routine reading) |
+| `tpw-exe-region-effect` | tp.exe `0x4d8480`..`0x4d8607` (thiscall, `ecx` = cell manager; add flag, effect index, cell id) | none; a synthetic cell manager with the effect table at `+0x1d9104` and the grid at `+0x1b1104` | 520 (random tables up to radius 9, words near the 16-bit limits, cells at the map's corners) | **X22**: **agree** 520/520 with `ParkEnvironment.Apply` (the 19 × 19 window around the source) | (the plan is the routine reading) |
+| `tpw-exe-guard-choice` | tp.exe `0x5099c0`..`0x509ade` (thiscall, `ecx` = the receiving thing; out, prankster cell id) and the state test `0x4d6330` | none but the debug print; synthetic guard things in the thing table `0x7cfb90` behind game word `+0x1da744` | 520 (up to six guards in all states, equal distances, the receiver at (0, 0) and elsewhere) | **X24**: **agree** 520/520 with `StaffWorldSimulation.ChooseGuard`; measuring from the prankster or giving a tie to the later guard disagrees | (the plan is the routine reading) |
+| `tpw-exe-litter-finder` | tp.exe `0x4c8ed0`..`0x4c9033` (thiscall, `ecx` = park; out, collector id, cell id, range) | none but the debug print; synthetic cell records at `[0x8023a0]` and the park's scratch buffer at `+0x1f020` | 520 (ranges 0..5, claims by others and by him, cells at the map's corners) | **X23**: **agree** 520/520 with `StaffWorldSimulation.FindLitter` | (the plan is the routine reading) |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
@@ -2272,3 +2277,92 @@ GUEST-010 keeps:
 - the gate routes, tested as a path to an arrival lane's end;
 - the walk's "stuck" result and the off-path search;
 - the stranded mark (`+0x198`, animation 0x11).
+
+### 7.15 Findings X20 and X21: litter by cell
+
+Question (ECON-020, GUEST-005): where does litter go? OpenTPW kept a park-wide count that every sale raised by `LitterEffect`/100
+and every handyman lowered each park hour. The research and the plan are in docs/reverse/WANDER-plan.md §6.
+
+**The guest's side.** The use routine `0x4fe1e0` adds the type's `LitterEffect` (`+0x154`) to the guest's litter meter `+0x1b4`.
+State 6 checks the meter after vomiting and before the leaving gate (X18, now with the litter step): a byte of 90 or more runs the
+bin search `0x500dc0` (radius 3, squared cell distance below 9, the nearest reachable bin), and a bin sends the guest to state 9;
+without one a second draw drops litter `1 + R2 % 5` on the guest's cell and the meter empties. Vomiting drops type 7 (X18).
+
+**X20, littering a cell (`0x4d93b0`).** Executed with the world generator. On 526 inputs the stored type, the claim, the sprite's
+position and the generator's state agree with `ParkLitter.Drop` and `ParkLitter.SpriteOffset`: nothing online or on a littered cell
+(one item per cell); otherwise the generator is reseeded with the cell id `y·128 + x + 1` and drawn twice for the sprite's offset
+`x·10 + r1 % 9 + 1`, z likewise. Vomit and stinkbomb also add RegionFX 2 and 5 (`0x4d8440`), recorded here; OpenTPW adds them with
+the environment grid (phase 4). The reseed is not applied to OpenTPW's own streams (DET-014): the sprite offset is a function of the
+cell alone.
+
+**X21, the walk to a bin (`0x4fff20`).** On 518 inputs: walking on changes nothing; arriving at a bin plays its sound; arriving
+without a bin or stuck drops `1 + rand % 5` on the cell; then the meter is 0 and the state 6. The original leaves `+0x1dc` (the bin)
+in place, where OpenTPW clears its bin id; nothing reads the word before the next choice writes it.
+
+**Fixed in C#.** `ParkLitter` keeps the litter by cell for the economy and its save; `GuestSimulation` fills the meter, runs the
+litter step, the bin search and state 9, and drops vomit. A sale no longer adds litter to the park. A free handyman claims the first
+unclaimed littered cell in the finder's order (`0x4c8ed0`, x outer and y inner), park-wide because he has no position yet, and
+sweeps it for WorkDuration park turns (`0x4d76a0`); litter comes before toilets (`0x4d7100`). The handymen's strike grievance now
+reads the littered share of the path and queue cells (`0x509360`).
+
+ECON-020 keeps the generator reseed and the analyser's cache lag; ECON-022 the handymen's positions, walks and DetectionRange;
+GUEST-005 the access cell of a bin and a bin removed during the walk.
+
+### 7.16 Findings X18 (pranks) and X22: pranks and the environment grid
+
+Question (GUEST-007, GUEST-006): what do pranksters do, and how do vomit and stinkbombs act on guests? OpenTPW had no prankery flag and
+passed 0 for the guest's cell environment words. The research is in docs/reverse/WANDER-plan.md §7.
+
+**The flag.** The constructor's eighth draw (`0x4fb114`): 100 when it is below `PrankeryLikelihood` modulo 100 (`0x7850dc`), plus the thing
+id modulo 3. Read in the disassembly; `GuestStart.PrankFlag` transcribes it.
+
+**X18, the prank step (`0x4ff0f5`).** The state-6 target now runs nonzero flags with a synthetic thing list on the guest's cell, the
+balloon burst `0x4fe950` and the message bus `0x40fb10` recorded. On 578 inputs (78 edges) the handler agrees with `GuestDecision`: below
+a happiness byte of 15 and with the flag above `R % 101`, a stinkbomb (when `R % 100` is below `StinkbombLikelihood`, with sound 0xcf),
+litter `R % 5 + 1`, or the first other guest with a balloon; then event 15, the type-14 message `{0x7007a8, 0, id, id % 3}` and happiness
++1 (clamped), and the step falls through to the final choice. The prank test reads happiness after the leaving gate: a gate without a
+way out has just taken the big change, which can make an unhappy enough guest prank (the stub of `0x4fea70` applies the change; testing the
+earlier value, 2 inputs differ).
+
+**X22, the region writer (`0x4d8480`).** Executed without stubs on a synthetic cell manager. On 520 inputs the window around the source
+agrees with `ParkEnvironment.Apply`: the square radius clipped to the map, `sign × coefficient / (|dx| + |dy| + 1)` truncated toward zero,
+wrapping 16-bit words. The PC writer is the Mac `0xd73a0` (docs/reverse/PPC-guests.md phase 2) with the same table layout.
+
+**Fixed in C#.** `GuestSettings` loads `PrankeryLikelihood` and `StinkbombLikelihood`; a new guest gets its prankery flag; state 6 runs the
+prank step; `ParkLitter` spreads vomit's and a stinkbomb's `RegionFX` on `ParkEnvironment` while they lie, and the needs update reads the
+guest's cell words.
+
+GUEST-007 keeps the balloons (no guest carries one), the advisor's prank lines, the guards' chase and escort, and event 15. GUEST-006
+keeps the other environment sources (entertainers, toilets, guards, cameras, fireworks) and the thought pick.
+
+### 7.17 Finding X23: the handymen search from where they stand
+
+Question (ECON-022): where do handymen go? OpenTPW's handymen had no position: a free one took the first unclaimed littered cell park-wide
+and its job time started at once. The state machine is read in full in docs/reverse/WANDER-plan.md §4.
+
+**X23, the litter finder (`0x4c8ed0`).** Executed without stubs. On 520 inputs the cell it returns agrees with `StaffWorldSimulation.FindLitter`:
+the square of DetectionRange cells around the handyman, clipped to the map, the cells with litter claimed by nobody or by him, scanned x
+outer and y inner, the smallest Manhattan distance, the first on a tie.
+
+**Fixed in C#.** In a level `StaffWorldSimulation` runs the handyman's update once per park turn: the speed step, the idle litter scan,
+the states 0, 1, 8, 9, 10 and 11, the setter's stamps and speed bonus, and the job search in the original order (strike and rest, too
+tired, litter, toilets, patrol). He walks with the guests' steering (WALK-I) and patrols with their destination routine, kept to his
+patrol rectangle; a sweep or a clean is timed from his arrival. His idle and walking voices come from the same draws. The park save
+keeps his state, stamps, speed and walk. A headless economy keeps its own dispatch.
+
+ECON-022 keeps the walks to the rest and strike areas, the 100-turn toilet claim lapse, the player's maintenance request and patrol
+rectangle controls, the separation among staff, and a toilet's access cell.
+
+### 7.18 Finding X24: the guard nearest the staff HQ answers a prank
+
+Question (GUEST-007, ECON-022): which guard does a prank call? The prankster's bus message reaches the staff HQ thing, whose handler
+`0x508a30` checks the security word of the prankster's cell and asks `0x5099c0` for a guard (docs/reverse/WANDER-plan.md §4).
+
+**X24, the guard choice (`0x5099c0`).** Executed with only the debug print stubbed. On 520 inputs the guard it writes agrees with
+`StaffWorldSimulation.ChooseGuard`: in list order, the guards in state 0 or 1, the smallest squared distance from **the receiver's own cell**,
+the first on a tie. The prankster's cell, passed as the routine's second argument, is never read. The receiver is the staff HQ, which sits at
+cell (0, 0) in the shipped Easymode park and in four played saves, so the free guard nearest the map's corner goes, however far from the
+prankster. Two wrong readings fail: measuring from the prankster (56 differ) and a tie to the later guard (65 differ).
+
+**Fixed in C#.** In a level the guards walk and answer pranks (`StaffWorldSimulation.ReportPrank`, the chase, the catch and the escort of
+WANDER-plan §4); entertainers patrol and perform. The guard list's order is the hire order (ECON-022).

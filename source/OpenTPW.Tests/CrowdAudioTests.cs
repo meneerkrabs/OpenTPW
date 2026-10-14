@@ -370,10 +370,10 @@ public class CrowdAudioTests
 		var voice = WaitForVoice();
 		Assert.AreEqual( 0.5f, voice.Gain );
 		var rawPcm = (short)(sounds[0].Samples[GameAudio.Crowd!.CurrentSample].SampleNumber * 100);
-		var options = new GameOptions { SoundEffectsVolume = 10, SoundEffectsOn = true };
+		var options = new GameOptions { SoundEffectsVolume = 100, SoundEffectsOn = true };
 		GameAudio.ApplyOptions( mixer, options );
 		Assert.AreEqual( (short)(rawPcm * 0.5f), mixer.Mix( 1 )[0] );
-		options.SoundEffectsVolume = 5;
+		options.SoundEffectsVolume = 50;
 		GameAudio.ApplyOptions( mixer, options );
 		Assert.AreEqual( (short)(rawPcm * 0.25f), mixer.Mix( 1 )[0] );
 		options.SoundEffectsOn = false;

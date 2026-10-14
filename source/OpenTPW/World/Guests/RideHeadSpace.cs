@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace OpenTPW;
 
 /// <summary>
@@ -11,17 +9,17 @@ namespace OpenTPW;
 // [BIN:STP-PPC:0x100B0F90 DELHEAD] every slot holding the visitor is zeroed, and a head hung on it is taken down
 // [BIN:STP-PPC:0x1019B298 head lookup] the 20-byte lookup records of the model's lookup state: a record matches head id k when its +4 word is k and its flags have 0x80
 // [BIN:STP-PPC:0x1019B56C head hang] the matched record gets flag 0x2 and a sprite handle, and the lookup state counts one more attached head
-// [APPROX:HEADS-003] the lookup records are the model's dummy attribute records (20 bytes: type, value, 12 reserved bytes); the table's length rule (the run from id 1) follows the PC executable's FUN_0044b220 (docs/exe/park.md, "The head table"), not a Mac trace
+// [BIN:STP-PPC:0x100B2BA0 script init] counts head ids from 1 until the lookup returns -1, allocates 4 bytes per id at script +0x30 and stores the count at +0x4C [0x100B32D4..0x100B3368]; the init also runs for SPAWNCHILD and SPAWNSOUND, so every script has its own table
+// [BIN:STP-PPC:0x1019AE64 lookup construction] attribute record i belongs to node header+0x46 (Unknown46) + i; below the mesh count (+0x44) it is a mesh record, else a dummy record [0x1019AE64, 0x1019B7CC]
+// [BIN:STP-PPC:0x1019B298 head id lookup] a head id is the FIRST attribute record with type flag 0x80 whose value equals the id; every shipped head record has type 0xb1/0xf1, so it has flag 0x30 and a world matrix
 public sealed class RideHeadSpace
 {
 	/// <summary>Flag bit 0x80 of a dummy attribute type: a head record ([BIN:STP-PPC:0x1019B298]).</summary>
 	public const uint HeadFlag = 0x80;
 
-	/// <summary>Node names that carry a head id in the original models: <c>head07</c>, <c>Head7</c>, <c>Kid_07</c>, <c>spriteposition07</c>.</summary>
-	private static readonly Regex NodeNameId = new( @"^(?:head|kid_|spriteposition)(\d+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant );
-
 	private readonly int[] nodes;
 	private readonly int[] visitors;
+	private readonly int seed;
 	// An owned seeded .NET-compatible generator whose full state the park-resume snapshot stores (ScriptRandomTests
 	// proves its draws equal a seeded System.Random's).
 	private readonly ScriptRandom random;
@@ -29,6 +27,7 @@ public sealed class RideHeadSpace
 	private RideHeadSpace( int[] nodes, int seed )
 	{
 		this.nodes = nodes;
+		this.seed = seed;
 		visitors = new int[nodes.Length];
 		random = new ScriptRandom( seed );
 	}
@@ -43,37 +42,51 @@ public sealed class RideHeadSpace
 	/// The head space of <paramref name="model"/>, or null when it has no head id 1 (the original's table is null then, so
 	/// ADDHEAD does nothing). <paramref name="seed"/> drives the slot draw; the original draws from its global generator.
 	/// </summary>
-	// [APPROX:HEADS-001] the slot draw uses a generator seeded per ride, not the original's global rand (0x10105328 on the Mac)
+	// [APPROX:HEADS-001] the slot draw uses the original's formula, labs(worldRand() >> 1) % length (0x100B0E9C), on a generator seeded per ride instead of the shared world stream 0x10105328 (s * 1664525 + 1013904223), which is not ported (DET-015)
 	public static RideHeadSpace? Create( ModelFile model, int seed )
 	{
 		ArgumentNullException.ThrowIfNull( model );
-		var ids = new HashSet<uint>( model.DummyAttributes.Where( attribute => (attribute.Type & HeadFlag) != 0 ).Select( attribute => attribute.Value ) );
-		var count = 0;
-		while ( ids.Contains( (uint)(count + 1) ) )
-			count++;
-		if ( count == 0 )
-			return null;
-		var nodes = new int[count];
-		for ( var slot = 0; slot < count; slot++ )
-			nodes[slot] = NodeForHead( model, slot + 1 );
-		return new RideHeadSpace( nodes, seed );
+		var nodes = new List<int>();
+		while ( true )
+		{
+			var node = NodeForHead( model, nodes.Count + 1 );
+			if ( node == NoRecord )
+				break;
+			nodes.Add( node );
+		}
+		return nodes.Count == 0 ? null : new RideHeadSpace( nodes.ToArray(), seed );
+	}
+
+	/// <summary>The lookup found no record for a head id (the original's -1).</summary>
+	public const int NoRecord = -2;
+
+	/// <summary>
+	/// The model node of head id <paramref name="id"/>: the node header+0x46 + i of the first attribute record i with flag
+	/// 0x80 and value id. <see cref="NoRecord"/> when no record has the id; -1 when the record has no usable node (no
+	/// 0x30 flag, so no matrix, or a node past the model), so the head is counted but not drawn.
+	/// </summary>
+	// [BIN:STP-PPC:0x1019B298 head id lookup] first record with flag 0x80 and value == id
+	// [BIN:STP-PPC:0x1019AE64 lookup construction] record i belongs to node Unknown46 + i
+	public static int NodeForHead( ModelFile model, int id )
+	{
+		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
+		{
+			var attribute = model.DummyAttributes[index];
+			if ( (attribute.Type & HeadFlag) == 0 || attribute.Value != (uint)id )
+				continue;
+			var node = model.Counts.Unknown46 + index;
+			return node < model.Nodes.Count && (attribute.Type & 0x30) != 0 ? node : -1;
+		}
+		return NoRecord;
 	}
 
 	/// <summary>
-	/// The model node a head id hangs from, found by its name. The first node whose name carries the id wins; -1 when the
-	/// model names none (the head then has no place to draw).
+	/// A new empty table with this table's length and nodes and its own draw stream: every script (root, child, sound) has
+	/// its own head table, allocated by the script init at its start.
 	/// </summary>
-	// [APPROX:HEADS-002] the head's node is the node named after its id (headNN, HeadN, Kid_NN, spriteposition NN): the original's record-to-node link (the lookup record's +0 and +4 words, the attribute's 12 reserved bytes are zero in the Sun God) is not traced, and five jungle/fantasy/hallow/space models name no node for some ids (Flower Power, Phantom, Eruption, Hover Bot Havoc, Rock 'n Roll)
-	public static int NodeForHead( ModelFile model, int id )
-	{
-		for ( var index = 0; index < model.Nodes.Count; index++ )
-		{
-			var match = NodeNameId.Match( model.Nodes[index].Name.Trim() );
-			if ( match.Success && int.TryParse( match.Groups[1].Value, out var named ) && named == id )
-				return index;
-		}
-		return -1;
-	}
+	// [BIN:STP-PPC:0x100B2BA0 script init] also runs for SPAWNCHILD (63) and SPAWNSOUND (64)
+	// [APPROX:HEADS-005] whether a child takes its parent's thing id (+0xAC) is untraced; the child's draw stream is seeded from the ride's seed and a child index
+	internal RideHeadSpace NewTable( int index ) => new( (int[])nodes.Clone(), unchecked( seed * 31 + index ) );
 
 	/// <summary>The visitor on slot <paramref name="slot"/>, 0 when free.</summary>
 	public int VisitorAt( int slot ) => visitors[slot];
@@ -91,6 +104,17 @@ public sealed class RideHeadSpace
 		}
 	}
 
+	/// <summary>True when any slot holds a visitor.</summary>
+	internal bool HasVisitors => Array.Exists( visitors, visitor => visitor != 0 );
+
+	/// <summary>Appends <see cref="Hung"/> to a caller-owned list.</summary>
+	internal void AppendHung( List<(int Visitor, int Node)> into )
+	{
+		for ( var slot = 0; slot < visitors.Length; slot++ )
+			if ( visitors[slot] != 0 && nodes[slot] >= 0 )
+				into.Add( (visitors[slot], nodes[slot]) );
+	}
+
 	/// <summary>ADDHEAD: a random free slot takes the visitor. Returns the slot, or -1 when the visitor is 0 or no slot is free.</summary>
 	public int Add( int visitor )
 	{
@@ -99,10 +123,17 @@ public sealed class RideHeadSpace
 		int slot;
 		do
 		{
-			slot = random.Next( visitors.Length );
+			slot = DrawSlot();
 		} while ( visitors[slot] != 0 );
 		visitors[slot] = visitor;
 		return slot;
+	}
+
+	/// <summary>labs(worldRand() >> 1) % length over this ride's stream: a signed 32-bit value from two draws.</summary>
+	private int DrawSlot()
+	{
+		var raw = unchecked( (int)(((uint)random.Next( 1 << 16 ) << 16) | (uint)random.Next( 1 << 16 )) );
+		return (int)(Math.Abs( (long)(raw >> 1) ) % visitors.Length);
 	}
 
 	/// <summary>Clears host-owned presentation slots when the ride releases its riders or is torn down.</summary>

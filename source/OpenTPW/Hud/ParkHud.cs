@@ -377,6 +377,12 @@ public sealed partial class ParkHud
 			PostMessage( CoasterToolHelp );
 			return;
 		}
+		// a placed water ride enters the water track tool (tool mode 16) at its station; the queue tool follows once the circuit is valid (Level.RewalkTrack)
+		if ( item.Runtime.Bump != null && level.EnterTrackTool( item ) )
+		{
+			PostMessage( TrackToolHelp );
+			return;
+		}
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
 		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
@@ -727,6 +733,8 @@ public sealed partial class ParkHud
 		return toolPress = true;
 	}
 
+	/// <summary>The water track tool's help line (OpenTPW text; the original's track-tool help is not identified).</summary>
+	public const string TrackToolHelp = "Water track: click to lay a line of track tiles (two cells each), click again to continue; join the end of the station to complete the circuit. Right click or Escape leaves.";
 	/// <summary>The coaster tool's help line (OpenTPW text; the original's track-tool help is not identified).</summary>
 	public const string CoasterToolHelp = "Track: click to place pylons, wheel for height, Tab for loop pylons, Backspace removes the last pylon; click a station end to close the circuit and again (or Enter) to complete.";
 	/// <summary>Height change per mouse-wheel notch in the coaster tool (world units).</summary>

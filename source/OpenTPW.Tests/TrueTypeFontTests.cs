@@ -186,7 +186,7 @@ public class TrueTypeFontTests
 		}
 	}
 
-	private static (int, int, bool)[] Square( int x0, int y0, int x1, int y1, bool clockwise = true ) => clockwise
+	internal static (int, int, bool)[] Square( int x0, int y0, int x1, int y1, bool clockwise = true ) => clockwise
 		? new[] { (x0, y0, true), (x0, y1, true), (x1, y1, true), (x1, y0, true) }
 		: new[] { (x0, y0, true), (x1, y0, true), (x1, y1, true), (x0, y1, true) };
 

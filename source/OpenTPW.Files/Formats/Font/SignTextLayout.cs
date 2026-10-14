@@ -14,8 +14,8 @@ public enum SignTextAlignment
 /// <summary>
 /// CPU layout and rasterization of one line of sign text with a <see cref="TrueTypeFont"/>, following
 /// GDI conventions: a negative LOGFONT height is the em height,
-/// advance widths come from <c>hmtx</c>; pair kerning from <c>kern</c> is opt-in (GDI TextOut does not kern;
-/// [APPROX:COMPAT-006]). Characters without a glyph
+/// advance widths come from <c>hmtx</c>; pair kerning from <c>kern</c> is opt-in (the original's sign text goes through
+/// Uniscribe, which exposes no kerning call; [APPROX:COMPAT-006]). Characters without a glyph
 /// use glyph 0 (.notdef), as GDI substitutes the default character, and are reported.
 /// </summary>
 public static class SignTextLayout
@@ -40,7 +40,15 @@ public static class SignTextLayout
 	public static IReadOnlyList<int> FindMissing( TrueTypeFont font, string text ) =>
 		CodePoints( text ).Where( code => code > ' ' && !char.IsControl( (char)Math.Min( code, 0xFFFF ) ) && !font.HasGlyph( code ) ).Distinct().ToArray();
 
-	private static List<(int Glyph, float PenX)> Place( TrueTypeFont font, string text, bool kerning, out float advance, out List<int> missing )
+	/// <summary>
+	/// The width of one character after the slot's percent: width × percent / 100, truncated. At 100 percent the advance is left
+	/// as it is (the original's integer widths are not reproduced; see COMPAT-002).
+	/// </summary>
+	// [BIN:TPW-EXE:0x005EAD01 sign text width] the .sgn slot field at file offset +324 (memory slot base + 8, loader 0x5EC3A0) scales each character's width as width × percent / 100, truncated (0x5EAD01–0x5EAD2C, and in the font-size fit loop)
+	public static float ScaledAdvance( float advancePixels, int widthPercent ) =>
+		widthPercent == 100 ? advancePixels : MathF.Truncate( advancePixels * widthPercent / 100f );
+
+	private static List<(int Glyph, float PenX)> Place( TrueTypeFont font, string text, bool kerning, out float advance, out List<int> missing, int widthPercent = 100, float pixelsPerUnit = 1 )
 	{
 		var placed = new List<(int Glyph, float PenX)>();
 		missing = new List<int>();
@@ -56,17 +64,18 @@ public static class SignTextLayout
 			if ( kerning && previous >= 0 )
 				pen += font.GetKerning( previous, glyph );
 			placed.Add( (glyph, pen) );
-			pen += font.GetMetrics( glyph ).AdvanceWidth;
+			var characterAdvance = font.GetMetrics( glyph ).AdvanceWidth;
+			pen += widthPercent == 100 ? characterAdvance : ScaledAdvance( characterAdvance * pixelsPerUnit, widthPercent ) / pixelsPerUnit;
 			previous = glyph;
 		}
 		advance = pen;
 		return placed;
 	}
 
-	public static SignTextMetrics Measure( TrueTypeFont font, string text, float emPixels, float horizontalScale = 1, bool kerning = false )
+	public static SignTextMetrics Measure( TrueTypeFont font, string text, float emPixels, float horizontalScale = 1, bool kerning = false, int widthPercent = 100 )
 	{
-		var placed = Place( font, text, kerning, out var advance, out var missing );
 		var scale = font.ScaleForEmHeight( emPixels );
+		var placed = Place( font, text, kerning, out var advance, out var missing, widthPercent, scale * horizontalScale );
 		return new SignTextMetrics( advance * scale * horizontalScale, font.WindowsAscent * scale, font.WindowsDescent * scale, placed.Count, missing );
 	}
 
@@ -88,9 +97,9 @@ public static class SignTextLayout
 	/// (the height never changes).
 	/// </summary>
 	// [BIN:STP-PPC:0x100A9F9C sign line] fit when the extent is below the 2x canvas width; else lo = 1, hi = lfWidth (or -lfHeight when 0), mid = (hi - 1) / 2 + 1; a fitting trial sets lo = mid, mid += (hi - mid) / 2, a wide one sets hi = mid, mid = lo + (mid - lo) / 2; stop on the first fitting trial with hi - lo < 3
-	public static int FitLogFontWidth( TrueTypeFont font, string text, float emPixels, int logFontWidth, int canvasWidth, bool kerning = false )
+	public static int FitLogFontWidth( TrueTypeFont font, string text, float emPixels, int logFontWidth, int canvasWidth, bool kerning = false, int widthPercent = 100 )
 	{
-		float Extent( int width ) => Measure( font, text, emPixels, LogFontHorizontalScale( font, emPixels, width ), kerning ).Width;
+		float Extent( int width ) => Measure( font, text, emPixels, LogFontHorizontalScale( font, emPixels, width ), kerning, widthPercent ).Width;
 		if ( Extent( logFontWidth ) < canvasWidth )
 			return logFontWidth;
 		var low = 1;
@@ -116,12 +125,12 @@ public static class SignTextLayout
 		return middle;
 	}
 
-	public static CoverageBitmap Rasterize( TrueTypeFont font, string text, float emPixels, float horizontalScale = 1, bool kerning = false )
+	public static CoverageBitmap Rasterize( TrueTypeFont font, string text, float emPixels, float horizontalScale = 1, bool kerning = false, int widthPercent = 100 )
 	{
 		if ( !(emPixels > 0) || !float.IsFinite( emPixels ) )
 			throw new ArgumentOutOfRangeException( nameof( emPixels ), "The em height must be positive." );
-		var placed = Place( font, text, kerning, out _, out _ );
 		var scale = font.ScaleForEmHeight( emPixels );
+		var placed = Place( font, text, kerning, out _, out _, widthPercent, scale * horizontalScale );
 		return TrueTypeRasterizer.Rasterize( placed.Select( item => (font.GetOutline( item.Glyph ), item.PenX) ), scale * horizontalScale, scale );
 	}
 
@@ -130,10 +139,10 @@ public static class SignTextLayout
 	/// <paramref name="color"/> with coverage as alpha, plus <paramref name="padding"/> transparent
 	/// pixels on every side. <c>BaselineY</c> is the baseline row inside the image.
 	/// </summary>
-	public static (byte[] Rgba, int Width, int Height, int BaselineY) RenderRgba( TrueTypeFont font, string text, float emPixels, (byte R, byte G, byte B) color, float horizontalScale = 1, int padding = 2, bool kerning = false )
+	public static (byte[] Rgba, int Width, int Height, int BaselineY) RenderRgba( TrueTypeFont font, string text, float emPixels, (byte R, byte G, byte B) color, float horizontalScale = 1, int padding = 2, bool kerning = false, int widthPercent = 100 )
 	{
 		padding = Math.Max( 0, padding );
-		var bitmap = Rasterize( font, text, emPixels, horizontalScale, kerning );
+		var bitmap = Rasterize( font, text, emPixels, horizontalScale, kerning, widthPercent );
 		var width = Math.Max( 1, bitmap.Width + padding * 2 );
 		var height = Math.Max( 1, bitmap.Height + padding * 2 );
 		var rgba = new byte[width * height * 4];
@@ -159,28 +168,28 @@ public static class SignTextLayout
 	/// character cell at that row (GDI <c>TA_TOP</c>, the TextOut default). Returns the em height used.
 	/// </summary>
 	public static float DrawLine( byte[] rgba, int width, int height, TrueTypeFont font, string text, float emPixels, (byte R, byte G, byte B) color,
-		SignTextAlignment alignment = SignTextAlignment.Center, float horizontalScale = 1, float? centerY = null, int margin = 8, bool kerning = false, float? cellTop = null )
+		SignTextAlignment alignment = SignTextAlignment.Center, float horizontalScale = 1, float? centerY = null, int margin = 8, bool kerning = false, float? cellTop = null, int widthPercent = 100 )
 	{
 		ArgumentNullException.ThrowIfNull( rgba );
 		if ( rgba.Length != width * height * 4 )
 			throw new ArgumentException( "Canvas size does not match its dimensions.", nameof( rgba ) );
 		if ( string.IsNullOrEmpty( text ) )
 			return emPixels;
-		var metrics = Measure( font, text, emPixels, horizontalScale, kerning );
+		var metrics = Measure( font, text, emPixels, horizontalScale, kerning, widthPercent );
 		var available = Math.Max( 1, width - 2 * margin );
 		if ( metrics.Width > available )
 			emPixels *= available / metrics.Width;
 		var lineHeight = (font.WindowsAscent + font.WindowsDescent) * font.ScaleForEmHeight( emPixels );
 		if ( cellTop == null && lineHeight > height - 2 * margin )
 			emPixels *= Math.Max( 1, height - 2 * margin ) / lineHeight;
-		var bitmap = Rasterize( font, text, emPixels, horizontalScale, kerning );
+		var bitmap = Rasterize( font, text, emPixels, horizontalScale, kerning, widthPercent );
 		if ( bitmap.Width == 0 )
 			return emPixels;
 		var scale = font.ScaleForEmHeight( emPixels );
 		var ascent = font.WindowsAscent * scale;
 		var descent = font.WindowsDescent * scale;
 		var baseline = cellTop is { } top0 ? top0 + ascent : (centerY ?? height / 2f) + (ascent - descent) / 2;
-		var advance = Measure( font, text, emPixels, horizontalScale, kerning ).Width;
+		var advance = Measure( font, text, emPixels, horizontalScale, kerning, widthPercent ).Width;
 		var penX = alignment switch
 		{
 			SignTextAlignment.Left => margin,

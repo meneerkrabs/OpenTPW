@@ -672,6 +672,8 @@ public partial class Level
 			state.IsOpen = item.IsOpen;
 			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
+			// a water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
+			state.TrackValid = item.Runtime.Bump?.IsTrackValid ?? true;
 			// the park points counts-test needs real queue cells from the entrance and room in them (0x004DE130, 0x004DDF50)
 			if ( Guests is { } guests )
 				state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, guests.Grid );

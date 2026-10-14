@@ -91,7 +91,7 @@ internal sealed class AdvisorBalance
 		{
 			// [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32
 			MinimumScore = settings.GetInt( "GeneralAdvisor.MinScoreForConsideration" ),
-			// [APPROX:ADVISOR-019] Loaded but not applied: the eligibility path compares the group repeat interval, and no consumer of the general intervals (+24/+28) is traced — evidence needed: the reads of balance fields +24 and +28
+			// [BIN:TPW-EXE:0x0059BEA0 advisor balance] absence result (medium-high confidence): no code reads fields +0x18/+0x1C (MinTimeAnyMessage/MinTimeSameMessage) of the Advisor.sam object (static 0xFB3540, built by 0x59BEA0); +0x20 (MinScore) is read at 0x59B6C3. They are loaded and not applied
 			MinimumTimeAnyMessage = settings.GetInt( "GeneralAdvisor.MinTimeAnyMessage" ),
 			MinimumTimeSameMessage = settings.GetInt( "GeneralAdvisor.MinTimeSameMessage" ),
 			Groups = groups,

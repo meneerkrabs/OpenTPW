@@ -81,7 +81,7 @@ public class AdvisorTests
 	public void ApproximationRegisterIsSequentialAndUnique()
 	{
 		// Traced rules leave the register; their numbers are not reused.
-		var retired = new[] { 1, 3, 4, 15, 21 };
+		var retired = new[] { 1, 3, 4, 8, 13, 14, 15, 19, 21, 24 };
 		CollectionAssert.AreEqual( Enumerable.Range( 1, 24 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
@@ -191,6 +191,24 @@ public class AdvisorTests
 		// Advisorm13 is the only clip with tracks on the five mouth meshes: the likeliest source of the original mouth-shape choice.
 		var mouths = new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Tracks.Select( track => global.Nodes[track.NodeIndex].Name ).Where( name => name.StartsWith( "Mouth - " ) ).OrderBy( name => name ).ToArray();
 		CollectionAssert.AreEqual( new[] { "Mouth - Aah", "Mouth - Eee", "Mouth - Normal", "Mouth - Ooh", "Mouth - Sss" }, mouths );
+	}
+
+	/// <summary>The clip lengths of the original's advisor clips come from trailer word 2 (0x474070): the global advisor's and a level advisor's.</summary>
+	[TestMethod]
+	public void OriginalAdvisorClipLengthsComeFromTheClipTrailers()
+	{
+		using var assets = new OriginalAssets();
+		var global = AdvisorClipDurations.Load( FileSystem, null )!;
+		Assert.IsNotNull( global );
+		Assert.AreEqual( AdvisorClipDurations.FromTrailer( (uint)new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Duration ), global.Of( 13 ) );
+		Assert.AreEqual( 0u, global.Of( AdvisorClipDurations.StartClip ), "the entry of clip 14 is forced to 0" );
+		Assert.IsTrue( global.Of( AdvisorClipDurations.EndClip ) > 0 );
+		var jungle = AdvisorClipDurations.Load( FileSystem, "jungle" );
+		Assert.IsNotNull( jungle, "the level advisor's clips are used when loaded" );
+		var sequence = AdvisorSequences.Generate( 5000 + AdvisorSequences.BudgetSlackMilliseconds, jungle!, new AdvisorRandom().Next );
+		Assert.AreEqual( 14, sequence.Clips[0] );
+		Assert.AreEqual( 15, sequence.Clips[^1] );
+		Assert.IsTrue( AdvisorSequences.ResponseSpan( sequence, jungle! ) >= 1000 + 2 * jungle!.Of( 15 ) );
 	}
 
 	[TestMethod]

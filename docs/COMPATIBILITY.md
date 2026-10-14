@@ -250,7 +250,7 @@ reads line 1 through `0x4E2860`, which strips a trailing "--", and line 2 throug
 October 14, 2026, second round (tp.exe and Theme Park Inc data): COMPAT-017 is retired with a code change. The sign lines come from
 the selected language's file only (no English fallback); a file without SIGNA or SIGNB shows "MISSING STRING", which the original sets
 for NAME, SIGNA, SIGNB and +0x500 before it parses (`0x413600`, `0x41360D`–`0x41361D`); without a language file the definition's text
-pointers stay NULL (`0x412C65`) and the .sam name stays; the "both empty, keep the .sam name" rule is gone. The line-1 fallback `0x78A374` is a
+pointers stay NULL (`0x412C65`; the sign code's handling of a NULL line is untraced and OpenTPW draws the display name); the "both empty, keep the .sam name" rule is gone. The line-1 fallback `0x78A374` is a
 never-written .bss buffer, the empty string, so an empty line 1 stays empty (`0x4E2860`). Both getters (`0x413020`, `0x4130B0`) read the
 OBJECT_NAMES row (table `0x7488D8`, +4 and +8) when the id is listed, and otherwise def+0x4F8 (SIGNA) and def+0x4FC (SIGNB).
 COMPAT-011 (the localized-string fallback order), COMPAT-012 (the UniToMB encode rule: the original converts wide text with

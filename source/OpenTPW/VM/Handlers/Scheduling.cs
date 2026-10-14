@@ -40,7 +40,11 @@ public static partial class OpcodeHandlers
 			if ( deadline <= now )
 				vm.WaitUntil( vm.TimeMilliseconds );
 			else
-				vm.WaitFor( wait );
+			{
+				// The original resumes once the integer clock word reaches the deadline, so the wake is when the scheduler clock reaches it (not the arming time's fraction plus the wait).
+				// [APPROX:VM-901] the clock is this VM's non-wrapping double, so a wait that spans the 2^32 ms wrap of the original's clock word (about 49.7 days of scheduler clock) is not modelled — evidence needed: none (the rule is traced, tp.exe 0x553828); the port waits for the wrap-free case
+				vm.WaitUntil( vm.TimeMilliseconds + ( deadline - vm.SchedulerMilliseconds ) );
+			}
 		}
 
 		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted)" )]

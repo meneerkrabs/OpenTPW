@@ -164,10 +164,10 @@ All 34 corpus uses are positive literals (1..10000): 1 ms frame spacing between
 fire-effect ADDOBJs, 300/500 ms stage delays, a 1000 ms litbin fire-risk check
 and a 10000 ms obstacle startup delay. The deadline is the 32-bit
 scheduler clock word plus the operand as a wrapping unsigned sum, like WAITANIM's (`Scheduling.WaitAbsolute`; the VM
-turns it into a wait of the operand's milliseconds when the sum is ahead of the clock): a sum that wraps (a negative operand) or an
+turns it into a wait until the scheduler clock reaches the deadline when the sum is ahead of the clock, so the wake follows the integer clock word, not the arming time's fraction): a sum that wraps (a negative operand) or an
 operand of 0 is already past and yields once, resuming at the next servicing tick, and a sum of exactly 0 reads as not armed (the PC
 word 0 is the sentinel, cleared once a wait ends), so the next execution stores again and yields again. The VM keeps no extra word,
-so snapshots round-trip as before (VM-901 retired).
+so snapshots round-trip as before. VM-901 is narrowed to the one thing the double clock cannot do: a wait that spans the 2^32 ms wrap of the original's clock word.
 
 **MULT** follows the SUB/DIV/MOD family: `MULT dest a b` →
 `dest = a × b`, destination first, 32-bit wrap, flags set — the sole corpus use

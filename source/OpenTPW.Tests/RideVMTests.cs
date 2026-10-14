@@ -452,7 +452,7 @@ public class RideVMTests
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
 		Run( vm, 1 );
 		Assert.AreEqual( RideVMState.Waiting, vm.State );
-		Assert.AreEqual( 1000d / 60 + 500, vm.WakeTimeMilliseconds, 1e-9, "now + operand, not an absolute clock word" );
+		Assert.AreEqual( 16 + 500, vm.WakeTimeMilliseconds, 1e-9, "the integer clock word (16 at the 16.67 ms arming) + operand, not an absolute clock word" );
 		Run( vm, 29 );
 		Assert.AreEqual( 0, vm.Variables[0], "500 ms = 30 ticks have not passed" );
 		Run( vm, 2 );
@@ -467,7 +467,7 @@ public class RideVMTests
 			.I( Opcode.WAITABS, V( 1 ) )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
 		Run( vm, 1 );
-		Assert.AreEqual( 1000d / 60 + 250, vm.WakeTimeMilliseconds, 1e-9 );
+		Assert.AreEqual( 16 + 250, vm.WakeTimeMilliseconds, 1e-9, "the wake is when the integer clock reaches 16 + 250, not 250 ms after the fractional arming time" );
 		Run( vm, 14 );
 		Assert.AreEqual( RideVMState.Waiting, vm.State, "250 ms ≈ 15 ticks have not fully passed" );
 		Run( vm, 2 );
@@ -510,7 +510,7 @@ public class RideVMTests
 		var vm = Load( new Asm().I( Opcode.WAITABS, -100 ).I( Opcode.COPY, V( 0 ), 7 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
 		Run( vm, 1 );
 		Assert.AreEqual( RideVMState.Waiting, vm.State );
-		Assert.AreEqual( 1000d / 60 + 4294967196d, vm.WakeTimeMilliseconds, 1e-3 );
+		Assert.AreEqual( 16 + 4294967196d, vm.WakeTimeMilliseconds, 1e-3 );
 		Run( vm, 10 );
 		Assert.AreEqual( 0, vm.Variables[0] );
 	}
@@ -555,6 +555,20 @@ public class RideVMTests
 		Assert.AreEqual( 0, vm.Variables[0] );
 		Run( vm, 1 );
 		Assert.AreEqual( 7, vm.Variables[0] );
+	}
+
+	/// <summary>
+	/// The original resumes once the integer clock word reaches the deadline (tp.exe 0x55386D). Armed at 16.67 ms (word 16) with
+	/// 500 ms, the deadline is 516, so the script resumes at the tick of 516.67 ms (31 ticks), not one tick later.
+	/// </summary>
+	[TestMethod]
+	public void WaitAbsoluteResumesWhenTheIntegerClockReachesItsDeadlineNotOneTickLate()
+	{
+		var vm = Load( new Asm().I( Opcode.WAITABS, 500 ).I( Opcode.COPY, V( 0 ), 7 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 30 );
+		Assert.AreEqual( 0, vm.Variables[0], "500.00 ms after arming is not yet 516" );
+		Run( vm, 1 );
+		Assert.AreEqual( 7, vm.Variables[0], "tick 31 (516.67 ms) has floor(clock) >= 516" );
 	}
 
 	/// <summary>Stopping the script cancels a pending WAITABS like any other wait: no slice runs after it.</summary>

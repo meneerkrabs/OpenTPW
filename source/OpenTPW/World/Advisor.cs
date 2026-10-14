@@ -112,7 +112,7 @@ internal sealed class Advisor : IDisposable
 	/// The model is shown: set when a response starts (every sequence starts an animation other than 12), cleared when the
 	/// last clip of its sequence ends (<see cref="DrawnSpanMilliseconds"/>) and by <see cref="Kill"/>.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004732A0 animation start] the model is shown when any animation other than 12 starts (via 0x45BD30); "Kill advisor" (0x429D60: animation 12 with the immediate flag, then unlink), called by the stop path 0x5996D0 (six callers, including level exit) and the slap path 0x5994E0, hides it at once; the normal end of advice (0x599880) calls neither, the sampler hides the model at the end of the last clip (see DrawnSpanMilliseconds)
+	// [BIN:TPW-EXE:0x004732A0 animation start] the model is shown when any animation other than 12 starts (via 0x45BD30); "Kill advisor" (0x429D60: animation 12 with the immediate flag, then unlink), called by the stop path 0x5996D0 (six callers, including level exit) and the slap path 0x5994E0, hides it at once; the normal end of advice (0x599880) calls neither, the sampler hides the model at the end of the last clip (see DrawnSpanMilliseconds). The model therefore hides at the clip sum even while a long speech of a fixed row (21-27) is still playing; that follows the trace, and a capture should confirm it
 	public bool ModelShown { get; private set; }
 
 	/// <summary>The model is drawn: shown, and (automatic advisor) before the last clip ends or (manual tools) while the speech plays.</summary>

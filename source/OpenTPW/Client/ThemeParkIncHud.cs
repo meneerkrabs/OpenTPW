@@ -96,7 +96,7 @@ public sealed class ThemeParkIncHud
 			return;
 		armedEntry = null;
 		level.BuildEntry = null;
-		// The placed object is free (TPI-901); the queue tool follows as in the Theme Park World place flow.
+		// The placed object is free ([EXT:tpi-free-builds]); the queue tool follows as in the Theme Park World place flow.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemNameOf( item.Entry ) ) );
 		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );

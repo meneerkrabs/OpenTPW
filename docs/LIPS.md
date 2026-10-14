@@ -399,7 +399,8 @@ October 14, 2026, from the decrypted Windows `tp.exe` (`[BIN:TPW-EXE:...]` citat
   `0x4732A0` shows the model again (`0x4732C6`–`0x4732DD`); after the last clip nothing starts, so the model stays hidden until the next
   response. The earlier round's statement that only Kill hides it was true of `0x599880` itself, not of the sampler. OpenTPW therefore
   draws the model until the sum of the sequence's clips has passed since the request (`Advisor.DrawnSpanMilliseconds`) and clears
-  `ModelShown` there; the clips themselves are not drawn (ADVISOR-006). `Advisor.Kill` is called when the level is left. Not checked:
+  `ModelShown` there; the clips themselves are not drawn (ADVISOR-006). `Advisor.Kill` is called when the level is left. A fixed row's clips can sum to less than a long speech (rows 21 to 27), so the model then hides while the speech still plays; that
+  follows the trace and a capture should confirm it. Not checked:
   the model-flag 0x4000 branch and the frame order between the update and the sampler.
 - **Without sound** (`0x802BC8`/`0x802BD4` clear; set at `0x51B660` only when sound init succeeds) the sample is 1 ms
   long (`0x51C570`), there is no sound handle (`0x51BFC0`) and the advice ends with a sequence built from a 501 ms budget.

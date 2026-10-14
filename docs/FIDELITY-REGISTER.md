@@ -14,13 +14,13 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **379 unresolved unique APPROX IDs**, 454 APPROX occurrences, 217 EXT occurrences, 194 DATA occurrences and 903 BIN occurrences.
+Current inventory: **380 unresolved unique APPROX IDs**, 455 APPROX occurrences, 220 EXT occurrences, 194 DATA occurrences and 903 BIN occurrences.
 
-Of these, 355 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 356 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
-Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the 21 configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
+Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the 22 configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
 
 | Area | Unique unresolved IDs | Source occurrences |
 | --- | ---: | ---: |
@@ -45,6 +45,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | SAVE | 16 | 16 |
 | TRACK | 16 | 20 |
 | UI | 81 | 105 |
+| VM | 1 | 1 |
 | WALK | 10 | 10 |
 
 ## Approximation declarations
@@ -420,6 +421,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-940 | Original-fidelity area (scope unadjudicated) | the lobby effects advance at a fixed 30 ticks a second; the original steps them once per rendered frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:91` |
 | UI-941 | Original-fidelity area (scope unadjudicated) | only the lobby islands' own draws advance the lobby generator; its flying meshes and camera wander also draw from it in the original, so strikes and one-shots come in a different rhythm | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:92` |
 | UI-942 | Original-fidelity area (scope unadjudicated) | the globe's music and ambience (cat_globallobbysfx 2 and 3) replace the lobby's while the globe is up, and the enter-park sound (event 4) plays whatever game mode follows; the original keeps or stops the lobby's own sentences untraced and skips event 4 for game type 2 | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:93` |
+| VM-901 | Original-fidelity area (scope unadjudicated) | WAITABS: the deadline is the 32-bit clock word plus the operand, compared as the original does (tp.exe 0x553828), but the wake runs on this VM's non-wrapping double clock, so a wait that spans the 2^32 ms wrap of the original's clock word is not modelled | See source annotation/runtime register | `source/OpenTPW/VM/VmApproximations.cs:12` |
 | WALK-001 | Original-fidelity area (scope unadjudicated) | the speed boost +196 comes from the Sugar ingredient only, with the ride build's amount 50 (+3 per visit); the original's per-object amount (ride +404, set from the shop screen and saved) is not modelled | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:13` |
 | WALK-002 | Original-fidelity area (scope unadjudicated) | avoid_walls models only its edge branch (the first pushing edge of +x, -x, +y, -y); the diagonal-corner branches tried when no edge pushes are left out | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:14` |
 | WALK-003 | Original-fidelity area (scope unadjudicated) | separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists; the original's query 0x10087c also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:15` |
@@ -442,7 +444,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 - `ADVISOR-011` (docs/reverse/APPROX-TRACE.md)
 - `ADVISOR-013` (docs/reverse/APPROX-TRACE.md)
 - `ADVISOR-014` (docs/reverse/APPROX-TRACE.md)
+- `ADVISOR-016` (docs/LIPS.md)
+- `ADVISOR-018` (docs/LIPS.md)
 - `AUDIO-017` (docs/AUDIO.md)
+- `BLUEPRINT-002` (docs/reverse/BLUEPRINT.md)
 - `COAST-001` (docs/reverse/COAST-plan.md)
 - `COAST-002` (docs/reverse/COAST-plan.md)
 - `COAST-003` (docs/reverse/COAST-plan.md)
@@ -457,6 +462,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 - `COMPAT-011` (docs/reverse/APPROX-TRACE.md)
 - `COMPAT-012` (docs/reverse/APPROX-TRACE.md)
 - `COMPAT-013` (docs/reverse/APPROX-TRACE.md)
+- `COMPAT-017` (docs/COMPATIBILITY.md)
+- `COMPAT-031` (docs/COMPATIBILITY.md)
 - `DET-001` (docs/reverse/DET-plan.md)
 - `DET-002` (docs/reverse/DET-plan.md)
 - `DET-003` (docs/reverse/DET-plan.md)
@@ -469,6 +476,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 - `DET-010` (docs/reverse/DET-plan.md)
 - `DET-011` (docs/reverse/DET-plan.md)
 - `DET-012` (docs/reverse/DET-plan.md)
+- `DET-016` (docs/DETERMINISM.md)
 - `ECON-003` (docs/reverse/APPROX-TRACE.md)
 - `ECON-006` (docs/reverse/APPROX-TRACE.md)
 - `ECON-008` (docs/reverse/APPROX-TRACE.md)
@@ -495,6 +503,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 - `GATE-003` (docs/reverse/BOARD-plan.md)
 - `GATE-004` (docs/M3-GATE.md)
 - `GATE-005` (docs/M3-GATE.md)
+- `HEADS-005` (docs/RSE-VM.md)
 - `ONLINE-073` (docs/ONLINE.md)
 - `QUEUE-007` (docs/reverse/BOARD-plan.md)
 - `RIDES-001` (docs/reverse/APPROX-TRACE.md)
@@ -509,6 +518,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 - `RIDES-027` (docs/reverse/APPROX-TRACE.md)
 - `RIDES-029` (docs/reverse/APPROX-TRACE.md)
 - `RIDES-039` (docs/reverse/REVIEW-ANIM-2.md)
+- `TPI-900` (docs/THEME-PARK-INC.md)
+- `TPI-901` (docs/THEME-PARK-INC.md)
+- `TPI-902` (docs/THEME-PARK-INC.md)
+- `TPI-903` (docs/THEME-PARK-INC.md)
+- `TPI-904` (docs/THEME-PARK-INC.md)
 - `UI-001` (docs/reverse/APPROX-TRACE.md)
 - `UI-009` (docs/reverse/APPROX-TRACE.md)
 - `UI-019` (docs/reverse/APPROX-TRACE.md)
@@ -518,6 +532,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 - `UI-033` (docs/reverse/APPROX-TRACE.md)
 - `UI-035` (docs/reverse/PPC-review.md)
 - `UI-088` (docs/UI.md)
+- `VM-902` (docs/RSE-VM.md)
 
 ## Approximation sites
 
@@ -967,6 +982,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-941 | `source/OpenTPW/World/Lobby/LobbyEffects.cs:63` | [APPROX:UI-941] only the islands' own draws advance the generator; the original's flying meshes and camera wander draw from it too (0x10090174, 0x1009476C), so the strikes come in a different rhythm |
 | UI-942 | `source/OpenTPW/Audio/GameAudio.cs:310` | [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat; [APPROX:UI-942] its game-type 2 check is not reproduced |
 | UI-942 | `source/OpenTPW/Audio/GameAudio.cs:319` | [APPROX:UI-942] the lobby's own music and ambience are stopped while the globe plays and restarted after it; what the original does with them is not traced |
+| VM-901 | `source/OpenTPW/VM/Handlers/Scheduling.cs:45` | [APPROX:VM-901] the clock is this VM's non-wrapping double, so a wait that spans the 2^32 ms wrap of the original's clock word (about 49.7 days of scheduler clock) is not modelled — evidence needed: none (the rule is traced, tp.exe 0x553828); the port waits for the wrap-free case |
 | WALK-001 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:148` | [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (a Sugar visit adds 3): the original's shop screen can change it (ride +404, saved as mAmountOfSpecialIngredient) and OpenTPW has neither that control nor the saved field — evidence needed: the screen that sets +404 (handlers 0x1685b4 and 0x168640), its range and the save field |
 | WALK-002 | `source/OpenTPW/World/Guests/GuestNavigation.cs:262` | [APPROX:WALK-002] only the edge branch of avoid_walls is modelled; its four diagonal-corner branches (0xfdfe4..0xfe5e0 via 0xfc9e0), tried when no edge pushes, are not — evidence needed: 0xfc9e0 and the corner branches |
 | WALK-003 | `source/OpenTPW/World/Guests/GuestSimulation.cs:687` | [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10); the original's query also keeps thing types 4–8 and 18, which never push in OpenTPW — evidence needed: the writers of thing +4/+6 and of the cell lists, and what thing types 4–8 and 18 are |
@@ -1086,6 +1102,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | language-settings | `source/OpenTPW/Client/LanguageStartup.cs:7` | [EXT:language-settings] where the choice is stored and offered is an OpenTPW matter; the original read its language from the install |
 | late-kart-guard | `source/OpenTPW/World/Tracks/BumpController.cs:509` | [EXT:late-kart-guard] a kart is refused while the race is over, where the original creates a kart that never moves and keeps the controller's count above 0 (its race never resets: a deadlock no shipped script reaches); OpenTPW does not reproduce the frozen kart |
 | legacy-economy-save | `source/OpenTPW/Economy/ParkSaveFile.cs:78` | [EXT:legacy-economy-save] this legacy economy-only park save (Level.SavePark/LoadPark, used by DeterminismTests) persists the economy and every random stream, not guests, queues or object script state, and a load keeps the running guests and scripts; the player's save (GameFlow.SaveCurrentPark -&gt; ParkResumeSaveFile) already stores the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks |
+| legacy-economy-save | `source/OpenTPW/World/Level.cs:797` | &lt;summary&gt;Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (the legacy economy-only save, [EXT:legacy-economy-save]).&lt;/summary&gt; |
+| legacy-economy-save | `source/OpenTPW/World/ParkWorldStreams.cs:42` | &lt;summary&gt;Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (the legacy economy-only save, [EXT:legacy-economy-save]).&lt;/summary&gt; |
 | legacy-kart-save | `source/OpenTPW/World/Level.Tracks.cs:320` | [EXT:legacy-kart-save] a save from before the go-kart or bumper-car controllers (no controller for such a ride) restores its rides as freshly placed ones: station tiles and no track for karts, an arena for bumper cars, a closed controller; the guests a bumper ride still held go to its leaving list (save compatibility, no original rule) |
 | live-language | `source/OpenTPW/Client/GameFlow.cs:545` | [EXT:live-language] Switches to &lt;see cref="pendingLanguage"/&gt;: the language, the string table and the fonts. Caches of |
 | live-language | `source/OpenTPW/Client/PendingLanguage.cs:9` | [EXT:live-language] where the files of a language come from is an OpenTPW matter |
@@ -1172,6 +1190,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | tpi-capability-gates | `source/OpenTPW/Client/GameFlow.ThemeParkInc.cs:11` | [EXT:tpi-capability-gates] the slice's frame is gated by OpenTPW's capability policy (a scope decision), not by traced Theme Park Inc behaviour |
 | tpi-capability-gates | `source/OpenTPW/Client/Setup/GameEdition.cs:81` | [EXT:tpi-capability-gates] the slice's capability gates are OpenTPW's honest limits (a scope decision), not traced Theme Park Inc behaviour |
 | tpi-capability-gates | `source/OpenTPW/Client/Setup/GameEdition.cs:191` | [EXT:tpi-capability-gates] the slice's stated limits are OpenTPW's honest capability gates (a scope decision), not traced Theme Park Inc behaviour |
+| tpi-free-builds | `source/OpenTPW/Client/ThemeParkIncHud.cs:99` | The placed object is free ([EXT:tpi-free-builds]); the queue tool follows as in the Theme Park World place flow. |
 | tpi-free-builds | `source/OpenTPW/Client/ThemeParkIncHud.cs:234` | [EXT:tpi-free-builds] builds are free because the slice runs no economy (an OpenTPW scope decision); no original Theme Park Inc price is claimed |
 | tpi-text-hud | `source/OpenTPW/Client/ThemeParkIncHud.cs:25` | [EXT:tpi-text-hud] the whole HUD is an OpenTPW text interface (an OpenTPW design decision for the experimental slice); no original Theme Park Inc interface behaviour is claimed |
 | tpi-tool-flow | `source/OpenTPW/Client/ThemeParkIncHud.cs:423` | [EXT:tpi-tool-flow] the tools follow the traced Theme Park World flow (the TPW tool flow reused for the slice); no original Theme Park Inc build tool is claimed |
@@ -1950,8 +1969,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPI-EXE:0x0074D840 global save body | `source/OpenTPW.Files/Formats/Save/ThemeParkIncGlobalSave.cs:71` | [BIN:TPI-EXE:0x0074D840 global save body] the loader 0x0074D110 reads the world and version words, then this body and its sub-serializers (0x0074B1F0 card, 0x0074FEF0 park, 0x0045A130 options, 0x00592720, 0x00620E30 shares, 0x00622D70, 0x005BF470 ambient tags) and rejects the file when a marker (TATS, AMTA, MEHT, DTOT, RAHS, MAPS) differs |
 | TPW-EXE:0x00402D63 clock offset | `source/OpenTPW/Client/AutomaticAdvisor.cs:14` | [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300 |
 | TPW-EXE:0x0040C410 close-park handler | `source/OpenTPW/Hud/ParkHud.cs:616` | [BIN:TPW-EXE:0x0040C410 close-park handler] the shortcut calls the door routine 0x519EF0 whatever the park's state, which posts event 4 (0x51A1C6, also from a closed park) or, for opening, event 3 (0x51A033) every time |
-| TPW-EXE:0x00412C65 object definition constructor | `source/OpenTPW/World/Objects/ObjectCatalog.cs:633` | [BIN:TPW-EXE:0x00412C65 object definition constructor] the object text is read from the selected language's file only; without that file the definition's text pointers stay NULL (0x412C65/0x412C6B) and the caller keeps the .sam name |
-| TPW-EXE:0x00413600 object text | `source/OpenTPW.Tests/ObjectCatalogTests.cs:508` | [BIN:TPW-EXE:0x00413600 object text] the sign lines come from the selected language's file only; no file means no lines (the .sam name stays) |
+| TPW-EXE:0x00412C65 object definition constructor | `source/OpenTPW/World/Objects/ObjectCatalog.cs:633` | [BIN:TPW-EXE:0x00412C65 object definition constructor] the object text is read from the selected language's file only; without that file the definition's text pointers stay NULL (0x412C65/0x412C6B); what the sign code does with a NULL line is untraced, so OpenTPW's caller (ObjectSigns.Lines) falls back to the object's display name |
+| TPW-EXE:0x00413600 object text | `source/OpenTPW.Tests/ObjectCatalogTests.cs:508` | [BIN:TPW-EXE:0x00413600 object text] the sign lines come from the selected language's file only; no file means no lines (ObjectSigns then draws the display name; the original's NULL-line handling is untraced) |
 | TPW-EXE:0x00413600 object text | `source/OpenTPW/World/Objects/ObjectCatalog.cs:634` | [BIN:TPW-EXE:0x00413600 object text] before parsing, NAME, SIGNA, SIGNB and +0x500 are set to L"MISSING STRING" (0x6FD880, 0x41360D–0x41361D), so a file without a SIGNA or SIGNB key shows that string on the line |
 | TPW-EXE:0x00413600 object text | `source/OpenTPW/World/Objects/ObjectCatalog.cs:637` | [BIN:TPW-EXE:0x00413600 object text] the object text file's NAME, SIGNA and SIGNB sections are parsed with the default "MISSING STRING"; SIGNA/SIGNB are copied into each placed object as two 32-character lines (0x413020/0x4130B0, called at 0x4DB6F9/0x4DB70D) |
 | TPW-EXE:0x00429BA0 advisor setup | `source/OpenTPW/World/Advisor.cs:69` | [BIN:TPW-EXE:0x00429BA0 advisor setup] model matrix = identity with translation (0.6, -0.6, 0.2); the root node is |
@@ -1959,7 +1978,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPW-EXE:0x0044B410 head draw | `source/OpenTPW/World/Tracks/TrackRenderer.cs:228` | [BIN:TPW-EXE:0x0044B410 head draw] the seat's dummy node is found by class 0x80 and its number (0x0044B220); each rider is drawn as the guest's head sprite at that node (0x00475A10), the ADDHEAD mechanism |
 | TPW-EXE:0x00451640 | `source/OpenTPW/World/Tracks/TrackPieceKit.cs:75` | [APPROX:TRACK-002] the height profiles (.hmp) are the original's per-object height map ([BIN:TPW-EXE:0x00451640] loads it from the mesh loader 0x4629D0 and rebuilds it from the mesh with 0x451880 when it is missing or mis-sized); OpenTPW parses it and uses it only as the kart surface (TRACK-001) — evidence needed: the sampler mode that reads it (0x4527F0) |
 | TPW-EXE:0x00468500 sign rebuild | `source/OpenTPW/World/Objects/ObjectCatalog.cs:638` | [BIN:TPW-EXE:0x00468500 sign rebuild] the sign rebuild of the types with flag 0x8000000 reads line 1 through 0x4E2860 (which strips a trailing "--") and line 2 through 0x4E2920 |
-| TPW-EXE:0x004732A0 animation start | `source/OpenTPW/World/Advisor.cs:115` | [BIN:TPW-EXE:0x004732A0 animation start] the model is shown when any animation other than 12 starts (via 0x45BD30); "Kill advisor" (0x429D60: animation 12 with the immediate flag, then unlink), called by the stop path 0x5996D0 (six callers, including level exit) and the slap path 0x5994E0, hides it at once; the normal end of advice (0x599880) calls neither, the sampler hides the model at the end of the last clip (see DrawnSpanMilliseconds) |
+| TPW-EXE:0x004732A0 animation start | `source/OpenTPW/World/Advisor.cs:115` | [BIN:TPW-EXE:0x004732A0 animation start] the model is shown when any animation other than 12 starts (via 0x45BD30); "Kill advisor" (0x429D60: animation 12 with the immediate flag, then unlink), called by the stop path 0x5996D0 (six callers, including level exit) and the slap path 0x5994E0, hides it at once; the normal end of advice (0x599880) calls neither, the sampler hides the model at the end of the last clip (see DrawnSpanMilliseconds). The model therefore hides at the clip sum even while a long speech of a fixed row (21-27) is still playing; that follows the trace, and a capture should confirm it |
 | TPW-EXE:0x004735D0 animation sampler | `source/OpenTPW/Client/AutomaticAdvisor.cs:235` | [BIN:TPW-EXE:0x004735D0 animation sampler] the model is drawn until the last clip of the response's sequence ends (Advisor.DrawnSpanMilliseconds), where the sampler hides it; only a later response or Kill changes that |
 | TPW-EXE:0x004735D0 animation sampler | `source/OpenTPW/World/Advisor.cs:107` | [BIN:TPW-EXE:0x004735D0 animation sampler] at the end of a clip (frame past its length, 0x473743–0x47374E) with nothing queued ([channel+0x24] == 12, 0x47375D) and model flag 8 (0x473769–0x473776) the sampler starts the idle set 12 (0x472F60) and hides a shown model with 0x45BDD0 (scene unlink 0x576540, then clears bit 0x19); the advisor model has flag 8 (load flags 0x50120 at 0x429C9D: 0x461F10 ORs 8 at 0x4621C9, 0x4557C0 copies it into the model) |
 | TPW-EXE:0x00474070 clip length | `source/OpenTPW/World/AdvisorSequence.cs:52` | [BIN:TPW-EXE:0x00474070 clip length] returns (uint)(trailer word 2 × 1000) / 30, and 0 when the slot has no clip at that index |

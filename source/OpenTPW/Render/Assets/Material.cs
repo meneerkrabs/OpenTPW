@@ -16,7 +16,10 @@ public enum MaterialFlags
 	AdditiveBlend = 4,
 
 	/// <summary>No face culling, so camera-facing particles survive whichever way they wind.</summary>
-	DoubleSided = 8
+	DoubleSided = 8,
+
+	/// <summary>Plain one-plus-one additive blending (the particles' render flag 0x4); wins over <see cref="AdditiveBlend"/>.</summary>
+	OneOneBlend = 16
 }
 
 public partial class Material : Asset
@@ -263,6 +266,9 @@ public partial class Material : Asset
 		}
 	}
 
+	private static readonly BlendStateDescription OneOneBlendState = new( RgbaFloat.Clear,
+		new BlendAttachmentDescription( true, BlendFactor.One, BlendFactor.One, BlendFunction.Add, BlendFactor.One, BlendFactor.One, BlendFunction.Add ) );
+
 	private void SetupResources( MaterialFlags flags )
 	{
 		var vertexLayout = new VertexLayoutDescription( Vertex.VertexElementDescriptions );
@@ -289,7 +295,8 @@ public partial class Material : Asset
 		//
 		var pipelineDescription = new GraphicsPipelineDescription()
 		{
-			BlendState = flags.HasFlag( MaterialFlags.AdditiveBlend ) ? BlendStateDescription.SingleAdditiveBlend : BlendStateDescription.SingleAlphaBlend,
+			BlendState = flags.HasFlag( MaterialFlags.OneOneBlend ) ? OneOneBlendState
+				: flags.HasFlag( MaterialFlags.AdditiveBlend ) ? BlendStateDescription.SingleAdditiveBlend : BlendStateDescription.SingleAlphaBlend,
 
 			DepthStencilState = new DepthStencilStateDescription(
 				!flags.HasFlag( MaterialFlags.DisableDepthTest ),

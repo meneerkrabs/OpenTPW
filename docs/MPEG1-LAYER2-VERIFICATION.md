@@ -90,5 +90,5 @@ SCFSI/grouping/channel independence, current-frame table transitions, corrected
 CRC coverage and excluded scalefactor bits, truncation and first-complete-header
 SDT metadata. `Mpeg1LayerTwoWavExportTests` runs the existing selected-entry writer.
 Layer I (including its existing joint mode), LSF maps/PCM, cooperative batching
-and mismatch policy retain their previous behavior. Layer II joint, freeformat,
+and mismatch policy retain their previous behavior. MPEG-2 Layer II joint, freeformat,
 MPEG2.5 and LayerIII remain explicitly unsupported.

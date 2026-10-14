@@ -31,6 +31,14 @@ public sealed class BumpVehicle
 	public const int Crunched = 0x200000;
 	/// <summary>The controller's first vehicle (the one whose model the controller tracks).</summary>
 	public const int First = 0x400000;
+	/// <summary>Kart flags of the hovering space and fantasy karts (types −9 and −10, set at the first launch): hover with a bob, front and back height only, bank into turns, a shadow instance.</summary>
+	public const int HoverKartFlags = 0x3C00;
+	public const int Hover = 0x400;
+	public const int FrontBackHeight = 0x800;
+	public const int Bank = 0x1000;
+	public const int Shadow = 0x2000;
+	/// <summary>Kart grid slot mode: the vehicle aims at its grid buoy and parks there.</summary>
+	public const int GridMode = 0x40;
 	/// <summary>The vehicle finished launching.</summary>
 	public const int Launched = 0x4000000;
 
@@ -52,6 +60,18 @@ public sealed class BumpVehicle
 	/// <summary>Wall-hit spin (water only, drives the boat's roll).</summary>
 	public int Spin { get; set; }
 	public int Roll { get; set; }
+	/// <summary>The kart's drawn heading (+0x54): it follows the direction of the velocity by (angle difference × speed / 1000) per tick. Karts only.</summary>
+	public int VisualHeading { get; set; }
+	/// <summary>The kart's yaw change of the last tick (+0x5C, angle difference × speed / 1000) and its change since the tick before (+0x60); the bank of hovering karts reads them.</summary>
+	public int YawRate { get; set; }
+	public int YawDelta { get; set; }
+	/// <summary>The kart's animation clip (+0x10): 12 standing, 5 driving (karts only).</summary>
+	public int Animation { get; set; }
+	/// <summary>The effect asked for this tick (+0x14) and the effect latched for playing (+0x18); 1 exhaust puff, 2 horn, 3 crash (karts).</summary>
+	public int EffectRequest { get; set; }
+	public int EffectLatch { get; set; }
+	/// <summary>The height the pose probes last found (+0xA0, model units); presentation state, kept so a probe without a surface reuses it. Not part of the digest.</summary>
+	public float Height { get; set; }
 	/// <summary>The vehicle radius in section units.</summary>
 	public int Radius { get; set; }
 	/// <summary>Per-vehicle thrust added to the controller's (+0x68).</summary>

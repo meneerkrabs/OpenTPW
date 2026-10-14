@@ -4,25 +4,35 @@ namespace OpenTPW;
 public partial class Level
 {
 	private TrackBuilder? waterTracks;
+	private TrackBuilder? kartTracks;
 	private readonly Dictionary<OriginalObject, TrackStation> trackStations = new();
-	private TrackRenderer? trackRenderer;
+	private readonly Dictionary<TrackFamily, TrackRenderer> trackRenderers = new();
 	private bool trackRenderFailed;
+	private static readonly TrackFamily[] TrackFamilies = { TrackFamily.Water, TrackFamily.Kart };
 
 	/// <summary>The headless water track builder over the level's cell map (null in the generic sandbox).</summary>
 	public TrackBuilder? WaterTracks => waterTracks;
+	/// <summary>The headless go-kart track builder over the same cell map (null in the generic sandbox).</summary>
+	public TrackBuilder? KartTracks => kartTracks;
+
+	/// <summary>The builder of a station's family: kart rides lay kart tiles (type 11), water rides water tiles (type 16).</summary>
+	public TrackBuilder? BuilderOf( OriginalObject station ) => station.Runtime.Bump?.Template.Family == TrackFamily.Kart ? kartTracks : waterTracks;
 	private OriginalObject? trackToolStation;
 	/// <summary>The water ride whose track the track tool lays, or null when the tool is off.</summary>
 	public OriginalObject? TrackToolStation => CellTool.Writer is TrackLineWriter ? trackToolStation : null;
 	/// <summary>The stations of the level's water rides with their tile layout.</summary>
 	public IReadOnlyDictionary<OriginalObject, TrackStation> TrackStations => trackStations;
 	/// <summary>Tile and boat instances the track renderer holds.</summary>
-	public (int Tiles, int Boats) TrackInstances => (trackRenderer?.TileCount ?? 0, trackRenderer?.BoatCount ?? 0);
+	public (int Tiles, int Boats) TrackInstances => (trackRenderers.Values.Sum( renderer => renderer.TileCount ), trackRenderers.Values.Sum( renderer => renderer.BoatCount ));
+	/// <summary>The renderer of one track family (null until a station of the family exists and the first frame ran).</summary>
+	internal TrackRenderer? TrackRendererOf( TrackFamily family ) => trackRenderers.GetValueOrDefault( family );
 
 	private void SetupTracks()
 	{
 		if ( Guests == null )
 			return;
 		waterTracks = new TrackBuilder( Guests.Grid.Cells, TrackFamily.Water, () => Park?.Economy, Objects.Grid, IsPathBlocked );
+		kartTracks = new TrackBuilder( Guests.Grid.Cells, TrackFamily.Kart, () => Park?.Economy, Objects.Grid, IsPathBlocked );
 		Objects.ObjectPlaced += OnTrackStationPlaced;
 		Objects.ObjectRemoved += OnTrackStationRemoved;
 		foreach ( var item in Objects.Objects )
@@ -31,7 +41,7 @@ public partial class Level
 
 	private void OnTrackStationPlaced( OriginalObject item )
 	{
-		if ( waterTracks == null || item.Runtime.Bump is not { } bump || item.IsDeleted )
+		if ( waterTracks == null || kartTracks == null || item.Runtime.Bump is not { } bump || item.IsDeleted )
 			return;
 		var station = TrackStation.FromPlacement( item.Placement.X, item.Placement.Y, item.Placement.Rotation );
 		trackStations[item] = station;
@@ -40,7 +50,7 @@ public partial class Level
 		// A restored park carries its tiles and boats in the save's track part; the restore walks the circuit then.
 		if ( resumeState != null )
 			return;
-		waterTracks.PlaceStation( station );
+		BuilderOf( item )!.PlaceStation( station );
 		RewalkTrack( item );
 	}
 
@@ -51,7 +61,7 @@ public partial class Level
 		if ( TrackToolStation == item )
 			CellTool.Cancel();
 		trackToolStation = null;
-		DemolishTrack( station );
+		DemolishTrack( station, BuilderOf( item )! );
 		item.Runtime.Bump?.Rebuild( TrackCircuit.Invalid( "removed" ) );
 	}
 
@@ -60,13 +70,11 @@ public partial class Level
 	/// </summary>
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
 	// [APPROX:TRACK-007] the demolition clears the ride's own tiles and pays nothing: the original's one Spend (2 × the cell cost scaled by a percentage) has an untraced sign and percentage — evidence needed: 0x100E2424 and the Spend's direction
-	private void DemolishTrack( TrackStation station )
+	private void DemolishTrack( TrackStation station, TrackBuilder builder )
 	{
-		if ( waterTracks == null )
-			return;
 		// exactly the tiles laid for this ride go, so a neighbouring ride's circuit that touches it stays
-		waterTracks.RemoveOwned( waterTracks.OwnerOf( station ) );
-		waterTracks.RemoveStation( station );
+		builder.RemoveOwned( builder.OwnerOf( station ) );
+		builder.RemoveStation( station );
 	}
 
 	/// <summary>
@@ -77,7 +85,7 @@ public partial class Level
 	{
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || item.Runtime.Bump is not { } bump )
 			return null;
-		var circuit = TrackCircuitWalker.WalkAndRefresh( waterTracks, station );
+		var circuit = TrackCircuitWalker.WalkAndRefresh( BuilderOf( item )!, station );
 		bump.Rebuild( circuit );
 		if ( !circuit.IsValid )
 			return circuit;
@@ -99,8 +107,9 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
 			return false;
+		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
-		CellTool.Enter( new TrackLineWriter( waterTracks, () => RewalkTrack( station ), waterTracks.OwnerOf( layout ) ), layout.Exit );
+		CellTool.Enter( new TrackLineWriter( builder, () => RewalkTrack( station ), builder.OwnerOf( layout ) ), layout.Exit );
 		trackToolStation = station;
 		return true;
 	}
@@ -124,32 +133,37 @@ public partial class Level
 			LastActionMessage = "Cannot build a track here.";
 			return null;
 		}
-		var result = new TrackLineWriter( waterTracks, () => RewalkTrack( station ), waterTracks.OwnerOf( trackStations[station] ) ).Commit( from, to );
+		var builder = BuilderOf( station )!;
+		var result = new TrackLineWriter( builder, () => RewalkTrack( station ), builder.OwnerOf( trackStations[station] ) ).Commit( from, to );
 		LastActionMessage = result.Completed ? $"Built {result.Built.Count} track tiles for ${result.Charged}." : $"Cannot build a track here: {result.StoppedBy}.";
 		return result;
 	}
 
-	/// <summary>Updates the track renderer: tile instances after a layer change, boats at their positions.</summary>
+	/// <summary>Updates the track renderers (one per track family): tile instances after a layer change, vehicles at their positions.</summary>
 	private void UpdateTrackRendering()
 	{
 		if ( trackRenderFailed || waterTracks == null )
 			return;
-		var first = trackStations.Keys.FirstOrDefault( item => !item.IsDeleted );
-		if ( first == null )
-		{
-			trackRenderer?.Dispose();
-			trackRenderer = null;
-			return;
-		}
 		try
 		{
-			if ( trackRenderer == null )
+			foreach ( var family in TrackFamilies )
 			{
-				var entry = first.Entry;
-				var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, TrackFamily.Water );
-				trackRenderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ) );
+				var first = trackStations.Keys.FirstOrDefault( item => !item.IsDeleted && item.Runtime.Bump?.Template.Family == family );
+				if ( first == null )
+				{
+					if ( trackRenderers.Remove( family, out var stale ) )
+						stale.Dispose();
+					continue;
+				}
+				if ( !trackRenderers.TryGetValue( family, out var renderer ) )
+				{
+					var entry = first.Entry;
+					var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
+					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ) );
+					trackRenderers[family] = renderer;
+				}
+				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.Family == family ) );
 			}
-			trackRenderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
 		{
@@ -159,15 +173,16 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Places a water ride with a small closed circuit near the park's initial path and points the park camera at it (the debug flag
-	/// <c>--debug-water-track</c>, for captures; the park pays for the ride when it is available and for the tiles). Null when no site has room.
+	/// Places a water ride (<paramref name="trackType"/> 2) or a go-kart ride (1) with a small closed circuit near the park's initial path and points the park
+	/// camera at it (the debug flags <c>--debug-water-track</c> and <c>--debug-kart-track</c>, for captures; the park pays for the ride when it is available
+	/// and for the tiles). Null when no site has room.
 	/// </summary>
-	// [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the water track tool for the player
-	internal OriginalObject? BuildDemoWaterRide()
+	// [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the track tool for the player
+	internal OriginalObject? BuildDemoTrackRide( int trackType = 2 )
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || Guests == null || OriginalPark == null )
 			return null;
-		var entry = Objects.Catalog.Buildable.Where( item => item.Settings.GetInt( "Bumper.WhichTrackType" ) == 2 ).OrderBy( item => item.InfoId ).FirstOrDefault();
+		var entry = Objects.Catalog.Buildable.Where( item => item.Settings.GetInt( "Bumper.WhichTrackType" ) == trackType ).OrderBy( item => item.InfoId ).FirstOrDefault();
 		if ( entry == null )
 			return null;
 		var grid = Objects.Grid;
@@ -190,13 +205,28 @@ public partial class Level
 			foreach ( var offset in new (int X, int Y)[] { (4, 4), (-2, 4), (-2, 0) } )
 				CellTool.Click( (layout.First.X + offset.X, layout.First.Y + offset.Y) );
 			CellTool.Cancel();
+			if ( trackType == 1 && station.Runtime.Bump is { IsTrackValid: true } karts )
+			{
+				// the kart script waits for real guests, so the capture helper plays its part: three karts with a rider each, on a long race
+				karts.Command( 7, 0 );
+				for ( var car = 0; car < 3; car++ )
+				{
+					karts.Command( 1, 9000 + car );
+					karts.Command( 4, 0 );
+				}
+				karts.Command( 14, 20 );
+				karts.Command( 3, 0 );
+			}
 			var centre = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, layout.First.X + 2, layout.First.Y + 2 );
 			(Camera.Mode as ParkCameraMode)?.SetPose( new Vector3( centre.X, centre.Y, 0 ), 22, -20 );
-			Log.Trace( $"--debug-water-track: {entry.DisplayName} at {layout.First} with a {(station.Runtime.Bump!.IsTrackValid ? "valid" : "invalid")} circuit of {waterTracks.Tiles().Count()} tiles; camera on engine ({centre.X:0.#}, {centre.Y:0.#})." );
+			Log.Trace( $"--debug-track: {entry.DisplayName} at {layout.First} with a {(station.Runtime.Bump!.IsTrackValid ? "valid" : "invalid")} circuit of {BuilderOf( station )!.Tiles().Count()} tiles; camera on engine ({centre.X:0.#}, {centre.Y:0.#})." );
 			return station;
 		}
 		return null;
 	}
+
+	/// <summary>The water ride of <see cref="BuildDemoTrackRide"/>.</summary>
+	internal OriginalObject? BuildDemoWaterRide() => BuildDemoTrackRide( 2 );
 
 	// ---- Park-resume snapshot -----------------------------------------------------------------------
 
@@ -215,10 +245,15 @@ public partial class Level
 	internal void RestoreTracksSnapshot( TrackWorldSaveData? saved )
 	{
 		var controllers = LiveWaterRides().ToList();
+		// a save written before the kart rides had controllers holds none for a kart station: its track is empty, so the station tiles are laid and the fresh controller kept
+		var legacy = controllers.Where( item => item.Runtime.Bump!.Template.IsKart && saved?.Controllers.Any( entry => entry.AttractionId == item.Runtime.AttractionId ) != true ).ToList();
 		if ( saved == null )
 		{
 			if ( controllers.Any( item => item.Runtime.LiveBump!.Vehicles.Count > 0 ) )
 				throw new InvalidDataException( "The park holds boats but the save carries no track part." );
+			if ( controllers.Count != legacy.Count )
+				throw new InvalidDataException( "The save carries no track part, but the park places water rides." );
+			MigrateLegacyKarts( legacy );
 			return;
 		}
 		if ( Guests == null || waterTracks == null )
@@ -227,7 +262,7 @@ public partial class Level
 		foreach ( var entry in saved.Controllers )
 		{
 			var station = controllers.FirstOrDefault( item => item.Runtime.AttractionId == entry.AttractionId )
-				?? throw new InvalidDataException( $"The save holds a track controller for attraction {entry.AttractionId}, which this park does not place as a water ride." );
+				?? throw new InvalidDataException( $"The save holds a track controller for attraction {entry.AttractionId}, which this park does not place as a track ride." );
 			var bump = station.Runtime.Bump!;
 			if ( bump.Type != entry.Type )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s controller type {bump.Type} is not the saved {entry.Type}." );
@@ -238,9 +273,41 @@ public partial class Level
 			if ( !rebuilt.SequenceEqual( entry.Sections ) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s walked sections do not match the saved ones." );
 			bump.Restore( entry );
+			station.Runtime.ResumeBumpEffects();
 		}
-		if ( controllers.Count != saved.Controllers.Count )
-			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count} water rides." );
+		if ( controllers.Count - legacy.Count != saved.Controllers.Count )
+			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count - legacy.Count} rides that need one." );
+		MigrateLegacyKarts( legacy );
 		Objects.ScriptWorld.Bumpers.CosmeticState = saved.CosmeticState;
+	}
+
+	/// <summary>Lays the station tiles of kart rides that an older save carried without a controller and walks their (empty) circuit.</summary>
+	// [APPROX:TRACK-027] a save from before the go-kart controllers (park-resume version 1 without a kart controller) restores its kart rides as freshly placed ones: station tiles, no track, a closed controller
+	private void MigrateLegacyKarts( IEnumerable<OriginalObject> legacy )
+	{
+		foreach ( var item in legacy )
+		{
+			if ( !trackStations.TryGetValue( item, out var station ) )
+				continue;
+			BuilderOf( item )!.PlaceStation( station );
+			RewalkTrack( item );
+		}
+	}
+}
+
+/// <summary>The riders of the go-karts as head sources: every kart's riders hang from the head dummies of the kart mesh (<see cref="TrackRenderer.CollectHeads"/>).</summary>
+internal sealed class TrackHeadSources : IHeadSourceProvider
+{
+	private readonly Func<IEnumerable<TrackRenderer>> renderers;
+
+	public TrackHeadSources( Func<IEnumerable<TrackRenderer>> renderers ) => this.renderers = renderers;
+
+	public void Collect( List<HeadSource> sources, int? onlyAttraction )
+	{
+		foreach ( var renderer in renderers() )
+		{
+			if ( renderer.Family == TrackFamily.Kart )
+				renderer.CollectHeads( sources, onlyAttraction );
+		}
 	}
 }

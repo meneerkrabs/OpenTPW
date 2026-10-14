@@ -190,7 +190,10 @@ public class TrackSaveTests
 		Rejects( Bumper( 1, good ), "engine voice" );
 		Rejects( Bumper( 2, good with { Flags = 0x4004009 } ), "engine voice" );
 		Rejects( Bumper( 2, good, Vehicle( 4, 41000 ) with { Flags = 0x4404009, ObjectIndex = 0, Riders = new List<int> { 6 }, Engine = true, WallHits = -1 } ), "engine voice" );
-		Rejects( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { Engine = true } } } ).ToList() } ), "engine voice" );
+		Rejects( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { Type = -9, Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { Engine = true } } } ).ToList() } ), "engine voice" );
+		// a boat holds its engine voice for its whole life, but never a smoke emitter (water boats have no sparks node)
+		ParkResumeSaveFile.ValidateShape( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { Engine = true } } } ).ToList() } ) );
+		Rejects( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { Smoke = true } } } ).ToList() } ), "smoke emitter" );
 	}
 
 	[TestMethod]

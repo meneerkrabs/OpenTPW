@@ -63,7 +63,7 @@ public partial class Level
 
 	/// <summary>The centre of a bumper ride's arena in section units: the middle of the bounding box of the ride's footprint cells.</summary>
 	// [BIN:TPW-EXE:0x00529E10 ride placement] the original places the arena at the placement cell plus a per-rotation offset read from the object type (+0xA4..+0xC0) and 0x600 on both axes
-	// [APPROX:TRACK-030] the arena centre is the middle of the footprint's bounding box, not the original's type-record offset — evidence needed: the offset fields at the type record's +0xA4..+0xC0 and the conversion of the placement cell in 0x00529E10
+	// [APPROX:TRACK-030] the arena centre is the middle of the footprint's bounding box; the original's is (cursor cell + Adjust[rotation] + fixed[rotation]) × 0xC00 + 0x600 ([BIN:TPW-EXE:0x00529E53]; shipped bumper Adjust North (−2, 1), East (1, 3), South (3, 0), West (0, −2), fixed (+4, +1), (+1, −5), (−5, −2), (−2, +4)) — evidence needed: the relation of OpenTPW's placement anchor to the original cursor cell (0x818C3C, object offset 0x4D9CC0 from type +0x4B0)
 	internal static (int X, int Y) BumperArenaCentre( OriginalObject item )
 	{
 		var cells = item.Cells.ToArray();
@@ -317,7 +317,7 @@ public partial class Level
 	}
 
 	/// <summary>Lays the station tiles of kart rides that an older save carried without a controller and walks their (empty) circuit.</summary>
-	// [APPROX:TRACK-027] a save from before the go-kart or bumper-car controllers (no controller for such a ride) restores its rides as freshly placed ones: station tiles and no track for karts, an arena for bumper cars, a closed controller; the guests a bumper ride still held go to its leaving list
+	// [EXT:legacy-kart-save] a save from before the go-kart or bumper-car controllers (no controller for such a ride) restores its rides as freshly placed ones: station tiles and no track for karts, an arena for bumper cars, a closed controller; the guests a bumper ride still held go to its leaving list (save compatibility, no original rule)
 	private void MigrateLegacyKarts( IEnumerable<OriginalObject> legacy )
 	{
 		foreach ( var item in legacy )

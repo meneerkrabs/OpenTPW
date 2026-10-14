@@ -191,9 +191,12 @@ public class MechanicArrivalIndependentReviewTests
 		// The synthetic level intentionally has no placed object/access mapping. Dispatch a fresh job through its real fixed-step route.
 		scene.Park.Remove( scene.Ride.Id ); var ride = scene.Park.RegisterExisting( 1100 ); ride.IsBrokenDown = true; ride.Repair = 0;
 		for ( var frame = 0; frame < 120; frame++ ) level.AdvanceSimulation( FixedStepClock.TickDuration );
-		Assert.AreEqual( ride.Id, scene.Member.AssignedInstanceId );
-		Assert.IsTrue( scene.Member.AwaitingJobArrival );
-		Assert.AreEqual( 3L, scene.Member.BusyTicks );
+		// In a level the mechanics run their own state machine (tp.exe 0x004DA490): without an access cell no route reaches the ride, so nobody
+		// claims it and the job stays pending (the ride stays broken).
+		Assert.AreSame( level.StaffWorld, scene.Park.StaffWorld );
+		Assert.AreEqual( 0, ride.MechanicId );
+		Assert.AreEqual( 0, scene.Member.RideId );
+		Assert.AreEqual( 0L, scene.Member.BusyTicks );
 		Assert.IsTrue( ride.IsBrokenDown );
 	}
 }

@@ -202,7 +202,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines; without a staff world (the mechanics, and every role in a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the handymen's litter share counts the live map (ECON-020), the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the mechanics' state machine (0x004DA490), the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines; without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the handymen's litter share counts the live map (ECON-020), the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -254,9 +254,37 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>The strike and rest gate of a world-driven member's search (tp.exe <c>0x00506A40</c>): true when the member now strikes or rests.</summary>
 	internal bool StaffStrikeOrRest( StaffMember member ) => StrikeOrRest( member, HasRestArea );
 
-	/// <summary>Whether an attached world runs this member's state machine (the handymen, entertainers, guards and researchers; the mechanics keep the economy's).</summary>
-	internal bool DrivenByWorld( StaffMember member ) =>
-		StaffWorld != null && member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard or StaffType.Researcher;
+	/// <summary>Whether an attached world runs this member's state machine (every role once a level attaches one).</summary>
+	internal bool DrivenByWorld( StaffMember member ) => StaffWorld != null;
+
+	/// <summary>
+	/// Whether a ride needs a mechanic (tp.exe <c>0x004DAA90</c> and the arrival <c>0x004DA740</c>): broken down (state 1, <c>0x004E0370</c>) or being
+	/// upgraded (state 2, <c>0x004E03E0</c>); the maintenance request (<c>+0x64</c>, <c>0x004E03D0</c>) has no control in OpenTPW (ECON-049).
+	/// </summary>
+	internal bool NeedsMechanic( int instanceId ) => objects.TryGetValue( instanceId, out var item ) && item.Kind == ParkObjectKind.Ride && JobRank( item ) is 0 or 1;
+
+	/// <summary>The rides in object order that need a mechanic and are claimed by nobody or by <paramref name="mechanic"/>, with their cells' ids.</summary>
+	internal IEnumerable<ParkObjectState> RidesNeedingMechanic( int mechanic ) =>
+		objects.Values.OrderBy( item => item.Id ).Where( item => NeedsMechanic( item.Id ) && (item.MechanicId == 0 || item.MechanicId == mechanic) );
+
+	/// <summary>The repair or upgrade time a mechanic sets on arrival (tp.exe <c>0x004DA370</c> state 13, <see cref="RepairTimer"/>).</summary>
+	internal long MechanicWorkTime( StaffMember member, int instanceId )
+	{
+		var item = objects[instanceId];
+		int? upgradeDuration = ObjectState( item ) == RideObjectStates.Upgrading && Catalog.TryGet( item.InfoId, out var info ) && item.PendingLevel < info.Upgrades.Count
+			? info.Upgrades[item.PendingLevel].DurationOfUpgrade : null;
+		return RepairTimer( Settings[StaffType.Mechanic].WorkDuration[member.Grade], item.Repair, upgradeDuration );
+	}
+
+	/// <summary>A world mechanic finishes his job (tp.exe <c>0x004DF8F0</c>): the repair or the upgrade, as <see cref="FinishJob"/>.</summary>
+	internal void FinishMechanicJob( StaffMember member )
+	{
+		member.AssignedInstanceId = member.RideId;
+		member.RideId = 0;
+		var state = member.State;
+		FinishJob( member );
+		member.State = state;
+	}
 
 	/// <summary>The member's role is on strike (the strike flag 0x00509990).</summary>
 	internal bool RoleOnStrike( StaffType type ) => Staff.Strikes.IsActive( type );
@@ -528,13 +556,13 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( jobs.Count == 0 )
 			return;
 		var role = Settings[StaffType.Mechanic];
-		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
+		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => !DrivenByWorld( member ) && member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
 		{
 			if ( jobs.Count == 0 )
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
-			// [APPROX:ECON-021] live jobs await reachable host arrival, then consume the dispatch-computed timer after one arrival-observation update; headless jobs start at once — evidence needed: original movement, timer sampling and arrival-to-completion ordering
+			// [APPROX:ECON-021] without a staff world (a headless economy) the mechanic starts at once where the original first walks to the ride, and its jobs keep OpenTPW's dispatch order (broken, upgrading, then rides worn below 25 by OpenTPW's own threshold); in a level the mechanics run the original's state machine (ECON-022) — evidence needed: none for the level (read, tp.exe 0x004DA490); the headless dispatch is OpenTPW's own
 			int? upgradeDuration = ObjectState( job ) == RideObjectStates.Upgrading && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
 				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
 			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
@@ -990,6 +1018,17 @@ public sealed class ParkEconomy : IParkEconomy
 				member.BusyTicks = 0;
 				member.AwaitingJobArrival = false;
 				member.State = StaffState.Patrolling;
+			}
+			if ( member.RideId == instanceId )
+			{
+				// the ride went: the mechanic's walk to it or his work on it ends and he searches again
+				member.RideId = 0;
+				if ( member.Job is StaffJob.ToRide or StaffJob.Repairing )
+				{
+					member.Job = StaffJob.Idle;
+					member.IdleStamp = 0;
+					member.State = StaffState.Idle;
+				}
 			}
 			if ( member.RestAreaId == instanceId )
 			{

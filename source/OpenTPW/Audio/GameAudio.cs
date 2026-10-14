@@ -508,7 +508,7 @@ public static class GameAudio
 	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn with an independent host stream.
 	/// </summary>
 	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer handler draws the world random at each walking/idle turn and plays at (draw & 0xF) == 0 — the gate is traced for all roles (0x100D5EAC, 0x100D6434, 0x100D9BAC, 0x100D9F10, 0x100D2DDC, 0x100D2E44, 0x100D4EF0, 0x100D4E18, 0x100F0460, 0x100F0630)
-	// [APPROX:AUDIO-024] for the mechanics only (the other roles' state machines draw their voices, PlayStaffVoices), the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the other roles' state machines (their handlers' turn boundary and world draw order)
+	// [APPROX:AUDIO-024] only without a staff world (in a level every role's state machine draws its voices, PlayStaffVoices), the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the other roles' state machines (their handlers' turn boundary and world draw order)
 	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn, bool worldDrawsVoices = false )
 	{
 		if ( events == null || turn == staffTurn )
@@ -516,7 +516,7 @@ public static class GameAudio
 		staffTurn = turn;
 		foreach ( var member in staff )
 		{
-			if ( worldDrawsVoices && member.Type != StaffType.Mechanic )
+			if ( worldDrawsVoices )
 				continue;
 			if ( staffRandom.Next( 16 ) != 0 )
 				continue;

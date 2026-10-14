@@ -233,6 +233,9 @@ public static class ParkSaveFile
 		/// <summary>The cell of the member's <c>RegionFX</c> row (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? EffectCell { get; init; }
+		/// <summary>The ride a mechanic walks to or works on (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int RideId { get; init; }
 		/// <summary>The rest area the member walks to or rests in (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public int RestAreaId { get; init; }
@@ -254,6 +257,7 @@ public static class ParkSaveFile
 			TargetGuestId = member.TargetGuestId,
 			EffectCell = member.EffectCell is { } cell ? new[] { cell.X, cell.Y } : null,
 			RestAreaId = member.RestAreaId,
+			RideId = member.RideId,
 			OffGridLeg = member.OffGridLeg.Count == 0 ? null : member.OffGridLeg.SelectMany( point => new[] { point.X, point.Y, point.ByteX, point.ByteY } ).ToArray()
 		};
 
@@ -271,6 +275,7 @@ public static class ParkSaveFile
 			member.TargetGuestId = TargetGuestId;
 			member.EffectCell = EffectCell is [var x, var y] ? (x, y) : null;
 			member.RestAreaId = RestAreaId;
+			member.RideId = RideId;
 			member.OffGridLeg = OffGridLeg is { } leg ? leg.Chunk( 4 ).Select( point => (point[0], point[1], point[2], point[3]) ).ToList() : new();
 		}
 
@@ -281,6 +286,7 @@ public static class ParkSaveFile
 			StaffType.Entertainer => job == StaffJob.Performing,
 			StaffType.Guard => job is StaffJob.Chasing or StaffJob.Escorting or StaffJob.ReturningFromEscort,
 			StaffType.Researcher => job == StaffJob.Researching,
+			StaffType.Mechanic => job is StaffJob.ToRide or StaffJob.Repairing,
 			_ => false
 		});
 	}
@@ -470,8 +476,7 @@ public static class ParkSaveFile
 					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
 					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
-					WorldState = member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard or StaffType.Researcher
-						&& (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null) ? StaffWorldData.Capture( member ) : null,
+					WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null) ? StaffWorldData.Capture( member ) : null,
 					CellX = member.CellX,
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
@@ -593,6 +598,7 @@ public static class ParkSaveFile
 				&& float.IsFinite( world.SmoothedSpeed ) && (world.ToiletId == 0 || member.Type == StaffType.Handyman && ids.Contains( world.ToiletId ))
 				&& (world.TargetGuestId == 0 || member.Type == StaffType.Guard && world.TargetGuestId > 0)
 				&& (world.EffectCell is null || ParkEconomy.EffectRow( member.Type ) != null && world.EffectCell is [>= 0 and < ParkLitter.MapSize, >= 0 and < ParkLitter.MapSize])
+				&& (world.RideId == 0 || member.Type == StaffType.Mechanic && ids.Contains( world.RideId ) && world.Job is StaffJob.ToRide or StaffJob.Repairing)
 				&& (world.RestAreaId == 0 || ids.Contains( world.RestAreaId ) && world.Job is StaffJob.ToRestArea or StaffJob.Resting)
 				&& (world.OffGridLeg is null || world.OffGridLeg.Length % 4 == 0 && world.OffGridLeg.Chunk( 4 ).All( point =>
 					point[0] is >= 0 and < ParkLitter.MapSize && point[1] is >= 0 and < ParkLitter.MapSize && point[2] is >= 0 and < 256 && point[3] is >= 0 and < 256 ))

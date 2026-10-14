@@ -324,6 +324,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Mechanics now walk to their rides as in the original (tp.exe `0x4da490`, `0x4da5b0`, `0x4daa90`; ECON-021, ECON-022;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level a mechanic idles or patrols and, from where he stands, takes the nearest ride
+  that is broken down or being upgraded (not the park's worst one), walks there and starts the repair (`(100 − state of repair) ×
+  WorkDuration / 100` turns) or the upgrade only when he arrives. Rides merely worn are no longer serviced before they break, as in the
+  original. Every staff role in a level now runs its own state machine.
 - Researchers now wander and research as in the original (tp.exe `0x5029f0`; ECON-022): a spell of `WorkDuration` turns where they stand
   (cat_staff 138 now and then), then they wander on; their points still come every 20th turn. Every staff role a level drives now walks
   to rest and to strike (`0x506a40`, `0x505fe0`, `0x5061d0`, `0x506300`; [WANDER-plan.md](reverse/WANDER-plan.md) §4): a tired member

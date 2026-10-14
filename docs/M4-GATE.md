@@ -230,7 +230,7 @@ of each lifecycle step was added for that reason.
 - Original semantics: no original trace exists. Every PASS is a statement about OpenTPW.
 - Queues (built by the queue tool) and path building: the M3 gate measures them. Here
   every guest attraction uses the one-cell queue at its path cell.
-- Original ride cycles, ride durations, capacities and their units (RIDES-016), ride
+- Original ride cycles, ride durations, capacities and their units, ride
   breakdown and repair, upgrades, prices, and what guests feel after a ride.
 - Visual animation fidelity (vertex animation, channel mixing; OBJECTS.md): the gate
   sees only that clips were requested and resolved (`animationsPlayed`,

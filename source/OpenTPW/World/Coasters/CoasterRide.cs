@@ -294,17 +294,17 @@ public sealed class CoasterRide
 	// ---- COAST commands ------------------------------------------------------------------------------
 
 	/// <summary>Performs a <c>COAST</c> command of the station script (PPC-rides command table, COAST-plan §5.3).</summary>
-	public int Perform( RideEffectCall call ) => Command( call.Argument( 0 ), call.OperandCount > 1 ? call.Argument( 1 ) : 0 );
+	public int Perform( RideEffectCall call ) => Command( call.Argument( 0 ), call.OperandCount > 1 ? call.Argument( 1 ) : 0, call.VM.SpeedBias );
 
 	/// <summary>One <c>COAST</c> command with its resolved parameter; returns the command's result.</summary>
-	public int Command( int command, int parameter )
+	public int Command( int command, int parameter, int speedBias = RideVM.DefaultSpeedBias )
 	{
 		switch ( command )
 		{
 			case 8:
 				// [BIN:STP-PPC:0x100B6DF4 COAST bridge] COAST 8 creates or looks up the controller (0x1003DAFC), stores it at script +224 and applies the script speed (0x1003DE68); the parameter is ignored
 				Initialised = true;
-				ApplyScriptSpeed( RideVM.SpeedBias );
+				ApplyScriptSpeed( speedBias );
 				return 0;
 			case 1:
 				// [BIN:STP-PPC:0x1003DBC0 coaster boarding] COAST 1 resolves the visitor and hands it to the controller's passenger slots
@@ -347,7 +347,7 @@ public sealed class CoasterRide
 	/// The ride-script loop's speed setter (<c>0x43b2b0</c>): a changed setting becomes the controller's speed setting and the
 	/// speed cap lerp(maxAtMin, maxAtMax, s/100) (<c>0x43c3d0</c>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x43b2b0 coaster speed setter] the loop 0x5516b0 calls it every pass with the signed 16-bit script bias at script +0xC0 (50 at creation, 0x558c3c); applied via 0x43c3d0 (setting +0x30, cap +0x34 = fmadds-style lerp of definition +0x4C and +0x50 by s·0.01, dirty flags 0x1001, the per-node pass 0x43afa0 on flag 8) when it differs from the setting and money is off (0x785a2c set) or controller +0 bit 0x8000 is clear; bit 0x8000 and the money switch are not modelled (treated as clear), and since the bias never changes (RIDES-033) the first pass after COAST 8 is the only one that changes anything
+	// [BIN:TPW-EXE:0x43b2b0 coaster speed setter] the loop 0x5516b0 calls it every pass with the signed 16-bit script bias at script +0xC0 (50 at creation, 0x558c3c); applied via 0x43c3d0 (setting +0x30, cap +0x34 = fmadds-style lerp of definition +0x4C and +0x50 by s·0.01, dirty flags 0x1001, the per-node pass 0x43afa0 on flag 8) when it differs from the setting and money is off (0x785a2c set) or controller +0 bit 0x8000 is clear; bit 0x8000 and the money switch are not modelled (treated as clear), and since the script's bias (RideVM.SpeedBias, the ride's InitSpeed) is only written at ride init (RIDES-033) the first pass after COAST 8 is the only one that changes anything
 	internal void ApplyScriptSpeed( int bias )
 	{
 		if ( bias == SpeedSetting )

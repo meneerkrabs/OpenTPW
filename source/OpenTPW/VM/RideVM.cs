@@ -102,7 +102,7 @@ public sealed class RideVM
 	/// The original's GETTIME and WAITANIM(_CH) call 0x10e844 on the global r30 (loaded at 0xaf55c) and subtract no
 	/// creation timestamp.
 	/// </summary>
-	// [APPROX:RIDES-044] The scheduler clock starts at 0 when the park's script world is created and advances with the script ticks (60 Hz fixed steps); the original's scheduler clock (0x1010E844 on the global r30, 0x100AF55C) has a start value and rate that are not traced — evidence needed: the scheduler clock's value when a placed object's script starts, and whether a save stores it
+	// [APPROX:RIDES-044] The scheduler clock starts at 0 when the park's script world is created and advances with the script ticks (60 Hz fixed steps). PC: script deadlines use the scaled timer 0x785970 (0x402d70 → 0x4031e0) plus +0x44/+0x48; saves store it ('SSEM' at 0x41555a, read back into +0x4c by 0x402e30). A new park's start value needs a capture, and GETTIME's handler is not located on the PC — evidence needed: the timer's value when a new park's first script starts
 	public double SchedulerMilliseconds => ClockOriginMilliseconds + TimeMilliseconds;
 
 	/// <summary>The scheduler clock as the original's 32-bit millisecond word (truncated, wrapping after about 49.7 days).</summary>
@@ -146,6 +146,8 @@ public sealed class RideVM
 		Script = script;
 		this.options = options;
 		Parent = parent;
+		if ( parent != null )
+			SpeedBias = parent.SpeedBias;
 		SourceName = options.SourceName ?? "script";
 		Effects = options.Effects ?? UnimplementedRideScriptEffects.Instance;
 		World = options.World ?? parent?.World ?? new RideScriptWorld();
@@ -341,6 +343,7 @@ public sealed class RideVM
 			Wait4AnimDeadline = Wait4AnimDeadline,
 			LoopAnimationToken = LoopAnimationToken,
 			TriggerWaitToken = TriggerWaitToken,
+			SpeedBias = SpeedBias,
 			ExecutedInstructions = ExecutedInstructions,
 			SliceCount = SliceCount,
 			UnimplementedEffects = new Dictionary<Opcode, int>( unimplementedEffects )
@@ -388,6 +391,7 @@ public sealed class RideVM
 		Wait4AnimDeadline = snapshot.Wait4AnimDeadline;
 		LoopAnimationToken = snapshot.LoopAnimationToken;
 		TriggerWaitToken = snapshot.TriggerWaitToken;
+		SpeedBias = snapshot.SpeedBias;
 		ExecutedInstructions = snapshot.ExecutedInstructions;
 		SliceCount = snapshot.SliceCount;
 		unimplementedEffects.Clear();
@@ -449,8 +453,7 @@ public sealed class RideVM
 
 	/// <summary>
 	/// WAITABS's wait: the original's case 45 adds the operand to now without WAIT's script-speed division
-	/// (STP-PPC 0xb0710–0xb0788) and always yields on the first encounter. With the speed bias pinned to 1
-	/// (RIDES-033) this equals <see cref="WaitFor"/>; the separate seam keeps a future bias from changing WAITABS.
+	/// (STP-PPC 0xb0710–0xb0788) and always yields on the first encounter, so the script speed never applies to it.
 	/// A non-positive deadline wakes at the next servicing tick, as the original's unsigned now ≥ deadline resume does.
 	/// </summary>
 	// [APPROX:VM-901] The deadline lives in this VM's non-wrapping double script clock, not the original's wrapping unsigned 32-bit word with its zero-deadline sentinel (docs/reverse/PPC-clock.md); wrap-past-2^31/2^32 behaviour is unmodelled.
@@ -475,18 +478,23 @@ public sealed class RideVM
 
 	internal int TimerRemaining => (int)Math.Max( 0, Math.Ceiling( timerEndMilliseconds - TimeMilliseconds ) );
 
-	/// <summary>
-	/// Script speed of the animation opcodes: <c>0.5 + bias / 100</c> from the signed bias at script +192, which
-	/// script creation sets to 50 (0xb3154/0xb318c).
-	/// </summary>
-	// [APPROX:RIDES-033] Script speed stays 1.0 (the creation bias 50); the native writers of the bias (0x100B2A34, 0x100B5B18) are not modelled — evidence needed: what those callers store and when
-	public const float ScriptSpeed = 1f;
+	/// <summary>Script speed at the creation bias 50: 0.5 + 50 / 100.</summary>
+	public const float DefaultScriptSpeed = 1f;
+
+	/// <summary>The creation value of <see cref="SpeedBias"/> ([BIN:TPW-EXE:0x558c3c script creation]).</summary>
+	public const int DefaultSpeedBias = 50;
 
 	/// <summary>
-	/// The signed bias at script +192 (0xC0), set to 50 at script creation (Mac 0xb3154/0xb318c; tp.exe 0x558c3c, 16-bit store 0x32).
-	/// The ride-script loop (tp.exe 0x5516b0, 0x5517e1..0x5517ef) hands it to the coaster speed setter 0x43b2b0 every pass.
+	/// The script's speed bias (the ride's SPEED; setter 0x55a300): ride init writes <c>Upgrades[0].InitSpeed</c> when above 0
+	/// (0x4db51c..0x4db54c) and children copy their parent's (0x551888). The host also writes it at ride-settings apply and upgrade completion.
 	/// </summary>
-	public const int SpeedBias = 50;
+	// The signed 16-bit word at script +192 (0xC0); the ride-script loop (tp.exe 0x5516b0, 0x5517e1..0x5517ef) hands it to the coaster speed setter 0x43b2b0 every pass.
+	public int SpeedBias { get; internal set; } = DefaultSpeedBias;
+
+	/// <summary>Script speed of the animation opcodes: <c>0.5 + bias / 100</c> in single precision (constants −0.01 and 0.5 at 0x551769).</summary>
+	// [BIN:TPW-EXE:0x551769 script speed] speed = 0.5 + bias / 100; the bias is the ride's SPEED: ride init 0x4db51c..0x4db54c, children copy the parent's (0x551888), creation default 50 (0x558c3c), setter 0x55a300.
+	// [APPROX:RIDES-033] The bias writers at ride-settings apply (0x4af440 → 0x4dd6e0) and upgrade completion (0x4df8f0, Upgrades[level].InitSpeed) are not modelled: live upgrades keep the authored speed (QUEUE-011) — evidence needed: the host's ride-settings change flow
+	public float ScriptSpeed => 0.5f + SpeedBias / 100f;
 
 	/// <summary>WAIT4ANIM deadline (script +164) in script-clock milliseconds; 0 = none. Each trigger overwrites it.</summary>
 	internal double Wait4AnimDeadline { get; set; }
@@ -549,6 +557,9 @@ public sealed class RideVM
 		hash.Add( Wait4AnimDeadline );
 		hash.Add( LoopAnimationToken );
 		hash.Add( TriggerWaitToken );
+		// A bias other than the creation value changes the script speed; the default leaves earlier digests alone.
+		if ( SpeedBias != DefaultSpeedBias )
+			hash.Add( SpeedBias );
 		hash.Add( ExecutedInstructions );
 		hash.Add( SliceCount );
 		hash.Add( seed );

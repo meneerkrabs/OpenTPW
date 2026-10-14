@@ -23,14 +23,14 @@ namespace OpenTPW;
 /// texture coordinates (<see cref="GetVertexPositions"/>, <see cref="GetTexCoords"/>); the shared
 /// <see cref="ModelFile"/> is never written.
 /// </summary>
-// [APPROX:RIDES-032] Every instance takes the placement callback route (0xa7960 with r4 = 1) on every update; the object-list route (0x4d354, r4 = 0: clocks advance without posing unless object flag 0x00400000, loops replay without a bind and keep their vertex cursors) is not modelled — evidence needed: the engine's condition for calling the render-record callback installed at 0x5a3bc, and the setter of object flag 0x00400000
-// [APPROX:RIDES-034] No idle restart: the original object update re-triggers AnimID 5, sub 0 on channel 0 while channel 0 has ended for objects whose +4 & 0x8004 is clear (0xa798c–0xa79c8) — evidence needed: which placed objects keep +4 & 0x8004 clear (placement-flag sources)
+// [APPROX:RIDES-032] Every instance takes the placement callback route (Mac 0xa7960 with r4 = 1) on every update. PC: the render callback 0x463030 at model record +0x140 (set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 updates instances without that flag via 0x473c70(inst, 0, 8) without posing and clears the flag on the others. Object flag 0x00400000 is set at 0x4737e8 when a non-looping clip ends with nothing deferred, flags & 0x10 set and & 0x8 clear (it also sets 0x40000000 and holds the last frame). The list-pass route is not modelled — evidence needed: the renderer's call site of the 0x140 callback
+// [BIN:TPW-EXE:0x473c70 idle restart] The idle restart (Mac 0xa798c–0xa79c8) never fires for placed rides: placement through 0x4db090 → 0x4dd500 (flags 0x361/0x32f) and script-spawned instances (0x55a720, 0x549faf, 0x54a237, 0x54a715; flags 0x101) always set bit 4; the creator 0x463060 sets bit 4 from argument bit 1 and 0x8000 from argument 0x80. (RIDES-034 retired.)
 // [APPROX:RIDES-035] MD2 texture-frame tracks (trailer word 12) now apply: the clip update 0xa56f8 runs them when trailer bit 0x2 is set and global option bit 0x8 is clear (its only store writes 0), and <see cref="GetTextureFrame"/> exposes the winning frame per slot; the original's reader of the slot's current frame in the draw path is still not traced, so the binding to rendered textures follows this port's material-slot mapping — evidence needed: the draw-path reader of a texture slot's current frame
 public sealed class ObjectAnimator
 {
 	/// <summary>Default rate shared with the Totem; 30 is proved for the Feral Mac channel formula, while Windows and runtime clock selection remain unverified.</summary>
 	// [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed.
-	// [APPROX:RIDES-001] Mac channel rate 30 is proved; Windows rate and selection/binding of the native scaled or unscaled channel clock remain unverified.
+	// [BIN:TPW-EXE:0x473490 channel frame arithmetic] The PC frame is (u32)(now − start) · speed · 0.03f on x87 = 30 per second (0x473490, 0x4735d0), so the Mac rate agrees (float rounding may differ slightly). Channel flag 0x40 selects the unscaled clock 0x7b4974, else the scaled clock 0x7b496c, both refreshed by 0x473440 from the timer 0x785970; ride channels use the scaled clock, the advisor the unscaled one. (RIDES-001 retired.)
 	public const float DefaultTicksPerSecond = 30f;
 
 	/// <summary>Channel AnimID / deferred-slot sentinel for "no clip" (0xa6ca8).</summary>
@@ -438,7 +438,7 @@ public sealed class ObjectAnimator
 					vertexLimitations.Add( $"{clip.Name} node {track.NodeIndex}: UV block animates {track.UvAnimation.CornerCount} corners, the mesh has {model.Meshes[mesh].TexCoords.Length}" );
 				else
 					// The sampler runs the UV pass when global option +16396 bit 0x10 and node bit 0x4000 are both clear, or header flag 0x4 is set (0xa5698–0xa56b8).
-					// [APPROX:RIDES-036] The UV pass always runs: global option +16396 bit 0x10 and node bit 0x4000 are taken as clear, as their setters are not traced (ANIM-plan §14) — evidence needed: the writers of option bit 0x10 and node bit 0x4000
+					// [APPROX:RIDES-036] The UV pass always runs. PC: the option word 0x7b4980 has exactly one write, 0x4740d0, called once with 0 from 0x457a90, so bit 0x10 is always clear (gate at 0x47219a); only node bit 0x4000 is untraced and taken as clear — evidence needed: the writers of node bit 0x4000
 					uvs[track.NodeIndex] = track.UvAnimation;
 			}
 		}
@@ -697,7 +697,7 @@ public sealed class ObjectAnimator
 		// Header flag 0x4 (relative animation) makes the sampler add vertex keys and translations to a per-update base copy
 		// (0xa4a58/0xa4f68, 0xa7a30) and recompute face normals (0xa772c), but the ride loader clears it unless its argument
 		// has 0x20000 (0x58a3c), so on the default load path these models animate in set mode with their stored normals.
-		// [APPROX:RIDES-043] Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load path strips the flag; add mode behind the ride-loader argument 0x20000 (vertex keys 0xa4a58/0xa4f68; UV keys with r5 = header & 4 at 0xa56d4, add loop 0xa8420) is not modelled — evidence needed: the ride-data source of the 0x594c8 flag word that allows 0x20000
+		// [APPROX:RIDES-043] Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the object load path strips the flag. PC: the loader 0x461f10 keeps header flag 4 only when the inner argument bit 0x20000 is set (else it logs "Ride %s has relative animation incorrectly set" and strips it); 0x4629d0 maps outer 0x1000000 to inner 0x20000; only the TrackMaster loader 0x42fad0 passes it (0x1013405), while the object loader 0x413c10 passes 0x50c00/0x450c00/0xb24a9/0x4b24a9/0xc0 ("Set mode is original for objects; Add mode only for TrackMaster coaster models"). Add mode for TrackMaster coaster models (vertex keys 0xa4a58/0xa4f68; UV keys at 0xa56d4, add loop 0xa8420 on the Mac) is not modelled
 		return track.VertexAnimation.GetPoseLimitation( model.Meshes[mesh].Positions.Length, duration );
 	}
 

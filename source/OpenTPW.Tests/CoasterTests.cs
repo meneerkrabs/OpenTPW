@@ -964,9 +964,11 @@ public class CoasterTests
 		var ride = builder.Ride;
 		Assert.AreEqual( (60, 110f), (ride.SpeedSetting, ride.SpeedCap), "the constructor's setting 60 before the script runs" );
 		ride.Command( 8, 0 );
-		Assert.AreEqual( RideVM.SpeedBias, ride.SpeedSetting );
+		Assert.AreEqual( RideVM.DefaultSpeedBias, ride.SpeedSetting );
 		Assert.AreEqual( CoasterRide.SpeedCapFor( ride.Definition, 50 ), ride.SpeedCap );
 		Assert.AreEqual( 105f, ride.SpeedCap );
+		ride.Command( 8, 0, 80 );
+		Assert.AreEqual( (80, CoasterRide.SpeedCapFor( ride.Definition, 80 )), (ride.SpeedSetting, ride.SpeedCap ), "a station script whose ride has InitSpeed 80" );
 	}
 
 	/// <summary>In mode 64 the station step is skipped (0x43b8b0): an unloaded train does not move on to boarding until the power is back.</summary>

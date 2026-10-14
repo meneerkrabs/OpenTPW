@@ -231,6 +231,9 @@ reach my patrol area"); inside, the steps that leave it are removed, and with no
   broken or upgrading ride, walk to it and repair or upgrade it from their arrival (§4). Every staff role now walks.
 - **Phase 8 (ECON-049, ECON-022), done.** The player calls a mechanic or a handyman from the ride panel and draws an employee's patrol
   area with two clicks; the wander keeps staff inside it (§4).
+- **Phase 9 (ECON-044, GUEST-007), done in the simulation.** Balloon and costume shops give guests a balloon with a life or a costume
+  (`0x4fe1e0`); a ride puts the balloon away and gives it back, the life runs out on the needs phase, and balloon pranksters burst other
+  guests' balloons (docs/GUESTS.md "Balloons and costumes"). Drawing balloons and costumes is the next step.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 
@@ -271,7 +274,8 @@ A map cell record (`[0x8023a0]`, 0x44 bytes) holds at most one item: `+0x2c` the
   - 100: when `R % 100` is below `PeepInfo.StinkbombLikelihood` (`0x7850e0`, 25) a stinkbomb (litter 8) on the cell and sound 0xcf;
   - 101: litter `R % 5 + 1` on the cell;
   - 102: the first other guest on the cell's thing list (game `+0x2b8 + 0x44 × cell id`, next at thing `+0xa`) holding a balloon
-    (`+0x210`, `mBalloonScript`) has it burst (`0x4fe950`, presentation only).
+    (`+0x210`, `mBalloonScript`) has it burst (`0x4fe950`: the model goes and +0x210 is cleared, which the balloon count reads; the life +0x214
+    stays). Without such a guest there is no prank.
   A prank (a litter prank even when its cell already holds litter) records guest event 15, sends message type 14 on the bus `0x788d3c`
   (`{vtbl 0x7007a8, 0, prankster id, id % 3}`) and adds 1.0 to happiness, clamped. The step never returns early.
 - **Who hears it.** The advisor (thing type 11, `0x59b060`) queues message 0x7d, 0x7e or 0x7f (PrankSbomb, PrankLitter, PrankBalloon).

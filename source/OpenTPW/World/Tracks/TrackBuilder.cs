@@ -58,7 +58,7 @@ public sealed class TrackBuilder
 	public IEnumerable<(int X, int Y)> Tiles() => Tracks.Cells().Where( item => item.Cell.IsOrigin ).Select( item => (item.X, item.Y) );
 
 	/// <summary>The owner id of the ride whose station is <paramref name="station"/> (TRACK-021): its first tile's origin-cell index plus one.</summary>
-	// [APPROX:TRACK-021] OpenTPW tags every tile with its ride so rides side by side stay separate; the original's 40-byte cell has no such field and relies on the masks — evidence needed: how the original keeps two adjacent rides' circuits apart (0x0052A970 and the demolition at 0x100748A0)
+	// [EXT:track-tile-owner] OpenTPW tags every tile with its ride so rides side by side stay separate and a demolition removes the ride's own tiles; the original's 40-byte cell has no owner field and its walk and demolition follow the masks (its vehicles can cross into a neighbour ride's adjacent objects, see TRACK-019)
 	public int OwnerOf( TrackStation station ) => Tracks.IndexOf( station.First.X, station.First.Y ) + 1;
 
 	/// <summary>Whether tiles of the two owners may connect: the same ride, or a tile laid without a ride (owner 0).</summary>

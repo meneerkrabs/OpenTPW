@@ -145,7 +145,8 @@ public sealed class TrackSurface
 	/// surface with a sine bob of ±0.43 units (period 512 / 6 ticks) and banks into turns by yaw / 13 × π/2; its shadow lies on the mean of all four probes.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00546280 kart pose] probes at (sin h, cos h) × R and (cos h, −sin h) × R (R = vehicle radius / 307.2); pitch = atan2(2R, front − back) style difference over 2R, roll likewise for right and left; flag 0x800 uses (front + back) / 2 and no roll, flag 0x400 adds 1.6 + sine[age × 6] × 0.0016667 (the 256-scaled table), flag 0x1000 adds (yaw rate / 13) × π/2 to the roll, the shadow (0x2000) stands on the four-probe mean
-	// [APPROX:TRACK-024] the bank's sign (into the turn) and a clamp of ±0.6 radians are OpenTPW's: the original's unclamped term can exceed a quarter turn on a hard yaw
+	// [BIN:TPW-EXE:0x005469C3 kart bank] 0x5469C3..0x5469ED: roll += (yaw + α·Δyaw) / 13 × π/2 with no clamp before the roll − π/2 at 0x546A3D; the original's roll is the negative of this pose's slope roll (roll = −atan((right − left) / 2R) + bank), so the bank's sign relative to the slope roll is the original's and the absolute roll sign is OpenTPW's rendering convention
+	// [EXT:kart-roll-convention] the absolute sign of the roll is a rendering convention: this pose has roll = atan((right − left) / 2R) − yaw / 13 × π/2, the negative of the original's roll
 	public static KartPose KartPose( float x, float y, int heading, float radius, bool hover, bool bank, int age, int yawRate, Func<float, float, float> heightAt )
 	{
 		var angle = heading * 2 * MathF.PI / BumpMath.Turn;
@@ -160,7 +161,7 @@ public sealed class TrackSurface
 		var roll = hover ? 0f : MathF.Atan2( right - left, 2 * radius );
 		var height = hover ? (front + back) / 2 + HoverHeight + BumpMath.Sin( age * 6 ) * 0.0016666667f : mean;
 		if ( bank )
-			roll += Math.Clamp( -yawRate / 13f * MathF.PI / 2, -0.6f, 0.6f );
+			roll += -yawRate / 13f * MathF.PI / 2;
 		return new KartPose( height, pitch, roll, mean );
 	}
 }

@@ -57,7 +57,9 @@ leaves the station at its `>` cell. That is the station node.
   on a complete track. A drop on the same cell is free. The height change works
   the same way. Deleting pylons or the whole track refunds nothing, and there is
   no undo stack (Backspace deletes the last pylon without a refund). Track money
-  is posted as other costs and income (COAST-031).
+  is posted as other costs and income (COAST-031); the original debit `0x4d01f0` also tests the bank's withdrawals
+  gate (ECON-051) and keeps the last balance and the turn it entered the red (SAVE-008), which OpenTPW leaves to the
+  economy and save owners, and the station's total spent is OpenTPW's own.
 - **Closing and completing.** A click on a station end cell closes the circuit
   without adding a node. A second click, or Enter, completes it: one station end
   node with node flags `0x144` is appended (the loader always sets definition bit
@@ -99,7 +101,10 @@ commands reach the station's `CoasterRide`:
 Guests queue and are admitted by the same machinery as other rides
 (`RideVisitorBridge`). Track type 3 skips the capacity test. A coaster that is
 not complete and closed takes no guests. For track type 3, the guests' ride
-excitement is `trunc(0.5·E + 50)`, where `E` is the coaster's excitement rating.
+excitement is `trunc(0.5·E + 50)`, where `E` is the coaster's excitement rating. The sickness has no guest consumer
+(COAST-013 retired: the guest rating `0x4e0560` fetches it from `0x43e0b0` and discards it). The guest predicate
+`0x441970` also tests controller `+0x140 == 0` and that the coaster is not the one being edited (`0x790fec`); OpenTPW has
+neither state, and the queue's state 11 gives a failing coaster thought 13 and sends the guest on (not modelled, GUESTS.md).
 
 Trains move in hops of half a sample (`0x40650`). Each hop averages the cars'
 speed after the height change to the point half a sample ahead. It then applies
@@ -113,6 +118,22 @@ and below 0.01 it is 0. The hops run on OpenTPW's fixed 60 Hz simulation step
 instead of the original's per-frame elapsed time, which keeps runs reproducible
 (COAST-022). Trains leave the station at the release headway
 (`uiTrainReleaseRate`) and come back to unload.
+
+The station commands follow the Windows twins (tp.exe `0x43b1f0..0x43b330`, which agree with the Mac readings).
+`COAST 5` is gated: argument 0 opens (state 4) only from state 8 or 2, a nonzero argument closes (state 8) only from
+state 4; OpenTPW keeps a closed flag, so a repeated command changes nothing, and the original's admission ring (moved
+into the leaving ring that `COAST 3` pops when the ride closes) does not exist here because a guest is seated at once.
+`COAST 4` maps 0/1/2 to the modes 16/64/32; mode 32 is treated exactly like 16 by the mode setter `0x435730` and nothing
+tests it. In mode 64 the station step (`0x43b8b0`) is skipped, so an unloaded train does not move on to boarding until
+the power is back (an arriving train unloads open or closed; boarding is state 4 only). `COAST 6` takes
+`min(max(request, 0), definition +0x318, first train definition +8)`: the lower bound is the literal 0 on the PC where
+the Mac reading takes a global (documented difference, OpenTPW follows the PC); the two upper bounds are not applied
+(the seat sockets are not read). `COAST 8` makes the ride script's speed bias (script +0xC0, 50 at creation,
+`0x558c3c`) the speed setting through `0x43b2b0`/`0x43c3d0`, so the speed cap is `lerp(maxAtMin, maxAtMax, 0.5)`
+instead of the constructor's setting 60; the loop calls the setter every pass, but the bias never changes (RIDES-033).
+A suspended coaster's roll is the swing of pass `0x43c450` (`0x43c76c..0x43ca45`): the force plus gravity rotated into
+the sample frame by −yaw, −pitch and −old roll, approached through `atan2(−X, Y)` at rate `min(|F′|·fForceMultiplier,
+1)` and faded to 0 over the braking zone (COAST-018, libm instead of the runtime sine table).
 
 ## Rating
 
@@ -190,8 +211,8 @@ sections: an empty topology is not proof of an empty controller.
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twenty-two open
-IDs. The IDs below 15 are the unknowns of COAST-plan §10 that are still open.
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twenty-one open
+IDs (COAST-013 is retired). The IDs below 15 are the unknowns of COAST-plan §10 that are still open.
 COAST-015..019 are the new unknowns of §10.1. COAST-022..031 are rules OpenTPW
 chose while implementing the plan. COAST-032 is the single-precision arithmetic
 of the knot chord, the node tangent and the knot-control norms, where the

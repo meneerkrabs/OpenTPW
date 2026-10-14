@@ -890,6 +890,23 @@ research batch was included in this merge.
   `[EXT:...]` design decisions (UI-001, 038, 040, 043, 022, 902, 089, 906, 908 retired). The staff, locator, hire, dismissal,
   overview, camera-button, slider, fluid and key-table items are narrowed to what the executable leaves open (UI.md).
 
+- **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
+  (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0
+  instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
+  mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
+  narrowed to what remains. No determinism or coaster pin moved.
+- **Ride particles (October 14):** RSE EVENT types 1 and 2 now create, simulate and draw particles of the original system
+  (docs/PARTICLES.md). `Data/Particle/Tp2.plb` (105 templates, 20 effectors) is read by `ParticleTemplateFile`; `ParticleSystem`
+  mirrors the traced pool (120 emitter slots, 2048 particles, private LCG seeded 1, 31 ms ticks, bursts, per-quarter rates,
+  chained and death effects, the type-2 direction, the control scale); `ParticleRenderer` draws camera-facing sprites from the
+  `particles` set (`esprites.wad` SPR_PA/PB) with the template's blend, as a weather-style entity with a precompiled web shader
+  and a new one-plus-one material flag. A prepared request is converted back to native units and handed to the pool
+  (fire and forget, no save state, outside the determinism hash). PTCL-901 is retired for PTCL-902 to PTCL-908 (arithmetic,
+  effectors, sprite scale, draw order, settings and ground callback, the PART save block, the callers not wired); PTCL-900 is
+  narrowed. In the shipped jungle the Aztec Mayhem torches already fire EVENT 2.
+- **Allocation test made sturdy (October 14):** `PerFrameExactTierLookupAddsNoDefaultParameterAllocations` keeps the
+  smallest of three measured passes per loop, so a one-off runtime allocation on the thread (seen once on ubuntu Release,
+  48 bytes) no longer fails it while a per-call allocation still does.
 - **Rides register round (October 14):** the rides register is read against the decrypted Windows tp.exe. Ride init writes
   `InitDuration` only when above 0, as its low byte clamped to `UsageInfo.MinDuration..MaxDuration` (also the tier seed;
   RIDES-016 retired), and the script speed is now `0.5 + bias / 100` with the bias from the ride's `Upgrades[0].InitSpeed`
@@ -948,6 +965,10 @@ research batch was included in this merge.
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.
+- **A fairground setup screen (October 14):** the browser's start screen now looks like the original's front end: a night sky
+  with bunting and balloons, a yellow-outlined logo, a gold-rimmed panel and chunky gold buttons (Play leads once game files are
+  kept; choosing another folder turns blue). CSS and inline SVG only: no original art and no web fonts (the content security
+  policy allows none); it fits a phone and keeps still for reduced motion.
 - **One write at a time per kept file (October 13):** writes to the same kept browser file now wait for each other, so one
   write's bytes can no longer end up under another's hash; writes to different files stay independent.
 - **Kept game files survive a failed rewrite (October 13):** when the browser rewrites a file it keeps (after a failed read),

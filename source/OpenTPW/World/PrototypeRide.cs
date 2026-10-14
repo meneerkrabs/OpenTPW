@@ -100,9 +100,12 @@ public sealed class PrototypeRide : OriginalObject
 	internal static string ResolveTexturePath( BaseFileSystem fileSystem, string textureName )
 	{
 		var name = textureName.TrimEnd( '\0' );
-		foreach ( var directory in ObjectAssets.TextureDirectories( ObjectCatalog.Load( "jungle" ).Get( InfoId ) ).Select( item => item.Directory ).Where( directory => fileSystem.DirectoryExists( directory ) ) )
+		foreach ( var directory in ObjectAssets.TextureDirectoryNames( ArchivePath, "jungle" ) )
 		{
-			var path = fileSystem.GetFiles( directory ).FirstOrDefault( entry => string.Equals( Path.GetFileNameWithoutExtension( entry ), name, StringComparison.OrdinalIgnoreCase ) );
+			string[] files;
+			try { files = fileSystem.GetFiles( directory ).ToArray(); }
+			catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException ) { continue; }
+			var path = files.FirstOrDefault( entry => string.Equals( Path.GetFileNameWithoutExtension( entry ), name, StringComparison.OrdinalIgnoreCase ) );
 			if ( path != null )
 				return path;
 		}

@@ -141,17 +141,25 @@ public static class ObjectAssets
 	// [BIN:TPW-EXE:0x0046EAD0 texture lookup] 0x461a60 → 0x46e670 sets the model directory, <dir>\textures (<dir>\stexture in the low-detail set) and <theme>\sharetex (<theme>\ssharete) (0x46e650); the lookup 0x46ead0 tries <dir>\textures\<name> as .wct then .tga, then assigns the shared texture without an existence check, else logs "Could not load texture…"; GTexture is only set by the coaster loader 0x42fad0, so the archive's gtexture (12 track-ride archives) stays in both sets
 	public static IEnumerable<(BaseFileSystem FileSystem, string Directory)> TextureDirectories( ObjectCatalogEntry entry )
 	{
+		// The theme's shared folders live in the game data (FileSystem), the archive's own in the entry's file system.
+		foreach ( var name in TextureDirectoryNames( entry.ArchivePath, entry.Theme ) )
+			yield return (name.StartsWith( entry.ArchivePath + "/", StringComparison.Ordinal ) ? entry.FileSystem : FileSystem, name);
+	}
+
+	/// <summary>The directory names of <see cref="TextureDirectories"/> for an archive and theme, in search order.</summary>
+	public static IEnumerable<string> TextureDirectoryNames( string archivePath, string theme )
+	{
 		var low = UsesLowDetailTextures;
 		// [EXT:low-detail-texture-fallback] the low sets are searched first, then the full folders: a few objects name textures that exist only in `textures`
 		// (fantasy gokarts hivesign01/02, space gates Sen_sgn1/2, jungle totem tp_sign), where the original would find none. A selected texture pack replaces
 		// the full textures by path, so with a pack the low set is not used at all (UsesLowDetailTextures).
 		if ( low )
-			yield return (entry.FileSystem, $"{entry.ArchivePath}/stexture");
-		yield return (entry.FileSystem, $"{entry.ArchivePath}/textures");
-		yield return (entry.FileSystem, $"{entry.ArchivePath}/gtexture");
+			yield return $"{archivePath}/stexture";
+		yield return $"{archivePath}/textures";
+		yield return $"{archivePath}/gtexture";
 		if ( low )
-			yield return (FileSystem, $"/levels/{entry.Theme}/ssharete");
-		yield return (FileSystem, $"/levels/{entry.Theme}/sharetex");
+			yield return $"/levels/{theme}/ssharete";
+		yield return $"/levels/{theme}/sharetex";
 	}
 
 	/// <summary>Finds an MD2 material's texture (.wct) by name, or null when no searched directory has it.</summary>

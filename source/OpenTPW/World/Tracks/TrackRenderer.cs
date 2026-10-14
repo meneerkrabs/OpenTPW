@@ -217,6 +217,7 @@ public sealed class TrackRenderer : IDisposable
 	/// The rider heads of the vehicles: each rider hangs from the kart mesh's head dummy of its seat (class 0x100000B1, number 1, and 2 in the Halloween karts).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0044B410 head draw] the seat's dummy node is found by class 0x80 and its number (0x0044B220); each rider is drawn as the guest's head sprite at that node (0x00475A10), the ADDHEAD mechanism
+	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer; the original's draw internals and the riders' seat order are not traced
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		foreach ( var visual in visuals )

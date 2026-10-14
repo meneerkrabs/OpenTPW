@@ -676,7 +676,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return QueueJoinResult.NoRoom;
 		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
 		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
-		// [APPROX:QUEUE-004] a kart ride's controller thing (Bumper.WhichTrackType 1) does not exist in OpenTPW, so its excitement is the data level without the track terms; water rides apply the formula (docs/TRACKS.md) — evidence needed: kart controllers (phase 2 of the track work)
+		// [APPROX:QUEUE-004] water and kart rides (Bumper.WhichTrackType 2 and 1) apply the controller formula (docs/TRACKS.md); a ride with any other thing behind +36 is not modelled — evidence needed: whether such things exist
 		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
 			return refusal;
 		if ( count >= QueueLimit )

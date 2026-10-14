@@ -204,6 +204,18 @@ public partial class Level
 			foreach ( var offset in new (int X, int Y)[] { (4, 4), (-2, 4), (-2, 0) } )
 				CellTool.Click( (layout.First.X + offset.X, layout.First.Y + offset.Y) );
 			CellTool.Cancel();
+			if ( trackType == 1 && station.Runtime.Bump is { IsTrackValid: true } karts )
+			{
+				// the kart script waits for real guests, so the capture helper plays its part: three karts with a rider each, on a long race
+				karts.Command( 7, 0 );
+				for ( var car = 0; car < 3; car++ )
+				{
+					karts.Command( 1, 9000 + car );
+					karts.Command( 4, 0 );
+				}
+				karts.Command( 14, 20 );
+				karts.Command( 3, 0 );
+			}
 			var centre = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, layout.First.X + 2, layout.First.Y + 2 );
 			(Camera.Mode as ParkCameraMode)?.SetPose( new Vector3( centre.X, centre.Y, 0 ), 22, -20 );
 			Log.Trace( $"--debug-track: {entry.DisplayName} at {layout.First} with a {(station.Runtime.Bump!.IsTrackValid ? "valid" : "invalid")} circuit of {BuilderOf( station )!.Tiles().Count()} tiles; camera on engine ({centre.X:0.#}, {centre.Y:0.#})." );

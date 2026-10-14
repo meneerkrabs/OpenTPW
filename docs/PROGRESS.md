@@ -902,12 +902,21 @@ research batch was included in this merge.
   objects and buoys are built in the original's fixed-point units. `Wateride.RSE` drives a `BumpController` through `BUMP` 1-14, 16 and 17 (the PC
   dispatch shows BUMP 5 is the validity read and BUMP 17 with 0 starts the water): integer steering, integration, walls, keep-out circles, boat
   collisions, laps and unload at 30 ticks per second, the sine table regenerated from the start-up code. Pieces and boats are drawn from the ride's
-  meshes, and the cells, controller and boats are saved in the park-resume envelope. Kart controllers, jumps, tunnels and the water animation stay
+  meshes, and the cells, controller and boats are saved in the park-resume envelope. Jumps, tunnels and the water animation stay
   open; TRACK-001 to 021 are registered, QUEUE-004 is narrowed to karts and ARRIVAL-003 applies the water ride's track word.
   Review round: every tile records its ride (TRACK-021), so rides side by side never connect and a demolition removes only its own tiles; a circuit
   that overflows the section, object or buoy pool is invalid (TRACK-020); the park-resume capture and restore share one live-controller rule; the
   resume check bounds guests, positions, velocities and the tick clock and the restore checks boat indexes against the walked circuit; the canonical state
   covers every restored boat field; the tick and the renderer no longer copy the boat list.
+- **Go-kart tracks, phase 2 (October 14):** the go-karts of all four themes run on the shared controller, end to end for the Jungle's Dino Karts (`GoKarts.RSE`
+  drives a real race in the tests and the native smoke). From `tp.exe`: the grid (eight flag-2 buoys in a staggered pair of columns, then the finish buoy,
+  oriented by the orientation bits), the n-th kart aiming at the n-th grid slot and parking there, `BUMP 3` starting the race with a per-lap thrust bias from the
+  world generator, laps and the race over (the first finisher sets phase 3, the others leave at their next crossing, the last kart out resets to loading),
+  broken karts coasting, and the effects: crash (`cat_rides` 12), horn (EventMap slot 3 on the module LCG), exhaust (particles 1 and 10, `cat_rides` 24), the engine
+  voice, particle 15 at spawn and unload, the speed-40 animation switch. Karts are drawn with the four-probe pose over the piece's `.hmp` profile (the hover karts
+  of space and fantasy with a bob, a bank and a shadow instance), their riders as head sprites at the kart's head dummies, and the kart fields join the saves
+  and the digest of kart parks only. `BUMP 8` returns nothing. TRACK-015 and 016 are narrowed (bumper cars; water spray), TRACK-023 to 026 added; QUEUE-004 now
+  covers neither water nor kart rides. `--debug-kart-track` places the ride for captures.
 - **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
   advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
   request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),

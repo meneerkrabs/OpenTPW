@@ -13,7 +13,21 @@ public partial class Level : IDisposable
 	private ParkLayout parkLayout = null!;
 	internal SandboxTextOverlay TextOverlay { get; private set; } = null!;
 	public PrototypeRide? PlacedRide { get; private set; }
-	public bool IsPlacing { get; set; }
+	private bool isPlacing;
+	/// <summary>The prototype ride is being placed; starting it ends a staff tool (one park tool at a time).</summary>
+	public bool IsPlacing
+	{
+		get => isPlacing;
+		set
+		{
+			if ( value )
+			{
+				StaffPlacement?.Cancel();
+				PatrolTool?.Cancel();
+			}
+			isPlacing = value;
+		}
+	}
 	public string LastActionMessage { get; private set; } = "";
 	/// <summary>Imported original level data; null for the generic sandbox.</summary>
 	public OriginalPark? OriginalPark { get; private set; }
@@ -354,6 +368,7 @@ public partial class Level : IDisposable
 			sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
+		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 
@@ -373,8 +388,10 @@ public partial class Level : IDisposable
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
-			else if ( item.Kind == ParkEventKind.UpgradeBought )
+			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
 				CloseForUpgrade( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.MaintenanceCancelled || item.Kind == ParkEventKind.ToiletCleaned && item.Amount == 1 )
+				OpenAfterCancelledCall( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
 			{
 				ApplyCompletedCatalogueTier( item.InstanceId );
@@ -398,7 +415,20 @@ public partial class Level : IDisposable
 	/// enforces too (<see cref="RideOpening.MayOpen"/>). Without this the ride kept taking guests while its wear was stopped for the upgrade.
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF928 upgrade start] the upgrade start writes state 2, which clears the open word +100 and writes VAR_RIDECLOSED = 1 (0xe0c3c, ORACLE.md F27)
-	private void CloseForUpgrade( int instance ) => AttractionRuntimeOf( instance )?.Close();
+	private void CloseForUpgrade( int instance )
+	{
+		if ( AttractionRuntimeOf( instance ) is not { } runtime )
+			return;
+		runtime.Close();
+		SyncOpenState( runtime );
+	}
+
+	/// <summary>The economy record takes the script's open state at once, so a park save before the next tick keeps it (SyncObjectEconomy does it each tick).</summary>
+	private void SyncOpenState( OriginalObjectRuntime runtime )
+	{
+		if ( EconomyStateOf( runtime ) is { } state )
+			state.IsOpen = runtime.IsOpen;
+	}
 
 	/// <summary>The attraction runtime linked to an economy instance (a placed object or the prototype ride), or null.</summary>
 	private OriginalObjectRuntime? AttractionRuntimeOf( int instance )
@@ -428,6 +458,20 @@ public partial class Level : IDisposable
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again
 	// [BIN:STP-PPC:0x100DF928 upgrade end] the upgrade's end leaves state 2 through SetState(0) like the repair (ORACLE.md F27, static): the same reopening, an incomplete coaster closed again
+	/// <summary>
+	/// A cancelled call for a mechanic reopens the ride unless its state keeps it closed (tp.exe <c>0x004DFE30</c> off, the reopen guard); so does the clean
+	/// that answered a toilet's call.
+	/// </summary>
+	// Approximation (ECON-049, registered at ParkGate.MayOpen): the toilet a call closed opens again after the handyman's clean; the original's clean (0x004DFD80) clears the call, and how the toilet reopens is not traced
+	private void OpenAfterCancelledCall( int instance )
+	{
+		if ( AttractionRuntimeOf( instance ) is { } runtime && Gate?.MayOpen( runtime ) == true )
+		{
+			runtime.Open();
+			SyncOpenState( runtime );
+		}
+	}
+
 	private void OpenAfterRepair( int instance )
 	{
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )
@@ -542,6 +586,7 @@ public partial class Level : IDisposable
 
 	public void Update()
 	{
+		StaffPlacement?.Reconcile();
 		StaffWorld?.Synchronize();
 		if ( RideView?.Ride.IsDeleted == true )
 			ExitRideView();
@@ -708,12 +753,20 @@ public partial class Level : IDisposable
 	public ulong ComputeStateHash() => Streams.ComputeStateHash();
 
 	/// <summary>Writes the park economy and every random stream to an OpenTPW park save.</summary>
-	public void SavePark( string path ) => Streams.SavePark( path );
+	public void SavePark( string path )
+	{
+		StaffPlacement?.PrepareForSave();
+		Streams.SavePark( path );
+	}
 
 	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
 	public void LoadPark( string path )
 	{
+		// a load that fails leaves the economy, and so the staff tool and its pending flag, as they were
 		Streams.LoadPark( path );
+		StaffPlacement?.Abandon();
+		// the patrol tool's employee id belongs to the replaced economy
+		PatrolTool?.Cancel();
 		AttachStaffWorld();
 		// The gate holds the economy it was built over; the load replaced it.
 		if ( Park != null && Gate != null )
@@ -743,8 +796,9 @@ public partial class Level : IDisposable
 		ExitRideView();
 		ExitFreeWalk();
 		onlinePanel?.Dispose();
-		trackRenderer?.Dispose();
-		trackRenderer = null;
+		foreach ( var renderer in trackRenderers.Values )
+			renderer.Dispose();
+		trackRenderers.Clear();
 		DetachOverlay();
 		TextOverlay?.Dispose();
 	}

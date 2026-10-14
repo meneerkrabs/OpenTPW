@@ -419,6 +419,8 @@ public sealed class UiButton : UiElement
 	/// <summary>The mouse wheel over the button also calls <see cref="Adjusted"/> (OpenTPW page cycle buttons); off elsewhere, so the wheel over a lobby button does not turn the island.</summary>
 	public bool WheelAdjusts { get; set; }
 	public Func<bool>? Selected { get; set; }
+	/// <summary>Keeps the normal frame while focused, for a model whose highlight texture the game files lack (b_callmech's b_callmechg).</summary>
+	public bool KeepNormalFrameWhenFocused { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	public override bool Focusable => Visible && Enabled;
 
@@ -438,7 +440,7 @@ public sealed class UiButton : UiElement
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
-		var frame = !Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused ? HighlightFrame : NormalFrame;
+		var frame = !Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
 		if ( Model != null && context.DrawModel( Model, frame, rect ) )
 		{
 			if ( Text != null )

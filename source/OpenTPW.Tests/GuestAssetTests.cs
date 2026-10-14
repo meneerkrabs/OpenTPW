@@ -316,6 +316,26 @@ public class GuestAssetTests
 	}
 
 	/// <summary>
+	/// Every theme's shops: only the balloon shops (ShopType 6) carry <c>UsageInfo.AppearanceEffect</c> 1 and only the costume shops (ShopType 5) carry 2
+	/// (ECON-044, tp.exe <c>0x004FE1E0</c>).
+	/// </summary>
+	[TestMethod]
+	public void OnlyBalloonAndCostumeShopsChangeTheGuestsLook()
+	{
+		int balloons = 0, costumes = 0;
+		foreach ( var theme in ObjectCatalog.Themes )
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				var shopType = entry.Settings.GetInt( "UsageInfo.ShopType" );
+				var expected = shopType == 6 ? GuestAppearance.Balloon : shopType == 5 ? GuestAppearance.Costume : 0;
+				Assert.AreEqual( expected, OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).AppearanceEffect, $"{theme} {entry.DisplayName} (ShopType {shopType})" );
+				balloons += expected == GuestAppearance.Balloon ? 1 : 0;
+				costumes += expected == GuestAppearance.Costume ? 1 : 0;
+			}
+		Assert.IsTrue( balloons > 0 && costumes > 0, $"{balloons} balloon and {costumes} costume shops" );
+	}
+
+	/// <summary>
 	/// The original Belly Bounce (Bouncy.RSE) with a queue path laid beside the Easymode paths: guests walk the
 	/// queue cells, stand four to a cell, are called forward through the traced gates and ride.
 	/// </summary>

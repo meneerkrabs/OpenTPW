@@ -144,6 +144,7 @@ public partial class Level
 			LastActionMessage = "Cannot edit the coaster while riders are on board.";
 			return false;
 		}
+		StaffPlacement?.Cancel();
 		CellTool.Cancel();
 		CoasterToolStation = station;
 		return true;

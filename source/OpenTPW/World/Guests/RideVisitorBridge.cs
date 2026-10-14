@@ -201,6 +201,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int Price { get; }
 	/// <summary>The type's <c>UsageInfo.SpecialIngredient</c> (<c>+344</c>); 4 (Sugar) makes a visit raise the guest's speed boost.</summary>
 	public int SpecialIngredient { get; set; }
+	/// <summary>The type's <c>UsageInfo.AppearanceEffect</c> (tp.exe <c>+0x15C</c>): 1 gives the guest a balloon, 2 puts on or returns a costume.</summary>
+	public int AppearanceEffect { get; set; }
 	/// <summary>The ride's amount of the special ingredient (<c>+404</c>), 50 when the ride is built.</summary>
 	// [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (a Sugar visit adds 3): the original's shop screen can change it (ride +404, saved as mAmountOfSpecialIngredient) and OpenTPW has neither that control nor the saved field — evidence needed: the screen that sets +404 (handlers 0x1685b4 and 0x168640), its range and the save field
 	// Only tests change it: nothing in play sets +404 and it is neither saved nor hashed, so a public setter would make state the save loses.
@@ -676,7 +678,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return QueueJoinResult.NoRoom;
 		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
 		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
-		// [APPROX:QUEUE-004] a kart ride's controller thing (Bumper.WhichTrackType 1) does not exist in OpenTPW, so its excitement is the data level without the track terms; water rides apply the formula (docs/TRACKS.md) — evidence needed: kart controllers (phase 2 of the track work)
+		// [APPROX:QUEUE-004] water and kart rides (Bumper.WhichTrackType 2 and 1) apply the controller formula (docs/TRACKS.md); a ride with any other thing behind +36 is not modelled — evidence needed: whether such things exist
 		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
 			return refusal;
 		if ( count >= QueueLimit )

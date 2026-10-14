@@ -48,11 +48,13 @@ public sealed partial class OriginalObjectRuntime
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
 		}
-		// A water ride (Bumper.WhichTrackType 2) gets a bump-ride controller; kart rides keep the shared tables only (docs/TRACKS.md).
-		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { IsWater: true } template )
+		// A water ride (Bumper.WhichTrackType 2) or a go-kart ride (1) gets a bump-ride controller (docs/TRACKS.md).
+		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
 		{
-			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers );
+			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers ) { AttractionId = AttractionId };
 			world.Bumpers.Add( Bump );
+			if ( template.IsKart )
+				Bump.Effect += OnBumpEffect;
 			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
@@ -227,6 +229,7 @@ public sealed partial class OriginalObjectRuntime
 			Coaster.ClearTrains();
 			Coaster.World.Remove( Coaster );
 		}
+		StopBumpEffects();
 		ReleaseBump();
 		Script?.Stop();
 		Animator.StopAll();
@@ -401,6 +404,8 @@ public sealed partial class OriginalObjectRuntime
 			Parameters = CreateQueueParameters( entry ),
 			// [DATA:<object>.sam:UsageInfo.SpecialIngredient] type +344: 0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar (the ice cream shops); only Sugar changes a guest here (the speed boost)
 			SpecialIngredient = settings.GetInt( "UsageInfo.SpecialIngredient" ),
+			// [DATA:<object>.sam:UsageInfo.AppearanceEffect] type +0x15C: "1 = Balloon, 2 = Costume" (Shops.sam); the use routine tp.exe 0x004FE1E0 switches on it
+			AppearanceEffect = settings.GetInt( "UsageInfo.AppearanceEffect" ),
 			// [DATA:<object>.sam:UsageInfo.ThirstEffect/HungerEffect/VomitEffect/HappinessEffect/GoldenTicketCost/ISIndoors, Upgrades[0].CostOfUpgrade, Info.Id] the type words the attraction score and the visit effects read (type +324/+328/+332/+336/+196/+276/+440, ORACLE.md F24)
 			ThirstEffect = settings.GetInt( "UsageInfo.ThirstEffect" ),
 			HungerEffect = settings.GetInt( "UsageInfo.HungerEffect" ),

@@ -217,7 +217,7 @@ public sealed partial class ParkHud
 			Text = () => SelectedInfo == null ? "" : SelectedInfo.DisplayName ?? strings.Object( SelectedInfo.ObjectNameIndex ),
 			Font = fonts => fonts.Heading,
 			Color = UiColors.Title,
-			Bounds = new UiRect( 470, 1090, 520, 70 ),
+			Bounds = new UiRect( 470, 1090, 420, 70 ),
 			Anchor = UiAnchor.BottomLeft,
 			Visible = false
 		} ) );
@@ -291,6 +291,7 @@ public sealed partial class ParkHud
 
 		AddShopPriceButton();
 		AddRideUpgradeButton();
+		AddCallStaffButton();
 		hud.DrawOverlay = DrawMessages;
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
@@ -300,6 +301,10 @@ public sealed partial class ParkHud
 			else if ( CancelCamcorder() ) { }
 			else if ( level.IsCoasterToolActive )
 				level.ExitCoasterTool();
+			else if ( level.StaffPlacement is { IsActive: true } staffTool )
+				staffTool.Cancel();
+			else if ( level.PatrolTool is { IsActive: true } patrolTool )
+				patrolTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else
@@ -354,6 +359,8 @@ public sealed partial class ParkHud
 		if ( item.Entry is not { } entry )
 			return;
 		level.CellTool.Cancel();
+		level.StaffPlacement?.Cancel();
+		level.PatrolTool?.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -562,6 +569,7 @@ public sealed partial class ParkHud
 
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
 		UpdateRideUpgradeButton( input );
+		UpdateCallStaffButton();
 		TrackCashChange( context.Delta );
 		SampleHappiness( context.Delta );
 		var paused = Paused;
@@ -651,12 +659,13 @@ public sealed partial class ParkHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
+		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value ));
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
-			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value );
-		var toolClick = visitorClick || rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
+			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true } );
+		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && input.LeftReleased && !toolPress )
+		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
 			toolPress = false;
@@ -671,6 +680,64 @@ public sealed partial class ParkHud
 		return overUi || consumed || toolClick;
 	}
 
+	/// <summary>The patrol tool's HUD side: the hovered cell, right click leaves, a left click stores a corner or sets the area (tp.exe mode 0x36).</summary>
+	private bool UpdatePatrolTool( UiInput input, bool inPark )
+	{
+		if ( level.PatrolTool is not { IsActive: true } tool )
+			return false;
+		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		{
+			tool.Cancel();
+			return toolPress = true;
+		}
+		if ( inPark )
+			tool.Hover( cursorX, cursorY );
+		else
+			tool.Hover( null, null );
+		if ( !inPark || !input.LeftPressed )
+			return false;
+		tool.Click( cursorX, cursorY );
+		return toolPress = true;
+	}
+
+	private bool staffCursorSet;
+
+	/// <summary>
+	/// The staff tools' HUD side (hire placement and carrying): the cursor, the hovered cell, right click leaves, a left click on a valid cell completes it.
+	/// A click on an invalid cell does nothing and the tool stays; the park view's other clicks (guest selection, the path tool) wait while it runs.
+	/// </summary>
+	// [APPROX:UI-100] the tools' cursor 9 (Data/ui/cursors/c_carry.ani) is the closest cursor OpenTPW has, Input.CursorTypes.Carry (Ccar.tga): the in-park pointer is the system pointer and .ani cursors are not loaded; the dangling sprite hangs over the hovered cell's centre instead of the exact mouse point — evidence needed: the original cursor renderer
+	private bool UpdateStaffTool( UiInput input, bool inPark )
+	{
+		var tool = level.StaffPlacement;
+		if ( tool == null || !tool.IsActive )
+		{
+			if ( staffCursorSet )
+			{
+				staffCursorSet = false;
+				Input.CursorType = Input.CursorTypes.Normal;
+			}
+			return false;
+		}
+		staffCursorSet = true;
+		Input.CursorType = Input.CursorTypes.Carry;
+		// the same capture gate as the visitor selection: a press on an ImGui overlay is not a park click
+		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		{
+			tool.Cancel();
+			return toolPress = true;
+		}
+		if ( inPark )
+			tool.Hover( cursorX, cursorY );
+		else
+			tool.Hover( null, null );
+		if ( !inPark || !input.LeftPressed )
+			return false;
+		// a click on an invalid cell only logs in the original ("Can't put staff here"): no player text, the tool stays
+		tool.Click( cursorX, cursorY );
+		return toolPress = true;
+	}
+
 	/// <summary>
 	/// The path/queue tool's HUD side: park-view help (441–445), the ghost line under the cursor, Backspace undo
 	/// and right-click cancel. Clicks inside the tool are committed here; <see cref="Update"/> reports them as captured,
@@ -681,7 +748,8 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		// [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
-		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
+		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
+			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
@@ -823,7 +891,18 @@ public sealed partial class ParkHud
 		if ( level.Blueprint is not { } blueprint )
 			return;
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
-		if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
+		if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
+			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell (tp.exe 0x53c8d0, its texture 1 of an untraced table) is the blueprint's red face
+			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
+		else if ( level.PatrolTool is { IsActive: true } patrol )
+		{
+			// Approximation (UI-024, registered at ParkHud.Build): the patrol tool's rectangle is previewed as the blueprint's edge cells between the first corner and the hovered cell; the original's marking is not traced
+			foreach ( var (x, y) in patrol.PreviewEdge() )
+				cells.Add( (x, y, BlueprintMarker.Allowed) );
+			if ( patrol.FirstCorner == null && patrol.HoverCell is { } corner )
+				cells.Add( (corner.X, corner.Y, BlueprintMarker.Allowed) );
+		}
+		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
 			foreach ( var cell in ghost.Line )
 			{

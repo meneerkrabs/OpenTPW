@@ -6,7 +6,7 @@ namespace OpenTPW.Hud;
 public partial class ParkHud
 {
 	public bool CamcorderArmed { get; private set; }
-	private bool camcorderKeyDown = Input.IsFrameKeyDown( Key.C ) || Input.Down( InputButton.CamcorderMode );
+	private bool camcorderKeyDown = Input.IsFrameKeyDown( Input.ChordKey( InputButton.CamcorderMode ) ) || Input.Down( InputButton.CamcorderMode );
 	private bool camcorderMouseDown = Input.Mouse.Left;
 
 	private bool CancelCamcorder()
@@ -19,7 +19,7 @@ public partial class ParkHud
 
 	private bool UpdateCamcorder( UiInput input, System.Numerics.Vector2 viewport, bool blocked )
 	{
-		var down = Input.IsFrameKeyDown( Key.C ) || Input.Down( InputButton.CamcorderMode );
+		var down = Input.IsFrameKeyDown( Input.ChordKey( InputButton.CamcorderMode ) ) || Input.Down( InputButton.CamcorderMode );
 		var pressed = down && !camcorderKeyDown;
 		camcorderKeyDown = down;
 		var wasMouseDown = camcorderMouseDown;

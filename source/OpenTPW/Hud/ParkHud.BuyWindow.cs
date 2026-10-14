@@ -19,7 +19,7 @@ public sealed partial class ParkHud
 	public const int BuyVisibleRows = BuyListModel.VisibleRows;
 	// [APPROX:UI-044] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list
 	public const float BuyRowHeight = 444f / BuyVisibleRows;
-	// [APPROX:UI-045] a header click sorts by that column (ascending, again for descending; the list starts by name ascending as the original's sort word does); the table only gives column header buttons 16/17 without a model — evidence needed: the original header handler
+	// [BIN:TPW-EXE:0x665a44 buy list sort] list 504 has attribute 0x91 including 0x10 (header sort): the same column toggles its direction, a new column starts ascending, and the sort word [0x755140] starts at 1 (column 0, ascending; 0x4ad057 → 0x6659af) and is written back on a change (0x4ac9dd), so the order survives reopening the window for the session (ListSortMemory); the table only gives column header buttons 16/17 without a model
 
 	// [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143)
 	private static readonly (BuildCategory Category, string Model, UIStrings Title, int Help, UiRect Rect)[] BuyCategories =
@@ -32,7 +32,7 @@ public sealed partial class ParkHud
 
 	// [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11)
 	private static readonly UiRect BuyContent = Rect( 1037, 427, 1727, 871 );
-	// [APPROX:UI-050] the third column (1673,1724) has no known content and stays empty; the unnamed controls 491 and 512 are not drawn — evidence needed: capture of the original buy window
+	// [APPROX:UI-050] the third column (1673,1724) has no known content and stays empty; the unnamed control 491 is not drawn — evidence needed: capture of the original buy window
 	private static readonly (float Left, float Right)[] BuyColumns = { (1039, 1447), (1460, 1664), (1673, 1724) };
 	// [DATA:Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496] label/value rows of the stats frame (493)
 	private static readonly (UiRect Label, UiRect Value)[] BuyStatRows =
@@ -95,12 +95,7 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		level.CellTool.Cancel();
-		if ( pendingItem != null || level.BuildEntry != null )
-		{
-			pendingItem = null;
-			level.IsPlacing = false;
-			level.BuildEntry = null;
-		}
+		LeaveBuildTool();
 		buyScreen ??= CreateBuyScreen();
 		buy.EnsureSelection();
 		Stack.Push( buyScreen );
@@ -177,12 +172,15 @@ public sealed partial class ParkHud
 		Model( "statsFrame", BuyPanelModel, Rect( 259, 621, 971, 902 ) );
 		Model( "listFrame", BuyListFrameModel, Rect( 1009, 179, 1813, 902 ) );
 
-		// [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048])
+		// [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122
 		screen.Add( new UiLabel
 		{
 			Id = "title", Text = () => strings[BuyCategories.First( entry => entry.Category == buy.Category ).Title], Font = fonts => fonts.Title, Color = UiColors.Title,
 			Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center
 		} );
+		// [BIN:TPW-EXE:0x4acdae buy window control 512] a type-1 label at (1297,75)-(1769,154) (table record 0x755114) shows the park's cash balance (0x7cf83c -> 0x5195d0 -> 0x6ad810, the HUD cash accessor) as UITEXT 0x1ca "Cash $ N" (0x4ace20), or 0x1cb with the magnitude when it is negative (0x4acdec); 0x4ac2fa refreshes it. The same label text as the hire window's control 9366.
+		screen.Add( new UiLabel { Id = "buyCash", Text = () => BuyCashText, Font = fonts => fonts.Label, Color = UiColors.Value,
+			Align = UiAlign.Right, Fit = true, Bounds = Rect( 1297, 75, 1769, 154 ), Anchor = UiAnchor.Center } );
 		// [DATA:Mac buy table 0x4cd94:492] item name line at the top of the preview frame
 		screen.Add( new UiLabel
 		{

@@ -1,3 +1,4 @@
+using Veldrid;
 using OpenTPW.UI.Original;
 
 namespace OpenTPW.Hud;
@@ -35,7 +36,7 @@ internal enum HudScreenShortcut
 /// </summary>
 public sealed partial class ParkHud
 {
-	// [APPROX:UI-900] a second press of a window key closes that window (toggle) and A/S stay with the camera pan; the original closes with Esc and re-opens on a repeat key (0x488ba0, key group "shortcuts" 0x748378), and A and S are real keys (allitems, allstaff) — OpenTPW choices, no evidence needed
+	// [EXT:window-key-toggle] a second press of a window key closes that window (toggle) and A/S stay with the camera pan; the original closes with Esc and re-opens on a repeat key (0x488ba0, key group "shortcuts" 0x748378), its callbacks sit in the release-side slot (OpenTPW fires on press), and A (allitems) and S (allstaff) are real keys — OpenTPW design decisions, no evidence needed
 	/// <summary>Non-modal HUD windows a window key may close when one is the top screen.</summary>
 	internal static readonly HashSet<string> TogglableWindowNames = new()
 	{
@@ -120,7 +121,21 @@ public sealed partial class ParkHud
 			ApplyShortcut( shortcut );
 		}
 
-		static bool Pressed( HudScreenShortcut shortcut ) => shortcut switch
+		static bool Pressed( HudScreenShortcut shortcut ) => PressedNow( shortcut );
+	}
+
+	/// <summary>
+	/// Whether the shortcut's key edge is down this frame. A plain shortcut needs that no Ctrl is held, so a KEYBOARD.str letter that equals a
+	/// Ctrl chord's letter (Dutch research O and Ctrl+O) cannot fire both; the Ctrl chords (help, locators) are exempt.
+	/// </summary>
+	internal static bool PressedNow( HudScreenShortcut shortcut )
+	{
+		var chord = shortcut is HudScreenShortcut.ToggleHelpBar or HudScreenShortcut.LocateNextStaff or HudScreenShortcut.LocateNextVisitor;
+		var ctrl = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight );
+		return (chord || !ctrl) && RawPressed( shortcut );
+	}
+
+	private static bool RawPressed( HudScreenShortcut shortcut ) => shortcut switch
 		{
 			HudScreenShortcut.BuyWindow => Input.Pressed( InputButton.BuyAttractions ),
 			HudScreenShortcut.ParkInfo => Input.Pressed( InputButton.ParkInfo ),
@@ -141,7 +156,6 @@ public sealed partial class ParkHud
 			HudScreenShortcut.LocateNextVisitor => Input.Pressed( InputButton.VisitorLocator ),
 			_ => false,
 		};
-	}
 
 	/// <summary>The plain V window edge; the registered Ctrl+V locator chord owns its raw V match.</summary>
 	internal static bool VisitorWindowShortcutPressed() => Input.Pressed( InputButton.AllVisitors ) && !Input.Down( InputButton.VisitorLocator );
@@ -151,7 +165,7 @@ public sealed partial class ParkHud
 		switch ( shortcut )
 		{
 			case HudScreenShortcut.ToggleHelpBar:
-				helpBarVisibility = !HelpBarVisible;
+				ToggleGlobalHelp();
 				break;
 			case HudScreenShortcut.BuyWindow:
 				ToggleWindow( BuyWindowOpen, OpenBuyWindow, CloseBuyWindow );
@@ -193,10 +207,8 @@ public sealed partial class ParkHud
 				Status.Speed = GameSpeed.Normal;
 				break;
 			case HudScreenShortcut.TurnBlueprintLeft:
-				RotateBlueprint( -90 );
-				break;
 			case HudScreenShortcut.TurnBlueprintRight:
-				RotateBlueprint( 90 );
+				RotateBlueprint( shortcut );
 				break;
 			case HudScreenShortcut.LocateNextStaff:
 				LocateNextStaffRole();
@@ -249,18 +261,27 @@ public sealed partial class ParkHud
 		OpenStaffWindow();
 	}
 
-	// [APPROX:UI-903] the original sets the build angle to (angle + 90) mod 360 and (angle + 270) mod 360 for comma and full stop (0x40c120/0x40c150, global 0x81d7a4); OpenTPW turns through Level.RotateBuild's 90-degree steps — evidence needed: the sign mapping of the two keys onto Level.RotateBuild
-	private void RotateBlueprint( int degrees )
+	/// <summary>
+	/// How many <see cref="Level.RotateBuild"/> steps (each +90 degrees) a blueprint-turn key takes: comma adds 90 degrees (one step), full stop adds 270
+	/// (three steps). Level.BuildRotation is the angle the build check and placement use, as the original's global is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x40c120 turn key ','] game key group row 1 (0x74803c) sets the build angle (0x81d7a4, getter 0x52f1f0, setter 0x52f1b0) to (angle + 0x5a) mod 0x168; [BIN:TPW-EXE:0x40c150 turn key '.'] row 2 (0x748050) adds 0x10e. The angle goes unchanged to the placement check and commit 0x528a70 (0x524c51..0x524c63), as Level.BuildRotation does to PlaceObject (ObjectFootprint: rotation 90 maps (u, v) to (X+v, Y-u), verified on Easymode saves)
+	internal static int BlueprintTurnSteps( HudScreenShortcut shortcut ) => shortcut switch
 	{
-		// Level.RotateBuild owns the rotation and steps +90 degrees; a left turn is three of its steps.
+		HudScreenShortcut.TurnBlueprintLeft => 1,
+		HudScreenShortcut.TurnBlueprintRight => 3,
+		_ => 0,
+	};
+
+	private void RotateBlueprint( HudScreenShortcut shortcut )
+	{
 		if ( level.BuildEntry == null )
 			return;
-		var steps = ((degrees / 90) % 4 + 4) % 4;
-		for ( var step = 0; step < steps; step++ )
+		for ( var step = 0; step < BlueprintTurnSteps( shortcut ); step++ )
 			level.RotateBuild();
 	}
 
-	// [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S opens the locator panel (0x481790 → 0x4b3f60, role radios 0x95e..0x964) and the per-employee panel's buttons 1293/1295 cycle through staff — evidence needed: porting those panels
+	// [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S (0x40c590 → 0x481790 → 0x4b3f60) opens the locator panel (role radios 0x95e..0x964) and the per-employee panel's buttons 1293/1295 (help 92 "cycle back", 91 "cycle through") cycle through staff — evidence needed: porting those panels (no further evidence needed)
 	private static readonly StaffType[] LocatorRoles = { StaffType.Handyman, StaffType.Mechanic, StaffType.Entertainer, StaffType.Guard, StaffType.Researcher };
 	private StaffType? lastLocatedRole;
 	private void LocateNextStaffRole()

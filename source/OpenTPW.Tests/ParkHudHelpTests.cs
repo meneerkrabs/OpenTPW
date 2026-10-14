@@ -58,6 +58,7 @@ public class ParkHudHelpTests
 		using var tap = Input.InjectKeyDown( control, Key.H );
 		Input.UpdateButtons();
 		Assert.IsTrue( Input.Pressed( InputButton.HireStaff ), "the shared physical H reaches both button bindings" );
+		Assert.IsFalse( ParkHud.PressedNow( HudScreenShortcut.StaffApplicants ), "the HUD ignores a plain shortcut while Ctrl is held" );
 		Handler( hud )( false );
 		Assert.IsTrue( hud.StaffWindowOpen, "Ctrl+H cannot close the unrelated staff window" );
 		Assert.IsTrue( Input.Pressed( InputButton.ToggleHelpBar ) );
@@ -131,7 +132,7 @@ public class ParkHudHelpTests
 	}
 
 	[TestMethod]
-	public void ToggleControlsTheRealHoverHelpDrawWithoutChangingTheSharedOption()
+	public void ToggleFlipsTheGlobalPopupHelpOptionAndTheRealHoverHelpDraw()
 	{
 		var hud = CreateHud();
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
@@ -148,18 +149,19 @@ public class ParkHudHelpTests
 		context.Batch.Clear();
 		hud.Stack.Draw( context, hud.HelpBarVisible );
 		Assert.AreEqual( 0, context.Batch.Texts.Count, "hidden help emits no text draw" );
-		Assert.IsTrue( context.PopupHelp, "the owner gate never overwrites the global popup-help option" );
+		Assert.IsFalse( GameOptions.Current.PopupHelp, "Ctrl+H flips the global Popup help option itself (options byte +0x36)" );
 		Assert.AreSame( font, context.Fonts.Small, "the existing borrowed font remains usable" );
-		context.PopupHelp = false;
+		context.PopupHelp = GameOptions.Current.PopupHelp;
 		hud.Stack.Draw( context );
-		Assert.AreEqual( 0, context.Batch.Texts.Count, "the compatibility overload follows the global option" );
+		Assert.AreEqual( 0, context.Batch.Texts.Count, "every screen follows the flipped option" );
+		GameOptions.Current.PopupHelp = true;
 		context.PopupHelp = true;
 		hud.Stack.Draw( context );
-		Assert.IsTrue( context.Batch.Texts.Any( text => text.Text == "AA" ), "another screen owner keeps its normal help route" );
+		Assert.IsTrue( context.Batch.Texts.Any( text => text.Text == "AA" ), "flipping it back shows the help again" );
 	}
 
 	[TestMethod]
-	public void HelpChordCanEnableHudHelpWhenTheGlobalOptionIsOffWithoutChangingOtherOwners()
+	public void HelpChordEnablesTheGlobalOptionWhenItIsOffAndTheNextChordDisablesIt()
 	{
 		GameOptions.Current.PopupHelp = false;
 		var hud = CreateHud();
@@ -176,12 +178,12 @@ public class ParkHudHelpTests
 		Handler( hud )( true );
 		context.Batch.Clear();
 		hud.Draw( context );
-		Assert.IsTrue( context.Batch.Texts.Any( text => text.Text == "AA" ), "Ctrl+H enables actual HUD help even when the global option is off" );
-		Assert.IsFalse( context.PopupHelp );
-		Assert.IsFalse( GameOptions.Current.PopupHelp );
+		Assert.IsTrue( context.Batch.Texts.Any( text => text.Text == "AA" ), "Ctrl+H enables the help when the global option is off" );
+		Assert.IsTrue( GameOptions.Current.PopupHelp, "the chord set the global option" );
+		context.PopupHelp = GameOptions.Current.PopupHelp;
 		context.Batch.Clear();
 		hud.Stack.Draw( context );
-		Assert.IsFalse( context.Batch.Texts.Any( text => text.Text == "AA" ), "the compatibility overload still follows the global option" );
+		Assert.IsTrue( context.Batch.Texts.Any( text => text.Text == "AA" ), "every screen follows the option" );
 		Input.UpdateButtons();
 		Handler( hud )( true );
 		using var secondTap = Input.InjectKeyDown( Key.ControlLeft, Key.H );
@@ -190,6 +192,7 @@ public class ParkHudHelpTests
 		context.Batch.Clear();
 		hud.Draw( context );
 		Assert.IsFalse( context.Batch.Texts.Any( text => text.Text == "AA" ), "the next chord hides the same help again" );
+		Assert.IsFalse( GameOptions.Current.PopupHelp );
 	}
 
 	[TestMethod]

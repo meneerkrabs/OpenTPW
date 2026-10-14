@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 /// the proven staff/buy window geometry; the window itself is an original feature (the key table's
 /// All Attractions key A, which the host camera's WASD pan currently owns).
 /// </summary>
-// [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry; the decoded tables (attractions 0x7508e0, per-category lists 0x750ab8/0x750ba0/0x750ca0, list id 400 at [266,318,1825,876]) are not ported — evidence needed: porting them
+// [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry; the decoded tables (attractions 0x7508e0, per-category lists 0x750ab8/0x750ba0/0x750ca0, list id 400 at [266,318,1825,876]) are not ported, their list behaviour (attribute 0x291) is — evidence needed: porting them
 public sealed partial class ParkHud
 {
 	private static readonly UiRect AttractionContent = Rect( 1043, 441, 1729, 911 );
@@ -32,7 +32,12 @@ public sealed partial class ParkHud
 	private UiScreen? attractionScreen;
 	private UiButton? deleteAttractionButton;
 	private BuildCategory attractionCategory = BuildCategory.Rides;
-	private bool attractionSortDescending;
+	/// <summary>The sort direction of the current category tab, remembered for the session (UI-084).</summary>
+	private bool attractionSortDescending
+	{
+		get => Sorts.AttractionDescending[(int)attractionCategory];
+		set => Sorts.AttractionDescending[(int)attractionCategory] = value;
+	}
 	private int selectedAttractionId;
 	private int attractionFirstRow;
 
@@ -93,7 +98,6 @@ public sealed partial class ParkHud
 		if ( AttractionsWindowOpen )
 			return;
 		attractionCategory = BuildCategory.Rides;
-		attractionSortDescending = false;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
 		RefreshAttractionRows();
@@ -130,8 +134,7 @@ public sealed partial class ParkHud
 	public void ScrollAttractions( int rows ) => SetAttractionFirstRow( attractionFirstRow + rows );
 	public void SetAttractionFirstRow( int first ) => attractionFirstRow = Math.Clamp( first, 0, AttractionMaxFirstRow );
 
-	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends.
-	// [APPROX:UI-084] the initial column state of this list is assumed to be its single sortable column, ascending — evidence needed: the original list's initial state
+	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending, the per-category sort words 0x750d5c..0x750d68 = 1), so the first press on column 0 descends, and each category keeps its word for the session (ListSortMemory).
 	public void SortAttractions()
 	{
 		attractionSortDescending = !attractionSortDescending;
@@ -142,8 +145,8 @@ public sealed partial class ParkHud
 			SelectAttraction( index );
 	}
 
-	/// <summary>Row activation (Enter or a second click): selects the object in the park and leaves the list, as a park click does.</summary>
-	// [APPROX:UI-910] activation selects the attraction and closes the window; the original's message 0x402 centres the camera on the cell (0x4867b0) and closes, 0x400 opens the info panel and keeps the list — evidence needed: the gestures that produce them
+	/// <summary>The select button and Enter: selects the object in the park and leaves the list, as a park click does.</summary>
+	// [EXT:overview-select-button] the go-to/select button (the shipped b_goto art has no texture in ui.wad) and Enter select the object in the park and close the window; the original's list messages are 0x400 (left click: info panel, list kept) and 0x402 (right click: centre the camera and close)
 	public void SelectSelectedAttraction()
 	{
 		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == selectedAttractionId );
@@ -151,6 +154,25 @@ public sealed partial class ParkHud
 			return;
 		CloseAttractionsWindow();
 		SelectObject( match );
+	}
+
+	/// <summary>A left click on a row: opens the object's info panel (the info arm) and keeps the list.</summary>
+	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which opens the object's info panel and keeps the list (button 0 = left is medium confidence, [APPROX:UI-910])
+	private void OpenSelectedAttractionInfo()
+	{
+		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == selectedAttractionId );
+		if ( match != null )
+			ShowInfoArmKeepingWindows( match );
+	}
+
+	/// <summary>A right click on a row: centres the park camera on the object and closes the list.</summary>
+	// [BIN:TPW-EXE:0x66563d list click, 0x4867b0 locate] a click of the other button selects the row and posts 0x402, which centres the camera on the object's cell and closes the window
+	private void LocateSelectedAttraction()
+	{
+		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == selectedAttractionId );
+		if ( match != null && Camera.Mode is ParkCameraMode camera )
+			camera.Focus( match.Position );
+		CloseAttractionsWindow();
 	}
 
 	/// <summary>Sells and removes the selected attraction through the park's removal seam (confirmation when enabled).</summary>
@@ -169,7 +191,7 @@ public sealed partial class ParkHud
 			EnsureAttractionSelection();
 		}
 		if ( GameOptions.Current.Confirmations )
-			Stack.Push( UiDialogs.Message( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )],
+			Stack.Push( UiDialogs.Message( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )] + "\n" + row.Name,
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
 				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 		else Remove();
@@ -264,7 +286,7 @@ public sealed partial class ParkHud
 			Bounds = Rect( 1742, 331, 1803, 391 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollAttractions( 1 ),
 			Bounds = Rect( 1742, 850, 1803, 910 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-910] the select button selects the row's object in the park; the delete button sells it
+		// [EXT:overview-select-button] the select button selects the row's object in the park; the delete button sells it (the shipped b_goto art has no texture in ui.wad)
 		// (the original buttons of this window are not decoded; the shipped b_goto art has no texture in ui.wad).
 		screen.Add( new UiButton { Id = "gotoAttraction", Text = () => strings.Extra( OpenTpwText.SelectInPark ), Font = fonts => fonts.Label,
 			Clicked = SelectSelectedAttraction, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
@@ -316,6 +338,19 @@ public sealed partial class ParkHud
 		public bool ArrowsSelect => true;
 		public void Select( int index ) => owner.SelectAttraction( index );
 		public void Scroll( int rows ) => owner.ScrollAttractions( rows );
+		public bool HoverSelects => true;
+		public int HoveredRow { get; private set; } = -1;
+		public void Hover( int index ) => HoveredRow = index;
+		// [BIN:TPW-EXE:0x665c35 list dispatcher] attribute 0x291 lists: a left click selects the row and opens its info panel and keeps the list; a right click selects the row, centres the camera on it and closes
+		public bool RowClicked( int index, bool left )
+		{
+			Select( index );
+			if ( left )
+				owner.OpenSelectedAttractionInfo();
+			else
+				owner.LocateSelectedAttraction();
+			return true;
+		}
 		public override void Activate() => owner.SelectSelectedAttraction();
 		public override void Adjust( int direction ) => owner.SelectAttraction( Math.Max( 0, Selected ) + direction );
 		public int RowAt( UiCanvas canvas, NVector2 point )
@@ -338,6 +373,8 @@ public sealed partial class ParkHud
 				var y = AttractionContent.Y + visible * StaffRowHeight;
 				var rect = canvas.Map( Rect( AttractionContent.X, y, AttractionContent.Right, y + StaffRowHeight ), Anchor );
 				var selected = row.AttractionId == owner.selectedAttractionId;
+				if ( index == HoveredRow && !selected )
+					context.Batch.AddRectangle( rect, new Veldrid.RgbaByte( 60, 90, 200, 60 ) );
 				if ( selected )
 					context.Batch.AddRectangle( rect, new Veldrid.RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
 				var color = selected ? UiColors.Highlight : UiColors.Text;

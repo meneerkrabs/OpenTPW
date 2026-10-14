@@ -32,6 +32,7 @@ public sealed class SoundChain
 	public bool IsStopped => stopped;
 	/// <summary>The chain's place (null: flat) and range, for the voice pool (<see cref="SoundEventSystem.Pump"/>).</summary>
 	internal Vector3? Position => position;
+	internal SoundEvent Event => soundEvent;
 	internal float Range => range;
 
 	internal SoundChain( SoundEventSystem system, SoundCategory category, SoundEvent soundEvent, AudioChannel channel, int parameter, Vector3? position, float range )
@@ -46,11 +47,8 @@ public sealed class SoundChain
 	}
 
 	/// <summary>Starts the first child now.</summary>
-	internal void Start()
-	{
-		nextChildAt = system.Mixer.PlayedFrames;
-		Pump();
-	}
+	/// <summary>Makes the first child due: it starts in the next pooled tick of <see cref="SoundEventSystem.Pump"/>, as the original makes it in the root's tick.</summary>
+	internal void Start() => nextChildAt = system.Mixer.PlayedFrames;
 
 	/// <summary>Starts a child once the clock has passed the newest child's time; finished children are dropped without being stopped.</summary>
 	internal void Pump()

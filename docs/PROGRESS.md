@@ -6,12 +6,13 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
-## Scream voices limited to the twelve nearest (October 14, 2026)
+## Scream voices limited to the sound manager's pool of twelve (October 14, 2026)
 
-Ride screams no longer start new children everywhere in the park. tp.exe's sound manager (`0x6b62b0`) ticks only the 12 nearest
-audible voices, ranked by ground distance to the listener (`0x6bb9f0`), and a held scream chain only makes its next child in that
-tick (`0x6bdae0` → `0x6bdb50`). OpenTPW now holds back a scream chain that is out of the listener's range (95 sound units) or outside
-the twelve nearest voices; its started children play out (AUDIO-038). The timing of a chain itself was confirmed in tp.exe: a full
+Ride screams no longer start new children everywhere in the park. tp.exe's sound manager (`0x6b62b0`) ticks only 12 audible
+voices, ranked by event priority with the ground distance as tie-break (`0x6bb9f0`, `0x6b6bc0`), and a held scream chain makes its
+children, the first included, only in that tick (`0x6bdae0` → `0x6bdb50`). Screams (priority 2700) rank below the crowd (5300) and
+most ride and ambient sounds, so OpenTPW now holds back a scream chain that is out of the listener's range (95 sound units over the
+ground) or outside the twelve highest-ranked voices; its started children play out (AUDIO-038). The timing of a chain itself was confirmed in tp.exe: a full
 ride (8+ riders, event 74) screams every 0–0.5 s, as in the original data.
 
 ## Ticket booth verdict, broken-ride state and no boredom loss (October 14, 2026)

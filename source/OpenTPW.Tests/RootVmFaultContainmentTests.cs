@@ -225,6 +225,7 @@ public class RootVmFaultContainmentTests
 				return (SoundChain)typeof( OriginalObjectEffects ).GetField( "screamChain", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( owner.Script.Effects )!;
 			}
 			var held = Scream( runtime ); var otherHeld = Scream( other );
+			system.Pump();
 			Assert.IsNotNull( held ); Assert.IsNotNull( otherHeld ); Assert.IsTrue( mixer.Mix( 1 ).Any( value => value != 0 ) );
 			var live = runtime.CaptureSnapshot();
 			Assert.IsTrue( live.HeldScream, "a held scream is captured with its operands" );

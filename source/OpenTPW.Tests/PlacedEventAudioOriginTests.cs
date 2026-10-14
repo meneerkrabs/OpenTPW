@@ -146,7 +146,10 @@ public class PlacedEventAudioOriginTests
 		Run(Opcode.SINGLESCREAM, 1, 0);
 		Assert.AreEqual(middle, mixer.Voices.Single().Position, "band 1, level 0, speed 50: cat_kids 76 at the footprint middle");
 		Run(Opcode.STARTSCREAM, 1, 50);
-		Assert.AreEqual(2, mixer.Voices.Count, "the held chain's first child starts with it");
+		Assert.AreEqual(1, mixer.Voices.Count, "the held chain's first child waits for the pooled tick (tp.exe 0x6bdb50)");
+		AudioListener.Update(middle, new Vector3(0, 0, 1)); // within the scream's range 95: an inaudible chain makes no child
+		((SoundEventSystem)typeof(GameAudio).GetField("events", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!).Pump();
+		Assert.AreEqual(2, mixer.Voices.Count, "the held chain's first child starts in the next tick");
 		Assert.AreEqual(middle, mixer.Voices.Last().Position, "the held scream is positioned too");
 		Run(Opcode.STOPSCREAM);
 	}

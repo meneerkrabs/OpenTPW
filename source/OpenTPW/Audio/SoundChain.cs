@@ -11,6 +11,7 @@ namespace OpenTPW;
 /// </summary>
 // [BIN:STP-PPC:sound_shared 0x10011F20 CreatePlaceHolder] the event flags 0x404 (cat_kids 71-74, the screams) make a voice that chains one-shot children
 // [LEAD:maexah/OpenTPW docs/exe/audio.md, PC 0x006BDAE0/0x006C3E00/0x006BD9B0] child scheduling from start time, first-sound selection and hard stop; packed local PC exe prevents independent verification
+// [BIN:TPW-EXE:0x6bdb50 held chain advance] the root voice (vtable 0x70a2e0, made for flags 0x404 by 0x6b6700 → 0x6bdd30) ticks in 0x6bdae0: a child node whose end (+0x1c, its creation time + a delay drawn min + R % (max − min) from its own sound, 0x6c3a80) has passed makes the next child (0x6bdbb0); released children play out, and the stop 0x6bd9b0 stops every live child; the root is ticked only while it holds a place in the sound manager's pool (SoundEventSystem.Pump)
 // [APPROX:AUDIO-034] held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads — evidence needed: the Mac held-voice tick, variation and stop routines
 public sealed class SoundChain
 {
@@ -29,6 +30,9 @@ public sealed class SoundChain
 	/// <summary>The value the links are matched against (the original's per-voice parameter; for a scream, clamp((operand + script speed) / 2, 0, 100)).</summary>
 	public int Parameter { get; set; }
 	public bool IsStopped => stopped;
+	/// <summary>The chain's place (null: flat) and range, for the voice pool (<see cref="SoundEventSystem.Pump"/>).</summary>
+	internal Vector3? Position => position;
+	internal float Range => range;
 
 	internal SoundChain( SoundEventSystem system, SoundCategory category, SoundEvent soundEvent, AudioChannel channel, int parameter, Vector3? position, float range )
 	{

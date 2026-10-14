@@ -116,8 +116,11 @@ public sealed class SoundEventSystem
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
 		sentences.RemoveAll( sentence => sentence.IsStopped );
+		var pooled = PooledChains();
 		foreach ( var chain in chains.ToArray() )
 		{
+			if ( !pooled.Contains( chain ) )
+				continue;
 			try
 			{
 				chain.Pump();
@@ -130,6 +133,52 @@ public sealed class SoundEventSystem
 			}
 		}
 		chains.RemoveAll( chain => chain.IsStopped );
+	}
+
+	/// <summary>The voices the sound manager updates per tick (tp.exe <c>0x6b8380</c> passes 12 to the pool set-up <c>0x6b6050</c>).</summary>
+	public const int VoicePool = 12;
+
+	/// <summary>
+	/// A voice's place in the pool: 0xFFFF − round(d² / 100) over the ground distance to the listener (tp.exe <c>0x6bb9f0</c>), 0xFFFF for a flat
+	/// voice or one at the listener, and 0 past the scale (the original leaves its old key there).
+	/// </summary>
+	internal static int PoolKey( Vector3? position )
+	{
+		if ( position is not { } place )
+			return 0xFFFF;
+		var listener = AudioListener.Position;
+		var dx = MathF.Abs( place.X - listener.X );
+		var dz = MathF.Abs( place.Z - listener.Z );
+		var squared = dx * dx + dz * dz;
+		if ( squared <= 0f )
+			return 0xFFFF;
+		var scaled = Math.Round( squared * 0.01f, MidpointRounding.ToEven );
+		return scaled > 0xFFFF ? 0 : 0xFFFF - (int)scaled;
+	}
+
+	/// <summary>Whether a voice at <paramref name="position"/> with <paramref name="range"/> is heard: flat, no range, or the listener within the range.</summary>
+	internal static bool Audible( Vector3? position, float range ) =>
+		position is not { } place || range <= 0 || (place - AudioListener.Position).Length <= range;
+
+	/// <summary>
+	/// The held chains among the <see cref="VoicePool"/> nearest audible voices this tick. A chain outside them, or out of the listener's range, starts no
+	/// new child; the children it already started play out.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6b62b0 sound manager tick] only the voices in the pool of 12 are ticked; a voice is admitted (0x6b6bc0) only while audible (0x6bca10: the listener within the voice's range, the map sound's float +34) and ranked by the key 0x6bb9f0, so the nearest win; a held chain's next child is made in its tick (0x6bdae0 → 0x6bdb50)
+	// [APPROX:AUDIO-038] the pool ranks the held chains with the running sentences and placed sounds, but only the chains are held back: OpenTPW's sentences and placed sounds always play; the event priority word the key routine stores beside the key (+0x22) and the admission's tie order are not modelled
+	private HashSet<SoundChain> PooledChains()
+	{
+		var voices = new List<(object Voice, int Key)>();
+		foreach ( var sentence in sentences )
+			if ( !sentence.IsStopped && Audible( sentence.Position, sentence.Range ) )
+				voices.Add( (sentence, PoolKey( sentence.Position )) );
+		foreach ( var placement in placements )
+			if ( Audible( placement.Position, placement.Range ) )
+				voices.Add( (placement, PoolKey( placement.Position )) );
+		foreach ( var chain in chains )
+			if ( !chain.IsStopped && Audible( chain.Position, chain.Range ) )
+				voices.Add( (chain, PoolKey( chain.Position )) );
+		return voices.OrderByDescending( voice => voice.Key ).Take( VoicePool ).Select( voice => voice.Voice ).OfType<SoundChain>().ToHashSet();
 	}
 
 	public SoundEventSystem( AudioMixer mixer, uint seed = 1 )
@@ -482,6 +531,8 @@ public sealed class PlacedSound
 	private readonly bool loops;
 	private readonly Task<Mp2Audio?> decoding;
 	private bool stopped;
+	internal Vector3 Position => position;
+	internal float Range => range;
 
 	internal PlacedSound( AudioMixer mixer, AudioChannel channel, float volume, Vector3 position, float range, bool loops, Task<Mp2Audio?> decoding )
 	{

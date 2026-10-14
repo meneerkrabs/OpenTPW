@@ -301,6 +301,15 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Crowd | `cat_kids` 0x5B (branching sentence, parameter 0–100) | guests within four cells of the camera; louder/bigger sections as more gather, stopped when nobody is near | count `0x101C2490` (`0x100C313C`, radius 4, cap 100), sentence `0x100BC210`/`0x100BC2E0` |
 | Advisor speech | response table: sample and LIP from the global or level speech bank | traced advisor events | `0x10006B7C` |
 
+**How often screams come.** A held scream is a chain of one-shot children (tp.exe `0x6bdae0` → `0x6bdb50`): each child starts a
+delay after the previous child's start, drawn from the event's bounds — 1–3 s for one rider (event 71), 0.5–2 s for two or three (72),
+0.1–1 s for four to seven (73) and 0–0.5 s for eight or more (74) — and earlier children play out, so a full ride screams almost
+continuously, as in the original. What limits it is the sound manager: it ticks only the 12 nearest audible voices (`0x6b62b0`,
+ranked by `0xFFFF − d²/100` over the ground distance, `0x6bb9f0`), and a scream is audible only while the listener is within its
+range of 95 sound units (9.5 cells). A chain outside the pool or out of range starts no new child (AUDIO-038). The visitors'
+chatter and laughter is the crowd sentence (`cat_kids` 0x5B), a continuous bed at 14–22 % volume while guests are within four cells
+of the camera: its segments have no delay in the data.
+
 Traced in the binary but not triggered yet:
 
 * The custom-bank type 10 is not routed. Type 0 is the dispatcher's default/unsupported path.
@@ -538,6 +547,7 @@ implemented yet.
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
 | AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start; the original re-evaluates the playing sample when a parameter in slots 1-3 changes (`0x6bbb80` -> `0x6bbbe0`) | Which slot carries the crowd's parameter 7 |
+| AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) holds back only the held chains (screams); OpenTPW ranks them with the running sentences and pending placed sounds by the ground-distance key `0x6bb9f0`, but its sentences and placed sounds always play | The manager's admission order (`0x6b6bc0`), the priority word beside the key, and what happens to a sentence that loses its place |
 
 ### Register round 2 (October 14)
 

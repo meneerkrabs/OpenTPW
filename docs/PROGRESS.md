@@ -324,6 +324,12 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Researchers now wander and research as in the original (tp.exe `0x5029f0`; ECON-022): a spell of `WorkDuration` turns where they stand
+  (cat_staff 138 now and then), then they wander on; their points still come every 20th turn. Every staff role a level drives now walks
+  to rest and to strike (`0x506a40`, `0x505fe0`, `0x5061d0`, `0x506300`; [WANDER-plan.md](reverse/WANDER-plan.md) §4): a tired member
+  walks to the nearest Staff Room and rests there until its energy is full (the room's `VAR_STAFFIN` counts it), and while its role
+  strikes and the gates are open it walks out past the ticket booth to the strike area and back in when the strike ends. Without a
+  rest area a tired member loses happiness now and then, as before.
 - Entertainers and guards now walk the park as in the original (tp.exe `0x4d4810`, `0x4d6410`, `0x508a30`; ECON-022, GUEST-006, GUEST-007;
   [WANDER-plan.md](reverse/WANDER-plan.md) §4). An entertainer patrols and, when guests stand within his `ActivationDistance` (3 to 5
   cells), performs for `WorkDuration` turns (cat_staff 135 at the end); wherever he stands he cheers the cells around him (`RegionFX[0]`).

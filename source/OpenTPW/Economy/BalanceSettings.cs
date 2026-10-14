@@ -83,6 +83,9 @@ public sealed class BalanceSettings
 		HandymanDetectionRange = Grades( grade => standard.GetInt( $"HandymanConstsPerGrade[{grade}].DetectionRange", 0, optional: true ) );
 		// [DATA:levels/Standard.sam:EntertainerConstsPerGrade[g].ActivationDistance] the square an entertainer looks around for guests before he performs (0x007853A0 + 16 × grade)
 		EntertainerActivationDistance = Grades( grade => standard.GetInt( $"EntertainerConstsPerGrade[{grade}].ActivationDistance", 0, optional: true ) );
+		// [DATA:levels/Standard.sam:FixedItemInfo.StrikeAreaStartX/Y, StrikeAreaSizeX/Y] the rectangle striking staff walk to (0x007855EC..0x007855F8)
+		StrikeArea = (standard.GetInt( "FixedItemInfo.StrikeAreaStartX", 0, optional: true ), standard.GetInt( "FixedItemInfo.StrikeAreaStartY", 0, optional: true ),
+			Math.Max( 1, standard.GetInt( "FixedItemInfo.StrikeAreaSizeX", 1, optional: true ) ), Math.Max( 1, standard.GetInt( "FixedItemInfo.StrikeAreaSizeY", 1, optional: true ) ));
 		HappinessRecuperationRate = Grades( grade => (float)standard.GetDouble( $"PerGradeStaffConsts[{grade}].HappinessRecuperationRate" ) );
 		RestLevel = standard.GetInt( "AllStaffConstants.RestLevel" );
 		HappyHitCosNoRestArea = standard.GetInt( "AllStaffConstants.HappyHitCosNoRestArea" );
@@ -163,6 +166,8 @@ public sealed class BalanceSettings
 	public IReadOnlyList<int> HandymanDetectionRange { get; }
 	/// <summary>The cells an entertainer looks around for guests before he performs, by grade (<c>EntertainerConstsPerGrade[g].ActivationDistance</c>).</summary>
 	public IReadOnlyList<int> EntertainerActivationDistance { get; }
+	/// <summary>The strike area outside the park (<c>FixedItemInfo.StrikeAreaStart/Size</c>): its first cell and its size in cells.</summary>
+	public (int X, int Y, int Width, int Height) StrikeArea { get; }
 	/// <summary><c>AllStaffConstants.RestLevel</c>: a staff member whose truncated energy byte is at most this seeks a rest area.</summary>
 	public int RestLevel { get; }
 	/// <summary><c>AllStaffConstants.HappyHitCosNoRestArea</c>: the happiness a tired staff member without a rest area to go to loses (one draw in sixteen).</summary>

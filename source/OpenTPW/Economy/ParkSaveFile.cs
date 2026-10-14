@@ -233,6 +233,12 @@ public static class ParkSaveFile
 		/// <summary>The cell of the member's <c>RegionFX</c> row (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? EffectCell { get; init; }
+		/// <summary>The rest area the member walks to or rests in (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int RestAreaId { get; init; }
+		/// <summary>The points still to walk off the paths, as x, y, byte x, byte y quads (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? OffGridLeg { get; init; }
 
 		internal static StaffWorldData Capture( StaffMember member ) => new()
 		{
@@ -246,7 +252,9 @@ public static class ParkSaveFile
 			SmoothedSpeed = member.SmoothedSpeed,
 			Navigation = member.Navigation is { } navigation ? NavigationData.Capture( navigation ) : null,
 			TargetGuestId = member.TargetGuestId,
-			EffectCell = member.EffectCell is { } cell ? new[] { cell.X, cell.Y } : null
+			EffectCell = member.EffectCell is { } cell ? new[] { cell.X, cell.Y } : null,
+			RestAreaId = member.RestAreaId,
+			OffGridLeg = member.OffGridLeg.Count == 0 ? null : member.OffGridLeg.SelectMany( point => new[] { point.X, point.Y, point.ByteX, point.ByteY } ).ToArray()
 		};
 
 		internal void Apply( StaffMember member )
@@ -262,6 +270,8 @@ public static class ParkSaveFile
 			member.Navigation = Navigation?.Restore();
 			member.TargetGuestId = TargetGuestId;
 			member.EffectCell = EffectCell is [var x, var y] ? (x, y) : null;
+			member.RestAreaId = RestAreaId;
+			member.OffGridLeg = OffGridLeg is { } leg ? leg.Chunk( 4 ).Select( point => (point[0], point[1], point[2], point[3]) ).ToList() : new();
 		}
 
 		/// <summary>The states a role's state machine takes: the shared 0–7 and the role's own.</summary>
@@ -270,6 +280,7 @@ public static class ParkSaveFile
 			StaffType.Handyman => job is >= StaffJob.ToLitter and <= StaffJob.Cleaning,
 			StaffType.Entertainer => job == StaffJob.Performing,
 			StaffType.Guard => job is StaffJob.Chasing or StaffJob.Escorting or StaffJob.ReturningFromEscort,
+			StaffType.Researcher => job == StaffJob.Researching,
 			_ => false
 		});
 	}
@@ -459,7 +470,7 @@ public static class ParkSaveFile
 					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
 					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
-					WorldState = member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard
+					WorldState = member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard or StaffType.Researcher
 						&& (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null) ? StaffWorldData.Capture( member ) : null,
 					CellX = member.CellX,
 					CellY = member.CellY,
@@ -582,6 +593,9 @@ public static class ParkSaveFile
 				&& float.IsFinite( world.SmoothedSpeed ) && (world.ToiletId == 0 || member.Type == StaffType.Handyman && ids.Contains( world.ToiletId ))
 				&& (world.TargetGuestId == 0 || member.Type == StaffType.Guard && world.TargetGuestId > 0)
 				&& (world.EffectCell is null || ParkEconomy.EffectRow( member.Type ) != null && world.EffectCell is [>= 0 and < ParkLitter.MapSize, >= 0 and < ParkLitter.MapSize])
+				&& (world.RestAreaId == 0 || ids.Contains( world.RestAreaId ) && world.Job is StaffJob.ToRestArea or StaffJob.Resting)
+				&& (world.OffGridLeg is null || world.OffGridLeg.Length % 4 == 0 && world.OffGridLeg.Chunk( 4 ).All( point =>
+					point[0] is >= 0 and < ParkLitter.MapSize && point[1] is >= 0 and < ParkLitter.MapSize && point[2] is >= 0 and < 256 && point[3] is >= 0 and < 256 ))
 				&& (world.Navigation is null || world.Navigation.IsValid)), $"staff {member.Id} world state" );
 			Require( member.LitterCell is null || (member.Type == StaffType.Handyman && member.LitterCell.Length == 2 && member.AssignedInstanceId == 0
 				&& (member.WorldState is { Job: StaffJob.ToLitter or StaffJob.Sweeping } || member.WorldState is null && BusyTurnsOf( member ) > 0)

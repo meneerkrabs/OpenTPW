@@ -202,7 +202,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines but not the staff state machine: walking members drain every turn, working means a job in progress, resting needs no walk, idle members are not told apart and the rest search runs every turn; the handymen's analyser statistics, the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the staff state machine, the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines; without a staff world (the mechanics, and every role in a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the handymen's litter share counts the live map (ECON-020), the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the mechanics' state machine (0x004DA490), the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -210,6 +210,14 @@ public sealed class ParkEconomy : IParkEconomy
 		var restArea = HasRestArea;
 		foreach ( var member in Staff.Members )
 		{
+			// A member a world drives walks to its rest area or the strike area and rests or strikes in its own state machine (the generic handlers
+			// 0x00505FE0, 0x005061D0, 0x005056E0, 0x00506300); only the role's strike ends here, when a striker sees the park closed and empty.
+			if ( DrivenByWorld( member ) )
+			{
+				if ( member.State == StaffState.OnStrike && !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+					Staff.Strikes.End( member.Type );
+				continue;
+			}
 			switch ( member.State )
 			{
 				case StaffState.PickedUp:
@@ -232,9 +240,6 @@ public sealed class ParkEconomy : IParkEconomy
 						member.State = StaffState.Patrolling;
 					continue;
 			}
-			// A handyman, entertainer or guard in a world drains and decides in its own state machine (0x004D73C0, 0x004D4810, 0x004D6410: the walk drain while walking, the work drain while working, the strike and rest gate in the search).
-			if ( DrivenByWorld( member ) )
-				continue;
 			if ( member.BusyTicks > 0 )
 			{
 				StaffVitals.Work( member );
@@ -249,8 +254,15 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>The strike and rest gate of a world-driven member's search (tp.exe <c>0x00506A40</c>): true when the member now strikes or rests.</summary>
 	internal bool StaffStrikeOrRest( StaffMember member ) => StrikeOrRest( member, HasRestArea );
 
-	/// <summary>Whether an attached world runs this member's state machine (the handymen, entertainers and guards).</summary>
-	internal bool DrivenByWorld( StaffMember member ) => StaffWorld != null && member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard;
+	/// <summary>Whether an attached world runs this member's state machine (the handymen, entertainers, guards and researchers; the mechanics keep the economy's).</summary>
+	internal bool DrivenByWorld( StaffMember member ) =>
+		StaffWorld != null && member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard or StaffType.Researcher;
+
+	/// <summary>The member's role is on strike (the strike flag 0x00509990).</summary>
+	internal bool RoleOnStrike( StaffType type ) => Staff.Strikes.IsActive( type );
+
+	/// <summary>Whether a rest area (an object with <c>UsageInfo.ChillsYouOut</c>) with this instance id stands in the park.</summary>
+	internal bool IsRestArea( int instanceId ) => objects.TryGetValue( instanceId, out var item ) && Catalog.TryGet( item.InfoId, out var info ) && info.ChillsYouOut;
 
 	/// <summary>The <c>RegionFX</c> row a member spreads where it stands: the entertainers' 0, the guards' 3 (security); null for the other roles.</summary>
 	public static int? EffectRow( StaffType type ) => type switch
@@ -978,6 +990,17 @@ public sealed class ParkEconomy : IParkEconomy
 				member.BusyTicks = 0;
 				member.AwaitingJobArrival = false;
 				member.State = StaffState.Patrolling;
+			}
+			if ( member.RestAreaId == instanceId )
+			{
+				// the rest area went: a walk to it or a rest in it ends (the original's case is not traced; ECON-022)
+				member.RestAreaId = 0;
+				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting )
+				{
+					member.Job = StaffJob.Idle;
+					member.IdleStamp = 0;
+					member.State = StaffState.Idle;
+				}
 			}
 			if ( member.ToiletId == instanceId )
 			{

@@ -164,6 +164,27 @@ The per-grade tables follow `PerGradeStaffConsts` (`0x785330`, 16 bytes a grade)
   the park entrance (`0x4d8690`) for state 19, which walks there and patrols. A held guest (state 17, `0x501c94`) waits while a guard in
   state 18 has it as his target and is destroyed otherwise (`0x50b780`). Guards never spot pranksters themselves.
 
+Read in full for the researcher and the shared states (2026-10-14):
+- **The researcher.** The pre-update `0x502960` adds `ResearcherConstsPerGrade.ResearchAbility` points every 20th turn unless the display
+  state is Resting, On strike or Picked up (where he stands plays no part). The handler `0x5029f0`: 0 idles (voice 169) until the turn
+  passes IdleDuration + `+0x200`; 1 patrols (voice 168, the walk drain); both then run the search `0x502c70`: the gate; a draw whose low two
+  bits are not both 0 and a wander patrol; else, unless too tired, state 15 with `+0x214` = the turn. State 15 drains as work and, before
+  the turn passes `+0x214` + WorkDuration (`0x785458`), plays cat_staff 138 on a draw's low four bits 0; after it a wander patrols, or none
+  restamps.
+- **The gate `0x506a40`** (every search opens with it). While the role's strike flag is set and the park gates' `VAR_STATUS` is 1
+  (`0x51a290` reads `mParkGates` at game `+0x1da732`), four draws pick a point of the strike area (`FixedItemInfo.StrikeArea*`,
+  `0x7855ec`..`0x7855f8`) and a route there sets state 4 (bonus 25); without a route it goes on. Above RestLevel the energy byte
+  (`+0x1fc`) sets the base speed, and a happiness byte (`+0x1f8`) above 97 costs a draw (a message). At or below it, the rest finder
+  `0x506910` takes the nearest object with flag `+0x32` bit 1 (`UsageInfo.ChillsYouOut`, the Staff Room; squared distance, the first
+  on a tie), a route to its access cell stores it (`+0x208`) and sets state 2; else a draw and, on its low four bits 0, happiness −=
+  HappyHitCosNoRestArea.
+- **State 2** `0x505fe0` walks; on arrival the rest area's script variable 0 (`VAR_STAFFIN` in every theme) + 1 and state 3 (the
+  member's model goes); held, the happiness hit and state 0. **State 3** `0x5061d0` adds RecuperationRate to energy and
+  HappinessRecuperationRate to happiness; at an energy byte of 100 `0x506d10` takes the variable back down, clears `+0x208`, sets state 0
+  and runs the type's search. **State 4** `0x5056e0` walks (message 0x15) and on arrival or held sets state 5 (bonus 0). **State 5**
+  `0x506300` turns the heading on one draw in eight, ends the role's strike when the park is closed and empty, and once the flag is clear
+  routes to entrance A (`0x7855bc`): state 1, else 0.
+
 ## 5. Plan
 
 - **Phase 2 (GUEST-010), done.** `GuestSimulation` runs the guest states 6 and 7 per park turn as above (`GuestDecision`,
@@ -183,7 +204,9 @@ The per-grade tables follow `PerGradeStaffConsts` (`0x785330`, 16 bytes a grade)
   a sweep or a clean from their arrival (ORACLE.md X23). Their rest and strike stay the economy's.
 - **Phase 5 (ECON-022, GUEST-006, GUEST-007), done for entertainers and guards.** Entertainers patrol and perform for nearby guests
   and carry their RegionFX row; guards carry their security row and answer a prank with the chase, the catch and the escort (§4).
-  The researchers, the mechanics' walk and the generic rest and strike walks follow.
+- **Phase 6 (ECON-022, ECON-014), done for the researchers and the shared states.** Researchers wander and research where they stand;
+  every world-driven role walks to the Staff Room to rest and out through the gate to the strike area (§4). The mechanics' own state
+  machine follows.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

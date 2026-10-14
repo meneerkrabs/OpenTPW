@@ -368,8 +368,10 @@ public class GuestTests
 		Assert.IsTrue( simulation.Departed > 0 || simulation.Guests.All( guest => !simulation.IsInPark( guest ) ) );
 
 		economy.OpenPark();
-		economy.SetEntranceFee( 35 );
-		Assert.AreEqual( 35, simulation.AdmissionFee, "single source: the economy's entrance fee" );
+		// The booth's verdict (tp.exe 0x004FF5B0): with no attraction points the park value is MinimumEntryFee 20, so 24 is fair (below 1.25 × 20)
+		// and 35 would be on the expensive side, where guests wait and lose happiness until they go home.
+		economy.SetEntranceFee( 24 );
+		Assert.AreEqual( 24, simulation.AdmissionFee, "single source: the economy's entrance fee" );
 		var drinks = CreateShop( 2, (0, 5), satisfies: GuestNeeds.Thirst );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1203, out var shop ) );
 		bridge.Link( drinks.Bridge.AttractionId, shop!.Id );
@@ -378,7 +380,7 @@ public class GuestTests
 		thirsty.Thirst = 120;
 		Run( simulation, new[] { drinks }, 60 * 60 );
 		Assert.IsTrue( simulation.Admissions > 0 );
-		Assert.AreEqual( simulation.Admissions * 35, economy.Ledger.CurrentTotals[LedgerCategory.GateTakings] );
+		Assert.AreEqual( simulation.Admissions * 24, economy.Ledger.CurrentTotals[LedgerCategory.GateTakings] );
 		Assert.AreEqual( simulation.Admissions, economy.Counters[ParkCounters.Admissions] );
 		Assert.IsTrue( shop.CustomersThisMonth > 0 );
 		Assert.AreEqual( shop.CustomersThisMonth * 30, economy.Ledger.CurrentTotals[LedgerCategory.ShopTakings] );

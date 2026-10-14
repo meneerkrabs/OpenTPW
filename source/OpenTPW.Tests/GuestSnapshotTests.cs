@@ -323,6 +323,7 @@ public class GuestSnapshotTests
 		public bool HasQueue => false;
 		public bool ProvidesRelief => false;
 		public bool IsBroken => false;
+		public bool IsBrokenDown => false;
 		public bool ReliefWornOut => false;
 		public bool IsRunning => false;
 		public int RidersOnBoard => 0;

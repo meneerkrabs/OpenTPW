@@ -93,7 +93,7 @@ public sealed class StaffMember
 
 	/// <summary>The player draws the member's patrol rectangle between two corner cells (tp.exe <c>0x00506E50</c>), clamped to the map.</summary>
 	// [BIN:TPW-EXE:0x00506E50 set patrol area] stores the two corner cell ids at +0x20A and +0x20C; the area test 0x00506ED0 reads the first as the low corner
-	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): the corners are ordered here, low corner first; how the original's map tool (mouse mode 0x36, 0x00524960) orders a drag is not traced
+	// [BIN:TPW-EXE:0x00524960 patrol tool] mouse mode 0x36: the first click on the map stores a corner cell, the second orders the two (the smaller x and y first) and sets the selected member's area, then the tool ends (0x0052F200)
 	public void SetPatrolArea( (int X, int Y) a, (int X, int Y) b )
 	{
 		static int Clamp( int value ) => Math.Clamp( value, 0, ParkLitter.MapSize - 1 );

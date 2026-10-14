@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **387 unresolved unique APPROX IDs**, 463 APPROX occurrences, 183 EXT occurrences, 188 DATA occurrences and 736 BIN occurrences.
+Current inventory: **387 unresolved unique APPROX IDs**, 463 APPROX occurrences, 183 EXT occurrences, 188 DATA occurrences and 737 BIN occurrences.
 
 Of these, 363 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -2008,6 +2008,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPW-EXE:0x00519EF0 open/close events | `source/OpenTPW/Client/AutomaticAdvisor.cs:105` | [BIN:TPW-EXE:0x00519EF0 open/close events] events 3/4 are posted on every press of the open/close button (control 0x4F3B1), also when the state does not change |
 | TPW-EXE:0x0051BFC0 sound start | `source/OpenTPW/Client/SpeechAudioPlayer.cs:78` | [BIN:TPW-EXE:0x0051BFC0 sound start] the advisor's sample start gets three 0.0 floats (position) |
 | TPW-EXE:0x0051C570 sample length | `source/OpenTPW/Client/SpeechAudioPlayer.cs:36` | [BIN:TPW-EXE:0x0051C570 sample length] the original's mouth runs on the advisor clock, never on audio; with the sound system inactive (0x802BC8/0x802BD4 clear, set at 0x51B660 only when sound init succeeds) the sample length is 1 ms (0x51C570), there is no sound handle (0x51BFC0) and the advice ends with a sequence built from a 501 ms budget |
+| TPW-EXE:0x00524960 patrol tool | `source/OpenTPW/Economy/ParkStaff.cs:96` | [BIN:TPW-EXE:0x00524960 patrol tool] mouse mode 0x36: the first click on the map stores a corner cell, the second orders the two (the smaller x and y first) and sets the selected member's area, then the tool ends (0x0052F200) |
 | TPW-EXE:0x00524960 track validity | `source/OpenTPW/Economy/ParkEconomyContracts.cs:201` | [BIN:TPW-EXE:0x00524960 track validity] the walk (0x0052A970) writes the flag after every track edit; the park points counts-test reads it for karts and water rides |
 | TPW-EXE:0x00524960 track validity | `source/OpenTPW/World/Tracks/BumpController.cs:86` | [BIN:TPW-EXE:0x00524960 track validity] the flag is the circuit walk's verdict, rewritten after every track edit (label 0x75B538 at 0x4DBE00); BUMP 5 reads it into the branch accumulator |
 | TPW-EXE:0x0052A490 water pieces | `source/OpenTPW/World/Tracks/BumpController.cs:326` | [BIN:TPW-EXE:0x0052A490 water pieces] BUMP 17 walks the circuit from both station sides and triggers animation 5 (parameter 0) or 12 (nonzero) on channel 7 of every piece; the stored value (script +0xE6) makes a repeated value a no-op |

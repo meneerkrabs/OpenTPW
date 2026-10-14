@@ -57,6 +57,12 @@ internal sealed partial class GameFlow
 			() => RetireAutomaticPark( level.LevelName ) );
 				}
 				catch ( Exception error ) when ( !session.CheckpointCommitted && ProgressFailure( error ) ) { ShowAutomaticFailure( level, hud, screen, error ); }
+				// the checkpoint is safely written: a failure while leaving the park is reported, not thrown out of the frame
+				catch ( Exception error ) when ( session.CheckpointCommitted && ProgressFailure( error ) )
+				{
+					Log.Warning( $"The automatic checkpoint was saved, but leaving the park failed: {error.Message}" );
+					ShowProgressFailure( error );
+				}
 			};
 			automaticExitQueued = queued; Queue( queued );
 		}

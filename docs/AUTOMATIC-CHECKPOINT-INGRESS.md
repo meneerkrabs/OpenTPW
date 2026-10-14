@@ -25,9 +25,16 @@ or weakened capture is provided. Normal Quit keeps its existing progress-only
 policy. A lazy pending load is cancelled by an explicit exit request under the
 existing queue policy; a failed checkpoint does not restore that request.
 
-After the automatic write returns, retirement/lobby failures propagate outside
-the save-failure dialog boundary. The saved checkpoint remains committed; there
-is no claim that partial teardown restored the old world. Progress can remain
+After the automatic write returns, a retirement/lobby failure is logged and shown
+with the progress failure dialog instead of escaping the frame. The saved
+checkpoint remains committed; there is no claim that partial teardown restored the
+old world.
+
+A checkpoint stays until the next Exit to Lobby of its theme overwrites it: a New
+park or Instant Action start does not remove it, as it does not remove a manual
+save. Continuing a Full Simulation checkpoint needs no own progress history, the
+same as Continue of a manual save (PLAYER-PROGRESS-INGRESS.md): the starter-key
+gate applies to new parks only. Progress can remain
 committed while a later checkpoint fails. No two-file transaction, cross-process
 CAS, historical profile creator identity, browser durability or forced OS-close
 guarantee is added.

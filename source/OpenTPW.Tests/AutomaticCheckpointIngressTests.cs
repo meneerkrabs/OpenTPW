@@ -107,9 +107,9 @@ public class AutomaticCheckpointIngressTests
 		Pending( w.Flow ); Assert.AreEqual( 1, captures ); Assert.AreEqual( 1, retired ); typeof( GameFlow ).GetMethod( "DetachProgress", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( w.Flow, null );
 	}
 	[TestMethod]
-	public void LateRetirementFailureEscapesSaveFailureUiAfterCommittedWrite()
+	public void LateRetirementFailureAfterCommittedWriteIsReportedNotThrown()
 	{
-		var w = ExitWorld(); w.Flow.AutomaticCaptureOverride = _ => Snapshot(); w.Flow.AutomaticRetireOverride = _ => throw new IOException( "late retirement" ); Exit( w ); Assert.ThrowsException<IOException>( () => Pending( w.Flow ) ); Assert.AreEqual( "pause", w.Hud.Stack.Top!.Name ); Assert.IsTrue( File.Exists( AutomaticThemeContinuation.Slot( SaveFileSystem, "jungle" ) ) );
+		var w = ExitWorld(); w.Flow.AutomaticCaptureOverride = _ => Snapshot(); w.Flow.AutomaticRetireOverride = _ => throw new IOException( "late retirement" ); Exit( w ); Pending( w.Flow ); Assert.IsTrue( File.Exists( AutomaticThemeContinuation.Slot( SaveFileSystem, "jungle" ) ), "the checkpoint stays written" );
 	}
 	[DataTestMethod, DataRow( false ), DataRow( true )]
 	public void AutomaticOfferChecksProfileBeforeApplyWithoutNewKeyGateOrCreation( bool instant )

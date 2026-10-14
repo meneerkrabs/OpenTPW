@@ -386,7 +386,8 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes
-		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once.
+		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once, and every
+		// fourth shows a thought bubble again whenever its last one went.
 		// The balloon still runs down, rides still put it away and the renderers draw them as for a bought one.
 		if ( args.Contains( "--debug-guest-looks" ) )
 		{
@@ -405,6 +406,9 @@ internal static class Game
 				dressed.IntersectWith( guests.Guests );
 				foreach ( var guest in guests.Guests )
 				{
+					// every fourth guest keeps a thought bubble up, cycling through the seventeen guest thoughts, so captures show them
+					if ( guest.Id % 4 == 0 && guest.BubbleThought == GuestThought.None )
+						(guest.BubbleThought, guest.BubbleTurn) = ((GuestThought)(1 + guest.Id / 4 % 17), guests.ParkTurn);
 					if ( !dressed.Add( guest ) )
 						continue;
 					if ( guest.Id % 2 == 0 )
@@ -721,7 +725,7 @@ internal static class Game
 			HeroDirectory = GetOption( args, "--texture-pack-hero-dir", "a directory of hand-made replacement PNGs" ) ?? "" };
 		// Guest sprites are assembled into atlases from the sprite banks; they join the build under their pack keys.
 		var sprites = subtree.Length == 0
-			? GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadBalloons() )
+			? GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadBalloons() ).Concat( GuestSpriteAtlas.LoadThoughts() )
 				.Concat( new[] { "jungle", "fantasy", "hallow", "space" }.SelectMany( theme => GuestSpriteAtlas.LoadCostumes( theme ).Concat( GuestSpriteAtlas.LoadCostumeHeads( theme ) ) ) ).ToList()
 			: new List<GuestSpriteAtlas>();
 		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}{(options.Merge ? " (merging)" : "")}." );

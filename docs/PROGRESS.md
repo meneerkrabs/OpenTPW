@@ -1013,6 +1013,29 @@ research batch was included in this merge.
 ## Browser build, official server and website (October 10, 2026)
 
 - **Particle allocation test (October 14):** `ParticleSystemPortTests.TickAllocatesNothing` measures windows of 100 ticks until one is clean, so tiered-compilation allocations in a busy full run no longer fail it; a real per-tick allocation still never gives a clean window.
+- **Rides register round 2 (October 14):** the rides items were traced in tp.exe and the code follows what was found
+  (docs/OBJECTS.md, "Retired and reclassified"). Names: the executable binds OBJECT_NAMES by Info.Id through a 281-row
+  table (0x7488D8), `ObjectNameTable`, instead of the English matcher; 262 of 274 entries now bind (only the three tools of each
+  theme do not), the gates, signs, lights, seaplane, loudspeakers and renamed rides get their names, and the fantasy
+  Fountain and the space Crater point at the right entry (RIDES-010 retired; COMPAT-016 cites the table). Shapes: every
+  symbol comes from the executable's 19-row table (0x7396C8) with a cell type and a compass bit; the entrances `8 6 4 O`, the
+  exits `X` and `W` and the cells `Q # D` exist now, the open side of an access cell comes from its symbol (exit: its bit,
+  entrance: the opposite), all 209 corpus access cells open as before, and the bit-to-axis mapping stays APPROX (RIDES-012,
+  medium confidence). 12-byte vertex block: the PC sampler does read it (0x4718F7). The table holds one pose per tick
+  (duration + 1 poses, all 30 records), the sampler shows pose `trunc(time)` with no blending, and `ObjectAnimator` does the
+  same; 19 of the 30 records (speakers, rocks, tree, droid, plane) were drawn wrong before, and the 10 catalog clips that were
+  reported as limitations play now (RIDES-041 retired; docs/MD2-MODELS.md corrected). Upgrade completion sets the script
+  speed bias to the new level's `InitSpeed` when above 0 (0x4DF8F0, RIDES-033 narrowed to the unmodelled ride-settings UI).
+  Low detail: `stexture` and `ssharete` replace `textures` and `sharetex` exactly when the active detail has TEXTUREQUALITY 0
+  or 1, and they hold every texture the full folders hold (RIDES-022 retired). `coaster.sam` is the coaster's own settings
+  as in the loader (0x413C10, 0x42FAD0; RIDES-009 retired, values identical). Also retired: RIDES-017 (build-menu filler
+  0x4AAF70), RIDES-036 (UV pass gate) and RIDES-043 (objects load in set mode; the TrackMaster Add-mode remainder moved to
+  COAST-026); reclassified as OpenTPW conventions: RIDES-026 (`[EXT:md2-engine-scale]`), RIDES-030
+  (`[EXT:malformed-texture-coordinates]`) and RIDES-038 (`[EXT:trig-anim-speed-guard]`, the corpus has four literal uses
+  from 1800 to 4000); narrowed: RIDES-011, 012, 019 (the original picks bus, seaplane or ferry per arrival with the LCG at
+  0x51A2F0, not implemented here), 024, 025, 031, 033, 035 and 044. Open and not implemented: in Instant Action the
+  original does not load an object without `Easy_<object>.sam` (0x413AC4), which would change the objects of that catalog
+  (docs/OBJECTS.md, "Remaining gates"). Re-pins: see docs/DETERMINISM.md.
 - **Advisor, compatibility and VM register round 2 (October 14):** the advisor's fixed sequences are imported: the ten rows in use of table `0x76DC18` (`AdvisorFixedSequences`), a
   span of the clip sum + 1000 + clip 15, a row that sums to 0 (sequence 28, or clips missing from the archives) generated instead, the immediate start derived from
   "first clip is not 14", and the timer entries' effect (particle `0x521E60`, sound `0xC6`, `0x4B9340`) registered as ADVISOR-025; ADVISOR-016 is retired. ADVISOR-018 is settled at the
@@ -1159,6 +1182,22 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   autorun focus rectangle, the speed buttons and time keys, the sandbox map and the overview detail rows are now documented
   `[EXT:...]` design decisions (UI-001, 038, 040, 043, 022, 902, 089, 906, 908 retired). The staff, locator, hire, dismissal,
   overview, camera-button, slider, fluid and key-table items are narrowed to what the executable leaves open (UI.md).
+- **UI register round 2 (October 14):** the second `tp.exe` read of the UI items. Comma now adds 90 degrees to the build angle
+  (one `RotateBuild` step) and full stop adds 270 (three steps), where they were swapped (UI-903 retired); leaving the build tool
+  resets the angle to 0, and holding exactly Ctrl at the placing click (or at the last click of a ride's queue) keeps the build
+  tool armed (UI-031 narrowed to the coaster and track sub-modes). Window lists follow the original's list control: the pointer
+  selects the hovered row, a click counts only when released within 500 ms and moved at most 6 px, a left click on an
+  applicant hires (and so starts the Place tool), a left click on an attraction or visitor row opens its info panel and keeps the
+  list, a right click centres the camera and closes (UI-083/910 keep the medium-confidence "button 0 is the left button"). Each
+  list keeps its last sort for the session (UI-045, UI-084 retired). The buy window's control 512 shows the cash balance
+  (UITEXT `0x1ca`/`0x1cb`, UI-048 retired); the HUD cash box is nine digits wide and centred on `i_dollar` (UI-021 retired);
+  the research effort sliders truncate a drag (UI-065 retired, UI-030 retired). Ctrl+H flips the global Popup help option and
+  the host persists it (UI-920 retired); the Confirmations option gates the dismissal prompt (UI-092 narrowed); the map window
+  pauses the park (UI-096 narrowed); Instant Action skips the enter-park sound (UI-942 narrowed); the pick-up button is the
+  original `b_pick` model with help 88 (UI-098 narrowed). Shortcut letters now come from the language's `KEYBOARD.str` except a
+  plain letter that is a camera-pan key (Dutch hire A keeps H; UI-012 narrowed). The advisor message 309 (response 569) is not
+  posted: its score is a field of the `Advisor.sam` balance object whose key is untraced (UI-097 narrowed). UI-015, 900, 909 and
+  931-935 are documented `[EXT:...]` decisions. Review fixes: list hover only highlights (the click selects, so buttons beside a list never retarget), a plain shortcut never fires under Ctrl, Escape and a right click leave a Ctrl-kept build tool, the click time limit ignores a single long frame, and the browser keeps the default for Ctrl+W/T/N chords. 407 to 391 unresolved IDs.
 
 - **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
   (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0

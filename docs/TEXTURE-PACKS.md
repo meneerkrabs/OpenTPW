@@ -225,7 +225,7 @@ so the options row has no effect then.
 
 - Reads every `.wct` in the installation's WADs and keeps the game path the engine loads it
   by (lower case), e.g. `levels/jungle/terrain/textures/jgr_bas1.wct`.
-- Keeps these original: the low-detail `stexture`/`ssharete` variants (also `ui/stexture`),
+- Keeps these original: the low-detail `stexture`/`ssharete` variants (also `ui/stexture`; objects use them exactly with the Low detail preset, so a pack shows on Medium, High and Enhanced),
   fonts, textures whose smaller side is below 32 pixels (too little detail to upscale) and
   world textures containing exact magenta (255,0,255), which the renderer may treat as a
   chroma key.

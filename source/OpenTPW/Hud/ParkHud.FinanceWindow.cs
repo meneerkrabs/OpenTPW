@@ -44,12 +44,7 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		level.CellTool.Cancel();
-		if ( pendingItem != null || level.BuildEntry != null )
-		{
-			pendingItem = null;
-			level.IsPlacing = false;
-			level.BuildEntry = null;
-		}
+		LeaveBuildTool();
 		financeScreen ??= CreateFinanceScreen();
 		if ( financeScreen.Find( "loans" ) is UiButton loans )
 			loans.Enabled = FinanceEconomy?.Features.Loans == true;

@@ -209,14 +209,14 @@ public enum InputButton
 
 	/// <summary>
 	/// Turn Blueprint Left (Comma)
-	/// Turns the blueprint left.
+	/// Turns the blueprint by 90 degrees (one rotation step; the original's comma adds 90 to the build angle).
 	/// </summary>
 	[DefaultKey( Key.Comma )]
 	TurnBlueprintLeft,
 
 	/// <summary>
 	/// Turn Blueprint Right (Full stop)
-	/// Turns the blueprint right.
+	/// Turns the blueprint by 270 degrees (three rotation steps; the original's full stop adds 270 to the build angle).
 	/// </summary>
 	[DefaultKey( Key.Period )]
 	TurnBlueprintRight,

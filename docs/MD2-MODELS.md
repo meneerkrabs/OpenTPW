@@ -235,13 +235,26 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
   track has at least two keys, starts at tick 0, increases strictly and reaches the
   clip end. `ModelUvAnimation`.
 - **12-byte block** (flag 0x4000 with 0x1000; 30 records): `ptr → u32
-  index[count], u32 count, ptr → count × (f32 x, y, z)`, one pose. The engine
-  relocates it and the bind sets node bits 0x800/0x100, but no reader of the floats
-  was found, so it is parsed (`ModelVertexPose`) and the stored mesh is shown
-  (RIDES-041); the floats differ from the stored positions in 19 of the 30.
+  index[count], u32 count, ptr → floats`. The float table holds one pose of `count`
+  positions (f32 x, y, z) per tick of the record, `duration + 1` poses in all: in
+  all 30 records the table ends exactly where the next one starts (`ModelVertexPose.FrameCount`,
+  checked by the corpus test). The earlier finding that no reader of the floats exists was wrong: the PC
+  sampler (tp.exe 0x471860; record flags 0x1000 and 0x4000 at 0x4718F7) takes
+  frame = `ftol(clip time)` (record clock +0x20), base = `count · frame`, and writes vertex *i* from entry
+  `j = index[i]` (identity when the index pointer is null) at `floats[(base + j) · 12 bytes]`; in set mode
+  (model header flag 4 clear, 0x471AA1, always the case for objects) the vertex is replaced and the node
+  bounds updated, in add mode (0x471943) the position is added. Its "interpolation" multiplies the same
+  address by `t` and `1 − t` (0x471AC5 and 0x471AD2 compute one address twice), so the result is the stored
+  position with no blending between poses. `ModelVertexPose.ApplyPose` and `ObjectAnimator` do this
+  (RIDES-041 retired): the pose of tick `trunc(time)`, held at the last pose past the table (an OpenTPW
+  guard; a table that does not hold duration + 1 poses, not in the corpus, is read as far as it fits). All
+  30 records have clip lengths of 10 to 280 ticks (go-karts 10, speakers 30, rocks and tree 50, droid 72 to 280, plane 200), so
+  these are real per-tick vertex animations, not one stored pose; 19 of the 30 start on a pose that
+  differs from the stored mesh (speaker, rocks, tree, droid and plane "c" clips), which the old
+  stored-mesh display got wrong.
 
 Record bits (ANIM-plan §1): 0x1, 0x8, 0x80, 0x1000, 0x10000 and 0x20000 are
-decoded and played; 0x200/0x400 (path parameters) and 0x4000 stay in
+decoded and played, and so is 0x4000 (the 12-byte block); 0x200/0x400 (path parameters) stay in
 `ModelAnimationTrack.UnsupportedFlags`. 0x10, 0x20, 0x40, 0x8000 (always with
 0x8), 0x100 (with 0x80), 0x800 (with 0x200/0x400) and 0x2000 (with 0x1000) are
 never tested by the sampler, the bind, the engine relocation or the clip bind:
@@ -299,10 +312,9 @@ the ride catalog loader requests, for descriptors whose word +56, by the
 also skip it is only ever stored as 0). In the catalog only the fantasy gates'
 three clips are affected. The parsed, cached `ModelFile` is never written, so instances of one
 asset keep independent poses. Unplayable tracks are listed in
-`VertexLimitations` and leave the stored mesh: the 12-byte block (10 catalog
-clips, 23 tracks), UV blocks whose corner count differs from the mesh, blocks that do not list every
-position exactly once, and groups that end before the clip. All 599 other
-catalog clips with vertex tracks play. `ObjectRenderParts.WritePositions` maps
+`VertexLimitations` and leave the stored mesh: UV blocks whose corner count differs from the mesh, blocks that do not list every
+position exactly once, and groups that end before the clip. All 609 catalog clips with vertex tracks play
+(the 10 that carry a 12-byte block were reported as limitations before RIDES-041). `ObjectRenderParts.WritePositions` maps
 positions through the corner order into the part's own vertex array (engine
 axes); stored normals are kept. The original's object update recomputes face
 normals after a vertex pass only for relative-animation models (0xa772c); two
@@ -313,7 +325,8 @@ coordinates. Channels mix by ascending index, the highest channel writing a
 component winning (0xa7960). Node-state bit 0x10 from node lists and toggles
 hides the node's mesh (RIDES-042; the draw-path reader is not traced).
 Relative-animation models play their vertex tracks in set mode, because the
-default ride load path strips header flag 0x4 (RIDES-043). Texture-frame tracks
+default ride load path strips header flag 0x4 (the loader 0x461F10 keeps it only for the TrackMaster coaster loader, whose
+Add mode is registered under COAST-026). Texture-frame tracks
 apply (RIDES-035): `ObjectAnimator.UpdateTextureFrames` resamples every slot a
 bound clip addresses at that channel's tick — channels and tracks mix in
 ascending order, the last non-null `FrameAt` wins (hyenasm1 carries two tracks
@@ -365,7 +378,7 @@ console harness referencing `OpenTPW.Tests.csproj`, on the main thread, with
 cannot create a Cocoa window. Native SDL2, cimgui and veldrid-spirv libraries
 must be available beside the harness. No original assets or native binaries
 are committed. Not played: group-0
-bounds (no consumer traced), the 12-byte block and path parameters. `LobbyIsland` (not instantiated by the game yet) uses the composed
+bounds (no consumer traced) and path parameters. `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials
 white instead of requesting `lobby/terrain/textures/.wct`.
 
@@ -446,7 +459,7 @@ count and offset fields, but that does not verify the rest of its layout.
 ## Remaining gates and sources
 
 Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
-of the scene clock; a reader of the 12-byte block's floats; path parameters
+of the scene clock; path parameters
 (0x200/0x400); consumers of node bit 0x10 and the group-0 box; the original
 draw-path reader of a texture slot's current frame (the applied binding follows
 this port's material-slot mapping, RIDES-035/MD2-900..902);

@@ -109,8 +109,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 12451, easedKeys );
 		Assert.AreEqual( 2832, scaleKeys );
 		Assert.AreEqual( 0, sharedTables );
-		// Includes the texture-coordinate and 12-byte tables.
-		Assert.AreEqual( 7857488, tableBytes );
+		// Includes the texture-coordinate and 12-byte tables (RIDES-041: a 12-byte block's float table holds duration + 1 poses, all read).
+		Assert.AreEqual( 8541812, tableBytes );
 	}
 
 	/// <summary>
@@ -298,8 +298,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 1735, sampled );
 		Assert.AreEqual( 0, keysOutside );
 		Assert.AreEqual( 713683, keysInside );
-		// The 12-byte block (30 records) and path parameters (0x200/0x400) only; 0x10000 is decoded and 0x2000 is metadata.
-		Assert.AreEqual( 101, unsupported );
+		// Path parameters (0x200/0x400) only: the 30 12-byte records are played since RIDES-041; 0x10000 is decoded and 0x2000 is metadata.
+		Assert.AreEqual( 71, unsupported );
 		Assert.AreEqual( 2536, toggleLists );
 		Assert.AreEqual( 2536, togglesWithinDuration );
 		Assert.AreEqual( 1278, clips );
@@ -318,7 +318,7 @@ public class Md2CorpusTests
 	public void OriginalUvBlocksTwelveByteBlocksAndMetadataBitsHoldTheirInvariants()
 	{
 		var dataPath = OriginalDataPath();
-		int uvBlocks = 0, uvPaired = 0, cornerTracks = 0, twelveByte = 0, twelvePaired = 0, metadataRecords = 0, listedNodes = 0;
+		int uvBlocks = 0, uvPaired = 0, cornerTracks = 0, twelveByte = 0, twelvePaired = 0, poseDiffers = 0, metadataRecords = 0, listedNodes = 0;
 		int tickZeroWithinStep = 0, tickZeroCorners = 0, listedOutside = 0;
 		var violations = new List<string>();
 		var parents = new Dictionary<uint, uint> { [0x10] = 0x8, [0x20] = 0x8, [0x40] = 0x8, [0x8000] = 0x8, [0x100] = 0x80, [0x800] = 0x600, [0x2000] = 0x1000 };
@@ -376,6 +376,15 @@ public class Md2CorpusTests
 							twelvePaired++;
 							if ( pose.GetLimitation( mesh.Positions.Length ) is { } limitation )
 								violations.Add( $"{label}: {limitation}" );
+							// RIDES-041: the float table holds one pose per tick, duration + 1 of them (the table ends where the next one starts).
+							else
+							{
+								if ( pose.FrameCount != track.Duration + 1 )
+									violations.Add( $"{label}: the 12-byte block holds {pose.FrameCount} poses for duration {track.Duration}" );
+								var shown = new System.Numerics.Vector3[mesh.Positions.Length];
+								pose.ApplyPose( 0, shown );
+								poseDiffers += shown.Where( ( position, index ) => ( position - mesh.Positions[index].GetSystemVector3() ).Length() > 1e-3f ).Any() ? 1 : 0;
+							}
 						}
 					}
 					if ( track.UvAnimation is not { } uv )
@@ -408,6 +417,8 @@ public class Md2CorpusTests
 			}
 		}
 		Assert.AreEqual( 0, violations.Count, string.Join( Environment.NewLine, violations.Take( 20 ) ) );
+		// 19 of the 30 records start on a pose that differs from the stored mesh, which is why showing the stored mesh was wrong.
+		Assert.AreEqual( (30, 19), (twelvePaired, poseDiffers) );
 		Assert.IsTrue( uvBlocks > 0 && uvPaired > 0 && cornerTracks > 0 && twelvePaired > 0 && metadataRecords > 0 && listedNodes > 0 );
 		Assert.IsTrue( uvPaired <= uvBlocks && twelvePaired <= twelveByte && listedOutside < listedNodes );
 		// Measured, not pinned (ANIM-plan §13 leaves it open): how often a corner's tick-0 key equals the stored coordinate.

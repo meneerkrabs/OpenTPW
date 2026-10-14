@@ -53,7 +53,12 @@ public partial class Level
 		BuildEntry = null;
 		IsPlacing = false;
 		IsRemovingObjects = false;
+		ResetBuildRotation();
+		BuildToolsEnded?.Invoke();
 	}
+
+	/// <summary>Raised by <see cref="EndBuildTools"/> so the HUD drops the item it had armed.</summary>
+	public event Action? BuildToolsEnded;
 
 	/// <summary>The economy's staff worlds; a park load replaces the economy, so it runs again then.</summary>
 	private void AttachStaffWorld()

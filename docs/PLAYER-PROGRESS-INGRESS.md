@@ -61,3 +61,29 @@ candidate precommit refusal, bounded profile reads, checked award amounts and
 exact runtime unsubscribe. A failed dirty level-queue flush retains the pending
 action, live world and its hash, then persists the earned identity on retry.
 These controls do not qualify cross-process writes or rendered activation.
+
+## Independent transaction and lifecycle controls
+
+Secondary headless tests execute the actual staged GameFlow pump with a real
+`EntityConstructionScope` and controlled `Level.Step`, rather than only invoking
+a candidate precommit delegate. Construction refusal and a dirty award arriving
+during staging retain the exact old level, entity list, camera and serialized
+economy, and delete only the candidate. Canceling a staged request cannot publish
+its tentative profile. Ordinary construction failures without a progress
+precommit still propagate.
+
+A real entity-retirement exception after profile publication pins a different
+boundary: the legitimate one-key profile remains and a fresh request does not
+award another, but the old world may already be partially retired. This is not
+world rollback. `EnterLevel` and Ready run outside the precommit catch; a failure
+there does not trigger that catch to dispose the entered candidate. Post-activation
+listener/window or hardware failure recovery remains unqualified.
+
+Further controls cover a dirty award after queuing but before execution, direct
+teardown refusal before ownership/stack mutation, normal UI Quit refusal before
+an absent native window could close, actual successful staged-style teardown,
+runtime Load followed by a real award without Pump, and one/zero subscriptions
+across rebind/retirement. A native close, terrain construction, rendered candidate
+activation and browser storage were not executed. A synthetic successful-teardown
+fixture uses `applyPendingLanguage:false`, the same option as staged retirement;
+its earlier missing-language-folder failure is retained in the review evidence.

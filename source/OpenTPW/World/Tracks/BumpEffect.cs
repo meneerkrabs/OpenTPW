@@ -22,7 +22,8 @@ public enum BumpEffectKind
 /// <summary>One cosmetic effect of a vehicle: raised by <see cref="BumpController"/> while it ticks, played by the host (never part of the simulation state).</summary>
 /// <param name="Slot">The vehicle's slot in the controller.</param>
 /// <param name="X">Vehicle position in section units.</param>
-public readonly record struct BumpEffect( BumpEffectKind Kind, int Slot, int Id, int Value, int X, int Y );
+/// <param name="Height">The vehicle's presentation height in model units (the pose probes' last result; 0 in a headless host).</param>
+public readonly record struct BumpEffect( BumpEffectKind Kind, int Slot, int Id, int Value, int X, int Y, float Height = 0f );
 
 /// <summary>The effect ids of the kart code (traced from the executable; the cat_rides ids are not mapped to sounds, TRACK-025).</summary>
 public static class BumpEffects

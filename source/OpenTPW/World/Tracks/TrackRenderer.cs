@@ -41,6 +41,8 @@ public sealed class TrackRenderer : IDisposable
 	private readonly List<VehicleVisual> visuals = new();
 	private readonly List<(BumpController Controller, BumpVehicle Vehicle)> wanted = new();
 	private float? kartStationHeight;
+	private readonly Func<float, float, float> probe;
+	private TrackCellLayer? probeLayer;
 	private int version = -1;
 	private bool disposed;
 
@@ -54,6 +56,7 @@ public sealed class TrackRenderer : IDisposable
 		this.kit = kit;
 		this.gridOrigin = gridOrigin;
 		this.groundHeight = groundHeight;
+		probe = ( x, y ) => SurfaceHeight( probeLayer!, x, y );
 	}
 
 	public TrackFamily Family => kit.Family;
@@ -130,6 +133,7 @@ public sealed class TrackRenderer : IDisposable
 		}
 		while ( visuals.Count < wanted.Count )
 			visuals.Add( new VehicleVisual() );
+		probeLayer = layer;
 		var origin = gridOrigin();
 		for ( var index = 0; index < wanted.Count; index++ )
 		{
@@ -149,7 +153,7 @@ public sealed class TrackRenderer : IDisposable
 			{
 				// a kart is drawn along the direction it moves (the drawn heading follows the velocity), the original's +0x54
 				var pose = TrackSurface.KartPose( x, y, vehicle.VisualHeading, radius, hover, (vehicle.Flags & BumpVehicle.Bank) != 0, vehicle.Age, vehicle.YawRate,
-					( probeX, probeY ) => SurfaceHeight( layer, probeX, probeY ) );
+					probe );
 				vehicle.Height = pose.Height;
 				transform = Matrix4x4.CreateRotationX( pose.Pitch ) * Matrix4x4.CreateRotationY( -pose.Roll )
 					* Matrix4x4.CreateRotationZ( -vehicle.VisualHeading * 2 * MathF.PI / BumpMath.Turn )
@@ -168,7 +172,7 @@ public sealed class TrackRenderer : IDisposable
 			}
 			else
 			{
-				var pose = TrackSurface.Pose( x, y, vehicle.Heading, radius, ( probeX, probeY ) => SurfaceHeight( layer, probeX, probeY ) );
+				var pose = TrackSurface.Pose( x, y, vehicle.Heading, radius, probe );
 				transform = Matrix4x4.CreateRotationX( pose.Pitch ) * Matrix4x4.CreateRotationY( -pose.Roll )
 					* Matrix4x4.CreateRotationZ( -vehicle.Heading * 2 * MathF.PI / BumpMath.Turn )
 					* Matrix4x4.CreateTranslation( x, y, pose.Height )

@@ -106,7 +106,7 @@ public sealed class BumpController
 	/// <summary>The kart grid buoys (flag 2), in slot order.</summary>
 	public IEnumerable<Buoy> GridBuoys => buoys.Where( buoy => buoy.IsSkipped );
 
-	private void Raise( BumpEffectKind kind, BumpVehicle vehicle, int id = 0, int value = 0 ) => Effect?.Invoke( new BumpEffect( kind, vehicle.Slot, id, value, vehicle.X, vehicle.Y ) );
+	private void Raise( BumpEffectKind kind, BumpVehicle vehicle, int id = 0, int value = 0 ) => Effect?.Invoke( new BumpEffect( kind, vehicle.Slot, id, value, vehicle.X, vehicle.Y, vehicle.Height ) );
 	/// <summary>Guests added by BUMP 1 who ride with the next boat, newest first (+0xC4).</summary>
 	public List<int> Pending { get; } = new();
 	/// <summary>Guests who left a boat, handed to the script one at a time by BUMP 2, newest first (+0xC8).</summary>
@@ -325,7 +325,7 @@ public sealed class BumpController
 	}
 
 	/// <summary>BUMP 6: closes the ride; the waiting guests go to the leaving list.</summary>
-	// [BIN:TPW-EXE:0x00544A10 close ride] phase 0 and the pending list moves behind the leaving list; only the bumper cars turn to the unload point at once, karts and water boats finish their run (a vehicle ends it at its next finish crossing with the phase 0)
+	// [BIN:TPW-EXE:0x00544A10 close ride] karts parked on the grid stay aboard when the ride closes during loading (the routine touches only the lists and the phase); the script recovers them with BUMP 10 (unload every kart, close) and a reopen (BUMP 7) leaves them parked for BUMP 3. Phase 0 and the pending list moves behind the leaving list; only the bumper cars turn to the unload point at once, karts and water boats finish their run (a vehicle ends it at its next finish crossing with the phase 0)
 	public void Close()
 	{
 		if ( Phase == PhaseClosed )
@@ -373,6 +373,10 @@ public sealed class BumpController
 	public bool Launch()
 	{
 		if ( VehicleCount >= Template.MaxVehicles || VehicleCount >= MaximumVehicles || Phase == PhaseClosed )
+			return false;
+		// [BIN:TPW-EXE:0x0054A040 relaunch kart] the original accepts BUMP 4 in phase 3 but its relaunch gives such a kart no movement flags, so it would stand on the station for ever (no shipped script creates a kart after the start)
+		// [APPROX:TRACK-028] a kart is refused while the race is over, where the original creates a kart that never moves
+		if ( Template.IsKart && Phase == PhaseOver )
 			return false;
 		var slot = FreeSlot();
 		if ( slot < 0 )

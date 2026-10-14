@@ -8,6 +8,7 @@ public partial class Level
 	private readonly Dictionary<OriginalObject, TrackStation> trackStations = new();
 	private readonly Dictionary<TrackFamily, TrackRenderer> trackRenderers = new();
 	private bool trackRenderFailed;
+	private static readonly TrackFamily[] TrackFamilies = { TrackFamily.Water, TrackFamily.Kart };
 
 	/// <summary>The headless water track builder over the level's cell map (null in the generic sandbox).</summary>
 	public TrackBuilder? WaterTracks => waterTracks;
@@ -145,7 +146,7 @@ public partial class Level
 			return;
 		try
 		{
-			foreach ( var family in new[] { TrackFamily.Water, TrackFamily.Kart } )
+			foreach ( var family in TrackFamilies )
 			{
 				var first = trackStations.Keys.FirstOrDefault( item => !item.IsDeleted && item.Runtime.Bump?.Template.Family == family );
 				if ( first == null )
@@ -244,10 +245,15 @@ public partial class Level
 	internal void RestoreTracksSnapshot( TrackWorldSaveData? saved )
 	{
 		var controllers = LiveWaterRides().ToList();
+		// a save written before the kart rides had controllers holds none for a kart station: its track is empty, so the station tiles are laid and the fresh controller kept
+		var legacy = controllers.Where( item => item.Runtime.Bump!.Template.IsKart && saved?.Controllers.Any( entry => entry.AttractionId == item.Runtime.AttractionId ) != true ).ToList();
 		if ( saved == null )
 		{
 			if ( controllers.Any( item => item.Runtime.LiveBump!.Vehicles.Count > 0 ) )
 				throw new InvalidDataException( "The park holds boats but the save carries no track part." );
+			if ( controllers.Count != legacy.Count )
+				throw new InvalidDataException( "The save carries no track part, but the park places water rides." );
+			MigrateLegacyKarts( legacy );
 			return;
 		}
 		if ( Guests == null || waterTracks == null )
@@ -256,7 +262,7 @@ public partial class Level
 		foreach ( var entry in saved.Controllers )
 		{
 			var station = controllers.FirstOrDefault( item => item.Runtime.AttractionId == entry.AttractionId )
-				?? throw new InvalidDataException( $"The save holds a track controller for attraction {entry.AttractionId}, which this park does not place as a water ride." );
+				?? throw new InvalidDataException( $"The save holds a track controller for attraction {entry.AttractionId}, which this park does not place as a track ride." );
 			var bump = station.Runtime.Bump!;
 			if ( bump.Type != entry.Type )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s controller type {bump.Type} is not the saved {entry.Type}." );
@@ -267,10 +273,25 @@ public partial class Level
 			if ( !rebuilt.SequenceEqual( entry.Sections ) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s walked sections do not match the saved ones." );
 			bump.Restore( entry );
+			station.Runtime.ResumeBumpEffects();
 		}
-		if ( controllers.Count != saved.Controllers.Count )
-			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count} water rides." );
+		if ( controllers.Count - legacy.Count != saved.Controllers.Count )
+			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count - legacy.Count} rides that need one." );
+		MigrateLegacyKarts( legacy );
 		Objects.ScriptWorld.Bumpers.CosmeticState = saved.CosmeticState;
+	}
+
+	/// <summary>Lays the station tiles of kart rides that an older save carried without a controller and walks their (empty) circuit.</summary>
+	// [APPROX:TRACK-027] a save from before the go-kart controllers (park-resume version 1 without a kart controller) restores its kart rides as freshly placed ones: station tiles, no track, a closed controller
+	private void MigrateLegacyKarts( IEnumerable<OriginalObject> legacy )
+	{
+		foreach ( var item in legacy )
+		{
+			if ( !trackStations.TryGetValue( item, out var station ) )
+				continue;
+			BuilderOf( item )!.PlaceStation( station );
+			RewalkTrack( item );
+		}
 	}
 }
 

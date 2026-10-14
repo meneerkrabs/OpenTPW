@@ -33,7 +33,7 @@ public sealed partial class OriginalObjectRuntime
 	{
 		if ( stopped )
 			return;
-		var engine = bumpToEngine?.Invoke( effect.X, effect.Y, 0f );
+		var engine = bumpToEngine?.Invoke( effect.X, effect.Y, effect.Height );
 		var sound = engine is { } point ? engineToSound?.Invoke( point ) : null;
 		switch ( effect.Kind )
 		{
@@ -75,6 +75,30 @@ public sealed partial class OriginalObjectRuntime
 			case BumpEffectKind.EngineParameter:
 				// [APPROX:TRACK-025] the engine's pitch parameter (EventMap VAR_PAR0 = speed / 3) is raised every tick, but the voice is a plain event voice: no parameter reaches it
 				break;
+		}
+	}
+
+	/// <summary>
+	/// After a restore: starts the engine voice of every live kart again (the voices start at the launch, which a restored race has passed). No launch particle is
+	/// raised and no generator is drawn, so the simulation state is untouched.
+	/// </summary>
+	internal void ResumeBumpEffects()
+	{
+		if ( stopped || Bump is not { Template.IsKart: true } bump )
+			return;
+		if ( EventMapEvent( BumpEffects.SlotEngine ) is not { } engineEvent )
+			return;
+		foreach ( var vehicle in bump.Vehicles )
+		{
+			if ( engineVoices.ContainsKey( vehicle.Slot ) )
+				continue;
+			var engine = bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height );
+			var sound = engine is { } point ? engineToSound?.Invoke( point ) : null;
+			if ( GameAudio.PlayRseEvent( 3, (uint)engineEvent, sound ) is { } voice )
+			{
+				BumpEffectStats = BumpEffectStats with { Engines = BumpEffectStats.Engines + 1 };
+				engineVoices[vehicle.Slot] = voice;
+			}
 		}
 	}
 

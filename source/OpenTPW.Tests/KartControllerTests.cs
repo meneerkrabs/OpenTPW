@@ -580,4 +580,80 @@ public class KartControllerTests
 		restored.Controller.Restore( copy );
 		Assert.AreEqual( 0f, restored.Controller.Vehicles[0].Height, "a NaN height is reset, as the original does" );
 	}
+
+	[TestMethod]
+	public void ACarCreatedWhileTheRaceIsOverIsRefused()
+	{
+		var rig = new KartLoop( seed: 31 );
+		var c = rig.Controller;
+		rig.Load( 2 );
+		c.Command( 14, 1 );
+		c.Command( 3, 0 );
+		for ( var tick = 0; tick < 120 * 30 && c.Phase != BumpController.PhaseOver; tick++ )
+			c.Tick();
+		Assert.AreEqual( BumpController.PhaseOver, c.Phase );
+		c.Command( 1, 500 );
+		Assert.AreEqual( 0, c.Command( 4, 0 ), "no kart is created once the race is over (TRACK-028)" );
+		for ( var tick = 0; tick < 120 * 30 && c.VehicleCount > 0; tick++ )
+			c.Tick();
+		Assert.AreEqual( 0, c.VehicleCount );
+		Assert.AreEqual( BumpController.PhaseLoading, c.Phase, "the phase resets, nothing is stuck on the station" );
+	}
+
+	[TestMethod]
+	public void ACarCreatedMidRaceAimsAtTheBuoyAfterTheFinishAndRunsAFullCircuit()
+	{
+		var rig = new KartLoop( seed: 12 );
+		var c = rig.Controller;
+		rig.Load( 1 );
+		c.Command( 14, 3 );
+		c.Command( 3, 0 );
+		rig.Run( 60 );
+		c.Command( 1, 600 );
+		Assert.AreEqual( 1, c.Command( 4, 0 ) );
+		var late = c.Vehicles.Last();
+		Assert.AreEqual( c.FirstAfterFinish!.Index, late.TargetBuoy, "0x54A040's phase-2 branch gives a new car the buoy after the finish (+0xA4)" );
+		Assert.AreEqual( 0, late.Flags & BumpVehicle.GridMode );
+		Assert.IsTrue( (late.Flags & BumpVehicle.LapMode) != 0 );
+		Assert.AreEqual( -3, late.Laps );
+	}
+
+	[TestMethod]
+	public void ClosingDuringLoadingKeepsTheParkedKartsAndBumpTenOrAReopenRecoversThem()
+	{
+		var rig = new KartLoop( seed: 8 );
+		var c = rig.Controller;
+		rig.Load( 2 );
+		c.Command( 6, 0 );
+		Assert.AreEqual( BumpController.PhaseClosed, c.Phase );
+		Assert.AreEqual( 2, c.VehicleCount, "the close routine leaves the parked karts aboard (0x544A10)" );
+		c.Command( 3, 0 );
+		Assert.AreEqual( BumpController.PhaseClosed, c.Phase, "the start needs phase 1" );
+		// a reopen leaves them parked for BUMP 3
+		c.Command( 7, 0 );
+		Assert.AreEqual( BumpController.PhaseLoading, c.Phase );
+		c.Command( 3, 0 );
+		Assert.AreEqual( BumpController.PhaseRunning, c.Phase );
+		// the script's own recovery: BUMP 10 unloads every kart and closes
+		var other = new KartLoop( seed: 8 );
+		other.Load( 2 );
+		other.Controller.Command( 6, 0 );
+		other.Controller.Command( 10, 0 );
+		Assert.AreEqual( 0, other.Controller.VehicleCount );
+		Assert.AreEqual( 2, other.Controller.Leaving.Count, "both riders are handed back" );
+		Assert.AreEqual( BumpController.PhaseClosed, other.Controller.Phase );
+	}
+
+	[TestMethod]
+	public void EffectsCarryTheVehiclesPresentationHeight()
+	{
+		var rig = new KartLoop( seed: 3 );
+		rig.Controller.Command( 7, 0 );
+		rig.Controller.Command( 1, 1 );
+		rig.Controller.Command( 4, 0 );
+		rig.Controller.Vehicles.Single().Height = 4.25f;
+		rig.Effects.Clear();
+		rig.Run( 3 );
+		Assert.IsTrue( rig.Effects.Count > 0 && rig.Effects.All( effect => effect.Height == 4.25f ), "the engine parameter effect carries the height the pose probes found" );
+	}
 }

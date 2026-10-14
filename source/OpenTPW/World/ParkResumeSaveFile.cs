@@ -176,7 +176,7 @@ internal static class ParkResumeSaveFile
 				liveTrackRides[record.AttractionId] = template;
 		}
 		var savedControllers = snapshot.Tracks?.Controllers ?? new List<BumpControllerSaveData>();
-		Require( savedControllers.Count == liveTrackRides.Count && savedControllers.All( controller => liveTrackRides.ContainsKey( controller.AttractionId ) ),
+		Require( TrackControllersMatch( liveTrackRides, savedControllers.Select( controller => controller.AttractionId ).ToList() ),
 			$"the save holds {savedControllers.Count} track controllers, but the park places {liveTrackRides.Count} live track rides" );
 		foreach ( var controller in savedControllers )
 		{
@@ -821,6 +821,13 @@ internal static class ParkResumeSaveFile
 			}
 		}
 	}
+
+	/// <summary>
+	/// Whether the saved controllers fit the live track rides: every water ride has one and none belongs to a ride the park does not place; a kart ride may lack one,
+	/// because a save from before the kart controllers carries none (the restore migrates it, TRACK-027).
+	/// </summary>
+	internal static bool TrackControllersMatch( IReadOnlyDictionary<int, BumperTemplate> liveRides, IReadOnlyCollection<int> savedAttractions ) =>
+		liveRides.Where( ride => ride.Value.IsWater ).All( ride => savedAttractions.Contains( ride.Key ) ) && savedAttractions.All( liveRides.ContainsKey );
 
 	/// <summary>
 	/// The coaster part's pure consistency (null means the park held no coasters — saves from before the coaster slice):

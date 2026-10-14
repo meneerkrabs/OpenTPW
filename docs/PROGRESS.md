@@ -918,10 +918,6 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
-- **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
-  with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
-  live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
-  playing a scream" after the first ride cycle).
 - **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
   applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
   places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a
@@ -934,6 +930,10 @@ research batch was included in this merge.
   leaves a member in hand without a position alone. New register IDs ECON-052/053, GUEST-013..016 and UI-097..100; tests `StaffPlacementTests`,
   `StaffSpriteTests`, `StaffSpriteAssetTests`; the native jungle smoke hires, places, draws (GPU readback), picks up and drops a handyman
   ([STAFF-PLACEMENT.md](STAFF-PLACEMENT.md)).
+- **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
+  with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
+  live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
+  playing a scream" after the first ride cycle).
 - **Browser options no longer stop the game (October 14):** the browser has no .NET configuration system, so opening
   Options → Game files read the old `Settings.Default` and stopped the game with "Configuration system failed to
   initialize". The browser chooses its game folder on the page, so it no longer shows that button, and the old settings are
@@ -946,12 +946,29 @@ research batch was included in this merge.
   objects and buoys are built in the original's fixed-point units. `Wateride.RSE` drives a `BumpController` through `BUMP` 1-14, 16 and 17 (the PC
   dispatch shows BUMP 5 is the validity read and BUMP 17 with 0 starts the water): integer steering, integration, walls, keep-out circles, boat
   collisions, laps and unload at 30 ticks per second, the sine table regenerated from the start-up code. Pieces and boats are drawn from the ride's
-  meshes, and the cells, controller and boats are saved in the park-resume envelope. Kart controllers, jumps, tunnels and the water animation stay
+  meshes, and the cells, controller and boats are saved in the park-resume envelope. Jumps, tunnels and the water animation stay
   open; TRACK-001 to 021 are registered, QUEUE-004 is narrowed to karts and ARRIVAL-003 applies the water ride's track word.
   Review round: every tile records its ride (TRACK-021), so rides side by side never connect and a demolition removes only its own tiles; a circuit
   that overflows the section, object or buoy pool is invalid (TRACK-020); the park-resume capture and restore share one live-controller rule; the
   resume check bounds guests, positions, velocities and the tick clock and the restore checks boat indexes against the walked circuit; the canonical state
   covers every restored boat field; the tick and the renderer no longer copy the boat list.
+- **Go-kart tracks, phase 2 (October 14):** the go-karts of all four themes run on the shared controller, end to end for the Jungle's Dino Karts (`GoKarts.RSE`
+  drives a real race in the tests and the native smoke). From `tp.exe`: the grid (eight flag-2 buoys in a staggered pair of columns, then the finish buoy,
+  oriented by the orientation bits), the n-th kart aiming at the n-th grid slot and parking there, `BUMP 3` starting the race with a per-lap thrust bias from the
+  world generator, laps and the race over (the first finisher sets phase 3, the others leave at their next crossing, the last kart out resets to loading),
+  broken karts coasting, and the effects: crash (`cat_rides` 12), horn (EventMap slot 3 on the module LCG), exhaust (particles 1 and 10, `cat_rides` 24), the engine
+  voice, particle 15 at spawn and unload, the speed-40 animation switch. Karts are drawn with the four-probe pose over the piece's `.hmp` profile (the hover karts
+  of space and fantasy with a bob, a bank and a shadow instance), their riders as head sprites at the kart's head dummies, and the kart fields join the saves
+  and the digest of kart parks only. `BUMP 8` returns nothing. TRACK-015 and 016 are narrowed (bumper cars; water spray), TRACK-023 to 026 added; QUEUE-004 now
+  covers neither water nor kart rides. `--debug-kart-track` places the ride for captures.
+- **Bumper cars release their riders (October 14):** guests who rode the bumper cars of any theme (jungle Bumper Cars, Halloween, space, Bumble Bugs) never came
+  out: the four `bumper.RSE` scripts drive the ride with `BUMP` commands and the ride had no controller, so `BUMP 2` never returned a guest (a headless probe boarded 16
+  and released 0, all 16 stuck in `GuestState.Using`). The shared controller now runs the bumper types (−1, −6, −11, −14) from `tp.exe`: open sets phase 1, `BUMP 4` makes a car
+  that drops at a random free spot of the arena (one keep-in circle and a ring of eight buoys), `BUMP 12` seats a guest in the first empty car, `BUMP 3` starts the session
+  and every car counts down the duration the script set with `BUMP 13`; at 0 each car hands its riders to the leaving list, and with nobody left the ride goes back to loading
+  while the cars stay. Closing, breakdown and `BUMP 16` follow the traced routines. Cars wander between the buoys on the shared integer physics. The real script of all four
+  rides board, run and release 16 guests over several cycles in `BumperCarAssetTests`. A save from before the controller restores the ride freshly and hands its riders to
+  the leaving list. TRACK-015 narrowed; TRACK-029 (no chase yet), 030 (arena centre) and 031 (cars not drawn, no effects) added.
 - **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
   advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
   request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),

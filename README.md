@@ -130,8 +130,8 @@ What works today, with your own original game data:
   pack from your own copy ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)).
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](https://opentpw.io/docs/PS2.html)).
 
-Not done yet: go-kart ride tracks and the water ride jumps and tunnels (one water ride, Splish Splash, builds, runs and saves its original track
-in [phase 1](https://opentpw.io/docs/TRACKS.html)), rider heads on coaster and tour cars, the particle effects of the other
+Not done yet: the jumps and tunnels of the water and go-kart rides (the water rides and the go-karts of all four themes build, run and save their original tracks,
+[phases 1 and 2](https://opentpw.io/docs/TRACKS.html)), rider heads on coaster and tour cars, the particle effects of the other
 callers (ride smoke, flying cars, litter; RSE EVENT types 1 and 2 are drawn, [particles](https://opentpw.io/docs/PARTICLES.html)),
 additional staff actions (the guards' chase and escort, entertainer shows) and their sounds, the path tool's link-end and undo sounds, and the exact original rules in places where
 OpenTPW still uses a documented approximation. The

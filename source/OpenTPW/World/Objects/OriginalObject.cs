@@ -112,6 +112,15 @@ public class OriginalObject : Entity
 				return GameAudio.SoundPosition(engine);
 			});
 			Runtime.BindParticlePlacement(placement);
+			// the kart effects (sounds, particles) happen where the vehicle is: section units at 307.2 per model unit, on the grid, with the height the pose probes found
+			Runtime.SetBumpPlacement(
+				( x, y, height ) => new System.Numerics.Vector3( x / TrackRenderer.UnitsPerModelUnit * ObjectPlacement.ModelScale + Placement.GridOrigin.X, y / TrackRenderer.UnitsPerModelUnit * ObjectPlacement.ModelScale + Placement.GridOrigin.Y, Placement.BaseHeight + height * ObjectPlacement.ModelScale ),
+				engine =>
+				{
+					if ( Level?.OriginalPark?.Heightfield is { } field )
+						engine += new System.Numerics.Vector3( OriginalParkPlacement.GetOrigin( field ), 0 );
+					return GameAudio.SoundPosition( engine );
+				} );
 			BuildModels();
 			UpdateTransforms();
 		}

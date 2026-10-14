@@ -58,6 +58,8 @@ public sealed class RideHeadRenderer : Entity
 	private bool deleted;
 
 	public bool Visible { get; set; } = true;
+	/// <summary>Which riders this renderer draws a head for (null: all): the kid heads leave riders in costume to the costume heads where the theme has them.</summary>
+	public Func<Guest, bool>? Draws { get; init; }
 	/// <summary>Head quads submitted in the last frame; this count alone does not prove visible pixels.</summary>
 	public int DrawnHeads { get; private set; }
 
@@ -144,12 +146,12 @@ public sealed class RideHeadRenderer : Entity
 		foreach ( var source in sources )
 		{
 			var guest = simulation.Find( source.Visitor );
-			if ( !CanDraw( guest, source.AttractionId ) )
+			if ( !CanDraw( guest, source.AttractionId ) || Draws?.Invoke( guest! ) == false )
 				continue;
 			var placement = HeadPresentation.Compute( source.NodeWorld, source.NodeFlags, cameraMd2 );
 			if ( !placement.Visible )
 				continue;
-			// [BIN:STP-PPC:0x100E8F70] the kidsheads art, or costumeheads when the visitor's costume flag (+0x24) is 2 (set index +0x20); OpenTPW guests wear no costumes yet, so the kid's own head set is used
+			// [BIN:STP-PPC:0x100E8F70] the kidsheads art, or costumeheads when the visitor's costume flag (+0x24) is 2 (set index +0x20); a rider in costume gets the theme's costume head (Level.SetupGuests), and in Fantasy and Hallow, which ship none, its kid head (GUEST-017)
 			// [APPROX:HEADS-004] head sprite size is the body's pixel scale times the traced scale property 0.685; how the original maps sprite scale to world units and handles depth is untraced
 			var atlasIndex = guest!.Type % Math.Min( 8, atlases.Count );
 			var atlas = atlases[atlasIndex];

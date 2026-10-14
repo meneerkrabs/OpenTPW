@@ -274,6 +274,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
+| `--debug-guest-looks` | For captures: gives every second guest a balloon and every third a costume as they appear (`[EXT:debug-guest-looks]`, docs/GUESTS.md "Rendering"). |
 | `--capture-interface` | With `--capture-world`: writes the composed output (world plus the original-style interface, no ImGui) instead of the world alone. |
 | `--capture-camera x,y,height,yaw` | With `--capture-world`: holds the park camera at that ground target, height and yaw (degrees) for the last 30 frames before the capture, so a smoke test or park start keeps its own camera until then. The capture log prints the pose. |
 | `--capture-sequence count,interval` | With `--capture-world`: writes `count` numbered images (`shot-0000.png`, ...) one every `interval` frames, then exits; for clips and for finding a moment in a smoke run. |

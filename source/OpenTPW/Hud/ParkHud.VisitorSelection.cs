@@ -25,7 +25,7 @@ public sealed partial class ParkHud
 			Camera.Mode is not ParkCameraMode || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects ||
 			level.CellTool.IsActive || level.IsCoasterToolActive || level.GuestRenderer == null)
 			return false;
-		var guest = level.GuestRenderer.PickVisitor(input.Mouse, viewport, Camera.ViewMatrix, Camera.ProjMatrix);
+		var guest = level.PickVisitor(input.Mouse, viewport, Camera.ViewMatrix, Camera.ProjMatrix);
 		return guest != null && SelectWorldVisitor(guest);
 	}
 }

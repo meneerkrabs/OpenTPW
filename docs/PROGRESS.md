@@ -329,6 +329,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   guests nearby a little ill and less hungry, and more so once it is dirty, until a handyman cleans it. A camera spreads security over five
   cells, so a prank there brings a guard. A Firework Show or Laser Show cheers guests up around it and changes how attractive the rides
   beside it look, until its show has run. All eight original region sources are now modelled.
+- Balloons and costumes are drawn, as in the original (tp.exe `0x4fa030`, `0x4f9f00`, `0x4fe950`; GUEST-017; [GUESTS.md](GUESTS.md)
+  "Rendering"). A guest in costume walks in the theme's costume (Jungle's tiger, Fantasy's knight, and so on), and riders in costume show
+  the costume head where the theme has one. Balloons in four colours hang over their guests, trail behind and dip while they walk, bob, and
+  show their burst frame when they pop. The texture pack builder now includes the balloon and costume sprites, and
+  `--debug-guest-looks` dresses guests for captures.
 - Guests now buy balloons and costumes, as in the original (tp.exe `0x4fe1e0`, `0x501650`, `0x501db0`; ECON-044, GUEST-007;
   [GUESTS.md](GUESTS.md) "Balloons and costumes"). A balloon shop gives a balloon that lives 127 needs phases (about two minutes) at the
   build's quality of goods; a ride puts it away and gives it back. A costume shop puts a costume on, and a second visit returns it. Balloon

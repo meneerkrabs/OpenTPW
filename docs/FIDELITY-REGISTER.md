@@ -1114,7 +1114,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | autorun-focus-rect | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [EXT:autorun-focus-rect] platform emulation: the dotted focus rectangle imitates GDI's DrawFocusRect (pixels with even x + y inverted); Windows draws the original's, OpenTPW draws its own |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | camera-view-cycle | `source/OpenTPW/Hud/ParkHud.cs:191` | [EXT:camera-view-cycle] the camera button cycles host Standard/Close/Overview views; [APPROX:UI-042] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 with camcorder mode (99, help 479) and send a postcard (100, help 480) and starts sound 0x131 — evidence needed: that panel's actions |
-| debug-forecast | `source/OpenTPW/Client/Game.cs:383` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
+| debug-forecast | `source/OpenTPW/Client/Game.cs:391` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
 | debug-forecast | `source/OpenTPW/World/ParkWeather.cs:132` | Smoke-only (&lt;c&gt;[EXT:debug-forecast]&lt;/c&gt;): posts a forecast of &lt;paramref name="quality"/&gt; the warning |
 | debug-guest-looks | `source/OpenTPW/Client/Game.cs:362` | [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes |
 | debug-water-track | `source/OpenTPW/Client/Game.cs:327` | [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the |
@@ -1220,7 +1220,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:108` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:146` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:298` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:706` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:714` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:303` | [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world, |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:106` | [EXT:tpi-viewer] Theme Park Inc runs an experimental slice (docs/THEME-PARK-INC.md), not the supported game |

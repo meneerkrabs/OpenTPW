@@ -28,7 +28,7 @@ public static class GuestWander
 	/// its own centre; null when the start is no path cell or its links lead to no path cell (stranded).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810; fewer than two left: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
-	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw )
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea = null )
 	{
 		var remaining = draw() % 5;
 		// [APPROX:GUEST-010] off the linked paths the original searches the eight directions at distances 0..3 for a path cell a route reaches (centre point, 0x80), then five random cells within ±5; the search meets the own cell first, so a path cell without links gives its own centre, which is all OpenTPW models: a guest on a cell that is no path cell finds no destination; a stranded guest is not marked (+0x198, animation 0x11), so it draws again on its next try — evidence needed: none (read); OpenTPW's routes start on path cells
@@ -48,7 +48,9 @@ public static class GuestWander
 				var direction = CandidateOrder[index];
 				var (dx, dy) = GuestPathGrid.Directions[direction];
 				// [APPROX:GUEST-010] a candidate is a link of the current cell to a path cell; the original keeps every link except to queue cells (removed on a path cell, 0x00536310 / 0x00536320), its own queue link's direction on a queue cell (0x00522850), cell type 10 (0x00536350) and, for staff, cells outside the patrol rectangle (0x00506ED0); OpenTPW's maps link path cells only to path cells (ParkPathBuilder, saves), and it has no type 10 cells and no wandering staff yet (ECON-022) — evidence needed: none for guests on path cells
-				candidates[index] = (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( cell.X + dx, cell.Y + dy ) ? direction : -1;
+				// staff keep to their patrol rectangle (0x00506ED0 removes the candidates outside it)
+				candidates[index] = (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( cell.X + dx, cell.Y + dy )
+					&& (inArea == null || inArea( cell.X + dx, cell.Y + dy )) ? direction : -1;
 				count += candidates[index] >= 0 ? 1 : 0;
 			}
 			int chosen;

@@ -5,7 +5,11 @@ public enum CellToolMode : byte
 {
 	None = 0,
 	Path = 1,
-	Queue = 3
+	Queue = 3,
+	/// <summary>The kart track tool: the mode is the origin cell type the line writes (docs/TRACKS.md).</summary>
+	KartTrack = 11,
+	/// <summary>The water track tool (origin cell type 16).</summary>
+	WaterTrack = 16
 }
 
 /// <summary>Lays snapped straight lines of one cell type for <see cref="CellBuildTool"/>.</summary>
@@ -100,7 +104,18 @@ public sealed class CellBuildTool
 			vertices.Add( end );
 			pushed = true;
 		}
-		var result = Writer.Commit( start, end );
+		var writer = Writer;
+		var result = writer.Commit( start, end );
+		// A commit that finished the work (a track circuit closing) ended or replaced the tool: nothing is left to continue.
+		if ( !ReferenceEquals( Writer, writer ) )
+			return result;
+		// A writer that steps in tiles (the track tools) snaps the end further; the tool continues from where the line really ended.
+		if ( result.SnappedEnd != end )
+		{
+			end = result.SnappedEnd;
+			if ( pushed )
+				vertices[^1] = end;
+		}
 		Ghost = null;
 		LastCommit = result;
 		if ( pushed )

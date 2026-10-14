@@ -9,18 +9,17 @@ namespace OpenTPW.Hud;
 /// original key table's All Visitors key (V). No original layout table is decoded for this window,
 /// so its placement follows the proven staff/buy window geometry.
 /// </summary>
-// [APPROX:UI-907] window layout, list columns and detail placement follow the staff/buy table geometry (no table is decoded for this window) — evidence needed: the original all-visitors window table
+// [APPROX:UI-907] window layout, list columns and detail placement follow the staff/buy table geometry; the decoded table (visitors 0x7506c8, six columns) is not ported — evidence needed: porting it
 public sealed partial class ParkHud
 {
 	private static readonly UiRect VisitorContent = Rect( 1043, 441, 1729, 911 );
 	private static readonly UiRect VisitorScrollTrack = Rect( 1743, 398, 1802, 843 );
 	private static readonly UiRect VisitorScrollKnob = Rect( 1735, 651, 1802, 718 );
-	// [APPROX:UI-907] six equal detail rows fill the stats frame's area (five original rows plus the live thought row).
+	// [EXT:overview-detail-rows] six equal detail rows fill the stats frame's area (five original rows plus the live thought row); the original window has no detail rows.
 	private const int VisitorDetailRowCount = 6;
 
 	private UiScreen? visitorScreen;
 	private bool visitorSortDescending;
-	private bool visitorSortWasChosen;
 	private int selectedVisitorId;
 	private int visitorFirstRow;
 	private string[]? kidStates;
@@ -57,7 +56,6 @@ public sealed partial class ParkHud
 		if ( VisitorWindowOpen )
 			return;
 		visitorSortDescending = false;
-		visitorSortWasChosen = false;
 		visitorFirstRow = 0;
 		selectedVisitorId = 0;
 		RefreshVisitorRows();
@@ -94,11 +92,11 @@ public sealed partial class ParkHud
 	public void ScrollVisitors( int rows ) => SetVisitorFirstRow( visitorFirstRow + rows );
 	public void SetVisitorFirstRow( int first ) => visitorFirstRow = Math.Clamp( first, 0, VisitorMaxFirstRow );
 
-	// [APPROX:UI-084] repeated header presses reverse the ascending order; the original sort cycle is not decoded.
+	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends.
+	// [APPROX:UI-084] the initial column state of this list is assumed to be its single sortable column, ascending — evidence needed: the original list's initial state
 	public void SortVisitors()
 	{
-		visitorSortDescending = visitorSortWasChosen && !visitorSortDescending;
-		visitorSortWasChosen = true;
+		visitorSortDescending = !visitorSortDescending;
 		RefreshVisitorRows();
 		var index = VisitorRowIndex( selectedVisitorId );
 		EnsureVisitorSelection();
@@ -107,14 +105,14 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Row activation (Enter or a second click): focuses the visitor's simulated position and leaves the list, like the locator buttons.</summary>
-	// [APPROX:UI-910] activation locates the visitor and closes the window (the original's row activation is not decoded) — evidence needed: the original list's row handler
+	// [APPROX:UI-910] activation locates the visitor and closes the window; the original's message 0x402 centres the camera on the cell (0x4867b0) and closes, 0x400 opens the info panel and keeps the list — evidence needed: the gestures that produce them
 	public bool LocateSelectedVisitor() => LocateVisitor( SelectedVisitor );
 
 	/// <summary>Whether locating can run at all: the park camera over an original park's terrain.</summary>
 	public bool CanLocateVisitors => Camera.Mode is ParkCameraMode && level.OriginalPark != null;
 
 	/// <summary>Focuses a specific visitor's simulated position on the terrain (the locator flow of the staff window's visitor button).</summary>
-	// [APPROX:UI-091] the locator focuses a live simulated position; the original locate flow remains unqualified
+	// [APPROX:UI-091] the locator focuses a live simulated position; the original's 0x402 path is verified, the HUD locate-button handlers remain — evidence needed: those handlers
 	public bool LocateVisitor( Guest? guest )
 	{
 		if ( guest == null || Camera.Mode is not ParkCameraMode camera || level.OriginalPark is not { } park ||

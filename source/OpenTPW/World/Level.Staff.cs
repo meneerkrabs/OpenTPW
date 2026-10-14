@@ -10,7 +10,33 @@ public partial class Level
 		var lane = Guests.Settings.ArrivalLaneA ?? Guests.Settings.ArrivalLaneB;
 		StaffWorld = new StaffWorldSimulation( Guests.Grid, () => Park.Economy.Staff.Members, StaffJobAccess,
 			lane is { Length: > 0 } ? lane[^1] : null );
+		StaffWorld.Toilets = ToiletSites;
+		AttachStaffWorld();
+	}
+
+	/// <summary>The economy's staff worlds; a park load replaces the economy, so it runs again then.</summary>
+	private void AttachStaffWorld()
+	{
+		if ( Park == null || StaffWorld == null )
+			return;
 		Park.Economy.MechanicJobWorld = StaffWorld;
+		Park.Economy.HandymanWorld = StaffWorld;
+	}
+
+	/// <summary>The toilets for the handymen: relief objects with an economy instance, their cell and the path cell in front of them.</summary>
+	private IReadOnlyList<ToiletSite> ToiletSites()
+	{
+		var sites = new List<ToiletSite>();
+		foreach ( var (item, instance) in economyInstances )
+		{
+			if ( item.IsDeleted || !item.Runtime.Visitors.ProvidesRelief || !item.Runtime.Visitors.HasCells )
+				continue;
+			var access = item.Runtime.Visitors.JoinCell ?? item.Runtime.Visitors.EntranceCell;
+			// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateHandymen): a toilet's access cell (thing +0x36) is its queue's join cell or the path cell in front of its entrance, as for the mechanics' arrival
+			if ( Guests!.Grid.IsWalkable( access.X, access.Y ) )
+				sites.Add( new ToiletSite( instance, (item.Placement.X, item.Placement.Y), access ) );
+		}
+		return sites.OrderBy( site => site.Id ).ToList();
 	}
 
 	private (int X, int Y)? StaffJobAccess( int instance )

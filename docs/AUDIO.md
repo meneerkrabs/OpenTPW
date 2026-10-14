@@ -113,12 +113,13 @@ volume, loop flags or SDT member IDs. TPI particle parity is not established.
 
 `GameAudio.RseEventCategory` and `FindRseEvent` intentionally return null for
 1/2, even when an audio catalog contains a numerically matching ID. The generic
-object-effects hook still records these requests as unimplemented. It now exposes
-only the bounded owner-local latest preparation described in [PARTICLE-KEYS.md](PARTICLE-KEYS.md#latest-owner-local-event-preparation).
-No particle renderer, fake sound, audio approximation ID or native pool ownership is introduced.
-A future particle slice must bind resolved keys to the owning object's animated
-model/placement and provide removal/park-teardown cleanup; a sound voice handle
-cannot represent this particle pool handle.
+object-effects hook still records these requests as unimplemented for the audio
+service; the particle side is described in [PARTICLES.md](PARTICLES.md): a
+prepared EVENT 1/2 request (the owner-local preparation in
+[PARTICLE-KEYS.md](PARTICLE-KEYS.md#latest-owner-local-event-preparation))
+starts an effect in the level's own particle pool. No fake sound or audio
+approximation ID is introduced, and a sound voice handle cannot represent a
+particle pool handle (the dispatcher discards it).
 
 Reproduce the static evidence without running original instructions:
 
@@ -291,6 +292,9 @@ Traced in the binary but not triggered yet:
   (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
   activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
   activation; it has no separate status panel (UI-910) and no map markers or strip yet.
+* A prankster's stinkbomb plays `cat_kids` 207 (0xCF) at the prankster (tp.exe `0x4FF289`, through the thing sound
+  `0x4FAA00`). A guest's litter going into a bin plays no sound of its own: it sets the bin script's variable 0
+  (`VAR_TRIGGER`) to 1 (`0x4FFF20`, `0x55A0B0`), and the bin's script does the rest.
 * Global lobby effects now play (see "Lobby effects" below): the thunder (`cat_globallobbysfx` 1) with the lobby's
   lightning, the globe's music and ambience (2, 3) and the enter-park sound (4).
 * The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and
@@ -456,7 +460,7 @@ implemented yet.
 | AUDIO-021 | `scape.omp` places and the camera-midpoint listener share the park's sound units after undoing terrain centering; the midpoint follows a fork lead | The Mac's listener position and placement units traced together |
 | AUDIO-022 | A refused path-tool commit plays `cat_ui` 175; the Mac site is gated and its mapping to a refusal is inferred | The tool latch `obj+36` and the refusal path |
 | AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
-| AUDIO-024 | A staff member's walking/idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `STAF`; its state is not persisted on save/load | The handlers' turn boundary, shared world draw order and presentation-stream continuity |
+| AUDIO-024 | A staff member's walking/idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `STAF`; its state is not persisted on save/load; handymen in a level draw theirs in their state machine (tp.exe `0x4d73c0`, states 0 and 1) from the economy's stream | The handlers' turn boundary, shared world draw order and presentation-stream continuity |
 | AUDIO-025 | December's average is the unnamed word at weather `+0x4B4`, taken as 4; its tolerance and chance are confirmed (`0x101037D4`) | The `.sam` loader's write of `+0x4B4` |
 | AUDIO-026 | The forecast applies DaysOfWarning after the roll, on day indices | The Mac's day comparison units (`now` against `+0x20`) |
 | AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |
@@ -478,8 +482,10 @@ implemented yet.
 | AUDIO-013 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
 | AUDIO-014 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
 
-The option volumes keep their 0–10 steps (UI-030); the original stores percentages whose
-defaults are `DefaultVolume.*` in `sound.sam` (effects 75, music 60, speech 75, movie 100).
+The option volumes are percentages (0–100) like the original's `{on, percent}` pairs, with the
+`DefaultVolume.*` defaults of `sound.sam` (effects 75, music 60, speech 75, movie 100; the globals holding them
+are medium confidence). Options files from before the change (0–10 steps) are migrated ×10 on load. Only the
+slider step granularity within 0–100 stays open (UI-030).
 
 ## Selected SDT entry to WAV (desktop)
 

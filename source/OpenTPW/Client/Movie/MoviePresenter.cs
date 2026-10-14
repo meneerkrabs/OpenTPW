@@ -43,6 +43,8 @@ internal sealed class MoviePresenter : IDisposable
 	/// by 352/480 of its height, which is 640 x 352 on a 640 x 480 screen; the 320 x 352 TGQ frames are therefore
 	/// shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md).
 	/// </summary>
+	// [EXT:movie-letterbox] the original ran fixed 4:3 modes; OpenTPW runs any window size and letterboxes the 640:352 picture inside it
+	// instead of stretching it to the window width (design decision).
 	public const double OriginalDisplayAspect = 640d / 352;
 
 	public int Width { get; }

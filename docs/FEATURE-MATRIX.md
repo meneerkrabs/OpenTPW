@@ -37,8 +37,8 @@ visual fidelity and D3D11/Vulkan execution remain unverified.
 MD2, MAP, RSE, TPWI, LIP, MTR and TGQ have bounded readers (FORMAT-BACKLOG.md).
 All 274 original objects and optional bonus objects enter the catalog; guests use
 rides/shops/sideshows/toilets through the visitor bridge. The economy and HUD share
-purchase/sale ownership. Missing vertex animation, sounds/particles and coaster,
-kart and tour controllers remain explicit gaps ([OBJECTS.md](OBJECTS.md)).
+purchase/sale ownership. Missing vertex animation, sounds/particles and the
+kart and tour controllers remain explicit gaps ([OBJECTS.md](OBJECTS.md)); water rides run their track controller ([TRACKS.md](TRACKS.md)).
 
 The verified [Patch 2](PATCH-2.md) data copy is a separate reference baseline;
 28 physical Data differences and 24 WAD member differences are known. Static

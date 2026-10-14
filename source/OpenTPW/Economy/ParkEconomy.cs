@@ -25,8 +25,6 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>Months in the red before bankruptcy (TAG_SYSTEM 123–127: warnings at 3 and 5, bankrupt after 6).</summary>
 	// [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)]
 	public const int MonthsInRedForBankruptcy = 6;
-	// [APPROX:ECON-020] a sale adds LitterEffect/100 litter items to a park-wide store; the original adds LitterEffect to the buying guest's 0..100 litter meter, which drops one litter event at 90 (ORACLE F18) — evidence needed: a guest litter meter with the drop-at-90 and bin rules, and the park's litter count
-	public const int LitterScale = 100;
 
 	private readonly SortedDictionary<int, ParkObjectState> objects = new();
 	private readonly List<LoanAccount> loans = new();
@@ -46,6 +44,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Research = new ParkResearch( settings, catalog );
 		Objectives = new ParkObjectives( settings, catalog );
 		EntranceFee = settings.InitialAdmissionFee;
+		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
 		Staff.CreateInitialPool( Random, 0 );
 	}
 
@@ -71,7 +70,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public int EntranceFee { get; private set; }
 	public bool IsBankrupt { get; private set; }
 	public int MonthsInRed { get; private set; }
-	public long LitterScaled { get; private set; }
+	/// <summary>The park's litter by map cell (dropped by guests, swept by handymen; docs/reverse/WANDER-plan.md §6).</summary>
+	public ParkLitter Litter { get; } = new();
 	public int TicketsSpent { get; private set; }
 	private readonly HashSet<int> ticketItems = new();
 	/// <summary>Objects bought with golden tickets; further copies are paid in cash.</summary>
@@ -141,6 +141,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
+	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
+	public IHandymanWorld? HandymanWorld { get; set; }
 	// A mechanic's BusyTicks is the number of park turns (staff updates) until its job completes.
 
 	public long Turn => ParkCalendar.Turn( Tick );
@@ -167,7 +169,10 @@ public sealed class ParkEconomy : IParkEconomy
 				StrikeOrRest( member, HasRestArea );
 			}
 		}
-		DispatchToiletCleaning();
+		if ( HandymanWorld != null )
+			HandymanWorld.UpdateHandymen( this, turn );
+		else
+			DispatchHandymen();
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
@@ -227,6 +232,9 @@ public sealed class ParkEconomy : IParkEconomy
 						member.State = StaffState.Patrolling;
 					continue;
 			}
+			// A handyman in a world drains and decides in its own state machine (0x004D73C0: the walk drain in state 1, the work drain in 9 and 11, the strike and rest gate in the job search).
+			if ( member.Type == StaffType.Handyman && HandymanWorld != null )
+				continue;
 			if ( member.BusyTicks > 0 )
 			{
 				StaffVitals.Work( member );
@@ -236,6 +244,28 @@ public sealed class ParkEconomy : IParkEconomy
 				StaffVitals.Walk( member );
 			StrikeOrRest( member, restArea );
 		}
+	}
+
+	/// <summary>The strike and rest gate of a handyman's job search (tp.exe <c>0x00506A40</c>): true when the member now strikes or rests.</summary>
+	internal bool HandymanStrikeOrRest( StaffMember member ) => StrikeOrRest( member, HasRestArea );
+
+	/// <summary>A toilet's gauge byte is below <see cref="DirtyToiletGauge"/> (tp.exe <c>0x004E0390</c>).</summary>
+	internal static bool IsDirtyToilet( ParkObjectState item ) => (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
+
+	/// <summary>The relief objects (toilets), in object order.</summary>
+	internal IEnumerable<ParkObjectState> Toilets() =>
+		objects.Values.Where( item => Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief ).OrderBy( item => item.Id );
+
+	/// <summary>The end of a handyman's clean (tp.exe <c>0x004DFD80</c>): the gauge is back at 100, the claim and the request clear.</summary>
+	internal void FinishToiletClean( StaffMember member )
+	{
+		if ( objects.TryGetValue( member.ToiletId, out var item ) && item.MechanicId == member.Id )
+		{
+			item.Repair = RideRepair.FullGauge;
+			item.MechanicId = 0;
+			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+		}
+		member.ToiletId = 0;
 	}
 
 	/// <summary>Whether any placed object is a rest area for staff (<c>UsageInfo.ChillsYouOut</c>, in the shipped data the Staff Room).</summary>
@@ -262,12 +292,13 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>The staff manager's month-end consideration of each role's strike (ECON-014): <see cref="StaffStrikeBoard.ConsiderMonth"/> with the park's state.</summary>
-	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike debug word is never set, the handymen's analyser statistics are not supplied (so their litter grievance never applies), OpenTPW's stamp counts the park clock from its start, and the game-type gating of the caller is not traced (strikes are considered in every mode)
+	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike debug word is never set, OpenTPW's stamp counts the park clock from its start, and the game-type gating of the caller is not traced (strikes are considered in every mode)
+	// [BIN:TPW-EXE:0x00509360 handyman grievance] the handymen's litter grievance: the analyser's littered cells (0x004C8180) over its path, queue and type-9 cells (0x004C8150), as singles, above 0.2 (ParkLitter.Statistic)
 	private void ConsiderStrikes()
 	{
 		var stamp = ParkCalendar.Seconds( Tick ) * StaffStrikeBoard.StampUnitsPerSecond;
 		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.PeopleInPark, stamp,
-			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList() );
+			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList(), Litter.Statistic );
 		foreach ( var message in messages )
 			Raise( ParkEventKind.StaffStrikeMessage, (int)message.Kind, 0, (int)message.Role, $"TAG_SYSTEM {message.TagSystemIndex}" );
 	}
@@ -308,7 +339,6 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		Staff.UpdatePool( Random, Tick );
 		DispatchMechanics();
-		CleanLitter();
 	}
 
 	/// <summary>
@@ -384,6 +414,14 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		member.AwaitingJobArrival = false;
 		member.State = StaffState.Patrolling;
+		if ( member.LitterCell is { } litter )
+		{
+			// [BIN:TPW-EXE:0x004D76A0 sweep] when the turn passes the arrival stamp + WorkDuration[grade], 0x004D9620 removes the litter of the handyman's cell
+			member.LitterCell = null;
+			if ( Litter.CollectorAt( litter.X, litter.Y ) == member.Id )
+				Litter.Remove( litter.X, litter.Y );
+			return;
+		}
 		if ( !objects.TryGetValue( member.AssignedInstanceId, out var item ) )
 		{
 			member.AssignedInstanceId = 0;
@@ -502,19 +540,30 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The handyman's toilet job (tp.exe states 10 and 11): a free handyman takes a dirty toilet (gauge byte below 25) that nobody cleans yet and
-	/// is busy for <c>HandymanConstsPerGrade[grade].WorkDuration</c> park turns and the update that ends state 11; the toilet is then back at 100.
+	/// The handyman's jobs (tp.exe <c>0x004D7100</c>): litter first, then toilets. A free handyman claims a littered cell nobody has claimed
+	/// (the sweep, states 8 and 9) or, with no such cell, a dirty toilet (gauge byte below 25) that nobody cleans yet (states 10 and 11).
+	/// Either job keeps him busy for <c>HandymanConstsPerGrade[grade].WorkDuration</c> park turns and the update that ends it.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004D7880 dirty toilet search] a handyman without litter in reach takes the nearest toilet flagged by mRequestedService, else one whose gauge byte is below 25 within DetectionRange cells; state 11 lasts until the turn passes its start + WorkDuration[grade] (0x004D73C0, the grade table 0x007853EC {WorkDuration, DetectionRange, PoundsPerTrainingPoint})
-	private void DispatchToiletCleaning()
+	// [BIN:TPW-EXE:0x004D7100 handyman job search] after the strike/rest gate (0x00506A40) and the too-tired gate (energy byte below RestLevel), the litter finder 0x004C8ED0 scans the cells within DetectionRange (x outer, y inner) for litter claimed by nobody or by him and takes the nearest by Manhattan distance; only without litter does 0x004D7880 look for a toilet flagged by mRequestedService, or one whose gauge byte is below 25 within DetectionRange; a sweep or a clean ends when the turn passes the arrival stamp + WorkDuration[grade] (0x004D76A0, 0x004D73C0; the grade table 0x007853EC {WorkDuration, DetectionRange, PoundsPerTrainingPoint})
+	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateHandymen): without a world the handymen have no position, so a free handyman takes the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, timed from the dispatch
+	private void DispatchHandymen()
 	{
-		var dirty = objects.Values.Where( item => item.MechanicId == 0 && Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief
-			&& (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge ).OrderBy( item => item.Repair ).ThenBy( item => item.Id ).ToList();
-		if ( dirty.Count == 0 )
-			return;
 		var role = Settings[StaffType.Handyman];
-		foreach ( var handyman in Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
+		List<ParkObjectState>? dirty = null;
+		using var litter = Litter.Littered().Where( cell => Litter.CollectorAt( cell.X, cell.Y ) == 0 ).GetEnumerator();
+		foreach ( var handyman in Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ).ToList() )
 		{
+			if ( litter.MoveNext() )
+			{
+				var (x, y) = litter.Current;
+				Litter.Claim( x, y, handyman.Id, Turn );
+				handyman.LitterCell = (x, y);
+				handyman.BusyTicks = role.WorkDuration[handyman.Grade] + 1;
+				handyman.State = StaffState.Working;
+				continue;
+			}
+			dirty ??= objects.Values.Where( item => item.MechanicId == 0 && Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief
+				&& (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge ).OrderBy( item => item.Repair ).ThenBy( item => item.Id ).ToList();
 			if ( dirty.Count == 0 )
 				break;
 			var toilet = dirty[0];
@@ -524,17 +573,6 @@ public sealed class ParkEconomy : IParkEconomy
 			handyman.State = StaffState.Working;
 			toilet.MechanicId = handyman.Id;
 		}
-	}
-
-	/// <summary>Each free handyman removes one litter item per <c>HandymanConstsPerGrade[grade].WorkDuration</c> game minutes (<b>approximation</b>).</summary>
-	private void CleanLitter()
-	{
-		if ( LitterScaled == 0 )
-			return;
-		var role = Settings[StaffType.Handyman];
-		foreach ( var handyman in Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable ) )
-			// [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide, and takes dirty toilets dirtiest first (DispatchToiletCleaning); handymen have no position, so the walk to the litter or the toilet (state 10), the litter-first rule within DetectionRange, the nearest-toilet choice and the mRequestedService flag are not modelled — evidence needed: capture of cleaning speed, and the writer of mRequestedService
-			LitterScaled = Math.Max( 0, LitterScaled - 60L * LitterScale / Math.Max( 1, role.WorkDuration[handyman.Grade] ) );
 	}
 
 	private void EndDay( long day )
@@ -686,7 +724,7 @@ public sealed class ParkEconomy : IParkEconomy
 		return ParkValueRules.ObjectValue( costs, (float)item.Repair );
 	}
 
-	public int LitterItems => (int)(LitterScaled / LitterScale);
+	public int LitterItems => Litter.Count;
 
 	/// <summary>
 	/// Park rating 0–100 (UITEXT 155): a sum of capped counts of guests, attractions and staff. It does
@@ -827,7 +865,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / divisor, age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
 	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
 	// [BIN:STP-PPC:0x100DC834 counts-test] only things passing 0x100DC834 count: thing +0x2E bit 0x4 (the type's Info.IsChoosable, 0x100DABDC), ride state (+0x198) not BROKEN_DOWN (1, 0x100DFE0C) and not CONDEMNED (4, 0x100DFE20), the open word +0x64 nonzero (0x100DFF18; 1 at construction, cleared by closing and by breaking down), a connected entrance (0x100DD3F4 gives a cell), room in the queue (0x100DC988), a coaster without riders (0x100E2FE4, 0x10045EAC) and a built track for karts and water rides (+0x28)
-	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; of the counts-test Info.IsChoosable, IsBrokenDown (which also stands for the original's CONDEMNED, a breakdown at life gauge 0), IsOpen and the queue (cells from the entrance, room in them) are applied, not the coaster controller test 0x00441970 (riders +0x140 zero, controller +0x3C bit 0 set and bit 1 clear, a global at 0x00790FEC clear) nor the kart or water track word (+0x2C on the PC, written only by the constructor, as 1) — evidence needed: the coaster controller's +0x140 and +0x3C bits in OpenTPW terms (riders, VAR_ONRIDE?), and whether a condemned ride stays condemned after a repair
+	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; of the counts-test Info.IsChoosable, IsBrokenDown (which also stands for the original's CONDEMNED, a breakdown at life gauge 0), IsOpen and the queue (cells from the entrance, room in them) are applied, not the coaster controller test 0x00441970 (riders +0x140 zero, controller +0x3C bit 0 set and bit 1 clear, a global at 0x00790FEC clear) nor the kart track word (+0x2C on the PC, which the circuit walk writes after every track edit: a water ride's walk is applied, TRACK-005) — evidence needed: the coaster controller's +0x140 and +0x3C bits in OpenTPW terms (riders, VAR_ONRIDE?), and whether a condemned ride stays condemned after a repair
 	public int ParkPoints()
 	{
 		var counts = new Dictionary<int, int>();
@@ -860,7 +898,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// object is neither broken down (in the economy or by its script) nor closed. The test's world conditions are listed at <see cref="ParkPoints"/>.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DD920 counts-test] the same tests as 0x100DC834 at the PC offsets (flags +0x32 bit 4, state +0x19C not 1 or 4, open word +0x68); the back of the queue 0x004DE130 walks the queue from the front cell at the entrance and counts its cells (+0x40), so an attraction without queue cells has none and does not count, and 0x004DDF50 called with guest 0 returns the whole list's length, compared with 4 × the cells
-	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen && item.QueueHasRoom;
+	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen && item.QueueHasRoom && item.TrackValid;
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
 	/// <param name="builtTick">When the object was built, for an object from an original save (default: now).</param>
@@ -895,19 +933,39 @@ public sealed class ParkEconomy : IParkEconomy
 		return item;
 	}
 
+	/// <summary>Ends the jobs on a removed object: a mechanic's timed job, and a world handyman's walk to the toilet or its clean (he searches again).</summary>
+	private void ReleaseJobsOn( int instanceId )
+	{
+		foreach ( var member in Staff.Members )
+		{
+			if ( member.AssignedInstanceId == instanceId )
+			{
+				member.AssignedInstanceId = 0;
+				member.BusyTicks = 0;
+				member.AwaitingJobArrival = false;
+				member.State = StaffState.Patrolling;
+			}
+			if ( member.ToiletId == instanceId )
+			{
+				member.ToiletId = 0;
+				if ( member.Job is HandymanJob.ToToilet or HandymanJob.Cleaning )
+				{
+					member.Job = HandymanJob.Idle;
+					member.IdleStamp = 0;
+					member.SpeedBonus = 0;
+					member.State = StaffState.Idle;
+				}
+			}
+		}
+	}
+
 	/// <summary>Removes an object and credits its <see cref="ScrapValue"/>.</summary>
 	public long Sell( int instanceId )
 	{
 		var item = RequireObject( instanceId );
 		var value = ScrapValue( item );
 		objects.Remove( instanceId );
-		foreach ( var member in Staff.Members.Where( member => member.AssignedInstanceId == instanceId ) )
-		{
-			member.AssignedInstanceId = 0;
-			member.BusyTicks = 0;
-			member.AwaitingJobArrival = false;
-			member.State = StaffState.Patrolling;
-		}
+		ReleaseJobsOn( instanceId );
 		Post( LedgerCategory.OtherIncome, value );
 		Raise( ParkEventKind.ObjectSold, value, instanceId, item.InfoId );
 		return value;
@@ -918,13 +976,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		var item = RequireObject( instanceId );
 		objects.Remove( instanceId );
-		foreach ( var member in Staff.Members.Where( member => member.AssignedInstanceId == instanceId ) )
-		{
-			member.AssignedInstanceId = 0;
-			member.BusyTicks = 0;
-			member.AwaitingJobArrival = false;
-			member.State = StaffState.Patrolling;
-		}
+		ReleaseJobsOn( instanceId );
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
 	}
 
@@ -1118,6 +1170,13 @@ public sealed class ParkEconomy : IParkEconomy
 		member.AwaitingJobArrival = false;
 		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) && item.MechanicId == member.Id )
 			item.MechanicId = 0;
+		// A dismissed handyman's litter and toilet go back to the others (the original's thing is gone, and its id no longer matches a claim).
+		foreach ( var (x, y) in Litter.Littered().Where( cell => Litter.CollectorAt( cell.X, cell.Y ) == member.Id ).ToList() )
+			Litter.Claim( x, y, 0, 0 );
+		member.LitterCell = null;
+		if ( objects.TryGetValue( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id )
+			toilet.MechanicId = 0;
+		member.ToiletId = 0;
 		var wage = Staff.MonthlyWage( member );
 		if ( wage > 0 )
 			Post( LedgerCategory.StaffCosts, wage );
@@ -1177,7 +1236,6 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( Catalog.TryGet( item.InfoId, out var info ) )
 		{
 			Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
-			LitterScaled += info.LitterEffect;
 		}
 		Counters.Add( ParkCounters.ShopProfit, item.Price - item.CostOfGoods );
 		Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
@@ -1231,8 +1289,6 @@ public sealed class ParkEconomy : IParkEconomy
 		Counters.Max( ParkCounters.Record( kind, infoId ), value );
 	}
 
-	/// <summary>Adds litter (in 1/<see cref="LitterScale"/> items) reported by guests or pranksters.</summary>
-	public void AddLitter( int scaledAmount ) => LitterScaled += Math.Max( 0, scaledAmount );
 
 	public void SetObjectOpen( int instanceId, bool open ) => RequireObject( instanceId ).IsOpen = open;
 
@@ -1278,7 +1334,7 @@ public sealed class ParkEconomy : IParkEconomy
 		takenOffers.UnionWith( loans.Select( loan => loan.OfferIndex ) );
 	}
 
-	internal void RestoreState( long tick, GameSpeed speed, bool open, int fee, bool bankrupt, int monthsInRed, long litter, int ticketsSpent, int nextObjectId,
+	internal void RestoreState( long tick, GameSpeed speed, bool open, int fee, bool bankrupt, int monthsInRed, IEnumerable<LitterCell> litter, int ticketsSpent, int nextObjectId,
 		long droppedAdmissions, IEnumerable<ParkObjectState> restoredObjects, IEnumerable<LoanAccount> restoredLoans, IEnumerable<int> restoredOffers, IEnumerable<long> restoredAdmissions )
 	{
 		Tick = tick;
@@ -1287,7 +1343,7 @@ public sealed class ParkEconomy : IParkEconomy
 		EntranceFee = fee;
 		IsBankrupt = bankrupt;
 		MonthsInRed = monthsInRed;
-		LitterScaled = litter;
+		Litter.Restore( litter );
 		TicketsSpent = ticketsSpent;
 		NextObjectId = nextObjectId;
 		DroppedAdmissions = droppedAdmissions;

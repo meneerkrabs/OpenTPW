@@ -263,11 +263,11 @@ public static class OptionsScreen
 		void Label( string id, UiRect rect, Func<string> text, Func<IEnumerable<string>>? variants = null ) => page.Label( id, rect, text, variants );
 		void Toggle( string id, string model, UiRect rect, Func<bool> isOn, Action toggled, bool enabled = true ) => page.Toggle( id, model, rect, isOn, toggled, enabled );
 		void Slider( string id, UiRect track, UiRect hit, UiRect knob, Func<int> steps, Func<int> value, Action<int> changed, bool enabled = true ) => page.Slider( id, track, hit, knob, steps, value, changed, enabled );
-		static string Percent( int volume ) => $" {volume * 10} %";
+		static string Percent( int volume ) => $" {volume} %";
 
 		// [DATA:options table 0x4b0dc] control rectangles of the original page; meanings from the supplied PC capture
 		// Top left: 3D card rendering and videocard. OpenTPW always renders on the GPU of the window.
-		// [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice
+		// [EXT:options-fixed-rows] the PC lets players change the 3D card, video card and audio quality; OpenTPW has no software renderer, card choice or audio quality, so those rows are shown fixed (disabled): OpenTPW scope
 		Panel( "gpu", "f_optpanel", Rect( 57, 167, 668, 316 ) );
 		Label( "gpu", Rect( 124, 218, 424, 263 ), () => strings[UIStrings.GPURendering] );
 		Toggle( "gpu", "b_on2", Rect( 521, 190, 624, 292 ), () => true, () => { }, false );

@@ -297,6 +297,12 @@ internal sealed partial class GameFlow : IDisposable
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
+		if ( level.Guests != null )
+			level.Guests.Pranked += ( guest, prank ) =>
+			{
+				if ( prank == GuestDecision.Prank.Stinkbomb )
+					GameAudio.PlayStinkbomb( new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+			};
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
 		// build and guest systems under the experimental HUD, without the reference game's economy, HUD or advisor.
 		if ( level.IsThemeParkIncSlice )
@@ -496,7 +502,9 @@ internal sealed partial class GameFlow : IDisposable
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
-			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1 );
+			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesHandymen == true );
+			if ( Level.StaffWorld != null )
+				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );
 			GameAudio.SetRain( Level.Weather?.RainLevel ?? 0 );
 			foreach ( var strike in Level.Weather?.TakeThunder() ?? Array.Empty<Vector3>() )
 				GameAudio.PlayThunder( strike );

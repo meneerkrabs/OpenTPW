@@ -42,6 +42,7 @@ public sealed class ParkCellMap
 		Width = width;
 		Height = height;
 		types = new byte[width * height];
+		Tracks = new TrackCellLayer( width, height );
 		flags = new ushort[width * height];
 		placements = new short[width * height];
 		links = new byte[width * height];
@@ -84,6 +85,8 @@ public sealed class ParkCellMap
 
 	public int Width { get; }
 	public int Height { get; }
+	/// <summary>The track layer (kart and water track tiles, docs/TRACKS.md); empty until a track is laid.</summary>
+	public TrackCellLayer Tracks { get; }
 	/// <summary>Incremented by every write.</summary>
 	public int Version { get; private set; }
 
@@ -175,6 +178,9 @@ public sealed class ParkCellMap
 			hash.Add( index );
 			hash.Add( types[index] | flags[index] << 8 | (long)links[index] << 24 | (long)queueLinks[index] << 32 | (long)(ushort)placements[index] << 40 );
 		}
+		// The track layer joins the digest only while a track exists, so every trackless park keeps its earlier pins.
+		if ( Tracks.Count > 0 )
+			Tracks.AddCanonicalState( hash );
 	}
 
 	/// <summary>

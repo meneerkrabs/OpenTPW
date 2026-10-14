@@ -74,6 +74,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int StaticExcitementLevel => excitementLevel;
 	/// <summary>Replaces the .sam excitement with a live value (a coaster's rating, <c>0xdff70</c>), or null.</summary>
 	public Func<int>? ExcitementSource { get; set; }
+	/// <summary>
+	/// A ride with a controller behind it (a water ride's bump controller, docs/TRACKS.md) turns the data level into its excitement base before the speed and
+	/// duration ratios scale it (60 % of the level plus up to 40 from the circuit's piece counts); null for every other ride.
+	/// </summary>
+	public Func<int, int>? ExcitementBase { get; set; }
 	/// <summary>The sideshow's goods, price and win chance, read by <see cref="LiveExcitement"/>; the level mirrors them from the economy each tick.</summary>
 	public SideshowTerms Sideshow
 	{
@@ -180,6 +185,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int InitCostOfGoods { get; set; }
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
 	public int HappinessEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.LitterEffect</c> (tp.exe type <c>+0x154</c>).</summary>
+	public int LitterEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>).</summary>
 	public int GoldenTicketCost { get; set; }
 	/// <summary>Type <c>Upgrades[0].CostOfUpgrade</c> (<c>+440</c>).</summary>
@@ -668,7 +675,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( count >= QueueRoom )
 			return QueueJoinResult.NoRoom;
 		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
-		// [APPROX:QUEUE-004] the excitement of a ride with a thing behind ride +36 (60 % of the level plus up to 40 from three piece counts of 0x1ea40) is not modelled, because OpenTPW has no such thing and what the counts are is not traced — evidence needed: the ride +36 handle and 0x1ea40
+		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
+		// [APPROX:QUEUE-004] a kart ride's controller thing (Bumper.WhichTrackType 1) does not exist in OpenTPW, so its excitement is the data level without the track terms; water rides apply the formula (docs/TRACKS.md) — evidence needed: kart controllers (phase 2 of the track work)
 		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
 			return refusal;
 		if ( count >= QueueLimit )
@@ -698,9 +706,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( ExcitementSource is { } source )
 				return source();
 			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; the original would divide 0 by 0 (NaN, excitement 0) — evidence needed: none, no original object lacks them
+			var level = ExcitementBase?.Invoke( excitementLevel ) ?? excitementLevel;
 			if ( Parameters is { Speed: 0, InitSpeed: 0, Duration: 0, InitDuration: null or 0 } )
-				return excitementLevel;
-			return QueueJoinRules.ScaledExcitement( excitementLevel, Parameters.Speed, Parameters.InitSpeed, Parameters.Duration, Parameters.InitDuration ?? Parameters.Duration );
+				return level;
+			return QueueJoinRules.ScaledExcitement( level, Parameters.Speed, Parameters.InitSpeed, Parameters.Duration, Parameters.InitDuration ?? Parameters.Duration );
 		}
 	}
 

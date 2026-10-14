@@ -383,3 +383,5 @@ These packages require a matching .NET 10 runtime and legally obtained external
 game assets. Build the arm64 dependency before publishing that RID. Successful
 cross-publication is not successful execution on the target platform.
 Current verification and remaining release blockers are recorded in PROGRESS.md.
+
+The CPU-only `--inspect-tpi-mission /local/mission.sam` command checks explicitly selected retained TPI mission bounds and reports parser omissions. See [static mission inspection](TPI-MISSION-INSPECTION.md) for its modified-NoCD evidence and lexical/runtime limits.

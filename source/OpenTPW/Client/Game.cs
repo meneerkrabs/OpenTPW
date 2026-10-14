@@ -85,6 +85,14 @@ internal static class Game
 			Console.WriteLine( "Read-only container decoding only: original park payload semantics and gameplay import remain unverified." );
 			return;
 		}
+		var missionIndex = Array.IndexOf( args, "--inspect-tpi-mission" );
+		if ( missionIndex >= 0 )
+		{
+			if ( missionIndex + 1 >= args.Length || args[missionIndex + 1].StartsWith( "--" ) )
+				throw new ArgumentException( "--inspect-tpi-mission requires a local .sam path (docs/TPI-MISSION-INSPECTION.md)." );
+			TpiMissionInspection.Run( args[missionIndex + 1] );
+			return;
+		}
 		var pathIndex = Array.IndexOf( args, "--game-path" );
 		string? commandLinePath = null;
 		if ( pathIndex >= 0 )

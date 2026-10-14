@@ -9,7 +9,7 @@ public sealed partial class ParkHud
 
 	private void AddRideUpgradeButton()
 	{
-		// [APPROX:UI-935] host confirmation for catalogue-supported ordinary ride upgrades; native geometry/confirmation behavior remains unqualified.
+		// [EXT:upgrade-confirm] the host confirmation for catalogue-supported ordinary ride upgrades has no original rule to match
 		rideUpgradeButton = hud.Add( new UiButton { Id = "rideUpgrade", Text = () => strings[UIStrings.BuyUpgrades],
 			Font = fonts => fonts.Label, Clicked = OpenRideUpgrade,
 			Bounds = UiRect.FromCenter( new System.Numerics.Vector2( 875, 1425 ), 200, 100 ), Anchor = UiAnchor.BottomLeft,

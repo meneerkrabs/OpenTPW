@@ -101,8 +101,56 @@ internal sealed class AdvisorClipDurations
 	}
 }
 
-/// <summary>A generated animation sequence: the clips in play order (ending with clip 15) and the sum of their lengths.</summary>
-internal sealed record AdvisorSequence( IReadOnlyList<int> Clips, int SumMilliseconds );
+/// <summary>
+/// An animation sequence: the clips in play order and the sum of their lengths, which is also when the last clip ends. A
+/// generated sequence ends with clip 15; a fixed one with its table row's last clip.
+/// </summary>
+/// <param name="TimerMilliseconds">
+/// The effect timer a fixed row's timer entry sets (the clip sum before the entry plus its milliseconds), on the advisor
+/// clock relative to the clip start; null without one. The timer's effect is not ported (ADVISOR-025).
+/// </param>
+internal sealed record AdvisorSequence( IReadOnlyList<int> Clips, int SumMilliseconds, int? TimerMilliseconds = null );
+
+/// <summary>One entry of a fixed-sequence row: a clip (with its accessory bits) or a timer.</summary>
+internal readonly record struct AdvisorSequenceEntry( int Clip, int Bits, int TimerMilliseconds )
+{
+	public static AdvisorSequenceEntry Play( int clip, int bits = 0 ) => new( clip, bits, 0 );
+	public static AdvisorSequenceEntry Timer( int milliseconds ) => new( 0, 0, milliseconds );
+
+	public bool IsTimer => Clip == 0;
+}
+
+/// <summary>
+/// The response table's fixed sequences: the rows of the original's sequence table that the response rows' sequence field
+/// (16 and up; −1 is generated) selects. Ten rows are in use; the others (18–20 and 24) are empty.
+/// </summary>
+internal static class AdvisorFixedSequences
+{
+	/// <summary>The sequence field of the first row.</summary>
+	public const int FirstSequence = 16;
+
+	// [BIN:TPW-EXE:0x00598BF0 fixed-sequence builder] row (sequence − 16) of the table at 0x76DC18 (0x50 bytes per row), walked until a zero entry: an entry with bit 0x400000 is a timer pair (flag, milliseconds), any other entry is a clip (entry & 0xFF80FFFF; bits 0x7F0000 are stored at 0xF79660 for the accessory selector 0x598CA0)
+	// [BIN:TPW-EXE:0x0076DC18 fixed-sequence table] the ten rows in use; the clips 16-20 exist only in the level advisors' archives
+	private static readonly IReadOnlyDictionary<int, AdvisorSequenceEntry[]> Rows = new Dictionary<int, AdvisorSequenceEntry[]>
+	{
+		[16] = new[] { Clip( 16 ) },
+		[17] = new[] { Clip( 17, 2 ), Clip( 17, 2 ), Clip( 17, 2 ), Clip( 17, 2 ), Clip( 18, 4 ), Clip( 19, 9 ), Clip( 20, 0x11 ) },
+		[21] = new[] { Clip( 14 ), Clip( 5 ), Clip( 11 ), Clip( 15 ) },
+		[22] = new[] { Clip( 14 ), Clip( 11 ), Clip( 1 ), Clip( 12 ), Clip( 1 ), Clip( 15 ) },
+		[23] = new[] { Clip( 14 ), Clip( 11 ), Clip( 11 ), Clip( 5 ), Clip( 15 ) },
+		[25] = new[] { Clip( 14 ), Clip( 11 ), Clip( 4 ), Clip( 15 ) },
+		[26] = new[] { Clip( 14 ), Clip( 5 ), Clip( 1 ), Clip( 11 ), Clip( 6 ), Clip( 15 ) },
+		[27] = new[] { Clip( 14 ), Clip( 11 ), Clip( 9 ), Clip( 15 ) },
+		[28] = new[] { AdvisorSequenceEntry.Timer( 17000 ) },
+		[29] = new[] { Clip( 17, 2 ), Clip( 17, 2 ), Clip( 17, 2 ), Clip( 17, 2 ), Clip( 18, 4 ), Clip( 19, 9 ), AdvisorSequenceEntry.Timer( 1000 ), Clip( 20, 0x11 ) },
+	};
+
+	private static AdvisorSequenceEntry Clip( int clip, int bits = 0 ) => AdvisorSequenceEntry.Play( clip, bits );
+
+	/// <summary>The entries of the fixed sequence <paramref name="sequence"/>; empty for −1 (generated), an empty row or a value outside the table.</summary>
+	public static IReadOnlyList<AdvisorSequenceEntry> Row( int sequence ) =>
+		Rows.TryGetValue( sequence, out var row ) ? row : Array.Empty<AdvisorSequenceEntry>();
+}
 
 /// <summary>The advisor's animation sequences: the generator of the original's 550 generated responses.</summary>
 internal static class AdvisorSequences
@@ -158,6 +206,38 @@ internal static class AdvisorSequences
 	}
 
 	/// <summary>
+	/// The sequence a response plays: its fixed row when the response has one (sequence 16 and up), else a generated one. A
+	/// fixed row whose clips sum to 0 (an empty row, a row of only a timer such as 28, or clips missing from the advisor
+	/// archives) falls back to the generator with the same budget; its timer stays.
+	/// </summary>
+	/// <param name="sequence">The response row's sequence field: −1 for a generated sequence, otherwise the row of the fixed table.</param>
+	/// <param name="budgetMilliseconds">Speech length + 200 + 300.</param>
+	public static AdvisorSequence Build( int sequence, int budgetMilliseconds, AdvisorClipDurations durations, Func<int> rand )
+	{
+		ArgumentNullException.ThrowIfNull( durations );
+		ArgumentNullException.ThrowIfNull( rand );
+		var clips = new List<int>();
+		var sum = 0;
+		int? timer = null;
+		// [BIN:TPW-EXE:0x00598BF0 fixed-sequence builder] a timer entry sets the timer to the clip sum so far plus its milliseconds and adds no clip; a clip adds its length from the clip table (clip 14 is 0); a sum of 0 with a nonzero budget returns the generator's sequence (0x598B20) instead
+		foreach ( var entry in AdvisorFixedSequences.Row( sequence ) )
+		{
+			if ( entry.IsTimer )
+			{
+				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update calls the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340
+				// [APPROX:ADVISOR-025] the timer is recorded on the sequence (the clip sum so far plus its milliseconds), but its effect (particle 87, sound 0xC6, 0x4B9340) is not ported — evidence needed: the effects of 0x521E60 with these arguments and of 0x4B9340
+				timer = sum + entry.TimerMilliseconds;
+				continue;
+			}
+			clips.Add( entry.Clip );
+			sum += (int)durations.Of( entry.Clip );
+		}
+		if ( sum == 0 && budgetMilliseconds != 0 )
+			return Generate( budgetMilliseconds, durations, rand ) with { TimerMilliseconds = timer };
+		return new AdvisorSequence( clips, sum, timer );
+	}
+
+	/// <summary>
 	/// Span the response player returns: the sequence sum + 1000 + the length of clip 15. A generated sequence already
 	/// ends with clip 15, so that clip counts twice.
 	/// </summary>
@@ -167,10 +247,13 @@ internal static class AdvisorSequences
 
 	/// <summary>
 	/// Whether a response with fixed sequence <paramref name="sequence"/> (−1 for a generated one) starts its audio when the
-	/// response is requested: only the sequences 16, 17 and 29. Every other sequence opens with clip 14 and starts its audio
+	/// response is requested: when its row's first clip is not clip 14, which is the sequences 16, 17 and 29. Every other
+	/// sequence opens with clip 14 (a generated one always does) and starts its audio
 	/// <see cref="AdvisorSpeechStart.DelayMilliseconds"/> later.
 	/// </summary>
-	public static bool StartsImmediately( int sequence ) => sequence is 16 or 17 or 29;
+	// [BIN:TPW-EXE:0x00598BF0 fixed-sequence builder] the builder clears the immediate-start word 0xF79694 when the row's first clip is not clip 14 (0x598C47–0x598C56); a row without a clip never clears it
+	public static bool StartsImmediately( int sequence ) =>
+		AdvisorFixedSequences.Row( sequence ).FirstOrDefault( entry => !entry.IsTimer ) is { Clip: not 0 and not AdvisorClipDurations.StartClip };
 }
 
 /// <summary>

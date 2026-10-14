@@ -103,14 +103,15 @@ public class OriginalObject : Entity
 				: new OriginalObjectRuntime( entry, world, seed, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
-			Runtime.SetEventOrigin(() =>
+			Vector3 ToSound(System.Numerics.Vector3 engine)
 			{
-				var engine = System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, Placement.ModelToEngine);
 				// Match UpdateListener: imported terrain is centred for rendering, but sound uses its original coordinates.
 				if (Level?.OriginalPark?.Heightfield is { } field)
 					engine += new System.Numerics.Vector3(OriginalParkPlacement.GetOrigin(field), 0);
 				return GameAudio.SoundPosition(engine);
-			});
+			}
+			Runtime.SetEventOrigin(() => ToSound(System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, Placement.ModelToEngine)));
+			Runtime.SetEventAnchors(() => ToSound(FootprintMiddle()), ToSound);
 			Runtime.BindParticlePlacement(placement);
 			// the kart effects (sounds, particles) happen where the vehicle is: section units at 307.2 per model unit, on the grid, with the height the pose probes found
 			Runtime.SetBumpPlacement(
@@ -130,6 +131,23 @@ public class OriginalObject : Entity
 			Delete();
 			throw;
 		}
+	}
+
+	/// <summary>
+	/// The middle of the object's footprint in engine coordinates at the object's base height: the original's anchor for its screams and for an EVENT sound with a negative key.
+	/// A fixed item (authored in park coordinates) has no footprint and uses its model origin.
+	/// </summary>
+	// [BIN:TPW-EXE:0x466b70 footprint middle] the middle of the footprint rectangle in cell*10 units (cell corners, so a one-cell object's middle is half a cell in); the height is the model's +0x44 field in the original, the object's base height here
+	// [APPROX:AUDIO-908] the footprint middle's height is the object's base height; the original reads the model's +0x44 field, not traced
+	internal System.Numerics.Vector3 FootprintMiddle()
+	{
+		if ( Entry.IsFixedItem )
+			return System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, Placement.ModelToEngine );
+		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( Entry.Shape, Placement.X, Placement.Y, Placement.Rotation );
+		return new System.Numerics.Vector3(
+			Placement.GridOrigin.X + (minX + maxX + 1) * 0.5f * ObjectPlacement.CellSize,
+			Placement.GridOrigin.Y + (minY + maxY + 1) * 0.5f * ObjectPlacement.CellSize,
+			Placement.BaseHeight );
 	}
 
 	public ObjectCatalogEntry Entry => Runtime.Entry;
@@ -235,7 +253,7 @@ public class OriginalObject : Entity
 				for ( var vertexIndex = 0; vertexIndex < part.Vertices.Length; vertexIndex++ )
 					if ( ObjectSigns.IsSignSlot( part.Textures[part.Vertices[vertexIndex].TexIndex] ) )
 					{
-						// [APPROX:COMPAT-031] orient the gate's sign lighting upward so the light stone name remains legible.
+						// [EXT:gate-paint-legibility] orient the gate's sign lighting upward so the light stone name remains legible (an OpenTPW presentation decision until an original capture exists).
 						var vertex = part.Vertices[vertexIndex];
 						vertex.Normal = System.Numerics.Vector3.UnitZ;
 						part.Vertices[vertexIndex] = vertex;

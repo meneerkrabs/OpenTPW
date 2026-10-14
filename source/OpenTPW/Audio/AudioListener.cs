@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The one place the park is heard from. The host follows the fork's camera midpoint listener lead,
+/// The one place the park is heard from: the camera's eye in the eye camera modes, otherwise the midpoint of eye and target (tp.exe <c>0x54f8f6</c>),
 /// and every voice given a range is turned down over its distance from it.
 /// </summary>
 public static class AudioListener

@@ -147,7 +147,7 @@ internal sealed partial class GameFlow : IDisposable
 			{
 				LobbyCameraMode.Target = Lobby!.Target( island );
 				// [BIN:STP-PPC:0x1009598C lobby audio start] the front end starts the selected island's theme lobby music (cat_locallobbymusic 1) and looping ambience (cat_locallobbysfx 2)
-				// [APPROX:AUDIO-010] the sentences restart on every island selection; when the original switches them is not traced
+				// [BIN:TPW-EXE:0x5e1640 island step] the island-step virtuals (0x5e1640, 0x5e1730; vtable 0x702ce8/0x702cec) stop the old island's two voices (+0x1c/+0x20, 0x51c300) and start the new island's music event 1 and ambience event 2 from the lobby table (0x803a4c, registered by 0x51e8f0); 0x5e14a0 (after the UI toggle at 0x4a6a33), 0x5e18d0, 0x5e23f0 and 0x5e0b21 restart them too
 				GameAudio.EnterLobby( island.Level );
 			},
 			LoadEntries = FindLoadEntries,
@@ -270,7 +270,7 @@ internal sealed partial class GameFlow : IDisposable
 		if ( entry.Sandbox )
 			StartLevel( "jungle", original: false, developerPanels: false, overFrames: overFrames, ready: level => level.LoadSandbox() );
 		else
-			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc
+			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen: GameType is derived from flag bits 0x2000000/0x1000000 of 0x7a1a8c (0x550ca0), set by a front-end toggle (0x4bbf63), and OpenTPW has no player profiles — evidence needed: whether a park file can carry the game type
 			StartLevel( entry.Level, original: true, developerPanels: false, overFrames: overFrames );
 	}
 
@@ -344,6 +344,9 @@ internal sealed partial class GameFlow : IDisposable
 		return level;
 	}
 
+	/// <summary>The window list sorts of this session, shared by every park's HUD (UI-084).</summary>
+	private readonly ListSortMemory listSorts = new();
+
 	private ParkHud CreateParkHud( Level level, IHudParkStatus status )
 	{
 		ParkHud? createdHud = null;
@@ -356,6 +359,9 @@ internal sealed partial class GameFlow : IDisposable
 			CreateOptions = CreateOptions,
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 			GoOnline = ShowOnline,
+			ListSorts = listSorts,
+			OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
+			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
 		} );
 		return createdHud;
 	}
@@ -365,7 +371,6 @@ internal sealed partial class GameFlow : IDisposable
 	/// (<c>cat_kids</c> 0x5B, capped at 100). The original's park turn counts them the same way each turn.
 	/// </summary>
 	// [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) for the crowd sentence
-	// [APPROX:AUDIO-006] cells are counted by rectangle (Chebyshev distance); the original's area shape inside the radius is not traced
 	private static int GuestsNearCamera( Level level )
 	{
 		if ( level.Guests == null || Camera.Mode is not ParkCameraMode camera )
@@ -382,6 +387,7 @@ internal sealed partial class GameFlow : IDisposable
 	}
 
 	/// <summary>The crowd count's radius in cells (<c>0x101C2490</c> passes 4 to the guest counter).</summary>
+	// [BIN:TPW-EXE:0x4c8d30 crowd counter] the park loop (0x54e360) calls it with the camera cell, radius 4 (0x54f4ba) and counts the things whose type byte (+2) is 1 over the cell rectangle [x-4, x+4] x [y-4, y+4] clamped to 0..127 (0x4c8d43-0x4c8da5); the caller caps the count at 100 (0x54f89e) and sends 0 when the world state is 4 (setter 0x51e7b0): the same square as this Chebyshev test
 	public const int CrowdRadiusCells = 4;
 
 	private void TearDown( bool applyPendingLanguage = true )
@@ -495,7 +501,7 @@ internal sealed partial class GameFlow : IDisposable
 			if ( parkBuild != null && Camera.Mode is FreeWalkCameraMode walkCamera )
 				walkCamera.ModalOpen = true;
 			UpdateParkGlobe( Hud );
-			// The pause menu and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
+			// The pause menu, the map window and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
 			// The park being left waits too while the next one is built.
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
@@ -506,6 +512,7 @@ internal sealed partial class GameFlow : IDisposable
 			if ( Level.StaffWorld != null )
 				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );
 			GameAudio.SetRain( Level.Weather?.RainLevel ?? 0 );
+			GameAudio.SetWeatherRain( Level.Weather?.Rain ?? false );
 			foreach ( var strike in Level.Weather?.TakeThunder() ?? Array.Empty<Vector3>() )
 				GameAudio.PlayThunder( strike );
 			return;
@@ -523,6 +530,7 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		}
 		GameAudio.EnsureStarted();
+		GameAudio.PlayStartupSound();
 		GameAudio.Update();
 		UpdateGlobeView();
 		Camera.Update();

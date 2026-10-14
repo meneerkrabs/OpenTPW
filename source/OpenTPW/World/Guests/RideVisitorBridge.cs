@@ -98,81 +98,22 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>The wear gauge (ride <c>+64</c>, the state of repair 0–100) the relief predicate reads; the level mirrors it from the economy.</summary>
 	public double WearGauge { get; set; } = 100;
 	/// <summary>The ride's head table for ADDHEAD/DELHEAD, null when its model has no head records (see <see cref="RideHeadSpace"/>).</summary>
-	// [BIN:STP-PPC:0x100B2BA0 script init] every script (root, child, sound) has its own head table; this is the root script's, child and sound scripts get their own on their first ADDHEAD/DELHEAD (HeadTableFor)
+	// [BIN:TPW-EXE:0x00558D2B script init] only the root script gets a table: the init stores the thing id (+0xAC) and, when it is 0, skips the head-id lookup and the table allocation (0x558D2B–0x558E0B), and SPAWNCHILD (0x555081) and SPAWNSOUND (0x5551AB) create their script with thing id 0 and copy the parent's thing id only afterwards (0x555168–0x55519A)
 	public RideHeadSpace? Heads { get; set; }
 
-	private readonly List<(RideVM Vm, RideHeadSpace Table)> childHeads = new();
+	/// <summary>The head table of the script that runs a head opcode: the root's; none for a child or sound script, whose ADDHEAD and DELHEAD do nothing.</summary>
+	// [BIN:TPW-EXE:0x00554C3E ADDHEAD] the handler exits when the table pointer (+0x30) is NULL (0x554C89), and DELHEAD does the same (0x554D6F), so head opcodes in child and sound scripts have no effect
+	private RideHeadSpace? HeadTableFor( RideVM vm ) => vm.Parent == null ? Heads : null;
 
-	/// <summary>The head table of the script that runs a head opcode: the root's, or a child/sound script's own (created empty from the root's records).</summary>
-	// [APPROX:HEADS-005] whether a child takes its parent's thing id (+0xAC) is untraced; a child's table is dropped with its script, joins the canonical state while it exists, and a park-resume snapshot refuses while one holds a head (no shipped child script uses a head opcode)
-	private RideHeadSpace? HeadTableFor( RideVM vm )
-	{
-		if ( Heads == null || vm.Parent == null )
-			return Heads;
-		PruneChildHeads();
-		foreach ( var (owner, existing) in childHeads )
-			if ( ReferenceEquals( owner, vm ) )
-				return existing;
-		var table = Heads.NewTable( childHeads.Count + 1 );
-		childHeads.Add( (vm, table) );
-		return table;
-	}
+	/// <summary>Appends the visitors with a head up and the model node each hangs from, without allocating.</summary>
+	public void CollectHungHeads( List<(int Visitor, int Node)> into ) => Heads?.AppendHung( into );
 
-	/// <summary>Drops the tables of child and sound scripts that were stopped, replaced or removed: their heads go down with them.</summary>
-	private void PruneChildHeads()
-	{
-		if ( childHeads.Count > 0 )
-			childHeads.RemoveAll( entry => entry.Vm.State is RideVMState.Halted or RideVMState.Faulted );
-	}
-
-	/// <summary>Number of live child/sound head tables (the root's is <see cref="Heads"/>).</summary>
-	internal int ChildHeadTableCount
-	{
-		get
-		{
-			PruneChildHeads();
-			return childHeads.Count;
-		}
-	}
-
-	/// <summary>True when a live child/sound script's table holds a head.</summary>
-	internal bool ChildHeadsOccupied()
-	{
-		PruneChildHeads();
-		foreach ( var (_, table) in childHeads )
-			if ( table.HasVisitors )
-				return true;
-		return false;
-	}
-
-	/// <summary>Appends the visitors with a head up on any script's table and the model node each hangs from, without allocating.</summary>
-	public void CollectHungHeads( List<(int Visitor, int Node)> into )
-	{
-		if ( Heads == null )
-			return;
-		Heads.AppendHung( into );
-		if ( childHeads.Count == 0 )
-			return;
-		PruneChildHeads();
-		foreach ( var (_, table) in childHeads )
-			table.AppendHung( into );
-	}
-
-	/// <summary>Visitors with a head up on any script's table (allocates; for tests and the smoke test).</summary>
+	/// <summary>Visitors with a head up and the model node each hangs from (allocates; for tests and the smoke test).</summary>
 	public IEnumerable<(int Visitor, int Node)> HungHeads()
 	{
 		var list = new List<(int Visitor, int Node)>();
 		CollectHungHeads( list );
 		return list;
-	}
-
-	private void ForEachHeadTable( Action<RideHeadSpace> action )
-	{
-		if ( Heads == null )
-			return;
-		action( Heads );
-		foreach ( var (_, table) in childHeads )
-			action( table );
 	}
 
 	public int AttractionValue { get; }
@@ -204,7 +145,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int SpecialIngredient { get; set; }
 	/// <summary>The type's <c>UsageInfo.AppearanceEffect</c> (tp.exe <c>+0x15C</c>): 1 gives the guest a balloon, 2 puts on or returns a costume.</summary>
 	public int AppearanceEffect { get; set; }
-	/// <summary>The ride's amount of the special ingredient (<c>+404</c>), 50 when the ride is built.</summary>
+	/// <summary>The ride's amount of the special ingredient (Mac <c>+404</c>, PC <c>+0x198</c> beside the price per use at <c>+0x194</c>; the serializer <c>0x004DB7D0</c> names it <c>mAmountOfSpecialIngredient</c>), 50 when the ride is built.</summary>
 	// [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (a Sugar visit adds 3): the original's shop screen can change it (ride +404, saved as mAmountOfSpecialIngredient) and OpenTPW has neither that control nor the saved field — evidence needed: the screen that sets +404 (handlers 0x1685b4 and 0x168640), its range and the save field
 	// Only tests change it: nothing in play sets +404 and it is neither saved nor hashed, so a public setter would make state the save loses.
 	public int IngredientAmount { get; internal set; } = GuestSpeed.DefaultIngredientAmount;
@@ -226,6 +167,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// the life gauge is 0): the ride dismisses its queue head first, one guest per park turn, and takes nobody (ORACLE.md F15).
 	/// </summary>
 	public bool IsBroken => vm != null && Get( RideVariables.VAR_BROKEN ) != 0;
+	/// <summary>
+	/// The ride is in state 1 (broken down; 4 when condemned is not told apart): entered by the ride update that reads <c>VAR_BROKEN</c>, left only when
+	/// the ride is opened again (a repair, an upgrade's end or the open button: <c>SetState(0)</c>), whatever the script does to <c>VAR_BROKEN</c> meanwhile.
+	/// </summary>
+	// The repair (0xdf4d4) and the other openers write the open word 1 and VAR_RIDECLOSED 0 together with SetState(0), so an opened ride has left state 1
+	public bool IsBrokenDown => brokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0);
+	private bool brokenDown;
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
 	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
 	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
@@ -272,14 +220,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			}
 		}
 		hash.Add( MaximumQueueLength );
-		// Child/sound head tables join the state only while they exist (none in the shipped scripts), so existing pins hold.
-		if ( ChildHeadTableCount > 0 )
-		{
-			hash.Add( childHeads.Count );
-			foreach ( var (_, table) in childHeads )
-				for ( var slot = 0; slot < table.Count; slot++ )
-					hash.Add( table.VisitorAt( slot ) );
-		}
 		hash.Add( called );
 		hash.Add( BoardedTotal );
 		hash.Add( ReleasedTotal );
@@ -303,6 +243,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		hash.Add( letMeOnWritten );
 		hash.Add( lastAdmissionTurn );
+		hash.Add( brokenDown );
 		hash.Add( QueueFrontCell is { } front ? front.X : -1 );
 		hash.Add( QueueFrontCell is { } frontCell ? frontCell.Y : -1 );
 		hash.Add( QueueEntranceDirection );
@@ -343,6 +284,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		CalledGuest = called,
 		LetMeOnWritten = letMeOnWritten,
 		LastAdmissionTurn = lastAdmissionTurn,
+		BrokenDown = brokenDown,
 		CalledTurn = calledTurn,
 		QueueCells = queueCells.ToArray(),
 		QueueEditCount = QueueEditCount,
@@ -507,6 +449,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		called = snapshot.CalledGuest;
 		letMeOnWritten = snapshot.LetMeOnWritten;
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
+		brokenDown = snapshot.BrokenDown;
 		calledTurn = snapshot.CalledTurn;
 		queueCells.Clear();
 		queueCells.AddRange( snapshot.QueueCells );
@@ -681,8 +624,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	{
 		if ( guestId <= 0 || !IsOpen )
 			return QueueJoinResult.Closed;
-		// [APPROX:QUEUE-018] a broken ride (VAR_BROKEN ≠ 0) refuses joins as if closed; the state-10 join checks of 0xeccb0 are traced without a breakdown test, and how a broken ride keeps guests out of state 10 is not — evidence needed: the ride +408 state and the state-6/state-10 handling of a broken ride
-		if ( IsBroken )
+		// [APPROX:QUEUE-018] a ride in state 1 refuses joins as if closed (its open word is 0 then); the PC join gate is not traced, the Mac join offer 0xe03f0 rejects states 1 and 4 (ORACLE.md) — evidence needed: the PC twin of the state-10 join checks
+		if ( IsBrokenDown )
 			return QueueJoinResult.Closed;
 		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
 			return QueueJoinResult.AlreadyQueued;
@@ -843,7 +786,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 		// A breakdown takes precedence over a closed ride: SetState(1) writes VAR_RIDECLOSED = 1 itself, and the original still drains the
 		// queue head first (0xe0aec) instead of emptying it at once.
-		if ( !isOpen() && !IsBroken )
+		if ( !isOpen() && !IsBroken && !IsBrokenDown )
 		{
 			if ( called != 0 )
 			{
@@ -868,16 +811,24 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		lastAdmissionTurn = turn;
 		// [BIN:STP-PPC:0x100E0AEC ride update, states 1, 2 and 4] while the ride is broken (state 1; 4 when condemned) every update removes the head guest from the queue and sends it away (0xdcebc, 0xee804) unless the script has already taken it; the rest wait their turn, so a queue drains one guest per park turn. Static reading (ORACLE.md F15): the dispatch is exercised in the oracle target queue-ride-update
 		// [BIN:STP-PPC:0x100E1864 breakdown noticed] in state 0 the ride update runs the admission (0xe1404) first and only then reads VAR_BROKEN and enters state 1 (4 when the life gauge is 0): SetState(1) runs the head step once, zeroes the pending visitor and writes VAR_RIDECLOSED = 1 with the open word 0 (the oracle target ride-set-state executes it, ORACLE.md F27)
-		// [APPROX:QUEUE-019] OpenTPW keeps no ride state word: a ride is in state 0 while it is open and in state 1 while it is closed and VAR_BROKEN ≠ 0; a queue that is still there when the script clears VAR_BROKEN is turned away at once, the original's ride stays in state 1 and keeps dismissing its head until a SetState(0) caller (0xdad24, 0xde8e4 open, 0xdf4d4 repair, 0xdf90c maintenance off, 0xdfb08 upgrade done) reopens it, and state 4 (life gauge 0) is not told apart — evidence needed: none for the callers (executed), a trace of when the script clears VAR_BROKEN
+		// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] state 0 runs 0x4e14e0 (VAR_BROKEN, script slot 7: SetState(1), or 4 when the life gauge +0x48 truncates to 0); states 1, 2 and 4 run the head step 0x4e0450 and the script dismiss 0x4e1410; nothing in states 1, 2 or 4 reads VAR_BROKEN
+		// [APPROX:QUEUE-019] OpenTPW keeps state 1 in the bridge (state 2, upgrading, is the economy's closed ride, ECON-023): it is left when the ride is opened again, which stands for the SetState(0) callers (repair 0x4df8f0, the open button, an upgrade's end); state 4 (life gauge 0) is not told apart from 1 — evidence needed: none for the dispatch (read), the life gauge in the bridge
+		if ( brokenDown )
+		{
+			if ( IsBrokenDown )
+			{
+				DismissHead();
+				return;
+			}
+			brokenDown = false;
+		}
 		if ( IsBroken )
 		{
+			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too; it is
+			// admitted from only while open. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
 			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 )
-			{
 				CheckAdmission( turn );
-				EnterBrokenState();
-			}
-			else
-				DismissHead();
+			EnterBrokenState();
 			return;
 		}
 		CheckAdmission( turn );
@@ -889,6 +840,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	private void EnterBrokenState()
 	{
+		brokenDown = true;
 		DismissHead();
 		if ( called != 0 )
 			Withdraw();
@@ -974,7 +926,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( !onRide.Remove( guest ) )
 			return;
 		// Host cleanup: do not leave a presentation slot on the previous ride after release.
-		ForEachHeadTable( table => table.Remove( guest ) );
+		Heads?.Remove( guest );
 		hopped.Remove( guest );
 		limbo.RemoveAll( entry => entry.Guest == guest );
 		for ( var index = 0; index < bouncing.Count; index++ )
@@ -988,7 +940,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public void ReleaseAll()
 	{
 		// Host teardown, not a claim about the original script destructor: clear even orphaned head ids.
-		ForEachHeadTable( table => table.Clear() );
+		Heads?.Clear();
 		if ( called != 0 )
 		{
 			var guest = called;

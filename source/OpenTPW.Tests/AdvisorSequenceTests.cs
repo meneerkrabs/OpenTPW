@@ -101,6 +101,69 @@ public class AdvisorSequenceTests
 	}
 
 	[TestMethod]
+	public void TheTenFixedRowsAreImported()
+	{
+		var rows = Enumerable.Range( 16, 14 ).Where( sequence => AdvisorFixedSequences.Row( sequence ).Count > 0 ).ToArray();
+		CollectionAssert.AreEqual( new[] { 16, 17, 21, 22, 23, 25, 26, 27, 28, 29 }, rows, "rows 18-20 and 24 are empty and unused" );
+		CollectionAssert.AreEqual( new[] { 14, 11, 1, 12, 1, 15 }, AdvisorFixedSequences.Row( 22 ).Select( entry => entry.Clip ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 17, 17, 17, 17, 18, 19, 20 }, AdvisorFixedSequences.Row( 17 ).Select( entry => entry.Clip ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 2, 2, 2, 2, 4, 9, 0x11 }, AdvisorFixedSequences.Row( 17 ).Select( entry => entry.Bits ).ToArray(), "the accessory bits (entry >> 16 & 0x7F)" );
+		Assert.AreEqual( 0, AdvisorFixedSequences.Row( -1 ).Count, "a generated response has no row" );
+		var timers = AdvisorFixedSequences.Row( 29 ).Where( entry => entry.IsTimer ).ToArray();
+		Assert.AreEqual( 1, timers.Length );
+		Assert.AreEqual( 1000, timers[0].TimerMilliseconds );
+		Assert.AreEqual( 17000, AdvisorFixedSequences.Row( 28 ).Single().TimerMilliseconds );
+	}
+
+	[TestMethod]
+	public void AFixedSequenceSumsItsClipsAndTheSpanAddsOneSecondAndClip15()
+	{
+		var milliseconds = Enumerable.Repeat( 100u, 20 ).ToArray();
+		milliseconds[4] = 700;   // clip 5
+		milliseconds[10] = 300;  // clip 11
+		milliseconds[14] = 600;  // clip 15
+		var durations = Durations( milliseconds );
+		// Row 21: clip 14 (0), clip 5, clip 11, clip 15.
+		var sequence = AdvisorSequences.Build( 21, 5000, durations, () => throw new InvalidOperationException( "a fixed row draws nothing" ) );
+		CollectionAssert.AreEqual( new[] { 14, 5, 11, 15 }, sequence.Clips.ToArray() );
+		Assert.AreEqual( 700 + 300 + 600, sequence.SumMilliseconds, "the sum is when the last clip ends" );
+		Assert.AreEqual( (uint)(1600 + 1000 + 600), AdvisorSequences.ResponseSpan( sequence, durations ) );
+		Assert.IsNull( sequence.TimerMilliseconds );
+	}
+
+	[TestMethod]
+	public void ATimerEntrySetsTheTimerFromTheClipSumSoFarAndAddsNoClip()
+	{
+		var durations = Uniform( 200 );
+		var sequence = AdvisorSequences.Build( 29, 5000, durations, () => 0 );
+		CollectionAssert.AreEqual( new[] { 17, 17, 17, 17, 18, 19, 20 }, sequence.Clips.ToArray() );
+		Assert.AreEqual( 7 * 200, sequence.SumMilliseconds, "the timer's milliseconds are not part of the sum" );
+		Assert.AreEqual( 6 * 200 + 1000, sequence.TimerMilliseconds, "the clips before the timer plus its 1000 ms" );
+	}
+
+	[TestMethod]
+	public void ASequenceWhoseClipsSumToZeroFallsBackToTheGeneratorKeepingItsTimer()
+	{
+		// Row 28 is a timer only; clips missing from the archives (length 0) do the same for any row.
+		var generated = AdvisorSequences.Generate( 1500, Uniform( 500 ), Script( 0, 0, 1, 2, 3 ) );
+		var sequence = AdvisorSequences.Build( 28, 1500, Uniform( 500 ), Script( 0, 0, 1, 2, 3 ) );
+		CollectionAssert.AreEqual( generated.Clips.ToArray(), sequence.Clips.ToArray() );
+		Assert.AreEqual( generated.SumMilliseconds, sequence.SumMilliseconds );
+		Assert.AreEqual( 17000, sequence.TimerMilliseconds );
+		var missing = AdvisorSequences.Build( 16, 1500, Durations( new uint[20] ), () => 0 );
+		Assert.AreEqual( 15, missing.Clips[^1], "row 16 holds only clip 16; with no length it is generated (which, with no lengths at all, still ends with clip 15)" );
+		CollectionAssert.AreEqual( AdvisorSequences.Generate( 1500, Durations( new uint[20] ), () => 0 ).Clips.ToArray(), missing.Clips.ToArray() );
+	}
+
+	[TestMethod]
+	public void AGeneratedResponseHasNoRow()
+	{
+		var generated = AdvisorSequences.Generate( 2500, Uniform( 1000 ), Script( 9, 4, 2, 6 ) );
+		var built = AdvisorSequences.Build( -1, 2500, Uniform( 1000 ), Script( 9, 4, 2, 6 ) );
+		CollectionAssert.AreEqual( generated.Clips.ToArray(), built.Clips.ToArray() );
+	}
+
+	[TestMethod]
 	public void AnImmediateStartHasTheLipClockTwoHundredMillisecondsBeforeTheRequest()
 	{
 		var start = AdvisorSpeechStart.For( 5000, 16 );

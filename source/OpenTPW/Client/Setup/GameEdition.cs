@@ -78,7 +78,7 @@ public sealed record EditionCapabilities
 	/// <c>Standard.sam</c> lacks 89 of the balance keys the Theme Park World economy reads (measured October 13, 2026);
 	/// the original HUD, front end, advisor and every save, progress and sharing format stay refused.
 	/// </summary>
-	// [APPROX:TPI-903] the slice's capability gates are OpenTPW's honest limits, not traced Theme Park Inc behaviour
+	// [EXT:tpi-capability-gates] the slice's capability gates are OpenTPW's honest limits (a scope decision), not traced Theme Park Inc behaviour
 	public static EditionCapabilities ForThemeParkIncSlice() => new()
 	{
 		Economy = false,
@@ -188,7 +188,7 @@ public static class GameEditions
 	}
 
 	/// <summary>One line for the start-up log: what the slice is and that it is not checked against the original game.</summary>
-	// [APPROX:TPI-903] the slice's stated limits are OpenTPW's honest capability gates, not traced Theme Park Inc behaviour
+	// [EXT:tpi-capability-gates] the slice's stated limits are OpenTPW's honest capability gates (a scope decision), not traced Theme Park Inc behaviour
 	public static string SliceNotice => "experimental Theme Park Inc slice: world, building and guests only; "
 		+ "no economy, staff, advisor, missions, Global Master Save, COS or Theme Park Inc interface; original behaviour is not verified.";
 }

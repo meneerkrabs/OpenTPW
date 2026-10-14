@@ -40,17 +40,11 @@ public sealed partial class ParkHud
 		}
 		SetInfoArm( false );
 		level.CellTool.Cancel();
-		if ( pendingItem != null || level.BuildEntry != null )
-		{
-			pendingItem = null;
-			level.IsPlacing = false;
-			level.BuildEntry = null;
-		}
+		LeaveBuildTool();
 		researchScreen ??= CreateResearchScreen();
 		Stack.Push( researchScreen );
 		researchScreen.Focus( researchScreen.Find( "exit" ) );
-		// [BIN:STP-PPC:0x1015644C drawer message 0x0b] opening the map/research drawer plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)')
-		// [APPROX:AUDIO-007] the sound plays when the research window opens; the original slides a drawer out of the main panel
+		// [BIN:TPW-EXE:0x4a1737 drawer open] opening the map/research drawer (message 0xA) plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)')
 		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
 	}
 
@@ -62,9 +56,9 @@ public sealed partial class ParkHud
 			Stack.Pop();
 		if ( Stack.Top == researchScreen )
 			Stack.Pop();
-		// [BIN:STP-PPC:0x1015644C drawer message 0x10] finishing the drawer's collapse plays cat_ui event 0xC2 (through the play-by-id helper 0x101383F8 at 0x101568DC)
-		// [APPROX:AUDIO-007] the sound plays when the research window closes; the original slides a drawer back into the main panel
-		GameAudio.PlayUi( GameAudio.DrawerCloseEvent );
+		// [BIN:TPW-EXE:0x4a186f drawer close] a close plays cat_ui 0x1C when it starts and 0xC2 when the slide finishes (0x4a1947); OpenTPW has no slide, so both play at once
+		// [EXT:drawer-window] the research screen is a window that opens and closes at once where the original slides a drawer out of the main panel (docs/AUDIO.md; UI register)
+		GameAudio.PlayDrawerClose();
 	}
 
 	private string ResearchItemName( ResearchCategory category )
@@ -139,11 +133,10 @@ public sealed partial class ParkHud
 			screen.Add( new ResearchProgressBar( this, category ) { Id = $"progress{index}",
 				Bounds = cells.Fluid, Anchor = UiAnchor.Center } );
 			Model( $"effortTrack{index}", "effortslidea", slider );
-			// [APPROX:UI-065] Linear 0..100 effort travel across the table's slider rectangle (the original range is SetRange(0,100), 0x4aa6bd). The generic slider's
-			// exact end stops and quantization need an original capture or handler trace.
+			// [BIN:TPW-EXE:0x4aa6bd effort sliders] SetRange(0,100) on the generic slider class: integer value 0..100, a drag position is truncated (0x66afc9), the ball runs linearly across the table's slider rectangle
 			screen.Add( new UiSlider { Id = $"effort{index}", Track = cells.Track,
 				KnobSize = new NVector2( cells.Knob.Width, cells.Knob.Height ), KnobTop = cells.Knob.Y,
-				Steps = () => 101, Value = () => ResearchEconomy?.Research.Effort[(int)category] ?? 0,
+				Steps = () => 101, Truncates = true, Value = () => ResearchEconomy?.Research.Effort[(int)category] ?? 0,
 				Changed = value => SetResearchEffort( category, value ),
 				Bounds = slider, Anchor = UiAnchor.Center } );
 		}
@@ -177,7 +170,7 @@ public sealed partial class ParkHud
 			context.DrawModel( "fluid", 0, bounds );
 			if ( owner.ResearchProgress( category ) is not { } fraction )
 				return;
-			// [APPROX:UI-066] Draw a simple fill within the fluid cell; the original draws no fill but animates the fluid model (0x4a95b0: (p+20)/100 in 16.16, state 3, frame limit 0x30, winding down to 0x20).
+			// [APPROX:UI-066] a simple fill within the fluid cell; the original draws no fill but animates the fluid model (0x4a95b0: (p+20)/100 in 16.16, state 3, frame limit 0x30, winding down to 0x20) — evidence needed: porting the fluid model animation (no further evidence needed)
 			var inset = bounds.Inflate( -bounds.Height * 0.2f );
 			context.Batch.AddRectangle( inset with { Width = inset.Width * fraction }, new RgbaByte( 104, 213, 239, 190 ) );
 		}

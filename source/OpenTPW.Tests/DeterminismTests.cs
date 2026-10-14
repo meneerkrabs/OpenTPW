@@ -179,7 +179,7 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0xCAF8114002723B8CUL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( 0x9F437861FA2E5452UL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]
@@ -204,7 +204,7 @@ public class DeterminismTests
 			var streams = resumed.RandomState;
 			// Move the economy and the script stream away from the save point by drawing, not through the
 			// restore path under test; the guest stream is covered by LoadRestoresEveryStreamDrawnAfterTheSave,
-			// because drawing from it also moves the (unsaved, DET-016) guests.
+			// because drawing from it also moves the (unsaved in this legacy economy-only save) guests.
 			resumed.Economy.Advance( 50_000 );
 			resumed.Scripts.NextScriptSeed();
 			Assert.AreNotEqual( atSave, resumed.Hash );
@@ -239,7 +239,8 @@ public class DeterminismTests
 			park.Sound.Draw();
 			park.Save( path );
 			var saved = park.RandomState;
-			Assert.AreEqual( park.Seed.SoundStream, saved.SoundSeed, "sound draws do not move the chooser seed (0x100118C8 is its only store)" );
+			Assert.AreEqual( park.Sound.Seed, saved.SoundSeed, "the chooser's advanced state is what the save holds (AUDIO-037: the original's chooser is clock-seeded and unsaved)" );
+			Assert.AreNotEqual( park.Seed.SoundStream, saved.SoundSeed, "the draw before the save advanced the chooser (tp.exe 0x6bc84c stores every draw's state)" );
 			for ( var tick = 0; tick < 600; tick++ )
 				park.Guests.Tick( Tick );
 			park.Scripts.NextScriptSeed();
@@ -268,6 +269,7 @@ public class DeterminismTests
 		park.Run( 600 );
 		var before = park.Streams.ComputeStateHash();
 		park.Sound.Draw();
+		Assert.AreNotEqual( park.Seed.SoundStream, park.Sound.Seed, "the draw advanced the chooser" );
 		Assert.AreEqual( before, park.Streams.ComputeStateHash() );
 		Assert.AreEqual( before, new ParkWorldStreams( park.Seed, null, park.Guests, park.Scripts, null ).ComputeStateHash(), "a headless run hashes like a run with sound" );
 	}
@@ -330,7 +332,7 @@ public class DeterminismTests
 			.Concat( world )
 			.SelectMany( path => File.ReadLines( path ).Select( ( line, index ) => (path, line, index) ) ).ToList();
 		Assert.AreEqual( 1, lines.Count( item => IsApprovedCivilTimeProvider( Path.GetRelativePath( source, item.path ), item.line ) ),
-			"Only the exact single TPW-gated provider boundary is approved (VM-902)." );
+			"Only the exact single TPW-gated provider boundary is approved (the host clock input, [EXT:vm-host-time])." );
 		var hits = lines.Where( item => ForbiddenInSimulation.IsMatch( item.line )
 			&& !IsApprovedCivilTimeProvider( Path.GetRelativePath( source, item.path ), item.line ) )
 			.Select( item => $"{Path.GetRelativePath( root.FullName, item.path )}:{item.index + 1}: {item.line.Trim()}" ).ToList();
@@ -444,8 +446,8 @@ public class DeterminismAssetTests
 			var economy = ParkSaveFile.Serialize( park.Economy );
 			Run( 3000 );
 			streams.Scripts.NextScriptSeed();
-			// Since ORACLE-F a draw never stores the sound seed (sound_shared 0x100118C8), so only a reseed moves it.
-			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "sound draws do not move the seed" );
+			// A draw stores the chooser's advanced state (tp.exe 0x6bc84c), and the park saves it so a resume continues the same draws.
+			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "no draw since the save" );
 			streams.Sound.Draw();
 			streams.Sound.Reseed( unchecked(saved.SoundSeed + 1) );
 			var moved = streams.CaptureRandomState();
@@ -490,6 +492,9 @@ public class DeterminismAssetTests
 			Assert.AreEqual( fixedRun, Run( RideScriptWorld.FixedClock ), "a fixed civil time gives the same run" );
 			Assert.AreNotEqual( Run( () => new DateTime( 2000, 1, 1, 3, 0, 0 ) ), Run( () => new DateTime( 2000, 1, 1, 16, 0, 0 ) ),
 				"the hour reaches the world state, so a headless run that pins a hash must fix the clock" );
+			// MIN and SEC are host time too (tp.exe 0x5566FF, 0x55674E), so a two-run comparison with a real clock can flake on them as well.
+			// In this 120 s run the minute and second do not reach the hash (only the hour does).
+			Assert.AreEqual( Run( () => new DateTime( 2000, 1, 1, 3, 10, 20 ) ), Run( () => new DateTime( 2000, 1, 1, 3, 40, 50 ) ) );
 		}
 		finally
 		{

@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>Host terrain inspection camera. No object collision, photography or recording.</summary>
-// [APPROX:UI-932] terrain-sampled eye height, movement and look tuning are host choices, not native camcorder reconstruction.
+// [EXT:camcorder-first-person] the plain C first-person inspection camera stands in for the unported camcorder (the original's C key is the camcorder, shortcut row 16, 0x40c5c0 → 0x481a10, see UI-042); terrain-sampled eye height, movement and look tuning are host choices.
 public sealed class FreeWalkCameraMode : CameraMode
 {
 	public const float EyeHeight = 1.6f, MoveSpeed = 4f, TurnSpeed = 90f;

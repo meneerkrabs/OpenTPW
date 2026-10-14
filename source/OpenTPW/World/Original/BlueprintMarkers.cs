@@ -163,7 +163,8 @@ public sealed class BlueprintMarkers : ModelEntity
 	}
 
 	/// <summary>One textured quad from four original-space corners (u: first→second, v: first→third), both sides facing out.</summary>
-	// [APPROX:BLUEPRINT-002] each face shows its whole texture once and both sides are drawn; the original's per-corner texture coordinates come from a runtime table (0x101ED3D4) rotated by the face's direction — evidence needed: the table's initialiser
+	// [BIN:TPW-EXE:0x0053C3F0 blueprint UV table] the runtime table 0x871EE8 (12-byte entries, u at +0, v at +4) holds the unit square (0,0), (1,0), (0,1), (1,1) in entries 0-3 and (0.5, 0.5) in entry 4; entries 5-8 are the rotating +-0.4 square of the track symbols
+	// [BIN:TPW-EXE:0x0053DF30 blueprint face builder] textures 8-14 (m_link to m_erase) use the rotating set from entry 5, every other texture the unit square from entry 0 (0x53DFE6–0x53DFF2); the corner order follows the direction byte: default (0,1,2,3), 0x40 (1,3,0,2), 0x10 (3,2,1,0), 4 (2,0,3,1) (0x53DFF7–0x53E034), which shows only on a non-uniform texture; the blue and red markers are uniform, so each face shows its whole texture once, as here, and both sides are drawn (no hardware cull)
 	private static void AddFace( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot,
 		System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
 	{

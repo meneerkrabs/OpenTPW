@@ -10,6 +10,9 @@ namespace OpenTPW;
 /// <param name="BankNumber">1-based index into the category's <c>cat_*BANK.map</c> list.</param>
 public readonly record struct SoundSample( uint SampleNumber, uint CumulativeWeight, uint Value, ushort BankNumber, ushort Reserved );
 
+/// <summary>A bank name from a <c>cat_*BANK.map</c> and whether its record carries the Global flag (0x20).</summary>
+public readonly record struct SoundBankName( string Name, bool Global );
+
 /// <summary>A link of a branching sentence: after this sound, the sound <see cref="TargetSound"/> may follow while the event parameter is within [<see cref="MinimumParameter"/>, <see cref="MaximumParameter"/>].</summary>
 public readonly record struct SoundLink( uint TargetSound, ushort Reserved, byte MinimumParameter, byte MaximumParameter );
 
@@ -132,7 +135,14 @@ public sealed class SoundCatalog
 	public SoundEvent? Find( uint id ) => Events.FirstOrDefault( item => item.Id == id );
 
 	/// <summary>Reads a <c>cat_*BANK.map</c>: the bank names (for example <c>Sound\Ambient</c>), in the order sample bank numbers refer to.</summary>
-	public static IReadOnlyList<string> ReadBankNames( byte[] data )
+	public static IReadOnlyList<string> ReadBankNames( byte[] data ) => ReadBankMap( data ).Select( bank => bank.Name ).ToList();
+
+	/// <summary>
+	/// Reads a <c>cat_*BANK.map</c> with each bank's folder flag: <see cref="SoundBankName.Global"/> is bit 0x20 of the record's flag byte
+	/// (the bank lives under the data root's <c>Global</c> folder, not under the category's own folder).
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bff14] the bank-map reader tests the flag byte at record +9 for 0x20; set: the base is the data root plus "Global\" (0x782dd8, 0x6bff1b-0x6bff3d); clear: the category's own folder
+	public static IReadOnlyList<SoundBankName> ReadBankMap( byte[] data )
 	{
 		ArgumentNullException.ThrowIfNull( data );
 		if ( data.Length > MaximumFileBytes || data.Length < HeaderBytes )
@@ -142,13 +152,14 @@ public sealed class SoundCatalog
 			throw new InvalidDataException( $"Sound bank map claims {count} banks." );
 		// [BIN:STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap] 11-byte records (rewritten at load), then per bank a u32 length and the name
 		var position = HeaderBytes + (int)count * 11;
-		var names = new List<string>();
+		var names = new List<SoundBankName>();
 		for ( var index = 0; index < count; index++ )
 		{
 			Require( data, position, 4 );
 			var length = (int)U32( data, position );
 			Require( data, position + 4, length );
-			names.Add( Encoding.Latin1.GetString( data, position + 4, length ).TrimEnd( '\0' ) );
+			var flags = data[Math.Min( data.Length - 1, HeaderBytes + index * 11 + 9 )];
+			names.Add( new SoundBankName( Encoding.Latin1.GetString( data, position + 4, length ).TrimEnd( '\0' ), (flags & 0x20) != 0 ) );
 			position += 4 + length;
 		}
 		if ( position != data.Length )

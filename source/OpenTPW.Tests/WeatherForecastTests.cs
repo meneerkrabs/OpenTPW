@@ -166,13 +166,16 @@ public class WeatherForecastTests
 		Assert.AreEqual( 0, weather.CurrentDay );
 		Assert.AreEqual( 4, weather.DaysOfWarning );
 		Assert.IsNull( weather.Forecast );
-		weather.Step( ParkCalendar.TickAtDay( 3 ) );
-		Assert.AreEqual( 3, weather.CurrentDay );
-		Assert.IsNotNull( weather.Forecast, "day 3 rolls the next quality (the seed's schedule)" );
-		Assert.AreEqual( 3 + 4, weather.ForecastApplyDay, "the forecast applies the warning distance after its roll" );
-		weather.Step( ParkCalendar.TickAtDay( 7 ) );
-		Assert.AreEqual( 7, weather.CurrentDay );
-		Assert.IsNull( weather.Forecast, "day 7 applies it" );
+		weather.Step( ParkCalendar.TickOfTurn( 1 ) );
+		Assert.AreEqual( 0, weather.CurrentDay );
+		Assert.IsNotNull( weather.Forecast, "[BIN:TPW-EXE:0x511f70] lastChanged is 0, so the first update rolls a forecast at once" );
+		Assert.AreEqual( 4, weather.ForecastApplyDay, "the forecast applies the warning distance after its roll" );
+		weather.Step( ParkCalendar.TickAtDay( 4 ) );
+		Assert.AreEqual( 4, weather.CurrentDay );
+		Assert.IsNotNull( weather.Forecast, "the timestamp is the roll's time plus four days, a turn after the start of day 4" );
+		weather.Step( ParkCalendar.TickAtDay( 5 ) );
+		Assert.AreEqual( 5, weather.CurrentDay );
+		Assert.IsNull( weather.Forecast, "day 5 applies it" );
 	}
 
 	[TestMethod]
@@ -213,6 +216,8 @@ public class WeatherForecastTests
 		weather.Step( ParkCalendar.TickAtDay( 5 ) );
 		Assert.IsNotNull( weather.Forecast, "day 5 is still inside the warning window" );
 		weather.Step( ParkCalendar.TickAtDay( 6 ) );
+		Assert.IsNotNull( weather.Forecast, "the timestamp (four days after the posting turn) is a few turns past the start of day 6" );
+		weather.Step( ParkCalendar.TickAtDay( 7 ) );
 		Assert.IsNull( weather.Forecast );
 		Assert.AreEqual( 100, weather.Quality, "the debug forecast applies on its day like a natural one" );
 	}
@@ -222,14 +227,14 @@ public class WeatherForecastTests
 	{
 		var weather = new ParkWeather( Jungle(), 4, 10, 10 );
 		weather.AdvanceTo( 0 );
-		weather.AdvanceTo( ParkCalendar.TickAtDay( 5 ) ); // turn by turn: day 3 rolls the forecast (apply day 7)
-		Assert.AreEqual( 5, weather.CurrentDay );
-		Assert.IsNotNull( weather.Forecast, "the seed's schedule has a forecast pending on day 5" );
+		weather.AdvanceTo( ParkCalendar.TickAtDay( 2 ) ); // turn by turn: the first turn rolls the forecast (applies four days later)
+		Assert.AreEqual( 2, weather.CurrentDay );
+		Assert.IsNotNull( weather.Forecast, "the first update's forecast is pending on day 2" );
 		var snapshot = weather.CaptureSnapshot();
 		var restored = new ParkWeather( Jungle(), 4, 10, 10 );
 		restored.RestoreSnapshot( snapshot );
-		Assert.AreEqual( 5, restored.CurrentDay, "the countdown's 'now' resumes at the saved day, not day 0" );
-		Assert.AreEqual( 7, restored.ForecastApplyDay );
+		Assert.AreEqual( 2, restored.CurrentDay, "the countdown's 'now' resumes at the saved day, not day 0" );
+		Assert.AreEqual( 4, restored.ForecastApplyDay );
 		// The first presentation step after restore reads the true remaining distance, before any turn steps.
 		var state = new WeatherForecastState();
 		var quality = restored.Forecast;

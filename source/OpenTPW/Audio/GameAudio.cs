@@ -15,14 +15,42 @@ public static class GameAudio
 	public const uint ParkMusicEvent = 2;
 	/// <summary>The music parameter's cap (<c>0x101C2448</c>: values above 0x59 become 0x59).</summary>
 	public const int MaximumMusicParameter = 89;
+	/// <summary>The sound the application plays once at start-up (<c>cat_ui</c> 0xD2, submitted flat by the start-up initialisation <c>0x54dcf0</c> at <c>0x54de6a</c>-<c>0x54de7d</c>, right after it registers the global categories).</summary>
+	// [BIN:TPW-EXE:0x54de6a start-up sound] WinMain (0x45a960, call at 0x45abed) runs the start-up init 0x54dcf0, which registers the global categories (0x51eae0) and submits cat_ui event 210 (a one-shot, flags 0x200) flat
+	public const uint StartupEvent = 0xD2;
+	private static bool startupPlayed;
+
+	/// <summary>
+	/// Plays the start-up sound (<see cref="StartupEvent"/>) once per process, when the front end first shows (a real application start;
+	/// a run that loads a level directly never plays it over the park music); null when already played, or when sound or the event is missing.
+	/// </summary>
+	internal static AudioVoice? PlayStartupSound()
+	{
+		if ( startupPlayed || events == null )
+			return null;
+		startupPlayed = true;
+		return StartupVoice = events.Play( Ui, StartupEvent, AudioChannel.Effects );
+	}
+
 	/// <summary>The click every control activation plays (<c>0x10137FD0</c>: a 0x100 message from a control plays <c>cat_ui</c> 0x1F).</summary>
 	public const uint ClickEvent = 0x1F;
 	/// <summary>The error feedback of the buy window and the dialogs (<c>0x10139A40</c>: <c>cat_ui</c> 0x1D; called from the buy window at <c>0x10163AFC</c>/<c>0x10163BFC</c> and the checkbox dialog at <c>0x1013B7A4</c>).</summary>
 	public const uint ErrorEvent = 0x1D;
-	/// <summary>The map/research drawer's open sound (<c>0x1015644C</c> message 0x0b: <c>cat_ui</c> 0x1C).</summary>
+	/// <summary>The map/research drawer's open sound (<c>0x1015644C</c> message 0x0b: <c>cat_ui</c> 0x1C); the PC drawer (<c>0x4a14f0</c>) plays it again when a close starts (message 0xB, <c>0x4a186f</c>).</summary>
 	public const uint DrawerOpenEvent = 0x1C;
 	/// <summary>The map/research drawer's close sound (<c>0x1015644C</c> message 0x10 finishing state 3 plays <c>cat_ui</c> 0xC2 through the play-by-id helper <c>0x101383F8</c> at <c>0x101568DC</c>).</summary>
 	public const uint DrawerCloseEvent = 0xC2;
+	/// <summary>
+	/// The drawer closing: <c>cat_ui</c> 0x1C when the close starts, then 0xC2 when it completes. The PC's drawer window procedure (<c>0x4a14f0</c>) plays 0x1C on message 0xB (<c>0x4a186f</c>)
+	/// and 0xC2 when its slide timer finishes a state-3 close (<c>0x4a1947</c>); OpenTPW has no slide, so the two follow at once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4a186f drawer close] message 0xB sets state 3 (4 when wparam is -1) and plays cat_ui 0x1C; [BIN:TPW-EXE:0x4a1947] the finished state-3 slide (timer 0x80080, about ten 20 ms steps) plays 0xC2, a state-4 close posts 0xB to the parent instead; 0x1C and 0xC2 have no other callers
+	public static void PlayDrawerClose()
+	{
+		PlayUi( DrawerOpenEvent );
+		PlayUi( DrawerCloseEvent );
+	}
+
 	/// <summary>The crowd event (<c>0x100BC210</c>/<c>0x100BC2E0</c>: <c>cat_kids</c> 0x5B, a branching sentence).</summary>
 	public const uint CrowdEvent = 0x5B;
 	/// <summary>The crowd parameter's cap (<c>0x101C2498</c> and <c>0x100BC238</c>: values above 100 become 100).</summary>
@@ -54,7 +82,8 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x10070DE0 path lay click] cat_ui 101 under tool mode 1 or 3 with the latch clear; the PC doc's 0x005271B7 is a lead (packed PC exe)
 	public const uint PathLayEvent = 101;
 	/// <summary>The path tool's refused click: <c>cat_ui</c> 175 (Mac <c>0x10073D1C</c>, reached behind the latch and a byte test; the mapping to a refusal is inferred from the fork).</summary>
-	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [APPROX:AUDIO-022] whether it is the refusal of a commit or a preview is not fully read
+	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [BIN:TPW-EXE:0x524a80] the click handler 0x52496e plays cat_ui 0xAF at (x*10, 0, z*10) of the clicked cell (0x524a80-0x524aae) before its tool switch, while tool 0x38 is off, the refusal latch (0x816d48) is set, no line drag is running (0x785a2c == 0) and the mouse has moved since a hover (0x8186d8)
+	// [APPROX:AUDIO-022] the original plays it on any click while the hovered line is refused (validator 0x535670 = 1, or cost > money); OpenTPW plays it on its own refused commit result, at the clicked cell
 	public const uint PathRefusedEvent = 175;
 	/// <summary>
 	/// A queue joined to a path: <c>cat_ui</c> 139 at the cell. The queue tool's commit plays it at the clicked end when the
@@ -82,13 +111,16 @@ public static class GameAudio
 	private static SoundSentence? globeAmbience;
 	private static string? lobbyLevelBeforeGlobe;
 	private static SoundSentence? rain;
+	private static SoundSentence? weatherRain;
+	private static List<SoundSentence>? placedSentences;
 	private static long staffTurn = -1;
 	private static DeterministicRandom staffRandom = new( 1 );
-	private static DeterministicRandom crowdRandom = new( 1 );
 	private static bool staffVoiceLogged;
 	private static IReadOnlyList<PlacedSound>? placedAmbients;
 
 	public static bool Enabled { get; set; } = true;
+	/// <summary>The start-up sound's voice (<see cref="StartupEvent"/>), played once when the service first starts; null when <c>cat_ui</c> or the event is missing.</summary>
+	public static AudioVoice? StartupVoice { get; private set; }
 	public static AudioMixer? Mixer => events?.Mixer;
 	public static SoundEventSystem? Events => events;
 	public static SoundCategory? Ui { get; private set; }
@@ -120,7 +152,7 @@ public static class GameAudio
 		AudioApproximations.LogOnce();
 		var mixer = AudioMixer.Open();
 		AudioMixer.Current = mixer;
-		// Clock seed like the original's LbTime_GetClock; it only colours front-end sounds, since EnterPark reseeds from the park's world seed.
+		// Clock seed like the original's start-up seeding (tp.exe 0x72e09c, QueryPerformanceCounter); it only colours front-end sounds, since EnterPark reseeds from the park's world seed (AUDIO-037).
 		events = new SoundEventSystem( mixer, (uint)Environment.TickCount );
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
 		// [BIN:STP-PPC:0x100BC6F0 sound manager] global categories registered at sound-manager offsets 12 (cat_ui), 20 (cat_speech), 0 (cat_ambient), 8 (cat_rides), 4 (cat_kids), 16 (cat_staff)
@@ -167,8 +199,6 @@ public static class GameAudio
 		if ( seed is uint value )
 			events!.Reseed( value );
 		staffRandom = new DeterministicRandom( events!.Seed ^ 0x53544146u );
-		// [APPROX:AUDIO-035] crowd sample choices advance an independent host stream seeded from the sound seed XOR ASCII CROW; the original source of variation is unverified, and this presentation stream is not persisted
-		crowdRandom = new DeterministicRandom( events.Seed ^ 0x43524F57u );
 		LevelMusic = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Music", "cat_music" );
 		LevelSpeech = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Speech", "cat_speech" );
 		// [BIN:STP-PPC:0x100BC864 level registration] the level's cat_ambient and cat_rides registered at sound-manager offsets 24 and 28
@@ -190,6 +220,7 @@ public static class GameAudio
 		LevelRides = null;
 		SetCrowd( 0 );
 		SetRain( 0 );
+		SetWeatherRain( false );
 		StopPlacedAmbients();
 		events?.StopChains();
 		events?.Forget( leftMusic, leftSpeech, leftAmbient, leftRides );
@@ -204,9 +235,8 @@ public static class GameAudio
 	/// are counted, not played.
 	/// </summary>
 	// [DATA:levels/*/scape.omp] type 1 records: word 1 the category (nought: global cat_ambient), word 2 the effect, words 3-5 the place, word 6 the range (x2/1024)
-	// [LEAD:maexah/OpenTPW docs/exe/park.md "The land's own sounds" and World/Park/ParkPlacedObjects.cs] the hand-off to FUN_0051c130 with the place and range; PC addresses unverifiable (packed exe)
-	// [APPROX:AUDIO-021] the record's place is in park units and the listener's place in the same sound units — evidence needed: the Mac listener and placement units traced together
-	// [APPROX:AUDIO-020] a placed effect that is a sentence (not a one-shot) plays its first sound once — evidence needed: the placed sentence's player on the Mac
+	// [BIN:TPW-EXE:0x550e00 scape.omp loader] type 1 records go to the placed submit 0x51c130(0, global or level ambient, effect, x/1024, y/1024, z/1024, range*2/1024), each coordinate divided toward zero (0x550f1c-0x550f4d): the same play message as 0x51bfc0 plus a range, so the library picks its player from the event flags and a sentence plays as a positioned sentence; the returned handle is discarded; type 3 records submit 0x51bfc0 and then bind a rectangle (0x51c5d0)
+	// [BIN:TPW-EXE:0x54f8f6 units] placements share the int world units of every submit (cell*10 for tool sounds, footprint*10 for screams, scape words /1024 truncated toward zero, range*2/1024) with the listener's place
 	public static void StartPlacedAmbients( string level )
 	{
 		StopPlacedAmbients();
@@ -215,6 +245,7 @@ public static class GameAudio
 			return;
 		var file = new PlacedObjectsFile( FileSystem.ReadAllBytes( path ) );
 		var voices = new List<PlacedSound>();
+		var sentences = new List<SoundSentence>();
 		var type3 = 0;
 		foreach ( var record in file.Records )
 		{
@@ -227,18 +258,34 @@ public static class GameAudio
 				continue;
 			var category = record.Category == 0 ? Ambient : LevelAmbient;
 			var (x, height, z) = record.SoundPlace;
+			var place = new Vector3( x, height, z );
+			var range = record.Range > 0 ? record.Range : (float?)null;
+			// A placed sentence plays as a positioned sentence for the park's lifetime; the placed submit's handle is discarded (nothing stops it but the park's end).
+			if ( category?.Catalog.Find( (uint)record.Sound ) is { Player: not SoundEventPlayer.OneShot } )
+			{
+				if ( events.StartSentence( category, (uint)record.Sound, AudioChannel.Effects, null, place, range ) is { } sentence )
+					sentences.Add( sentence );
+				continue;
+			}
 			// Each starts once its sample is decoded, so the park's first frame does not wait for them (docs/BROWSER-PERFORMANCE.md).
-			var voice = events.PlayAtWhenDecoded( category, (uint)record.Sound, AudioChannel.Effects, new Vector3( x, height, z ), record.Range > 0 ? record.Range : null );
+			var voice = events.PlayAtWhenDecoded( category, (uint)record.Sound, AudioChannel.Effects, place, range );
 			if ( voice != null )
 				voices.Add( voice );
 		}
 		placedAmbients = voices;
-		Log.Trace( $"Sound: {level} placed ambients {voices.Count} starting, {type3} rectangle sounds not played (scape.omp type 3)." );
+		placedSentences = sentences;
+		Log.Trace( $"Sound: {level} placed ambients {voices.Count} starting, {sentences.Count} placed sentences, {type3} rectangle sounds not played (scape.omp type 3)." );
 	}
 
 	/// <summary>Stops the land's own ambient voices (the level's <c>scape.omp</c> records).</summary>
 	public static void StopPlacedAmbients()
 	{
+		if ( placedSentences != null )
+		{
+			foreach ( var sentence in placedSentences )
+				sentence.Stop();
+			placedSentences = null;
+		}
 		if ( placedAmbients != null )
 		{
 			foreach ( var voice in placedAmbients )
@@ -307,7 +354,7 @@ public static class GameAudio
 	}
 
 	/// <summary>The enter-park sound: <c>cat_globallobbysfx</c> 4, flat, as the camera flies into the island.</summary>
-	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat; [APPROX:UI-942] its game-type 2 check is not reproduced
+	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat, except when the game type that follows is 2 (Instant Action; FrontEndMenu.EnterParkSoundPlays; Mac-traced, the PC enter action was not checked)
 	public static void PlayEnterPark()
 	{
 		var voice = events?.Play( GlobalLobbySfx, EnterParkEvent, AudioChannel.Effects );
@@ -356,7 +403,7 @@ public static class GameAudio
 		{
 			if ( crowd == null )
 			{
-				crowd = events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects, () => (uint)crowdRandom.Next( 1 << 16 ) );
+				crowd = events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects );
 				if ( crowd != null )
 					Log.Trace( $"Sound: crowd sentence started ({guestsNearCamera} guests within {GameFlow.CrowdRadiusCells} cells of the camera)." );
 			}
@@ -380,11 +427,11 @@ public static class GameAudio
 	/// The rain sentence: starts <c>cat_ambient</c> 0x21 when the level rises above zero, follows the level as the
 	/// sentence's parameter (the branching links pick the heavier sections), and stops when it returns to zero.
 	/// The original's level setter starts, updates and stops one global rain voice this way; the weather thing also
-	/// starts a second, unmodulated voice of its own that OpenTPW does not reproduce.
+	/// starts a second, unmodulated voice of its own (<see cref="SetWeatherRain"/>).
 	/// </summary>
 	// [BIN:STP-PPC:0x100BC388 rain level] above 0 the global rain voice (cat_ambient 0x21, submitted flat) is started once and given parameter 8 = the level; 0 stops it with 0x100BBA58
 	// [BIN:STP-PPC:0x10103394 level source] the level is the weather thing's current drop count × 100 / MaxRaindrops (the Mac's rain tick; the fork's +0x34 target reading is refuted)
-	// [APPROX:AUDIO-015] only the level-driven rain voice is built; the weather thing's own +0x54 voice (0x10103C4C mode 0) is not — whether the original's second voice is audible is not established
+	// [APPROX:AUDIO-015] the thing's own flat voice (SetWeatherRain) is built beside the level-driven one while it rains; whether the library lets two instances of one event sound (a per-event instance or priority limit) is not traced
 	public static void SetRain( int level )
 	{
 		if ( events == null )
@@ -412,6 +459,39 @@ public static class GameAudio
 		}
 	}
 
+	/// <summary>
+	/// The weather thing's own rain voice: <c>cat_ambient</c> 0x21, flat and with no parameter, started while the weather mode is rain and stopped in snow or clear weather. It sounds
+	/// beside the level-driven voice of <see cref="SetRain"/>, which keeps following the drop count in every weather (snow included) until the drops reach 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5131f0 weather mode setter] mode 0 (rain) submits cat_ambient 0x21 (0x51327c) with no parameter into the thing's +0x54 (mRainSoundHandle, saved); mode 1 (snow) and mode 2 (clear) stop it
+	// [BIN:TPW-EXE:0x512a7f level rain voice] the level-driven voice 0x51e830 (parameter 8) is fed every tick from the current drops * 100 / MaxRaindrops, also in snow
+	public static void SetWeatherRain( bool raining )
+	{
+		if ( events == null )
+			return;
+		if ( raining )
+		{
+			if ( weatherRain == null )
+			{
+				weatherRain = events.StartSentence( Ambient, RainEvent, AudioChannel.Effects );
+				if ( weatherRain != null )
+					Log.Trace( "Sound: the weather's own rain voice started (cat_ambient 0x21, flat)." );
+			}
+		}
+		else if ( weatherRain != null )
+		{
+			weatherRain.Stop();
+			weatherRain = null;
+			Log.Trace( "Sound: the weather's own rain voice stopped (snow or clear)." );
+		}
+	}
+
+	/// <summary>The weather thing's own rain voice while it rains (<see cref="SetWeatherRain"/>).</summary>
+	public static SoundSentence? WeatherRain => weatherRain;
+
+	/// <summary>The level-driven rain voice (<see cref="SetRain"/>).</summary>
+	public static SoundSentence? RainVoice => rain;
+
 	/// <summary>Plays the thunder one-shot at a strike's position (the original passes the top of the last bolt, height 300).</summary>
 	// [BIN:STP-PPC:0x101034C8-0x10103518 thunder submit] when the weather thing's thunder countdown (+0x44) reaches 0, cat_ambient 0x20 is submitted at the last lightning location (+0x48..+0x50)
 	public static AudioVoice? PlayThunder( Vector3 position )
@@ -430,7 +510,7 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x100ACA38 scream event] band 0 plays nothing; 1 plays cat_kids 71; 2-3 play 72 (negative bands too); 4-7 play 73; 8 and above play 74
 	// [BIN:STP-PPC:0x100ACB7C scream parameter] parameter = (level + speed) / 2 clamped to 0..100 (signed shift); the speed is the ride VM's word at +192, default 50 (0x100B3154, 0x100B318C)
 	// [BIN:STP-PPC:0x100B19DC refusal] a ride already holding a scream handle refuses: the engine logs "Started screaming without stopping first." and overwrites the handle with 0, so the held chain screams on unreferenced
-	// [APPROX:AUDIO-032] the scream's place is the ride's box middle in the original (0x100AC71C, midpoints of two floats and the object's height at +68); OpenTPW plays it flat — evidence needed: the box-middle mapping onto OpenTPW's ride objects
+	// [BIN:TPW-EXE:0x551130 STARTSCREAM submit] the held scream is positioned: cat_kids 0x47-0x4A at (x, y, z) with parameter 6 = clamp((a + b) / 2, 0, 100); the place is the ride's footprint middle (0x555edb -> 0x551130, SINGLESCREAM 0x555f1b -> 0x556af0 -> 0x551320; 0x466b70 reads the footprint rectangle at object +0xC0/+0xC4, scaled x10)
 	// [BIN:TPW-EXE:0x5516b0 script speed word] the speed word is the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; default 50 at 0x558c3c), the same short the script loop pushes to the ride every pass
 	public static SoundChain? StartScream( Func<SoundChain?> held, int band, int level, Vector3? position, int scriptSpeed = 50 )
 	{
@@ -456,8 +536,7 @@ public static class GameAudio
 	public static int ScreamParameter( int level, int scriptSpeed = 50 ) => Math.Clamp( (level + scriptSpeed) / 2, 0, 100 );
 
 	/// <summary>
-	/// A ride script's <c>SINGLESCREAM</c>: the original places it at the ride's box middle; the host plays it flat
-	/// while that mapping is missing (AUDIO-032). A non-negative second operand takes
+	/// A ride script's <c>SINGLESCREAM</c>: placed at the ride's footprint middle (<paramref name="position"/>; flat only for a runtime without a placement). A non-negative second operand takes
 	/// the 4×4 grid (the band's row crossed with (level + speed) / 50 clamped to 0..3); a negative one picks on the
 	/// band alone. The second operand is read as a short, so the corpus's literal 65535 is −1.
 	/// </summary>
@@ -508,7 +587,7 @@ public static class GameAudio
 	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn with an independent host stream.
 	/// </summary>
 	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer handler draws the world random at each walking/idle turn and plays at (draw & 0xF) == 0 — the gate is traced for all roles (0x100D5EAC, 0x100D6434, 0x100D9BAC, 0x100D9F10, 0x100D2DDC, 0x100D2E44, 0x100D4EF0, 0x100D4E18, 0x100F0460, 0x100F0630)
-	// [APPROX:AUDIO-024] only without a staff world (in a level every role's state machine draws its voices, PlayStaffVoices), the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the other roles' state machines (their handlers' turn boundary and world draw order)
+	// [EXT:staff-voice-fallback] the original always has staff state machines, so voices without a staff world are OpenTPW's own mode: the turn is the park turn, draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, walking is the travelling flag; in a level every role's state machine draws its voices (PlayStaffVoices) from the world stream (the PC draws from the shared world LCG 0x516330, docs/DETERMINISM.md)
 	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn, bool worldDrawsVoices = false )
 	{
 		if ( events == null || turn == staffTurn )
@@ -566,6 +645,12 @@ public static class GameAudio
 		Log.Trace( $"Sound: path tool cat_ui {eventId} {(voice == null ? "not available" : "played")}." );
 	}
 
+	/// <summary>Where a cell's sounds play: the original submits them at (x*10, 0, z*10) (a cell is ten units, height 0).</summary>
+	public static Vector3 CellSoundPosition( int x, int y ) => new( x * 10, 0, y * 10 );
+
+	/// <summary>The path tool's refused click at the clicked cell (<see cref="PathRefusedEvent"/>, <c>cat_ui</c> 175 at (x*10, 0, z*10); tp.exe <c>0x524a80</c>).</summary>
+	public static void PlayPathRefused( int cellX, int cellY ) => PlayUiAt( PathRefusedEvent, CellSoundPosition( cellX, cellY ) );
+
 	/// <summary>A <c>cat_ui</c> sound at a park position: the queue joining a path (<see cref="QueueJoinEvent"/>) and the backtrack (<see cref="BacktrackEvent"/>).</summary>
 	public static void PlayUiAt( uint eventId, Vector3 position )
 	{
@@ -622,7 +707,8 @@ public static class GameAudio
 	/// level category without the event, in the global category of the same name. Original scripts rely on the fallback
 	/// (<c>incagod.RSE</c> plays <c>EVENT 3 id 43</c>, which only the global <c>cat_rides</c> has).
 	/// </summary>
-	// [APPROX:AUDIO-011] the level-to-global category fallback mirrors the bank fallback (AUDIO-002); the sound library's own fallback rule is not traced
+	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for a null category)
+	// [APPROX:AUDIO-011] OpenTPW falls back from a level category without the event to the global category of the same name (incagod.RSE's EVENT 3 id 43 exists only in the global cat_rides); whether the library's own lookup resolves a missing id elsewhere is not traced
 	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId )
 	{
 		var category = RseEventCategory( type );
@@ -656,16 +742,17 @@ public static class GameAudio
 	/// </summary>
 	// [BIN:STP-PPC:0x100B1F78 REPAIREFFECT show] the repair-start path calls the cat_kids submit family (0x100ACC24; the traced call selects event 75, families up to 90 by the object's repair level)
 	// [BIN:STP-PPC:0x100B1E60 REPAIREFFECT hide] hiding plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
-	// [APPROX:AUDIO-008] the repair-start event stays 75 (family 1, index 0); the original picks among 75–90 by the object's repair-level field (+20) and two float operands — evidence needed: the repair-level field's source in the object runtime
+	// [BIN:TPW-EXE:0x55635f REPAIREFFECT 1] with more than five operands it calls 0x551320(band = [[vm+0x1c]+0x14], 1, 1, x, y, z) at the object's position (0x556a80): index (a + b) / 50 capped at 3 is 0 here, and the owner object's band word +0x14 picks the family (0 silent, 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87; 0x551351-0x5514f7)
+	// [APPROX:AUDIO-008] OpenTPW has no band word on its ride objects, so the show path uses band 1 (event 75); the field's meaning in the original is not traced
 	public static void PlayRepairEffect( int show ) => PlayRepairEffect( show, null );
 
-	/// <summary>Existing show path, or the hide pair at a validated sound-space origin; returns submitted voices for owner cleanup.</summary>
+	/// <summary>The show sound (<c>cat_kids</c> 75) or the hide pair at a validated sound-space origin (the object's place; flat without one); returns submitted voices for owner cleanup.</summary>
 	internal static (AudioVoice? First, AudioVoice? Second) PlayRepairEffect( int show, Vector3? position )
 	{
 		if ( events == null )
 			return (null, null);
 		if ( show != 0 )
-			return (events.Play( Kids, RepairStartEvent, AudioChannel.Effects ), null);
+			return (position == null ? events.Play( Kids, RepairStartEvent, AudioChannel.Effects ) : events.PlayAt( Kids, RepairStartEvent, AudioChannel.Effects, position.Value ), null);
 		var first = position == null ? events.Play( Rides, RepairStopEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairStopEvent, AudioChannel.Effects, position.Value );
 		try
 		{
@@ -710,13 +797,12 @@ public static class GameAudio
 	}
 
 	/// <summary>
-	/// Places the listener for the frame: the host follows the fork's proposed camera eye/target midpoint,
-	/// whose exact mapping is not independently verified. The place is given in the
+	/// Places the listener for the frame (the caller picks the eye or the eye/target midpoint with <see cref="ListenerPlace"/>, as
+	/// the original's park loop does). The place is given in the
 	/// engine's coordinates (X/Y ground, Z up) and moved into the original's sound units (five sound units per
 	/// engine unit at model scale 0.2), undoing the heightfield's centering for imported parks.
 	/// </summary>
-	// [LEAD:maexah/OpenTPW docs/exe/audio.md "The listener", PC 0x0054F9E4] camera eye/target midpoint; packed PC exe prevents local verification and the prior nine-digit Mac address was malformed and is withdrawn
-	// [APPROX:AUDIO-021] the camera midpoint follows the fork's listener lead; the Mac listener's exact position and placement units are not traced together
+	// [BIN:TPW-EXE:0x54f8f6 listener] the park loop sets the listener through 0x51c1d0: when the camera-mode byte 0x790ab0 has bits 0x16 the listener is the camera position (0x7909c0..c8); otherwise it is pos - (pos - target) * 0.5 (0x700f88) with the target at 0x790ab8..c0; the orientation vectors are 0x7909a0.. and 0x7909b0..
 	public static void UpdateListener( System.Numerics.Vector3 ear, System.Numerics.Vector3 forward, ModelHeightfield? heightfield = null )
 	{
 		const float soundUnitsPerEngineUnit = 1f / OriginalParkPlacement.ModelScale;
@@ -725,6 +811,15 @@ public static class GameAudio
 			new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit ),
 			new Vector3( forward.X, 0, forward.Y ) );
 	}
+
+	/// <summary>
+	/// The listener's place for a camera: the eye in the camera modes whose byte <c>0x790ab0</c> has bits 0x16 (OpenTPW's free-walk camera), otherwise the midpoint of
+	/// eye and target.
+	/// </summary>
+	// [BIN:TPW-EXE:0x54f915 listener mode test] test 0x16, [0x790ab0]: set takes the eye (0x54f921-0x54f958), clear the midpoint (0x54f965-0x54f9e4)
+	// [EXT:listener-eye-mode] OpenTPW's mapping of the original's camera-mode bits 0x16 to its camera modes: the free-walk camera (eye heard); the orbiting park camera hears the midpoint
+	public static System.Numerics.Vector3 ListenerPlace( System.Numerics.Vector3 eye, System.Numerics.Vector3 target, bool eyeMode )
+		=> eyeMode ? eye : eye - (eye - target) * 0.5f;
 
 	/// <summary>The original's sound units of an engine place (X/Y ground, Z up): x/z stay ground, the engine's Z becomes the sound height, × 5 at the model scale 0.2.</summary>
 	public static Vector3 SoundPosition( System.Numerics.Vector3 engine ) =>

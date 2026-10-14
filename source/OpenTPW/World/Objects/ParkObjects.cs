@@ -84,7 +84,7 @@ public sealed class ParkObjects
 	private readonly int scriptKey;
 
 	/// <param name="seed">The park's world seed: object script seeds and the script world's stream derive from it.</param>
-	/// <param name="civilClock">The civil time the objects' scripts read (YEAR to HOUR); null is the host clock, as in the game.</param>
+	/// <param name="civilClock">The civil time the objects' scripts read (YEAR to SEC); null is the host clock, as in the game.</param>
 	public ParkObjects( ObjectCatalog catalog, IParkGrid grid, WorldSeed? seed = null, Func<DateTime>? civilClock = null )
 	{
 		Catalog = catalog;

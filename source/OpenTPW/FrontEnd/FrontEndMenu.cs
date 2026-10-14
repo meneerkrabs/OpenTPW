@@ -129,7 +129,7 @@ public sealed partial class FrontEndMenu
 		return screen;
 	}
 
-	// [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow
+	// [EXT:no-player-profiles] OpenTPW has no player profiles, so Game Mode is asked on every park entry and each entry starts a new park. The original keeps the mode per player (STP-PPC 0x1015D220/0x1013741C): [BIN:TPW-EXE:0x550ca0 GameType] derives it from bits 0x2000000 (2) and 0x1000000 (1) of the flags word 0x7a1a8c, which a front-end toggle (0x4bbf63..0x4bbf9f) sets, and resumes the player's per-theme autosave (path pieces "save" 0x747a2c, "users" 0x747a3c, "autosave" 0x747a58); a design decision
 	public void ShowGameMode()
 	{
 		var screen = new ProgressChoiceScreen( "gameMode" );
@@ -149,7 +149,7 @@ public sealed partial class FrontEndMenu
 				Id = entry.Id,
 				Text = () => strings[entry.Label],
 				Help = strings.Help( entry.Help ),
-				Clicked = () => { if ( screen.TryActivate( Stack ) ) actions.StartPark( Selected, entry.Mode ); },
+				Clicked = () => { if ( screen.TryActivate( Stack ) ) { PlayEnterPark( entry.Mode == GameMode.InstantAction ); actions.StartPark( Selected, entry.Mode ); } },
 				Bounds = new UiRect( window.X + 150, window.Y + 240 + index * 150, window.Width - 450, 120 ),
 				Anchor = UiAnchor.Center
 			} );
@@ -178,7 +178,7 @@ public sealed partial class FrontEndMenu
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.LoadPark] );
 		if ( entries.Count == 0 )
 			screen.Add( new UiLabel { Id = "empty", Text = () => strings.Extra( OpenTpwText.NoSavedParks ), Align = UiAlign.Center, Bounds = new UiRect( window.X + 100, window.Y + 200, window.Width - 400, 80 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-934] eight-row scroll viewport and selection/activation controls are host UI; native Load navigation is not qualified.
+		// [EXT:load-chooser] the eight-row scroll viewport and the selection/activation controls are host UI; there is no original rule to match
 		var parks = entries.ToArray();
 		var list = screen.Add( new UiScrollList
 		{
@@ -189,7 +189,8 @@ public sealed partial class FrontEndMenu
 			Selected = parks.Length == 0 ? -1 : 0,
 			Enabled = parks.Length != 0,
 			Visible = parks.Length != 0,
-			RowActivated = index => { if ( screen.TryBeginActivation() ) load( parks[index] ); },
+			ClicksOnActivate = false,
+			RowActivated = index => { if ( screen.TryBeginActivation() ) { GameAudio.PlayUi( GameAudio.ClickEvent ); load( parks[index] ); } },
 			RowHeight = 90,
 			Margin = 10,
 			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 360, 740 ),

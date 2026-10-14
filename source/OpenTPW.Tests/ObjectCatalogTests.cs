@@ -506,6 +506,9 @@ public class ObjectCatalogCorpusTests
 		Assert.AreEqual( ("_snake_1", 1, "Snake", "Slither"), (snake.ArchiveName, snake.BonusNumber, snake.SettingsName, snake.DisplayName) );
 		Assert.AreEqual( "Rutschbahn", BonusNames.Read( snake, "German" ) );
 		Assert.AreEqual( "Slither", BonusNames.Read( snake, "Klingon" ), "unknown languages fall back to English" );
+		// [BIN:TPW-EXE:0x00413600 object text] the sign lines come from the selected language's file only; no file means no lines (ObjectSigns then draws the display name; the original's NULL-line handling is untraced)
+		Assert.IsNotNull( BonusNames.ReadSignLines( snake, "German" ) );
+		Assert.IsNull( BonusNames.ReadSignLines( snake, "Klingon" ), "the sign lines do not fall back to English" );
 		Assert.IsTrue( snake.HasQueue, "bonus rides use the game's Rides.sam defaults" );
 	}
 }

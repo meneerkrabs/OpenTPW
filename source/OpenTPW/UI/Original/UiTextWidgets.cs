@@ -67,6 +67,15 @@ public interface IUiRowList
 	int RowAt( UiCanvas canvas, System.Numerics.Vector2 point );
 	void Select( int index );
 	void Scroll( int rows );
+	/// <summary>Whether moving the pointer over a row selects it (list attribute 0x80, tp.exe 0x6656a0).</summary>
+	bool HoverSelects => false;
+	/// <summary>The row under the pointer (-1: none) for lists that highlight on hover. Hovering never changes the selection, so a button beside the list cannot retarget while the pointer travels to it.</summary>
+	void Hover( int index ) { }
+	/// <summary>
+	/// A completed click on row <paramref name="index"/> (<paramref name="left"/>: the left button, otherwise the right one); true when the list
+	/// handled it. False leaves the screen's default: a click selects, a second click on the selected row activates, a right click backs out.
+	/// </summary>
+	bool RowClicked( int index, bool left ) => false;
 }
 
 /// <summary>An element that follows the mouse while it is held (slider ball, scroll bar).</summary>
@@ -98,6 +107,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
+	/// <summary>Whether an activation plays the control click before <see cref="RowActivated"/>; off for an owner that may refuse and clicks itself.</summary>
+	public bool ClicksOnActivate { get; set; } = true;
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
 	public override bool Focusable => Visible && Enabled;
@@ -133,8 +144,12 @@ public sealed class UiScrollList : UiElement, IUiRowList
 
 	public override void Activate()
 	{
-		if ( Selected >= 0 && Selected < Rows().Count )
-			RowActivated?.Invoke( Selected );
+		if ( Selected < 0 || Selected >= Rows().Count || RowActivated == null )
+			return;
+		// [BIN:TPW-EXE:0x485780 UI message hook] a row activation is a control message like any other, so it clicks (unless the owner clicks itself once its activation is accepted)
+		if ( ClicksOnActivate )
+			GameAudio.PlayUi( GameAudio.ClickEvent );
+		RowActivated( Selected );
 	}
 
 	/// <summary>Row index under <paramref name="point"/> (framebuffer pixels), or -1.</summary>

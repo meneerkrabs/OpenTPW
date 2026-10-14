@@ -1,5 +1,20 @@
 namespace OpenTPW;
 
+/// <summary>The staff's own thought ids (tp.exe <c>0x0050BE80</c> callers in <c>0x00506A40</c>, <c>0x005056E0</c> and <c>0x00506F30</c>); the guests' THOUGHTS table ends at 17.</summary>
+public static class StaffThoughts
+{
+	/// <summary>Happiness byte above 97, one gate pass in sixteen (0x00506CF4).</summary>
+	public const int VeryHappy = 18;
+	/// <summary>Happiness byte at most 10 (0x00506CCD).</summary>
+	public const int Unhappy = 19;
+	/// <summary>Energy at most RestLevel: off to rest (0x00506B50).</summary>
+	public const int Tired = 20;
+	/// <summary>Walking out to strike, state 4 (0x00505709).</summary>
+	public const int Strike = 21;
+	/// <summary>No reachable cell of the patrol area in 30 tries (0x0050701F).</summary>
+	public const int NoDestination = 22;
+}
+
 /// <summary>
 /// The guests' thoughts as tp.exe sets them: the pick of the needs phase (<c>0x004FC8A0</c>) and the thought object's bubble (<c>0x0050BE80</c>), which
 /// shows a thought for 12 park turns and lets a new bubble in only after a gap that depends on the new thought.

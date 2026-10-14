@@ -159,9 +159,20 @@ public class RideHeadSpaceTests
 		script.Advance( Tick );
 		Assert.AreEqual( 1, bridge.Heads!.Hung().Count( x => x.Visitor == 7 ) );
 		Assert.AreEqual( 0, bridge.Heads.Hung().Count( x => x.Visitor == 77 ), "the root's table does not take the child's rider" );
-		Assert.AreEqual( 2, bridge.HeadTables.Count() );
+		Assert.AreEqual( 1, bridge.ChildHeadTableCount );
 		Assert.AreEqual( 2, bridge.HungHeads().Count() );
-		Assert.AreEqual( 1, bridge.HeadTables.Last().Hung().Count( x => x.Visitor == 77 ) );
+		Assert.IsTrue( bridge.HungHeads().Any( x => x.Visitor == 77 ) );
+		Assert.IsTrue( bridge.ChildHeadsOccupied(), "a snapshot must refuse while a child holds a head" );
+		var withChild = new StateHasher();
+		bridge.AddCanonicalState( withChild );
+		// Stopping (or replacing, or removing) the child takes its table and its heads down.
+		script.RemoveChild();
+		Assert.AreEqual( 0, bridge.ChildHeadTableCount );
+		Assert.IsFalse( bridge.ChildHeadsOccupied() );
+		CollectionAssert.AreEqual( new[] { 7 }, bridge.HungHeads().Select( x => x.Visitor ).ToArray() );
+		var without = new StateHasher();
+		bridge.AddCanonicalState( without );
+		Assert.AreNotEqual( withChild.Value, without.Value );
 		bridge.ReleaseAll();
 		Assert.IsFalse( bridge.HungHeads().Any() );
 	}

@@ -104,6 +104,17 @@ public sealed class RideHeadSpace
 		}
 	}
 
+	/// <summary>True when any slot holds a visitor.</summary>
+	internal bool HasVisitors => Array.Exists( visitors, visitor => visitor != 0 );
+
+	/// <summary>Appends <see cref="Hung"/> to a caller-owned list.</summary>
+	internal void AppendHung( List<(int Visitor, int Node)> into )
+	{
+		for ( var slot = 0; slot < visitors.Length; slot++ )
+			if ( visitors[slot] != 0 && nodes[slot] >= 0 )
+				into.Add( (visitors[slot], nodes[slot]) );
+	}
+
 	/// <summary>ADDHEAD: a random free slot takes the visitor. Returns the slot, or -1 when the visitor is 0 or no slot is free.</summary>
 	public int Add( int visitor )
 	{

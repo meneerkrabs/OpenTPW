@@ -19,6 +19,7 @@ internal interface IHeadSourceProvider
 internal sealed class FlatRideHeadSources : IHeadSourceProvider
 {
 	private readonly ParkObjects objects;
+	private readonly List<(int Visitor, int Node)> scratch = new();
 
 	public FlatRideHeadSources( ParkObjects objects ) => this.objects = objects;
 
@@ -28,7 +29,9 @@ internal sealed class FlatRideHeadSources : IHeadSourceProvider
 		{
 			if ( ride.Visitors.Heads == null || ride.IsDeleted || onlyAttraction is int attraction && attraction != ride.Visitors.AttractionId )
 				continue;
-			foreach ( var (visitor, node) in ride.Visitors.HungHeads() )
+			scratch.Clear();
+			ride.Visitors.CollectHungHeads( scratch );
+			foreach ( var (visitor, node) in scratch )
 				sources.Add( new HeadSource( visitor, ride.Visitors.AttractionId, ObjectPlacement.SwapAxes( ride.GetNodeTransform( node ) ), ride.Runtime.Model.Nodes[node].Type ) );
 		}
 	}

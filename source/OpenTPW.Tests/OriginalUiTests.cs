@@ -211,45 +211,54 @@ public class OriginalUiTests
 	[TestMethod]
 	public void FrontEndMenuNavigatesIslandsGameModeAndQuit()
 	{
-		var islands = new[] { "jungle", "fantasy", "hallow", "space" }.Select( ( level, index ) =>
-			new LobbyIslandInfo( index, level, "data\\lobby\\terrain", $"{level[..3]}_isle", $"{level[..3]}_gate", level, 0, 10, (0, 0, 0), Array.Empty<string>(), false, 0 ) ).ToArray();
-		var started = new List<(string, GameMode)>();
-		var selected = new List<string>();
-		var quit = 0;
-		var menu = new FrontEndMenu( FakeStrings(), islands, new FrontEndActions
+		var previousLog = Log;
+		Log = new();
+		try
 		{
-			StartPark = ( island, mode ) => started.Add( (island.Level, mode) ),
-			IslandSelected = island => selected.Add( island.Level ),
-			Quit = () => quit++,
-		} );
-		var context = FakeContext();
-		Assert.AreEqual( "enterPark", menu.Main.Focused!.Id );
-		Assert.AreEqual( "Lost Kingdom", menu.SelectedName );
-		menu.Stack.Update( context, UiInput.Key( UiKeys.Left ) );
-		Assert.AreEqual( "space", menu.Selected.Level, "left from the first island wraps to the last" );
-		Assert.AreEqual( "Space Zone", menu.SelectedName );
-		menu.Stack.Update( context, UiInput.Click( menu.Main.Find( "nextIsland" )!.ScreenRect( context.Canvas ).Center ) );
-		Assert.AreEqual( "jungle", menu.Selected.Level );
-		CollectionAssert.AreEqual( new[] { "space", "jungle" }, selected );
-		Assert.AreEqual( "help344", menu.Main.Find( "nextIsland" )!.Help, "original tooltip UIHELPTEXT 344" );
-
-		menu.Main.Focus( menu.Main.Find( "enterPark" ) );
-		menu.Stack.Update( context, UiInput.Key( UiKeys.Accept ) );
-		Assert.AreEqual( "gameMode", menu.Stack.Top!.Name );
-		menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );
-		Assert.AreEqual( "lobby", menu.Stack.Top!.Name );
-		menu.ShowGameMode();
-		var full = menu.Stack.Top!.Find( "fullSimulation" )!;
-		menu.Stack.Update( context, UiInput.Click( full.ScreenRect( context.Canvas ).Center ) );
-		CollectionAssert.AreEqual( new[] { ("jungle", GameMode.FullSimulation) }, started );
-
-		menu.Stack.Clear();
-		menu.Stack.Push( menu.Main );
-		menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );
-		Assert.AreEqual( "confirmQuit", menu.Stack.Top!.Name );
-		Assert.AreEqual( "ui9", ((UiLabel)menu.Stack.Top.Find( "message" )!).Text(), "original QUIT GAME confirmation" );
-		menu.Stack.Update( context, UiInput.Key( UiKeys.Accept ) );
-		Assert.AreEqual( 1, quit );
+			var islands = new[] { "jungle", "fantasy", "hallow", "space" }.Select( ( level, index ) =>
+				new LobbyIslandInfo( index, level, "data\\lobby\\terrain", $"{level[..3]}_isle", $"{level[..3]}_gate", level, 0, 10, (0, 0, 0), Array.Empty<string>(), false, 0 ) ).ToArray();
+			var started = new List<(string, GameMode)>();
+			var selected = new List<string>();
+			var quit = 0;
+			var menu = new FrontEndMenu( FakeStrings(), islands, new FrontEndActions
+			{
+				StartPark = ( island, mode ) => started.Add( (island.Level, mode) ),
+				IslandSelected = island => selected.Add( island.Level ),
+				Quit = () => quit++,
+			} );
+			var context = FakeContext();
+			Assert.AreEqual( "enterPark", menu.Main.Focused!.Id );
+			Assert.AreEqual( "Lost Kingdom", menu.SelectedName );
+			menu.Stack.Update( context, UiInput.Key( UiKeys.Left ) );
+			Assert.AreEqual( "space", menu.Selected.Level, "left from the first island wraps to the last" );
+			Assert.AreEqual( "Space Zone", menu.SelectedName );
+			menu.Stack.Update( context, UiInput.Click( menu.Main.Find( "nextIsland" )!.ScreenRect( context.Canvas ).Center ) );
+			Assert.AreEqual( "jungle", menu.Selected.Level );
+			CollectionAssert.AreEqual( new[] { "space", "jungle" }, selected );
+			Assert.AreEqual( "help344", menu.Main.Find( "nextIsland" )!.Help, "original tooltip UIHELPTEXT 344" );
+	
+			menu.Main.Focus( menu.Main.Find( "enterPark" ) );
+			menu.Stack.Update( context, UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( "gameMode", menu.Stack.Top!.Name );
+			menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );
+			Assert.AreEqual( "lobby", menu.Stack.Top!.Name );
+			menu.ShowGameMode();
+			var full = menu.Stack.Top!.Find( "fullSimulation" )!;
+			menu.Stack.Update( context, UiInput.Click( full.ScreenRect( context.Canvas ).Center ) );
+			CollectionAssert.AreEqual( new[] { ("jungle", GameMode.FullSimulation) }, started );
+	
+			menu.Stack.Clear();
+			menu.Stack.Push( menu.Main );
+			menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );
+			Assert.AreEqual( "confirmQuit", menu.Stack.Top!.Name );
+			Assert.AreEqual( "ui9", ((UiLabel)menu.Stack.Top.Find( "message" )!).Text(), "original QUIT GAME confirmation" );
+			menu.Stack.Update( context, UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( 1, quit );
+		}
+		finally
+		{
+			Log = previousLog;
+		}
 	}
 
 	[TestMethod]

@@ -254,4 +254,33 @@ public class LitterTests
 		Assert.AreEqual( 1, guest.RidesTaken );
 		Assert.AreEqual( 50f, guest.Litter, "tp.exe 0x004FE1E0 adds LitterEffect (+0x154), clamped to 0..100" );
 	}
+
+	[TestMethod]
+	public void EveryThemesBinScriptTakesItsTriggerAsVariableZero()
+	{
+		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		if ( string.IsNullOrWhiteSpace( gamePath ) || !System.IO.Directory.Exists( gamePath ) )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original bin scripts." );
+		var previous = FileSystem;
+		FileSystem = new BaseFileSystem( OriginalParkImportTests.OriginalDataPath() );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		Log = new();
+		try
+		{
+			foreach ( var theme in ObjectCatalog.Themes )
+			{
+				var bins = ObjectCatalog.Load( theme ).Entries.Where( entry => entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) ).ToList();
+				Assert.AreEqual( 1, bins.Count, $"{theme} has one litter bin" );
+				var runtime = new OriginalObjectRuntime( bins[0] );
+				Assert.IsNotNull( runtime.Script, $"{theme}'s bin has a script" );
+				// tp.exe 0x0055A0B0 writes variable 0: the script's only variable, VAR_TRIGGER
+				Assert.AreEqual( 0, runtime.Script!.GetVariableIndex( Level.BinTriggerVariable ), theme );
+				Assert.AreEqual( 1, runtime.Script.VariableNames.Count, theme );
+			}
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
 }

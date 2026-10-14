@@ -109,7 +109,7 @@ table `0x7cdba0..`, which `0x4d9a65` fills at start-up: link 1 is (0, −1), 4 i
 **Off the paths,** it searches the eight directions at distances 0..3 for a path cell that a route reaches. If none is found, it tries
 five random cells within ±5 cells.
 
-## 4. Staff (ECON-022, phase 3; medium)
+## 4. Staff (ECON-022, phase 3; high for the handyman, read in full)
 
 The handyman's state machine is `0x4d73c0`:
 - **State 0, idle:** waits until its per-grade idle time (`0x785330 + 16 × grade`) has passed since `+0x200`, then searches for a job.
@@ -121,6 +121,21 @@ The handyman's state machine is `0x4d73c0`:
   3. otherwise `0x4f9490`, as for guests but inside the patrol rectangle (state 1), or idle (state 0).
 
 Each walk starts its job timer only on arrival.
+
+Read in full for the handyman (2026-10-14):
+- **The update.** Once per park turn: the pre-update `0x4d7060` (the speed step `0x4fa870`, shared with the guests; an idle handyman scans
+  for litter every IdleDuration turns and searches when it finds some), then the state handler `0x4d73c0`. States 0 and 1 draw the world
+  generator every update and play the idle (161) or walking (160) voice at `draw & 15 == 0`.
+- **The setter `0x4d7330`.** 8 and 10 set the speed bonus `+0xc2` to 25; 9 and 11 stamp `+0x214`; 0 stamps `+0x200` with the turn after a
+  patrol, else 0 (search at once), and clears the bonus. The base speed `+0xc0` follows the energy byte in the job search: 60, 80, 100,
+  120 or 140 (`0x75c7f8`).
+- **The litter.** A find reseeds the generator with the cell id and walks to the point `13 × clamp(r & 0x7f, 1, 9)` on each axis, claims
+  the cell and sets state 8. State 8 checks the claim, walks, and on arrival with litter still there stands on the point (`0x4fa930`) and
+  sweeps (state 9) until the turn passes the stamp + WorkDuration; the sweep removes the litter of the cell he stands on. A failed walk
+  clears his target but leaves the claim, which only his own search takes again.
+- **The toilet.** State 10 walks; stuck sets state 0; on arrival he must stand on the toilet's access cell and hold its claim, else
+  state 0. State 11 cleans until the turn passes the stamp + WorkDuration.
+- **The rest.** A fresh handyman runs the job search in his constructor.
 
 ## 5. Plan
 
@@ -136,8 +151,9 @@ Each walk starts its job timer only on arrival.
   Oracle: the state-6 order as an x86 target with stubbed callees, and the destination step rule (§3, steps 1–4) on synthetic cells.
 - **Phase 3a (ECON-020, GUEST-005), done.** Litter by cell (§6): the guest's litter meter, step 3 of state 6, the bin search and
   state 9, vomit on the cell, the handymen's sweep by cell (still without positions) and their litter grievance (ORACLE.md X20, X21).
-- **Phase 3b (ECON-022).** Staff patrol with the same destination inside their rectangle. The handyman's job search runs from its
-  position (§4), and job timers start on arrival.
+- **Phase 3b (ECON-022), done for the handymen.** In a level the handymen run their state machine (§4, `StaffWorldSimulation`): they
+  patrol with the guests' destination routine inside their rectangle, search for litter and dirty toilets from their position, and time
+  a sweep or a clean from their arrival (ORACLE.md X23). Their rest and strike stay the economy's; the other roles follow.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

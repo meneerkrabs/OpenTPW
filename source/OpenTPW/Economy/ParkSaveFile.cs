@@ -195,12 +195,116 @@ public static class ParkSaveFile
 		/// <summary>The littered cell a handyman sweeps (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? LitterCell { get; init; }
+		/// <summary>A handyman's state machine in a world (absent: none yet).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public HandymanData? Handyman { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public float? CellX { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public float? CellY { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public double TravelSeconds { get; init; }
+	}
+
+	/// <summary>A handyman's state machine (docs/reverse/WANDER-plan.md §4): its state, stamps, toilet, patrol rectangle, speed and walk.</summary>
+	public sealed class HandymanData
+	{
+		public required HandymanJob Job { get; init; }
+		public long IdleStamp { get; init; }
+		public long JobStamp { get; init; }
+		public int ToiletId { get; init; }
+		/// <summary>The patrol rectangle: x0, y0, x1, y1.</summary>
+		public required int[] PatrolArea { get; init; }
+		public required int BaseSpeed { get; init; }
+		public int SpeedBonus { get; init; }
+		public float SmoothedSpeed { get; init; }
+		/// <summary>The steering state, null before a world placed him.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public NavigationData? Navigation { get; init; }
+
+		internal static HandymanData Capture( StaffMember member ) => new()
+		{
+			Job = member.Job,
+			IdleStamp = member.IdleStamp,
+			JobStamp = member.JobStamp,
+			ToiletId = member.ToiletId,
+			PatrolArea = new[] { member.PatrolArea.X0, member.PatrolArea.Y0, member.PatrolArea.X1, member.PatrolArea.Y1 },
+			BaseSpeed = member.BaseSpeed,
+			SpeedBonus = member.SpeedBonus,
+			SmoothedSpeed = member.SmoothedSpeed,
+			Navigation = member.Navigation is { } navigation ? NavigationData.Capture( navigation ) : null
+		};
+
+		internal void Apply( StaffMember member )
+		{
+			member.Job = Job;
+			member.IdleStamp = IdleStamp;
+			member.JobStamp = JobStamp;
+			member.ToiletId = ToiletId;
+			member.PatrolArea = (PatrolArea[0], PatrolArea[1], PatrolArea[2], PatrolArea[3]);
+			member.BaseSpeed = BaseSpeed;
+			member.SpeedBonus = SpeedBonus;
+			member.SmoothedSpeed = SmoothedSpeed;
+			member.Navigation = Navigation?.Restore();
+		}
+	}
+
+	/// <summary>A <see cref="GuestNavigation"/> as saved: every field the next step reads; cell lists as x, y pairs.</summary>
+	public sealed class NavigationData
+	{
+		public required int[] Position { get; init; }
+		public required int[] Velocity { get; init; }
+		public required int[] Target { get; init; }
+		public required bool Arrived { get; init; }
+		public required int Index { get; init; }
+		public required int Count { get; init; }
+		public required int[] Route { get; init; }
+		public required int Cursor { get; init; }
+		public required int WalkCrossings { get; init; }
+		public required int[] AlsoOpen { get; init; }
+		public required int History { get; init; }
+		public required int PreviousRemaining { get; init; }
+		public required bool OffGrid { get; init; }
+		public required int Reroutes { get; init; }
+
+		private static int[] Pairs( IEnumerable<(int X, int Y)> cells ) => cells.SelectMany( cell => new[] { cell.X, cell.Y } ).ToArray();
+
+		private static (int X, int Y)[] Cells( int[] pairs ) => Enumerable.Range( 0, pairs.Length / 2 ).Select( index => (pairs[2 * index], pairs[2 * index + 1]) ).ToArray();
+
+		internal static NavigationData Capture( GuestNavigation navigation ) => new()
+		{
+			Position = new[] { navigation.X, navigation.Y },
+			Velocity = new[] { navigation.VelocityX, navigation.VelocityY },
+			Target = new[] { navigation.TargetX, navigation.TargetY },
+			Arrived = navigation.Arrived,
+			Index = navigation.Index,
+			Count = navigation.Count,
+			Route = Pairs( navigation.Route ),
+			Cursor = navigation.Cursor,
+			WalkCrossings = navigation.WalkCrossings,
+			AlsoOpen = Pairs( navigation.AlsoOpen ),
+			History = navigation.History,
+			PreviousRemaining = navigation.PreviousRemaining,
+			OffGrid = navigation.OffGrid,
+			Reroutes = navigation.Reroutes
+		};
+
+		internal bool IsValid => Position is { Length: 2 } && Velocity is { Length: 2 } && Target is { Length: 2 } && Route is { } route && route.Length % 2 == 0
+			&& AlsoOpen is { } open && open.Length % 2 == 0 && Count is >= 0 and <= GuestNavigation.BufferedWaypoints && Cursor >= 0
+			&& Cursor <= route.Length / 2 - Count && Index >= 0 && (Index < Count || Count == 0);
+
+		internal GuestNavigation Restore()
+		{
+			var navigation = new GuestNavigation
+			{
+				X = Position[0], Y = Position[1], VelocityX = Velocity[0], VelocityY = Velocity[1], TargetX = Target[0], TargetY = Target[1],
+				Arrived = Arrived, Index = Index, Count = Count, Route = Cells( Route ), Cursor = Cursor, WalkCrossings = WalkCrossings,
+				AlsoOpen = Cells( AlsoOpen ), History = History, PreviousRemaining = PreviousRemaining, OffGrid = OffGrid, Reroutes = Reroutes
+			};
+			for ( var index = 0; index < Count; index++ )
+				navigation.Buffer[index] = navigation.Route[Cursor + index];
+			return navigation;
+		}
 	}
 
 	public sealed class LitterData
@@ -330,6 +434,7 @@ public static class ParkSaveFile
 					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
 					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
+					Handyman = member.Type == StaffType.Handyman && (member.Navigation != null || member.Job != HandymanJob.Idle) ? HandymanData.Capture( member ) : null,
 					CellX = member.CellX,
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
@@ -420,8 +525,11 @@ public static class ParkSaveFile
 		foreach ( var cell in data.Litter )
 			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
 				&& cell.Collector >= 0 && littered.Add( (cell.X, cell.Y) ), $"litter at ({cell.X}, {cell.Y})" );
+		// A claim belongs to a handyman: in a world his own search takes it again (the original keeps a claim after a failed walk); without one he
+		// must be sweeping it, or nothing would end the claim.
 		foreach ( var cell in data.Litter.Where( cell => cell.Collector != 0 ) )
-			Require( data.Staff.Members.Any( member => member.Id == cell.Collector && member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y ),
+			Require( data.Staff.Members.Any( member => member.Id == cell.Collector && member.Type == StaffType.Handyman
+				&& (member.Handyman != null || member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y) ),
 				$"litter at ({cell.X}, {cell.Y}) claimed by staff {cell.Collector}, who does not sweep it" );
 		Require( data.Ledger.MonthIndex == ParkCalendar.MonthIndex( data.Tick ), "ledger month matches the clock" );
 		Require( data.Ledger.History.Count <= ParkLedger.MaximumHistoryMonths && data.MonthlyAdmissions.Count <= ParkLedger.MaximumHistoryMonths, "history length" );
@@ -442,7 +550,13 @@ public static class ParkSaveFile
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
-			Require( member.LitterCell is null || (member.Type == StaffType.Handyman && member.LitterCell.Length == 2 && member.AssignedInstanceId == 0 && BusyTurnsOf( member ) > 0
+			Require( member.Handyman is null || (member.Type == StaffType.Handyman && Enum.IsDefined( member.Handyman.Job ) && member.Handyman.PatrolArea is { Length: 4 } area
+				&& area[0] is >= 0 and < ParkLitter.MapSize && area[2] >= area[0] && area[2] < ParkLitter.MapSize && area[1] is >= 0 and < ParkLitter.MapSize
+				&& area[3] >= area[1] && area[3] < ParkLitter.MapSize && member.Handyman.BaseSpeed is >= 0 and <= 255 && member.Handyman.SpeedBonus is >= 0 and <= 255
+				&& float.IsFinite( member.Handyman.SmoothedSpeed ) && (member.Handyman.ToiletId == 0 || ids.Contains( member.Handyman.ToiletId ))
+				&& (member.Handyman.Navigation is null || member.Handyman.Navigation.IsValid)), $"staff {member.Id} handyman state" );
+			Require( member.LitterCell is null || (member.Type == StaffType.Handyman && member.LitterCell.Length == 2 && member.AssignedInstanceId == 0
+				&& (member.Handyman is { Job: HandymanJob.ToLitter or HandymanJob.Sweeping } || member.Handyman is null && BusyTurnsOf( member ) > 0)
 				&& data.Litter.Any( cell => cell.X == member.LitterCell[0] && cell.Y == member.LitterCell[1] && cell.Collector == member.Id )), $"staff {member.Id} litter job" );
 			if ( member.AwaitingJobArrival )
 			{
@@ -531,6 +645,8 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		foreach ( var saved in data.Staff.Members.Where( member => member.Handyman != null ) )
+			saved.Handyman!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
 		foreach ( var member in park.Staff.Members.Where( member => member.AwaitingJobArrival ) )
 			if ( !park.OwnsMechanicJob( member ) ) throw new InvalidDataException( $"Staff {member.Id} cannot await its restored mechanic job." );
 

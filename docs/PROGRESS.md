@@ -324,6 +324,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- A guest's litter going into a bin now fires the bin's script trigger (variable 0, `VAR_TRIGGER` in every theme; tp.exe `0x4fff20`,
+  `0x55a0b0`), so the bin plays its own sound, and a stinkbomb plays `cat_kids` 207 at the prankster (`0x4ff289`).
+- Handymen now walk and search as in the original (tp.exe `0x4d73c0`, `0x4d7100`, `0x4c8ed0`; ORACLE.md 7.17, X23; ECON-022;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level each handyman patrols the paths, looks for litter within his DetectionRange
+  (2 to 5 cells by grade) and, only when there is none, for a dirty toilet in reach; he walks there, faster than on patrol, and sweeps or
+  cleans for WorkDuration turns from his arrival. An idle handyman looks again every IdleDuration turns. His idle and walking voices come
+  from his own state machine (AUDIO-024 narrowed). The park save keeps his state and walk. Rest and strike still need no walk.
 - Pranksters prank, as in the original (tp.exe `0x4fb114`, `0x4ff0f5`, `0x4d8480`; ORACLE.md 7.16, X18 and X22; GUEST-007, GUEST-006;
   [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PrankeryLikelihood` guests in 100 (5 in the shipped balance) are pranksters for life; when
   unhappy they drop stinkbombs or litter on their cell and cheer up a little. Vomit and stinkbombs now spread their `RegionFX` on the

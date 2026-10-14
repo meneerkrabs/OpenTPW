@@ -1605,6 +1605,7 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-litter-drop` | tp.exe `0x4d93b0`..`0x4d95d0` (thiscall, `ecx` = cell record, argument the type), the world generator step `0x516330` and reseed `0x516370`, `_ftol` | `0x475a10` sprite (descriptor and bank recorded), `0x475480` placement (x, z recorded), `0x4d8440` RegionFX add, `0x521e60` particle; the GameType object marked constructed, word 0 from the input | 526 (26 edges: every type on three cells, an occupied cell, an online park; 500 random) | **X20**: **agree** 526/526 with `ParkLitter.Drop` and `SpriteOffset` (type, collector, sprite offset, the generator's state after the reseed) | (the plan is the routine reading) |
 | `tpw-exe-bin-walk` | tp.exe `0x4fff20`..`0x4fffe4` (thiscall, `ecx` = guest) | the walk step `0x4fa2a0` (0, 1 or 2 chosen), the bin sound `0x55a070` / `0x55a0b0`, the draw, the litter drop `0x4d93b0` (type and cell recorded), `0x501db0` state | 518 (18 edges, 500 random) | **X21**: **agree** 518/518 with the state-9 handler of `GuestSimulation` | (the plan is the routine reading) |
 | `tpw-exe-region-effect` | tp.exe `0x4d8480`..`0x4d8607` (thiscall, `ecx` = cell manager; add flag, effect index, cell id) | none; a synthetic cell manager with the effect table at `+0x1d9104` and the grid at `+0x1b1104` | 520 (random tables up to radius 9, words near the 16-bit limits, cells at the map's corners) | **X22**: **agree** 520/520 with `ParkEnvironment.Apply` (the 19 × 19 window around the source) | (the plan is the routine reading) |
+| `tpw-exe-litter-finder` | tp.exe `0x4c8ed0`..`0x4c9033` (thiscall, `ecx` = park; out, collector id, cell id, range) | none but the debug print; synthetic cell records at `[0x8023a0]` and the park's scratch buffer at `+0x1f020` | 520 (ranges 0..5, claims by others and by him, cells at the map's corners) | **X23**: **agree** 520/520 with `StaffWorldSimulation.FindLitter` | (the plan is the routine reading) |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
@@ -2332,3 +2333,21 @@ guest's cell words.
 
 GUEST-007 keeps the balloons (no guest carries one), the advisor's prank lines, the guards' chase and escort, and event 15. GUEST-006
 keeps the other environment sources (entertainers, toilets, guards, cameras, fireworks) and the thought pick.
+
+### 7.17 Finding X23: the handymen search from where they stand
+
+Question (ECON-022): where do handymen go? OpenTPW's handymen had no position: a free one took the first unclaimed littered cell park-wide
+and its job time started at once. The state machine is read in full in docs/reverse/WANDER-plan.md §4.
+
+**X23, the litter finder (`0x4c8ed0`).** Executed without stubs. On 520 inputs the cell it returns agrees with `StaffWorldSimulation.FindLitter`:
+the square of DetectionRange cells around the handyman, clipped to the map, the cells with litter claimed by nobody or by him, scanned x
+outer and y inner, the smallest Manhattan distance, the first on a tie.
+
+**Fixed in C#.** In a level `StaffWorldSimulation` runs the handyman's update once per park turn: the speed step, the idle litter scan,
+the states 0, 1, 8, 9, 10 and 11, the setter's stamps and speed bonus, and the job search in the original order (strike and rest, too
+tired, litter, toilets, patrol). He walks with the guests' steering (WALK-I) and patrols with their destination routine, kept to his
+patrol rectangle; a sweep or a clean is timed from his arrival. His idle and walking voices come from the same draws. The park save
+keeps his state, stamps, speed and walk. A headless economy keeps its own dispatch.
+
+ECON-022 keeps the walks to the rest and strike areas, the 100-turn toilet claim lapse, the player's maintenance request and patrol
+rectangle controls, the separation among staff, and a toilet's access cell.

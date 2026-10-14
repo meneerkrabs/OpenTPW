@@ -106,6 +106,8 @@ EXPECTED = {
     ('tpw-exe-bin-walk', 'plan'): AGREE,
     # X22 (region effect writer 0x4d8480, GUEST-006): ParkEnvironment.Apply, square radius, Manhattan divisor, wrapping words.
     ('tpw-exe-region-effect', 'plan'): AGREE,
+    # X23 (the handyman's litter finder 0x4c8ed0, ECON-022): StaffWorldSimulation.FindLitter, range square, claims, Manhattan, first on a tie.
+    ('tpw-exe-litter-finder', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -819,6 +821,10 @@ class Oracle(CoastTests, unittest.TestCase):
     # ------------------------------------------------------------------ X22: region effects
     def test_region_effect_spreads_like_the_environment_grid(self):
         self.check(('tpw-exe-region-effect', 'plan'))
+
+    # ------------------------------------------------------------------ X23: the handyman's litter finder
+    def test_litter_finder_takes_the_nearest_unclaimed_cell(self):
+        self.check(('tpw-exe-litter-finder', 'plan'))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

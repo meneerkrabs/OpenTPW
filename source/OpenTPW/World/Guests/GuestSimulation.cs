@@ -139,7 +139,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public Func<IReadOnlyList<LitterBin>>? Bins { get; set; }
 	/// <summary>Squared distance in cells below which a bin is in reach (tp.exe <c>0x00500DC0</c>, radius 3).</summary>
 	public const int BinRadius = 3;
-	/// <summary>A guest reached its bin and threw its litter away (the bin's sound; tp.exe <c>0x004FFF20</c>).</summary>
+	/// <summary>A guest reached its bin and threw its litter away (the level triggers the bin's script; tp.exe <c>0x004FFF20</c>).</summary>
 	public event Action<Guest, int>? LitterBinned;
 	/// <summary>Where guests pay (the park economy). Null: the standalone <see cref="GuestSettings.AdmissionFee"/> and attraction prices apply and no money is booked anywhere.</summary>
 	public IGuestPayments? Payments { get; set; }
@@ -898,8 +898,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// State 9 (tp.exe <c>0x004FFF20</c>): one walk step per park turn towards the bin. On arrival at a bin the litter goes in; a walk that ends
 	/// stuck drops the litter on the guest's cell instead (<c>1 + rand % 5</c>). Either way the meter empties and the guest decides again.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FFF20 state 9] the walk step 0x004FA2A0: 1 keeps walking; 0 with a bin plays the bin's sound; 2, or a bin id of 0, drops 1 + rand % 5 on the current cell (0x004D93B0); then the meter +0x1B4 = 0 and state 6
-	// [APPROX:GUEST-005] a bin removed during the walk counts as no bin (the litter falls on the cell), where the original still plays the sound of the object id it holds; the walk ends stuck only when a grid edit takes a cell or link of its route (EndBrokenWalks) — evidence needed: none (read)
+	// [BIN:TPW-EXE:0x004FFF20 state 9] the walk step 0x004FA2A0: 1 keeps walking; 0 with a bin triggers the bin's script (Level.TriggerBin); 2, or a bin id of 0, drops 1 + rand % 5 on the current cell (0x004D93B0); then the meter +0x1B4 = 0 and state 6
+	// [APPROX:GUEST-005] a bin removed during the walk counts as no bin (the litter falls on the cell), where the original still triggers the script of the object id it holds; the walk ends stuck only when a grid edit takes a cell or link of its route (EndBrokenWalks) — evidence needed: none (read)
 	private void UpdateThrowingAwayLitter( Guest guest )
 	{
 		if ( !turnStarted )

@@ -74,6 +74,7 @@ public partial class Level
 		if ( Guests == null )
 			return;
 		Guests.Bins = LitterBins;
+		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
@@ -122,6 +123,22 @@ public partial class Level
 				bins.Add( new LitterBin( instance, cell, found ) );
 		}
 		return bins;
+	}
+
+	/// <summary>The bin's script variable a guest's litter sets (each theme's Litter Bin script declares only <c>VAR_TRIGGER</c>).</summary>
+	public const string BinTriggerVariable = "VAR_TRIGGER";
+
+	/// <summary>
+	/// A guest threw its litter into the bin with economy instance <paramref name="instance"/>: the bin's script variable 0 becomes 1, and the
+	/// script plays the bin's sound and animation.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FFF20 bin trigger] on arrival with a bin, state 9 looks up the bin thing's script (+0x24) through 0x0055A070 and sets its variable 0 to 1 through 0x0055A0B0 ("RSSE: Bad variable reference" when out of range)
+	// [DATA:<theme> Litter Bin .rse] VAR_TRIGGER is the script's only variable (index 0) in all four themes
+	private void TriggerBin( int instance )
+	{
+		foreach ( var (item, id) in economyInstances )
+			if ( id == instance && !item.IsDeleted )
+				item.Runtime.SetVariable( BinTriggerVariable, 1 );
 	}
 
 	/// <summary>

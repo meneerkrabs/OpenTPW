@@ -224,6 +224,16 @@ import or proof of all original TPWS layouts. See SAVE-CONTAINER.md for evidence
 
 ## Movies
 
+Export a single decoded TGQ video frame without game assets, a window or audio:
+
+```sh
+dotnet source/OpenTPW/bin/Release/net10.0/OpenTPW.dll --export-tgq-png /path/movie.tgq 1 /path/new.png
+```
+
+The index is zero-based among video frames. The PNG uses the encoded dimensions
+and the current opaque RGBA conversion, without display aspect stretching. The
+output must be new; invalid input leaves it absent. See TGQ-MOVIES.md for limits.
+
 ```sh
 bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf
 bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie plan --headless

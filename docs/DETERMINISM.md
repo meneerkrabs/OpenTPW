@@ -207,7 +207,7 @@ snapshots restore at the creation value). No pinned hash moved. The scripted-obj
 waits (`out / script speed`) and its WAITs (`operand / script speed`, STP-PPC 0xb0658) are now shorter, which moves
 every later timestamp of its 30 s trace by up to about 1.2 s.
 
-Coaster register round 2 (October 14): the coaster hash content changed shape (the trains drop the stop-and-dispatch state, last
+Coaster register round 2 (October 14): the pylon heights (h0, h1, the stack offset) feed the hash, so `CoasterPylonRig` composes its node matrices with plain single-precision multiplies and adds instead of `Matrix4x4`'s operator, which may fuse the multiply-add on some CPUs. The coaster hash content changed shape (the trains drop the stop-and-dispatch state, last
 departure and boarding clock; they gain the train flags, the boarding span, the seated-at-the-station lists, the admission
 ring, the platform start, the station window, the intersection count and each node's loop rotate). No pinned golden or
 resume hash in the suite depended on a running coaster's content, so none had to be re-pinned; the coaster tests assert

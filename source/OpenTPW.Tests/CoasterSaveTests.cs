@@ -179,6 +179,52 @@ public class CoasterSaveTests
 	}
 
 	/// <summary>
+	/// A save of the older shape was rated with the earlier pylon heights, so its train and car counts can differ from the re-derived ones:
+	/// it still loads, the new placement stands and every saved rider (lap and seated at the station) waits to leave. A save of the current
+	/// shape with a wrong count is still refused.
+	/// </summary>
+	[TestMethod]
+	public void AnOldSaveWhoseRatingPlacesAnotherTrainCountStillLoads()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		var captured = CoasterSave.CaptureRide( ride, attractionId: 7 );
+		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkResumeJson.Serialize( captured ) )!.AsObject();
+		json.Remove( "Admission" );
+		foreach ( var train in json["Trains"]!.AsArray() )
+		{
+			foreach ( var member in new[] { "Flags", "FirstBoardingCar", "LastBoardingCar", "BoardingCars" } )
+				train!.AsObject().Remove( member );
+		}
+		var old = ParkResumeJson.Deserialize<CoasterRideSaveData>( System.Text.Encoding.UTF8.GetBytes( json.ToJsonString() ) );
+		var guest = 800;
+		CoasterTrainSaveData WithRiders( CoasterTrainSaveData train, int state ) => train with
+		{
+			State = state,
+			Cars = train.Cars.Select( _ => new List<int> { ++guest } ).ToList()
+		};
+		// One more train than the re-derived rating places, one of them boarding, one running.
+		var trains = old.Trains.Select( ( train, index ) => WithRiders( train, index == 0 ? CoasterRide.LegacyBoardingState : CoasterRide.LegacyRunningState ) ).ToList();
+		trains.Add( WithRiders( old.Trains[0], CoasterRide.LegacyRunningState ) );
+		var expected = trains.Sum( train => train.Cars.Sum( car => car.Count ) );
+		var resumed = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		resumed.RestoreSnapshot( old with { Trains = trains, Leaving = new List<int>() } );
+		Assert.AreEqual( ride.Trains.Count, resumed.Trains.Count, "the re-derived placement stands" );
+		Assert.AreEqual( 0, resumed.RidersOnBoard );
+		Assert.AreEqual( expected, resumed.LeavingCount, "no saved rider is lost" );
+
+		// Fewer cars in the saved train than the definition gives is the same case.
+		var short_ = old.Trains.Select( train => train with { Cars = train.Cars.Skip( 1 ).ToList() } ).ToList();
+		var resumedShort = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		resumedShort.RestoreSnapshot( old with { Trains = short_, Leaving = new List<int>() } );
+		Assert.AreEqual( ride.Trains.Count, resumedShort.Trains.Count );
+
+		// The current shape is not forgiven.
+		var current = captured with { Trains = captured.Trains.Concat( captured.Trains.Take( 1 ) ).ToList() };
+		Assert.ThrowsException<InvalidDataException>( () => FreshRide( ride.Definition, new CoasterWorld( 1 ) ).RestoreSnapshot( current ) );
+	}
+
+	/// <summary>
 	/// A speed change on a completed track (COAST 8 with the script's bias, 0x43b2b0 → 0x43c3d0) re-rates it at the new
 	/// cap, so a park resume, which re-derives the rating from the saved cap, holds the same controller.
 	/// </summary>

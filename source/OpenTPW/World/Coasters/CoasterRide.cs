@@ -485,12 +485,7 @@ public sealed class CoasterRide
 		if ( count != trains.Count )
 		{
 			foreach ( var train in trains )
-				foreach ( var car in train.CarLists )
-				{
-					foreach ( var guest in car )
-						leaving.Enqueue( guest );
-					car.Clear();
-				}
+				UnloadAll( train );
 			PlaceTrains( count );
 		}
 		TrackChanged?.Invoke( this );
@@ -612,9 +607,10 @@ public sealed class CoasterRide
 				{
 					first = Math.Min( newFirst, first );
 					last = Math.Max( newLast, last );
+					// [BIN:TPW-EXE:0x43b9fe seating span] the seating call gets the span grown from the stored one (min/max, 0x43b9ae..0x43b9cb), but +0x18 and +0x1c keep the raw first and last of 0x43b7e0 (0x43ba09, 0x43ba0c)
 					SeatGuests( train, first, last - first + 1 );
-					train.FirstBoardingCar = first;
-					train.LastBoardingCar = last;
+					train.FirstBoardingCar = newFirst;
+					train.LastBoardingCar = newLast;
 				}
 			}
 			train.Flags |= CoasterTrainFlags.InStation;
@@ -713,7 +709,7 @@ public sealed class CoasterRide
 			Move( train, (float)deltaSeconds );
 		foreach ( var train in trains )
 			ClearHeadway( train );
-		// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown); an arriving train unloads open or closed and boarding needs state 4
+		// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown); an arriving train unloads open or closed and boarding needs state 4; the tick also skips the station step (and 0x439570) for a train whose flag bit 0x2 is clear (0x435ce5 test byte [esi],2; the train flag writers of bit 0x2 are not identified, the stride-0x60 car flags at 0x43d1ee/0x43d23e are another word), here every train counts as having it set
 		if ( IsBroken )
 			return;
 		foreach ( var train in trains )
@@ -959,14 +955,37 @@ public sealed class CoasterRide
 				ClearTrains();
 			RaiseTrackChanged();
 		}
-		if ( saved.Trains.Count != trains.Count )
-			throw new InvalidDataException( $"Coaster '{Name}' holds {saved.Trains.Count} trains in the save, but the restored track places {trains.Count}." );
+		// A save of the older shape (no train flags) was rated with the earlier pylon heights, minimum heights and end node flags, so the
+		// re-derived rating can place another number of trains or cars. Its trains are not kept: the new placement stands and every saved rider
+		// waits to leave (they are not lost). A save of the current shape must match exactly, or it is refused.
+		var olderShape = saved.Trains.Any( train => train.Flags is null );
+		var matches = saved.Trains.Count == trains.Count
+			&& saved.Trains.Select( ( train, index ) => train.Cars.Count == trains[index].Cars.Count ).All( equal => equal );
+		if ( !matches && !olderShape )
+		{
+			if ( saved.Trains.Count != trains.Count )
+				throw new InvalidDataException( $"Coaster '{Name}' holds {saved.Trains.Count} trains in the save, but the restored track places {trains.Count}." );
+			throw new InvalidDataException( $"Coaster '{Name}' holds trains with another number of cars in the save than the definition gives ({trains[0].Cars.Count} cars per train)." );
+		}
 		leaving.Clear();
 		foreach ( var guest in saved.Leaving )
 			leaving.Enqueue( guest );
 		admission.Clear();
 		foreach ( var guest in saved.Admission ?? new List<int>() )
 			admission.Enqueue( guest );
+		if ( !matches )
+		{
+			foreach ( var train in saved.Trains )
+			{
+				foreach ( var car in train.Cars )
+					foreach ( var guest in car )
+						leaving.Enqueue( guest );
+				foreach ( var car in train.BoardingCars ?? new List<List<int>>() )
+					foreach ( var guest in car )
+						leaving.Enqueue( guest );
+			}
+			return;
+		}
 		for ( var index = 0; index < trains.Count; index++ )
 			RestoreTrain( index, saved.Trains[index] );
 	}

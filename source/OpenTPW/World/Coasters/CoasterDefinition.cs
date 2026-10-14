@@ -258,6 +258,11 @@ public sealed class CoasterDefinition
 	// [BIN:TPW-EXE:0x4309a4 pylon heights] pylon +0xbc = h0, +0xc0 = h1, +0x68 (fMinHeight) = max(fMinHeight, h0) (0x4309a4..0x4309bb), +0xc4 = stack dummy Y − h0 or 0
 	internal void ApplyPylonModel( bool loop, CoasterPylonRig rig )
 	{
+		// The original applies h0 and h1 as they come (0x4309a4 has no guard on h1 <= h0, and a missing dummy reads the constant 0 at 0x6fde74).
+		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip (the Gorilla coaster 3180's loop pylon, h0 = h1 =
+		// 9.47, below its own raised minimum 10) and keeps the settings' heights: with h1 <= h0 every node of that pylon would stand at h0.
+		if ( rig.TagNode < 0 || rig.TagHigh <= rig.TagLow )
+			return;
 		var pylon = Pylon( loop );
 		pylon.MeshHeightLow = rig.TagLow;
 		pylon.MeshHeightHigh = rig.TagHigh;

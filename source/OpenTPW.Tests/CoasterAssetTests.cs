@@ -66,6 +66,7 @@ public class CoasterAssetTests
 	public void PylonHeightsAndStackOffsetsComeFromTheModelsTrackAndStackDummies()
 	{
 		var seen = 0;
+		var skipped = 0;
 		foreach ( var entry in PcCoasters() )
 		{
 			var definition = CoasterDefinition.FromCatalogEntry( entry );
@@ -79,6 +80,14 @@ public class CoasterAssetTests
 				if ( rig == null )
 					continue;
 				var pylon = definition.Pylon( loop );
+				if ( rig.TagNode < 0 || rig.TagHigh <= rig.TagLow )
+				{
+					Assert.IsFalse( pylon.HasModelHeights, $"{entry.InfoId} loop {loop}: a model whose track dummy does not move with the loft keeps the settings' heights" );
+					Assert.AreEqual( plain.Pylon( loop ).MinHeight, pylon.MinHeight );
+					Assert.AreEqual( plain.Pylon( loop ).MeshHeightHigh, pylon.MeshHeightHigh );
+					skipped++;
+					continue;
+				}
 				Assert.IsTrue( pylon.HasModelHeights, $"{entry.InfoId} loop {loop}" );
 				Assert.AreEqual( (rig.TagLow, rig.TagHigh, rig.StackOffset), (pylon.MeshHeightLow, pylon.MeshHeightHigh, pylon.StackOffset) );
 				Assert.AreEqual( MathF.Max( plain.Pylon( loop ).MinHeight, rig.TagLow ), pylon.MinHeight, $"{entry.InfoId}: fMinHeight raised to h0 (0x4309a4)" );
@@ -86,7 +95,8 @@ public class CoasterAssetTests
 				seen++;
 			}
 		}
-		Assert.IsTrue( seen >= 20, $"{seen} pylon models read" );
+		Assert.IsTrue( seen >= 18, $"{seen} pylon models read" );
+		Assert.IsTrue( skipped >= 1, "coaster 3180's loop pylon is stuck at h0 = h1 and is skipped" );
 		CoasterPylonRig Rig( int id, bool loop )
 		{
 			var entry = PcCoasters().Single( candidate => candidate.InfoId == id );

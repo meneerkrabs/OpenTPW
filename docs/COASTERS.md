@@ -258,7 +258,7 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   four pylons with the cursor on the fifth cell.
 
 Evidence found but not used: `uiInvalidCrossSection` and the node flags 0x800000/0x804000 mark the invalid presentation.
-Used since the register round 2: the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
+Used since the register round 2 (a model whose track dummy is missing or does not move with the loft clip, the loop pylon of coaster 3180 with h0 = h1 = 9.47, keeps the settings' heights; the original applies them as they come): the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
 node heights h0 and h1, read when the coaster's definition is built from its catalogue entry
 (`CoasterDefinition.FromCatalogEntry`; a definition built from settings alone keeps fMinHeight and fMaxHeight). The model's attribute
 records name the track dummy (record `0x800000`, a dummy number counted from 1 over the model's dummy nodes) and the stack dummy
@@ -294,7 +294,9 @@ a name search finds.
   tick boundary, including the boarding hand-over (a guest on the admission ring after `COAST 1`
   one host step before the bridge marks it aboard). A save from before the station rule (trains with a
   stop-and-dispatch state and boarding clock, no flags, no admission ring, an end node with flags `0x144`, no loop rotate) still
-  loads: a boarding train keeps its guests seated at the station, an unloading one hands its riders to the leaving ring.
+  loads: a boarding train keeps its guests seated at the station, an unloading one hands its riders to the leaving ring. The older saves were
+  rated with the earlier pylon heights, so the re-derived rating can place another number of trains or cars (coasters 1190, 2180, 2190, 3190 and
+  4185 at height 20): the new placement then stands and every saved rider waits to leave, nobody is dropped; a save of the current shape with a wrong count is refused.
 - `OriginalCoasterSaveTests` (no game data for the synthetic part): the original
   save's Coasters block reader — every traced field, truncation inside each part,
   bounds, non-finite floats, out-of-map cells, the two-coaster refusal and the

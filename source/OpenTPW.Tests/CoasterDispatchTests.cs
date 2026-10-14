@@ -41,6 +41,35 @@ public class CoasterDispatchTests
 			ride.Advance( Tick );
 	}
 
+	/// <summary>A speed change that changes the train count takes every train off with its lap riders and the guests seated at the station: nobody vanishes.</summary>
+	[TestMethod]
+	public void ARerateThatChangesTheTrainCountKeepsTheSeatedGuests()
+	{
+		var changed = false;
+		foreach ( var release in new[] { 1500, 2500, 4000, 6000, 9000, 14000, 20000 } )
+		{
+			foreach ( var bias in new[] { 0, 10, 20, 35, 65, 80, 100 } )
+			{
+				var ride = NewRide( settings => { settings["sCoasterType.uiMaxTrains"] = "8"; settings["sCoasterType.fMaxSpeedAtMinSetting"] = "3"; settings["sCoasterType.fMaxSpeedAtMaxSetting"] = "40"; settings["sCoasterType.uiTrainReleaseRate"] = release.ToString(); } );
+				var guest = 1000;
+				foreach ( var train in ride.Trains )
+				{
+					train.CarLists[0].Add( ++guest );
+					train.BoardingLists[^1].Add( ++guest );
+				}
+				var seated = guest - 1000;
+				var before = ride.Trains.Count;
+				ride.ApplyScriptSpeed( bias );
+				if ( ride.Trains.Count == before )
+					continue;
+				changed = true;
+				Assert.AreEqual( seated, ride.LeavingCount, $"release {release}, bias {bias}: the lap riders and the seated guests of {before} trains wait to leave" );
+				Assert.AreEqual( 0, ride.RidersOnBoard );
+			}
+		}
+		Assert.IsTrue( changed, "some script speed changes the train count of this circuit" );
+	}
+
 	[TestMethod]
 	public void TheStationWindowSpansThePlatformFromTheEndNodeToTheStationNode()
 	{

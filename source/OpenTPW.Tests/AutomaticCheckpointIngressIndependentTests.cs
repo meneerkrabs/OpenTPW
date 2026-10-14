@@ -112,6 +112,7 @@ public class AutomaticCheckpointIngressIndependentTests
 	[TestMethod]
 	public void ActualOwnedLoopRefusesExitWithoutStoppingOtherVoicesAndFreshRetryUsesRealCapture()
 	{
+		using var renderer = new AutomaticCheckpointCpuRendererScope();
 		var worldFixture = new UpgradeCatalogueDefaultsTests(); worldFixture.Setup();
 		var audioFixture = new PlacedEventAudioOriginTests(); var audioReady = false;
 		try

@@ -144,6 +144,7 @@ public class AutomaticCheckpointIngressTests
 	[TestMethod]
 	public void ActualHostCaptureAndAutomaticResumeUseRealSyntheticSimulationState()
 	{
+		using var renderer = new AutomaticCheckpointCpuRendererScope();
 		var fixture = new UpgradeCatalogueDefaultsTests(); fixture.Setup(); try
 		{
 			var type = typeof( UpgradeCatalogueDefaultsTests ); var flags = BindingFlags.Instance | BindingFlags.NonPublic;

@@ -208,6 +208,7 @@ public class AutomaticCheckpointCoreTests
 	[TestMethod]
 	public void ActualLevelCaptureGuardAndAtomicSaveRunThroughExistingSyntheticFixture()
 	{
+		using var renderer = new AutomaticCheckpointCpuRendererScope();
 		// Reuse the existing real object/VM/cell capture fixture without widening shared tests or loading original assets.
 		var fixture = new UpgradeCatalogueDefaultsTests(); fixture.Setup();
 		try

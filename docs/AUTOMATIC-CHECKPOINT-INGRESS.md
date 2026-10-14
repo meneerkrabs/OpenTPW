@@ -70,3 +70,11 @@ semantic-equivalent, and refuses raw profile whitespace changes. An oversized
 opaque profile hides only the automatic offer while manual Continue remains
 selectable and files stay unchanged. Positive graphical candidate/lobby activation
 remains outside these CPU controls.
+
+Current shared capture first normalizes active staff placement via
+`PrepareForSave`: a carried member is dropped back at its origin and a pending
+hire is cancelled under the existing staff-tool policy. A later automatic-capture
+refusal retains the live world identity and prior files, but does not undo that
+normalization or promise an unchanged world hash for an active staff tool. The
+existing unchanged-hash controls use inactive tools; no automatic-specific bypass
+or rollback is added.

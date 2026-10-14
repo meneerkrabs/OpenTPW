@@ -878,6 +878,9 @@ research batch was included in this merge.
 - **Front-end smoke follows the saved-park offer (October 14):** since entering an island with a saved park first offers to
   continue it (79726a00), the native front-end smoke, which saves a Jungle park earlier on, met that dialog instead of the game
   mode menu and stopped; it now checks the offer and takes "New park".
+- **README's open list corrected (October 14):** RSE EVENT types 1 and 2 are particle effects, not sounds (the positioned
+  ride sounds of the other types already play); the weather is drawn, as procedural approximations; visitors can be selected,
+  and what remains of the visitor click is its sound and the visitor panel's sounds.
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.

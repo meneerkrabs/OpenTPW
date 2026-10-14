@@ -54,11 +54,11 @@ public partial class Level
 
 	/// <summary>The staff room's <c>VAR_STAFFIN</c> (its script's only variable, index 0 in every theme): the members resting in it.</summary>
 	// [BIN:TPW-EXE:0x00505FE0 rest area count] the arrival adds 1 to the rest area's script variable 0 (0x0055A0B0), the rest's end (0x00506D10) takes 1 away
-	private void SetRestingStaff( int instance, int count )
+	private void SetRestingStaff( IReadOnlyDictionary<int, int> counts )
 	{
 		foreach ( var (item, id) in economyInstances )
-			if ( id == instance && !item.IsDeleted )
-				item.Runtime.SetVariable( "VAR_STAFFIN", count );
+			if ( !item.IsDeleted && item.Entry.Settings.GetBool( "UsageInfo.ChillsYouOut" ) )
+				item.Runtime.SetVariable( "VAR_STAFFIN", counts.GetValueOrDefault( id ) );
 	}
 
 	/// <summary>The toilets for the handymen: relief objects with an economy instance, their cell and the path cell in front of them.</summary>

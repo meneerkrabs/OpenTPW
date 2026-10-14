@@ -40,7 +40,7 @@ public class ResearcherRestTests
 			Guests = new GuestSimulation( Grid, GuestTests.CreateSettings(), 5 ) { ArrivalsEnabled = false, Litter = Park.Litter };
 			World = new StaffWorldSimulation( Grid, () => Park.Staff.Members, _ => null, (0, 5) )
 			{
-				Guests = Guests, RestAreas = () => Rests, GatesOpen = () => GatesOpen, RestingStaff = ( id, count ) => Resting[id] = count
+				Guests = Guests, RestAreas = () => Rests, GatesOpen = () => GatesOpen, RestingStaff = counts => { foreach ( var site in Rests ) Resting[site.Id] = counts.GetValueOrDefault( site.Id ); }
 			};
 			Park.StaffWorld = World;
 		}
@@ -161,6 +161,22 @@ public class ResearcherRestTests
 		Assert.IsFalse( handyman.Navigation.OffGrid, "back on the paths" );
 		Assert.IsTrue( f.Grid.IsWalkable( handyman.Navigation.Cell.X, handyman.Navigation.Cell.Y ) );
 		Assert.AreNotEqual( StaffState.OnStrike, handyman.State );
+	}
+
+	[TestMethod]
+	public void WithoutLaneAAStrikerTakesLaneB()
+	{
+		var f = new Fixture();
+		for ( var x = 16; x < 20; x++ )
+			f.Grid.SetPath( x, 5, true );
+		f.Guests.Settings.ArrivalLaneA = null;
+		var handyman = f.Hire( StaffType.Handyman );
+		f.Turns( 3 );
+		f.Strike( StaffType.Handyman, true );
+		var passed = false;
+		f.Turns( 300, () => passed |= handyman.Navigation!.OffGrid && handyman.Navigation.Cell == (17, 2) );
+		Assert.AreEqual( StaffJob.Striking, handyman.Job );
+		Assert.IsTrue( passed, "out past lane B's park-side crossing" );
 	}
 
 	[TestMethod]

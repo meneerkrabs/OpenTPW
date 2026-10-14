@@ -14,8 +14,8 @@ public sealed partial class StaffWorldSimulation
 	public Func<IReadOnlyList<RestSite>>? RestAreas { get; set; }
 	/// <summary>Whether the park gates stand open (their script's <c>VAR_STATUS</c> is 1); null: no gates, so nobody walks out to strike.</summary>
 	public Func<bool>? GatesOpen { get; set; }
-	/// <summary>Called after each staff turn with every rest area's id and the members resting in it (its script's <c>VAR_STAFFIN</c>).</summary>
-	public Action<int, int>? RestingStaff { get; set; }
+	/// <summary>Called after each staff turn with the members resting per rest area id (a room absent from it has none; its script's <c>VAR_STAFFIN</c>).</summary>
+	public Action<IReadOnlyDictionary<int, int>>? RestingStaff { get; set; }
 
 	/// <summary>
 	/// The strike and rest gate every search opens with (tp.exe <c>0x00506A40</c>): while the role strikes and the gates stand open, the member walks
@@ -127,11 +127,17 @@ public sealed partial class StaffWorldSimulation
 	/// <summary>The members resting in each rest area (its script's <c>VAR_STAFFIN</c>, which the original counts up on arrival and down at the rest's end).</summary>
 	private void CountRestingStaff( ParkEconomy economy )
 	{
-		if ( RestingStaff == null || RestAreas?.Invoke() is not { Count: > 0 } sites )
+		if ( RestingStaff == null )
 			return;
-		foreach ( var site in sites )
-			RestingStaff( site.Id, economy.Staff.Members.Count( member => member.Job == StaffJob.Resting && member.RestAreaId == site.Id ) );
+		var counts = new Dictionary<int, int>();
+		foreach ( var member in economy.Staff.Members )
+			if ( member.Job == StaffJob.Resting && member.RestAreaId != 0 )
+				counts[member.RestAreaId] = counts.GetValueOrDefault( member.RestAreaId ) + 1;
+		RestingStaff( counts );
 	}
+
+	/// <summary>The arrival lane a striker walks: A, or B where the level has no lane A.</summary>
+	private (int X, int Y)[]? StrikeLane() => Guests?.Lane( 0 ) is { Length: >= 5 } a ? a : Guests?.Lane( 1 ) is { Length: >= 5 } b ? b : null;
 
 	/// <summary>
 	/// The walk to a strike point outside the park: along the paths to the park entrance of lane A, then off the paths past its ticket booth to its
@@ -140,20 +146,33 @@ public sealed partial class StaffWorldSimulation
 	// Approximation (ECON-022, registered at UpdateStaff): OpenTPW's path grid ends at the park entrance, so a striker leaves along arrival lane A (entrance, ticket booth, park-side crossing) to the strike point and comes back the same way, where the original routes over its map's own cells
 	private bool RouteToStrike( StaffMember member, (int X, int Y, int ByteX, int ByteY) point )
 	{
-		if ( Guests?.Lane( 0 ) is not { Length: >= 5 } lane || !Route( member, lane[^1], GuestWander.CentreByte, GuestWander.CentreByte ) )
+		if ( StrikeLane() is not { } lane || !Route( member, lane[^1], GuestWander.CentreByte, GuestWander.CentreByte ) )
 			return false;
 		member.OffGridLeg = [Centred( lane[3] ), Centred( lane[2] ), point];
 		return true;
 	}
 
-	/// <summary>The walk back from the strike point to the park entrance of lane A (tp.exe <c>0x00506300</c> routes to entrance A).</summary>
+	/// <summary>
+	/// The walk back from the strike point to the park entrance of lane A (tp.exe <c>0x00506300</c> routes to entrance A). Without a lane to walk the
+	/// member steps back onto the nearest path cell (OpenTPW's off-grid road has no other way in).
+	/// </summary>
 	private bool RouteFromStrike( StaffMember member )
 	{
 		var navigation = member.Navigation!;
+		var lane = StrikeLane();
 		if ( !navigation.OffGrid )
-			return Guests?.Lane( 0 ) is { Length: >= 5 } inside && Route( member, inside[^1], GuestWander.CentreByte, GuestWander.CentreByte );
-		if ( Guests?.Lane( 0 ) is not { Length: >= 5 } lane )
+			return lane != null && Route( member, lane[^1], GuestWander.CentreByte, GuestWander.CentreByte );
+		if ( lane == null )
+		{
+			if ( grid.FindNearestWalkable( navigation.Cell.X, navigation.Cell.Y ) is { } cell )
+			{
+				(navigation.X, navigation.Y) = GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte );
+				navigation.SetDestination( navigation.X, navigation.Y, [] );
+				navigation.OffGrid = false;
+			}
+			member.OffGridLeg.Clear();
 			return false;
+		}
 		member.OffGridLeg = [Centred( lane[2] ), Centred( lane[3] ), Centred( lane[^1] )];
 		NextLeg( member );
 		return true;

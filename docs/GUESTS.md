@@ -223,7 +223,7 @@ invalidated on grid edits; `FindPath` follows the field. Jungle: 78 cells, one
 network reachable from EntranceA.
 
 **States** (`KIDSTATES` indices): bus stop → crossing (0, 1) → ticket booth (2, 4:
-pays `InitialAdmissionFee` or turns back angry) → entering (5) → walking around (7)
+the booth weighs the fee against the park, see [The ticket booth](#the-ticket-booth)) → entering (5) → walking around (7)
 → going to a ride (10) → walking to a queue position (12) ⇄ standing in the queue
 (11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden)
 → exiting a ride (15) → … → leaving the park (18) → crossing (19) → waiting to go
@@ -237,7 +237,7 @@ home (21) → removed.
 | Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
-| Boredom | `BoredomThreshold` read as seconds since the last ride |
+| Boredom | none: the major decision (tp.exe `0x4ff419`) has no boredom test and nothing reads `BoredomThreshold`; a decision that finds nothing costs the small step |
 | Ride outcome | the original's bands and illness gain (oracle F24); a ride does not extend the exit counter |
 | Queues | traced; see [Queues](#queues) and its `QUEUE-NNN` register |
 | Walking | traced; see [Walking](#walking) and its `WALK-NNN` register |
@@ -266,6 +266,22 @@ attractions it can reach; there is no random bonus. A use gives happiness `Perfe
 `excitement / RideVomitDivisor · ((100 − hunger) / 20)`, so a hungry guest (81 and up) is not made sick.
 Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters (`GUEST-002..005`).
 
+### The ticket booth
+
+At the booth (state 4, tp.exe `0x4ff9d0`) the guest weighs the entrance fee against what the park is worth (`0x4ff5b0`, "Working out
+how exciting park is"). The park value is GP = S / (N + R % (N / 2 + 1)) + `MinimumEntryFee`, with S the park's attraction points (the
+same sum as the arrival rule's, `0x4c8240`), N = `PeepInfo.ExcitementToCostDivisor` (4) and R a draw. A fee and a value both at or below
+`MinimumEntryFee` (20) are fair. Otherwise the fee, against GP in single precision, is:
+
+- from `ExpensivePriceMultiplier` × GP (2.0): far too expensive — the guest thinks 6 and goes home;
+- from `AveragePriceMultiplier` × GP (1.25): on the expensive side — the guest thinks 6, loses `MediumHappinessChange` and waits 50 + R % 50
+  park turns before asking again; once its happiness truncates to 0 it goes home instead (ARRIVAL-006);
+- up to `CheapPriceMultiplier` × GP (0.75): cheap — the guest gains `MediumHappinessChange` and pays;
+- otherwise fair — the guest pays.
+
+An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. OpenTPW charges the fee from the guest's purse and turns back a
+guest who cannot pay; the original's booth books the fee (`0x4d0600`) without reading the guest's cash (ARRIVAL-007).
+
 ### Needs and starting values
 
 Traced from the Mac binary and executed in the PowerPC oracle (finding F25, [ORACLE.md](reverse/ORACLE.md)); implemented in `GuestStart`, `NeedsUpdate` and `UseEffects`. A new guest starts with
@@ -282,7 +298,7 @@ its thing id (OpenTPW: its guest id, WALK-010):
 
 Using an attraction then applies its own effects after the outcome of [Attraction choice](#attraction-choice): thirst and hunger fall by the type's `ThirstEffect` / `HungerEffect`, illness and happiness rise by
 `VomitEffect` / `HappinessEffect` (clamped); a toilet sets the toilet meter to 0 (GUEST-005). Illness has no decay of its own. A guest at hunger 80 at a shop with a hunger effect of 50 goes to 30.
-Open: the boredom loss (GUEST-009), the draws (OpenTPW's own stream, DET-014).
+Open: the draws (OpenTPW's own stream, DET-014). There is no boredom loss: nothing in tp.exe reads `BoredomThreshold`.
 
 ### Lifecycle
 
@@ -661,8 +677,10 @@ one guest per park turn: the ride update (`0xe0a8c`, executed in the oracle for 
 and 4) removes the head from the queue and sends it away (`0xdcebc`, `0xee804`: reason 6, no
 thought, happiness down by `PeepInfo.MediumHappinessChange`, back to wandering). A head the script
 has already taken is forced aboard instead. The guests behind keep their places and wait, and a
-repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new joins: walking guests do not choose the ride
-(QUEUE-017) and joins are refused as if it were closed (QUEUE-018); these two are approximations. The ride update runs the admission once on the turn it
+repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new joins: the
+choice's counts-test (tp.exe `0x4dd920`) refuses states 1 and 4 and a closed ride, and never reads VAR_BROKEN, so a ride whose script has
+just reported a breakdown is still chosen until its ride update enters state 1; joins are refused in state 1 (QUEUE-018). State 1 lasts
+until the ride is opened again (a repair, an upgrade's end, the open button), even when the script clears VAR_BROKEN first (QUEUE-019). The ride update runs the admission once on the turn it
 notices the breakdown and then enters state 1, which writes VAR_RIDECLOSED = 1 and the open word 0 (ORACLE.md F27); admission does not call the head afterwards. Queued guests no longer leave "feeling sick" for
 a breakdown: state 11's exit at `0xed424` is `0xdfe34`, a relief object (toilet) whose wear gauge
 is below 25. OpenTPW wears only rides, so a toilet's gauge never falls and the exit does not fire
@@ -727,9 +745,9 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-014 | Laid cell by cell from the front, each touching the back | The queue tool's placement rules (UI-031) |
 | QUEUE-015 | Removing a queue cell removes every cell behind it; the original's cell clear (tp.exe `0x5367a0`) removes only that cell and leaves the rest unreached on the map | The remove tool's route into `0x5367a0` (callers `0x452ca0` / `0x452d30`) |
 | QUEUE-016 | Admission and state 11 run once per park turn | Live-list eligibility of objects and guests |
-| QUEUE-017 | Guests do not choose a broken attraction | The state-6 attraction choice and its test of ride `+408` |
-| QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |
-| QUEUE-019 | OpenTPW keeps no ride state word: a ride is in state 0 while it is open and in state 1 while it is closed and `VAR_BROKEN ≠ 0` (the admission runs on the turn it is noticed, `SetState(1)` writes `VAR_RIDECLOSED` and the open word, F27); a queue still there when the script clears `VAR_BROKEN` is turned away at once, where the original's ride stays in state 1 and keeps dismissing until a `SetState(0)` caller reopens it | A trace of when the script clears `VAR_BROKEN` |
+| QUEUE-017 | The queue room and the coaster controller tests of the counts-test (tp.exe 0x4dd920) are left to the join (ARRIVAL-003); the state and open-word tests are applied | none (read: tp.exe `0x4dd920`) |
+| QUEUE-018 | A ride in state 1 refuses joins as if closed; the PC join gate is not traced (the Mac join offer 0xe03f0 rejects states 1 and 4) | the PC twin of the state-10 join checks |
+| QUEUE-019 | OpenTPW keeps state 1 in the bridge and leaves it when the ride is opened again, standing for the SetState(0) callers (repair, the open button, an upgrade's end); state 2 is the economy's closed ride (ECON-023) and state 4 (life gauge 0) is not told apart from 1 | the life gauge in the bridge (state 4) |
 | QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; the original calls its millisecond clock twice (`0xadfb0`, `0xadfcc`), so its start can lie 1 ms later | None for the reading; OpenTPW's stepped script clock cannot tick between the two calls |
 | QUEUE-021 | A left click on a queue cell (help 444, "Left-click to edit this queue") starts the queue tool at that ride's back cell; the click handler is not traced | None: `Level.EditQueueAt` follows the help text and `EnterQueueTool` |
 | QUEUE-022 | A bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object; every original object has `InitSpeed` and `InitDuration`) is read at its design speed and duration, where the original would divide 0 by 0 and score 0 | None |

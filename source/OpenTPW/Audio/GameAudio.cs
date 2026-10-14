@@ -49,9 +49,20 @@ public static class GameAudio
 	/// <summary>The path tool's refused click: <c>cat_ui</c> 175 (Mac <c>0x10073D1C</c>, reached behind the latch and a byte test; the mapping to a refusal is inferred from the fork).</summary>
 	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [APPROX:AUDIO-022] whether it is the refusal of a commit or a preview is not fully read
 	public const uint PathRefusedEvent = 175;
-	/// <summary>The path tool's link-end sound (cat_ui 139, Mac <c>0x100711CC</c> in queue mode): not wired, its trigger is inferred.</summary>
-	// [BIN:STP-PPC:0x100711CC queue link end] cat_ui 139 in queue mode after the passes; [APPROX:AUDIO-023] not wired — the link-end condition is inferred, not traced
-	public const uint PathLinkEvent = 139;
+	/// <summary>
+	/// A queue joined to a path: <c>cat_ui</c> 139 at the cell. The queue tool's commit plays it at the clicked end when the
+	/// line's last cell lies on a path (the validator's code 8 sets the flag it reads), on every commit click including the
+	/// ending one, while the park's money is on.
+	/// </summary>
+	// [BIN:STP-PPC:0x100711CC queue joins a path] queue mode (3), money on (game+36 == 0) and the flag 0x7C500 the validator 0x84154 sets when the queue line's last cell is a path cell: cat_ui 139 at (x·10, 0, y·10) after the ride is told its queue changed; [BIN:TPW-EXE:0x527587] the same
+	// [APPROX:AUDIO-023] the second source, a laid path cell linking to a neighbouring queue cell whose link points back (0x10082D6C, four sites; tp.exe 0x5348D0), is not played: OpenTPW's path linking has no queue-link check yet (PATH-004)
+	public const uint QueueJoinEvent = 139;
+	/// <summary>Backspace in the park view over a path cell, with no build tool on: <c>cat_ui</c> 95 at that cell, then the cell is removed.</summary>
+	// [BIN:STP-PPC:0x10112430 backtrack key] the key command "backtrack" (Backspace, command table data 0x455B0): tool mode 0, mouse-mode state 0 or 1 and a path cell under the cursor play cat_ui 95 at (x·10, 0, y·10) before the single-cell removal (mode 0x32, build pass 0x10070B98, ClearCell's path case); [BIN:TPW-EXE:0x40BDA0] the same, its sound call at 0x40BE71
+	public const uint BacktrackEvent = 95;
+	/// <summary>The visitor click: <c>cat_kids</c> 129, flat, every time the visitor status panel is opened.</summary>
+	// [BIN:STP-PPC:0x1010B808 visitor status panel open] stores the visitor, builds its dialog, plays cat_kids 129 (mode 0, no position) unconditionally and shows the panel; called by a park-view click on a visitor, a roster row activation, the map's visitor markers and the selection strip; [BIN:TPW-EXE:0x4B79B0] the same
+	public const uint VisitorClickEvent = 129;
 	private static SoundEventSystem? events;
 	private static SoundSentence? music;
 	private static SoundSentence? crowd;
@@ -490,11 +501,25 @@ public static class GameAudio
 		_ => null,
 	};
 
-	/// <summary>The path tool's sounds: laying (<see cref="PathLayEvent"/>), refused (<see cref="PathRefusedEvent"/>) and the link-end (<see cref="PathLinkEvent"/>).</summary>
+	/// <summary>The path tool's sounds: laying (<see cref="PathLayEvent"/>) and refused (<see cref="PathRefusedEvent"/>).</summary>
 	public static void PlayPathToolSound( uint eventId )
 	{
 		var voice = events?.Play( Ui, eventId, AudioChannel.Effects );
 		Log.Trace( $"Sound: path tool cat_ui {eventId} {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>A <c>cat_ui</c> sound at a park position: the queue joining a path (<see cref="QueueJoinEvent"/>) and the backtrack (<see cref="BacktrackEvent"/>).</summary>
+	public static void PlayUiAt( uint eventId, Vector3 position )
+	{
+		var voice = events?.PlayAt( Ui, eventId, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: cat_ui {eventId} at a cell {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>The visitor click (<see cref="VisitorClickEvent"/>), played whenever a visitor's details are opened.</summary>
+	public static void PlayVisitorClick()
+	{
+		var voice = events?.Play( Kids, VisitorClickEvent, AudioChannel.Effects );
+		Log.Trace( $"Sound: visitor click cat_kids {VisitorClickEvent} {(voice == null ? "not available" : "played")}." );
 	}
 
 	/// <summary>

@@ -73,10 +73,10 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 	public IReadOnlyList<StaffWorldSnapshot> Snapshots => members().Where( member => member.CellX.HasValue && member.CellY.HasValue )
 		.Select( member =>
 		{
-			if ( member.Type is StaffType.Handyman or StaffType.Entertainer or StaffType.Guard or StaffType.Researcher && member.Navigation is { } navigation )
+			if ( member.Navigation is { } navigation )
 				return new StaffWorldSnapshot( member.Id, member.Type, member.CellX!.Value, member.CellY!.Value,
 					member.Job is StaffJob.Patrol or StaffJob.ToLitter or StaffJob.ToToilet or StaffJob.Chasing or StaffJob.Escorting or StaffJob.ReturningFromEscort
-						or StaffJob.ToRestArea or StaffJob.ToStrike && !navigation.Arrived, true );
+						or StaffJob.ToRestArea or StaffJob.ToStrike or StaffJob.ToRide && !navigation.Arrived, true );
 			var reachable = CanTravel( member, out var target, out var x, out var y );
 			return new StaffWorldSnapshot( member.Id, member.Type, member.CellX!.Value, member.CellY!.Value,
 				reachable && (x, y) != target, reachable );

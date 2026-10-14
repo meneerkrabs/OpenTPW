@@ -29,6 +29,10 @@ public enum StaffJob : byte
 	Sweeping = 9,
 	ToToilet = 10,
 	Cleaning = 11,
+	/// <summary>A mechanic walks to a ride that needs him (state 12).</summary>
+	ToRide = 12,
+	/// <summary>A mechanic repairs or upgrades the ride (state 13).</summary>
+	Repairing = 13,
 	/// <summary>An entertainer's performance (state 14).</summary>
 	Performing = 14,
 	/// <summary>A researcher at work (state 15).</summary>
@@ -82,7 +86,26 @@ public sealed class StaffMember
 	/// <summary>The toilet a handyman walks to or cleans [+0x21a], 0 when none.</summary>
 	public int ToiletId { get; set; }
 	/// <summary>The patrol rectangle, inclusive cells [+0x20a, +0x20c]; the whole map until the player draws one.</summary>
-	public (int X0, int Y0, int X1, int Y1) PatrolArea { get; set; } = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
+	public (int X0, int Y0, int X1, int Y1) PatrolArea { get; set; } = WholeMap;
+
+	/// <summary>The patrol rectangle of a member without one: the whole map (the constructor's corner cell ids 1 and 0x4000).</summary>
+	public static readonly (int X0, int Y0, int X1, int Y1) WholeMap = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
+
+	/// <summary>The player draws the member's patrol rectangle between two corner cells (tp.exe <c>0x00506E50</c>), clamped to the map.</summary>
+	// [BIN:TPW-EXE:0x00506E50 set patrol area] stores the two corner cell ids at +0x20A and +0x20C; the area test 0x00506ED0 reads the first as the low corner
+	// [BIN:TPW-EXE:0x00524960 patrol tool] mouse mode 0x36: the first click on the map stores a corner cell, the second orders the two (the smaller x and y first) and sets the selected member's area, then the tool ends (0x0052F200)
+	public void SetPatrolArea( (int X, int Y) a, (int X, int Y) b )
+	{
+		static int Clamp( int value ) => Math.Clamp( value, 0, ParkLitter.MapSize - 1 );
+		PatrolArea = (Clamp( Math.Min( a.X, b.X ) ), Clamp( Math.Min( a.Y, b.Y ) ), Clamp( Math.Max( a.X, b.X ) ), Clamp( Math.Max( a.Y, b.Y ) ));
+	}
+
+	/// <summary>The player clears the member's patrol rectangle (tp.exe <c>0x00506E90</c>): the whole map again.</summary>
+	// [BIN:TPW-EXE:0x00506E90 clear patrol area] +0x20A = 1 and +0x20C = 0x4000, cells (0, 0) and (127, 127); the employee panel's button 0x004B5B50 with 0
+	public void ClearPatrolArea() => PatrolArea = WholeMap;
+
+	/// <summary>Whether the member has a patrol rectangle of its own.</summary>
+	public bool HasPatrolArea => PatrolArea != WholeMap;
 	/// <summary>Base speed [+0xc0]: 60, 80, 100, 120 or 140 by energy.</summary>
 	public int BaseSpeed { get; set; } = 60;
 	/// <summary>Speed bonus [+0xc2]: 25 while walking to a job.</summary>
@@ -95,6 +118,8 @@ public sealed class StaffMember
 	public int TargetGuestId { get; set; }
 	/// <summary>The cell where an entertainer's or a guard's <c>RegionFX</c> row lies [+0xcc], null before a world placed it.</summary>
 	public (int X, int Y)? EffectCell { get; set; }
+	/// <summary>The ride a mechanic walks to or works on [+0x218], 0 when none.</summary>
+	public int RideId { get; set; }
 	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
 	public int RestAreaId { get; set; }
 	/// <summary>

@@ -311,6 +311,14 @@ public sealed class StaffPlacement
 				job.MechanicId = 0;
 			member.AssignedInstanceId = 0;
 		}
+		// a world mechanic's ride (+0x218) and its claim go the same way
+		if ( member.RideId != 0 )
+		{
+			if ( park.TryGetObject( member.RideId, out var ride ) && ride.MechanicId == member.Id )
+				ride.MechanicId = 0;
+			member.RideId = 0;
+		}
+		member.RestAreaId = 0;
 		member.BusyTicks = 0;
 		member.AwaitingJobArrival = false;
 	}

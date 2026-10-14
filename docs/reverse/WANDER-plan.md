@@ -185,6 +185,27 @@ Read in full for the researcher and the shared states (2026-10-14):
   `0x506300` turns the heading on one draw in eight, ends the role's strike when the park is closed and empty, and once the flag is clear
   routes to entrance A (`0x7855bc`): state 1, else 0.
 
+Read in full for the mechanic (2026-10-14). The handler `0x4da490`: 0 idles (voice 163) until the turn passes IdleDuration + `+0x200`;
+1 patrols (voice 162, the walk drain); both end in the search `0x4da5b0`: the gate, too tired ("Too tired to fix rides"), then the ride finder
+`0x4daa90`. It walks the object list once from a cursor (on the manager at game `+0x1da71a`) that moves one object on per search, and takes
+rides broken down (state 1, `0x4e0370`), upgrading (state 2, `0x4e03e0`) or with `mRequestedService` (`+0x64`, `0x4e03d0`) that are no toilet,
+whose claim (`0x4e0220`: `+0x5e`, lapsing after 100 turns when the claimant is no longer on it) is free or his, by the smallest squared
+distance (strictly smaller replaces). A route to its access cell claims it (`0x4e01f0`: `+0x5e`, `+0x60` = the turn) and sets state 12 (no
+speed bonus; the advisor's "on the way" message for a ride neither requested nor upgrading); otherwise a wander or idle. State 12
+`0x4da740` checks the claim, walks, and on arrival at a ride that still needs him sets state 13 with the timer `+0x214` (`0x4da370`: an
+upgrade's DurationOfUpgrade × WorkDuration, else (100 − the repair byte) × WorkDuration / 100; MechanicConstsPerGrade at `0x78542c`); held,
+it clears its ride and searches. State 13 `0x4da830` drains as work, counts the timer down, waits for a broken ride's fix animation, then
+`0x4df8f0` repairs fully (gauge 100, the claim and the request cleared) or installs the upgrade, and searches.
+
+The player's controls (2026-10-14). The ride panel's call button (`0x48ce50`; art `b_callmech`, `b_callhandy`) runs `0x4dfe30`: a call sets
+`mRequestedService` (`+0x64`) and closes the ride (`mCanLoad` 0, script variable 6 = 1); the mechanics' finder takes a requested ride that is no
+toilet, the handymen's toilet search a requested toilet at any distance (closer than the best so far); the repair (`0x4df8f0`) or the clean
+(`0x4dfd80`) clears it, and a cancel reopens the ride when the reopen guard allows. The employee panel's patrol buttons (`0x4b5b50`) clear the
+rectangle (`0x506e90`: cells (0, 0) and (127, 127), the constructor's default) or start mouse mode 0x36: the first map click stores a corner,
+the second orders the two and sets `+0x20a`/`+0x20c` (`0x506e50`, from the click handler `0x524960`). The wander keeps a member inside it: from
+outside, up to 30 random cells of the rectangle (two draws each) that a route reaches (`0x506f30`), else the wander without it ("I can't
+reach my patrol area"); inside, the steps that leave it are removed, and with none left `0x506f30` runs again.
+
 ## 5. Plan
 
 - **Phase 2 (GUEST-010), done.** `GuestSimulation` runs the guest states 6 and 7 per park turn as above (`GuestDecision`,
@@ -205,8 +226,14 @@ Read in full for the researcher and the shared states (2026-10-14):
 - **Phase 5 (ECON-022, GUEST-006, GUEST-007), done for entertainers and guards.** Entertainers patrol and perform for nearby guests
   and carry their RegionFX row; guards carry their security row and answer a prank with the chase, the catch and the escort (§4).
 - **Phase 6 (ECON-022, ECON-014), done for the researchers and the shared states.** Researchers wander and research where they stand;
-  every world-driven role walks to the Staff Room to rest and out through the gate to the strike area (§4). The mechanics' own state
-  machine follows.
+  every world-driven role walks to the Staff Room to rest and out through the gate to the strike area (§4).
+- **Phase 7 (ECON-021, ECON-022), done.** The mechanics run their state machine in a level: from where they stand they take the nearest
+  broken or upgrading ride, walk to it and repair or upgrade it from their arrival (§4). Every staff role now walks.
+- **Phase 8 (ECON-049, ECON-022), done.** The player calls a mechanic or a handyman from the ride panel and draws an employee's patrol
+  area with two clicks; the wander keeps staff inside it (§4).
+- **Phase 9 (ECON-044, GUEST-007), done in the simulation.** Balloon and costume shops give guests a balloon with a life or a costume
+  (`0x4fe1e0`); a ride puts the balloon away and gives it back, the life runs out on the needs phase, and balloon pranksters burst other
+  guests' balloons (docs/GUESTS.md "Balloons and costumes"). Drawing balloons and costumes is the next step.
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 
@@ -247,7 +274,8 @@ A map cell record (`[0x8023a0]`, 0x44 bytes) holds at most one item: `+0x2c` the
   - 100: when `R % 100` is below `PeepInfo.StinkbombLikelihood` (`0x7850e0`, 25) a stinkbomb (litter 8) on the cell and sound 0xcf;
   - 101: litter `R % 5 + 1` on the cell;
   - 102: the first other guest on the cell's thing list (game `+0x2b8 + 0x44 × cell id`, next at thing `+0xa`) holding a balloon
-    (`+0x210`, `mBalloonScript`) has it burst (`0x4fe950`, presentation only).
+    (`+0x210`, `mBalloonScript`) has it burst (`0x4fe950`: the model goes and +0x210 is cleared, which the balloon count reads; the life +0x214
+    stays). Without such a guest there is no prank.
   A prank (a litter prank even when its cell already holds litter) records guest event 15, sends message type 14 on the bus `0x788d3c`
   (`{vtbl 0x7007a8, 0, prankster id, id % 3}`) and adds 1.0 to happiness, clamped. The step never returns early.
 - **Who hears it.** The advisor (thing type 11, `0x59b060`) queues message 0x7d, 0x7e or 0x7f (PrankSbomb, PrankLitter, PrankBalloon).

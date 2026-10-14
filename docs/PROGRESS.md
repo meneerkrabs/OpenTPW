@@ -351,6 +351,23 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Guests now buy balloons and costumes, as in the original (tp.exe `0x4fe1e0`, `0x501650`, `0x501db0`; ECON-044, GUEST-007;
+  [GUESTS.md](GUESTS.md) "Balloons and costumes"). A balloon shop gives a balloon that lives 127 needs phases (about two minutes) at the
+  build's quality of goods; a ride puts it away and gives it back. A costume shop puts a costume on, and a second visit returns it. Balloon
+  pranksters now find victims: they burst another guest's balloon on their cell. The challenges "kids with balloons" and "kids with
+  costumes" count real guests instead of 0. Balloons and costumes are not drawn yet. Guest schema 6, world hash schema 17; the fixed-run,
+  Jungle and cross-grid hashes moved.
+- The player can call a mechanic and draw patrol areas, as in the original (tp.exe `0x4dfe30`, `0x4b5b50`, `0x524960`, `0x506f30`;
+  ECON-049, ECON-022; [WANDER-plan.md](reverse/WANDER-plan.md) §4). The ride panel shows the original call button (`b_callmech`, or
+  `b_callhandy` on a toilet): a call closes the ride and the nearest free mechanic comes even when nothing is broken (a toilet's call brings a
+  handyman from anywhere); the repair reopens it, and a second click cancels the call (greyed with no mechanics or on strike, UIHELPTEXT
+  574/575). The employee view of the staff window has "Patrol area" and "Whole park" buttons (UIHELPTEXT 86/87): two clicks on the map
+  set the rectangle, and staff then keep to it, walking into it first when they stand outside.
+- Mechanics now walk to their rides as in the original (tp.exe `0x4da490`, `0x4da5b0`, `0x4daa90`; ECON-021, ECON-022;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level a mechanic idles or patrols and, from where he stands, takes the nearest ride
+  that is broken down or being upgraded (not the park's worst one), walks there and starts the repair (`(100 − state of repair) ×
+  WorkDuration / 100` turns) or the upgrade only when he arrives. Rides merely worn are no longer serviced before they break, as in the
+  original. Every staff role in a level now runs its own state machine.
 - Researchers now wander and research as in the original (tp.exe `0x5029f0`; ECON-022): a spell of `WorkDuration` turns where they stand
   (cat_staff 138 now and then), then they wander on; their points still come every 20th turn. Every staff role a level drives now walks
   to rest and to strike (`0x506a40`, `0x505fe0`, `0x5061d0`, `0x506300`; [WANDER-plan.md](reverse/WANDER-plan.md) §4): a tired member

@@ -8,7 +8,7 @@ public partial class Level
 	private readonly Dictionary<OriginalObject, TrackStation> trackStations = new();
 	private readonly Dictionary<TrackFamily, TrackRenderer> trackRenderers = new();
 	private bool trackRenderFailed;
-	private static readonly TrackFamily[] TrackFamilies = { TrackFamily.Water, TrackFamily.Kart };
+	private static readonly TrackFamily[] TrackFamilies = { TrackFamily.Water, TrackFamily.Kart, TrackFamily.Bumper };
 
 	/// <summary>The headless water track builder over the level's cell map (null in the generic sandbox).</summary>
 	public TrackBuilder? WaterTracks => waterTracks;
@@ -170,7 +170,10 @@ public partial class Level
 		{
 			foreach ( var family in TrackFamilies )
 			{
-				var first = trackStations.Keys.FirstOrDefault( item => !item.IsDeleted && item.Runtime.Bump?.Template.Family == family );
+				// the bumper cars have no station tiles: the renderer of their family draws the cars of every bumper ride of the level
+				var first = family == TrackFamily.Bumper
+					? Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Runtime.Bump?.Template.IsBumper == true )
+					: trackStations.Keys.FirstOrDefault( item => !item.IsDeleted && item.Runtime.Bump?.Template.Family == family );
 				if ( first == null )
 				{
 					if ( trackRenderers.Remove( family, out var stale ) )
@@ -180,11 +183,11 @@ public partial class Level
 				if ( !trackRenderers.TryGetValue( family, out var renderer ) )
 				{
 					var entry = first.Entry;
-					var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
+					var kit = family == TrackFamily.Bumper ? null : TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
 					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ) );
 					trackRenderers[family] = renderer;
 				}
-				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.Family == family ) );
+				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.RenderFamily == family ) );
 			}
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
@@ -343,7 +346,7 @@ internal sealed class TrackHeadSources : IHeadSourceProvider
 	{
 		foreach ( var renderer in renderers() )
 		{
-			if ( renderer.Family == TrackFamily.Kart )
+			if ( renderer.Family is TrackFamily.Kart or TrackFamily.Bumper )
 				renderer.CollectHeads( sources, onlyAttraction );
 		}
 	}

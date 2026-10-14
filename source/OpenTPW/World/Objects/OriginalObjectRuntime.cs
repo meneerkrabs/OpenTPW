@@ -53,7 +53,7 @@ public sealed partial class OriginalObjectRuntime
 		{
 			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers ) { AttractionId = AttractionId };
 			world.Bumpers.Add( Bump );
-			if ( template.IsKart )
+			if ( !template.IsWater )
 				Bump.Effect += OnBumpEffect;
 			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}

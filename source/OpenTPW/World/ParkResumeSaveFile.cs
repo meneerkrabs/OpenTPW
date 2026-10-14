@@ -799,7 +799,7 @@ internal static class ParkResumeSaveFile
 			Require( controller.TickCount >= 0 && double.IsFinite( controller.TickRemainder ) && controller.TickRemainder >= 0 && controller.TickRemainder < BumpController.TickSeconds, $"track controller {controller.AttractionId} has a bad tick clock" );
 			Require( controller.Pending.Count + controller.Leaving.Count <= TrackSave.MaximumGuests && controller.Pending.Concat( controller.Leaving ).All( guest => guestIds.Contains( guest ) && listedGuests.Add( guest ) ),
 				$"track controller {controller.AttractionId} holds a guest list with a guest the park does not hold, or one listed twice" );
-			Require( controller.Laps is >= -1000 and <= 1000, $"track controller {controller.AttractionId} has laps {controller.Laps} out of range" );
+			Require( controller.Laps is >= -1000 and <= 0x10000, $"track controller {controller.AttractionId} has laps {controller.Laps} out of range" );
 			var slots = new HashSet<int>();
 			foreach ( var vehicle in controller.Vehicles )
 			{
@@ -812,7 +812,7 @@ internal static class ParkResumeSaveFile
 				Require( Small( vehicle.VX, 0x10000 ) && Small( vehicle.VY, 0x10000 ) && Small( vehicle.VX0, 0x10000 ) && Small( vehicle.VY0, 0x10000 ) && Small( vehicle.Speed, 0x100000 ),
 					$"a boat of track controller {controller.AttractionId} has a velocity out of range" );
 				Require( Small( vehicle.Spin, 0x100000 ) && Small( vehicle.Roll, 0x100000 ) && Small( vehicle.AccelBonus, 0x100000 ) && Small( vehicle.JitterX, 0x10000 ) && Small( vehicle.JitterY, 0x10000 )
-					&& vehicle.Radius is >= 0 and <= 0x10000 && Small( vehicle.Laps, 1000 ) && vehicle.Variant is >= 0 and < 256 && vehicle.Age >= 0 && vehicle.WallHits >= 0 && vehicle.WallWindow >= 0 && vehicle.Sprays >= 0
+					&& vehicle.Radius is >= 0 and <= 0x10000 && Small( vehicle.Laps, 0x10000 ) && vehicle.Variant is >= 0 and < 256 && vehicle.Age >= 0 && vehicle.WallHits >= -1 && vehicle.WallWindow >= 0 && vehicle.ChaseTarget is >= -1 and < BumpController.VehiclePool && vehicle.Sprays >= 0
 					&& Small( vehicle.BuoyCountdown, 0x10000 ),
 					$"a boat of track controller {controller.AttractionId} has a scalar out of range" );
 				Require( vehicle.VisualHeading is >= 0 and < BumpMath.Turn && Small( vehicle.YawRate, 0x10000 ) && Small( vehicle.YawDelta, 0x10000 ) && vehicle.Animation is 0 or 5 or 12

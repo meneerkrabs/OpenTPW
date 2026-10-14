@@ -43,6 +43,13 @@ public partial class Level
 	{
 		if ( waterTracks == null || kartTracks == null || item.Runtime.Bump is not { } bump || item.IsDeleted )
 			return;
+		if ( bump.Template.IsBumper )
+		{
+			// bumper cars lay no track: the controller's arena sits on the ride's footprint
+			var (arenaX, arenaY) = BumperArenaCentre( item );
+			bump.SetStation( arenaX, arenaY, TrackHeading.FromRotation( item.Placement.Rotation ) );
+			return;
+		}
 		var station = TrackStation.FromPlacement( item.Placement.X, item.Placement.Y, item.Placement.Rotation );
 		trackStations[item] = station;
 		var centre = TrackStation.Centre( station.First );
@@ -52,6 +59,21 @@ public partial class Level
 			return;
 		BuilderOf( item )!.PlaceStation( station );
 		RewalkTrack( item );
+	}
+
+	/// <summary>The centre of a bumper ride's arena in section units: the middle of the bounding box of the ride's footprint cells.</summary>
+	// [BIN:TPW-EXE:0x00529E10 ride placement] the original places the arena at the placement cell plus a per-rotation offset read from the object type (+0xA4..+0xC0) and 0x600 on both axes
+	// [APPROX:TRACK-030] the arena centre is the middle of the footprint's bounding box, not the original's type-record offset — evidence needed: the offset fields at the type record's +0xA4..+0xC0 and the conversion of the placement cell in 0x00529E10
+	internal static (int X, int Y) BumperArenaCentre( OriginalObject item )
+	{
+		var cells = item.Cells.ToArray();
+		if ( cells.Length == 0 )
+			return (item.Placement.X * TrackStation.CellUnits + TrackStation.CellUnits / 2, item.Placement.Y * TrackStation.CellUnits + TrackStation.CellUnits / 2);
+		var minX = cells.Min( cell => cell.X );
+		var maxX = cells.Max( cell => cell.X );
+		var minY = cells.Min( cell => cell.Y );
+		var maxY = cells.Max( cell => cell.Y );
+		return ((minX + maxX + 1) * TrackStation.CellUnits / 2, (minY + maxY + 1) * TrackStation.CellUnits / 2);
 	}
 
 	private void OnTrackStationRemoved( OriginalObject item )
@@ -107,6 +129,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
 			return false;
+		StaffPlacement?.Cancel();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
 		CellTool.Enter( new TrackLineWriter( builder, () => RewalkTrack( station ), builder.OwnerOf( layout ) ), layout.Exit );
@@ -246,7 +269,7 @@ public partial class Level
 	{
 		var controllers = LiveWaterRides().ToList();
 		// a save written before the kart rides had controllers holds none for a kart station: its track is empty, so the station tiles are laid and the fresh controller kept
-		var legacy = controllers.Where( item => item.Runtime.Bump!.Template.IsKart && saved?.Controllers.Any( entry => entry.AttractionId == item.Runtime.AttractionId ) != true ).ToList();
+		var legacy = controllers.Where( item => item.Runtime.Bump!.Template is { IsKart: true } or { IsBumper: true } && saved?.Controllers.Any( entry => entry.AttractionId == item.Runtime.AttractionId ) != true ).ToList();
 		if ( saved == null )
 		{
 			if ( controllers.Any( item => item.Runtime.LiveBump!.Vehicles.Count > 0 ) )
@@ -266,6 +289,15 @@ public partial class Level
 			var bump = station.Runtime.Bump!;
 			if ( bump.Type != entry.Type )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s controller type {bump.Type} is not the saved {entry.Type}." );
+			if ( bump.Template.IsBumper )
+			{
+				// a bumper ride has no circuit: the arena is rebuilt from the placement, the saved state goes straight in
+				if ( entry.Sections.Count != 0 )
+					throw new InvalidDataException( $"Attraction {entry.AttractionId} is a bumper ride but the save holds track sections for it." );
+				bump.Restore( entry );
+				station.Runtime.ResumeBumpEffects();
+				continue;
+			}
 			var circuit = RewalkTrack( station ) ?? throw new InvalidDataException( $"Attraction {entry.AttractionId} has no track station." );
 			if ( circuit.IsValid != entry.IsTrackValid )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s circuit walks {(circuit.IsValid ? "valid" : "invalid")}, the save says {(entry.IsTrackValid ? "valid" : "invalid")}." );
@@ -282,11 +314,17 @@ public partial class Level
 	}
 
 	/// <summary>Lays the station tiles of kart rides that an older save carried without a controller and walks their (empty) circuit.</summary>
-	// [APPROX:TRACK-027] a save from before the go-kart controllers (park-resume version 1 without a kart controller) restores its kart rides as freshly placed ones: station tiles, no track, a closed controller
+	// [APPROX:TRACK-027] a save from before the go-kart or bumper-car controllers (no controller for such a ride) restores its rides as freshly placed ones: station tiles and no track for karts, an arena for bumper cars, a closed controller; the guests a bumper ride still held go to its leaving list
 	private void MigrateLegacyKarts( IEnumerable<OriginalObject> legacy )
 	{
 		foreach ( var item in legacy )
 		{
+			if ( item.Runtime.Bump is { Template.IsBumper: true } bumper )
+			{
+				// a bumper ride of an older save had no controller, so its riders (stuck aboard with nothing to release them) are handed to the new controller's leaving list: the script's BUMP 2 returns them one by one
+				bumper.Leaving.AddRange( item.Visitors.Riders.Where( guest => !bumper.Leaving.Contains( guest ) ) );
+				continue;
+			}
 			if ( !trackStations.TryGetValue( item, out var station ) )
 				continue;
 			BuilderOf( item )!.PlaceStation( station );

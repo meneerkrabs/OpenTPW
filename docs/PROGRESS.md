@@ -912,6 +912,18 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
+  applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
+  places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a
+  Pick up button (refused on strike, in hand, escorting or on an unsuitable cell) that starts the Carry tool; a valid click drops the member on the cell
+  centre, idle, with no steering state, litter or toilet claim, and a mechanic loses its ride so the dispatch runs again; the patrol rectangle is never
+  touched, cancelling drops it back where it was, a new pick-up first drops the previous member, and a save drops a carried member on its old cell.
+  Staff are drawn as camera-facing sprites of `esprites.wad` through `StaffRenderer` (folder by role and theme, bank from the member, clip by job:
+  stand, walk at full or half rate, sweep, repair, research, strike, guard carry), resting members are hidden, and the tool shows the slot 6 dangling
+  sprite over the hovered cell and a red ground marker on invalid cells. The only change in `StaffWorldSimulation` is the `Synchronize` condition that
+  leaves a member in hand without a position alone. New register IDs ECON-052/053, GUEST-013..016 and UI-097..100; tests `StaffPlacementTests`,
+  `StaffSpriteTests`, `StaffSpriteAssetTests`; the native jungle smoke hires, places, draws (GPU readback), picks up and drops a handyman
+  ([STAFF-PLACEMENT.md](STAFF-PLACEMENT.md)).
 - **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
   with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
   live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
@@ -943,6 +955,14 @@ research batch was included in this merge.
   of space and fantasy with a bob, a bank and a shadow instance), their riders as head sprites at the kart's head dummies, and the kart fields join the saves
   and the digest of kart parks only. `BUMP 8` returns nothing. TRACK-015 and 016 are narrowed (bumper cars; water spray), TRACK-023 to 026 added; QUEUE-004 now
   covers neither water nor kart rides. `--debug-kart-track` places the ride for captures.
+- **Bumper cars release their riders (October 14):** guests who rode the bumper cars of any theme (jungle Bumper Cars, Halloween, space, Bumble Bugs) never came
+  out: the four `bumper.RSE` scripts drive the ride with `BUMP` commands and the ride had no controller, so `BUMP 2` never returned a guest (a headless probe boarded 16
+  and released 0, all 16 stuck in `GuestState.Using`). The shared controller now runs the bumper types (−1, −6, −11, −14) from `tp.exe`: open sets phase 1, `BUMP 4` makes a car
+  that drops at a random free spot of the arena (one keep-in circle and a ring of eight buoys), `BUMP 12` seats a guest in the first empty car, `BUMP 3` starts the session
+  and every car counts down the duration the script set with `BUMP 13`; at 0 each car hands its riders to the leaving list, and with nobody left the ride goes back to loading
+  while the cars stay. Closing, breakdown and `BUMP 16` follow the traced routines. Cars wander between the buoys on the shared integer physics. The real script of all four
+  rides board, run and release 16 guests over several cycles in `BumperCarAssetTests`. A save from before the controller restores the ride freshly and hands its riders to
+  the leaving list. TRACK-015 narrowed; TRACK-029 (no chase yet), 030 (arena centre) and 031 (cars not drawn, no effects) added.
 - **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
   advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
   request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),

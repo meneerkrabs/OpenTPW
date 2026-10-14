@@ -29,6 +29,7 @@ public sealed partial class ParkHud
 
 	private UiScreen? staffScreen;
 	private UiButton? dismissStaffButton;
+	private UiButton? pickUpStaffButton;
 	private StaffType? staffFilter = StaffType.Handyman;
 	private bool showingEmployedStaff;
 	private bool staffSortByWage;
@@ -130,7 +131,12 @@ public sealed partial class ParkHud
 			SelectStaff( selectedIndex );
 	}
 
-	/// <summary>Hires the still-available selected applicant through the economy.</summary>
+	/// <summary>
+	/// Hires the still-available selected applicant: the window closes and the Place tool starts with the applicant still in the pool; the employee
+	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). Without a park view the economy hires at once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire handler] the handler posts advisor message 0x135 and closes the window
+	// [APPROX:UI-097] the advisor message 0x135 (309, "place your new staff member") is not in OpenTPW's advisor table (its text is filled at runtime and its row is unbound) and the queue cannot withdraw advice: the hint is an OpenTPW line of the message area, shown when the tool starts — evidence needed: the descriptor row and text of message 309
 	public bool HireSelectedStaff()
 	{
 		if ( showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.IsBankrupt )
@@ -138,9 +144,35 @@ public sealed partial class ParkHud
 		var candidate = SelectedCandidate;
 		if ( candidate == null || !economy.Staff.CanHire( candidate.Type ) || economy.Staff.Candidates.All( item => item.Id != candidate.Id ) )
 			return false;
-		economy.Hire( candidate.Id );
+		if ( level.StaffPlacement is { } placement && ReferenceEquals( level.Park?.Economy, economy ) )
+		{
+			if ( !placement.BeginHire( candidate.Id ) )
+				return false;
+			level.EndBuildTools();
+			PostMessage( strings.Extra( OpenTpwText.PlaceStaff ) );
+			CloseStaffWindow();
+		}
+		else
+			economy.Hire( candidate.Id );
 		selectedStaffId = 0;
 		EnsureStaffSelection();
+		return true;
+	}
+
+	/// <summary>Whether the selected employee may be picked up now (tp.exe <c>CanBePickedUp</c> 0x505bd0, read each tick by the window).</summary>
+	public bool CanPickUpSelectedStaff => showingEmployedStaff && !level.IsReadOnlyVisit && SelectedStaff is { } member
+		&& level.StaffPlacement != null && level.Guests?.Grid.Cells is { } cells && StaffPlacementRules.CanBePickedUp( member, cells );
+
+	/// <summary>The pick-up button: puts the selected employee in the player's hand, closes the window and starts the Carry tool.</summary>
+	// [BIN:TPW-EXE:0x4b5ed9 pick-up button] control 0x50e of the staff info window runs 0x505c50 and the window closes
+	public bool PickUpSelectedStaff()
+	{
+		if ( !showingEmployedStaff || RejectReadOnlyAction() || SelectedStaff is not { } member || level.StaffPlacement is not { } placement )
+			return false;
+		if ( !placement.PickUp( member ) )
+			return false;
+		level.EndBuildTools();
+		CloseStaffWindow();
 		return true;
 	}
 
@@ -194,6 +226,8 @@ public sealed partial class ParkHud
 		SetStaffFirstRow( staffFirstRow );
 		if ( dismissStaffButton != null )
 			dismissStaffButton.Enabled = showingEmployedStaff && selectedStaffId != 0;
+		if ( pickUpStaffButton != null )
+			pickUpStaffButton.Enabled = CanPickUpSelectedStaff;
 	}
 
 	private string StaffName( StaffMember member ) => StaffName( member.Type, member.NameIndex, member.Id );
@@ -339,6 +373,11 @@ public sealed partial class ParkHud
 			Clicked = ConfirmDismissSelectedStaff, Font = fonts => fonts.Label, Enabled = false,
 			Bounds = Rect( 320, 449, 909, 518 ), Anchor = UiAnchor.Center };
 		screen.Add( dismissStaffButton );
+		// [APPROX:UI-098] the pick-up button of the employee's info window (control 0x50e of the window handled at 0x4b5cb0, a window OpenTPW does not port) sits beside the portrait of the employee view with an OpenTPW label; its label and rectangle are untraced — evidence needed: the 0x50e control's text and rectangle
+		pickUpStaffButton = new UiButton { Id = "pickUpStaff", Text = () => strings.Extra( OpenTpwText.PickUpStaff ),
+			Clicked = () => PickUpSelectedStaff(), Font = fonts => fonts.Label, Enabled = false, Visible = true,
+			Bounds = Rect( 770, 300, 990, 400 ), Anchor = UiAnchor.Center };
+		screen.Add( pickUpStaffButton );
 		// [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles.
 		Model( "staffLocateFrame", "!f_plain", Rect( 526, 1191, 893, 1439 ) );
 		Model( "visitorLocateFrame", "!f_plain", Rect( 12, 1191, 379, 1439 ) );

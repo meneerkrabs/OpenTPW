@@ -3,6 +3,10 @@ namespace OpenTPW;
 public partial class Level
 {
 	public StaffWorldSimulation? StaffWorld { get; private set; }
+	/// <summary>The hire and pick-up tools of the staff (docs/STAFF-PLACEMENT.md); null without a park economy.</summary>
+	public StaffPlacement? StaffPlacement { get; private set; }
+	/// <summary>Draws the placed staff and the tool's dangling sprite.</summary>
+	public StaffRenderer? StaffRenderer { get; private set; }
 
 	private void SetupStaff()
 	{
@@ -27,6 +31,24 @@ public partial class Level
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
 		AttachStaffWorld();
+		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsPathBlocked );
+		if ( OriginalPark != null )
+		{
+			StaffSpriteSet sprites;
+			using ( LoadProfile.Measure( "staff-sprites" ) )
+				sprites = StaffSpriteSet.Load( LevelName );
+			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement );
+		}
+	}
+
+	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
+	public void EndBuildTools()
+	{
+		CellTool.Cancel();
+		ExitCoasterTool();
+		BuildEntry = null;
+		IsPlacing = false;
+		IsRemovingObjects = false;
 	}
 
 	/// <summary>The economy's staff worlds; a park load replaces the economy, so it runs again then.</summary>

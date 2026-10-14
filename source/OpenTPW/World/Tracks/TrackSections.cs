@@ -246,6 +246,38 @@ public static class TrackSections
 		return (finish, stationX + dx / 3, stationY + dy / 3);
 	}
 
+	/// <summary>
+	/// The station buoys of a kart ride: <paramref name="slots"/> grid buoys (flag 2, vehicles park on them before the start) in a staggered pair of columns,
+	/// then the finish buoy (flag 4) 0xC00 behind the station. Slot i lies (slots − i − 2) × 0x400 along the flow and 0x400 across it, alternating sides
+	/// (even slots on the positive side); the orientation word swaps the axes (bit 1) and flips x (bit 2) and y (bit 4). The unload point is the station.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00545890 station buoys] kart types −4, −7, −9, −10: along = (count − i − 2) × 0x400 with count = controller +0x64, across = (i &amp; 1) × −0x800 + 0x400, swapped when the orientation word is odd, x negated for bit 2 and y for bit 4; each buoy gets flag 2; then the finish buoy at (−0xC00, 0) in the same frame with flag 4; +0x74/+0x78 and the unload point +0x90/+0x94 are the station
+	public static IReadOnlyList<Buoy> KartStationBuoys( int stationX, int stationY, int orientation, int slots )
+	{
+		var buoys = new List<Buoy>();
+		for ( var slot = 0; slot < slots; slot++ )
+		{
+			var along = (slots - slot - 2) * 0x400;
+			var across = (slot & 1) * -0x800 + 0x400;
+			var (x, y) = Oriented( orientation, along, across );
+			buoys.Add( new Buoy { Flags = Buoy.Used | Buoy.Skip, X = stationX + x, Y = stationY + y } );
+		}
+		var (fx, fy) = Oriented( orientation, -Cell, 0 );
+		buoys.Add( new Buoy { Flags = Buoy.Used | Buoy.Finish, X = stationX + fx, Y = stationY + fy } );
+		return buoys;
+	}
+
+	/// <summary>A point given along the flow and across it, in map axes under an orientation word: bit 1 swaps the axes, bit 2 negates x, bit 4 negates y.</summary>
+	public static (int X, int Y) Oriented( int orientation, int along, int across )
+	{
+		var (x, y) = (orientation & 1) == 0 ? (along, across) : (across, along);
+		if ( (orientation & 2) != 0 )
+			x = -x;
+		if ( (orientation & 4) != 0 )
+			y = -y;
+		return (x, y);
+	}
+
 	/// <summary>The orientation word of a heading as the controller stores it (+0xB0): bit 1 selects the Y axis, bit 2 flips X and bit 4 flips Y.</summary>
 	public static int OrientationOf( byte heading ) => heading switch
 	{

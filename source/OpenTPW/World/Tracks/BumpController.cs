@@ -3,10 +3,11 @@ namespace OpenTPW;
 /// <summary>
 /// The bump-ride controller of one kart or water ride (original: 0xD0 bytes, up to 64 in a module-wide table): the circuit's sections,
 /// collision objects and buoys, the guests waiting to board and to leave, and the vehicles. It runs the module's integer physics at 30
-/// ticks per second and answers the ride script's <c>BUMP</c> commands. This slice runs water boats (types −5, −8, −12, −13); the kart
-/// tables and templates are shared, the kart grid, race and bumper-car modes are not implemented.
+/// ticks per second and answers the ride script's <c>BUMP</c> commands. It runs water boats (types −5, −8, −12, −13), go-karts (types −4,
+/// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
+/// and hand their riders over when the session's countdown ends).
 /// </summary>
-// [APPROX:TRACK-015] kart rides (Bumper.WhichTrackType 1, controller types −4, −7, −9, −10) have the shared piece tables and templates but no controller: the grid start, race laps, followers, 8-vehicle limit and kart sounds are not implemented, so a kart ride runs its script without a track — evidence needed: the kart branches of 0x005474B0, 0x0054A040 and 0x00545890 exercised on a captured race
+// [APPROX:TRACK-015] the bumper cars of the controller types −1, −6, −11 and −14 board, run and release their riders as traced, but a car never chases another (TRACK-029), the arena sits on the footprint's middle (TRACK-030) and the cars are neither drawn nor heard (TRACK-031); the add-on handler 0x00548E80 is not ported (TRACK-008) — evidence needed: the chase step of 0x005474B0 and the add-on handler
 // [APPROX:TRACK-019] the controller's collision objects, buoys and boats are its own: the original's pools (2048 objects, 1024 buoys, 256 boats) are module-wide, so boats of two rides could meet and one ride's object search could find another's; separate rides sit on separate cells, so this only differs for overlapping circuits — evidence needed: whether the module-wide object scan crosses controllers
 
 public sealed class BumpController
@@ -51,9 +52,20 @@ public sealed class BumpController
 		Laps = template.Laps;
 		Performance = template.DefaultPerformance;
 		ApplyPerformance();
+		if ( template.IsBumper )
+		{
+			// a bumper ride has no track to walk: the attraction's track word keeps its constructor value 1, and the arena exists from the start (a placed ride moves it with SetStation)
+			IsTrackValid = true;
+			SetStation( 0, 0, TrackHeading.PosY );
+		}
 	}
 
+	/// <summary>Whether the ride lays a track (kart and water rides): false for the bumper cars, which drive in an arena.</summary>
+	public bool HasTrack => !Template.IsBumper;
+
 	public BumperTemplate Template { get; }
+	/// <summary>The attraction id of the ride this controller belongs to (set by the runtime; −1 for a controller of its own): the riders' heads draw for it.</summary>
+	public int AttractionId { get; set; } = -1;
 	public int Type => Template.Type;
 	public bool IsWater => Template.IsWater;
 	/// <summary>+4: laps to go (negative) or a duration in ticks.</summary>
@@ -95,6 +107,16 @@ public sealed class BumpController
 	/// <summary>The buoy after the finish buoy (the first section buoy), where a launched boat aims first (+0xA4).</summary>
 	public Buoy? FirstAfterFinish { get; private set; }
 	public IReadOnlyList<BumpVehicle> Vehicles => vehicles;
+	/// <summary>Whether the kart mesh has the sparks dummy (class 0x100, number 1): the exhaust puff and the breakdown smoke need it. The runtime sets it from the model; true by default.</summary>
+	public bool HasSparksNode { get; set; } = true;
+	/// <summary>Raised while a kart ticks for every cosmetic effect (sounds, particles, the engine voice, animation changes). Presentation only: handlers must not change the controller.</summary>
+	public event Action<BumpEffect>? Effect;
+	/// <summary>Whether the race has been started and not yet ended, for the kart rides (+0x50 is 2).</summary>
+	public bool IsRacing => Phase == PhaseRunning;
+	/// <summary>The kart grid buoys (flag 2), in slot order.</summary>
+	public IEnumerable<Buoy> GridBuoys => buoys.Where( buoy => buoy.IsSkipped );
+
+	private void Raise( BumpEffectKind kind, BumpVehicle vehicle, int id = 0, int value = 0 ) => Effect?.Invoke( new BumpEffect( kind, vehicle.Slot, id, value, vehicle.X, vehicle.Y, vehicle.Height ) );
 	/// <summary>Guests added by BUMP 1 who ride with the next boat, newest first (+0xC4).</summary>
 	public List<int> Pending { get; } = new();
 	/// <summary>Guests who left a boat, handed to the script one at a time by BUMP 2, newest first (+0xC8).</summary>
@@ -113,6 +135,14 @@ public sealed class BumpController
 		StationY = stationY;
 		StationHeading = heading;
 		Orientation = TrackSections.OrientationOf( heading );
+		if ( Template.IsBumper )
+		{
+			// bumper cars: the arena is centred on the station reference, cars drop in and out at the same point
+			UnloadX = stationX;
+			UnloadY = stationY;
+			BuildArena();
+			return;
+		}
 		if ( IsWater )
 		{
 			var (finish, unloadX, unloadY) = TrackSections.WaterStationBuoys( stationX, stationY, heading );
@@ -120,10 +150,47 @@ public sealed class BumpController
 			UnloadY = unloadY;
 			stationBuoys = new[] { finish };
 		}
+		else if ( Template.IsKart )
+		{
+			// karts spawn and unload at the station reference itself; the grid and the finish buoy lie around it
+			UnloadX = stationX;
+			UnloadY = stationY;
+			stationBuoys = TrackSections.KartStationBuoys( stationX, stationY, Orientation, Template.MaxVehicles );
+		}
 		RebuildStationOnly();
 	}
 
 	private IReadOnlyList<Buoy> stationBuoys = Array.Empty<Buoy>();
+
+	/// <summary>
+	/// The bumper arena (original: the setup of 0x00545890 for types −1, −6, −11 and −14): one full keep-in circle at the station centre, no sections,
+	/// and eight buoys on a ring around the centre that the cars wander between. The ring starts at (0, R) and turns by 45° per step with the
+	/// original's 8-bit sine factors and truncating shifts.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00545890 bumper arena] collision object flags 0x1F at (X, Y) with radius 0x1200 (−1), 0x1100 (−11) or 0x1600; eight buoys (flag 1) from (0, R) rotated by x' = (S·x + C·y) / 256, y' = (S·y − C·x) / 256 with C = sine[64] and S = sine[192], each shifted to the centre
+	private void BuildArena()
+	{
+		var circle = new CollisionObject { Flags = CollisionObject.Used | CollisionObject.Sides, X = StationX, Y = StationY, Extent = Template.ArenaRadius, ExtentY = Template.ArenaRadius, Index = 0 };
+		var ring = new List<Buoy>();
+		var x = 0;
+		var y = Template.RingRadius;
+		var c = BumpMath.Sine[64];
+		var s = BumpMath.Sine[192];
+		for ( var index = 0; index < 8; index++ )
+		{
+			ring.Add( new Buoy { Flags = Buoy.Used, X = x + StationX, Y = y + StationY, Index = index } );
+			var nx = s * x + c * y;
+			var ny = s * y - c * x;
+			x = (nx + ((nx >> 31) & 0xFF)) >> 8;
+			y = (ny + ((ny >> 31) & 0xFF)) >> 8;
+		}
+		sections = new List<TrackSection>();
+		objects = new List<CollisionObject> { circle };
+		buoys = ring;
+		FirstAfterFinish = null;
+		foreach ( var vehicle in vehicles )
+			vehicle.ObjectIndex = 0;
+	}
 
 	private void RebuildStationOnly()
 	{
@@ -223,7 +290,7 @@ public sealed class BumpController
 			case 2:
 				return TakeLeavingGuest();
 			case 3:
-				Halt();
+				Start();
 				return 0;
 			case 4:
 				return Launch() ? 1 : 0;
@@ -241,7 +308,8 @@ public sealed class BumpController
 					State = StateBroken;
 				else
 					State = StateFine;
-				return IsTrackValid ? 1 : 0;
+				// the routine has no return value, and the script's accumulator stays what it was (Visitors.cs: PreserveInput)
+				return 0;
 			case 9:
 				// [BIN:TPW-EXE:0x00554895 BUMP 9] a nonzero parameter marks the ride worn out (state 1), zero fixes it (state 0)
 				// [APPROX:TRACK-013] BUMP 9 with a nonzero parameter sets the worn state even over a break, as the traced routine does; what the worn state changes for water boats is not traced (the integration reads it for kart sounds only) — evidence needed: the readers of controller +0x54 equal to 1
@@ -297,6 +365,13 @@ public sealed class BumpController
 	// [BIN:TPW-EXE:0x00544840 open ride] water: only while closed, FirstAfterFinish = the buoy after the finish buoy (skipping flag 2), phase 2, then the performance is pushed; karts use phase 1
 	public void Open()
 	{
+		// [BIN:TPW-EXE:0x00544840 open ride] the bumper types fall into the default case: the phase becomes 1 whatever it was, then the performance is pushed
+		if ( Template.IsBumper )
+		{
+			Phase = PhaseLoading;
+			ApplyPerformance();
+			return;
+		}
 		if ( Phase != PhaseClosed )
 			return;
 		FirstAfterFinish = FindFirstAfterFinish();
@@ -305,7 +380,7 @@ public sealed class BumpController
 	}
 
 	/// <summary>BUMP 6: closes the ride; the waiting guests go to the leaving list.</summary>
-	// [BIN:TPW-EXE:0x00544A10 close ride] phase 0 and the pending list moves behind the leaving list; kart vehicles turn to the unload point at once, water boats finish their run
+	// [BIN:TPW-EXE:0x00544A10 close ride] karts parked on the grid stay aboard when the ride closes during loading (the routine touches only the lists and the phase); the script recovers them with BUMP 10 (unload every kart, close) and a reopen (BUMP 7) leaves them parked for BUMP 3. Phase 0 and the pending list moves behind the leaving list; only the bumper cars turn to the unload point at once, karts and water boats finish their run (a vehicle ends it at its next finish crossing with the phase 0)
 	public void Close()
 	{
 		if ( Phase == PhaseClosed )
@@ -313,12 +388,32 @@ public sealed class BumpController
 		Phase = PhaseClosed;
 		Leaving.AddRange( Pending );
 		Pending.Clear();
+		if ( !Template.IsBumper )
+			return;
+		// [BIN:TPW-EXE:0x00544A10 close ride] every bumper car of the controller gets laps 0 and flags (flags & 0xFFFFBFA1) | 0x10020: it stops carrying, heads for the end of the session and hands its rider over at its next step
+		foreach ( var vehicle in vehicles )
+		{
+			vehicle.Laps = 0;
+			vehicle.Flags = (vehicle.Flags & unchecked((int)0xFFFFBFA1)) | BumpVehicle.Retarget | BumpVehicle.ToUnload;
+		}
 	}
 
-	/// <summary>BUMP 3: the kart start routine; water rides ignore it.</summary>
-	// [BIN:TPW-EXE:0x00544F90 start bump ride] not for the water types: karts go from phase 1 to phase 2 and every vehicle is relaunched
-	public void Halt()
+	/// <summary>BUMP 3: the start of a kart race; water rides ignore it.</summary>
+	// [BIN:TPW-EXE:0x00544F90 start bump ride] not for the water types: the phase goes from 1 to 2 and every vehicle of the controller clears flags 0x80000 and 0x40 (parked, grid mode), takes the controller's laps (+4) as its lap counter and is relaunched (0x0054A040); "Start Bump Ride" is logged
+	public void Start()
 	{
+		if ( IsWater || Phase != PhaseLoading )
+			return;
+		Phase = PhaseRunning;
+		foreach ( var vehicle in vehicles.ToArray() )
+		{
+			vehicle.Flags &= unchecked((int)0xFFF7FFBF);
+			vehicle.Laps = Laps;
+			Relaunch( vehicle );
+			// [BIN:TPW-EXE:0x00544F90 start bump ride] the jungle bumper (type −1) switches every car that carries a guest (flag 0x4000) to animation 5
+			if ( Type == -1 && (vehicle.Flags & BumpVehicle.Steerable) != 0 )
+				vehicle.Animation = 5;
+		}
 	}
 
 	private void SetWater( bool running )
@@ -345,6 +440,10 @@ public sealed class BumpController
 	{
 		if ( VehicleCount >= Template.MaxVehicles || VehicleCount >= MaximumVehicles || Phase == PhaseClosed )
 			return false;
+		// [BIN:TPW-EXE:0x0054A040 relaunch kart] the original accepts BUMP 4 in phase 3 but its relaunch gives such a kart no movement flags, so it would stand on the station for ever (no shipped script creates a kart after the start)
+		// [APPROX:TRACK-028] a kart is refused while the race is over, where the original creates a kart that never moves
+		if ( Template.IsKart && Phase == PhaseOver )
+			return false;
 		var slot = FreeSlot();
 		if ( slot < 0 )
 			return false;
@@ -361,9 +460,22 @@ public sealed class BumpController
 		vehicle.Variant = VehicleCount % Template.ModelCount + Template.ModelBase;
 		// [APPROX:TRACK-012] a boat starts heading along the station's flow; the original's launch leaves the heading at 0 (+Y) for water and the first steering turns it — evidence needed: the heading a launched boat shows before its first turn
 		vehicle.Heading = HeadingOfStation();
+		if ( !IsWater )
+		{
+			// [BIN:TPW-EXE:0x00549DB0 create vehicle] a kart or bumper car plays animation 12 from its creation; the controller's first vehicle carries flag 0x400000 until it unloads
+			// [APPROX:TRACK-012] the drawn heading starts along the station's flow, where the original's zeroed record starts it at 0 (a bumper car takes a random one at its first launch)
+			vehicle.Animation = 12;
+			vehicle.VisualHeading = vehicle.Heading;
+			if ( !vehicles.Any( other => (other.Flags & BumpVehicle.First) != 0 ) )
+				vehicle.Flags |= BumpVehicle.First;
+			if ( Template.IsKart )
+				Raise( BumpEffectKind.EngineStart, vehicle, BumpEffects.SlotEngine );
+		}
 		RiderCount += vehicle.Riders.Count;
 		Relaunch( vehicle );
 		vehicle.Flags |= BumpVehicle.Launched;
+		if ( Template.IsKart )
+			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUpCar );
 		return true;
 	}
 
@@ -431,7 +543,13 @@ public sealed class BumpController
 			RiderCount--;
 		}
 		vehicle.Riders.Clear();
-		vehicle.Flags &= ~BumpVehicle.Live;
+		if ( Template.IsKart )
+		{
+			// [BIN:TPW-EXE:0x0054AE50 retire vehicle] the beam-up particle 15 (not in state 4), then the engine voice is replaced by EventMap slot 1
+			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUpCar );
+			Raise( BumpEffectKind.EngineStop, vehicle, BumpEffects.SlotStop );
+		}
+		vehicle.Flags &= ~(BumpVehicle.Live | BumpVehicle.First);
 		slots[vehicle.Slot] = null;
 		vehicles.Remove( vehicle );
 		VehicleCount--;
@@ -443,6 +561,16 @@ public sealed class BumpController
 	// [BIN:TPW-EXE:0x0054A040 relaunch] water (types −5, −8, −12, −13): buoy countdown 0, flags keep only bit 0, 7 and 14, then lap mode with a new aim (0x10008); a first launch aims at controller +0xA4 and clears the accel bonus
 	private void Relaunch( BumpVehicle vehicle )
 	{
+		if ( Template.IsKart )
+		{
+			RelaunchKart( vehicle );
+			return;
+		}
+		if ( Template.IsBumper )
+		{
+			RelaunchBumper( vehicle );
+			return;
+		}
 		vehicle.BuoyCountdown = 0;
 		vehicle.Flags &= unchecked((int)0xFFFBFF81);
 		if ( (vehicle.Flags & BumpVehicle.FirstLaunch) != 0 )
@@ -452,6 +580,92 @@ public sealed class BumpController
 			vehicle.TargetBuoy = FirstAfterFinish?.Index ?? -1;
 		vehicle.BuoyCountdown = 0;
 		vehicle.AccelBonus = 0;
+		vehicle.Flags &= ~BumpVehicle.FirstLaunch;
+	}
+
+	/// <summary>
+	/// The kart relaunch: while the ride loads (phase 1) the kart aims at the grid slot of its number (the vehicle count-th buoy with flag 2) in grid mode;
+	/// during the race (phase 2) it aims on in lap mode and draws a new thrust bias from the world generator, (3 − (draw &amp; 7)) × accel / 9, the only
+	/// difference between the karts.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0054A040 relaunch kart] the first launch of a hovering kart (types −9, −10) sets flags 0x3C00; flags &= 0xFFFBFF81 and the buoy countdown is 0; phase 1: +0x7C = the count-th buoy with flag 2, flags |= 0x10048 (retarget, grid, lap-mode bit); phase 2: flags |= 0x10008, a target outside the buoy list becomes +0xA4, +0x68 = (3 − (rand &amp; 7)) × (accel / 9); the first-launch flag 0x100000 is cleared in every case
+	// [APPROX:DET-013] the draw comes from the park's seeded world stream instead of the original's world generator
+	private void RelaunchKart( BumpVehicle vehicle )
+	{
+		if ( (vehicle.Flags & BumpVehicle.FirstLaunch) != 0 && Type is -9 or -10 )
+			vehicle.Flags |= BumpVehicle.HoverKartFlags;
+		vehicle.BuoyCountdown = 0;
+		vehicle.Flags &= unchecked((int)0xFFFBFF81);
+		if ( Phase == PhaseLoading )
+		{
+			var slot = 0;
+			var target = -1;
+			foreach ( var buoy in buoys )
+			{
+				if ( buoy.IsSkipped && ++slot == VehicleCount )
+				{
+					target = buoy.Index;
+					break;
+				}
+			}
+			if ( target >= 0 )
+				vehicle.TargetBuoy = target;
+			vehicle.Flags |= BumpVehicle.Retarget | BumpVehicle.GridMode | BumpVehicle.LapMode;
+		}
+		else if ( Phase == PhaseRunning )
+		{
+			vehicle.Flags |= BumpVehicle.Retarget | BumpVehicle.LapMode;
+			if ( vehicle.TargetBuoy < 0 || vehicle.TargetBuoy >= buoys.Count )
+				vehicle.TargetBuoy = FirstAfterFinish?.Index ?? -1;
+			vehicle.BuoyCountdown = 0;
+			vehicle.AccelBonus = (3 - (int)(worldRandom() & 7)) * (Accel / 9);
+		}
+		vehicle.Flags &= ~BumpVehicle.FirstLaunch;
+	}
+
+	/// <summary>
+	/// The bumper-car relaunch. A car's first launch drops it at a random free spot of the arena with a random heading and no passenger flag (0x4000); every
+	/// launch then picks the next target: a random buoy of the ring, or, one time in four when the car is not parked or already wandering, the buoy after
+	/// its current one. The buoy countdown is 3, so a car changes its mind after three captures.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0054A040 relaunch bumper] first launch (flag 0x100000): up to 100 draws of (radius = rand % arena radius, angle = rand &amp; 0x1FF) around the station until no other vehicle overlaps, flag 0x4000 cleared, heading +0x50 = +0x54 = rand &amp; 0x1FF, +0xA4 = −1 (no wall-stuck retarget); the jungle bumper also gets flags 0x3000000 and a presentation object. Target: flag 8 set and rand &amp; 0xF ≤ 3 → the buoy after the current one, else buoy number rand % 8 counted from the head; flags (flags &amp; 0xFFFBFF89) | 0x10008 | 0x8000, countdown +0x8C = 3, flag 0x100000 cleared
+	// [APPROX:TRACK-029] the relaunch never starts a chase (the original does for a car with another car in its arena object, when flags 0x40004 are clear and rand &amp; 0xF ≤ 2) and the chase step is not run, so a car only wanders between buoys; its chase draw is not taken — evidence needed: none missing for the choice (0x0054A040 is traced), the chase step of 0x005474B0 is traced but not ported
+	private void RelaunchBumper( BumpVehicle vehicle )
+	{
+		if ( (vehicle.Flags & BumpVehicle.FirstLaunch) != 0 )
+		{
+			var arena = Template.ArenaRadius;
+			for ( var attempt = 100; attempt > 0; attempt-- )
+			{
+				var radius = (int)(worldRandom() % (uint)arena);
+				var angle = (int)(worldRandom() & 0x1FF);
+				var along = BumpMath.Sine[(angle + 0x80) & 0x1FF] * radius;
+				var across = radius * BumpMath.Sine[angle];
+				vehicle.X = ((along + ((along >> 31) & 0xFF)) >> 8) + StationX;
+				vehicle.Y = StationY - ((across + ((across >> 31) & 0xFF)) >> 8);
+				if ( attempt == 1 || !vehicles.Any( other => other != vehicle && other.IsLive && BumpMath.Distance( other.X - vehicle.X, other.Y - vehicle.Y ) < other.Radius + vehicle.Radius ) )
+					break;
+			}
+			vehicle.Flags &= ~BumpVehicle.Steerable;
+			var heading = (int)(worldRandom() & 0x1FF);
+			vehicle.Heading = heading;
+			vehicle.VisualHeading = heading;
+			vehicle.WallHits = -1;
+		}
+		var next = vehicle.TargetBuoy;
+		int steps;
+		if ( (vehicle.Flags & BumpVehicle.LapMode) == 0 || (worldRandom() & 0xF) > 3 || next < 0 || next >= buoys.Count )
+		{
+			steps = buoys.Count == 0 ? 0 : (int)(worldRandom() % (uint)buoys.Count);
+			next = 0;
+		}
+		else
+			steps = 1;
+		vehicle.Flags = (vehicle.Flags & unchecked((int)0xFFFBFF89)) | BumpVehicle.Retarget | BumpVehicle.LapMode;
+		if ( buoys.Count > 0 )
+			vehicle.TargetBuoy = (next + steps) % buoys.Count;
+		vehicle.Flags |= 0x8000;
+		vehicle.BuoyCountdown = 3;
 		vehicle.Flags &= ~BumpVehicle.FirstLaunch;
 	}
 
@@ -553,6 +767,9 @@ public sealed class BumpController
 			StuckCheck( vehicle );
 			KeepIn( vehicle );
 			KeepOut( vehicle );
+			// [APPROX:TRACK-031] bumper cars make no effect: the crunch code 5, the engine voices and the jungle car's presentation object are not played
+			if ( Template.IsKart )
+				PlayEffect( vehicle );
 		}
 	}
 
@@ -728,10 +945,27 @@ public sealed class BumpController
 	private void Step( BumpVehicle vehicle )
 	{
 		vehicle.Age++;
+		// [BIN:TPW-EXE:0x005474B0 duration countdown] a lap counter at or above 0 is a duration: while the ride runs (phase 2) and is not broken it counts down once per tick, and at 0 the vehicle goes to the unload point (flags & 0xFFFFFFA1 | 0x10020); no kart or water script sets it (BUMP 14 stores a negative lap count); the water boats skip it here, so a boat that ended its run keeps its lap counter at 0 as phase 1 pinned
+		// [BIN:TPW-EXE:0x005474B0 session countdown] the bumper cars' duration is the same counter: BUMP 13 stores seconds × 30 and BUMP 3 hands it to every car; at 0 the bumper types also drop the carrying flag 0x4000 before they head for the end of the session
+		if ( !IsWater && vehicle.Laps >= 0 && Phase == PhaseRunning && State != StateBroken )
+		{
+			vehicle.Laps--;
+			if ( vehicle.Laps == 0 )
+			{
+				if ( Template.IsBumper )
+					vehicle.Flags &= ~BumpVehicle.Steerable;
+				vehicle.Flags = (vehicle.Flags & unchecked((int)0xFFFFFFA1)) | BumpVehicle.Retarget | BumpVehicle.ToUnload;
+			}
+		}
 		if ( (vehicle.Flags & 4) != 0 )
 			return;
 		if ( (vehicle.Flags & BumpVehicle.ToUnload) != 0 )
 		{
+			if ( Template.IsBumper )
+			{
+				EndBumperSession( vehicle );
+				return;
+			}
 			var distance = Steer( vehicle, UnloadX, UnloadY );
 			if ( (vehicle.Flags & BumpVehicle.Waypoint) != 0 && distance <= Template.BuoyRadius )
 			{
@@ -769,14 +1003,32 @@ public sealed class BumpController
 			vehicle.Flags |= BumpVehicle.Retarget;
 			return;
 		}
-		if ( (vehicle.Flags & BumpVehicle.LapMode) != 0 && (vehicle.Flags & 0x40) == 0 )
+		if ( (vehicle.Flags & BumpVehicle.LapMode) != 0 && (vehicle.Flags & BumpVehicle.GridMode) != 0 )
+		{
+			// [BIN:TPW-EXE:0x005474B0 grid slot] within a quarter of the buoy radius of its slot a kart parks: flag 0x80000 (damping × 0.7, no thrust) and its target becomes +0xA4, the buoy after the finish, where it waits for BUMP 3
+			if ( captured <= Template.BuoyRadius / 4 )
+			{
+				vehicle.Flags |= BumpVehicle.Slowed | BumpVehicle.Retarget;
+				vehicle.TargetBuoy = FirstAfterFinish?.Index ?? vehicle.TargetBuoy;
+				return;
+			}
+		}
+		else if ( (vehicle.Flags & BumpVehicle.LapMode) != 0 && (vehicle.Flags & BumpVehicle.GridMode) == 0 )
 		{
 			if ( buoy.IsFinish )
 			{
-				// laps run from a negative count up to 0; a closed ride ends the run at once
-				vehicle.Laps++;
-				if ( Phase == PhaseOver || Phase == PhaseClosed || vehicle.Laps == 0 )
+				// laps run from a negative count up to 0; a closed ride or a finished race ends the run at once, without counting the crossing
+				// [BIN:TPW-EXE:0x005474B0 finish buoy] phase 3 or 0 ends the run; otherwise ++laps (+0x88) ends it at 0; for the kart types a run ending in phase 2 sets phase 3 ("GoKart Race Over"), so the first kart home ends the race and the others go home at their next crossing
+				var ended = Phase == PhaseOver || Phase == PhaseClosed;
+				if ( !ended )
 				{
+					vehicle.Laps++;
+					ended = vehicle.Laps == 0;
+				}
+				if ( ended )
+				{
+					if ( Template.IsKart && Phase == PhaseRunning )
+						Phase = PhaseOver;
 					vehicle.JitterX = 0;
 					vehicle.JitterY = 0;
 					vehicle.Flags = (vehicle.Flags & unchecked((int)0xFFFFFFA1)) | BumpVehicle.Retarget | BumpVehicle.ToUnload;
@@ -798,6 +1050,30 @@ public sealed class BumpController
 			AimAtNext( vehicle, NextBuoy( buoy ) );
 		}
 		vehicle.Flags |= BumpVehicle.Retarget;
+	}
+
+	/// <summary>
+	/// A bumper car at the end of its session: it hands every rider to the leaving list at once (the ride's script collects them with BUMP 2), and when
+	/// that leaves nobody on any car of the controller, the ride goes back to loading and the car stops.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005474B0 bumper unload] the 0x20 branch for types −1, −6, −11, −14 calls 0x0054AC70 (riders to the front of the leaving list one by one, the rider count +0x60 falls, the head sprite goes); when the controller has no rider left its phase becomes 1 ("loading"), the car's flags &amp;= 0xFFFFFF81 (no more wandering or unloading) and its animation 12; otherwise the car repeats the call at its next step, so the last car's step ends the session for every car
+	private void EndBumperSession( BumpVehicle vehicle )
+	{
+		foreach ( var guest in vehicle.Riders )
+		{
+			Leaving.Insert( 0, guest );
+			RiderCount--;
+		}
+		vehicle.Riders.Clear();
+		if ( RiderCount > 0 )
+			return;
+		Phase = PhaseLoading;
+		vehicle.Flags &= unchecked((int)0xFFFFFF81);
+		if ( vehicle.Animation != 12 )
+		{
+			vehicle.Animation = 12;
+			Raise( BumpEffectKind.Animation, vehicle, 12 );
+		}
 	}
 
 	/// <summary>Aims at <paramref name="next"/> with a fresh jitter: the new value on X, the previous X on Y.</summary>
@@ -833,6 +1109,11 @@ public sealed class BumpController
 		vehicle.Speed = BumpMath.Length( vehicle.VX, vehicle.VY );
 		vehicle.Y += vehicle.VY;
 		vehicle.X += vehicle.VX;
+		if ( Template.IsKart )
+		{
+			IntegrateKart( vehicle );
+			return;
+		}
 		if ( !IsWater )
 			return;
 		if ( Math.Abs( vehicle.Spin ) > 0x30 )
@@ -844,6 +1125,90 @@ public sealed class BumpController
 		{
 			vehicle.Sprays++;
 			Sprays++;
+		}
+	}
+
+	/// <summary>
+	/// The tail of a kart's integration: the drawn heading follows the velocity, the horn and exhaust requests of the 32nd tick, and the animation switch at
+	/// the speed threshold; the engine voice gets its pitch every tick.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00547F50 integrate kart] the velocity angle a (512ths) moves the drawn heading +0x54 by ((a − h) mod 512, wrapped to ±256) × speed / 1000 per tick (+0x5C, with its change +0x60); racing (phase 2) on every 32nd tick above speed 230 with no pending effect asks for effect 2 (horn); worn (+0x54 = 1) above speed 80 with a sparks node a draw r = (lcg >> 16) &amp; 7 gives sparks (r &lt; 2) or an exhaust puff and effect 1 (r = 2); speed ≤ 40 sets animation 12 (not for the hovering karts, flag 0x400), above sets 5; the engine voice's parameter 10 is speed / 3
+	// [APPROX:TRACK-023] the drawn heading starts equal to the steering heading, and the unload and the break smoke cadences are OpenTPW's (see the register)
+	private void IntegrateKart( BumpVehicle vehicle )
+	{
+		var speed = vehicle.Speed;
+		if ( Phase == PhaseRunning && (TickCount & 0x1F) == 0 && speed > BumpEffects.TootSpeed && vehicle.EffectRequest == 0 )
+			vehicle.EffectRequest = BumpEffects.RequestToot;
+		if ( speed <= BumpEffects.AnimationSpeed )
+		{
+			if ( vehicle.Animation == 5 && (vehicle.Flags & BumpVehicle.Hover) == 0 )
+			{
+				vehicle.Animation = 12;
+				Raise( BumpEffectKind.Animation, vehicle, 12 );
+			}
+		}
+		else if ( vehicle.Animation == 12 )
+		{
+			vehicle.Animation = 5;
+			Raise( BumpEffectKind.Animation, vehicle, 5 );
+		}
+		if ( Phase == PhaseRunning && State == StateWorn && (TickCount & 0x1F) == 0 && speed > BumpEffects.ExhaustSpeed && HasSparksNode )
+		{
+			var draw = ((world?.NextCosmetic() ?? 0) >> 16) & 7;
+			if ( draw < 2 )
+				Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleSparks );
+			else if ( draw == 2 && vehicle.EffectRequest == 0 )
+			{
+				Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleExhaustPuff );
+				vehicle.EffectRequest = BumpEffects.RequestExhaust;
+			}
+		}
+		// [APPROX:TRACK-025] a broken kart smokes (particle 2 on its sparks node) every 32nd tick; the original's emitter and its cadence are not located (the script's own ADDOBJ smoke is separate)
+		if ( Phase == PhaseRunning && State == StateBroken && (TickCount & 0x1F) == 0 && HasSparksNode )
+			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleSmoke );
+		Raise( BumpEffectKind.EngineParameter, vehicle, BumpEffects.SlotEngine, speed / 3 );
+		var heading = BumpMath.HeadingOf( vehicle.VX, vehicle.VY );
+		var difference = (heading - vehicle.VisualHeading) & 0x1FF;
+		if ( difference > 0x100 )
+			difference -= 0x200;
+		var previous = vehicle.YawRate;
+		vehicle.YawRate = difference * speed / 1000;
+		vehicle.YawDelta = vehicle.YawRate - previous;
+		vehicle.VisualHeading = (vehicle.VisualHeading + vehicle.YawRate) & 0x1FF;
+	}
+
+	/// <summary>The effect player of a vehicle (the end of its tick): the request is latched at the higher code, a latched effect plays once.</summary>
+	// [BIN:TPW-EXE:0x00547170 effect player] request (+0x14) is taken into the latch (+0x18) when higher and cleared; 1 plays global cat_rides 24, 2 draws the module LCG and plays EventMap slot 3 (TOOT) when (lcg &amp; 0x70000) == 0, else stays latched for the next tick, 3 plays global cat_rides 12 (CRUNCH); a played effect clears the latch
+	// [APPROX:TRACK-025] the global cat_rides ids 12 and 24 and the EventMap slots are submitted as the executable names them; which sound each id is in the shipped catalogue is not mapped (the cat_rides catalogue format is unread)
+	private void PlayEffect( BumpVehicle vehicle )
+	{
+		var request = vehicle.EffectRequest;
+		if ( request != 0 )
+		{
+			if ( vehicle.EffectLatch < request )
+				vehicle.EffectLatch = request;
+			vehicle.EffectRequest = 0;
+		}
+		switch ( vehicle.EffectLatch )
+		{
+			case BumpEffects.RequestExhaust:
+				Raise( BumpEffectKind.GlobalSound, vehicle, BumpEffects.SoundExhaust );
+				vehicle.EffectLatch = 0;
+				break;
+			case BumpEffects.RequestToot:
+				if ( (((world?.NextCosmetic() ?? 0) & 0x70000) == 0) )
+				{
+					Raise( BumpEffectKind.EventSound, vehicle, BumpEffects.SlotToot );
+					vehicle.EffectLatch = 0;
+				}
+				break;
+			case BumpEffects.RequestCrash:
+				Raise( BumpEffectKind.GlobalSound, vehicle, BumpEffects.SoundCrunch );
+				vehicle.EffectLatch = 0;
+				break;
+			default:
+				vehicle.EffectLatch = 0;
+				break;
 		}
 	}
 
@@ -877,6 +1242,13 @@ public sealed class BumpController
 			var rest = normal - share;
 			vehicle.VX -= BumpMath.Div1024( rest * BumpMath.Sin( direction ) * 4 );
 			vehicle.VY -= BumpMath.Div1024( rest * BumpMath.Cos( direction ) * 4 );
+			// [BIN:TPW-EXE:0x00546C80 crash] a kart pair whose impulse (the share handed to the other) exceeds 0x82 asks for the CRUNCH effect (code 3) once per tick: both get flag 0x200000 (the bumper cars ask for code 5, the water boats make no sound)
+			if ( Template.IsKart && share > BumpEffects.CrashImpulse && ((vehicle.Flags | other.Flags) & BumpVehicle.Crunched) == 0 )
+			{
+				vehicle.Flags |= BumpVehicle.Crunched;
+				other.Flags |= BumpVehicle.Crunched;
+				vehicle.EffectRequest = BumpEffects.RequestCrash;
+			}
 		}
 		else
 		{
@@ -1083,6 +1455,16 @@ public sealed class BumpController
 			hash.Add( vehicle.WallHits );
 			hash.Add( vehicle.WallWindow );
 			hash.Add( vehicle.Sprays );
+			if ( Template.IsKart )
+			{
+				// the kart's drawn heading, yaw, animation and effect latch are simulation state (the effects draw from the cosmetic generator), so they join the digest of kart controllers only
+				hash.Add( vehicle.VisualHeading );
+				hash.Add( vehicle.YawRate );
+				hash.Add( vehicle.YawDelta );
+				hash.Add( vehicle.Animation );
+				hash.Add( vehicle.EffectRequest );
+				hash.Add( vehicle.EffectLatch );
+			}
 			hash.Add( vehicle.Riders.Count );
 			foreach ( var rider in vehicle.Riders )
 				hash.Add( rider );
@@ -1121,7 +1503,9 @@ public sealed class BumpController
 				Slot = saved.Slot, Flags = saved.Flags, Variant = saved.Variant, X = saved.X, Y = saved.Y, VX = saved.VX, VY = saved.VY, VX0 = saved.VX0, VY0 = saved.VY0,
 				Speed = saved.Speed, Heading = saved.Heading, Spin = saved.Spin, Roll = saved.Roll, Radius = saved.Radius, AccelBonus = saved.AccelBonus,
 				TargetX = saved.TargetX, TargetY = saved.TargetY, JitterX = saved.JitterX, JitterY = saved.JitterY, TargetBuoy = saved.TargetBuoy, Laps = saved.Laps,
-				BuoyCountdown = saved.BuoyCountdown, Age = saved.Age, ObjectIndex = saved.ObjectIndex, WallHits = saved.WallHits, WallWindow = saved.WallWindow, Sprays = saved.Sprays
+				BuoyCountdown = saved.BuoyCountdown, Age = saved.Age, ObjectIndex = saved.ObjectIndex, WallHits = saved.WallHits, WallWindow = saved.WallWindow, Sprays = saved.Sprays,
+				VisualHeading = saved.VisualHeading, YawRate = saved.YawRate, YawDelta = saved.YawDelta, Animation = saved.Animation, EffectRequest = saved.EffectRequest,
+				EffectLatch = saved.EffectLatch, Height = float.IsFinite( saved.Height ) ? saved.Height : 0f
 			};
 			vehicle.Riders.AddRange( saved.Riders );
 			slots[vehicle.Slot] = vehicle;

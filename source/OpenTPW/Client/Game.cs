@@ -332,19 +332,20 @@ internal static class Game
 			Render.PostUpdate += new WorldCapture( capturePath, frames, args.Contains( "--capture-interface" ), pose, sequence.Count, sequence.Interval ).Update;
 		}
 #if DEBUG
-		// [EXT:debug-water-track] smoke-only (Debug builds): once the original level is up, places a water ride with a closed circuit near the
+		// [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the
 		// park's paths and points the camera at it, so captures show the track tiles and a boat (docs/TRACKS.md).
-		if ( args.Contains( "--debug-water-track" ) )
+		if ( args.Contains( "--debug-water-track" ) || args.Contains( "--debug-kart-track" ) )
 		{
 			var demoFrames = 0;
-			Render.PostUpdate += BuildWaterDemo;
-			void BuildWaterDemo()
+			var demoType = args.Contains( "--debug-kart-track" ) ? 1 : 2;
+			Render.PostUpdate += BuildTrackDemo;
+			void BuildTrackDemo()
 			{
 				if ( flow.Level is not { WaterTracks: not null } demoLevel || ++demoFrames < 30 )
 					return;
-				Render.PostUpdate -= BuildWaterDemo;
-				if ( demoLevel.BuildDemoWaterRide() == null )
-					Log.Warning( "--debug-water-track: no site with room for a water ride and its circuit." );
+				Render.PostUpdate -= BuildTrackDemo;
+				if ( demoLevel.BuildDemoTrackRide( demoType ) == null )
+					Log.Warning( "--debug-water-track / --debug-kart-track: no site with room for a track ride and its circuit." );
 			}
 		}
 		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
@@ -449,7 +450,7 @@ internal static class Game
 		}
 		else if ( args.Contains( "--smoke-test" ) )
 		{
-			using var smokeTest = new SandboxSmokeTest( level, flow.Hud, flow.Context );
+			using var smokeTest = new SandboxSmokeTest( level, flow.Hud, flow.Context, input => flow.InjectedInput = input );
 			Render.PostUpdate += smokeTest.Update;
 			Render.Run();
 			smokeTest.VerifyCompleted();

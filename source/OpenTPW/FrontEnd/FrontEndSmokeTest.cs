@@ -558,7 +558,20 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "employed staff view", () =>
 		{
 			var hud = flow.Hud!;
-			Require( flow.Level!.Park!.Economy.Staff.Members.Any( member => member.Id == smokeStaffId ), "clicking the selected applicant hires through the staff window" );
+			var level = flow.Level!;
+			var placement = level.StaffPlacement;
+			Require( placement is { Kind: StaffToolKind.Place } && !hud.StaffWindowOpen, "clicking the selected applicant closes the staff window and starts the Place tool" );
+			Require( level.Park!.Economy.Staff.Members.All( member => member.Id != smokeStaffId )
+				&& level.Park.Economy.Staff.Candidates.Any( candidate => candidate.Id == smokeStaffId ), "the applicant is not employed until the placement click" );
+			var cells = level.Guests!.Grid.Cells;
+			(int X, int Y) target = (-1, -1);
+			for ( var y = 0; y < cells.Height && target.X < 0; y++ )
+				for ( var x = 0; x < cells.Width && target.X < 0; x++ )
+					if ( placement!.IsValid( x, y ) )
+						target = (x, y);
+			Require( target.X >= 0 && placement!.Click( target.X, target.Y ) == StaffClickResult.Placed, "a click on a valid cell hires the applicant" );
+			Require( level.Park.Economy.Staff.Members.Any( member => member.Id == smokeStaffId ), "the placed applicant is employed" );
+			hud.OpenStaffWindow();
 			Click( hud.Stack.Top!, "staffViewExt" );
 		} );
 		Wait( "employed staff view opens", 3 );

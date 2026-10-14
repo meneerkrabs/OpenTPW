@@ -19,7 +19,7 @@ binary is the checked source. The world field the routine reads is at Mac `world
 
 **Opening** (`DoorMoved(closed: false)`): the gate's command variable `VAR_COMMAND` becomes 1, and every
 closed attraction the walk reaches opens again, unless the original's reopening guard `0xde654` refuses it: broken down or
-condemned, an upgrade on its way, or a coaster without a complete circuit (ORACLE.md F27; ECON-049 for what is not modelled).
+condemned, an upgrade on its way, a mechanic called to it, or a coaster without a complete circuit (ORACLE.md F27; ECON-049 for what is not modelled).
 
 **Closing** (`DoorMoved(closed: true)`): every attraction the guests may be offered closes at once (thing
 flag `+0x2E` bit 4). The gate is commanded shut (`VAR_COMMAND` 0) only when the gate reports itself open
@@ -49,8 +49,8 @@ The reduced imported guest grid does not yet preserve every original cell type: 
 
 ## Approximations
 
-- `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test; the maintenance flag (no maintenance button in OpenTPW)
-  and the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) are not modelled.
+- `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test, including the maintenance flag (the ride
+  panel's call for a mechanic); the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) is not modelled.
 - `ECON-050`: the guest-grid import preserves paths, but not all original outside, approach-road and footprint cell types. The census predicate is traced; the imported type provenance is incomplete.
 - The ticket booth closes at once; the original's booth state and the closed-ride queue turn-away are not
   traced here.

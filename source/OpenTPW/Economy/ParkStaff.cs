@@ -31,6 +31,8 @@ public enum StaffJob : byte
 	Cleaning = 11,
 	/// <summary>An entertainer's performance (state 14).</summary>
 	Performing = 14,
+	/// <summary>A researcher at work (state 15).</summary>
+	Researching = 15,
 	/// <summary>A guard runs after a prankster (state 16).</summary>
 	Chasing = 16,
 	/// <summary>A guard takes a caught prankster to the ticket booth (state 18).</summary>
@@ -93,6 +95,13 @@ public sealed class StaffMember
 	public int TargetGuestId { get; set; }
 	/// <summary>The cell where an entertainer's or a guard's <c>RegionFX</c> row lies [+0xcc], null before a world placed it.</summary>
 	public (int X, int Y)? EffectCell { get; set; }
+	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
+	public int RestAreaId { get; set; }
+	/// <summary>
+	/// The points a member still walks off the path grid after its current walk (the road outside the park to and from the strike area): each a cell and
+	/// its sub-cell bytes. Empty on the paths.
+	/// </summary>
+	public List<(int X, int Y, int ByteX, int ByteY)> OffGridLeg { get; set; } = new();
 }
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>

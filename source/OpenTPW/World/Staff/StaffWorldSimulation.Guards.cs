@@ -60,7 +60,7 @@ public sealed partial class StaffWorldSimulation
 	/// <summary>The guard's search (tp.exe <c>0x004D63D0</c>, also the tail of states 0 and 1): the strike and rest gate, then a patrol on three turns in four, else idle.</summary>
 	private void SearchGuard( ParkEconomy economy, StaffMember member, long turn )
 	{
-		if ( StrikeOrRest( economy, member ) )
+		if ( StrikeOrRest( economy, member, turn ) )
 			return;
 		SetJob( economy, member, (turn & 3) != 0 && Patrol( economy, member, Cell( member ) ) ? StaffJob.Patrol : StaffJob.Idle, turn );
 	}

@@ -46,7 +46,7 @@ public sealed partial class StaffWorldSimulation
 	// [BIN:TPW-EXE:0x004D46D0 entertainer search] 0x00506A40 (strike, rest), 0x00506680 (too tired: "Too tired to entertain"); a draw % 3 == 0 and 0x004C8EB0 (a thing of type 1 within EntertainerConstsPerGrade[grade].ActivationDistance, 0x007853A0 + 16 × grade) draw the performance's animation and set state 14 with +0x214 = the turn; else (turn & 3) == 0 draws once and idles (0x005054D0(0)), or 0x004F9490 finds a destination, draws once and patrols (state 1); a failed wander changes nothing
 	private void SearchEntertainer( ParkEconomy economy, StaffMember member, long turn )
 	{
-		if ( StrikeOrRest( economy, member ) )
+		if ( StrikeOrRest( economy, member, turn ) )
 			return;
 		var cell = Cell( member );
 		if ( !StaffVitals.IsBelowRestLevel( member.Energy, economy.Settings.RestLevel ) && Draw( economy ) % 3 == 0

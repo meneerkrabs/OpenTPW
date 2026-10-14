@@ -107,22 +107,27 @@ public partial class Level
 		{
 			if ( item.IsDeleted || !item.Entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) || !economyInstances.TryGetValue( item, out var instance ) )
 				continue;
-			var cell = (item.Placement.X, item.Placement.Y);
-			(int X, int Y)? access = null;
-			foreach ( var point in item.AccessPoints )
-				if ( access == null && grid.IsWalkable( point.OutsideX, point.OutsideY ) )
-					access = (point.OutsideX, point.OutsideY);
-			for ( var direction = 0; access == null && direction < 4; direction++ )
-			{
-				var (dx, dy) = GuestPathGrid.Directions[direction];
-				if ( grid.IsWalkable( cell.X + dx, cell.Y + dy ) )
-					access = (cell.X + dx, cell.Y + dy);
-			}
-			// [APPROX:GUEST-005] a bin's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
-			if ( access is { } found )
-				bins.Add( new LitterBin( instance, cell, found ) );
+			if ( AccessCell( item, grid ) is { } found )
+				bins.Add( new LitterBin( instance, (item.Placement.X, item.Placement.Y), found ) );
 		}
 		return bins;
+	}
+
+	/// <summary>An object's access cell (thing <c>+0x36</c>) for bins and rest areas: its entrance's outside cell on a path, else its first path neighbour.</summary>
+	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
+	private static (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
+	{
+		var cell = (item.Placement.X, item.Placement.Y);
+		foreach ( var point in item.AccessPoints )
+			if ( grid.IsWalkable( point.OutsideX, point.OutsideY ) )
+				return (point.OutsideX, point.OutsideY);
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			if ( grid.IsWalkable( cell.X + dx, cell.Y + dy ) )
+				return (cell.X + dx, cell.Y + dy);
+		}
+		return null;
 	}
 
 	/// <summary>The bin's script variable a guest's litter sets (each theme's Litter Bin script declares only <c>VAR_TRIGGER</c>).</summary>

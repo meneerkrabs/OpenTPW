@@ -36,7 +36,7 @@ public sealed partial class StaffWorldSimulation
 	public IGuardGuests? Guests { get; set; }
 
 	// [BIN:TPW-EXE:0x004D73C0 handyman update] once per park turn after the pre-update 0x004D7060 (the speed 0x004FA870 and, while idle, a litter scan every IdleDuration turns): 0 idle until the turn passes +0x200 + IdleDuration[grade] (0x00785330 + 16 × grade); 1 patrol: one walk step, the walk drain while walking (0x005066A0), the job search on arrival or stuck; 8 to litter (0x004D7580); 9 sweep (0x004D76A0); 10 to a toilet (0x004D7790); 11 clean until the turn passes +0x214 + WorkDuration[grade] (0x004DFD80, 0x004DF390); every other state runs the generic staff handler
-	// [APPROX:ECON-022] handymen, entertainers and guards in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation), but their rest and strike are the economy's without the walks to the rest or strike area, the player's maintenance request (mRequestedService) and patrol rectangle have no control, they step without the guests' separation, a toilet claim ends when the walk to it fails instead of lapsing after 100 turns, a toilet's access cell is its join or entrance cell, an entertainer's performance has no animation and the guests do not turn to watch, the guard list's order is the hire order, a prank reaches the guards at once, a picked-up entertainer's or guard's row stays on the cell he was lifted from, and a guard carries a caught guest to the park entrance when the ticket booth is no path cell; a headless economy without a world keeps its own handyman dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: none (read, tp.exe 0x004D73C0 / 0x004D7100, 0x004D4810 / 0x004D46D0, 0x004D6410 / 0x00508A30 / 0x004D6790); the rest and strike walks and the controls are their own items
+	// [APPROX:ECON-022] handymen, entertainers, guards and researchers in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation), with the shared walks to a rest area and to the strike area, but the player's maintenance request (mRequestedService) and patrol rectangle have no control, they step without the guests' separation, a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance), a rest ends when its rest area is sold, a resting member stays on the map (no staff model is drawn yet), a toilet claim ends when the walk to it fails instead of lapsing after 100 turns, a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour, an entertainer's performance has no animation and the guests do not turn to watch, the guard list's order is the hire order, a prank reaches the guards at once, a picked-up entertainer's or guard's row stays on the cell he was lifted from, and a guard carries a caught guest to the park entrance when the ticket booth is no path cell; a headless economy without a world keeps its own handyman dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: none (read, tp.exe 0x004D73C0 / 0x004D7100, 0x004D4810 / 0x004D46D0, 0x004D6410 / 0x00508A30 / 0x004D6790, 0x005029F0, 0x00506A40 / 0x00505FE0 / 0x005061D0 / 0x00506300); the controls are their own items
 	// [BIN:TPW-EXE:0x0050B360 staff update] each staff thing in list order: the type's pre-update, then its state handler (4 mechanic 0x00505490 / 0x004DA490, 5 handyman 0x004D7060 / 0x004D73C0, 6 entertainer 0x004D4660 / 0x004D4810, 7 guard 0x004D6360 / 0x004D6410, 8 researcher 0x00502960 / 0x005029F0)
 	public void UpdateStaff( ParkEconomy economy, long turn )
 	{
@@ -62,12 +62,13 @@ public sealed partial class StaffWorldSimulation
 					}
 					member.Job = StaffJob.PickedUp;
 					continue;
-				case StaffState.OnStrike:
+				// a strike or rest the economy started without a walk (an older save): the member strikes or rests where he stands
+				case StaffState.OnStrike when member.Job is not (StaffJob.ToStrike or StaffJob.Striking):
 					member.Job = StaffJob.Striking;
-					continue;
-				case StaffState.Resting:
+					break;
+				case StaffState.Resting when member.Job is not (StaffJob.ToRestArea or StaffJob.Resting):
 					member.Job = StaffJob.Resting;
-					continue;
+					break;
 			}
 			if ( placed && member.Type == StaffType.Handyman )
 			{
@@ -76,31 +77,45 @@ public sealed partial class StaffWorldSimulation
 				DropDispatchedJob( economy, member );
 				Search( economy, member, turn );
 			}
-			else if ( member.Job is StaffJob.PickedUp or StaffJob.Striking or StaffJob.Resting or StaffJob.ToRestArea or StaffJob.ToStrike )
+			else if ( member.Job == StaffJob.PickedUp )
 			{
-				// Back from a rest or a strike: the original's rest end (0x00506D10) sets state 0 and runs the type's search in the same update.
+				// set down by the player (0x00505EA0 sets state 0): the type's search runs in the same update
 				SetJob( economy, member, StaffJob.Idle, turn );
-				switch ( member.Type )
-				{
-					case StaffType.Handyman: Search( economy, member, turn ); break;
-					case StaffType.Entertainer: SearchEntertainer( economy, member, turn ); break;
-					case StaffType.Guard: SearchGuard( economy, member, turn ); break;
-				}
+				SearchByType( economy, member, turn );
 			}
 			else
 			{
 				// the pre-update's speed step (0x004FA870 through 0x00505490, shared with the guests)
 				(member.SmoothedSpeed, _, var maxSpeed, var maxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, 0 );
-				switch ( member.Type )
+				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting or StaffJob.ToStrike or StaffJob.Striking )
+					UpdateRestOrStrike( economy, member, turn, maxSpeed, maxForce );
+				else
 				{
-					case StaffType.Handyman: UpdateHandyman( economy, member, turn, maxSpeed, maxForce ); break;
-					case StaffType.Entertainer: UpdateEntertainer( economy, member, turn, maxSpeed, maxForce ); break;
-					case StaffType.Guard: UpdateGuard( economy, member, turn, maxSpeed, maxForce ); break;
+					switch ( member.Type )
+					{
+						case StaffType.Handyman: UpdateHandyman( economy, member, turn, maxSpeed, maxForce ); break;
+						case StaffType.Entertainer: UpdateEntertainer( economy, member, turn, maxSpeed, maxForce ); break;
+						case StaffType.Guard: UpdateGuard( economy, member, turn, maxSpeed, maxForce ); break;
+						case StaffType.Researcher: UpdateResearcher( economy, member, turn, maxSpeed, maxForce ); break;
+					}
 				}
 			}
 			var navigation = member.Navigation!;
 			member.CellX = navigation.X / (float)Fixed16.One;
 			member.CellY = navigation.Y / (float)Fixed16.One;
+		}
+		CountRestingStaff( economy );
+	}
+
+	/// <summary>The type's search, run when a member is set down or ends a rest (0x00506D10 dispatches by type: 5 0x004D7100, 6 0x004D46D0, 7 0x004D63D0, 8 0x00502C70).</summary>
+	private void SearchByType( ParkEconomy economy, StaffMember member, long turn )
+	{
+		switch ( member.Type )
+		{
+			case StaffType.Handyman: Search( economy, member, turn ); break;
+			case StaffType.Entertainer: SearchEntertainer( economy, member, turn ); break;
+			case StaffType.Guard: SearchGuard( economy, member, turn ); break;
+			case StaffType.Researcher: SearchResearcher( economy, member, turn ); break;
 		}
 	}
 
@@ -217,7 +232,7 @@ public sealed partial class StaffWorldSimulation
 	private void Search( ParkEconomy economy, StaffMember member, long turn )
 	{
 		var settings = economy.Settings;
-		if ( StrikeOrRest( economy, member ) )
+		if ( StrikeOrRest( economy, member, turn ) )
 			return;
 		var cell = Cell( member );
 		if ( !StaffVitals.IsBelowRestLevel( member.Energy, settings.RestLevel ) )
@@ -245,21 +260,6 @@ public sealed partial class StaffWorldSimulation
 			}
 		}
 		SetJob( economy, member, Patrol( economy, member, cell ) ? StaffJob.Patrol : StaffJob.Idle, turn );
-	}
-
-	/// <summary>
-	/// The strike and rest gate every search opens with (tp.exe <c>0x00506A40</c>): a member above the rest level takes its base speed from its energy
-	/// (60, 80, 100, 120 or 140), then strikes or rests when it must; true when it now does.
-	/// </summary>
-	private static bool StrikeOrRest( ParkEconomy economy, StaffMember member )
-	{
-		var energy = StaffVitals.Byte( member.Energy );
-		if ( energy > economy.Settings.RestLevel )
-			member.BaseSpeed = energy < 100 ? GuestSpeed.BaseSpeeds[energy / 20] : GuestSpeed.BaseSpeeds[^1];
-		if ( !economy.StaffStrikeOrRest( member ) )
-			return false;
-		member.Job = member.State == StaffState.OnStrike ? StaffJob.Striking : StaffJob.Resting;
-		return true;
 	}
 
 	/// <summary>
@@ -343,21 +343,39 @@ public sealed partial class StaffWorldSimulation
 
 	private enum WalkResult { Arrived, Walking, Stuck }
 
-	/// <summary>One walk step (tp.exe <c>0x004FA2A0</c>): arrived, walking, or stuck when the route ahead lost a path cell.</summary>
+	/// <summary>
+	/// One walk step (tp.exe <c>0x004FA2A0</c>): arrived, walking, or stuck when the route ahead lost a path cell. A walk with an off-grid leg goes on
+	/// past its path end along the leg's points; it arrives at the last one.
+	/// </summary>
 	private WalkResult Walk( StaffMember member, int maxSpeed, int maxForce )
 	{
 		var navigation = member.Navigation!;
-		if ( navigation.Arrived )
-			return WalkResult.Arrived;
-		foreach ( var (x, y) in navigation.Route )
+		if ( !navigation.Arrived )
 		{
-			if ( !grid.IsWalkable( x, y ) )
+			if ( !navigation.OffGrid )
 			{
-				navigation.SetDestination( navigation.X, navigation.Y, [] );
-				return WalkResult.Stuck;
+				foreach ( var (x, y) in navigation.Route )
+				{
+					if ( !grid.IsWalkable( x, y ) )
+					{
+						navigation.SetDestination( navigation.X, navigation.Y, [] );
+						member.OffGridLeg.Clear();
+						return WalkResult.Stuck;
+					}
+				}
 			}
+			if ( !navigation.Step( maxSpeed, maxForce, navigation.OffGrid ? static ( _, _ ) => true : navigation.IsOnWalk ) )
+				return WalkResult.Walking;
 		}
-		return navigation.Step( maxSpeed, maxForce, navigation.IsOnWalk ) ? WalkResult.Arrived : WalkResult.Walking;
+		if ( member.OffGridLeg.Count > 0 )
+		{
+			NextLeg( member );
+			return WalkResult.Walking;
+		}
+		// back on a path cell, the member walks the grid again
+		if ( navigation.OffGrid && grid.IsWalkable( navigation.Cell.X, navigation.Cell.Y ) )
+			navigation.OffGrid = false;
+		return WalkResult.Arrived;
 	}
 
 	/// <summary>
@@ -374,7 +392,7 @@ public sealed partial class StaffWorldSimulation
 			case StaffJob.ToLitter or StaffJob.ToToilet:
 				member.SpeedBonus = GuestSpeed.ToiletBonus;
 				break;
-			case StaffJob.Sweeping or StaffJob.Cleaning or StaffJob.Performing:
+			case StaffJob.Sweeping or StaffJob.Cleaning or StaffJob.Performing or StaffJob.Researching:
 				member.JobStamp = turn;
 				break;
 			case StaffJob.Idle:
@@ -390,6 +408,13 @@ public sealed partial class StaffWorldSimulation
 			case StaffJob.Patrol or StaffJob.Escorting or StaffJob.ReturningFromEscort when member.Type == StaffType.Guard:
 				member.SpeedBonus = 0;
 				break;
+			// the shared setter 0x005054D0: 4 (to the strike) takes the bonus 25 (0x0075C7F2), 5 (striking) clears it and the heading
+			case StaffJob.ToStrike:
+				member.SpeedBonus = GuestSpeed.ToiletBonus;
+				break;
+			case StaffJob.Striking:
+				member.SpeedBonus = 0;
+				break;
 		}
 		member.Job = job;
 		// the display state (0x005064F0)
@@ -397,6 +422,9 @@ public sealed partial class StaffWorldSimulation
 		{
 			StaffJob.Idle => StaffState.Idle,
 			StaffJob.Patrol => StaffState.Patrolling,
+			StaffJob.ToRestArea or StaffJob.Resting => StaffState.Resting,
+			StaffJob.ToStrike or StaffJob.Striking => StaffState.OnStrike,
+			StaffJob.PickedUp => StaffState.PickedUp,
 			_ => StaffState.Working
 		};
 	}

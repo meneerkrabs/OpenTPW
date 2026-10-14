@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theme Park Inc setup · OpenTPW</title>
+<meta name="description" content="Use your own Theme Park Inc / Sim Coaster files with OpenTPW: desktop and browser launch steps, available worlds and experimental limits.">
+<meta name="theme-color" content="#2b1a72">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="docs.css">
+<script src="a11y.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+	<div class="wrap">
+		<a class="brand" href="/"><img src="logo.svg" alt="" width="40" height="40"><span>Open<b>TPW</b></span></a>
+		<nav aria-label="Main">
+			<a href="install.html">Install</a>
+			<a href="theme-park-inc.html" aria-current="page">Theme Park Inc</a>
+			<a href="docs/">Docs</a>
+			<a href="/#download">Download</a>
+			<a href="https://play.opentpw.io">Play in the browser</a>
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<main id="main" class="wrap page doc">
+ <h1>Start Theme Park Inc in OpenTPW</h1>
+ <p class="lead"><strong>Theme Park Inc / Sim Coaster (2001)</strong> can run as an experimental slice in OpenTPW's own engine. Bring your own installed or extracted game files, then launch OpenTPW. The original <code>autostart.exe</code> is not needed to run it.</p>
+ <p>This is a limited building-and-guests experiment, not the complete original game. Read <a href="#limits">what works and what is missing</a> before starting a park.</p>
+ <nav aria-label="Theme Park Inc setup sections"><ul>
+  <li><a href="#availability">Which build has which start screen?</a></li>
+  <li><a href="#files">Prepare the game files</a></li>
+  <li><a href="#desktop">Desktop edition chooser</a> · <a href="#desktop-current">Current desktop command</a></li>
+  <li><a href="#browser">Browser</a> · <a href="#limits">Limits</a> · <a href="#help">Troubleshooting</a></li>
+ </ul></nav>
+
+ <h2 id="availability">Which build should I use?</h2>
+ <p><strong>Availability checked 14 October 2026:</strong> the published <a href="https://github.com/meneerkrabs/OpenTPW/releases/tag/v0.7.19">v0.7.19 desktop release</a> does not contain the new TPW/TPI edition chooser. That chooser is reviewed in <a href="https://github.com/meneerkrabs/OpenTPW/pull/146">desktop starter PR #146</a> for a future release. A published pull request is not a released download.</p>
+ <p>The browser at <a href="https://play.opentpw.io/">play.opentpw.io</a> already offers explicit experimental Theme Park Inc starts. For a current desktop package, use the <a href="#desktop-current">command below</a>. Check the release notes when a newer package becomes available.</p>
+ <p>Use the <a href="install.html#download">normal OpenTPW download and platform instructions</a> for Windows, macOS or Linux. OpenTPW supplies its engine and runtime, not the original game data.</p>
+
+ <h2 id="files">1. Prepare your game files</h2>
+ <p>Choose your own Theme Park Inc / Sim Coaster installation, or data already extracted from your copy. A folder containing only an installer or <code>autostart.exe</code> is not a ready game-data folder. You need the folder containing <code>Data</code>, with its global, language and level files:</p>
+ <pre><code>Theme Park Inc/
+└── Data/
+    ├── global/
+    ├── Language/
+    └── levels/
+        ├── arabian/  (if present)
+        ├── science/  (if present)
+        └── water/    (if present)</code></pre>
+ <p>The eligible worlds are <strong>Arabian, Science and Water</strong>. The desktop chooser lists detected, available worlds; in the browser list, choose one that is present in your files. Your copy may contain fewer of them, and a missing world is refused. Do not combine Theme Park World and Theme Park Inc files in one folder; OpenTPW validates the edition and rejects a mismatched or mixed selection.</p>
+ <p>If your copy is still in installer cabinets, extract the data before selecting it. The <a href="docs/RUNNING.html#theme-park-inc-level-viewer-experimental">existing extraction and running reference</a> explains that folder layout. This site does not provide or download game files.</p>
+
+ <h2 id="desktop">2. Use the desktop edition chooser</h2>
+ <p><strong>For a build containing PR #146:</strong> this is the new OpenTPW setup window, not the original game's launcher.</p>
+ <ol>
+  <li>Start OpenTPW and select <strong>Theme Park Inc / Sim Coaster (Experimental)</strong> in its edition choice. Select <strong>Theme Park World</strong> for TPW files instead.</li>
+  <li>Choose the folder containing your TPI <code>Data</code>, type its path, or drag the folder onto setup. Selecting <code>Data</code> itself also works on desktop.</li>
+  <li>Wait for validation, then choose one of the available Arabian, Science or Water worlds and finish setup.</li>
+ </ol>
+ <p>OpenTPW rechecks the folder and world before starting and remembering the choice. Cancel or an invalid selection keeps the previous settings. TPI's remembered path/world is separate from the TPW path, CD and bonus settings. TPI enters the experimental world directly, without the TPW island lobby.</p>
+ <p>To reopen this chooser in a build that contains it, start OpenTPW with <code>--setup</code>. Explicit command-line game/tool starts keep their existing precedence.</p>
+
+ <h2 id="desktop-current">Current desktop package: start a world explicitly</h2>
+ <p>If your package has the older path-only setup, choose the installation and world on the command line. Replace the example folder with yours; replace <code>science</code> with <code>arabian</code> or <code>water</code> only when that world is present:</p>
+ <pre><code># macOS / Linux, from the extracted OpenTPW folder
+./OpenTPW --game-path "/path/to/Theme Park Inc" --load-original-level science
+
+# Windows PowerShell, from the extracted OpenTPW folder
+.\OpenTPW.exe --game-path "C:\Games\Theme Park Inc" --load-original-level science</code></pre>
+ <p>Do not use the TPW lobby, sandbox or campaign start for TPI data. The explicit world command enters the same experimental route used by the new chooser and browser.</p>
+
+ <h2 id="browser">3. Start in the browser</h2>
+ <ol>
+  <li>Open <a href="https://play.opentpw.io/">play.opentpw.io</a>. In the start list, choose <strong>Theme Park Inc — experimental Arabian, Science or Water</strong> for a world present in your files.</li>
+  <li>Choose <strong>Choose folder</strong> and select the extracted installation folder containing <code>Data</code>. Allow the import of the selected world's complete browser-supported file set to finish.</li>
+  <li>Use <strong>Play</strong> when the kept files are ready, or let the completed folder start enter the selected world. OpenTPW refuses files that do not match your selected edition or world.</li>
+ </ol>
+ <p>Your files remain on your device. Browser storage may be unavailable, cleared or too small; selecting the folder again recovers missing data. A partial import does not make a world ready. Once a park has opened, reload the page before switching installation. If a startup error asks you to reload, follow that message before retrying. See <a href="docs/WEB.html#game-files-on-demand">browser import and retry behaviour</a> and <a href="docs/WEB.html#game-files-kept-in-the-browser">kept-file storage</a>.</p>
+
+ <h2 id="limits">What this experiment runs</h2>
+ <div class="table-wrap"><table>
+  <thead><tr><th scope="col">Available in the slice</th><th scope="col">Still unavailable</th></tr></thead>
+  <tbody>
+   <tr><td>Terrain, paths, models and an OpenTPW experimental HUD</td><td>The original TPI interface and front end</td></tr>
+   <tr><td>Free building, rotating/removing objects, paths and queues</td><td>Money, research, calendar/economy rules and paid construction</td></tr>
+   <tr><td>Guests walking, queuing and riding under shared TPW guest rules</td><td>Native TPI campaign, missions, progression, staff and advisor</td></tr>
+   <tr><td>World sound and music where supported by the supplied files</td><td>Native park saves, full-session continuation, GMS/COS writing and park sharing</td></tr>
+  </tbody>
+ </table></div>
+ <p>When a build offers an OpenTPW <strong>layout checkpoint</strong>, loading it starts a new session with that layout. It is separate from a native park save or full simulation continuation. See <a href="docs/PARK-SAVES.html#experimental-theme-park-inc-layout-checkpoints">the checkpoint boundaries</a>.</p>
+ <p>Building is free because the TPI economy is disabled. Guest rules are shared with TPW, and some script effects and rendering details remain unresolved. No original TPI gameplay or visual parity is claimed. The <a href="docs/THEME-PARK-INC.html#theme-park-inc-playable-slice">technical slice reference</a> records the exact capability policy and current gaps.</p>
+
+ <h2 id="help">If the world will not start</h2>
+ <ul>
+  <li><strong>No TPI choice on desktop:</strong> check your build. The chooser described here is the PR #146 addition, not a v0.7.19 release feature. Use the explicit command above with an older package.</li>
+  <li><strong>Wrong edition or no available world:</strong> select TPI files, keep installations separate and check that the chosen world's folder is present. Do not rename a TPW world into a TPI world.</li>
+  <li><strong>Missing data or a decoder error:</strong> setup's directory check is not proof that every required asset is complete. Restore the files from your own installation or extraction and report the exact error.</li>
+  <li><strong>Browser import or kept-file failure:</strong> reselect the same folder and retry the complete import; reload first if a park has opened or the startup error asks you to do so.</li>
+ </ul>
+ <p>For a report, include your OpenTPW version, platform, game edition and world plus the error text. Keep game files out of public reports. Continue with <a href="install.html">platform installation help</a> or <a href="https://github.com/meneerkrabs/OpenTPW/issues">GitHub issues</a>.</p>
+</main>
+
+<footer>
+	<div class="wrap">
+		<nav aria-label="Footer">
+			<a href="/">Home</a>
+			<a href="docs/">Documentation</a>
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+			<a href="privacy.html">Privacy</a>
+			<a href="rules.html">Community rules</a>
+			<a href="mailto:contact@opentpw.io">contact@opentpw.io</a>
+		</nav>
+		<p>OpenTPW is free software under the MIT licence. Theme Park World is a trademark of Electronic Arts Inc. OpenTPW is an independent project and is not affiliated with or endorsed by Electronic Arts or Bullfrog Productions.</p>
+	</div>
+</footer>
+</body>
+</html>

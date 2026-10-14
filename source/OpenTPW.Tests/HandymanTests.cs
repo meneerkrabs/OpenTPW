@@ -136,6 +136,75 @@ public class HandymanTests
 	}
 
 	[TestMethod]
+	public void SellingTheToiletHeWalksToSendsHimSearchingAndKeepsTheParkSaveable()
+	{
+		var f = new Fixture();
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, f.Park.TryBuild( 1402, out var toilet ) );
+		toilet!.Repair = 10;
+		f.Toilets.Add( new ToiletSite( toilet.Id, (2, 6), (2, 5) ) );
+		f.Turns( 1 );
+		Assert.AreEqual( toilet.Id, f.Handyman.ToiletId );
+		f.Park.Sell( toilet.Id );
+		Assert.AreEqual( 0, f.Handyman.ToiletId );
+		Assert.AreEqual( HandymanJob.Idle, f.Handyman.Job );
+		var json = ParkSaveFile.Serialize( f.Park );
+		ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog );
+		var patrolled = false;
+		f.Turns( 30, () => patrolled |= f.Handyman.Job == HandymanJob.Patrol );
+		Assert.IsTrue( patrolled, "the next search finds nothing and patrols" );
+	}
+
+	[TestMethod]
+	public void AJobOfTheHeadlessDispatchEndsWhenTheWorldTakesHimOver()
+	{
+		var park = EconomyTestData.Park();
+		park.OpenPark();
+		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
+		park.Litter.Drop( 15, 5, (LitterType)1 );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 1 );
+		Assert.AreEqual( handyman.Id, park.Litter.CollectorAt( 15, 5 ), "the headless dispatch claims it park-wide" );
+		Assert.IsTrue( handyman.BusyTicks > 0 );
+
+		var f = new Fixture();
+		var json = ParkSaveFile.Serialize( park );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
+		restored.Litter.Cells = f.Grid.Cells;
+		restored.HandymanWorld = new StaffWorldSimulation( f.Grid, () => restored.Staff.Members, _ => null, (0, 5) );
+		var member = restored.Staff.OfType( StaffType.Handyman ).Single();
+		member.CellX = 0;
+		member.CellY = 5;
+		for ( var turn = 0; turn < 100; turn++ )
+			EconomyTestData.AdvanceToTurn( restored, restored.Turn + 1 );
+		Assert.AreEqual( 0, member.BusyTicks );
+		Assert.IsNull( member.LitterCell );
+		Assert.AreEqual( (LitterType)1, restored.Litter.TypeAt( 15, 5 ), "out of his range: the timer did not sweep it" );
+		Assert.AreEqual( 0, restored.Litter.CollectorAt( 15, 5 ) );
+	}
+
+	[TestMethod]
+	public void VoicesWaitForTheAudioAcrossTurns()
+	{
+		var f = new Fixture();
+		f.Turns( 400 );
+		var voices = f.World.TakeVoices();
+		Assert.IsTrue( voices.Count is > 1 and <= 64, $"{voices.Count} voices kept for one take" );
+		Assert.AreEqual( 0, f.World.TakeVoices().Count );
+	}
+
+	[TestMethod]
+	public void ASavedWalkWithACursorPastTheRouteIsRejected()
+	{
+		var f = new Fixture();
+		f.Park.Litter.Drop( 2, 5, (LitterType)2 );
+		f.Turns( 3 );
+		var json = ParkSaveFile.Serialize( f.Park );
+		var broken = System.Text.RegularExpressions.Regex.Replace( json, "\"Cursor\":\\s*\\d+", "\"Cursor\": 2147483647" );
+		Assert.AreNotEqual( json, broken );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () =>
+			ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( broken ) ), f.Park.Settings, f.Park.Catalog ) );
+	}
+
+	[TestMethod]
 	public void DismissingAHandymanFreesEveryClaim()
 	{
 		var f = new Fixture();

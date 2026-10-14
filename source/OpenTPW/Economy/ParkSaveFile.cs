@@ -291,7 +291,7 @@ public static class ParkSaveFile
 
 		internal bool IsValid => Position is { Length: 2 } && Velocity is { Length: 2 } && Target is { Length: 2 } && Route is { } route && route.Length % 2 == 0
 			&& AlsoOpen is { } open && open.Length % 2 == 0 && Count is >= 0 and <= GuestNavigation.BufferedWaypoints && Cursor >= 0
-			&& Cursor + Count <= route.Length / 2 && Index >= 0 && (Index < Count || Count == 0);
+			&& Cursor <= route.Length / 2 - Count && Index >= 0 && (Index < Count || Count == 0);
 
 		internal GuestNavigation Restore()
 		{

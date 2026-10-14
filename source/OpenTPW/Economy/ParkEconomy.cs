@@ -933,19 +933,39 @@ public sealed class ParkEconomy : IParkEconomy
 		return item;
 	}
 
+	/// <summary>Ends the jobs on a removed object: a mechanic's timed job, and a world handyman's walk to the toilet or its clean (he searches again).</summary>
+	private void ReleaseJobsOn( int instanceId )
+	{
+		foreach ( var member in Staff.Members )
+		{
+			if ( member.AssignedInstanceId == instanceId )
+			{
+				member.AssignedInstanceId = 0;
+				member.BusyTicks = 0;
+				member.AwaitingJobArrival = false;
+				member.State = StaffState.Patrolling;
+			}
+			if ( member.ToiletId == instanceId )
+			{
+				member.ToiletId = 0;
+				if ( member.Job is HandymanJob.ToToilet or HandymanJob.Cleaning )
+				{
+					member.Job = HandymanJob.Idle;
+					member.IdleStamp = 0;
+					member.SpeedBonus = 0;
+					member.State = StaffState.Idle;
+				}
+			}
+		}
+	}
+
 	/// <summary>Removes an object and credits its <see cref="ScrapValue"/>.</summary>
 	public long Sell( int instanceId )
 	{
 		var item = RequireObject( instanceId );
 		var value = ScrapValue( item );
 		objects.Remove( instanceId );
-		foreach ( var member in Staff.Members.Where( member => member.AssignedInstanceId == instanceId ) )
-		{
-			member.AssignedInstanceId = 0;
-			member.BusyTicks = 0;
-			member.AwaitingJobArrival = false;
-			member.State = StaffState.Patrolling;
-		}
+		ReleaseJobsOn( instanceId );
 		Post( LedgerCategory.OtherIncome, value );
 		Raise( ParkEventKind.ObjectSold, value, instanceId, item.InfoId );
 		return value;
@@ -956,13 +976,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		var item = RequireObject( instanceId );
 		objects.Remove( instanceId );
-		foreach ( var member in Staff.Members.Where( member => member.AssignedInstanceId == instanceId ) )
-		{
-			member.AssignedInstanceId = 0;
-			member.BusyTicks = 0;
-			member.AwaitingJobArrival = false;
-			member.State = StaffState.Patrolling;
-		}
+		ReleaseJobsOn( instanceId );
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
 	}
 

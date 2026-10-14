@@ -16,6 +16,7 @@ public sealed partial class StaffWorldSimulation
 	public Func<IReadOnlyList<ToiletSite>>? Toilets { get; set; }
 
 	private readonly List<StaffVoice> voices = new();
+	private const int MaxQueuedVoices = 64;
 
 	/// <summary>The staff voices drawn since the last call (the handymen's walking and idle voices).</summary>
 	public IReadOnlyList<StaffVoice> TakeVoices()
@@ -32,8 +33,9 @@ public sealed partial class StaffWorldSimulation
 	// [APPROX:ECON-022] handymen in a level walk and search as the original (WANDER-plan §4, StaffWorldSimulation), but their rest and strike are the economy's without the walks to the rest or strike area, a toilet claim ends when the walk to it fails instead of lapsing after 100 turns, the player's maintenance request (mRequestedService) and patrol rectangle have no control, a handyman steps without the guests' separation, and a toilet's access cell is its join or entrance cell; a headless economy without a world keeps its own dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: none (read, tp.exe 0x004D73C0 / 0x004D7100); the rest and strike walks and the controls are their own items
 	public void UpdateHandymen( ParkEconomy economy, long turn )
 	{
-		// only the latest turn's voices wait for the audio (a headless run takes none)
-		voices.Clear();
+		// the voices wait for the audio until it takes them; a run that never takes them keeps only the latest
+		if ( voices.Count > MaxQueuedVoices )
+			voices.RemoveRange( 0, voices.Count - MaxQueuedVoices );
 		Synchronize();
 		foreach ( var member in economy.Staff.OfType( StaffType.Handyman ).ToList() )
 		{
@@ -53,8 +55,12 @@ public sealed partial class StaffWorldSimulation
 					continue;
 			}
 			if ( placed )
-				// a new handyman searches at once (the constructor 0x004D6B60 runs the job search)
+			{
+				// a timed job of the headless dispatch (an older save) ends unfinished; a new handyman searches at once (the constructor
+				// 0x004D6B60 runs the job search)
+				DropDispatchedJob( economy, member );
 				Search( economy, member, turn );
+			}
 			else if ( member.Job is HandymanJob.PickedUp or HandymanJob.Striking or HandymanJob.Resting or HandymanJob.ToRestArea or HandymanJob.ToStrike )
 			{
 				// Back from a rest or a strike: the original's rest end (0x00506D10) sets state 0 and runs the job search in the same update.
@@ -67,6 +73,21 @@ public sealed partial class StaffWorldSimulation
 			member.CellX = navigation.X / (float)Fixed16.One;
 			member.CellY = navigation.Y / (float)Fixed16.One;
 		}
+	}
+
+	/// <summary>Releases a job the headless dispatch timed (its claim on litter or a toilet), so the economy's timer cannot finish it later.</summary>
+	private static void DropDispatchedJob( ParkEconomy economy, StaffMember member )
+	{
+		if ( member.BusyTicks == 0 )
+			return;
+		if ( member.LitterCell is { } cell && economy.Litter.CollectorAt( cell.X, cell.Y ) == member.Id )
+			economy.Litter.Claim( cell.X, cell.Y, 0, 0 );
+		if ( member.AssignedInstanceId != 0 && economy.TryGetObject( member.AssignedInstanceId, out var toilet ) && toilet.MechanicId == member.Id )
+			toilet.MechanicId = 0;
+		member.LitterCell = null;
+		member.AssignedInstanceId = 0;
+		member.BusyTicks = 0;
+		member.AwaitingJobArrival = false;
 	}
 
 	/// <summary>Gives a positioned member its steering state; false while it has no position.</summary>

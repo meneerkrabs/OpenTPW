@@ -65,13 +65,13 @@ public static class SignCanvas
 			if ( missing.Count > 0 )
 				diagnostics?.Add( $"Sign slot {index}: {slot.FontFileName} has no glyph for {string.Join( ", ", missing.Select( code => $"U+{code:X4}" ) )}; drawn as .notdef." );
 			// [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values).
-			// [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site.
-			// [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field.
+			// [BIN:TPW-EXE:0x005EAB70 sign text] tp.exe imports no TextOut, DrawText or ExtTextOut; the sign text goes through Uniscribe (ScriptStringAnalyse with flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array 0xF85F00, ScriptStringOut), and no kerning API is called
+			// [APPROX:COMPAT-006] no pair kerning on signs, as the original calls no kerning API — evidence needed: whether usp10's natural widths (ScriptStringGetLogicalWidths) already include kerning
 			// [DATA:*.sgn:LOGFONT lfWidth] the line's width, narrowed until it fits (0x100A9F9C); centred on the canvas (the original's x = 256 - extent / 2 on its 512-wide text DC)
 			var emPixels = Math.Max( 1, slot.EmHeightPixels );
 			var line = text.Trim();
-			var logFontWidth = SignTextLayout.FitLogFontWidth( font, line, emPixels, slot.LogFont.Width, Width );
-			SignTextLayout.DrawLine( canvas, Width, Height, font, line, emPixels, colour, horizontalScale: SignTextLayout.LogFontHorizontalScale( font, emPixels, logFontWidth ), margin: 0, cellTop: slot.OffsetY, kerning: false );
+			var logFontWidth = SignTextLayout.FitLogFontWidth( font, line, emPixels, slot.LogFont.Width, Width, widthPercent: slot.HorizontalScalePercent );
+			SignTextLayout.DrawLine( canvas, Width, Height, font, line, emPixels, colour, horizontalScale: SignTextLayout.LogFontHorizontalScale( font, emPixels, logFontWidth ), margin: 0, cellTop: slot.OffsetY, kerning: false, widthPercent: slot.HorizontalScalePercent );
 		}
 		return canvas;
 	}

@@ -894,6 +894,19 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
+  advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
+  request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),
+  generated sequences are built by the original's rule (`AdvisorSequences`, clip lengths from the advisor clip trailers; the
+  clips themselves are still not drawn, ADVISOR-006 narrowed), the response span is the sequence sum + 1000 + clip 15 (counted
+  twice for generated sequences; fixed sequences keep the estimate, ADVISOR-016 narrowed), and the model stays shown until
+  "Kill advisor" (level exit), not until the speech ends (ADVISOR-018 narrowed). The advisor material draws both faces as the
+  original's device does (ADVISOR-007 narrowed). ADVISOR-014 (synthesis window equals the table at `0x70BD08`) and ADVISOR-019
+  (balance fields +0x18/+0x1C are never read) are retired; ADVISOR-011/017/020 are narrowed to the traced rules and ADVISOR-024 is
+  an extension. Sign text: the `.sgn` slot percent now scales each character's width (COMPAT-005 retired; the composed-sign
+  baseline hashes of 71 of 75 signs were re-pinned), object sign lines keep 32 characters and line 1 loses a trailing "--"
+  (COMPAT-017 narrowed), COMPAT-006 now names Uniscribe instead of GDI TextOut, COMPAT-008 and COMPAT-013 are extensions, COMPAT-011/012
+  are narrowed. 392 to 384 unresolved IDs.
 - **UI register round (October 14):** findings from the Windows `tp.exe` land. The hire window's control 9366 is the plain
   cash label ("Cash $ N", UITEXT `0x1ca`/`0x1cb`); the applicant/employee toggle is now a labelled extension button
   (UI-090 retired). The map zoom is 1.0–3.0 in half steps and a pan moves the centre one map cell whatever the zoom (UI-087

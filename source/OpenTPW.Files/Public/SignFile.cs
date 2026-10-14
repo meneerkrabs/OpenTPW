@@ -16,8 +16,9 @@ public readonly record struct SignLogFont( int Height, int Width, int Escapement
 /// 11-word block (436 bytes in all), in the order the Mac loader reads them (0x100AA5A0, 0x100AA8A4).
 /// Verified: <see cref="FaceName"/>/<see cref="FontFileName"/> name a font in <c>fonts.wad</c> and
 /// <see cref="LogFont"/> is a LOGFONTA whose face name equals <see cref="FaceName"/>. Observed but
-/// unconfirmed: <see cref="HorizontalScalePercent"/> (85..141, mostly ~100) and <see cref="OffsetY"/>
-/// (first slot -61..32, second slot 40..147). <see cref="Effects"/> holds the 11 words of the second
+/// unconfirmed: <see cref="OffsetY"/>
+/// (first slot -61..32, second slot 40..147). <see cref="HorizontalScalePercent"/> (85..141, mostly ~100) scales each character's width
+/// (the slot field at file offset +324; <see cref="SignTextLayout.ScaledAdvance"/>). <see cref="Effects"/> holds the 11 words of the second
 /// block raw; the compositor (0x100ABF14) reads some of them as effect parameters.
 /// </summary>
 public sealed record SignTextSlot( string FaceName, string FontFileName, int HorizontalScalePercent, int OffsetY,

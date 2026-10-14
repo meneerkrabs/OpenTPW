@@ -132,6 +132,20 @@ public class MechanicWorldTests
 	}
 
 	[TestMethod]
+	public void DismissingAMechanicFreesHisRide()
+	{
+		var f = new Fixture();
+		var ride = f.Ride( (12, 6), (12, 5) );
+		var mechanic = f.Hire();
+		f.Turns( 2 );
+		ride.IsBrokenDown = true;
+		f.Until( () => mechanic.Job == StaffJob.ToRide );
+		Assert.AreEqual( mechanic.Id, ride.MechanicId );
+		f.Park.Fire( mechanic.Id );
+		Assert.AreEqual( 0, ride.MechanicId );
+	}
+
+	[TestMethod]
 	public void AWalkingMechanicResumesFromASaveExactly()
 	{
 		var f = new Fixture();

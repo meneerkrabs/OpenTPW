@@ -1273,6 +1273,10 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( objects.TryGetValue( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id )
 			toilet.MechanicId = 0;
 		member.ToiletId = 0;
+		// a dismissed mechanic's ride goes back to the others
+		if ( objects.TryGetValue( member.RideId, out var ride ) && ride.MechanicId == member.Id )
+			ride.MechanicId = 0;
+		member.RideId = 0;
 		// the destructor takes the member's RegionFX row off its cell (0x004D4620 for an entertainer, through 0x004D8460)
 		MoveStaffEffect( member, null );
 		member.TargetGuestId = 0;

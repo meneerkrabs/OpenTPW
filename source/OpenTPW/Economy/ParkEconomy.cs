@@ -1125,6 +1125,10 @@ public sealed class ParkEconomy : IParkEconomy
 		member.AwaitingJobArrival = false;
 		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) && item.MechanicId == member.Id )
 			item.MechanicId = 0;
+		// A dismissed handyman's litter goes back to the others (the original's thing is gone, and its id no longer matches a collector).
+		if ( member.LitterCell is { } litter && Litter.CollectorAt( litter.X, litter.Y ) == member.Id )
+			Litter.Claim( litter.X, litter.Y, 0, 0 );
+		member.LitterCell = null;
 		var wage = Staff.MonthlyWage( member );
 		if ( wage > 0 )
 			Post( LedgerCategory.StaffCosts, wage );

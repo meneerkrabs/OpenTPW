@@ -67,6 +67,54 @@ public class LitterTests
 		Assert.IsTrue( StaffStrikeBoard.Grievance( StaffType.Handyman, new[] { new StaffVital( 100, 100 ) }, litter: litter.Statistic ), "3/11 is (tp.exe 0x00509360)" );
 	}
 
+	private static (ParkEconomy Park, StaffMember Handyman) Sweeping()
+	{
+		var park = EconomyTestData.Park();
+		park.OpenPark();
+		park.Litter.Drop( 3, 1, (LitterType)2 );
+		park.Litter.Drop( 6, 1, (LitterType)4 );
+		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
+		park.Advance( ParkCalendar.TickOfTurn( park.Turn + 1 ) - park.Tick );
+		Assert.AreEqual( (3, 1), handyman.LitterCell );
+		return (park, handyman);
+	}
+
+	[TestMethod]
+	public void ASweepSurvivesASaveAndADismissalFreesItsCell()
+	{
+		var (park, handyman) = Sweeping();
+		var json = ParkSaveFile.Serialize( park );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
+		var member = restored.Staff.Members.Single( item => item.Id == handyman.Id );
+		Assert.AreEqual( (3, 1), member.LitterCell );
+		Assert.AreEqual( (member.Id, park.Litter.ClaimTurnAt( 3, 1 )), (restored.Litter.CollectorAt( 3, 1 ), restored.Litter.ClaimTurnAt( 3, 1 )) );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
+
+		park.Fire( handyman.Id );
+		Assert.AreEqual( (0, 0L), (park.Litter.CollectorAt( 3, 1 ), park.Litter.ClaimTurnAt( 3, 1 )), "the next handyman can take it" );
+		Assert.AreEqual( (LitterType)2, park.Litter.TypeAt( 3, 1 ) );
+	}
+
+	[TestMethod]
+	public void ASaveWhoseLitterIsClaimedByNobodySweepingItIsRefused()
+	{
+		var (park, handyman) = Sweeping();
+		var json = ParkSaveFile.Serialize( park ).Replace( $"\"Collector\": {handyman.Id}", "\"Collector\": 99" );
+		Assert.IsTrue( json.Contains( "\"Collector\": 99" ) );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ) );
+	}
+
+	[TestMethod]
+	public void ASweptCellForgetsItsClaim()
+	{
+		var litter = new ParkLitter();
+		litter.Drop( 2, 2, (LitterType)1 );
+		litter.Claim( 2, 2, 5, 77 );
+		litter.Remove( 2, 2 );
+		litter.Drop( 2, 2, (LitterType)1 );
+		Assert.AreEqual( (0, 0L), (litter.CollectorAt( 2, 2 ), litter.ClaimTurnAt( 2, 2 )), "a new item starts unclaimed, as a restored save has it" );
+	}
+
 	private static (GuestDecision.Outcome, string) Decide( float litter, bool bin, uint draw = 1 )
 	{
 		var calls = "";

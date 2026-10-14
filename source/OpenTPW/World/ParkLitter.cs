@@ -77,6 +77,7 @@ public sealed class ParkLitter
 		var index = Index( x, y );
 		types[index] = (byte)type;
 		collectors[index] = 0;
+		claimTurns[index] = 0;
 		Count++;
 		Version++;
 		Changed?.Invoke( x, y, type );
@@ -91,6 +92,7 @@ public sealed class ParkLitter
 		var index = Index( x, y );
 		types[index] = 0;
 		collectors[index] = 0;
+		claimTurns[index] = 0;
 		Count--;
 		Version++;
 		Changed?.Invoke( x, y, LitterType.None );

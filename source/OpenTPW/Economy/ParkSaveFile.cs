@@ -420,6 +420,9 @@ public static class ParkSaveFile
 		foreach ( var cell in data.Litter )
 			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
 				&& cell.Collector >= 0 && littered.Add( (cell.X, cell.Y) ), $"litter at ({cell.X}, {cell.Y})" );
+		foreach ( var cell in data.Litter.Where( cell => cell.Collector != 0 ) )
+			Require( data.Staff.Members.Any( member => member.Id == cell.Collector && member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y ),
+				$"litter at ({cell.X}, {cell.Y}) claimed by staff {cell.Collector}, who does not sweep it" );
 		Require( data.Ledger.MonthIndex == ParkCalendar.MonthIndex( data.Tick ), "ledger month matches the clock" );
 		Require( data.Ledger.History.Count <= ParkLedger.MaximumHistoryMonths && data.MonthlyAdmissions.Count <= ParkLedger.MaximumHistoryMonths, "history length" );
 		Require( data.Ledger.CurrentTotals.Values.All( value => value >= 0 ) && data.Ledger.History.All( month => month.Totals.Values.All( value => value >= 0 ) ), "ledger totals" );
@@ -475,6 +478,8 @@ public static class ParkSaveFile
 			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ) );
 		park.Ledger.RestoreProfitThisYear( data.Ledger.ProfitThisYear );
 		park.RestoreTicketItems( data.TicketItems );
+		if ( data.LitterScaled > 0 && data.Litter.Count == 0 )
+			Log.Trace( $"Park save: the legacy park-wide litter ({data.LitterScaled / 100.0:0.##} items) has no cells to land on; the park loads clean." );
 		park.RestoreState( data.Tick, data.Speed, data.ParkOpen, data.EntranceFee, data.Bankrupt, data.MonthsInRed,
 			data.Litter.Select( cell => new LitterCell( cell.X, cell.Y, (LitterType)cell.Type, cell.Collector, cell.ClaimTurn ) ), data.TicketsSpent, data.NextObjectId, data.DroppedAdmissions,
 			data.Objects.Select( item => new ParkObjectState

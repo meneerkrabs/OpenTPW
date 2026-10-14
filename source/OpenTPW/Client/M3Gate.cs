@@ -907,8 +907,16 @@ internal sealed class M3GateRun
 		var queueCells = queueRide?.QueueCells.ToHashSet() ?? new HashSet<(int X, int Y)>();
 		int stoodOnQueueCells = 0, boardedFromQueueCells = 0;
 		long repairs = 0, repairsNeeded = 0, wagesPaid = 0, wagesEvents = 0;
-		long litterPeak = economy.Litter.Count, litterCleaned = 0, litterDropped = 0, previousLitter = economy.Litter.Count;
+		long litterPeak = economy.Litter.Count, litterCleaned = 0, litterDropped = 0;
 		var litterWaited = false;
+		// Each drop and each sweep, so that both in one tick still count.
+		economy.Litter.Changed += ( _, _, type ) =>
+		{
+			if ( type == LitterType.None )
+				litterCleaned++;
+			else
+				litterDropped++;
+		};
 		var repairWindow = RepairWindow();
 		var pendingRepairs = new List<(int Instance, long Tick, long Deadline, bool Reported)>();
 		long maxRepairTicks = 0;
@@ -1178,11 +1186,7 @@ internal sealed class M3GateRun
 					litterNotCleaned.Add( tick, $"tick {tick}: unclaimed litter beside a free handyman for two turns (turn {ParkCalendar.Turn( economy.Tick )})" );
 				litterWaited = waiting;
 			}
-			if ( litter < previousLitter )
-				litterCleaned += previousLitter - litter;
-			else if ( litter > previousLitter )
-				litterDropped += litter - previousLitter;
-			previousLitter = litter;
+
 
 			if ( tick % minuteTicks == 0 )
 				MinuteHashes.Add( ComputeGateHash() );

@@ -276,25 +276,27 @@ public class BumpControllerTests
 		c.AddGuest( 8 );
 		Assert.IsTrue( c.Launch() );
 		var boat = c.Vehicles.Single();
-		Assert.AreEqual( (33792, 33792, 128, -1), (boat.X, boat.Y, boat.Heading, boat.Laps), "the boat starts at the station reference, heading along the flow, one lap to go" );
+		Assert.AreEqual( (33792, 33792, 0, -1), (boat.X, boat.Y, boat.Heading, boat.Laps), "the boat starts at the station reference with heading 0 (+Y, TRACK-012), one lap to go" );
 		Assert.AreEqual( c.FirstAfterFinish!.Index, boat.TargetBuoy );
 		Assert.AreEqual( BumpVehicle.Live | BumpVehicle.Steerable | BumpVehicle.LapMode | BumpVehicle.Retarget | BumpVehicle.Launched, boat.Flags );
 		loop.Run( 1 );
-		Assert.AreEqual( (33796, 33792, 4, 0, 128), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "thrust 6 × 255 × 4 / 1024 = 5, damped by 985 / 1024" );
+		Assert.AreEqual( (33792, 33792, 0, 0, 10), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "the boat turns toward its aim by the turn rate (10) before it thrusts: it stands still while the angle error is large" );
 		loop.Run( 3 );
-		Assert.AreEqual( (33832, 16), (boat.X, boat.VX) );
+		Assert.AreEqual( (33792, 0, 40), (boat.X, boat.VX, boat.Heading) );
 		loop.Run( 97 );
-		Assert.AreEqual( (42105, 33792, 101, 0, 108), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "tick 100: on the straight, aiming at the first corner buoy with its jitter" );
+		Assert.AreEqual( (40994, 33792, 101, 0, 110), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "tick 101: on the straight, aiming at the first corner buoy with its jitter" );
 		loop.Run( 200 );
-		Assert.AreEqual( (41848, 39889, -79, 0, 380, 3, 6), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.ObjectIndex), "tick 300: on the far straight" );
-		Assert.AreEqual( (134, -28, -571, -4), (boat.JitterX, boat.JitterY, boat.Spin, boat.Roll) );
+		Assert.AreEqual( (42425, 39823, -68, 0, 382, 3, 6), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.ObjectIndex), "tick 301: on the far straight" );
+		Assert.AreEqual( (134, -28, 593, 4), (boat.JitterX, boat.JitterY, boat.Spin, boat.Roll) );
 		loop.Run( 285 );
-		Assert.AreEqual( (30696, 33583, 50, -19, 120, 1, 0), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.Laps), "tick 585: past the finish buoy, the lap counter at 0" );
+		Assert.AreEqual( (30363, 33725, 50, -24, 142, 0, -1), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.Laps), "tick 586: nearing the finish buoy, the lap counter still at -1" );
+		loop.Run( 11 );
+		Assert.AreEqual( (30925, 33535, 56, 12, 122, 1, 0), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.Laps), "tick 597: past the finish buoy, the lap counter at 0" );
 		Assert.AreNotEqual( 0, boat.Flags & BumpVehicle.ToUnload, "the finished boat heads for the unload point" );
-		loop.Run( 24 );
-		Assert.AreEqual( 1, c.VehicleCount, "tick 609: still on its way" );
+		loop.Run( 20 );
+		Assert.AreEqual( 1, c.VehicleCount, "tick 617: still on its way" );
 		loop.Run( 1 );
-		Assert.AreEqual( 0, c.VehicleCount, "tick 610: unloaded" );
+		Assert.AreEqual( 0, c.VehicleCount, "tick 618: unloaded" );
 		Assert.AreEqual( 1, c.CompletedRuns );
 		CollectionAssert.AreEqual( new[] { 7, 8 }, c.Leaving, "the guests wait for BUMP 2 in boarding order" );
 		Assert.AreEqual( 0, c.RiderCount );
@@ -302,7 +304,7 @@ public class BumpControllerTests
 	}
 
 	[TestMethod]
-	public void TheRunIsDeterministicAndAdvanceUsesThirtyTicksPerSecond()
+	public void TheRunIsDeterministicAndAdvanceRunsOneTickPer31Milliseconds()
 	{
 		string Trace( Loop loop )
 		{
@@ -323,11 +325,13 @@ public class BumpControllerTests
 		timed.Controller.Open();
 		timed.Controller.Launch();
 		timed.Controller.Advance( 1.0 );
-		Assert.AreEqual( 30, timed.Controller.TickCount, "one second is 30 ticks" );
+		Assert.AreEqual( 0.031, BumpController.TickSeconds, "the controller ticks once per 31 ms world substep ([BIN:TPW-EXE:0x54F4C4], TRACK-011), not at 30 Hz" );
+		Assert.AreEqual( 30, BumpController.TicksPerSecond, "the duration unit of BUMP 13 stays 30" );
+		Assert.AreEqual( 32, timed.Controller.TickCount, "one second is 32 ticks of 31 ms (0.992 s) with 8 ms left over" );
 		timed.Controller.Advance( 1.0 / 60 );
-		Assert.AreEqual( 30, timed.Controller.TickCount, "half a tick carries over" );
+		Assert.AreEqual( 32, timed.Controller.TickCount, "the carried 8 ms and a 60 Hz step stay below one tick" );
 		timed.Controller.Advance( 1.0 / 60 );
-		Assert.AreEqual( 31, timed.Controller.TickCount );
+		Assert.AreEqual( 33, timed.Controller.TickCount );
 	}
 
 	[TestMethod]
@@ -365,7 +369,7 @@ public class BumpControllerTests
 		c.Open();
 		c.AddGuest( 1 );
 		c.Launch();
-		loop.Run( 10 );
+		loop.Run( 30 );
 		c.AddGuest( 2 );
 		c.Launch();
 		Assert.AreEqual( 2, c.VehicleCount );
@@ -540,7 +544,7 @@ public class BumpControllerTests
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => bump.Restore( badBuoy ) );
 		var badObject = saved with { Vehicles = saved.Vehicles.Select( vehicle => vehicle with { ObjectIndex = bump.Objects.Count } ).ToList() };
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => bump.Restore( badObject ) );
-		Assert.ThrowsException<System.IO.InvalidDataException>( () => bump.Restore( saved with { TickRemainder = BumpController.TickSeconds } ) );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => bump.Restore( saved with { TickRemainder = BumpController.MaximumSavedRemainder } ) );
 		Assert.AreEqual( 1, bump.VehicleCount, "a refused restore left the boats alone" );
 	}
 }

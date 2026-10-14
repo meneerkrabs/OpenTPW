@@ -231,7 +231,7 @@ public sealed class CoasterBuilder
 
 	// [BIN:STP-PPC:0x100CBFDC bank debit] coaster charges debit the bank (+12) directly; credits go through 0x100CBF50
 	// [BIN:TPW-EXE:0x4d01f0 bank debit] the debit (callers 0x435020, 0x441a00, 0x445a70; credit 0x4d0190 for refunds): bank +0x114 (mWithdrawalsEnabled, serializer 0x4cf920) 0 → nothing; else balance (+0xC) down, turn-entered-red (+0x120) stamped from game +0x1da70c when it crosses below 0 from the last balance (+0x11C) ≥ 0, last balance set, park total costs (+0x1F5A0; "Other costs" = total − loan payments) up, year profit (+0x124) down; the credit adds to balance, money-in (+0x1FC90) and year profit
-	// [EXT:coaster-ledger] track money is posted as other costs and other income (ParkEconomy), which matches the debit and credit totals, and joins the station's total spent, which is OpenTPW's own extension; the withdrawals gate (ECON-051), the last balance and the turn-entered-red stamp (SAVE-008) of the original debit belong to the economy and save owners
+	// [EXT:coaster-ledger] track money is posted as other costs and other income (ParkEconomy), which matches the debit and credit totals, and joins the station's total spent, which is OpenTPW's own extension; the debit's withdrawals gate, last balance and turn-entered-red stamp come from ParkEconomy's posting
 	private bool Spend( long amount, bool force = false )
 	{
 		if ( amount <= 0 )

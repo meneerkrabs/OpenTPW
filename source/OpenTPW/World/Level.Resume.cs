@@ -42,6 +42,7 @@ public partial class Level
 			Advisor = advisor?.CaptureSnapshot(),
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
+			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			AssetHashes = assets
 		};
@@ -96,8 +97,10 @@ public partial class Level
 		// node), and this restores the saved tracks, controller state, trains and riders over them.
 		RestoreCoastersSnapshot( snapshot.Coasters );
 		RestoreTracksSnapshot( snapshot.Tracks );
+		RestoreToursSnapshot( snapshot.Tours );
 		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
 		UpdateTrackRendering();
+		UpdateTourRendering();
 		renderedCellVersion = Guests.Grid.Cells.Version;
 	}
 

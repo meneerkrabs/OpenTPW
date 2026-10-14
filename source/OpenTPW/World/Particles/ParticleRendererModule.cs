@@ -14,12 +14,18 @@ internal static class ParticleRendererModule
 	[ModuleInitializer]
 	internal static void Attach() => OriginalObjectRuntime.ParticleRequested += Start;
 
+	private static ParticleRenderer? RendererFor( out Level level )
+	{
+		level = null!;
+		if ( global::Global.Render == null || Level.Current is not { } current )
+			return null;
+		level = current;
+		return ParticleRenderer.Current is { } existing && ReferenceEquals( existing.Level, current ) ? existing : Create( current );
+	}
+
 	private static void Start( ParticleEventRequest request )
 	{
-		if ( global::Global.Render == null || Level.Current is not { } level )
-			return;
-		var renderer = ParticleRenderer.Current is { } current && ReferenceEquals( current.Level, level ) ? current : Create( level );
-		if ( renderer == null )
+		if ( RendererFor( out var level ) is not { } renderer )
 			return;
 		var position = ToNative( level, request.EnginePosition );
 		// the resolver's control (1000) is the template's own draw scale, which the constructor already copies
@@ -28,6 +34,23 @@ internal static class ParticleRendererModule
 		else
 			renderer.Particles.Create( request.EffectId, position );
 	}
+
+	/// <summary>An emitter the caller keeps: the handle belongs to its own <see cref="ParticleSystem"/> (slot and generation only mean something there), so a handle left over from another level can never touch a newer system.</summary>
+	internal readonly record struct EmitterRef( ParticleSystem System, int Handle, Level Level );
+
+	/// <summary>Starts an emitter that the caller keeps (the bump rides' break smoke), or null when there is no renderer or the pool refuses.</summary>
+	internal static EmitterRef? StartEmitter( int effectId, SVector3 engine )
+	{
+		if ( RendererFor( out var level ) is not { } renderer )
+			return null;
+		var handle = renderer.Particles.Create( effectId, ToNative( level, engine ) );
+		return handle >= 0 ? new EmitterRef( renderer.Particles, handle, level ) : null;
+	}
+
+	internal static void MoveEmitter( EmitterRef emitter, SVector3 engine ) =>
+		emitter.System.Move( emitter.Handle, ToNative( emitter.Level, engine ) );
+
+	internal static void KillEmitter( EmitterRef emitter ) => emitter.System.Kill( emitter.Handle );
 
 	private static ParticleRenderer? Create( Level level )
 	{

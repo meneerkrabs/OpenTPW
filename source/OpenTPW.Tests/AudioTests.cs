@@ -91,10 +91,39 @@ public class AudioTests
 		Assert.AreEqual( 1, SoundEventSystem.ChooseSample( samples, 101, -1, false ) );
 		Assert.AreEqual( 2, SoundEventSystem.ChooseSample( samples, 65535, -1, false ) );
 		Assert.AreEqual( 2, SoundEventSystem.ChooseSample( samples, 150, 1, avoidRepeat: true ), "a sentence moves on from the sample it just played" );
+	}
+
+	[TestMethod]
+	public void TheSharedChooserAdvancesAndStoresItsStateOnEveryDraw()
+	{
+		// [BIN:TPW-EXE:0x6bc839 chooser] s = s * 0x19660D + 0x3C6EF35F is stored back (0xfb1f20); the draw is ror(s, 13), then >> 16 for weights or % range for ranges
 		var system = new SoundEventSystem( new AudioMixer( null ), seed: 1 );
-		Assert.AreEqual( unchecked(1u * 0x19660D + 0x3C6EF35F) >> 16, system.Draw() );
-		Assert.AreEqual( unchecked(1u * 0x19660D + 0x3C6EF35F) >> 16, system.Draw(), "the successor is never stored, so every draw is the same" );
-		Assert.AreEqual( 1u, system.Seed );
+		var first = unchecked(1u * 0x19660D + 0x3C6EF35F);
+		Assert.AreEqual( System.Numerics.BitOperations.RotateRight( first, 13 ) >> 16, system.Draw() );
+		Assert.AreEqual( first, system.Seed, "the advanced state is stored, not its rotation" );
+		var second = unchecked(first * 0x19660D + 0x3C6EF35F);
+		Assert.AreEqual( System.Numerics.BitOperations.RotateRight( second, 13 ) >> 16, system.Draw() );
+		Assert.AreEqual( second, system.Seed );
+		var third = unchecked(second * 0x19660D + 0x3C6EF35F);
+		Assert.AreEqual( System.Numerics.BitOperations.RotateRight( third, 13 ) % 7u, system.DrawBelow( 7 ), "a range draw is ror(s, 13) % range, so the range's maximum is never drawn" );
+		Assert.AreEqual( third, system.Seed );
+	}
+
+	[TestMethod]
+	public void AnOnlySoundOrSampleAndAnEmptyVolumeRangeDrawNothing()
+	{
+		// [BIN:TPW-EXE:0x6bc822] one sound: no draw; [0x6bc69d] one sample: no draw; [0x6bc11b] min == max volume: no draw
+		var system = new SoundEventSystem( new AudioMixer( null ), seed: 5 );
+		var sample = new SoundSample( 1, 65535, 0, 1, 0 );
+		Assert.AreEqual( 0, system.PickSample( new[] { sample }, -1, false ) );
+		var sound = new SoundEntry( 80, 80, 0, 0, 0, 0, 1, 100, new[] { sample }, Array.Empty<SoundLink>(), Array.Empty<byte>() );
+		Assert.AreEqual( 0, system.PickSound( new[] { sound } ) );
+		Assert.AreEqual( 80, system.Volume( sound ) );
+		Assert.AreEqual( 5u, system.Seed, "no draw was taken" );
+		var ranged = sound with { MaximumVolume = 90 };
+		var volume = system.Volume( ranged );
+		Assert.IsTrue( volume is >= 80 and < 90, volume.ToString() );
+		Assert.AreNotEqual( 5u, system.Seed );
 	}
 
 	[TestMethod]

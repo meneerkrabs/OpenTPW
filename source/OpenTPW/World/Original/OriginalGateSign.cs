@@ -87,7 +87,7 @@ public sealed class OriginalGateSign : Entity
 		}
 		parkName ??= DefaultParkName( park.LevelName );
 		// [APPROX:COMPAT-004] the gate board is decoded and composed; original-platform gate pixels remain unverified.
-		// [APPROX:COMPAT-031] the stored black paint is illegible on the decoded dark stone gate; use a light stone tint until original-platform pixels are available.
+		// [EXT:gate-paint-legibility] the stored black paint is illegible on the decoded dark stone gate; use a light stone tint (an OpenTPW presentation decision) until original-platform pixels are available.
 		var readablePaint = sign.Paints[0] is { } paint ? paint with { R = 230, G = 210, B = 170, A = 255 } : null;
 		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { parkName }, default, readablePaint );
 		foreach ( var diagnostic in diagnostics )
@@ -131,7 +131,7 @@ public sealed class OriginalGateSign : Entity
 					vertices.Add( new Vertex
 					{
 						Position = engine,
-						// [APPROX:COMPAT-031] the sign's lit face uses an upward normal for readable stone text.
+						// [EXT:gate-paint-legibility] the sign's lit face uses an upward normal for readable stone text.
 						Normal = System.Numerics.Vector3.UnitZ,
 						TexCoords = mesh.TexCoords[corner],
 						TexIndex = slotOfMaterial[material],

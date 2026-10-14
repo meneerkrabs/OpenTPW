@@ -1,6 +1,6 @@
 # LIPS: advisor lip-sync marks
 
-October 9, 2026. Status: strict raw `.LIP` reader/writer and selected MPEG Layer I/II decoder.
+October 9, 2026; updated October 14, 2026 (fixed sequences, model hiding, door events). Status: strict raw `.LIP` reader/writer and selected MPEG Layer I/II decoder.
 Mac static evidence establishes signed mark conversion, a pause-aware unscaled
 millisecond clock, loaded-LIP talking state, strict deadlines, one toggle per
 update and random mouth selection. The bounded original-clock helper is tested;
@@ -327,15 +327,20 @@ composed through the shared MD2 hierarchy code (`ModelAnimationPlayer.ComputeRes
 with the root `Position Dummy` the model is Y-up facing −Z. Drawn without a camera,
 nothing mirrors it, and the MD2 corner order is already clockwise for the renderer's
 front faces. The advisor material is drawn double-sided: the original's Direct3D device sets
-D3DCULL_NONE once at device init (`0x566957`) and nothing else writes the cull mode (ADVISOR-007). The model stays in its bind
+D3DCULL_NONE once at device init (`0x566957`) and nothing else writes the cull mode, and the mesh path has no back-face test
+(`0x57A750`, `0x57AA10`, `0x574110`–`0x574660`; the final submit `0x581CD0` → `[0x8BCBB8]` vtable +8 is unread, ADVISOR-007). The model stays in its bind
 pose. All 15 `Advisorm*.MD2` clips decode completely: TRS tracks, quantised vertex
 groups and node-flag toggles (plus the never-read metadata bit 0x2000); the level
 advisors add texture-coordinate tracks and one clip with path parameters
 (docs/reverse/ANIM-plan.md §10). The original starts animation id n as
 `Advisor<level>m<n>.MD2` on channel 0 at speed 1.0 on clock B
-(`Advisor.AnimationClipName`). The clip choice of a generated sequence is traced (`0x598B20`) and
+(`Advisor.AnimationClipName`). The clip choice of a generated sequence (`0x598B20`) and the fixed rows (`0x598BF0`, table `0x76DC18`) are traced and
 built by `AdvisorSequences` (see "Sequences and timing" below), but no clip is drawn (ADVISOR-006). The clips' node lists set node bit
-0x10 on the hats, spatula and bow tie, which fits ADVISOR-002's hidden set.
+0x10 on the hats, spatula and bow tie, which fits ADVISOR-002's hidden set. That bit is the clip-toggled word of the mesh-node record
+(+0, set at `0x472E75`, cleared at `0x472401`); the mesh draw's own bit 0x10 (`0x57A797`) is a different word, a render-node deferral
+marker (the draw defers a node of a model with flag 0x200000 to the list at `0x8BB220` and the drain `0x579C80` sets and clears it), so it
+does not answer which draw reads the toggled bit (RIDES-042). The fixed-sequence entries also carry accessory bits `0x7F0000`, stored at
+`0xF79660`, which the selector `0x598CA0` tests before it shows or hides nodes by dummy attribute (`0x429F60`, `0x429EE0`): a lead for ADVISOR-002.
 `Advisorm13` (330 ticks) is the only clip with tracks on all five mouth meshes, the
 likeliest original source of the mouth-shape choice.
 
@@ -345,8 +350,10 @@ Veldrid's SDL2 loader, no new dependency). Tests drive it with `SimulatedMovieAu
 consumed from the queue, so it leads the speaker by up to one 1,024-frame buffer
 (≈46 ms). The automatic advisor starts its speech on the advisor clock as the original does (see "Sequences
 and timing"); the manual `--advisor-say` / `--advisor-response` tools start at the first rendered advisor
-frame. Without an audio device, a wall clock drives the mouth and nothing is heard (ADVISOR-011: the
-original's mouth runs on the advisor clock, never on audio, and without a sound system it has no speech).
+frame. Without an audio device, a wall clock drives the mouth and nothing is heard (`[EXT:advisor-no-device-speech]`; the rule is
+fully traced: the original's mouth runs on the advisor clock, never on audio, and without a sound system `0x51BFC0` returns 0 and
+`0x51C570` returns its preset 1, so the player builds the sequence from 1 + 200 + 300 = 501 ms; an optional strict-parity change would
+use length 1 and no mouth).
 
 ### Sequences and timing
 
@@ -367,24 +374,48 @@ October 14, 2026, from the decrypted Windows `tp.exe` (`[BIN:TPW-EXE:...]` citat
   as unsigned integer arithmetic (`0x474070`), from the level advisor's clips when loaded, else the global
   advisor's (`0x5989C0`; the entry of clip 14 is forced to 0). `AdvisorSequences.Generate`, tested without a GPU.
 - **Span.** The response player returns the sequence sum + 1000 + the length of clip 15 (`0x5994AC`); a generated
-  sequence already contains clip 15, so it counts twice. The 60 fixed-sequence responses (table `0x76DC18`,
-  0x50-byte rows indexed by response +12 minus 16, entries with 0x400000 carry a timer) are not imported and keep
-  the old estimate speech + 200 + 300 + 1000 (ADVISOR-016).
-- **Shown.** The model is shown when any animation other than 12 starts (`0x4732A0` → `0x45BD30`) and hidden
-  only by "Kill advisor" (`0x429D60`: animation 12, then unlink), called by the stop path `0x5996D0` (six callers,
-  level exit among them) and the slap path `0x5994E0`; the normal end of advice (`0x599880`) does not hide it.
-  OpenTPW draws it until the span ends instead of until Kill, because the clips are not drawn (ADVISOR-006: a bind-pose advisor that
-  never leaves would look wrong); whether `0x4735D0` hides it after clip 15 is open (ADVISOR-018). `Advisor.Kill` is called when the level is left.
+  sequence already contains clip 15, so it counts twice.
+- **Fixed sequences** (60 of the 610 responses; `AdvisorFixedSequences`, builder `0x598BF0`). The response row's sequence field
+  (`0x768FB8`, 32-byte rows, field +0xC; −1 is generated) minus 16 selects a 0x50-byte row of the table `0x76DC18`, whose dword
+  entries run to a 0. An entry with bit 0x400000 is a timer pair (flag, milliseconds): it sets the timer `0xF79778` to the clip sum so
+  far plus the milliseconds and adds no clip. Any other entry is a clip (`entry & 0xFF80FFFF`; bits `0x7F0000` go to `0xF79660`) whose length
+  is the clip table's. If the first clip is not 14 the immediate-start word `0xF79694` is cleared (audio starts at the request: sequences
+  16, 17 and 29). Ten rows are in use: 16 (clip 16), 17 and 29 (clips 17, 17, 17, 17, 18, 19, 20; 29 has a 1000 ms timer before clip 20),
+  21 to 23 and 25 to 27 (clip 14, two or three body clips, clip 15) and 28 (a 17000 ms timer only); rows 18–20 and 24 are empty. A
+  sum of 0 with a nonzero budget falls back to the generator with the same budget, so 28 is generated (and keeps its timer), and so is
+  any row whose clips are missing from the archives: clips 16–20 exist only in the level advisors. The span is then the same sum + 1000
+  + the length of clip 15. When the advisor clock reaches the timer (`0x599991`) the update calls the particle effect `0x521E60` (87,
+  90000, 0, 7000), plays sound `0xC6` and calls `0x4B9340`; those effects are not ported (ADVISOR-025). Without any clip archive every length is 0 and
+  the original returns 1000; OpenTPW keeps speech + 200 + 300 + 1000 for such a partial install (`[EXT:advisor-no-clips]`).
+- **Shown.** The model is shown when any animation other than 12 starts (`0x4732A0` → `0x45BD30`). "Kill advisor"
+  (`0x429D60`: animation 12 with the immediate flag, then unlink) hides it at once; it is called by the stop path `0x5996D0` (six
+  callers, level exit among them) and the slap path `0x5994E0`, and the normal end of advice (`0x599880`) does not call it. But the
+  animation sampler `0x4735D0` hides it at the end of the last clip (ADVISOR-018, settled October 14, 2026, instruction level): at a clip
+  end (frame past its length, `0x473743`–`0x47374E`) with nothing queued (`[channel+0x24] == 12`, `0x47375D`) and model flag 8
+  (`0x473769`–`0x473776`) it starts the idle set 12 (`0x472F60`) and, when the object is shown (`0x45BDC0`), hides it with `0x45BDD0`
+  (scene unlink `0x576540`, clears bit 0x19; with model flag 0x4000 it calls `0x45BE80` instead). The advisor model has flag 8: it is
+  loaded with flags `0x50120` (`0x429C9D` → `0x461F10`, which ORs 8 into the template at `0x4621C9` when load flag 0x100 is set;
+  `0x4557C0` copies it into the model). The update starts the next clip only while the channel reads the idle set 12 (`0x599A23`), and
+  `0x4732A0` shows the model again (`0x4732C6`–`0x4732DD`); after the last clip nothing starts, so the model stays hidden until the next
+  response. The earlier round's statement that only Kill hides it was true of `0x599880` itself, not of the sampler. OpenTPW therefore
+  draws the model until the sum of the sequence's clips has passed since the request (`Advisor.DrawnSpanMilliseconds`) and clears
+  `ModelShown` there; the clips themselves are not drawn (ADVISOR-006). `Advisor.Kill` is called when the level is left. A fixed row's clips can sum to less than a long speech (rows 21 to 27), so the model then hides while the speech still plays; that
+  follows the trace and a capture should confirm it. Not checked:
+  the model-flag 0x4000 branch and the frame order between the update and the sampler.
 - **Without sound** (`0x802BC8`/`0x802BD4` clear; set at `0x51B660` only when sound init succeeds) the sample is 1 ms
   long (`0x51C570`), there is no sound handle (`0x51BFC0`) and the advice ends with a sequence built from a 501 ms budget.
 - **Balance.** Nothing reads fields +0x18/+0x1C (`MinTimeAnyMessage`/`MinTimeSameMessage`) of the `Advisor.sam` object
   (static `0xFB3540`, built by `0x59BEA0`); `+0x20` (`MinScore`) is read at `0x59B6C3` (absence result, medium-high
   confidence; ADVISOR-019 retired). The synthesis window table at `0x70BD08` (544 floats, −0.5·D[32·tap+row]) equals the
   decoder's (ADVISOR-014 retired).
-- **Events 2/3/4.** Bankruptcy (event 2, `0x4D0370` at the bank's month-end message type 0xC via `0x4D02D0`): balance < 0, previous
-  balance (+0x11C) < 0 and ((now − turn entered red +0x120) × rate / 4) × 10^7 / 2.592·10^13 > 5 post event 2 every month
-  while it holds; it does not close the park. Events 3/4 (`0x519EF0`) are posted on every press of the open/close button
-  (control `0x4F3B1`), also when the state does not change. OpenTPW's economy raises them differently (ADVISOR-020).
+- **Events 2/3/4.** Bankruptcy (event 2, `0x4D0370` at the bank's month-end message type 0xC via `0x4D02D0`): balance < 0 (`0x4D04DE`),
+  previous balance (+0x11C) < 0 (`0x4D04E4`–`0x4D04EC`) and `__alldiv(0x4F88B0(world+0x2A0, turn entered red +0x120), 2.592·10^13) ≥ 6`
+  (`0x4D053B`–`0x4D054F`) post event 2 through `0x40F630(2)` every month while it holds; the turn entered red (+0x120) is set when the balance
+  first goes below zero (`0x4D041A`–`0x4D0432`); it does not close the park. `0x4F88B0` itself is unread. Events 3/4 are posted by the
+  door routine `0x519EF0` on every press of the open/close button (control `0x4F3B1`) and of the Ctrl-O/Ctrl-C shortcuts (`0x40C410` calls
+  it), also when the park is already in that state (event 3 at `0x51A033`, event 4 at `0x51A1C6`, both reached from either state). OpenTPW
+  raises 3/4 the same way, from the HUD's door button and shortcuts (`HudHost.ParkDoorPressed` → `AutomaticAdvisor.OnParkDoorPressed`),
+  not from the economy's open/close transition; event 2 still comes from the economy's six-month bankruptcy (ADVISOR-020).
 
 On macOS arm64 (Metal) `--smoke-test --advisor-say 1` passed: 4.25 s wall time for
 4.23 s of speech, mouth sequence Aah > Normal > Aah > Normal, and 491 changed
@@ -412,8 +443,8 @@ model `OriginalAdvisorScoreQueue` and keeps all 31 of its cases as
 | 0 | Level start | 0 (`Welcome.Score`) | 1 → **level** bank sample 1, `Speech/lips/sp_001.LIP` |
 | 0, game type 2 | Level start in Instant Action (the game-type global, TOC −30136, is the one the player selector `0x1013781C` sets to 2) | 323 (`PrebuiltPark.Score`, tutorial group 1) | 587 → global 606 |
 | 2 | `ParkEconomy` bankruptcy (ADVISOR-020) | 106 (`Bankrupted.Score`) | 274/275 → global 424/425 |
-| 3 | `ParkEconomy.OpenPark` transition (ADVISOR-020) | 128 (`ParkNowOpen.Score`) | 308/309 → global 342/343 |
-| 4 | `ParkEconomy.ClosePark` transition (ADVISOR-020) | 129 (`ParkNowClosed.Score`) | 310/311 → global 344/345 |
+| 3 | Every press of the open button or Ctrl-O (`ParkHud`), also when the park is already open | 128 (`ParkNowOpen.Score`) | 308/309 → global 342/343 |
+| 4 | Every press of the close button or Ctrl-C (`ParkHud`), also when the park is already closed | 129 (`ParkNowClosed.Score`) | 310/311 → global 344/345 |
 
 `Advisor/Advisor.sam` is read at runtime with the bounded `.sam` reader (≤ 1 MiB):
 `MinScoreForConsideration`, the group repeat/once/slap controls and the five
@@ -444,9 +475,8 @@ Not wired: the other 346 descriptors, the 135 computed score producers and the
 background score scan, research/staff/prank/ride/challenge messages, slaps and
 the fixed animation sequences, drawing the clips and the recovered
 `OriginalAdvisorLipDriver` timing (it needs the original pause-aware advisor
-clock, which OpenTPW does not reconstruct). The bankruptcy and open/close
-producers use the economy's existing conditions; the original producers'
-thresholds and preconditions are not traced (ADVISOR-020). Read-only visits of
+clock, which OpenTPW does not reconstruct). The bankruptcy producer uses the economy's six-month bankruptcy; the original's monthly guard
+is traced but needs `0x4F88B0` and an economy field for the turn entered red (ADVISOR-020). Read-only visits of
 shared parks (online extension) and the generic sandbox (`--sandbox`, plain
 `--smoke-test`, sandbox saves) have no automatic advisor.
 
@@ -460,8 +490,9 @@ count, indexed by message ID) replace the controller's history. Then the level
 start raises events 10 and 0 as before. Records and non-initial history of
 messages without a bound descriptor are dropped and counted in the log line
 (Easymode: the one valid record, ParkNowOpen with score 20, and Welcome's
-history are bound and imported). OpenTPW's own park save still does not store
-the controller (ADVISOR-022).
+history are bound and imported; only messages 0, 106, 128, 129 and 323 are bound, ADVISOR-022). OpenTPW's own park save
+(`GameFlow.SaveCurrentPark` → `ParkResumeSaveFile`) does store the controller: the queue slots, the history, the reservation and the
+advisor clock (`AutomaticAdvisorSnapshot`); it refuses to save while speech is active.
 
 Native check (macOS arm64 Metal, October 10, 2026): `--smoke-test
 --load-original-level jungle` passed and logged `Advisor game event 0
@@ -539,22 +570,21 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | --- | --- | --- | --- |
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | Visible: body, head, eyes, antennae, hands; hats, spatula, bow tie, ShutEye hidden | Original node-visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
 | ADVISOR-005 | `source/OpenTPW/World/Advisor.cs` | Light colour 0.6, `test.shader` ambient 0.4 + fog (the light direction is traced) | Original advisor light colour/material captures |
-| ADVISOR-006 | `source/OpenTPW/World/Advisor.cs` | Bind pose; the generated sequence (`0x598B20`) is built and sets the span and the audio start, but no clip is drawn | The draw-path reader of node bit 0x10 (RIDES-042), the fixed-sequence rows of table `0x76DC18` and a skinned draw of the clips |
-| ADVISOR-007 | `source/OpenTPW/World/Advisor.cs` | The advisor material is drawn double-sided; the original sets only D3DCULL_NONE (`0x566957`), software culling is not excluded | A software back-face test in the original's mesh draw (`0x57A750`) or a capture |
+| ADVISOR-006 | `source/OpenTPW/World/Advisor.cs` | Bind pose; the generated (`0x598B20`) and fixed (`0x598BF0`, table `0x76DC18`) sequences are built and set the span, when the model hides and the audio start, but no clip is drawn; the draw-path bit 0x10 at `0x57A797` is a render-node deferral marker, not the clip-toggled mesh-node bit (mesh record +0, `0x472E75`/`0x472401`) | A skinned draw of the clips and a reader of the toggled mesh-node bit (RIDES-042) |
+| ADVISOR-007 | `source/OpenTPW/World/Advisor.cs` | The advisor material is drawn double-sided; the original sets only D3DCULL_NONE (`0x566957`) and its mesh path has no back-face test (`0x57A750`, `0x57AA10`, `0x574110`–`0x574660`) | The backend submit `0x581CD0` → `[0x8BCBB8]` vtable +8, or a capture |
 | ADVISOR-009 | `source/OpenTPW/World/Advisor.cs` | `--advisor-say` plays global clips by number and starts them at its first rendered frame; responses follow the traced global/level selector (`content/data/advisor-responses.toml`); the controller picks responses only for messages 0, 106, 128, 129 and 323 | The remaining 346 descriptors (table `0x76E300`) and their 135 computed score producers |
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:34` | Lip-sync clock = PCM consumed from the SDL queue (leads speaker by ≤ one 1,024-frame buffer, ≈46 ms) | Original A/V sync source; latency measurement |
-| ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs` | The speech runs on the audio clock, a wall clock for the full speech without a device; the original's mouth runs on the advisor clock and has no speech without sound (1 ms sample, 501 ms budget) | None for the rule (traced); OpenTPW keeps its own speech clock |
-| ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs` | Mono speech duplicated to both stereo channels (the original's `0x51BFC0` gets three 0.0 floats) | The original mixer's channel layout/panning for a zero-position sound |
-| ADVISOR-016 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Generated sequences return sequence sum + 1000 + clip 15 (`0x5994AC`); fixed-sequence responses (60 of 610) and games without advisor clip archives return speech + 200 + 300 + 1000 ms | The fixed sequences of table `0x76DC18` |
-| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Controller clock starts at 0 (the original's offset word starts 0, `0x402D63`) with the automatic advisor, one controller update per frame; it stands still while the pause menu is open | Carrying the saved clock on an original save import (`0x415140` → `0x402E80` → `0x403160`: saved advisor clock − live clock); which screen each pause caller (`0x4092A0`: `0x46B600`, `0x47F020`, `0x48C830`, `0x49EFB0`, `0x49F280`, `0x4A3A30`, `0x4A9380`, `0x5F0B40`) is |
-| ADVISOR-018 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | The model is drawn until the response's span ends instead of until Kill, because the clips are not drawn (ADVISOR-006); the original keeps it shown until the next Kill advisor | Whether `0x4735D0` hides the model after clip 15 |
-| ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Events 2/3/4 come from the economy's bankruptcy (six months in the red) and park open/close transitions; the original posts event 2 every month a red-time condition holds (`0x4D0370`) and 3/4 on every button press (`0x519EF0`) | The economy's turn-entered-red and rate terms; the button's repeat behaviour in OpenTPW |
-| ADVISOR-022 | `source/OpenTPW/World/AdvisorController.cs` | OpenTPW's own park save does not store the pending advice and history; on an original save import, records and history of messages without a bound descriptor are dropped (reported) | The remaining descriptor rows and their score producers; an OpenTPW save target for the controller |
+| ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs` | Mono speech duplicated to both stereo channels; the original submits it unpositioned (`0x51BFC0` with 0,0,0) and the library places flat sounds at (0,1,0) (`0x6BC51D`) | QMixer (outside tp.exe, AUDIO-018) or a capture |
+| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Controller clock starts at 0 for a new park and an original-save import (the original's offset word starts 0, `0x402D63`, and its load sets the +0x50 offset to the saved value), one controller update per frame; it stands still while the pause menu is open (the original whenever `0x4092A0` pauses) | The saved clock field in the import (`0x415140` → `0x402E80` → `0x403160`); which screen each of the eight pause callers (`0x46B74C`, `0x47F26C`, `0x48C87E`, `0x49EFBA`, `0x49F29F`, `0x4A3A6C`, `0x4A93D7`, `0x5F0B7F`) is |
+| ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Event 2 comes from the economy's bankruptcy (six months in the red), not the monthly guard of `0x4D0370` (balance and previous balance < 0 and the red-time term ≥ 6); events 3/4 are raised on every open/close button press as in `0x519EF0` | `0x4F88B0` and an economy field for the turn entered red (ParkEconomy belongs to the economy work) |
+| ADVISOR-022 | `source/OpenTPW/World/AdvisorController.cs` | On an original save import, pending advice and history of messages without a bound descriptor (all but 0, 106, 128, 129, 323) are dropped (reported); OpenTPW's own park save stores the controller | The remaining descriptor rows (table `0x76E300`) |
 | ADVISOR-023 | `source/OpenTPW/World/Advisor.cs` | The advisor's unprojected coordinates (centre (0.6, 0.6), y down) span the screen from −1 to 1, as clip space | The consumer of the `0x0057A750` transform output in `tp.exe`, or a capture of the original advisor |
+| ADVISOR-025 | `source/OpenTPW/World/AdvisorSequence.cs` | The effect of a fixed sequence's timer entry (sequences 28 and 29: particle `0x521E60` (87, 90000, 0, 7000), sound `0xC6`, `0x4B9340`) is not ported; the timer is recorded on the sequence | The effects of `0x521E60` with these arguments and of `0x4B9340` |
 
 Retired October 14, 2026 (traced in tp.exe, citations at the sites): ADVISOR-008 (audio start), ADVISOR-013 (talking
-flag), ADVISOR-014 (synthesis window), ADVISOR-019 (balance fields +0x18/+0x1C are not read). ADVISOR-024 is an
-extension (`[EXT:advisor-aspect]`).
+flag), ADVISOR-014 (synthesis window), ADVISOR-019 (balance fields +0x18/+0x1C are not read), ADVISOR-016 (the ten fixed
+rows of table `0x76DC18`; the unported timer effect is ADVISOR-025) and ADVISOR-018 (the sampler hides the model at the end of the
+last clip). ADVISOR-011 is an extension (`[EXT:advisor-no-device-speech]`), as is ADVISOR-024 (`[EXT:advisor-aspect]`).
 
 ## Remaining gates
 

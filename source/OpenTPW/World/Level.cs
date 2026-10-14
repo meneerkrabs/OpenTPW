@@ -799,7 +799,7 @@ public partial class Level : IDisposable
 		Streams.SavePark( path );
 	}
 
-	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
+	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (the legacy economy-only save, [EXT:legacy-economy-save]).</summary>
 	public void LoadPark( string path )
 	{
 		// a load that fails leaves the economy, and so the staff tool and its pending flag, as they were

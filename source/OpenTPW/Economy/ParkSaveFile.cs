@@ -75,7 +75,7 @@ public static class ParkSaveFile
 		public required ObjectivesData Objectives { get; init; }
 		public required Dictionary<string, long> Counters { get; init; }
 		/// <summary>World seed and the guest, script and sound streams (absent in saves written before world seeds: those streams are not restored).</summary>
-		// [APPROX:DET-016] the park save persists the economy and every random stream, but not guests, queues or object script state; a load keeps the running guests and scripts — evidence needed: an OpenTPW save of the thing and script tables (docs/reverse/DET-plan.md §4.4)
+		// [EXT:legacy-economy-save] this legacy economy-only park save (Level.SavePark/LoadPark, used by DeterminismTests) persists the economy and every random stream, not guests, queues or object script state, and a load keeps the running guests and scripts; the player's save (GameFlow.SaveCurrentPark -> ParkResumeSaveFile) already stores the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks
 		public WorldData? World { get; init; }
 	}
 

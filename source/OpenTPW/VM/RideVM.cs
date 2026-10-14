@@ -451,14 +451,6 @@ public sealed class RideVM
 
 	internal void WaitFor( double milliseconds ) => WaitUntil( TimeMilliseconds + Math.Max( 0, milliseconds ) );
 
-	/// <summary>
-	/// WAITABS's wait: the original's case 45 adds the operand to now without WAIT's script-speed division
-	/// (STP-PPC 0xb0710–0xb0788) and always yields on the first encounter, so the script speed never applies to it.
-	/// A non-positive deadline wakes at the next servicing tick, as the original's unsigned now ≥ deadline resume does.
-	/// </summary>
-	// [APPROX:VM-901] The deadline lives in this VM's non-wrapping double script clock, not the original's wrapping unsigned 32-bit word with its zero-deadline sentinel (docs/reverse/PPC-clock.md); wrap-past-2^31/2^32 behaviour is unmodelled.
-	internal void WaitForUnscaled( double milliseconds ) => WaitUntil( TimeMilliseconds + milliseconds );
-
 	internal void WaitUntil( double milliseconds )
 	{
 		WakeTimeMilliseconds = Math.Max( TimeMilliseconds, milliseconds );

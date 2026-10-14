@@ -1,6 +1,6 @@
 # RSE VM: executing original ride scripts
 
-October 9, 2026; updated October 13, 2026 (WAITABS/MULT). Status: **every opcode
+October 9, 2026; updated October 14, 2026 (WAITABS deadline, MIN/SEC, child head tables). Status: **every opcode
 used by the 308 original scripts has a VM handler**, and all scripts that can be
 started run in the VM without faults. The two opcodes only Theme Park Inc
 scripts contain — `WAITABS` (45) and `MULT` (48) — also have handlers now
@@ -156,18 +156,18 @@ object scripts faulted even before), so this is static corpus use plus VM-level
 execution — not a claim that observed retail play exercises them.
 
 **WAITABS** keeps the traced Mac shape ([reverse/PPC-clock.md](reverse/PPC-clock.md),
-dispatch `0xb0710`): despite the name, the first encounter stores
+dispatch `0xb0710`) and the PC's (tp.exe `0x553828`, `0x553783` for WAIT): despite the name, the first encounter stores
 `now + operand` — a relative deadline, **without** WAIT's script-speed
-division — in the same script field WAIT uses (`+160`), always yields, and
-later encounters resume once the clock passes the deadline (unsigned compare).
+division — in the same script field WAIT uses (`+160` Mac, `+0xA0` PC), always yields (the PC rewinds the program counter by 2),
+and later encounters resume once the clock passes the deadline (unsigned compare, `jb` at `0x55386D`).
 All 34 corpus uses are positive literals (1..10000): 1 ms frame spacing between
 fire-effect ADDOBJs, 300/500 ms stage delays, a 1000 ms litbin fire-risk check
-and a 10000 ms obstacle startup delay. In this VM the deadline lives in the
-script clock's non-wrapping double domain, so the original's 2^32 word wrap and
-its zero-deadline re-arm sentinel are not modelled — a session far below 2^31 ms
-of scheduler clock cannot observe the difference ([APPROX:VM-901]). A
-non-positive deadline yields once and resumes at the next servicing tick,
-matching the first-encounter-yield plus `now ≥ deadline` resume.
+and a 10000 ms obstacle startup delay. The deadline is the 32-bit
+scheduler clock word plus the operand as a wrapping unsigned sum, like WAITANIM's (`Scheduling.WaitAbsolute`; the VM
+turns it into a wait until the scheduler clock reaches the deadline when the sum is ahead of the clock, so the wake follows the integer clock word, not the arming time's fraction): a sum that wraps (a negative operand) or an
+operand of 0 is already past and yields once, resuming at the next servicing tick, and a sum of exactly 0 reads as not armed (the PC
+word 0 is the sentinel, cleared once a wait ends), so the next execution stores again and yields again. The VM keeps no extra word,
+so snapshots round-trip as before. VM-901 is narrowed to the one thing the double clock cannot do: a wait that spans the 2^32 ms wrap of the original's clock word.
 
 **MULT** follows the SUB/DIV/MOD family: `MULT dest a b` →
 `dest = a × b`, destination first, 32-bit wrap, flags set — the sole corpus use
@@ -185,23 +185,23 @@ operand/shared wake field/snapshot restore) and `RideVMTpiCorpusTests`
 
 ### Host civil-time queries
 
-TPW object scripts now route `YEAR`, `MONTH`, `DAY` and `HOUR` through their
+TPW object scripts now route `YEAR`, `MONTH`, `DAY`, `HOUR`, `MIN` and `SEC` through their
 shared script world's injected host-local clock (the system clock by default).
 Each executed instruction samples independently. The existing Feral evidence
 in [PPC-clock.md](reverse/PPC-clock.md#rse-civil-time-is-an-independent-clock-domain)
 proves C `time`/`localtime` and the fields: year minus 1900, month 1–12, day
-1–31 and hour 0–23. These are not `ParkCalendar` fields or scheduler elapsed
+1–31 and hour 0–23; the PC opcodes 97–102 (`0x5567D8`, handlers `0x5565B2`, `0x556605`, `0x556659`, `0x5566AC`, `0x5566FF`, `0x55674E`) call `time`
+(`0x67D3F0`) and `localtime` (`0x67D8E0`) and store tm_year (raw), tm_mon + 1, tm_mday, tm_hour, tm_min and tm_sec, so minute and
+second are host time too (October 14, 2026). These are not `ParkCalendar` fields or scheduler elapsed
 time. Pausing prevents script execution; the next eligible query samples
 current host time, regardless of simulation speed, turn count or saved date.
 
 The provider is unavailable for worlds created under TPI or an unsupported
-edition, even if explicitly supplied. `MIN` and `SEC` retain the existing
-unimplemented fallback. No TPI clock semantics are enabled.
+edition, even if explicitly supplied. No TPI clock semantics are enabled.
 
-[APPROX:VM-902] qualifies the managed local timezone/civil conversion, clock
-changes, invalid/rollover dates and Windows/TPI parity. The existing handler's
-destination writes, literal-destination discard and flags are retained; the
-clock-domain witness does not establish their native ordering or flags.
+The destination is written only when the operand is a variable (`& 0xFF000000 == 0x40000000`); the result register (+0x48) is set
+either way and the branches test it, so a literal destination only sets the flags (tp.exe `0x556736`). VM-902 is retired: what
+remains is an OpenTPW replay design point (`[EXT:vm-host-time]`): the host sample is neither saved nor hashed, so a replay needs the same samples.
 Provider/current host input is neither snapshotted nor hashed. Previously
 returned variables and flags remain saved and hashed; future queries after
 restore may diverge unless the same external inputs are supplied. No save or
@@ -264,7 +264,7 @@ Supported admission/query values still come exclusively from the effect
 implementation. It does not create visitors, vehicles, capacities, queues,
 or success responses. Original controller systems remain unimplemented.
 
-Every script has its own head table (the Mac script init 0x100B2BA0 also runs for SPAWNCHILD and SPAWNSOUND), and OpenTPW gives resolved child/sound VMs their own tables; whether a child takes its parent's thing id is untraced (HEADS-005); none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode. See the full inventory and pixel proof in GUESTS.md.
+Only the root script has a head table: on the PC the init (0x558D2B) stores the thing id and, when it is 0, skips the head-id lookup and the table allocation, and SPAWNCHILD (0x555081) and SPAWNSOUND (0x5551AB) create their script with thing id 0 and copy the parent's thing id (+0xAC) only afterwards (0x555168), so ADDHEAD (0x554C89) and DELHEAD (0x554D6F) exit on the NULL table in child and sound scripts. OpenTPW does the same (`RideVisitorBridge.HeadTableFor`; HEADS-005 retired, October 14, 2026): a child's head opcode does nothing, there is no per-child table to save, and the canonical state is unchanged (none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode, so no pinned hash moved). See the full inventory and pixel proof in GUESTS.md.
 
 ## Corpus run (`RideVMCorpusTests`)
 
@@ -366,8 +366,8 @@ member mapping, channels and the corpus run of all 262 object scripts are in
   types 3–9, while show keeps its qualified flat family 75 path. Types
   1/2 create particles in the original and remain unimplemented here; type 0
   is unsupported, not a positioned sound loop. No objects/particles, no ride-type
-  controllers (TOUR/BUMP/COAST), MIN/SEC unimplemented, no light opcodes. TPW YEAR/MONTH/DAY/HOUR
-  sample host civil time with VM-902's qualifications; they do not read the park calendar.
+  controllers (TOUR/BUMP/COAST), no light opcodes. TPW YEAR/MONTH/DAY/HOUR/MIN/SEC
+  sample host civil time (an unsaved external input, `[EXT:vm-host-time]`); they do not read the park calendar.
 - What the engine does with `EventMap.rse` variables, how the host is meant to
   feed `VAR_LETMEON`/`VAR_LETMEOFF`, and the `0xFFFF` second operand of EVENT
   are unknown.
@@ -474,7 +474,7 @@ handler attributes diverge.
 | 42 | `HUSH` | 39 | hooked | unknown upstream; corpus input (`HUSH VAR_LETMEON` before boarding) |
 | 43 | `HOP` | 39 | hooked | unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
 | 44 | `WAIT` | 458 | implemented | STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`) |
-| 45 | `WAITABS` | 0 | implemented | STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901) |
+| 45 | `WAITABS` | 0 | implemented | tp.exe 0x553828 and STP-PPC 0xb0710: despite the name the first encounter stores the 32-bit clock + operand (no WAIT speed division) in the shared deadline word and yields; later encounters wait while the clock is unsigned-below it; a wrapped deadline is already past and a deadline of exactly 0 arms again (Theme Park Inc corpus: 34 uses, literals 1..10000) |
 | 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |
 | 48 | `MULT` | 0 | implemented | TPW-EXE 0x553eb9: dest-first, a × b by imul (32-bit wrap), result in the flag word and a variable destination; Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` |
@@ -526,12 +526,12 @@ handler attributes diverge.
 | 94 | `GETCUSTPTCLCODE` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 95 | `SETTIMER` | 40 | implemented | corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms |
 | 96 | `GETTIMER` | 21 | implemented | corpus: `GETTIMER 0; BRANCH_NZ skip` staggers unloading; dest = remaining ms (≥ 0), sets flags |
-| 97 | `YEAR` | 0 | hooked | Feral host civil year minus 1900 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902 |
-| 98 | `MONTH` | 0 | hooked | Feral host civil month 1..12 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902 |
-| 99 | `DAY` | 0 | hooked | Feral host civil day 1..31 (PPC-clock.md); TPW runtime; existing destination/flags contract remains VM-902 |
-| 100 | `HOUR` | 1 | hooked | Feral host civil hour (PPC-clock.md); TPW runtime samples host time; existing destination/flags contract remains unqualified by the clock witness (VM-902) |
-| 101 | `MIN` | 1 | hooked | docs (in-game minute → dest); corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
-| 102 | `SEC` | 1 | hooked | docs (in-game second → dest); corpus `SEC 0; BRANCH_NZ` |
+| 97 | `YEAR` | 0 | hooked | host-local civil year minus 1900 (tm_year; tp.exe 0x5565B2 and PPC-clock.md); TPW runtime samples host time |
+| 98 | `MONTH` | 0 | hooked | host-local civil month 1..12 (tm_mon + 1; tp.exe 0x556605 and PPC-clock.md); TPW runtime samples host time |
+| 99 | `DAY` | 0 | hooked | host-local civil day 1..31 (tm_mday; tp.exe 0x556659 and PPC-clock.md); TPW runtime samples host time |
+| 100 | `HOUR` | 1 | hooked | host-local civil hour: tp.exe 0x5566AC calls time/localtime and stores tm_hour in the result register; a variable operand receives it, a literal only sets the flags; the TPW runtime samples host time (PPC-clock.md) |
+| 101 | `MIN` | 1 | hooked | host-local civil minute (tm_min), as HOUR: tp.exe 0x5566FF calls time/localtime and stores tm_min in the result register; corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
+| 102 | `SEC` | 1 | hooked | host-local civil second (tm_sec), as HOUR: tp.exe 0x55674E calls time/localtime and stores tm_sec in the result register; corpus `SEC 0; BRANCH_NZ` |
 | 103 | `SETREVERB` | 21 | hooked | docs (0–10) |
 | 104 | `DIPMUSIC` | 8 | hooked | docs (0/1) |
 | 105 | `SPARK` | 1 | hooked | unknown upstream; 1 corpus use (Plasma); passed through |

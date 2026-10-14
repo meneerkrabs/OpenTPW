@@ -16,8 +16,8 @@ TPW `YEAR`/`MONTH`/`DAY`/`HOUR` read host-local civil time, not the park calenda
 or scheduler clock (the Feral witness is in reverse/PPC-clock.md, "RSE civil
 time is an independent clock domain"). A `RideScriptWorld` accepts an injected
 provider; its default samples the current host clock per executed instruction.
-TPI and unsupported-edition worlds cannot enable it. VM-902 records the managed
-timezone/conversion and native destination/flag qualification limits.
+TPI and unsupported-edition worlds cannot enable it. `YEAR`, `MONTH`, `DAY`, `HOUR`, `MIN` and `SEC` all read it (tp.exe opcodes 97–102);
+the sample is an external input (`[EXT:vm-host-time]`; VM-902 retired), so a replay needs the same samples.
 
 The provider and its current host input are external: neither is serialized in
 `RideScriptWorldSnapshot` or fed to the canonical hash. Scheduler timestamps,
@@ -48,7 +48,8 @@ derives every simulation stream from it:
 | Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `System.Random(seed)` (DET-013) | `RideScriptWorld` |
 | Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `System.Random(seed)` | parent `RideVM` |
 | Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (COAST-027) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
-| Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG; draws do not store the successor (sound_shared `0x100118C8`) | `SoundEventSystem` |
+| Sound chooser (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the library's one shared LCG, `s·0x19660D + 0x3C6EF35F` stored on every draw, `ror(s, 13)` then `>> 16` or `% range` (tp.exe `0x6bc839`; AUDIO-037) | `SoundEventSystem` |
+| Weather (presentation and sim) | `ParkWeather` seed from the park's weather key | SplitMix64 `DeterministicRandom`; the PC draws from the shared world LCG `0x516330` (`[EXT:weather-stream]`) | `ParkWeather` |
 
 The stream keys are chosen so that the default seed reproduces the seeds each
 system used before world seeds existed: guests `Level.GuestSeed`, economy 1,
@@ -66,7 +67,7 @@ Found in `source/OpenTPW` (World, Guests, Economy, Objects, VM, Audio) and
 | `OriginalObjectRuntime.nextAttractionId` (static counter) | attraction ids, and through them guest state and the raw guest hash, depended on how many objects the process had created before | ids are now allocated by the park's `RideScriptWorld`; every park starts at 1 |
 | `RideVM`: `new Random()` when no seed was given (prototype Totem, `Ride`, standalone VMs) | RAND/FINDSCRIPTRAND differed on every run | the seed is drawn from the `RideScriptWorld` stream; a world-less VM gets its own default world (state 0) |
 | `Level.RestoreVisitedRide`: prototype ride in its own script world | its attraction id could collide with id 1 of the park's objects | uses `Objects.ScriptWorld` |
-| `GameAudio`: `SoundEventSystem(mixer, Environment.TickCount)` | sound choice (presentation) | each park reseeds it in `GameAudio.EnterPark` from `WorldSeed.SoundStream`; the clock seed now only affects front-end sounds |
+| `GameAudio`: `SoundEventSystem(mixer, Environment.TickCount)` | sound choice (presentation) | the clock seed matches the original's start-up seeding (`QueryPerformanceCounter`, tp.exe `0x72e09c`) and only affects front-end sounds: each park reseeds the chooser in `GameAudio.EnterPark` from `WorldSeed.SoundStream` and saves it (AUDIO-037, the one deviation from the original's unsaved chooser) |
 | `Extensions.RandomVector3` → `Random.Shared` | none: it has no callers | kept for presentation and documented as such; `DeterminismTests` fails if simulation folders reference it |
 | `Advisor`: `AdvisorMouth(new Random())` | mouth mesh choice while talking (presentation, clock B) | unchanged; the original also uses the C-library `rand` there (ADVISOR-001 area) |
 | `ParkEconomy.CreateForTheme(seed: 1)` / `Level.GuestSeed` | fixed, not tied to one seed | now derived from the world seed (same values for the default) |
@@ -130,7 +131,10 @@ script world, per-object runtimes, clock and the attraction→economy links —
 and restores it into a fresh candidate park, continuing the run exactly. The
 streams still ride inside the embedded economy's `World` section, and the
 envelope's shape check requires them to agree with the typed guest and script
-fields, so a resumed park continues the same streams this page describes.
+fields, so a resumed park continues the same streams this page describes. The
+envelope's optional `Particles` part (the particle pool's emitters, effectors and
+private generator, docs/PARTICLES.md) is presentation: it is neither hashed nor
+drawn from any of these streams, so the hash schema stays 14.
 
 ## Canonical state hash
 
@@ -170,13 +174,20 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
 
-The sound seed is saved with the park but is not part of the hash. As in the
-original, a draw does not store its successor: the library init
-(`0x100118B4`, store at `0x100118C8`) is the only writer of
-`CAudioPlaceHolder::mRandomSeed`, the eight chooser and volume sites only read
-it, and no library imports the symbol. Draws therefore never move the seed, so
-UI clicks and audio-device timing cannot change the replay state (DET-plan §3
-D9, §4.5).
+The sound seed is saved with the park but is not part of the hash. In the PC
+executable the chooser **advances**: every draw stores `s·0x19660D + 0x3C6EF35F` back
+into the shared state (`0xfb1f20`; sites `0x6bc810`, `0x6bc680`, `0x6bc090`, `0x6bc170`,
+`0x6bc343`, `0x6be450`, `0x6c3e00`) and uses `ror(s, 13)`; it is seeded once from
+`QueryPerformanceCounter` (`0x72e09c`) and never saved. The earlier text of this
+paragraph followed the Mac reading (a draw never stores its successor; only the
+library init `0x100118C8` writes `CAudioPlaceHolder::mRandomSeed`), which contradicts
+the PC instructions; the PC reading is used and the Mac reading is to be rechecked
+(docs/AUDIO.md "Mac versus PC"). Because UI clicks and mixer-timed sentence segments now move the
+chooser, its state depends on wall-clock events whenever sound is on: it is not a
+replay guarantee. The park still saves it (AUDIO-037) and reseeds it from the world
+seed at entry, so headless (`--mute`) runs and tests start from a known state, and it
+stays out of the canonical hash and out of the resume smoke test's composite hash
+(DET-plan §3 D9, §4.5).
 
 A park started from an original save (SAVE-I, docs/ECONOMY.md "Original save
 import") sets the economy's tick, bank, loans, objects and staff before its first
@@ -196,6 +207,28 @@ Other OpenTPW state that is **not in the hash**:
 
 A change to any of these does not change the hash. Adding one means bumping
 `SchemaVersion` and re-pinning the fixed-run hash.
+
+### Weather timing (October 14)
+
+The weather schedule moved from day indices to game-clock timestamps (docs/AUDIO.md "Weather schedule",
+AUDIO-026/027; tp.exe `0x511f70`, `0x51295c`): the constructor keeps the season's roll unapplied with
+`lastChanged = 0`, the first update rolls a forecast at once, and the apply falls through to the roll
+test in the same tick. The weather is not part of the canonical hash (it is presentation-side state saved
+in its own snapshot, `ParkWeather.ParkWeatherSnapshot`), so no hash pin moves: the fixed-run pin of
+`DeterminismTests` and the M3/M4 gate baselines were checked unchanged. What moved are the weather's own
+expectations (`ParkWeatherTests`, `WeatherForecastTests`, `SnapshotJsonRoundtripTests`), which were
+rewritten to the timestamp rules with the reasons in their messages, and the snapshot fields
+`LastChanged`/`NextRollDay`/`ApplyDay`, which now hold game seconds. A resumed save written before this
+change held day indices there; `ParkWeather.MigrateSchedule` recognises them (all three values within
+`DayIndex + DaysOfWarning + DaysBetweenChanges + 1` of a park at least a day old) and multiplies them by
+86,400 on restore, so no save version was bumped.
+
+The weather's own draws still come from its own stream, not from the PC's world LCG (`0x516330`:
+`world +0x1da708 = ror13(s·0x19660D + 0x3C6EF35F)`, the rotated value stored and `|value|` returned,
+seeded with `time(NULL)` at world creation `0x51586b`, setter `0x516370`). That LCG is shared by about 139
+call sites, so reproducing the weather's draws needs the draws of every other user in their original
+order; until the world LCG exists the weather stream is OpenTPW's design (`[EXT:weather-stream]`,
+formerly AUDIO-030).
 
 Rides register round (October 14): a script's speed bias (`RideVM.SpeedBias`, the ride's `InitSpeed`; 50 at creation) is
 part of the script digest only when it differs from 50, and is carried by the script snapshot (default 50, so older
@@ -335,10 +368,22 @@ itself needs a renderer and is not constructed by tests.
 
 | ID | Rule |
 | --- | --- |
-| DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world LCG |
-| DET-014 | guests use their own SplitMix64 stream, not the world LCG reseeded per guest id |
-| DET-015 | the economy uses its own SplitMix64 stream, not the world LCG |
-| DET-016 | the economy-only park save holds the streams and the economy, not guests, queues or scripts (the park-resume world save of docs/PARK-SAVES.md does hold them) |
+| DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world generator (tp.exe `0x516330`: LCG, rotate right by 13, abs) |
+| DET-014 | guests use their own SplitMix64 stream, not the world generator reseeded per guest id |
+| DET-015 | the economy uses its own SplitMix64 stream, not the world generator |
+
+DET-016 is retired (October 14, 2026): the economy-only park save is the legacy `ParkSaveFile` (`[EXT:legacy-economy-save]`), used by the
+determinism tests; the player's save (`GameFlow.SaveCurrentPark` → `ParkResumeSaveFile`) stores the economy and its streams, the layout,
+the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks (docs/PARK-SAVES.md).
+
+Port requirements for DET-013 to DET-015 (tp.exe, static evidence, nothing missing; the port is not done): the one world generator is
+`s = rotr(s * 1664525 + 1013904223, 13)` returning `abs((int)s)` with `int.MinValue` staying negative (`0x516330`); one `WorldRng` per level
+holds the u32 at world+0x1DA708; `0x516370` reseeds it with the zero-extended u16 thing id at eight sites (`0x4D71CA` and `0x4D94E2` in litter,
+`0x4F7B7E`, `0x4FB19E` in guest creation with eight draws, the reseed and two more draws, `0x4FCAFD`, `0x4FE6A1` and `0x4FE6FC` for the balloon,
+`0x50205F`), all taking the id through `0x50B350`; the state is seeded from `time()` at world setup and saved as `mRandomSeed` next to
+`mGameTick` (save `0x51710F`, load `0x517DE8`); every consumer shares the one stream with its own projection (RAND `labs(labs(r >>> 1) % (int16 + 1))`,
+ADDHEAD and FINDSCRIPTRAND `(labs(r >>> 1) % n) + 1`, tour and flying cars `labs(r) % 100`, 139 direct calls plus four inline copies); the original
+call order (substeps and the RSE pass schedule, things newest first, economy month-end) is needed for the right sequence, not only the distribution.
 
 The remaining IDs proposed in DET-plan §4.6 (DET-001, DET-003 to DET-011) belong
 to the substep scheduler and the original generators. DET-I2 will register them

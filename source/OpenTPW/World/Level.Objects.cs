@@ -308,14 +308,8 @@ public partial class Level
 		return result;
 	}
 
-	/// <summary>Where a cell's sounds play: the original submits them at (x·10, 0, y·10), the cell centre at height 0.</summary>
-	internal Vector3 CellSoundPosition( int x, int y )
-	{
-		if ( OriginalPark == null )
-			return new Vector3( x * 10, y * 10, 0 );
-		var centre = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, x, y );
-		return new Vector3( centre.X, centre.Y, 0 );
-	}
+	/// <summary>Where a cell's sounds play: the original submits them at (x*10, 0, z*10), a cell is ten units at height 0.</summary>
+	internal Vector3 CellSoundPosition( int x, int y ) => GameAudio.CellSoundPosition( x, y );
 
 	/// <summary>
 	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the

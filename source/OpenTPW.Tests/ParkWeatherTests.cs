@@ -92,23 +92,91 @@ public class ParkWeatherTests
 	}
 
 	[TestMethod]
-	public void TheForecastComesThreeDaysInAndAppliesAfterFourMoreWithASevenDayCycle()
+	public void TheConstructedQualityIsNeverConvertedAndTheFirstUpdateRollsAForecastAtOnce()
+	{
+		// [BIN:TPW-EXE:0x511f70] the constructor stores the season's roll as the quality without calling the converter 0x512f00, and lastChanged is 0
+		var weather = new ParkWeather( Jungle(), 4, 10, 10 );
+		weather.AdvanceTo( 0 );
+		Assert.IsNull( weather.Forecast, "nothing is forecast before the first update" );
+		Assert.IsTrue( weather.Quality is >= 1 and <= 100, "the quality is the season's roll" );
+		Assert.IsFalse( weather.Rain || weather.Snow || weather.Lightning, "and has no effect: no weather was converted" );
+		Assert.AreEqual( 0, weather.TargetDrops );
+		Assert.AreEqual( 0, weather.CurrentDrops );
+		var first = weather.Quality;
+		weather.Step( ParkCalendar.TickOfTurn( 1 ) );
+		Assert.IsNotNull( weather.Forecast, "the first update rolls a forecast at once" );
+		Assert.AreEqual( first, weather.Quality, "and does not apply it yet" );
+		Assert.IsFalse( weather.Rain || weather.Snow || weather.Lightning );
+		var coming = weather.Forecast!.Value;
+		weather.Step( ParkCalendar.TickAtDay( 4 ) );
+		Assert.AreEqual( coming, weather.Forecast, "day 4 is still warning: the apply time is the roll's time plus four days" );
+		weather.Step( ParkCalendar.TickAtDay( 5 ) );
+		Assert.IsNull( weather.Forecast, "day 5 applies it" );
+		Assert.AreEqual( coming, weather.Quality );
+	}
+
+	[TestMethod]
+	public void ASaveHoldingDayIndicesIsMigratedToGameSecondsAndACurrentOneIsNot()
 	{
 		var weather = new ParkWeather( Jungle(), 4, 10, 10 );
 		weather.AdvanceTo( 0 );
-		Assert.IsNull( weather.Forecast, "nothing is forecast on the first day" );
-		var first = weather.Quality;
-		weather.Step( ParkCalendar.TickAtDay( 2 ) );
-		Assert.IsNull( weather.Forecast, "day 2 is before the roll" );
-		weather.Step( ParkCalendar.TickAtDay( 3 ) );
-		Assert.IsNotNull( weather.Forecast, "day 3 rolls the next quality" );
-		Assert.AreEqual( first, weather.Quality, "and does not apply it yet" );
+		weather.AdvanceTo( ParkCalendar.TickAtDay( 5 ) );
+		var seconds = weather.CaptureSnapshot();
+		Assert.IsTrue( seconds.NextRollDay > 100, "a current snapshot holds game seconds" );
+		// the same schedule as a pre-timestamp save wrote it: day indices (limit = day 5 + 4 + 7 + 1 = 17)
+		var days = seconds with { LastChanged = 2, NextRollDay = 5, ApplyDay = 9, PendingQuality = 30 };
+		var migrated = new ParkWeather( Jungle(), 4, 10, 10 ).MigrateSchedule( days );
+		Assert.AreEqual( (2L * 86400, 5L * 86400, 9L * 86400), (migrated.LastChanged, migrated.NextRollDay, migrated.ApplyDay) );
+		var restored = new ParkWeather( Jungle(), 4, 10, 10 );
+		restored.RestoreSnapshot( days );
+		Assert.AreEqual( 9, restored.ForecastApplyDay, "the forecast resumes on its day" );
+		// a current snapshot is left alone, and so is one over the limit by a single day
+		Assert.AreEqual( seconds, restored.MigrateSchedule( seconds ) );
+		var over = seconds with { LastChanged = 0, NextRollDay = 18, ApplyDay = 0 };
+		Assert.AreEqual( over, restored.MigrateSchedule( over ) );
+		var atLimit = seconds with { LastChanged = 0, NextRollDay = 17, ApplyDay = 0 };
+		Assert.AreEqual( 17L * 86400, restored.MigrateSchedule( atLimit ).NextRollDay );
+		// a park under a day old cannot tell the two apart and keeps its values; an unstarted weather has nothing to migrate
+		var young = seconds with { LastTurn = 10, LastChanged = 0, NextRollDay = 5, ApplyDay = 0 };
+		Assert.AreEqual( young, restored.MigrateSchedule( young ) );
+		var unstarted = new ParkWeather( Jungle(), 4, 10, 10 ).CaptureSnapshot();
+		Assert.AreEqual( unstarted, restored.MigrateSchedule( unstarted ) );
+	}
+
+	[TestMethod]
+	public void ARollIsDueAtItsTimestampNotAtADayBoundary()
+	{
+		// [BIN:TPW-EXE:0x51295c] roll when now >= lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days, on timestamps, not day indices
+		var weather = new ParkWeather( Jungle(), 4, 10, 10 );
+		weather.AdvanceTo( 0 );
+		weather.Step( ParkCalendar.TickOfTurn( 1 ) );
+		var applyAt = ParkCalendar.SecondsPerTurn + 4 * ParkCalendar.SecondsPerDay;
+		var applyTick = ParkCalendar.TickAtSeconds( applyAt );
+		weather.Step( applyTick - 1 );
+		Assert.IsNotNull( weather.Forecast, "one tick before the apply time" );
+		weather.Step( applyTick );
+		Assert.IsNull( weather.Forecast, "the apply, with a three day cycle before the next roll" );
+		var appliedAt = ParkCalendar.Seconds( applyTick );
+		var rollTick = ParkCalendar.TickAtSeconds( appliedAt + 3 * ParkCalendar.SecondsPerDay );
+		var turnBefore = ParkCalendar.TickOfTurn( ParkCalendar.Turn( rollTick ) - 1 );
+		weather.Step( turnBefore );
+		Assert.IsNull( weather.Forecast, "the turn before lastChanged + 3 days: no roll yet, although it is the same day" );
+		weather.Step( rollTick );
+		Assert.IsNotNull( weather.Forecast, "the roll is due at lastChanged + 3 days" );
+	}
+
+	[TestMethod]
+	public void AnApplyFallsThroughToTheRollTestInTheSameTick()
+	{
+		// DaysBetweenChanges (3) <= DaysOfWarning (4): the next roll is due at once, in the tick that applied the forecast
+		var weather = new ParkWeather( Keys( "Weather.DaysOfWarning\t4\nWeather.DaysBetweenChanges\t3\n" ), 4, 10, 10 );
+		weather.AdvanceTo( 0 );
+		weather.Step( ParkCalendar.TickOfTurn( 1 ) );
 		var coming = weather.Forecast!.Value;
-		weather.Step( ParkCalendar.TickAtDay( 6 ) );
-		Assert.IsNotNull( weather.Forecast, "day 6 is still warning" );
-		weather.Step( ParkCalendar.TickAtDay( 7 ) );
-		Assert.IsNull( weather.Forecast, "day 7 applies it" );
-		Assert.AreEqual( coming, weather.Quality );
+		var applyTick = ParkCalendar.TickAtSeconds( ParkCalendar.SecondsPerTurn + 4 * ParkCalendar.SecondsPerDay );
+		weather.Step( applyTick );
+		Assert.AreEqual( coming, weather.Quality, "the forecast applied" );
+		Assert.IsNotNull( weather.Forecast, "and the same tick rolled the next forecast" );
 	}
 
 	[TestMethod]

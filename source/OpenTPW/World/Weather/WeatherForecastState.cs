@@ -26,8 +26,8 @@ public readonly record struct WeatherForecastSample(
 /// handler is not traced, so the wording, cadence and surface are OpenTPW approximations (AUDIO-905..907); no
 /// weather text exists in the shipped string tables to copy.
 /// </summary>
-// [APPROX:AUDIO-906] the forecast's kind text classifies the pending quality by the converter's bands only — the apply-time snow/rain coin flip has not happened, so both bands read "snow or rain", and the lightning band composes "thunderstorms"; the wording is OpenTPW's — evidence needed: the original's forecast message handler and its text
-// [APPROX:AUDIO-907] one message is posted when a forecast appears and one when it applies, plus one transient current-weather line on attach (a park entered or loaded with weather on screen); a park resumed mid-warning announces the pending forecast once, and the transient line shows for ChangedLineSeconds of simulation time — evidence needed: the original's forecast message cadence
+// [EXT:forecast-wording] the forecast's kind text classifies the pending quality by the converter's bands only — the apply-time snow/rain coin flip has not happened, so both bands read "snow or rain", and the lightning band composes "thunderstorms"; the wording is OpenTPW's — evidence needed: the original's forecast message handler and its text
+// [EXT:forecast-cadence] one message is posted when a forecast appears and one when it applies, plus one transient current-weather line on attach (a park entered or loaded with weather on screen); a park resumed mid-warning announces the pending forecast once, and the transient line shows for ChangedLineSeconds of simulation time — evidence needed: the original's forecast message cadence
 public sealed class WeatherForecastState
 {
 	/// <summary>How long the transient changed/current line stays on screen, in seconds of simulation time.</summary>
@@ -117,7 +117,7 @@ public sealed class WeatherForecastState
 	/// tie still undecided as "snow or rain" (the apply-time draw has not happened for a forecast), then snow, rain
 	/// and dry weather.
 	/// </summary>
-	// [APPROX:AUDIO-906] the kind wording is OpenTPW's; no weather text exists in the shipped Language tables (searched) — evidence needed: the original's forecast message handler
+	// [EXT:forecast-wording] the kind wording is OpenTPW's; no weather text exists in the shipped Language tables (searched) — evidence needed: the original's forecast message handler
 	internal static string KindText( WeatherQualityBands bands )
 	{
 		if ( bands.Lightning )

@@ -107,6 +107,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
+	/// <summary>Whether an activation plays the control click before <see cref="RowActivated"/>; off for an owner that may refuse and clicks itself.</summary>
+	public bool ClicksOnActivate { get; set; } = true;
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
 	public override bool Focusable => Visible && Enabled;
@@ -142,8 +144,12 @@ public sealed class UiScrollList : UiElement, IUiRowList
 
 	public override void Activate()
 	{
-		if ( Selected >= 0 && Selected < Rows().Count )
-			RowActivated?.Invoke( Selected );
+		if ( Selected < 0 || Selected >= Rows().Count || RowActivated == null )
+			return;
+		// [BIN:TPW-EXE:0x485780 UI message hook] a row activation is a control message like any other, so it clicks (unless the owner clicks itself once its activation is accepted)
+		if ( ClicksOnActivate )
+			GameAudio.PlayUi( GameAudio.ClickEvent );
+		RowActivated( Selected );
 	}
 
 	/// <summary>Row index under <paramref name="point"/> (framebuffer pixels), or -1.</summary>

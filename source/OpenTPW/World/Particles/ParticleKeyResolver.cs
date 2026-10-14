@@ -6,6 +6,8 @@ namespace OpenTPW;
 public enum ParticleKeyStatus
 {
 	Resolved,
+	/// <summary>The key entry has no matrix: the native resolver hands back position (0, 0, 0) and direction (0, 0, 1024) in world space.</summary>
+	ResolvedAtWorldOrigin,
 	UnsupportedSelector,
 	UnsupportedFallback,
 	MissingKey,
@@ -14,7 +16,7 @@ public enum ParticleKeyStatus
 }
 
 /// <summary>Engine coordinates (Z up); direction is unit length, without the native resolver's 1024 multiplier.
-/// Failed results carry no pose. Native fixed-point position/velocity conversion belongs to the future particle constructor.</summary>
+/// Failed results carry no pose, and so does <see cref="ParticleKeyStatus.ResolvedAtWorldOrigin"/> (the pose is the world origin, not an engine position).</summary>
 public readonly record struct ParticleKeyResult( ParticleKeyStatus Status, int AttributeIndex, int NodeIndex,
 	NVector3? EnginePosition, NVector3? EngineUnitDirection );
 
@@ -22,6 +24,8 @@ public readonly record struct ParticleKeyResult( ParticleKeyStatus Status, int A
 public sealed class ParticleKeyResolver
 {
 	public const uint EventSelector = 0x100;
+	/// <summary>The selector an EVENT sound's key is looked up with (tp.exe <c>0x556b90</c> passes 0x200 to <c>0x44b220</c>); particles use <see cref="EventSelector"/>.</summary>
+	public const uint SoundSelector = 0x200;
 	public const float NativeDirectionMultiplier = 1024f;
 	private readonly ModelFile model;
 
@@ -35,18 +39,18 @@ public sealed class ParticleKeyResolver
 
 	/// <summary>Resolve against the caller's current model-space hierarchy matrices (ObjectAnimator.NodeTransforms),
 	/// or explicitly supplied bind matrices. The resolver neither advances animation nor reads a camera.
-	/// Only selector 0x100 is qualified for particles. Negative keys require the unqualified native box/height fallback.
+	/// Selector 0x100 is qualified for particles and 0x200 for sounds. Negative keys require the unqualified native box/height fallback.
 	/// No extra position offset is inferred from the optional native output direction pointer.</summary>
 	// [BIN:STP-PPC:0x1019B298 model key lookup] matches attribute Value and selector mask; first matching entry wins
 	// [BIN:STP-PPC:0x1019AE64 lookup construction] entry i selects header word +0x46 plus i; +0x44 selects mesh versus dummy records
 	// [BIN:STP-PPC:0x100AC7F0 particle key resolver] position comes from matrix +48/+52/+56; direction from +32/+36/+40, optionally negated by runtime lookup flag 0x10, normalized then multiplied by 1024
-	// [APPROX:PTCL-900] current ObjectAnimator hierarchy matrices supply key frames; native lookup-table refresh gates and instance callback timing are unqualified — evidence needed: object-header bit 1 setters and the runtime key-table walk in placed objects
+	// [APPROX:PTCL-900] current ObjectAnimator hierarchy matrices supply key frames at EVENT time; the original reads the matrices of the object's last draw (tp.exe 0x473C70 -> 0x44AB30, about one render frame behind and stale while the object is culled)
 	public ParticleKeyResult Resolve( int key, uint selector, IReadOnlyList<Matrix4x4> nodeTransforms,
 		ObjectPlacement placement, bool includeDirection = false )
 	{
 		ArgumentNullException.ThrowIfNull( nodeTransforms );
 		ParticleKeyResult Refuse( ParticleKeyStatus status, int attribute = -1, int node = -1 ) => new( status, attribute, node, null, null );
-		if ( selector != EventSelector )
+		if ( selector != EventSelector && selector != SoundSelector )
 			return Refuse( ParticleKeyStatus.UnsupportedSelector );
 		if ( key < 0 )
 			return Refuse( ParticleKeyStatus.UnsupportedFallback );
@@ -61,10 +65,12 @@ public sealed class ParticleKeyResolver
 			if ( entry.Value != (uint)key || (entry.Type & selector) == 0 )
 				continue;
 			var node = model.Counts.Unknown46 + attribute;
-			// Native lookup entries without flags 0x30 have no matrix (zero position / default direction).
-			// Do not attach those zero outputs to a placed object's anchor as though they were a local node.
-			if ( node >= model.Nodes.Count || (entry.Type & 0x30) == 0 )
+			if ( node >= model.Nodes.Count )
 				return Refuse( ParticleKeyStatus.UnsupportedNode, attribute, node );
+			// [BIN:TPW-EXE:0x556BF1 null key matrix] a key entry without a matrix (flags 0x30 clear) is a success at the world origin: position (0, 0, 0) and direction (0, 0, 1024) in world space,
+			// not at the placed object's anchor
+			if ( (entry.Type & 0x30) == 0 )
+				return new ParticleKeyResult( ParticleKeyStatus.ResolvedAtWorldOrigin, attribute, node, null, null );
 			var frame = nodeTransforms[node];
 			if ( !Finite( frame ) || frame.M14 != 0 || frame.M24 != 0 || frame.M34 != 0 || frame.M44 != 1 )
 				return Refuse( ParticleKeyStatus.InvalidTransform, attribute, node );

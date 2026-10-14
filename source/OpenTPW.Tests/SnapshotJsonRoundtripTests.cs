@@ -47,8 +47,11 @@ public class SnapshotJsonRoundtripTests
 		original.AdvanceTo( ParkCalendar.TickAtDay( 6 ) );
 		original.ApplyQuality( 8 ); // a lightning-band quality, so the lightning clocks are live
 		original.Step( 0 );
+		// the first update rolled a forecast (tp.exe 0x511f70: lastChanged 0); the snapshot under test is the one with none pending
 		var snapshot = original.CaptureSnapshot() with
 		{
+			PendingQuality = null,
+			ApplyDay = 0,
 			PendingStrikes = new[] { new ParkWeather.ThunderStrikeSnapshot( 12f, 300f, 34f ) }
 		};
 		var json = Json( snapshot );

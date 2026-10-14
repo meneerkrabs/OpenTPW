@@ -267,36 +267,36 @@ public class RideVMCorpusTests
 
 	// 30 s of the open Inca Totem placed as an original object (OriginalObjectRuntime: its catalog entry, model and
 	// clips, OriginalObjectEffects as the animation host), capacity 6, no visitors, seed 1234. WAITANIM 0 0 plays
-	// AnimID 0 and waits its length less 300 ms (to 4,516 ms); then the 10 s passenger time-out, WAIT 700, a random
-	// TRIGANIM_CH set via JSR at 15,216 ms, TRIGANIM 5 (the main clip) at 15,733 ms, the sound/object timeline to
-	// 27,783 ms, and WAIT4ANIM, which waits for the deadline of the last trigger. Hooked instructions are traced as
+	// AnimID 0 and waits its length less 300 ms; then the 10 s passenger time-out, WAIT 700, a random TRIGANIM_CH set
+	// via JSR at 14,749 ms, TRIGANIM 5 (the main clip) at 15,216 ms, the sound/object timeline to 26,216 ms, and
+	// WAIT4ANIM, which waits for the deadline of the last trigger. Every wait is divided by the script speed (1.1). Hooked instructions are traced as
 	// executed (WAIT4ANIM included), with operand values before the instruction runs.
 	private const string HostedTotemTrace =
 		"16 WAITANIM 0 0\n" +
-		"14816 TRIGANIM_CH 5 2 0 1\n" +
-		"14816 TRIGANIM_CH 5 5 0 2\n" +
-		"14816 TRIGANIM_CH 5 8 0 3\n" +
-		"15333 TRIGANIM 5 0 0\n" +
-		"15333 ADDOBJ 3 -1 73 5\n" +
-		"15333 ADDOBJ 3 -1 90 5\n" +
-		"15333 ADDOBJ 3 -1 74 2\n" +
-		"15333 ADDOBJ 3 -1 75 2\n" +
-		"20633 EVENT 3 -1 76\n" +
-		"20633 KILLOBJ 2\n" +
-		"21633 SETREVERB 3\n" +
-		"21633 KILLOBJ 5\n" +
-		"21633 EVENT 3 -1 77\n" +
-		"21883 SINGLESCREAM 0 100\n" +
-		"21883 EVENT 3 -1 78\n" +
-		"23883 ADDOBJ 3 -1 73 5\n" +
-		"23883 ADDOBJ 3 -1 90 5\n" +
-		"23883 ADDOBJ 3 -1 74 5\n" +
-		"23883 ADDOBJ 3 -1 75 5\n" +
-		"27383 SETREVERB 0\n" +
-		"27383 KILLOBJ 5\n" +
-		"27383 EVENT 3 -1 76\n" +
-		"27383 WAIT4ANIM\n" +
-		"28100 WAIT4ANIM\n";
+		"14749 TRIGANIM_CH 5 2 0 1\n" +
+		"14749 TRIGANIM_CH 5 5 0 2\n" +
+		"14749 TRIGANIM_CH 5 8 0 3\n" +
+		"15216 TRIGANIM 5 0 0\n" +
+		"15216 ADDOBJ 3 -1 73 5\n" +
+		"15216 ADDOBJ 3 -1 90 5\n" +
+		"15216 ADDOBJ 3 -1 74 2\n" +
+		"15216 ADDOBJ 3 -1 75 2\n" +
+		"20050 EVENT 3 -1 76\n" +
+		"20050 KILLOBJ 2\n" +
+		"20966 SETREVERB 3\n" +
+		"20966 KILLOBJ 5\n" +
+		"20966 EVENT 3 -1 77\n" +
+		"21200 SINGLESCREAM 0 100\n" +
+		"21200 EVENT 3 -1 78\n" +
+		"23033 ADDOBJ 3 -1 73 5\n" +
+		"23033 ADDOBJ 3 -1 90 5\n" +
+		"23033 ADDOBJ 3 -1 74 5\n" +
+		"23033 ADDOBJ 3 -1 75 5\n" +
+		"26216 SETREVERB 0\n" +
+		"26216 KILLOBJ 5\n" +
+		"26216 EVENT 3 -1 76\n" +
+		"26216 WAIT4ANIM\n" +
+		"27983 WAIT4ANIM\n";
 
 	[TestMethod]
 	public void TotemScriptTraceWithItsObjectIsPinned()

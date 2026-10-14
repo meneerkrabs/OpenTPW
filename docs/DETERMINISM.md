@@ -200,7 +200,8 @@ Rides register round (October 14): a script's speed bias (`RideVM.SpeedBias`, th
 part of the script digest only when it differs from 50, and is carried by the script snapshot (default 50, so older
 snapshots restore at the creation value). No pinned hash moved. The scripted-object run of the original Totem
 (`TotemScriptTraceWithItsObjectIsPinned`) was re-pinned deliberately: Totem's `InitSpeed` is above 50, so its animation
-waits (`out / script speed`) are now shorter, which moves every later timestamp of its 30 s trace by about 400 ms.
+waits (`out / script speed`) and its WAITs (`operand / script speed`, STP-PPC 0xb0658) are now shorter, which moves
+every later timestamp of its 30 s trace by up to about 1.2 s.
 
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the

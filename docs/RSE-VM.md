@@ -305,9 +305,10 @@ unknown-command safety faults.
 `TotemScriptTraceWithItsObjectIsPinned` pins 30 s of Totem.RSE run as the placed
 original object (`OriginalObjectRuntime`, seed 1234, capacity 6, no visitors), so
 the animation opcodes have their real host: WAITANIM 0 at 16 ms plays AnimID 0 and
-waits its length less 300 ms (to 4,516 ms), then the 10 s passenger time-out,
-WAIT 700, VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 14,816 ms,
-TRIGANIM 5 at 15,333 ms, the sound/object timeline to 27,383 ms, then WAIT4ANIM
+waits its length less 300 ms divided by the script speed (Totem's `InitSpeed` 60 gives
+1.1), then the 10 s passenger time-out, WAIT 700 (also divided by the speed),
+VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 14,749 ms, TRIGANIM 5 at
+15,216 ms, the sound/object timeline to 26,216 ms, then WAIT4ANIM
 and VAR_RUNNING = 0 because nobody boarded. All five clip requests resolve.
 `TotemWithoutAnObjectWaitsOnItsFirstWaitAnim` pins the same script with no host:
 like the original's null-object path its first WAITANIM gets 0 ms and waits
@@ -471,7 +472,7 @@ handler attributes diverge.
 | 41 | `POP` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 42 | `HUSH` | 39 | hooked | unknown upstream; corpus input (`HUSH VAR_LETMEON` before boarding) |
 | 43 | `HOP` | 39 | hooked | unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
-| 44 | `WAIT` | 458 | implemented | docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`) |
+| 44 | `WAIT` | 458 | implemented | STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`) |
 | 45 | `WAITABS` | 0 | implemented | STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901) |
 | 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |

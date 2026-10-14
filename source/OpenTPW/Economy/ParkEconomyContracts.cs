@@ -52,7 +52,7 @@ public enum ParkEventKind
 	StaffStrikeMessage,
 	/// <summary>A toilet's gauge fell below 25 ("Toilet has become dirty and smelly", tp.exe 0x004E2440): <see cref="ParkEvent.InstanceId"/> the toilet.</summary>
 	ToiletDirty,
-	/// <summary>A handyman finished cleaning a toilet (tp.exe 0x004DFD80): <see cref="ParkEvent.InstanceId"/> the toilet.</summary>
+	/// <summary>A handyman finished cleaning a toilet (tp.exe 0x004DFD80): <see cref="ParkEvent.InstanceId"/> the toilet, <see cref="ParkEvent.Amount"/> 1 when the clean answered the player's call.</summary>
 	ToiletCleaned,
 	/// <summary>The player called a mechanic to the object (tp.exe 0x004DFE30): the ride closes. <see cref="ParkEvent.InstanceId"/> the object.</summary>
 	MaintenanceRequested,

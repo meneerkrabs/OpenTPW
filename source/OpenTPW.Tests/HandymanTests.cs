@@ -214,9 +214,12 @@ public class HandymanTests
 		f.Turns( 20 );
 		Assert.AreEqual( 0, toilet.MechanicId, "clean and far: nobody comes" );
 		f.Park.RequestMaintenance( toilet.Id, true );
+		var answered = false;
+		f.Park.EventRaised += item => answered |= item.Kind == ParkEventKind.ToiletCleaned && item.Amount == 1;
 		var cleaned = false;
 		f.Turns( 600, () => cleaned |= toilet.Repair == 100 && !toilet.MaintenanceRequested );
 		Assert.IsTrue( cleaned, "the call brings a handyman at any distance (0x004D7880) and his clean clears it" );
+		Assert.IsTrue( answered, "the clean reports that it answered the call (the level reopens the toilet)" );
 	}
 
 	[TestMethod]

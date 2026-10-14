@@ -748,7 +748,8 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		// [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
-		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
+		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
+			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );

@@ -355,8 +355,9 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			item.Repair = RideRepair.FullGauge;
 			item.MechanicId = 0;
+			var called = item.MaintenanceRequested;
 			item.MaintenanceRequested = false;
-			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
 		}
 		member.ToiletId = 0;
 	}
@@ -526,8 +527,9 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			// [BIN:TPW-EXE:0x004DFD80 toilet cleaned] the end of the handyman's state 11 sets the gauge back to 100.0 and clears the ride's mRequestedService (+0x64) and assigned staff (+0x5E)
 			item.Repair = RideRepair.FullGauge;
+			var called = item.MaintenanceRequested;
 			item.MaintenanceRequested = false;
-			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
 			return;
 		}
 		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E)

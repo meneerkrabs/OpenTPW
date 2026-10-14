@@ -28,6 +28,17 @@ public class PatrolAreaToolTests
 	}
 
 	[TestMethod]
+	public void ADrawnAreaIsSavedForAMemberWithoutAPosition()
+	{
+		var park = EconomyTestData.Park();
+		var guard = EconomyTestData.HireBest( park, StaffType.Guard );
+		guard.SetPatrolArea( (2, 3), (9, 8) );
+		var json = ParkSaveFile.Serialize( park );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
+		Assert.AreEqual( (2, 3, 9, 8), restored.Staff.Members.Single( member => member.Id == guard.Id ).PatrolArea );
+	}
+
+	[TestMethod]
 	public void CancelAndADismissedMemberLeaveTheAreaAlone()
 	{
 		var park = EconomyTestData.Park();

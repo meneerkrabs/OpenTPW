@@ -180,10 +180,170 @@ public class TrackAssetTests
 		GC.KeepAlive( rig );
 	}
 
-	private static object BuildCircuit( BumpController bump )
+	// ---- Go-karts ------------------------------------------------------------------------------------
+
+	private static ObjectCatalogEntry KartRide( string theme ) =>
+		ObjectCatalog.Load( theme ).Entries.First( entry => !entry.IsBonus && entry.Category == ObjectCategory.Ride && entry.Settings.GetInt( "Bumper.WhichTrackType" ) == 1 );
+
+	/// <summary>Every BUMP instruction of a script in program order as <c>command:parameter</c> (a variable parameter by its name).</summary>
+	private static string BumpSequence( ObjectCatalogEntry entry )
+	{
+		var member = entry.Scripts.First( script => !Path.GetFileName( script ).StartsWith( "EventMap", StringComparison.OrdinalIgnoreCase ) );
+		using var stream = entry.FileSystem.OpenRead( member );
+		var file = new RideScriptFile( stream );
+		return string.Join( " ", file.Instructions.Where( instruction => instruction.Opcode == (ushort)Opcode.BUMP )
+			.Select( instruction => $"{instruction.Operands[0].Value}:{(instruction.Operands[1].Kind == RideScriptOperandKind.Variable ? file.VariableNames[instruction.Operands[1].Value] : instruction.Operands[1].Value.ToString())}" ) );
+	}
+
+	/// <summary>The four go-kart scripts issue exactly the traced BUMP commands (the corpus pins the controller's contract: BUMP 9 is never issued, BUMP 17 only in space).</summary>
+	[TestMethod]
+	public void TheKartScriptsIssueTheTracedBumpSequences()
+	{
+		const string common = "5:0 7:0 5:0 10:0 10:0 7:0";
+		var expected = new Dictionary<string, string>
+		{
+			["jungle"] = $"{common} 1:VAR_LETMEON 4:0 14:VAR_DURATION 3:0 5:0 10:0 6:0 2:VAR_LETMEOFF 7:0 8:VAR_BREAKSTAT 8:0",
+			["hallow"] = $"{common} 1:VAR_LETMEON 4:0 4:0 14:VAR_DURATION 3:0 5:0 10:0 6:0 2:VAR_LETMEOFF 7:0 8:VAR_BREAKSTAT 8:0",
+			["space"] = $"{common} 1:VAR_LETMEON 4:0 14:VAR_DURATION 3:0 5:0 10:0 6:0 2:VAR_TEMP 7:0 8:1 8:0 17:1 17:0",
+			["fantasy"] = $"{common} 1:VAR_PEEPID 4:0 14:VAR_DURATION 3:0 5:0 10:0 6:0 2:VAR_PEEPID 7:0 8:1 8:0"
+		};
+		foreach ( var (theme, sequence) in expected )
+		{
+			var entry = KartRide( theme );
+			Assert.AreEqual( sequence, BumpSequence( entry ), $"{theme}: {entry.DisplayName}'s GoKarts.RSE" );
+			Assert.IsFalse( BumpSequence( entry ).Split( ' ' ).Any( word => word.StartsWith( "9:" ) ), "no kart script issues BUMP 9 (worn)" );
+		}
+		// the lap count of the script's BUMP 14 is VAR_DURATION, which the ride's InitDuration (3) sets
+		foreach ( var theme in expected.Keys )
+			Assert.AreEqual( 3, KartRide( theme ).Upgrades.First( level => level.Level == 0 ).GetInt( "InitDuration" ), theme );
+	}
+
+	/// <summary>The four kart rides: template and model range, the supplemental meshes, the head and sparks dummies and the EventMap ids.</summary>
+	[TestMethod]
+	public void TheKartRidesCarryTheirTemplatesMeshesDummiesAndEventMaps()
+	{
+		var expected = new[]
+		{
+			(Theme: "jungle", Type: -4, Base: 0, Count: 4, Heads: 1, Events: new[] { 194, 195, 199 }),
+			(Theme: "hallow", Type: -7, Base: 0, Count: 4, Heads: 2, Events: new[] { 165, 166, 170 }),
+			(Theme: "space", Type: -9, Base: 1, Count: 4, Heads: 1, Events: new[] { 167, 168, 172 }),
+			(Theme: "fantasy", Type: -10, Base: 1, Count: 1, Heads: 1, Events: new[] { 134, 135, 139 })
+		};
+		foreach ( var item in expected )
+		{
+			var entry = KartRide( item.Theme );
+			var template = BumperTemplates.ForRide( 1, entry.Settings.GetInt( "Bumper.BumperType" ) );
+			Assert.IsNotNull( template, item.Theme );
+			Assert.AreEqual( (item.Type, item.Base, item.Count), (template.Type, template.ModelBase, template.ModelCount), item.Theme );
+			Assert.IsTrue( template.IsKart && !template.IsWater );
+			var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, TrackFamily.Kart );
+			Assert.AreEqual( 0, kit.Missing().Count, item.Theme );
+			// every mesh the model range names exists in the archive, and the controller's cycling stays inside the supplemental list
+			for ( var variant = item.Base; variant < item.Base + item.Count; variant++ )
+			{
+				var name = entry.Settings[$"SupplementalMeshes[{variant}].FileName"]!.Trim( '"', ' ' );
+				var path = entry.FileSystem.GetFiles( entry.ArchivePath ).First( file => string.Equals( Path.GetFileName( file ), name, StringComparison.OrdinalIgnoreCase ) );
+				var model = ObjectAssets.LoadModel( entry.FileSystem, path );
+				Assert.AreEqual( ModelFileKind.Geometry, model.Kind, name );
+				for ( var head = 1; head <= item.Heads; head++ )
+					Assert.IsTrue( RideHeadSpace.NodeForHead( model, head ) >= 0, $"{name}: a rider seat dummy {head}" );
+				Assert.AreEqual( RideHeadSpace.NoRecord, RideHeadSpace.NodeForHead( model, item.Heads + 1 ), $"{name}: no more seats than the ride's riders per car" );
+				Assert.IsTrue( model.DummyAttributes.Any( attribute => attribute.Type == 0x131 && attribute.Value == 1 ), $"{name}: the sparks node" );
+			}
+			if ( template.Type is -9 or -10 )
+				Assert.AreEqual( "gk_shadow.md2", entry.Settings["SupplementalMeshes[0].FileName"]!.Trim( '"', ' ' ), "the hover karts' shadow is mesh 0" );
+			// the sound child's event ids (engine, stop, horn)
+			var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld( 3 ), seed: 1, open: false );
+			for ( var tick = 0; tick < 10; tick++ )
+				runtime.Simulate( Tick );
+			Assert.AreEqual( item.Events[0], runtime.EventMapEvent( BumpEffects.SlotEngine ), $"{item.Theme} engine" );
+			Assert.AreEqual( item.Events[1], runtime.EventMapEvent( BumpEffects.SlotStop ), $"{item.Theme} stop" );
+			Assert.AreEqual( item.Events[2], runtime.EventMapEvent( BumpEffects.SlotToot ), $"{item.Theme} horn" );
+			Assert.IsNotNull( runtime.Bump, "a kart ride has a controller" );
+			Assert.AreEqual( item.Type, runtime.Bump.Type );
+			runtime.Stop();
+		}
+	}
+
+	/// <summary>The jungle Dino Karts script against its controller: it opens, boards guests, parks the karts on the grid, starts the race, ends it and hands the guests back.</summary>
+	[TestMethod]
+	public void DinoKartsScriptDrivesItsControllerThroughARace()
+	{
+		var entry = ObjectCatalog.Load( "jungle" ).Get( 1150 );
+		var world = new RideScriptWorld( 3 );
+		var runtime = new OriginalObjectRuntime( entry, world, seed: 9, open: true );
+		var bump = runtime.Bump!;
+		Assert.AreEqual( -4, bump.Type );
+		var effects = new List<BumpEffect>();
+		bump.Effect += effects.Add;
+		for ( var tick = 0; tick < 3 * 60; tick++ )
+			runtime.Simulate( Tick );
+		Assert.AreEqual( BumpController.PhaseClosed, bump.Phase, "no circuit: the script waits at BUMP 5" );
+		var rig = BuildCircuit( bump, TrackFamily.Kart );
+		for ( var tick = 0; tick < 2 * 60; tick++ )
+			runtime.Simulate( Tick );
+		Assert.AreEqual( BumpController.PhaseLoading, bump.Phase, "BUMP 7 opened the ride for loading" );
+		// three guests board, one after the other; each gets its own kart (BUMP 1 then BUMP 4)
+		foreach ( var guest in new[] { 41, 42, 43 } )
+		{
+			runtime.SetVariable( nameof( RideVariables.VAR_LETMEON ), guest );
+			for ( var tick = 0; tick < 6; tick++ )
+				runtime.Simulate( Tick );
+			Assert.AreEqual( 0, runtime.GetVariableByName( "VAR_LETMEON" ), "the script took the guest" );
+		}
+		Assert.AreEqual( 3, bump.VehicleCount, "three karts" );
+		Assert.AreEqual( 3, runtime.GetVariable( RideVariables.VAR_ONRIDE ) );
+		Assert.AreEqual( new[] { 0, 1, 2 }.Sum(), bump.Vehicles.Sum( vehicle => vehicle.TargetBuoy ), "slot n aims at the n-th grid buoy" );
+		// the loading ends 10 s after the last boarding; the script waits 2 s, sets the laps (BUMP 14) and starts (BUMP 3)
+		var started = false;
+		var phases = new List<int> { bump.Phase };
+		var handed = new List<int>();
+		for ( var tick = 0; tick < 240 * 60 && handed.Count < 3; tick++ )
+		{
+			runtime.Simulate( Tick );
+			started |= bump.Phase == BumpController.PhaseRunning;
+			if ( phases[^1] != bump.Phase )
+				phases.Add( bump.Phase );
+			if ( runtime.GetVariableByName( "VAR_LETMEOFF" ) is var left and not 0 )
+			{
+				handed.Add( left );
+				runtime.SetVariable( "VAR_LETMEOFF", 0 );
+			}
+		}
+		Assert.IsTrue( started, "the script started the race" );
+		CollectionAssert.AreEqual( new[] { BumpController.PhaseLoading, BumpController.PhaseRunning, BumpController.PhaseOver, BumpController.PhaseLoading }, phases, "loading, running, race over, loading again" );
+		CollectionAssert.AreEquivalent( new[] { 41, 42, 43 }, handed, "BUMP 2 handed every guest back through VAR_LETMEOFF" );
+		Assert.AreEqual( 0, bump.VehicleCount );
+		Assert.AreEqual( 3, bump.CompletedRuns );
+		Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_RUNNING ), "the script's cycle ended" );
+		Assert.AreEqual( 0, runtime.Script!.UnimplementedEffects.GetValueOrDefault( Opcode.BUMP ), "every BUMP command reached the controller: " + string.Join( ", ", runtime.Script.UnimplementedEffects.Select( pair => $"{pair.Key}x{pair.Value}" ) ) );
+		Assert.IsTrue( effects.Any( effect => effect.Kind == BumpEffectKind.EngineParameter ), "the engines ran" );
+		Assert.AreEqual( 3, effects.Count( effect => effect.Kind == BumpEffectKind.EngineStart ) );
+		Assert.AreEqual( 3, effects.Count( effect => effect.Kind == BumpEffectKind.EngineStop ) );
+		Assert.IsTrue( effects.Count( effect => effect.Kind == BumpEffectKind.Particle && effect.Id == BumpEffects.ParticleBeamUpCar ) >= 6, "particle 15 at every spawn and unload" );
+		// a second cycle with a breakdown during the race: the run loop's subroutine reports VAR_BREAKSTAT to BUMP 8, the karts coast, then the repair
+		runtime.SetVariable( nameof( RideVariables.VAR_LETMEON ), 44 );
+		for ( var tick = 0; tick < 30 * 60 && bump.Phase != BumpController.PhaseRunning; tick++ )
+			runtime.Simulate( Tick );
+		Assert.AreEqual( BumpController.PhaseRunning, bump.Phase, "the second race started" );
+		for ( var tick = 0; tick < 3 * 60; tick++ )
+			runtime.Simulate( Tick );
+		runtime.SetVariable( "VAR_BREAKSTAT", 1 );
+		for ( var tick = 0; tick < 5 * 60 && bump.State != BumpController.StateBroken; tick++ )
+			runtime.Simulate( Tick );
+		Assert.AreEqual( BumpController.StateBroken, bump.State );
+		runtime.SetVariable( "VAR_BREAKSTAT", 0 );
+		for ( var tick = 0; tick < 5 * 60 && bump.State != BumpController.StateFine; tick++ )
+			runtime.Simulate( Tick );
+		Assert.AreEqual( BumpController.StateFine, bump.State );
+		runtime.Stop();
+		GC.KeepAlive( rig );
+	}
+
+	private static object BuildCircuit( BumpController bump, TrackFamily family = TrackFamily.Water )
 	{
 		var cells = new ParkCellMap( 40, 40 );
-		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new FlatGrid() );
+		var builder = new TrackBuilder( cells, family, () => null, new FlatGrid() );
 		var station = TrackStation.FromPlacement( 10, 10, 0 );
 		builder.PlaceStation( station );
 		var writer = new TrackLineWriter( builder );

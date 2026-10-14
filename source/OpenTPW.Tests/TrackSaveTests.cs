@@ -232,4 +232,15 @@ public class TrackSaveTests
 		restored.AddCanonicalState( hashC );
 		Assert.AreNotEqual( hashA.Value, hashC.Value, "the owner is part of the digest" );
 	}
+
+	[TestMethod]
+	public void ASaveFromBeforeTheKartControllersStillMatchesItsKartRide()
+	{
+		var live = new Dictionary<int, BumperTemplate> { [1] = BumperTemplates.Get( -5 ), [2] = BumperTemplates.Get( -4 ) };
+		Assert.IsTrue( ParkResumeSaveFile.TrackControllersMatch( live, new[] { 1, 2 } ), "a new save holds both controllers" );
+		Assert.IsTrue( ParkResumeSaveFile.TrackControllersMatch( live, new[] { 1 } ), "an old-shape save has no kart controller: it is migrated on load (TRACK-027)" );
+		Assert.IsFalse( ParkResumeSaveFile.TrackControllersMatch( live, new[] { 2 } ), "a water ride still needs its controller" );
+		Assert.IsFalse( ParkResumeSaveFile.TrackControllersMatch( live, new[] { 1, 9 } ), "a controller of a ride the park does not place is refused" );
+		Assert.IsTrue( ParkResumeSaveFile.TrackControllersMatch( new Dictionary<int, BumperTemplate> { [2] = BumperTemplates.Get( -4 ) }, Array.Empty<int>() ), "a park with only a kart ride and no track part" );
+	}
 }

@@ -324,6 +324,8 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- CI runs each pull request once: a push builds only `main` and the `v*` release tags, so a push to a PR branch no longer starts the
+  whole build twice, and a new push to a pull request cancels its older run (`.github/workflows/build.yml`).
 - Thought bubbles are drawn, and staff think too, as in the original (tp.exe `0x50be80`, `0x506a40`, `0x4fa030`; GUEST-006, QUEUE-005;
   [GUESTS.md](GUESTS.md) "Thoughts"). Guests and staff show the original bubbles above their heads (a burger for hunger, a drink for thirst,
   a thumb up after a sideshow win, a sleeping face for a tired handyman, a protest sign for a striker). Staff think when unhappy, very happy,

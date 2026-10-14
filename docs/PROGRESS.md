@@ -945,6 +945,16 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Desktop setup chooses TPW or experimental TPI (October 14):** the setup window offers Theme Park World or the experimental Theme Park Inc / Sim Coaster
+  (`[EXT:tpi-viewer]`, building and guests only, no economy or campaign) with an edition-aware inspection that refuses mixed or wrong-edition folders and
+  needs an available world; the TPI choice is stored beside the TPW paths in `setup.json` and starts through `--load-original-level`. An ordinary desktop
+  start does not open the window: it uses the saved choice, then the old setting, then detection, and only a first start with no usable folder, a missing or
+  invalid saved TPI folder or world (including a timed-out re-inspection) or `--setup` opens it. Options > Game files has an Edition button for switching
+  on desktop, effective at the next start. The TPI/TPW world lists come from `GameEditions` instead of a copy. Tests cover direct TPW and TPI starts, the
+  wizard cases and the edition switch persisting to `setup.json`.
+  Review fixes: a saved, old or detected folder holding Theme Park Inc data no longer passes as Theme Park World (the window opens instead of every start failing);
+  `--setup` with an explicit tool mode refuses before any window; a stale or timed-out choice keeps the window open with the typed folder and a reason; and
+  Options > Game files reports a timed-out check as such.
 - **Coasters drawn with their original track, pylons and cars (October 14):** the track is the `coaster.sam` cross section
   extruded along the curve (ten slices per knot pair, V every six units) with the real track textures, so the minecart track
   has rails and sleepers, the Gorilla Thrilla a rope, the flumes water that flows and a ratcheted dry section where they

@@ -111,6 +111,12 @@ public static class GameEditions
 	private static readonly string[] ThemeParkInc = { "arabian", "science", "water" };
 	private static readonly string[] ThemeParkWorld = { "jungle", "fantasy", "hallow", "space" };
 
+	/// <summary>The Theme Park Inc worlds the viewer slice can load (setup, edition inspection).</summary>
+	public static IReadOnlyList<string> ThemeParkIncWorlds => ThemeParkInc;
+
+	/// <summary>The Theme Park World themes; any of them in a Theme Park Inc folder means a mixed folder.</summary>
+	public static IReadOnlyList<string> ThemeParkWorldThemes => ThemeParkWorld;
+
 	/// <summary>The edition of the data the game started with (Theme Park World until a startup check says otherwise).</summary>
 	public static GameEdition Current { get; private set; } = GameEdition.ThemeParkWorld;
 

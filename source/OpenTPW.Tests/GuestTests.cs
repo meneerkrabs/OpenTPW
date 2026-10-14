@@ -397,7 +397,7 @@ public class GuestTests
 		var guest = simulation.SpawnArrival()!;
 		Run( simulation, Array.Empty<ScriptedAttraction>(), 30 * 60 );
 		Assert.AreEqual( 0, simulation.Admissions );
-		Assert.AreEqual( GuestThought.Angry, guest.Thought );
+		Assert.AreEqual( GuestThought.Dissatisfied, guest.Thought, "thought 6, as the original's price refusals at the booth (0x004FFA44)" );
 		Assert.IsNull( simulation.Find( guest.Id ), "the guest went home" );
 		Assert.AreEqual( 1, simulation.Departed );
 	}

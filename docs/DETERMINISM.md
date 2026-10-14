@@ -309,3 +309,10 @@ itself needs a renderer and is not constructed by tests.
 The remaining IDs proposed in DET-plan §4.6 (DET-001, DET-003 to DET-011) belong
 to the substep scheduler and the original generators. DET-I2 will register them
 with their code.
+
+### Faulted scripts
+
+Since the root-fault containment (`[EXT:vm-fault-containment]`, docs/RSE-VM.md) a script that faults stops advancing its
+clock, and its object releases its riders, trains, controller and sounds. Runs without a fault hash as before (the pinned
+digests are unchanged); a run in which a script faults now hashes differently from before that change, because the faulted
+script's `TimeMilliseconds` stays put and the released riders change the guest digest.

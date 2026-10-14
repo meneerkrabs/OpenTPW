@@ -111,6 +111,7 @@ public class OriginalObject : Entity
 					engine += new System.Numerics.Vector3(OriginalParkPlacement.GetOrigin(field), 0);
 				return GameAudio.SoundPosition(engine);
 			});
+			Runtime.BindParticlePlacement(placement);
 			BuildModels();
 			UpdateTransforms();
 		}

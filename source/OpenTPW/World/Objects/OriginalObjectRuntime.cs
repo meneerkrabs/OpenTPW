@@ -145,6 +145,7 @@ public sealed partial class OriginalObjectRuntime
 	{
 		if ( stopped )
 			return;
+		// [EXT:vm-fault-containment] a faulted root script stops its object: riders, trains, controller and sounds are released
 		if ( Script is { State: RideVMState.Faulted } )
 		{
 			Stop();
@@ -170,6 +171,7 @@ public sealed partial class OriginalObjectRuntime
 	{
 		stopped = true;
 		eventOrigin = null;
+		ClearParticleRequests();
 		effects.StopSounds();
 		Visitors.ReleaseAll();
 		if ( Coaster != null )
@@ -539,6 +541,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.EVENT )
 		{
+			if (call.Argument(0) is 1 or 2) ride.ObserveParticleEvent(call);
 			// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position
 			var type = call.Argument(0);
 			var voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), type is >= 3 and <= 9 ? ride.ReadEventOrigin() : null);

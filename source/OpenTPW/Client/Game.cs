@@ -348,6 +348,24 @@ internal static class Game
 					Log.Warning( "--debug-water-track / --debug-kart-track: no site with room for a track ride and its circuit." );
 			}
 		}
+		// [EXT:debug-coaster] smoke-only (Debug builds): once the original level is up, builds a small coaster ("built" or "open", optionally with a coaster
+		// Info.Id from --debug-coaster-id) and points the camera at it, so captures show the track, pylons and cars (docs/COASTERS.md).
+		var debugCoaster = GetOption( args, "--debug-coaster", "built or open for a coaster capture" );
+		if ( debugCoaster != null )
+		{
+			var coasterFrames = 0;
+			var coasterId = GetOption( args, "--debug-coaster-id", "a coaster Info.Id" ) is { } idText && int.TryParse( idText, out var parsedId ) ? parsedId : (int?)null;
+			var coasterHeight = GetOption( args, "--debug-coaster-height", "a pylon height" ) is { } heightText && int.TryParse( heightText, out var parsedHeight ) ? parsedHeight : 40;
+			Render.PostUpdate += BuildCoasterDemo;
+			void BuildCoasterDemo()
+			{
+				if ( flow.Level is not { OriginalPark: not null } demoLevel || ++coasterFrames < 30 )
+					return;
+				Render.PostUpdate -= BuildCoasterDemo;
+				if ( demoLevel.BuildDemoCoaster( debugCoaster == "built", coasterId, coasterHeight ) == null )
+					Log.Warning( "--debug-coaster: no site with room for a coaster and its circuit." );
+			}
+		}
 		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
 		// converter as soon as the park's weather exists, so captures can show rain/snow/lightning without waiting
 		// for the season's rolls. The drops, bolts and thunder still come from ParkWeather's normal machinery;

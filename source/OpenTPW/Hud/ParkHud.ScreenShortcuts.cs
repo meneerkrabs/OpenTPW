@@ -1,3 +1,4 @@
+using Veldrid;
 using OpenTPW.UI.Original;
 
 namespace OpenTPW.Hud;
@@ -120,7 +121,21 @@ public sealed partial class ParkHud
 			ApplyShortcut( shortcut );
 		}
 
-		static bool Pressed( HudScreenShortcut shortcut ) => shortcut switch
+		static bool Pressed( HudScreenShortcut shortcut ) => PressedNow( shortcut );
+	}
+
+	/// <summary>
+	/// Whether the shortcut's key edge is down this frame. A plain shortcut needs that no Ctrl is held, so a KEYBOARD.str letter that equals a
+	/// Ctrl chord's letter (Dutch research O and Ctrl+O) cannot fire both; the Ctrl chords (help, locators) are exempt.
+	/// </summary>
+	internal static bool PressedNow( HudScreenShortcut shortcut )
+	{
+		var chord = shortcut is HudScreenShortcut.ToggleHelpBar or HudScreenShortcut.LocateNextStaff or HudScreenShortcut.LocateNextVisitor;
+		var ctrl = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight );
+		return (chord || !ctrl) && RawPressed( shortcut );
+	}
+
+	private static bool RawPressed( HudScreenShortcut shortcut ) => shortcut switch
 		{
 			HudScreenShortcut.BuyWindow => Input.Pressed( InputButton.BuyAttractions ),
 			HudScreenShortcut.ParkInfo => Input.Pressed( InputButton.ParkInfo ),
@@ -141,7 +156,6 @@ public sealed partial class ParkHud
 			HudScreenShortcut.LocateNextVisitor => Input.Pressed( InputButton.VisitorLocator ),
 			_ => false,
 		};
-	}
 
 	/// <summary>The plain V window edge; the registered Ctrl+V locator chord owns its raw V match.</summary>
 	internal static bool VisitorWindowShortcutPressed() => Input.Pressed( InputButton.AllVisitors ) && !Input.Down( InputButton.VisitorLocator );

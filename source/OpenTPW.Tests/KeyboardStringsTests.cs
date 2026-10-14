@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using Veldrid;
 
 namespace OpenTPW.Tests;
@@ -113,19 +114,19 @@ public class KeyboardStringsTests
 		Assert.AreEqual( name == "Dutch" ? "KAIVWBFLTMOCWBAHSO,.P" : "BHIASVFLTGRCSVPHCO,.P", all, $"{name} KEYBOARD.str letters in file order" );
 	}
 
-	private static IEnumerable<InputButton> DownButtons() => Enum.GetValues<InputButton>().Where( Input.Down );
-
 	private static void AssertNoPlainButtonFiresUnderCtrl( string label )
 	{
 		var previous = Input.Keyboard;
 		try
 		{
-			foreach ( var chord in Enum.GetValues<InputButton>().Where( button => Input.ChordKey( button ) != default && IsCtrlChord( button ) ) )
+			var plain = Enum.GetValues<HudScreenShortcut>().Where( shortcut => shortcut != HudScreenShortcut.None
+				&& shortcut is not (HudScreenShortcut.ToggleHelpBar or HudScreenShortcut.LocateNextStaff or HudScreenShortcut.LocateNextVisitor) ).ToArray();
+			foreach ( var chord in Enum.GetValues<InputButton>().Where( IsCtrlChord ) )
 			{
 				Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.ControlLeft, Input.ChordKey( chord ) } );
 				Input.UpdateButtons();
-				var fired = DownButtons().Where( button => button != chord && button != InputButton.Clone ).ToArray();
-				CollectionAssert.AreEqual( Array.Empty<InputButton>(), fired, $"{label}: Ctrl+{Input.ChordKey( chord )} ({chord}) also fires {string.Join( ",", fired )}" );
+				var fired = plain.Where( ParkHud.PressedNow ).ToArray();
+				CollectionAssert.AreEqual( Array.Empty<HudScreenShortcut>(), fired, $"{label}: Ctrl+{Input.ChordKey( chord )} ({chord}) also fires {string.Join( ",", fired )}" );
 			}
 		}
 		finally

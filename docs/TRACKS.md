@@ -207,7 +207,7 @@ The PC dispatch (`0x554726..0x554A3D`, table at `0x556A18`) differs from the fir
 | 4 | launch a boat: needs phase ≠ 0 and fewer than the maximum; takes the waiting guests |
 | 5 | track valid (the walk's verdict) |
 | 6 / 7 | close / open (water opens straight into phase 2; closing sends waiting guests to the leaving list) |
-| 8 / 9 | broken (state 2) or worn out (state 1) for a nonzero parameter, fixed (0) for zero; BUMP 8 also starts or removes the break smoke emitters (below); the worn state is read only by the kart exhaust branch (TRACK-013 retired) |
+| 8 / 9 | broken (state 2) or worn out (state 1) for a nonzero parameter, fixed (0) for zero; BUMP 8 also starts or removes the break smoke emitters (below); BUMP 9 with 0 calls the same fix routine as BUMP 8 with 0 (`0x5548C3` → `0x544E50`), which kills the emitters only when the old state was broken, and a jungle bumper car (type −1) plays animation 12 at the break and 5 at the fix; the worn state is read only by the kart exhaust branch (TRACK-013 retired) |
 | 10 | eject all boats and close |
 | 11 | boats running (also into the variable) |
 | 12 | load the waiting guests into the first empty boat |

@@ -312,16 +312,17 @@ public sealed class BumpController
 					StartSmoke();
 				}
 				else
-				{
-					State = StateFine;
-					StopAllSmoke();
-				}
+					Fix();
 				// the routine has no return value, and the script's accumulator stays what it was (Visitors.cs: PreserveInput)
 				return 0;
 			case 9:
 				// [BIN:TPW-EXE:0x00554895 BUMP 9] a nonzero parameter marks the ride worn out (state 1), zero fixes it (state 0)
 				// [BIN:TPW-EXE:0x00544C61 BUMP 9] the only writer of controller +0x54 = 1 is unconditional (it also overwrites a break); the only reader of +0x54 == 1 is the kart exhaust branch of 0x547F50 (0x5486FC), so the worn state changes nothing for boats or bumper cars (+0x54 == 2 is read at 0x547DC4, 0x547E2C and 0x547F8E)
-				State = parameter != 0 ? StateWorn : StateFine;
+				// [BIN:TPW-EXE:0x005548C3 BUMP 9 fix] BUMP 9 with 0 calls the same fix routine as BUMP 8 with 0 (0x544E50): the state is cleared, but the emitters die only when the old state was broken
+				if ( parameter != 0 )
+					State = StateWorn;
+				else
+					Fix();
 				return 0;
 			case 10:
 				EjectAll();
@@ -363,13 +364,37 @@ public sealed class BumpController
 				continue;
 			vehicle.Smoke = true;
 			Raise( BumpEffectKind.EmitterStart, vehicle, BumpEffects.ParticleSmoke );
+			// [BIN:TPW-EXE:0x00544DE9 jungle break] for the jungle type −1 the new emitter is followed by animation 12 (the presentation object stops)
+			if ( Type == -1 )
+				SetAnimation( vehicle, 12 );
 		}
+	}
+
+	/// <summary>The fix routine of BUMP 8 and BUMP 9 with 0: state 0 always, the smoke emitters (and the jungle cars' animation 5) only when the ride was broken.</summary>
+	// [BIN:TPW-EXE:0x00544E50 fix] +0x54 is cleared; only when it was 2 does the routine walk the cars: for types −14..−3 and −1 each car with an emitter destroys it (0x51FEB0) and, for the jungle type −1 with flag 0x4000, plays animation 5 (0x544F2E..0x544F76)
+	private void Fix()
+	{
+		var old = State;
+		State = StateFine;
+		if ( old == StateBroken )
+			StopAllSmoke();
 	}
 
 	private void StopAllSmoke()
 	{
 		foreach ( var vehicle in vehicles )
+		{
+			var had = vehicle.Smoke;
 			StopSmoke( vehicle );
+			if ( had && Type == -1 && (vehicle.Flags & BumpVehicle.Steerable) != 0 )
+				SetAnimation( vehicle, 5 );
+		}
+	}
+
+	private void SetAnimation( BumpVehicle vehicle, int animation )
+	{
+		vehicle.Animation = animation;
+		Raise( BumpEffectKind.Animation, vehicle, animation );
 	}
 
 	private void StopSmoke( BumpVehicle vehicle )
@@ -863,7 +888,7 @@ public sealed class BumpController
 		tickRemainder += deltaSeconds;
 		while ( tickRemainder >= TickSeconds - 1e-9 )
 		{
-			tickRemainder -= TickSeconds;
+			tickRemainder = Math.Max( 0, tickRemainder - TickSeconds );
 			Tick();
 		}
 	}
@@ -1692,7 +1717,7 @@ public sealed class BumpController
 				TargetX = saved.TargetX, TargetY = saved.TargetY, JitterX = saved.JitterX, JitterY = saved.JitterY, TargetBuoy = saved.TargetBuoy, Laps = saved.Laps,
 				BuoyCountdown = saved.BuoyCountdown, Age = saved.Age, ObjectIndex = saved.ObjectIndex, WallHits = saved.WallHits, WallWindow = saved.WallWindow, Sprays = saved.Sprays,
 				VisualHeading = saved.VisualHeading, YawRate = saved.YawRate, YawDelta = saved.YawDelta, Animation = saved.Animation, EffectRequest = saved.EffectRequest,
-				EffectLatch = saved.EffectLatch, Height = float.IsFinite( saved.Height ) ? saved.Height : 0f, ChaseTarget = saved.ChaseTarget, Engine = saved.Engine, Smoke = saved.Smoke
+				EffectLatch = saved.EffectLatch, Height = float.IsFinite( saved.Height ) ? saved.Height : 0f, ChaseTarget = saved.ChaseTarget, Engine = saved.Engine || Template.IsWater, Smoke = saved.Smoke
 			};
 			vehicle.Riders.AddRange( saved.Riders );
 			slots[vehicle.Slot] = vehicle;

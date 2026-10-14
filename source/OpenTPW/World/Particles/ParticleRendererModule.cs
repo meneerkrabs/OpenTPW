@@ -35,25 +35,22 @@ internal static class ParticleRendererModule
 			renderer.Particles.Create( request.EffectId, position );
 	}
 
-	/// <summary>Starts an emitter that the caller keeps (the bump rides' break smoke) and returns its handle, or -1 when there is no renderer or the pool refuses.</summary>
-	internal static int StartEmitter( int effectId, SVector3 engine )
+	/// <summary>An emitter the caller keeps: the handle belongs to its own <see cref="ParticleSystem"/> (slot and generation only mean something there), so a handle left over from another level can never touch a newer system.</summary>
+	internal readonly record struct EmitterRef( ParticleSystem System, int Handle, Level Level );
+
+	/// <summary>Starts an emitter that the caller keeps (the bump rides' break smoke), or null when there is no renderer or the pool refuses.</summary>
+	internal static EmitterRef? StartEmitter( int effectId, SVector3 engine )
 	{
 		if ( RendererFor( out var level ) is not { } renderer )
-			return -1;
-		return renderer.Particles.Create( effectId, ToNative( level, engine ) );
+			return null;
+		var handle = renderer.Particles.Create( effectId, ToNative( level, engine ) );
+		return handle >= 0 ? new EmitterRef( renderer.Particles, handle, level ) : null;
 	}
 
-	internal static void MoveEmitter( int handle, SVector3 engine )
-	{
-		if ( handle >= 0 && RendererFor( out var level ) is { } renderer )
-			renderer.Particles.Move( handle, ToNative( level, engine ) );
-	}
+	internal static void MoveEmitter( EmitterRef emitter, SVector3 engine ) =>
+		emitter.System.Move( emitter.Handle, ToNative( emitter.Level, engine ) );
 
-	internal static void KillEmitter( int handle )
-	{
-		if ( handle >= 0 && ParticleRenderer.Current is { } renderer )
-			renderer.Particles.Kill( handle );
-	}
+	internal static void KillEmitter( EmitterRef emitter ) => emitter.System.Kill( emitter.Handle );
 
 	private static ParticleRenderer? Create( Level level )
 	{

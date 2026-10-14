@@ -358,6 +358,104 @@ public class TrackRegisterRoundTests
 		Assert.AreEqual( hashes[0], hashes[1] );
 	}
 
+	[TestMethod]
+	public void BUMP9ZeroSharesTheFixRoutineAndOnlyAFormerBreakKillsTheSmoke()
+	{
+		Rig Smoking()
+		{
+			var rig = new Rig( -4, seed: 21 );
+			rig.Controller.Command( 7, 0 );
+			rig.Controller.Command( 1, 1 );
+			rig.Controller.Command( 4, 0 );
+			rig.Controller.Command( 8, 1 );
+			Assert.AreEqual( 1, rig.Count( BumpEffectKind.EmitterStart ) );
+			return rig;
+		}
+		var fixedByNine = Smoking();
+		fixedByNine.Controller.Command( 9, 0 );
+		Assert.AreEqual( BumpController.StateFine, fixedByNine.Controller.State );
+		Assert.AreEqual( 1, fixedByNine.Count( BumpEffectKind.EmitterStop ), "BUMP 9 0 on a broken ride runs the same fix as BUMP 8 0 ([BIN:TPW-EXE:0x5548C3])" );
+		Assert.IsFalse( fixedByNine.Controller.Vehicles.Single().Smoke );
+		var worn = Smoking();
+		worn.Controller.Command( 9, 1 );
+		Assert.AreEqual( BumpController.StateWorn, worn.Controller.State );
+		worn.Controller.Command( 8, 0 );
+		Assert.AreEqual( BumpController.StateFine, worn.Controller.State );
+		Assert.AreEqual( 0, worn.Count( BumpEffectKind.EmitterStop ), "BUMP 8 0 after BUMP 9 1 keeps the smoke: the old state was 1, not 2" );
+		Assert.IsTrue( worn.Controller.Vehicles.Single().Smoke );
+		worn.Controller.Command( 9, 0 );
+		Assert.AreEqual( 0, worn.Count( BumpEffectKind.EmitterStop ) );
+	}
+
+	[TestMethod]
+	public void TheJungleBumperCarsPlayAnimation12AtTheBreakAnd5AtTheFix()
+	{
+		foreach ( var (type, jungle) in new[] { (-1, true), (-6, false) } )
+		{
+			var rig = new Rig( type, seed: 3 );
+			var c = rig.Controller;
+			c.Command( 7, 0 );
+			c.Command( 1, 1 );
+			c.Command( 4, 0 );
+			var car = c.Vehicles.Single();
+			car.Flags |= BumpVehicle.Steerable;
+			car.Animation = 5;
+			var before = rig.Count( BumpEffectKind.Animation );
+			c.Command( 8, 1 );
+			Assert.AreEqual( 1, rig.Count( BumpEffectKind.EmitterStart ), $"type {type}" );
+			Assert.AreEqual( jungle ? 12 : 5, car.Animation, $"type {type} at the break" );
+			c.Command( 8, 0 );
+			Assert.AreEqual( 5, car.Animation, $"type {type} at the fix" );
+			Assert.AreEqual( jungle ? before + 2 : before, rig.Count( BumpEffectKind.Animation ) );
+		}
+	}
+
+	[TestMethod]
+	public void TheTickClockNeverGoesNegativeAndAHandleBelongsToItsOwnParticleSystem()
+	{
+		var rig = new Rig( -5 );
+		var step = 0.0155;
+		for ( var index = 0; index < 5000; index++ )
+		{
+			rig.Controller.Advance( step + (index % 7) * 1e-4 );
+			Assert.IsTrue( rig.Controller.TickRemainder >= 0 );
+		}
+		var saved = TrackSave.CaptureController( rig.Controller, 1 );
+		rig.Controller.Restore( saved );
+		// two systems hand out the same slot and generation: a stale emitter reference must not reach the newer system
+		var template = new byte[ParticleTemplate.Size];
+		foreach ( var offset in new[] { 0x10, 0x98, 0xB4 } )
+			BitConverter.GetBytes( (short)-1 ).CopyTo( template, offset );
+		BitConverter.GetBytes( 1000 ).AsSpan( 0, 2 ).CopyTo( template.AsSpan( 0xA2 ) );
+		BitConverter.GetBytes( 100 ).CopyTo( template, 0x20 );
+		var pool = Enumerable.Range( 0, 105 ).Select( _ => new ParticleTemplate( (byte[])template.Clone() ) ).ToList();
+		var older = new ParticleSystem( pool );
+		var newer = new ParticleSystem( pool );
+		var oldHandle = older.Create( 2, (0, 0, 0) );
+		var newHandle = newer.Create( 2, (0, 0, 0) );
+		Assert.AreEqual( oldHandle, newHandle );
+		ParticleRendererModule.KillEmitter( new ParticleRendererModule.EmitterRef( older, oldHandle, null! ) );
+		for ( var tick = 0; tick < 5; tick++ )
+		{
+			older.Tick();
+			newer.Tick();
+		}
+		Assert.AreEqual( 0, older.LiveEmitters, "the old system's emitter ended" );
+		Assert.AreEqual( 1, newer.LiveEmitters, "the newer system's emitter with the same slot and generation lives on" );
+	}
+
+	[TestMethod]
+	public void ABoatRestoredFromASaveWithoutTheEngineFlagHoldsOne()
+	{
+		var rig = new Rig( -5 );
+		rig.Controller.Command( 7, 0 );
+		rig.Controller.Command( 1, 1 );
+		rig.Controller.Command( 4, 0 );
+		var saved = TrackSave.CaptureController( rig.Controller, 1 );
+		rig.Controller.Restore( saved with { Vehicles = saved.Vehicles.Select( vehicle => vehicle with { Engine = false } ).ToList() } );
+		Assert.IsTrue( rig.Controller.Vehicles.Single().Engine, "a pre-change save has no flag; a live boat always has a voice" );
+	}
+
 	// ---- TRACK-024: the bank has no clamp --------------------------------------------------------------
 
 	[TestMethod]

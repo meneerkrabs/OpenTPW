@@ -6,7 +6,7 @@ public sealed partial class OriginalObjectRuntime
 	private Func<System.Numerics.Vector3, Vector3?>? engineToSound;
 	private readonly Dictionary<int, AudioVoice> engineVoices = new();
 	/// <summary>The break-smoke emitter handle of each vehicle slot (presentation only).</summary>
-	private readonly Dictionary<int, int> smokeEmitters = new();
+	private readonly Dictionary<int, ParticleRendererModule.EmitterRef> smokeEmitters = new();
 
 	/// <summary>Counts of the kart effects the host played, for the smoke checks and the tests (sounds submitted, particles requested).</summary>
 	public (int Sounds, int Particles, int Engines) BumpEffectStats { get; private set; }
@@ -50,9 +50,8 @@ public sealed partial class OriginalObjectRuntime
 				if ( engine is { } start && !smokeEmitters.ContainsKey( effect.Slot ) )
 				{
 					BumpEffectStats = BumpEffectStats with { Particles = BumpEffectStats.Particles + 1 };
-					var handle = ParticleRendererModule.StartEmitter( effect.Id, start );
-					if ( handle >= 0 )
-						smokeEmitters[effect.Slot] = handle;
+					if ( ParticleRendererModule.StartEmitter( effect.Id, start ) is { } started )
+						smokeEmitters[effect.Slot] = started;
 				}
 				break;
 			case BumpEffectKind.EmitterMove:
@@ -78,6 +77,9 @@ public sealed partial class OriginalObjectRuntime
 			case BumpEffectKind.EngineStart:
 				if ( EventMapEvent( BumpEffects.SlotEngine ) is { } engineEvent && GameAudio.PlayRseEvent( 3, (uint)engineEvent, sound ) is { } voice )
 				{
+					// a voice already held by the slot (a restored boat, a reused slot) ends first, so none is left running unreachable
+					if ( engineVoices.Remove( effect.Slot, out var previous ) )
+						previous.Stop();
 					BumpEffectStats = BumpEffectStats with { Engines = BumpEffectStats.Engines + 1 };
 					engineVoices[effect.Slot] = voice;
 				}
@@ -96,7 +98,7 @@ public sealed partial class OriginalObjectRuntime
 					halted.Stop();
 				break;
 			case BumpEffectKind.EngineParameter:
-				// [APPROX:TRACK-025] the engine's pitch parameter (EventMap variable 10 = speed / 3, pushed into the voice by 0x51BC40 every tick) is raised, but the voice is a plain event voice: no parameter reaches it, and the voice does not follow its vehicle (the original moves it every tick, 0x51C270)
+				// [APPROX:TRACK-025] the engine's pitch parameter (EventMap variable 10 = speed / 3, pushed into the voice by 0x51BC40 every tick) is raised, but the voice is a plain event voice: no parameter reaches it, and the voice does not follow its vehicle (the original moves it every tick, 0x51C270); the smoke emitter likewise sits at the car's reference point, not on its sparks node
 				break;
 		}
 	}
@@ -113,9 +115,8 @@ public sealed partial class OriginalObjectRuntime
 		{
 			if ( vehicle.Smoke && !smokeEmitters.ContainsKey( vehicle.Slot ) && bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height ) is { } smokeAt )
 			{
-				var handle = ParticleRendererModule.StartEmitter( BumpEffects.ParticleSmoke, smokeAt );
-				if ( handle >= 0 )
-					smokeEmitters[vehicle.Slot] = handle;
+				if ( ParticleRendererModule.StartEmitter( BumpEffects.ParticleSmoke, smokeAt ) is { } started )
+					smokeEmitters[vehicle.Slot] = started;
 			}
 		}
 		if ( EventMapEvent( BumpEffects.SlotEngine ) is not { } engineEvent )

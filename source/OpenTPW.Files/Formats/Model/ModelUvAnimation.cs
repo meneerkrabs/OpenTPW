@@ -127,22 +127,32 @@ public sealed class ModelUvAnimation
 
 /// <summary>
 /// The 12-byte block of record flag 0x4000 (record +40): <c>ptr → u32 index[count], u32 count,
-/// ptr → count × (f32 x, y, z)</c>, one stored pose. The engine relocation (0x41ac8) and the bind
-/// (0xa3e24) read it and set node bits 0x800/0x100, but no reader of the floats was found
-/// (docs/reverse/ANIM-plan.md §3), so it is parsed and not played.
+/// ptr → floats</c>, read by the PC sampler. The float table holds one pose of <c>count</c> positions
+/// (f32 x, y, z) per tick of the record, <c>duration + 1</c> poses in all (the 30 corpus blocks end exactly
+/// where the next table starts). At clip time <c>t</c> the sampler takes pose <c>trunc(t)</c> and writes vertex <c>i</c> from entry
+/// <c>index[i]</c> of it; the original's blend of two poses multiplies one and the same address by <c>t</c> and <c>1 − t</c>,
+/// so the result is the stored position without blending.
 /// </summary>
+// [BIN:TPW-EXE:0x004718F7 12-byte vertex block] in the sampler 0x471860, record flags 0x1000 with 0x4000 take frame = ftol(clip time at +0x20) and base = count · frame (imul at 0x471922); vertex i reads entry j = (index pointer ? index[i] : i) at floats[(base + j) · 12 bytes]; in set mode (model header flag 4 clear, 0x471aa1) the vertex is replaced, in add mode (0x471943) the position is added; the "interpolation" multiplies the same address (0x471ac5/0x471ad2) by t and 1 − t
 public sealed class ModelVertexPose
 {
 	public const int HeaderBytes = 12;
 
-	internal ModelVertexPose( uint[] indices, NVector3[] positions )
+	internal ModelVertexPose( uint[] indices, NVector3[] positions, int frames )
 	{
 		Indices = indices;
 		Positions = positions;
+		FrameCount = frames;
 	}
 
+	/// <summary>Per vertex of the node: the entry of a pose that supplies it (record +40 index table).</summary>
 	public IReadOnlyList<uint> Indices { get; }
+	/// <summary>All poses one after another: <see cref="FrameCount"/> × <see cref="Count"/> positions.</summary>
 	public IReadOnlyList<NVector3> Positions { get; }
+	/// <summary>Number of poses stored (<c>duration + 1</c> in the corpus).</summary>
+	public int FrameCount { get; }
+	/// <summary>Positions per pose.</summary>
+	public int Count => Indices.Count;
 
 	/// <summary>Why the block does not fit a mesh of <paramref name="positionCount"/> positions, or null (the bind's count is the mesh's +88).</summary>
 	public string? GetLimitation( int positionCount )
@@ -157,22 +167,50 @@ public sealed class ModelVertexPose
 		return null;
 	}
 
-	internal static ModelVertexPose Decode( byte[] data, int block, Func<uint, long, string, int> pointer )
+	/// <summary>
+	/// The pose at <paramref name="time"/>: pose <c>trunc(time)</c> written to <paramref name="positions"/> (set mode, no blending).
+	/// A time past the last stored pose holds the last one (an OpenTPW guard; the original would read beyond the table).
+	/// </summary>
+	public void ApplyPose( float time, Span<NVector3> positions )
+	{
+		var frame = (int)Math.Min( ModelAnimationTrack.TruncateTick( time ), (uint)(FrameCount - 1) );
+		var count = Indices.Count;
+		for ( var vertex = 0; vertex < count && vertex < positions.Length; vertex++ )
+			positions[vertex] = Positions[frame * count + (int)Indices[vertex]];
+	}
+
+	internal static ModelVertexPose Decode( byte[] data, int block, Func<uint, long, string, int> pointer, long frames )
 	{
 		var count = BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( block + 4 ) );
 		var indexAt = count == 0 ? 0 : pointer( BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( block ) ), count * 4L, "12-byte block indices" );
-		var floatAt = count == 0 ? 0 : pointer( BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( block + 8 ) ), count * 12L, "12-byte block positions" );
-		var indices = new uint[count];
-		var positions = new NVector3[count];
-		for ( var index = 0; index < count; index++ )
+		var floatPointer = BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( block + 8 ) );
+		var floatAt = 0;
+		var stored = 1;
+		if ( count > 0 )
 		{
+			// OpenTPW guard: a table that does not hold duration + 1 poses (not in the corpus) is read as far as it fits, at least one pose.
+			try
+			{
+				floatAt = pointer( floatPointer, count * 12L * Math.Max( 1, frames ), "12-byte block positions" );
+				stored = (int)Math.Max( 1, frames );
+			}
+			catch ( InvalidDataException ) when ( frames > 1 )
+			{
+				floatAt = pointer( floatPointer, count * 12L, "12-byte block positions" );
+			}
+		}
+		var indices = new uint[count];
+		for ( var index = 0; index < count; index++ )
 			indices[index] = BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( indexAt + index * 4 ) );
+		var positions = new NVector3[count * stored];
+		for ( var index = 0; index < positions.Length; index++ )
+		{
 			var at = floatAt + index * 12;
 			positions[index] = new NVector3( BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( at ) ), BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( at + 4 ) ),
 				BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( at + 8 ) ) );
 			if ( !float.IsFinite( positions[index].X ) || !float.IsFinite( positions[index].Y ) || !float.IsFinite( positions[index].Z ) )
 				throw new InvalidDataException( "MD2 12-byte block position is not finite." );
 		}
-		return new ModelVertexPose( indices, positions );
+		return new ModelVertexPose( indices, positions, stored );
 	}
 }

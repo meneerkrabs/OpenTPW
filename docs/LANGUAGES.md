@@ -117,6 +117,7 @@ available language and back, and switches inside a park, checking the captured t
 | Data | Status |
 |---|---|
 | String tables (`*.str`) | Loaded from the language folder with that folder's own `MBToUni.dat` (front end, options, HUD, popup help, sandbox text panel; see UI.md). |
+| `KEYBOARD.str` | The 21 shortcut letters of the language (Dutch buy K, hire A, research O), applied to the HUD shortcuts when the language changes (`Input.ApplyKeyboardStrings`, tp.exe `0x40cb80`); a plain letter that is a camera-pan key (W, A, S, D) keeps its default, and the Polish file's two-byte entries are not decoded. |
 | BF4 fonts (`*.bf4`) | Loaded from the language folder (UI screens in SMALL/MED/BIG tiers, sandbox text panel). |
 | Banner meshes (`bankrupt`/`congrats`/`paused.MD2`) | Resolvable via `GameLanguage.FindFile`; not drawn by the game yet. |
 | Speech banks, `lips.WAD`, level `.LIP` | Resolvable via `GameLanguage.ResolveDataFile` (overlay first). `--advisor-say N` plays global `sp_NNN` and its `lips.WAD` mark list from the selected language (see LIPS.md); level LIPs are not used. |

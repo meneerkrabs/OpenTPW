@@ -20,8 +20,8 @@ internal sealed class CoasterAssets : IDisposable
 	{
 		Entry = entry;
 		Definition = definition;
-		Sections = CoasterCrossSections.FromSettings( entry.Settings );
-		CarTypes = CoasterCarTypes.FromSettings( entry.Settings );
+		Sections = CoasterCrossSections.FromSettings( entry.CoasterSettings );
+		CarTypes = CoasterCarTypes.FromSettings( entry.CoasterSettings );
 	}
 
 	public ObjectCatalogEntry Entry { get; }

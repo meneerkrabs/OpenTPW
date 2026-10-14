@@ -142,7 +142,7 @@ internal static class ParkResumeSaveFile
 			if ( !snapshot.Runtimes[index].State.Stopped )
 			{
 				liveCoasterStations.Add( record.AttractionId );
-				definitionsByAttraction[record.AttractionId] = CoasterDefinition.FromSettings( entry.Settings );
+				definitionsByAttraction[record.AttractionId] = CoasterDefinition.FromEntry( entry );
 			}
 		}
 		if ( snapshot.Coasters == null )

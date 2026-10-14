@@ -19,6 +19,10 @@ public sealed class HudHost
 	public Action<UiScreenStack>? GoOnline { get; init; }
 	/// <summary>Opens the existing postcard composer; it does not send a card.</summary>
 	public Action<UiScreenStack>? OpenPostcard { get; init; }
+	/// <summary>The list sorts the windows keep for the session; the game flow shares one instance between its parks.</summary>
+	public ListSortMemory ListSorts { get; init; } = new();
+	/// <summary>Called after a HUD key changed a player option (Ctrl+H flips Popup help) so the host can persist the options.</summary>
+	public Action? OptionsChanged { get; init; }
 	/// <summary>The open/close button or its shortcut was pressed (true: open, false: close), also when the park's state does not change; the advisor raises game event 3 or 4 on it.</summary>
 	public Action<bool>? ParkDoorPressed { get; init; }
 }
@@ -46,6 +50,10 @@ public sealed partial class ParkHud
 	private readonly List<UiElement> infoElements = new();
 	private string lastLevelMessage = "";
 	private BuildItem? pendingItem;
+	private UiLabel? moneyLabel;
+	private ListSortMemory? fallbackSorts;
+	/// <summary>The session's remembered list sorts (UI-084); a HUD built without a host keeps its own.</summary>
+	private ListSortMemory Sorts => host?.ListSorts ?? (fallbackSorts ??= new());
 	private OriginalObject? selectedObject;
 	private CashChangeTracker cashTracker;
 	private object? cashSource;
@@ -62,11 +70,15 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, item => Status.PriceOf( item ) ?? item.Cost );
+		buy = new BuyListModel( catalog, ItemName, item => Status.PriceOf( item ) ?? item.Cost, Sorts );
 		cashTracker = new CashChangeTracker( status.Money );
 		cashSource = status.EconomySource;
 		lastLevelMessage = level.LastActionMessage;
 		level.Objects.ObjectPlaced += OnObjectPlaced;
+		// Harnesses that build a Level without its constructor have no tool object.
+		if ( (CellBuildTool?)level.CellTool is { } cellTool )
+			cellTool.Ended += OnCellToolEnded;
+		level.BuildToolsEnded += () => { pendingItem = null; queueRearmItem = null; };
 		hud = new UiScreen( "hud" ) { Modal = false };
 		Stack.Push( hud );
 		Build();
@@ -99,16 +111,39 @@ public sealed partial class ParkHud
 	// calls the game pause 0x10110518 (0x10198580) and clears the gate; the menu's close routine 0x101985C0 sets the gate
 	// and calls the resume 0x10110598. The pause freezes the scaled clock (0x1010E888 → 0x10117C54) that drives the
 	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
-	// [APPROX:UI-096] only the pause menu (and screens opened from it) stops the park here; the original's other pause
-	// callers also include the full-screen map (0x101B9CA0 in 0x101B9C54), the message dialog when its last argument is 0
-	// (0x1019057C in 0x10190270), 0x1015F6DC in 0x1015F67C and the Load dialog (0x10153988) — evidence needed: which
-	// OpenTPW windows those screens correspond to and whether the pause gate +0x3C is set when they open in normal play
+	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), and by the generic dialog 0x47f020 (0x47f26c; probably the message box, medium confidence). Callers 0x46b74c, 0x49efba, 0x49f29f and 0x4a3a6c are unidentified, so the park only pauses here for the screens whose original pauses (the pause menu with the screens opened from it, and the map window)
+	// [APPROX:UI-096] the message dialog, the postcard (Ctrl+P) and the four unidentified callers pause in the original but not here — evidence needed: which screens 0x47f020's callers and 0x46b74c/0x49efba/0x49f29f/0x4a3a6c open
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
 	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
-		openScreens.Any( name => name is PauseMenuScreen or "texturePackDownload" ) ? 0 : speedScale;
+		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" ) ? 0 : speedScale;
+
+	/// <summary>The name of the map window's screen (it pauses the park while open).</summary>
+	public const string MapScreenName = "map";
 
 	/// <summary>The name of the Escape pause menu's screen.</summary>
 	public const string PauseMenuScreen = "pause";
+
+	/// <summary>
+	/// The cash text box (control 47) in table units: it starts at the table's x 258, is as wide as the nine digits "999999999" in the cash font, as high as
+	/// the text plus 16, and is centred vertically on the i_dollar icon (control 50, (37,58)-(242,262), centre y 160).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4a2082 HUD builder] 0x4929f0 measures "999999999" (0x752f10) in font slot 1; x1 = x0 + width*2048/screenW (word [0xfaa5c4]), H = textHeight*1536/screenH ([0xfaa5c0]) + 16 (0x4a2138), y0 = dollarTop + (dollarBottom - dollarTop)/2 - H/2 (integer), y1 = y0 + H; 0x65cc04 applies the rectangle. The measured-extent fields are medium confidence
+	internal static UiRect CashTextBounds( int digitsWidthUnits, int textHeightUnits )
+	{
+		const int left = 258, dollarTop = 58, dollarBottom = 262;
+		var height = textHeightUnits + 16;
+		var top = dollarTop + (dollarBottom - dollarTop) / 2 - height / 2;
+		return new UiRect( left, top, digitsWidthUnits, height );
+	}
+
+	private void FitCashText( UiContext context )
+	{
+		if ( moneyLabel == null )
+			return;
+		var (width, height) = context.Measure( context.Fonts.Balance, "999999999" );
+		var scale = Math.Max( 0.0001f, context.Canvas.Scale );
+		moneyLabel.Bounds = CashTextBounds( (int)(width / scale), (int)(height / scale) );
+	}
 
 	// [BIN:TPW-EXE:0x48ff70 HUD cash text] control 47 (refresh 0x4a0ab0) shows the bare |balance| through swprintf "%d": no digit grouping and no
 	// currency prefix; the sign is carried by control 50 (i_dollar), whose state is balance < 0.
@@ -169,10 +204,10 @@ public sealed partial class ParkHud
 		hud.Add( new UiModelImage { Id = "dateDisplay", Model = "date", Bounds = new UiRect( 152.6f, 1043.6f, 251.7f, 77.5f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 478 ) } );
 		// [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text
 		// (control 47, (258,60,720,260), white font slot 1) sits at the top left of the screen, not in the panel, whose
-		// buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the
-		// measured font extents and the drawable size (0x156ef4); the table rectangle is used as is.
+		// buttons start right below the date box. [BIN:TPW-EXE:0x4a2082 HUD builder] the original then resizes control 47 to the measured width of
+		// "999999999" and the text height + 16, centred on i_dollar (CashTextBounds); the per-frame Updating hook below does the same.
 		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Date, Color = new Veldrid.RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
-		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
+		moneyLabel = hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
 		// [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display
@@ -190,7 +225,7 @@ public sealed partial class ParkHud
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
-		// [EXT:camera-view-cycle] the camera button cycles host Standard/Close/Overview views; [APPROX:UI-042] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 with camcorder mode (99, help 479) and send a postcard (100, help 480) and starts sound 0x131 — evidence needed: that panel's actions
+		// [EXT:camera-view-cycle] the camera button cycles host Standard/Close/Overview views; [APPROX:UI-042] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and starts sound 0x131 — evidence needed: the camcorder mode and the panel's sound
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, CycleCameraView );
 
 		// [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0)
@@ -295,6 +330,7 @@ public sealed partial class ParkHud
 		AddRideUpgradeButton();
 		AddCallStaffButton();
 		hud.DrawOverlay = DrawMessages;
+		hud.Updating = FitCashText;
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
 		{
@@ -309,6 +345,8 @@ public sealed partial class ParkHud
 				patrolTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
+			else if ( pendingItem != null || level.BuildEntry != null )
+				LeaveBuildTool();
 			else
 				OpenPauseMenu();
 		};
@@ -332,6 +370,13 @@ public sealed partial class ParkHud
 		? ObjectNames.Join( Enumerable.Range( index, Math.Max( 1, entry.ObjectNameLength ) ).Select( strings.Object ) )
 		: entry.DisplayName;
 
+
+	/// <summary>Shows the info arm for <paramref name="item"/> without closing the windows open below it (a list row's left click keeps its list).</summary>
+	internal void ShowInfoArmKeepingWindows( OriginalObject item )
+	{
+		selectedObject = item;
+		InfoArmOpen = !item.IsDeleted;
+	}
 
 	public void SetInfoArm( bool open )
 	{
@@ -371,30 +416,90 @@ public sealed partial class ParkHud
 		PostMessage( strings.Help( 440 ) );
 	}
 
-	// [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation
+	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance continues into the entrance, exit and queue sub-modes (0x52fab0 / 0x52faf0, 0x52f580(3,0)), whose last click does the same Ctrl test. Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
+	// [APPROX:UI-031] the coaster and water-track tools (whose original sub-modes are not traced) end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 (another exit path that keeps the tool on exactly Ctrl and otherwise leaves it and resets the angle) are not mapped to an OpenTPW action — evidence needed: those sub-modes' continuation and what 0x52fab0 tests
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		if ( pendingItem?.Entry != item.Entry )
 			return;
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
+		var placed = pendingItem;
+		var queueFollows = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
+		if ( level.KeepBuildToolOnPlace && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
+		{
+			// Ctrl at the placing click: the tool stays armed with its item and angle for the next placement.
+			return;
+		}
 		pendingItem = null;
 		level.IsPlacing = false;
 		level.BuildEntry = null;
 		if ( item.Runtime.Coaster != null && level.EnterCoasterTool( item ) )
 		{
+			level.ResetBuildRotation();
 			PostMessage( CoasterToolHelp );
 			return;
 		}
 		// a placed water ride enters the water track tool (tool mode 16) at its station; the queue tool follows once the circuit is valid (Level.RewalkTrack)
 		if ( item.Runtime.Bump != null && level.EnterTrackTool( item ) )
 		{
+			level.ResetBuildRotation();
 			PostMessage( TrackToolHelp );
 			return;
 		}
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
-		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
+		if ( queueFollows && level.EnterQueueTool( item.Visitors ) )
+		{
+			// The queue tool's last click decides whether the build tool re-arms (Ctrl) or ends (OnCellToolEnded); the angle stays until then.
+			queueRearmItem = placed;
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
+			return;
+		}
+		level.ResetBuildRotation();
+	}
+
+	/// <summary>The item whose queue the queue tool is laying: the build tool re-arms with it when the queue ends on a click holding exactly Ctrl.</summary>
+	private BuildItem? queueRearmItem;
+	private bool cellToolClicking;
+
+	/// <summary>The path/queue tool turned off. Inside a click the decision waits for the click's result (<see cref="ResolveQueueRearm"/>); any other end (Escape, right click) returns the build tool to mode 0.</summary>
+	private void OnCellToolEnded()
+	{
+		if ( queueRearmItem == null || cellToolClicking )
+			return;
+		queueRearmItem = null;
+		level.ResetBuildRotation();
+	}
+
+	/// <summary>Whether a queue ended by a click re-arms the build tool: the click held exactly Ctrl and the line was not refused.</summary>
+	// [BIN:TPW-EXE:0x5253b8 queue end] the queue end does the same Ctrl test as a placement: exactly Ctrl continues, else the build tool ends and the angle returns to 0 (0x52f3b6); a refused cell ends the tool without a placement, so it does not continue
+	internal static bool RearmsAfterQueue( int modifierMask, SegmentResult? result ) => Level.KeepsBuildTool( modifierMask ) && result is not { Completed: false };
+
+	/// <summary>Called after a queue-tool click: when that click ended the tool, re-arm the build tool or reset the angle.</summary>
+	private void ResolveQueueRearm( SegmentResult? result )
+	{
+		var item = queueRearmItem;
+		if ( item == null || level.CellTool.IsActive )
+			return;
+		queueRearmItem = null;
+		if ( RearmsAfterQueue( Input.ModifierMaskDown, result ) && item.Entry is { } entry )
+		{
+			pendingItem = item;
+			level.BuildEntry = entry;
+			return;
+		}
+		level.ResetBuildRotation();
+	}
+
+	/// <summary>Ends the armed build tool (a window opened over it): the pending item goes and the build angle returns to 0.</summary>
+	private void LeaveBuildTool()
+	{
+		if ( pendingItem == null && level.BuildEntry == null )
+			return;
+		pendingItem = null;
+		level.IsPlacing = false;
+		level.BuildEntry = null;
+		level.ResetBuildRotation();
 	}
 
 	private void ToggleRideOpen()
@@ -674,6 +779,12 @@ public sealed partial class ParkHud
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
 			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
+		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
+		if ( inPark && !rideOwnsInput && !paused && input.RightPressed && GameOptions.Current.RmbCancel && level.BuildEntry != null && !toolClick )
+		{
+			LeaveBuildTool();
+			toolClick = true;
+		}
 		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
@@ -717,7 +828,7 @@ public sealed partial class ParkHud
 	/// The staff tools' HUD side (hire placement and carrying): the cursor, the hovered cell, right click leaves, a left click on a valid cell completes it.
 	/// A click on an invalid cell does nothing and the tool stays; the park view's other clicks (guest selection, the path tool) wait while it runs.
 	/// </summary>
-	// [APPROX:UI-100] the tools' cursor 9 (Data/ui/cursors/c_carry.ani) is the closest cursor OpenTPW has, Input.CursorTypes.Carry (Ccar.tga): the in-park pointer is the system pointer and .ani cursors are not loaded; the dangling sprite hangs over the hovered cell's centre instead of the exact mouse point — evidence needed: the original cursor renderer
+	// [APPROX:UI-100] the original loads its cursors from Data/ui/cursors/*.ani with LoadCursorFromFileA (0x489639, IAT 0x6fd314) into a cursor object (0x661935): OS animated cursors drawn at the pointer hot spot (a software cursor path, "bwcursor", also exists); OpenTPW has no .ani loader, so the tools' cursor 9 (c_carry.ani) is the closest cursor it has, Input.CursorTypes.Carry (Ccar.tga), and the dangling sprite hangs over the hovered cell's centre instead of the exact mouse point — evidence needed: a .ani cursor loader
 	private bool UpdateStaffTool( UiInput input, bool inPark )
 	{
 		var tool = level.StaffPlacement;
@@ -799,7 +910,17 @@ public sealed partial class ParkHud
 			return false;
 		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
 		var queueJoin = level.QueueJoinCell( tool );
-		var result = tool.Click( (cursorX, cursorY) );
+		cellToolClicking = true;
+		SegmentResult? result;
+		try
+		{
+			result = tool.Click( (cursorX, cursorY) );
+		}
+		finally
+		{
+			cellToolClicking = false;
+		}
+		ResolveQueueRearm( result );
 		level.PlayQueueJoin( queueJoin );
 		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); [APPROX:AUDIO-022] a refused commit plays cat_ui 175 at the clicked cell
 		if ( result is { Completed: true } )
@@ -904,7 +1025,7 @@ public sealed partial class ParkHud
 			return;
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
 		if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
-			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell (tp.exe 0x53c8d0, its texture 1 of an untraced table) is the blueprint's red face
+			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the original queues "square dynamic faces" with 0x53c8d0 (face type 1, queued only when [0x763c98] is set, unit-square UVs 0x871ee8; its 10th argument is a per-face flag, not a texture index) — evidence needed: the texture binding of face type 1 and the staff tool's caller among 0x53c8d0's 10 callers
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
 		else if ( level.PatrolTool is { IsActive: true } patrol )
 		{
@@ -994,7 +1115,7 @@ public sealed partial class ParkHud
 			hud.DrawOverlay = DrawMessages;
 		DrawCellToolGhost( context );
 		DrawCoasterGhost( context );
-		Stack.Draw( context, helpBarVisibility );
+		Stack.Draw( context, HelpBarVisible );
 	}
 
 	/// <summary>The preview shows the object's own sign text, like the object in the park (<see cref="ObjectSigns"/>).</summary>

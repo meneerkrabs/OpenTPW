@@ -232,13 +232,19 @@ public sealed class CoasterDefinition
 	public static CoasterDefinition FromSettings( ObjectSettings settings ) => FromValues( settings.Values );
 
 	/// <summary>
+	/// The definition of a catalog entry from its own coaster.sam settings (<see cref="ObjectCatalogEntry.SharedSettings"/>), as the TrackMaster loader 0x42FAD0 receives them;
+	/// an entry without shared files (synthetic ones) falls back to its object settings.
+	/// </summary>
+	public static CoasterDefinition FromEntry( ObjectCatalogEntry entry ) => FromSettings( entry.CoasterSettings );
+
+	/// <summary>
 	/// The definition of a catalogue coaster with its pylon models read: the settings over the defaults, then each pylon's mesh heights h0 and h1, its
 	/// raised minimum and its stack offset from the model (<c>0x42fad0</c> → <c>0x430590</c>). A pylon model the archive lacks keeps the settings' heights.
 	/// </summary>
 	public static CoasterDefinition FromCatalogEntry( ObjectCatalogEntry entry )
 	{
 		ArgumentNullException.ThrowIfNull( entry );
-		var definition = FromSettings( entry.Settings );
+		var definition = FromEntry( entry );
 		using var assets = new CoasterAssets( entry, definition );
 		foreach ( var loop in new[] { false, true } )
 		{

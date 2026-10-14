@@ -383,7 +383,7 @@ public class Md2VertexAnimationTests
 
 	/// <summary>The 12-byte block (flag 0x4000) is parsed but stays unsupported: no reader of its floats was traced.</summary>
 	[TestMethod]
-	public void TwelveByteBlockIsParsedButStaysUnsupported()
+	public void TwelveByteBlockIsParsedAndPlayed()
 	{
 		var data = CreateAnimation();
 		var block = Grow( ref data, 12 + 4 * 4 + 4 * 12 );
@@ -402,7 +402,13 @@ public class Md2VertexAnimationTests
 		Assert.IsNull( track.VertexAnimation );
 		CollectionAssert.AreEqual( new uint[] { 3, 2, 1, 0 }, track.VertexPose!.Indices.ToArray() );
 		Assert.AreEqual( new NVector3( 2, 4, 6 ), track.VertexPose.Positions[2] );
-		Assert.AreEqual( 0x5000u, track.UnsupportedFlags, "0x2000 is metadata, 0x4000 and its 0x1000 stay unsupported" );
+		// RIDES-041: the PC sampler reads the block (0x4718f7), so 0x4000 and its 0x1000 are supported; 0x2000 is metadata.
+		Assert.AreEqual( 0u, track.UnsupportedFlags );
+		// The table behind the index list holds one pose (duration + 1 would not fit): the pose is vertex i from entry index[i], at any time.
+		Assert.AreEqual( (4, 1), (track.VertexPose.Count, track.VertexPose.FrameCount) );
+		var applied = new NVector3[4];
+		track.VertexPose.ApplyPose( 7.5f, applied );
+		CollectionAssert.AreEqual( new[] { new NVector3( 3, 6, 9 ), new NVector3( 2, 4, 6 ), new NVector3( 1, 2, 3 ), new NVector3( 0, 0, 0 ) }, applied );
 		Assert.AreEqual( 0x2000u, track.MetadataBits );
 		Assert.IsNull( track.VertexPose.GetLimitation( 4 ) );
 		Assert.AreEqual( "the 12-byte block lists 4 positions, the mesh has 5", track.VertexPose.GetLimitation( 5 ) );

@@ -22,7 +22,7 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 /// </summary>
 // [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
 // [BIN:TPW-EXE:0x435adf scroll shift] the per-frame tick shifts V by δ = (now − ctl+0x138)·P·0.001 for every polygon of a texture the loader flagged (definition flag 4, set when any fScrollRate is nonzero; texture flag 0x20), P the power factor at controller +0x2c; the stored fScrollRate (texture +0xc) is not read in that loop
-// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment and self-illuminated textures are lit like the rest; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc
+// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment and self-illuminated textures are lit like the rest; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode vertex and UV animation (TrackMaster loader 0x42fad0 keeps header flag 4: keys added to a per-update base copy, the add paths of 0x471860) is not modelled (formerly the remainder of RIDES-043)
 public sealed class CoasterRenderer : Entity
 {
 	/// <summary>

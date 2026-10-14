@@ -175,7 +175,7 @@ the power is back (an arriving train unloads open or closed; boarding is state 4
 the Mac reading takes a global (documented difference, OpenTPW follows the PC); the two upper bounds are not applied
 (the seat sockets are not read). `COAST 8` makes the ride script's speed bias (script +0xC0, 50 at creation,
 `0x558c3c`) the speed setting through `0x43b2b0`/`0x43c3d0`, so the speed cap is `lerp(maxAtMin, maxAtMax, 0.5)`
-instead of the constructor's setting 60; the loop calls the setter every pass, but the bias never changes (RIDES-033).
+instead of the constructor's setting 60; the loop calls the setter every pass, and the bias changes only when an upgrade completes (it then becomes that level's `InitSpeed` when above 0, 0x4DF8F0).
 A suspended coaster's roll is the swing of pass `0x43c450` (`0x43c76c..0x43ca45`): the force plus gravity rotated into
 the sample frame by −yaw, −pitch and −old roll through the runtime sine table (4096 entries, `T[k] = f32(fsin(k/4096 · f32(2π)))`,
 scale `f32(4096 · f32(1/2π))`, the index rounded to nearest, `0x4708d0`), approached through `atan2(−X, Y)` at rate

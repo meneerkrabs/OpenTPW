@@ -1061,10 +1061,34 @@ public class QueueTests
 			var rig = new Rig( excitement: 25 );
 			rig.Script[RideVariables.VAR_BROKEN] = broken ? 1 : 0;
 			var guests = Enumerable.Range( 0, 10 ).Select( _ => rig.Simulation.SpawnInPark( 2, 0 ) ).ToList();
+			rig.RunTurns( 2 );
+			Assert.AreEqual( broken, rig.Ride.IsBrokenDown, "the ride update enters state 1 on the turn it reads VAR_BROKEN" );
 			var chose = 0;
 			rig.RunTurns( 60, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
 			Assert.AreEqual( broken, chose == 0, $"broken {broken}: {chose} guest-ticks heading for the ride" );
 		}
+	}
+
+	[TestMethod]
+	public void StateOneOutlastsVarBrokenUntilTheRideIsOpenedAgain()
+	{
+		// tp.exe 0x4e0e00: only state 0 reads VAR_BROKEN; states 1, 2 and 4 dismiss the head every turn, so a script that clears
+		// VAR_BROKEN before the repair does not end the drain, and the choice's counts-test (0x4dd920) reads the state, not VAR_BROKEN.
+		var (ride, script, host) = CreateAdmission();
+		script[RideVariables.VAR_BROKEN] = 1;
+		Assert.IsFalse( ride.IsBrokenDown, "state 0 until the ride update reads VAR_BROKEN" );
+		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 1 ), "a ride whose update has not run yet still takes guests" );
+		Assert.IsTrue( ride.TryJoinQueue( 2 ) );
+		Assert.IsTrue( ride.TryJoinQueue( 3 ) );
+		NextTurn( ride, host );
+		Assert.IsTrue( ride.IsBrokenDown );
+		script[RideVariables.VAR_BROKEN] = 0;
+		NextTurn( ride, host );
+		Assert.IsTrue( ride.IsBrokenDown, "VAR_BROKEN cleared, the ride stays in state 1" );
+		Assert.AreEqual( 1, ride.Queue.Count(), "one head dismissed per turn: 1 on the breakdown turn, 2 on the next" );
+		script[RideVariables.VAR_RIDECLOSED] = 0;
+		Assert.IsFalse( ride.IsBrokenDown, "opened again: SetState(0)" );
+		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 4 ) );
 	}
 
 	[TestMethod]

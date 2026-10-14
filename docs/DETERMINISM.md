@@ -245,6 +245,19 @@ relations (boarded equals released, hash round trips, an old save migrates and l
 save moved with it, so a save of the earlier shape is migrated on load (stop-and-dispatch states, no ring, end node `0x144`,
 no loop rotate) and its hash is recomputed in the new shape.
 
+Rides register round 2 (October 14): upgrade completion now sets the script speed bias to the new level's `InitSpeed` when
+above 0 (tp.exe 0x4DF8F0; `OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`, called from
+`Level.ApplyCompletedCatalogueTier` only; a resume or import still seeds the tier without touching the bias, since the saved VM
+state restores it). The bias is already in the script digest and snapshot, so no schema change is needed, and no pinned
+hash moved: the fixed run's synthetic park completes no upgrade, and the upgrade tests assert the bias directly
+(`CompletedTierSetsTheScriptSpeedBiasToThatLevelsInitSpeed`). A saved park that completed an upgrade under the older build keeps
+the bias it saved; only upgrades completed after this change move it (a ride that speeds up changes the timing of every later
+`WAIT` and animation trigger of its scripts, so such a run does not replay a recording made before). The other changes of the round
+(object names, shape symbols, the 12-byte vertex poses, the low-detail texture folders, `coaster.sam` as its own settings) touch no
+simulation state; the pins they moved are presentation and data pins: the catalog "named" counts, the MD2 corpus table-byte and
+unsupported-flag counts, the vertex-track census (609 clips play, none limited) and the frozen sign baseline (seven signs whose
+name changed; the five newly named signs are pinned in `RidesRound2CorpusTests`).
+
 Track register round (October 14): the kart and water controllers tick every 31 ms (`BumpController.TickSeconds = 0.031`, was 1/30 s) and a
 launched boat or kart starts at heading 0 (was the station's flow), so every park with a track controller runs a different
 trajectory than before: the golden boat run of `BumpControllerTests` (positions, velocities and headings from tick 1, the
@@ -286,7 +299,9 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xCAF8114002723B8C`, schema 18: the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp join the
+  (`0x9F437861FA2E5452`, schema 19: a ride keeps its broken-down state (QUEUE-019) in the hash, the booth's verdict on the fee
+  (tp.exe `0x004FF5B0`) draws from the guest stream, and the invented boredom loss is gone (nothing in tp.exe reads BoredomThreshold; docs/GUESTS.md). Before that:
+  `0xCAF8114002723B8C`, schema 18: the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp join the
   park save and so the hash; the synthetic park stays in the black, so only the hashed fields change the value (docs/ECONOMY.md). Before that:
   `0xB4FA626D739B5697`, schema 17: the guests think as in tp.exe (the pick of the needs phase on one phase in ten, from a hash of the
   guest and the turn, and no thought at the end of a ride or shop visit), so the hashed thoughts change; the guests' stream is untouched

@@ -166,6 +166,8 @@ public interface IRideVisitorBridge
 	bool ProvidesRelief { get; }
 	/// <summary>The ride script reports a breakdown (<c>VAR_BROKEN</c>, the original's ride state 1 or 4): its queue is dismissed head first and nobody joins.</summary>
 	bool IsBroken { get; }
+	/// <summary>The ride is in state 1 (broken down) until it is opened again; choices and the queue's move-up read this, not <c>VAR_BROKEN</c>.</summary>
+	bool IsBrokenDown { get; }
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c>: a relief object whose wear gauge is below 25. Queueing guests leave "feeling sick".</summary>
 	bool ReliefWornOut { get; }
 	/// <summary>The ride script's <c>VAR_RUNNING</c> is non-zero.</summary>

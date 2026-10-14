@@ -364,14 +364,22 @@ internal static class Game
 		// The balloon still runs down, rides still put it away and the renderers draw them as for a bought one.
 		if ( args.Contains( "--debug-guest-looks" ) )
 		{
-			var dressed = new HashSet<int>();
+			// Guests seen in the current park only: a new park starts afresh (its ids restart), and guests who left are forgotten.
+			var dressed = new HashSet<Guest>( ReferenceEqualityComparer.Instance );
+			GuestSimulation? park = null;
 			Render.PostUpdate += () =>
 			{
 				if ( flow.Level?.Guests is not { } guests )
 					return;
+				if ( guests != park )
+				{
+					park = guests;
+					dressed.Clear();
+				}
+				dressed.IntersectWith( guests.Guests );
 				foreach ( var guest in guests.Guests )
 				{
-					if ( !dressed.Add( guest.Id ) )
+					if ( !dressed.Add( guest ) )
 						continue;
 					if ( guest.Id % 2 == 0 )
 						(guest.HasBalloon, guest.BalloonLife) = (true, GuestAppearance.MaximumBalloonLife);

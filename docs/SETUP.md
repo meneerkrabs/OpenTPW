@@ -160,3 +160,11 @@ The original-style Options > Game files screen reuses these bounded operations.
 Game and CD paths can always be typed directly, including when Linux has no
 native dialog helper. Closing the screen or disposing GameFlow cancels its
 pending inspection and picker work.
+
+The desktop starter precedence controls also exercise the actual resolver with
+invalid remembered edition/world values, both gate flags, and command-line then
+environment overrides. Explicit tools leave those saved fields unchanged; a
+conflicting `--setup` request refuses before malformed configuration or an
+override can act. These are synthetic CPU resolver/argument controls, not native
+wizard rendering or headless gameplay qualification. Controlled empty discovery
+is injected only in tests; production retains the existing bounded search.

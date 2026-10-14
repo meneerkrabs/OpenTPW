@@ -2,8 +2,10 @@ namespace OpenTPW.Hud;
 
 public sealed partial class ParkHud
 {
-	// The screens (other than the HUD itself) the host has been told about, by name.
+	// The screens (other than the HUD itself) the host has been told about, by name; reused every frame.
 	private readonly HashSet<string> reportedScreens = new( StringComparer.Ordinal );
+	private readonly HashSet<string> openScreens = new( StringComparer.Ordinal );
+	private readonly List<string> screenChanges = new();
 
 	/// <summary>
 	/// Tells the host which screens opened and closed since the last frame: the advisor posts a window's help when it opens and
@@ -14,13 +16,27 @@ public sealed partial class ParkHud
 	{
 		if ( host?.WindowOpened == null && host?.WindowClosed == null )
 			return;
-		var open = new HashSet<string>( Stack.Screens.Where( screen => screen != hud ).Select( screen => screen.Name ), StringComparer.Ordinal );
-		foreach ( var closed in reportedScreens.Where( name => !open.Contains( name ) ).ToArray() )
+		openScreens.Clear();
+		var screens = Stack.Screens;
+		for ( var index = 0; index < screens.Count; index++ )
+			if ( screens[index] != hud )
+				openScreens.Add( screens[index].Name );
+		if ( openScreens.SetEquals( reportedScreens ) )
+			return;
+		screenChanges.Clear();
+		foreach ( var name in reportedScreens )
+			if ( !openScreens.Contains( name ) )
+				screenChanges.Add( name );
+		foreach ( var closed in screenChanges )
 		{
 			reportedScreens.Remove( closed );
 			host.WindowClosed?.Invoke( closed );
 		}
-		foreach ( var opened in open.Where( name => !reportedScreens.Contains( name ) ).ToArray() )
+		screenChanges.Clear();
+		foreach ( var name in openScreens )
+			if ( !reportedScreens.Contains( name ) )
+				screenChanges.Add( name );
+		foreach ( var opened in screenChanges )
 		{
 			reportedScreens.Add( opened );
 			host.WindowOpened?.Invoke( opened );

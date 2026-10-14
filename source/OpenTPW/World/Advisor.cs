@@ -47,7 +47,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-022", "an original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129, 323 and the help messages are bound) are dropped on import; OpenTPW's own park save stores the controller"),
 		("ADVISOR-025", "the effect a fixed sequence's timer entry fires when the advisor clock reaches it (sequences 28 and 29: the particle effect 0x521E60 (87, 90000, 0, 7000), sound 0xC6 and 0x4B9340 in the update 0x599880) is not ported; the timer is recorded on the sequence only"),
 		("ADVISOR-026", "the level advisors' props (Ticket, MAP, Ticket2, Mutant Eye and the T_Particle/Rotate dummies, shown by the ticket logic 0x599B09-0x599BDE and the accessory bits 0x20000-0x200000 of 0x598DC0) stay hidden"),
-		("ADVISOR-027", "withdrawing the speaking help (0x59AA70 -> 0x5994E0) hides the advisor and stops the speech, but its slap sound (0x27F-0x281 through 0x51BFC0) is not played and the last-tutorial copy at controller +0x16D0 (0x59A940) is not kept"),
+		("ADVISOR-027", "withdrawing the speaking help (0x59AA70 -> 0x5994E0) hides the advisor and stops the speech, but its slap sound (0x27F-0x281 through 0x51BFC0) is not played, and the last-tutorial copy at controller +0x16D0 (0x59A940) is not kept, nor is the branch 0x59AA7B-0x59AAC8 that clears the last-tutorial record's valid byte (+0x16E4) when the message is of group 1 (0x59C500 == 1) and +0x16DC is the message"),
 	};
 
 	private readonly AdvisorRig globalRig;
@@ -66,9 +66,14 @@ internal sealed class Advisor : IDisposable
 	private AdvisorSpeechStart? speechStart;
 	// The generated sequences draw from their own stream (see AdvisorRandom).
 	private readonly AdvisorRandom sequenceRandom = new();
+	// The clip lengths of the model that plays (a level advisor's clips 16-20 exist only there), by archive.
 	private AdvisorClipDurations? clipDurations;
-	private string? clipDurationsLevel;
-	private bool clipDurationsLoaded;
+	private readonly Dictionary<string, AdvisorClipDurations?> durationsByArchive = new();
+	// The theme costume of each level seen, read once.
+	private readonly Dictionary<string, AdvisorThemeCostume> themes = new();
+	// The hidden accessory nodes of the response's costume by clip accessory bits, and the per-frame scratch set.
+	private readonly Dictionary<int, HashSet<int>> costumeHidden = new();
+	private readonly HashSet<int> hiddenScratch = new();
 	private System.Numerics.Vector3 mouthMin = new( float.MaxValue );
 	private System.Numerics.Vector3 mouthMax = new( float.MinValue );
 	// [BIN:TPW-EXE:0x00429BA0 advisor setup] model matrix = identity with translation (0.6, -0.6, 0.2); the root node is
@@ -159,14 +164,20 @@ internal sealed class Advisor : IDisposable
 		foreach ( var (id, rule) in Approximations )
 			Log.Warning( $"[APPROX:{id}] {rule}" );
 		globalRig = rig = AdvisorRig.LoadGlobal();
-		foreach ( var part in globalRig.Parts.Where( part => Mouths.Contains( part.Name ) ) )
-			foreach ( var vertex in part.Vertices )
-			{
-				mouthMin = System.Numerics.Vector3.Min( mouthMin, vertex.Position.GetSystemVector3() );
-				mouthMax = System.Numerics.Vector3.Max( mouthMax, vertex.Position.GetSystemVector3() );
-			}
-		if ( float.IsPositiveInfinity( mouthMin.X ) || mouthMin.X == float.MaxValue )
-			throw new InvalidDataException( "The original advisor model has no mouth meshes." );
+		try
+		{
+			foreach ( var part in globalRig.Parts.Where( part => Mouths.Contains( part.Name ) ) )
+				foreach ( var vertex in part.Vertices )
+				{
+					mouthMin = System.Numerics.Vector3.Min( mouthMin, vertex.Position.GetSystemVector3() );
+					mouthMax = System.Numerics.Vector3.Max( mouthMax, vertex.Position.GetSystemVector3() );
+				}
+		}
+		catch
+		{
+			globalRig.Dispose();
+			throw;
+		}
 	}
 
 	/// <summary>
@@ -317,15 +328,16 @@ internal sealed class Advisor : IDisposable
 		return true;
 	}
 
-	private AdvisorClipDurations? ClipDurations( string? level )
+	private AdvisorClipDurations? ClipDurations( AdvisorRig playing )
 	{
-		if ( !clipDurationsLoaded || clipDurationsLevel != level )
+		if ( !durationsByArchive.TryGetValue( playing.Archive, out var durations ) )
 		{
-			clipDurations = AdvisorClipDurations.Load( FileSystem, level );
-			clipDurationsLevel = level;
-			clipDurationsLoaded = true;
+			// The playing model's own clips; a level model without any falls back to the global advisor's.
+			durations = AdvisorClipDurations.LoadArchive( FileSystem, playing.Archive )
+				?? (playing.Archive == ArchivePath ? null : AdvisorClipDurations.LoadArchive( FileSystem, ArchivePath ));
+			durationsByArchive[playing.Archive] = durations;
 		}
-		return clipDurations;
+		return durations;
 	}
 
 	private void Play( Mp2Audio audio, LipSyncTimeline lips, int clipNumber, string description, AdvisorResponse? response = null, string? level = null )
@@ -337,18 +349,22 @@ internal sealed class Advisor : IDisposable
 		player = CreatePlayer( audio );
 		speechStart = null;
 		Sequence = null;
-		ModelShown = true;
+		// Choose the model first: a failed level load must not leave a disposed rig drawn.
 		rig = SelectRig( response, level );
+		ModelShown = true;
 		// [BIN:TPW-EXE:0x005990E3 response player] the response row's +0x14 and +0x18 words are the accessory selectors (0xF79684, 0xF79688) and its +0x10 low half the model slot (0xF79674)
 		costume = response != null ? AdvisorCostumeTable.For( response.Id ) : AdvisorCostume.None;
-		theme = costume.Hat == -1 || costume.SecondHat == -1 ? AdvisorThemeCostume.Load( FileSystem, level ) : AdvisorThemeCostume.None;
+		theme = AdvisorThemeCostume.None;
+		if ( (costume.Hat == -1 || costume.SecondHat == -1) && level != null && !themes.TryGetValue( level, out theme! ) )
+			themes[level] = theme = AdvisorThemeCostume.Load( FileSystem, level );
+		costumeHidden.Clear();
 		if ( response != null && clock != null )
 		{
 			var now = clock();
 			speechStart = AdvisorSpeechStart.For( now, response.Animation );
 			// [BIN:TPW-EXE:0x00599050 response player] the builder gets the sample length + 200 + 300 ms; a fixed sequence (response +12 minus 16) comes from table 0x76DC18
 			var length = (int)Duration.TotalMilliseconds;
-			var durations = ClipDurations( level );
+			var durations = clipDurations = ClipDurations( rig );
 			if ( durations != null )
 			{
 				Sequence = AdvisorSequences.Build( response.Animation, length + AdvisorSequences.BudgetSlackMilliseconds, durations, sequenceRandom.Next );
@@ -548,7 +564,12 @@ internal sealed class Advisor : IDisposable
 			bits = Sequence.AccessoryBits is { } list && position.Index < list.Count ? list[position.Index] : 0;
 			worlds = rig.Pose( position.Clip, tick );
 		}
-		return (worlds, AdvisorAccessories.HiddenMeshNodes( rig.Nodes, costume, theme, bits, clip, tick ));
+		if ( !costumeHidden.TryGetValue( bits, out var accessories ) )
+			costumeHidden[bits] = accessories = AdvisorAccessories.CostumeHiddenNodes( rig.Nodes, costume, theme, bits );
+		hiddenScratch.Clear();
+		hiddenScratch.UnionWith( accessories );
+		AdvisorAccessories.ApplyToggles( rig.Nodes, hiddenScratch, clip, tick );
+		return (worlds, hiddenScratch);
 	}
 
 	/// <summary>The model a response draws: the level's advisor for a response that names model 1 (when the level has one), else the global advisor.</summary>
@@ -559,8 +580,17 @@ internal sealed class Advisor : IDisposable
 		if ( levelRigName != level )
 		{
 			levelRig?.Dispose();
-			levelRig = AdvisorRig.LoadLevel( FileSystem, level );
+			levelRig = null;
 			levelRigName = level;
+			try
+			{
+				levelRig = AdvisorRig.LoadLevel( FileSystem, level );
+			}
+			catch ( Exception exception )
+			{
+				// Any failure to build the level's model leaves the global advisor, never a released one.
+				Log.Warning( $"The advisor model of level {level} could not be loaded: {exception.Message}" );
+			}
 		}
 		return levelRig ?? globalRig;
 	}

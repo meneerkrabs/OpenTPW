@@ -9,7 +9,7 @@ advisor's tables live:
   spatula and the bow tie of the global advisor), 0 shows no accessory, -1 the level's theme costume. Only
   responses with a nonzero selector are listed.
 * ``advisor-help-messages.toml``: the scored-message descriptors whose score callback is the context-help
-  getter 0x59E8C0 (the 82 help messages the window code posts through 0x486B00). The descriptor table
+  getter 0x59E8C0 (82 descriptors; the 81 whose first response is in the response table, 291 names the absent 551). The descriptor table
   (0x76E300, 351 records of 0x38 bytes) is zero in the file; a straight-line initializer (0x5A0A50 to
   0x5A86FB: stores of immediates and registers loaded with immediates) fills it, so this script replays
   those stores instead of reading the file.
@@ -33,6 +33,9 @@ DESCRIPTOR_TABLE = 0x76E300
 DESCRIPTOR_RECORD = 0x38
 DESCRIPTOR_COUNT = 351
 INITIALIZER = 0x5A0A50
+INITIALIZER_END = 0x5A86FB
+PUSHES = (0x53, 0x55, 0x56, 0x57)
+POPS = (0x5B, 0x5D, 0x5E, 0x5F)
 HELP_SCORE_CALLBACK = 0x59E8C0
 
 REGISTERS = ['eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi']
@@ -74,15 +77,20 @@ def response_rows(image: Image) -> list[tuple[int, ...]]:
         address += RESPONSE_RECORD
 
 
-def replay_stores(image: Image, start: int, limit: int = 200000) -> dict[int, int | None]:
+def replay_stores(image: Image, start: int, end: int | None = None, limit: int = 200000) -> dict[int, int | None]:
     """Replays the straight-line stores of an initializer: immediates into registers, registers and
-    immediates into absolute addresses. Stops at the first other instruction (the function's return)."""
+    immediates into absolute addresses, pushes and pops. Any other instruction, or a store from a register
+    that holds no replayed value, is an error; the replay must reach the ``ret`` at ``end`` (when given)."""
     registers: dict[str, int | None] = {name: None for name in REGISTERS}
     memory: dict[int, int | None] = {}
     address = start
     for _ in range(limit):
         code = image.read(address, 10)
         opcode = code[0]
+        if opcode == 0xC3:
+            if end is not None and address != end:
+                raise ValueError(f'initializer returned at {address:#x}, expected {end:#x}')
+            return memory
         if 0xB8 <= opcode <= 0xBF:
             registers[REGISTERS[opcode - 0xB8]] = struct.unpack_from('<I', code, 1)[0]
             address += 5
@@ -92,25 +100,30 @@ def replay_stores(image: Image, start: int, limit: int = 200000) -> dict[int, in
         elif opcode == 0x8B and code[1] >> 6 == 3:
             registers[REGISTERS[(code[1] >> 3) & 7]] = registers[REGISTERS[code[1] & 7]]
             address += 2
-        elif opcode in (0x53, 0x55, 0x56, 0x57, 0x5B, 0x5D, 0x5E, 0x5F):
+        elif opcode in PUSHES or opcode in POPS:
             address += 1
         elif opcode == 0x89 and code[1] & 0xC7 == 0x05:
-            memory[struct.unpack_from('<I', code, 2)[0]] = registers[REGISTERS[(code[1] >> 3) & 7]]
+            register = REGISTERS[(code[1] >> 3) & 7]
+            if registers[register] is None:
+                raise ValueError(f'store of {register} at {address:#x} before it was loaded')
+            memory[struct.unpack_from('<I', code, 2)[0]] = registers[register]
             address += 6
         elif opcode == 0xA3:
+            if registers['eax'] is None:
+                raise ValueError(f'store of eax at {address:#x} before it was loaded')
             memory[struct.unpack_from('<I', code, 1)[0]] = registers['eax']
             address += 5
         elif opcode == 0xC7 and code[1] == 0x05:
             memory[struct.unpack_from('<I', code, 2)[0]] = struct.unpack_from('<I', code, 6)[0]
             address += 10
         else:
-            return memory
+            raise ValueError(f'unsupported instruction byte {opcode:#04x} at {address:#x}')
     raise ValueError('initializer did not end')
 
 
 def descriptors(image: Image) -> dict[int, dict[str, int]]:
     """The 351 message descriptors: the file's own words with the initializer's stores applied."""
-    stores = replay_stores(image, INITIALIZER)
+    stores = replay_stores(image, INITIALIZER, INITIALIZER_END)
     result = {}
     for message in range(DESCRIPTOR_COUNT):
         base = DESCRIPTOR_TABLE + message * DESCRIPTOR_RECORD
@@ -164,7 +177,7 @@ def render_costumes(rows: list[tuple[int, int, int]]) -> str:
 def render_help(rows: list[dict[str, int]]) -> str:
     lines = [
         '# Advisor help messages of Sim Theme Park World (Windows v2.0), for interoperability: the scored messages whose',
-        '# score callback is the context-help getter 0x59E8C0, which the window code posts through 0x486B00 and withdraws',
+        '# score callback is the context-help getter 0x59E8C0 (81 of the 82 descriptors; 291 names the absent response 551), which the window code posts through 0x486B00 and withdraws',
         '# through 0x486B40. Copied from the descriptor table at 0x76E300 of tp.exe',
         f'# (SHA-256 {TPW_SHA}),',
         '# as filled by its initializer at 0x5A0A50, by tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py;',

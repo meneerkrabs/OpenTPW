@@ -333,6 +333,24 @@ public class AdvisorHelpTests
 	}
 
 	[TestMethod]
+	public void TheCurrentMessageSurvivesASnapshot()
+	{
+		var controller = Controller();
+		controller.Advise( 188, 100, 0, true );
+		controller.Update( () => 1000, () => 100, _ => 4000 );
+		var snapshot = controller.CaptureSnapshot();
+		Assert.AreEqual( 188, snapshot.Queue.CurrentMessageId );
+		var resumed = Controller();
+		resumed.RestoreSnapshot( snapshot );
+		Assert.IsTrue( resumed.Withdraw( 188, 1500 ).SpeechCancelled, "the restored reservation still belongs to its message" );
+		// A snapshot from before the field existed restores with no current message.
+		var older = Controller();
+		older.RestoreSnapshot( snapshot with { Queue = snapshot.Queue with { CurrentMessageId = null } } );
+		Assert.IsFalse( older.Withdraw( 188, 1500 ).SpeechCancelled );
+		Assert.ThrowsException<InvalidDataException>( () => Controller().ValidateSnapshot( snapshot with { Queue = snapshot.Queue with { CurrentMessageId = 99999 } } ) );
+	}
+
+	[TestMethod]
 	public void WindowNamesMapToTheirHelp()
 	{
 		Assert.AreEqual( 188, AdvisorUiHelp.MessageFor( "buy" ) );

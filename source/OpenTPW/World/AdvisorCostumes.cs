@@ -145,6 +145,11 @@ internal sealed record AdvisorNodeMap( int NodeCount, int FirstAttributeNode, IR
 	/// Node of the first record (in order) whose type has a bit of <paramref name="typeMask"/> and whose value is <paramref name="value"/>; −1 without one.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0044B220 attribute lookup] the first record (in order) whose value equals the argument and whose type has a bit of the mask; the record index plus the u16 at model header +0x46 is the node, a mesh node below the header's mesh count, a dummy node after
+	private HashSet<int>? blinkNodes;
+
+	/// <summary>Whether a clip's node-flag toggles apply to <paramref name="node"/>: a mesh node that is not a mouth (the mouths follow <see cref="AdvisorMouth"/>).</summary>
+	public bool TogglesApplyTo( int node ) => (blinkNodes ??= Meshes.Where( mesh => !Advisor.Mouths.Contains( mesh.Name ) ).Select( mesh => mesh.Node ).ToHashSet()).Contains( node );
+
 	public int FindNode( uint typeMask, int value )
 	{
 		for ( var index = 0; index < Attributes.Count; index++ )
@@ -243,6 +248,14 @@ internal static class AdvisorAccessories
 	/// <param name="accessoryBits">The accessory bits of the clip playing (<see cref="AdvisorSequence.AccessoryBits"/>); bit 0 hides the costume.</param>
 	public static HashSet<int> HiddenMeshNodes( AdvisorNodeMap model, AdvisorCostume costume, AdvisorThemeCostume theme, int accessoryBits = 0, ModelAnimation? clip = null, float tick = 0 )
 	{
+		var hidden = CostumeHiddenNodes( model, costume, theme, accessoryBits );
+		ApplyToggles( model, hidden, clip, tick );
+		return hidden;
+	}
+
+	/// <summary>The part of <see cref="HiddenMeshNodes"/> that does not change while a clip plays: the accessories and props the selectors leave hidden. Compute it once per response and clip's accessory bits.</summary>
+	public static HashSet<int> CostumeHiddenNodes( AdvisorNodeMap model, AdvisorCostume costume, AdvisorThemeCostume theme, int accessoryBits = 0 )
+	{
 		ArgumentNullException.ThrowIfNull( model );
 		ArgumentNullException.ThrowIfNull( theme );
 		var hidden = new HashSet<int>();
@@ -254,26 +267,29 @@ internal static class AdvisorAccessories
 		ApplySelector( model, costume.Hat, theme, suppressed, hidden );
 		if ( costume.SecondHat != 0 )
 			ApplySelector( model, costume.SecondHat, theme, suppressed, hidden );
-		if ( clip != null )
+		return hidden;
+	}
+
+	/// <summary>Applies the blink toggles of <paramref name="clip"/> at <paramref name="tick"/> to <paramref name="hidden"/>; allocation-free.</summary>
+	public static void ApplyToggles( AdvisorNodeMap model, ISet<int> hidden, ModelAnimation? clip, float tick )
+	{
+		if ( clip == null )
+			return;
+		var tracks = clip.Tracks;
+		for ( var index = 0; index < tracks.Count; index++ )
 		{
-			foreach ( var track in clip.Tracks )
+			var track = tracks[index];
+			if ( track.NodeFlagToggles.Count == 0 || track.NodeIndex >= model.NodeCount || !model.TogglesApplyTo( track.NodeIndex ) )
+				continue;
+			// [BIN:STP-PPC:0x000A4F68 record sampler] scanning from the last entry back, the first whose magnitude is at most the tick decides: positive clears bit 0x10 (shown), zero or negative sets it (hidden)
+			if ( track.SampleNodeFlag( tick ) is { } hide )
 			{
-				if ( track.NodeFlagToggles.Count == 0 || track.NodeIndex >= model.NodeCount )
-					continue;
-				var mesh = model.Meshes.FirstOrDefault( candidate => candidate.Node == track.NodeIndex );
-				if ( mesh.Name == null || Advisor.Mouths.Contains( mesh.Name ) )
-					continue;
-				// [BIN:STP-PPC:0x000A4F68 record sampler] scanning from the last entry back, the first whose magnitude is at most the tick decides: positive clears bit 0x10 (shown), zero or negative sets it (hidden)
-				if ( track.SampleNodeFlag( tick ) is { } hide )
-				{
-					if ( hide )
-						hidden.Add( track.NodeIndex );
-					else
-						hidden.Remove( track.NodeIndex );
-				}
+				if ( hide )
+					hidden.Add( track.NodeIndex );
+				else
+					hidden.Remove( track.NodeIndex );
 			}
 		}
-		return hidden;
 	}
 }
 

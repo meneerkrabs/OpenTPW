@@ -91,6 +91,13 @@ internal sealed class AdvisorRig : IDisposable
 	private static AdvisorRig? Load( string archive, string member, string suffix, bool required )
 	{
 		var file = new ModelFile( $"{archive}/{member}" );
+		if ( required )
+		{
+			// The advisor cannot be drawn without its body, head, eyes and mouths.
+			foreach ( var name in Advisor.BodyMeshes.Concat( Advisor.Mouths ) )
+				if ( !file.Meshes.Any( mesh => mesh.Name == name ) )
+					throw new InvalidDataException( $"The original advisor model has no '{name}' mesh." );
+		}
 		var rig = new AdvisorRig( archive, suffix, file );
 		var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
 		// A level advisor's textures: its own, then the global advisor's (the level models share the eyes' and mouths' art)
@@ -162,6 +169,7 @@ internal sealed class AdvisorRig : IDisposable
 			rig.Dispose();
 			throw;
 		}
+		rig.Preload();
 		return rig;
 	}
 
@@ -179,6 +187,13 @@ internal sealed class AdvisorRig : IDisposable
 		}
 		part.Model.UpdateVertices( vertices );
 		part.Uploaded = world;
+	}
+
+	/// <summary>Loads the clips 1-20 and their players now, so that playing one never reads a file in the render path.</summary>
+	private void Preload()
+	{
+		for ( var number = 1; number <= AdvisorClipDurations.Count; number++ )
+			Pose( number, 0 );
 	}
 
 	/// <summary>Clip <paramref name="number"/> of this model's archive; null when the archive lacks it or it cannot be read.</summary>
@@ -238,7 +253,11 @@ internal sealed class AdvisorRig : IDisposable
 			return;
 		disposed = true;
 		foreach ( var part in parts )
+		{
 			part.Model.ReleaseBuffers();
+			// The material owns its pipeline, scratch buffer and shader reference.
+			part.Material.ReleaseOwnedResources();
+		}
 		parts.Clear();
 	}
 }

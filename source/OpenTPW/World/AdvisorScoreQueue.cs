@@ -49,7 +49,7 @@ internal sealed record AdvisorHistorySnapshot( uint SavedGameTick, int PreviousV
 /// </summary>
 internal sealed record AdvisorQueueSnapshot(
 	IReadOnlyList<AdvisorPendingAdviceSnapshot?> Slots, IReadOnlyDictionary<int, AdvisorHistorySnapshot> History,
-	uint LastActionStarted, uint LastActionDuration );
+	uint LastActionStarted, uint LastActionDuration, int? CurrentMessageId = null );
 
 /// <summary>
 /// The original advisor controller's pending-advice queue and per-message history, ported from the
@@ -132,7 +132,7 @@ internal sealed class AdvisorScoreQueue
 				? new AdvisorPendingAdviceSnapshot( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce )
 				: null ).ToArray(),
 			history.ToDictionary( pair => pair.Key, pair => new AdvisorHistorySnapshot( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ),
-			LastActionStarted, LastActionDuration );
+			LastActionStarted, LastActionDuration, CurrentMessageId );
 	}
 
 	/// <summary>
@@ -152,6 +152,7 @@ internal sealed class AdvisorScoreQueue
 				throw new InvalidDataException( $"Advisor queue snapshot is inconsistent: {message}." );
 		}
 		Require( snapshot.Slots.Count == Capacity, $"supply all {Capacity} pending slots" );
+		Require( snapshot.CurrentMessageId is not { } current || descriptors.ContainsKey( current ), "the current message has no bound descriptor" );
 		foreach ( var item in snapshot.Slots )
 			if ( item != null )
 			{
@@ -179,8 +180,8 @@ internal sealed class AdvisorScoreQueue
 			snapshot.History!.ToDictionary( pair => pair.Key, pair => new AdvisorMessageHistory( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ) );
 		LastActionStarted = snapshot.LastActionStarted;
 		LastActionDuration = snapshot.LastActionDuration;
-		// The speech does not resume after a load, so no message is current.
-		CurrentMessageId = null;
+		// The reservation resumes with the message it belongs to (absent in saves from before help withdrawal: none).
+		CurrentMessageId = snapshot.CurrentMessageId;
 	}
 
 	/// <summary>

@@ -74,6 +74,14 @@ internal sealed class AdvisorClipDurations
 	public static AdvisorClipDurations? Load( BaseFileSystem fileSystem, string? level )
 	{
 		foreach ( var archive in level == null ? new[] { Advisor.ArchivePath } : new[] { $"/levels/{level}/advisor", Advisor.ArchivePath } )
+			if ( LoadArchive( fileSystem, archive ) is { } durations )
+				return durations;
+		return null;
+	}
+
+	/// <summary>Lengths from the clips of one archive (the model that plays them); null when it holds no clip.</summary>
+	public static AdvisorClipDurations? LoadArchive( BaseFileSystem fileSystem, string archive )
+	{
 		{
 			IEnumerable<string> members;
 			try
@@ -82,7 +90,7 @@ internal sealed class AdvisorClipDurations
 			}
 			catch ( Exception exception ) when ( exception is IOException or DirectoryNotFoundException or UnauthorizedAccessException or InvalidDataException )
 			{
-				continue;
+				return null;
 			}
 			var words = new uint[Count];
 			var found = false;

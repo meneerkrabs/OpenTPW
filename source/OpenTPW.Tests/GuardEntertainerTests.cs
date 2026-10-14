@@ -88,13 +88,13 @@ public class GuardEntertainerTests
 		f.Turns( 400, () =>
 		{
 			if ( started < 0 && entertainer.Job == StaffJob.Performing )
-				started = f.Park.Turn;
-			else if ( started > 0 && ended < 0 && entertainer.Job != StaffJob.Performing )
+				started = entertainer.JobStamp;
+			else if ( started > 0 && ended < 0 && f.Sounds.Any( sound => sound.Event == StaffWorldSimulation.PerformanceEndEvent ) )
 				ended = f.Park.Turn;
 		} );
 		Assert.IsTrue( started > 0, "he performed" );
 		var work = f.Park.Settings[StaffType.Entertainer].WorkDuration[entertainer.Grade];
-		Assert.AreEqual( started + work + 1, ended, "the performance ends when the turn passes its start + WorkDuration" );
+		Assert.AreEqual( started + work + 1, ended, "the performance ends (cat_staff 135) when the turn passes its start + WorkDuration" );
 		Assert.IsTrue( f.Sounds.Any( sound => sound.Event == StaffWorldSimulation.PerformanceEndEvent && !sound.Kids ), "cat_staff 135 at its end" );
 	}
 

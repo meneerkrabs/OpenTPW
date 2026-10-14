@@ -60,7 +60,7 @@ public sealed partial class StaffWorldSimulation
 	/// <summary>The guard's search (tp.exe <c>0x004D63D0</c>, also the tail of states 0 and 1): the strike and rest gate, then a patrol on three turns in four, else idle.</summary>
 	private void SearchGuard( ParkEconomy economy, StaffMember member, long turn )
 	{
-		if ( StrikeOrRest( economy, member ) )
+		if ( StrikeOrRest( economy, member, turn ) )
 			return;
 		SetJob( economy, member, (turn & 3) != 0 && Patrol( economy, member, Cell( member ) ) ? StaffJob.Patrol : StaffJob.Idle, turn );
 	}
@@ -80,7 +80,8 @@ public sealed partial class StaffWorldSimulation
 				economy.MoveStaffEffect( member, Cell( member ) );
 		if ( Guests?.CellOf( guestId ) is not { } cell || economy.Litter.Environment.At( cell.X, cell.Y ).Security < 1 )
 			return;
-		var guards = economy.Staff.OfType( StaffType.Guard ).Where( member => member.Navigation != null
+		// a guard still walking back off the paths from a strike cannot route to the prankster on OpenTPW's grid, so he is not asked (ECON-022)
+		var guards = economy.Staff.OfType( StaffType.Guard ).Where( member => member.Navigation is { OffGrid: false }
 			&& member.State is not (StaffState.PickedUp or StaffState.OnStrike or StaffState.Resting) ).ToList();
 		if ( ChooseGuard( guards.Select( member => (member.Job, Cell( member )) ), StaffHqCell ) is not { } index )
 			return;

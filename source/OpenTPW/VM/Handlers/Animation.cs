@@ -21,14 +21,14 @@ public static partial class OpcodeHandlers
 		{
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, Opcode.TRIGANIM, new[] { animation, variant, duration } ) );
 			duration.Value = adjusted;
-			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, RideVM.ScriptSpeed );
+			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, vm.ScriptSpeed );
 			vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
 		}
 
 		[OpcodeHandler( Opcode.WAITANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset" )]
 		public static void WaitAnim( RideVM vm, Operand animation, Operand variant )
 		{
-			var wait = RideAnimationTiming.WaitAnimDelay( Trigger( vm, Opcode.WAITANIM, new[] { animation, variant } ), RideVM.ScriptSpeed );
+			var wait = RideAnimationTiming.WaitAnimDelay( Trigger( vm, Opcode.WAITANIM, new[] { animation, variant } ), vm.ScriptSpeed );
 			vm.Wait4AnimDeadline = 0;
 			vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
 			WaitUntilDeadline( vm, unchecked((uint)wait) );
@@ -58,7 +58,7 @@ public static partial class OpcodeHandlers
 		{
 			var speed = perMille.Value;
 			// Zero is undefined (divw by zero on PowerPC); the corpus uses 1800–4000.
-			// [APPROX:RIDES-038] A TRIGANIMSPEED speed operand below 0 faults the script: the original defines it (signed divw gives a deadline before now, the channel gets a negative speed), but how the channel frame 0xa6484 and the clip-end test 0xa7190 behave with a negative speed is not traced — evidence needed: the channel update with a negative speed
+			// [APPROX:RIDES-038] A TRIGANIMSPEED speed operand of 0 or below faults the script. PC 0x552f2e..0x552feb: the operand is stored at +0xe4 as 16 bits and the deadline is an idiv by the full operand, so speed 0 is a divide fault there too; a negative speed gives a decreasing frame whose end test in 0x4735d0 never fires, and sampling at negative frames is untraced — evidence needed: the pose sampler at negative frames
 			if ( speed <= 0 )
 				throw new RideScriptException( speed == 0
 					? "TRIGANIMSPEED speed 0 divides by zero (undefined divw)"
@@ -80,7 +80,7 @@ public static partial class OpcodeHandlers
 		{
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, Opcode.TRIGANIM_CH, new[] { animation, variant, duration, channel } ) );
 			duration.Value = adjusted;
-			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, RideVM.ScriptSpeed );
+			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, vm.ScriptSpeed );
 		}
 
 		[OpcodeHandler( Opcode.WAITANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline" )]
@@ -169,16 +169,17 @@ public static partial class OpcodeHandlers
 		/// clears the token and continues; different → executes again next slice (0xafe28, +152 cleared). A clip
 		/// without a member leaves the channel unchanged, so the script then waits until the channel shows that
 		/// AnimID. Without an object the query is skipped (0xafde8) and the compare reads the out operand's code
-		/// word + 1, which for a variable carries the tag 0xC0 in its top byte (0xae6ec) and never equals the token:
-		/// the script re-executes every slice for good.
+		/// word + 1: a variable word (tag 0xC0 on the Mac, 0x40 in the top byte on the PC) never equals the token and the
+		/// script re-executes every slice for good, while a literal word 0x0000vvvv equals it once v is the triggered AnimID (RIDES-037, PC 0x5535c7).
 		/// </summary>
 		private static void TriggerAndWait( RideVM vm, Opcode opcode, Operand[] operands, Operand animation, Operand duration, int channel, bool resetLoopToken )
 		{
 			if ( vm.TriggerWaitToken != 0 )
 			{
-				// [APPROX:RIDES-037] Without an object TRIGWAITANIM(_CH) compares its token with the out operand's code word + 1; OpenTPW treats a literal out operand like a variable (never equal), as the in-memory word of a literal is not traced — evidence needed: the RSE loader's literal operand encoding
+				// [BIN:TPW-EXE:0x5535c7 TRIGWAITANIM compare] Without an object both wait handlers (0x5535c7..0x5535d4 and 0x552cd3) compare the out operand's raw code word + 1 with the token. The loader 0x5587f0 stores code raw and operands decode as variable when (word & 0xff000000) == 0x40000000, else as the sign-extended low 16 bits: a literal word 0x0000vvvv resumes once v equals the triggered AnimID, a variable word never matches (the Mac rule's tag 0xC0 is the same never-equal case).
 				var matched = vm.Effects is IRideAnimationQuery query && query.TryGetAnimationId( vm, channel, out var animationId )
-					&& animationId + 1 == vm.TriggerWaitToken;
+					? animationId + 1 == vm.TriggerWaitToken
+					: duration.Kind == RideScriptOperandKind.Literal && duration.Raw + 1 == vm.TriggerWaitToken;
 				if ( !matched )
 				{
 					vm.RepeatInstruction();
@@ -190,7 +191,7 @@ public static partial class OpcodeHandlers
 			}
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, opcode, operands ) );
 			duration.Value = adjusted;
-			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, RideVM.ScriptSpeed );
+			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, vm.ScriptSpeed );
 			if ( resetLoopToken )
 				vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
 			vm.TriggerWaitToken = animation.Value + 1;

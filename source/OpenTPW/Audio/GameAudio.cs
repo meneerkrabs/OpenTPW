@@ -431,8 +431,8 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x100ACB7C scream parameter] parameter = (level + speed) / 2 clamped to 0..100 (signed shift); the speed is the ride VM's word at +192, default 50 (0x100B3154, 0x100B318C)
 	// [BIN:STP-PPC:0x100B19DC refusal] a ride already holding a scream handle refuses: the engine logs "Started screaming without stopping first." and overwrites the handle with 0, so the held chain screams on unreferenced
 	// [APPROX:AUDIO-032] the scream's place is the ride's box middle in the original (0x100AC71C, midpoints of two floats and the object's height at +68); OpenTPW plays it flat — evidence needed: the box-middle mapping onto OpenTPW's ride objects
-	// [APPROX:AUDIO-016] OpenTPW has no per-script speed word; the loader's default 50 stands — evidence needed: the RSE loader's speed field beside RideVM's timing
-	public static SoundChain? StartScream( Func<SoundChain?> held, int band, int level, Vector3? position )
+	// [BIN:TPW-EXE:0x5516b0 script speed word] the speed word is the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; default 50 at 0x558c3c), the same short the script loop pushes to the ride every pass
+	public static SoundChain? StartScream( Func<SoundChain?> held, int band, int level, Vector3? position, int scriptSpeed = 50 )
 	{
 		if ( events == null || held() != null )
 		{
@@ -442,7 +442,7 @@ public static class GameAudio
 		}
 		if ( ScreamBandEvent( band ) is not { } eventId )
 			return null;
-		var parameter = ScreamParameter( level );
+		var parameter = ScreamParameter( level, scriptSpeed );
 		var chain = events.StartChain( Kids, eventId, AudioChannel.Effects, parameter, position );
 		if ( chain != null )
 			Log.Trace( $"Sound: scream chain started (cat_kids {eventId}, parameter {parameter})." );
@@ -452,8 +452,7 @@ public static class GameAudio
 	/// <summary>The held-chain event a scream's band operand picks (Mac <c>0x100ACA38</c>: 0 nothing, 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74), or null for band 0.</summary>
 	public static uint? ScreamBandEvent( int band ) => band == 0 ? null : band == 1 ? 71u : band >= 8 ? 74u : band >= 4 ? 73u : 72u;
 
-	/// <summary>A scream's parameter: (level + script speed) / 2 clamped to 0..100 (Mac <c>0x100ACB7C</c>; the speed word's default 50).</summary>
-	// [APPROX:AUDIO-016] OpenTPW keeps no per-script speed word, so the default 50 stands for every ride
+	/// <summary>A scream's parameter: (level + script speed) / 2 clamped to 0..100 (Mac <c>0x100ACB7C</c>; the speed word is the script's speed bias, default 50).</summary>
 	public static int ScreamParameter( int level, int scriptSpeed = 50 ) => Math.Clamp( (level + scriptSpeed) / 2, 0, 100 );
 
 	/// <summary>

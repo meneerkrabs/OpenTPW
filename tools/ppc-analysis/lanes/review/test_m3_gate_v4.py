@@ -9,7 +9,7 @@ that only that rule can catch, and the boundary of the head bound W(0) = H + R +
   about 0.01 cells from its stand point, so pinning it where it stands no longer delays its arrival.
 - ``freeze-slots-160`` / ``freeze-slots-190``: on the first turn from tick 18,000 that a boarding fills the last of the
   CAP slots, every slot is set to free exactly 160 / 190 turns later. The new head cannot be called before then, so it
-  waits about that long as head: 160 stays under W(0) = 178 (PASS), 190 exceeds it (FAIL through the head check alone).
+  waits about that long as head: 160 stays under W(0) = 177 (PASS), 190 exceeds it (FAIL through the head check alone).
 - ``never-release-early+no-head-check``: BOUNCE slots are never released from tick 1 and the head check is disabled:
   the per-guest age check (each queued guest against W(p) for its join position) fails the row on its own.
 - ``release-at-1000+no-head-check+no-age-check``: slots are held until park turn 1,000, then released; the head and age
@@ -134,17 +134,18 @@ class Arithmetic(unittest.TestCase):
     """Round 4 recomputation of every bound the queue row uses, from the cited rules (no assets)."""
 
     def test_terms(self):
-        period = 1 + math.ceil(500 / 248)                       # loop WAIT 500 ms, speed 1
+        # loop WAIT 500 ms divided by jungle Bouncy's script speed 0.5 + 60/100 (WAIT 0xb0658): trunc(454.5) = 454 ms
+        period = 1 + math.ceil(int(500 / 1.1) / 248)
         host = 1 + (int(1.2 * 2) + 1) + (10 + 1) + 1 + 1 + period  # removal, move-up, interlude, call, notice, P
-        self.assertEqual((4, 21), (period, host))
+        self.assertEqual((3, 20), (period, host))
         h = host + 20 + 15
         r = bounce_hold_turns(30)
-        self.assertEqual((56, 121), (h, r))
-        self.assertEqual(178, h + r + 1)                        # W(0), the head check
-        self.assertEqual(277, 5 * h + r + 1 - 31 * 1000 // 248)  # tau_max (31 000 / 248 = 125 exactly)
-        self.assertAlmostEqual(68.696, 277 * 0.248, places=3)
+        self.assertEqual((55, 121), (h, r))
+        self.assertEqual(177, h + r + 1)                        # W(0), the head check
+        self.assertEqual(272, 5 * h + r + 1 - 31 * 1000 // 248)  # tau_max (31 000 / 248 = 125 exactly)
+        self.assertAlmostEqual(67.456, 272 * 0.248, places=3)
         w_max = 100 * h + (99 // 5 + 1) * r + 1
-        self.assertEqual((8021, 1989.208), (w_max, round(w_max * 0.248, 3)))
+        self.assertEqual((7921, 1964.408), (w_max, round(w_max * 0.248, 3)))
 
     def test_hold_rule_versus_closed_form(self):
         # 4 DUR + 1 holds for 7 <= DUR <= 30 (DUR 7 gives 29 = 4 * 7 + 1 by coincidence); DUR <= 6 gives 29; 31 jumps.
@@ -249,12 +250,12 @@ class MutationsRound4(unittest.TestCase):
         under = self.queue('freeze-slots-160')
         over = self.queue('freeze-slots-190')
         bound = under['evidence']['attraction']['waitBound']
-        self.assertEqual(178, bound['headToBoardingBoundTurns'])
+        self.assertEqual(177, bound['headToBoardingBoundTurns'])
         self.assertEqual('pass', under['verdict'], under['evidence'].get('firstViolation'))
         self.assertGreaterEqual(bound['headToBoardingMaxTurns'], 160)
-        self.assertLessEqual(bound['headToBoardingMaxTurns'], 178)
+        self.assertLessEqual(bound['headToBoardingMaxTurns'], 177)
         self.assertEqual('fail', over['verdict'])
-        self.assertIn('after becoming head > bound 178', over['evidence']['firstViolation'])
+        self.assertIn('after becoming head > bound 177', over['evidence']['firstViolation'])
         # Rules (a), (b) and walk-stall stay silent: only the head check catches it.
         attraction = over['evidence']['attraction']
         self.assertEqual((0, 0, 0), (attraction['headNotReadyViolations'], attraction['blockedViolations'],

@@ -327,8 +327,8 @@ from the left.
 Traced and executed (x86 findings X18 and X22, [ORACLE.md](reverse/ORACLE.md) section 7.16; [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PeepInfo.PrankeryLikelihood`
 guests in 100 (5 in the shipped balance) are pranksters, of one of three kinds by their id: stinkbombs, litter or balloons. In state 6 a prankster whose
 happiness byte is below 15 pranks when its flag beats a draw modulo 101: a stinkbomb on its cell (`StinkbombLikelihood` percent of the time, 25),
-litter on its cell, or another guest's balloon burst. A stinkbomb plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. OpenTPW's guests carry no balloons, so balloon
-pranksters never find a victim, and the advisor's prank lines are not modelled yet (GUEST-007).
+litter on its cell, or another guest's balloon burst (the first other guest on the cell holding one; without a victim there is no prank). A stinkbomb
+plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. The advisor's prank lines are not modelled yet (GUEST-007).
 
 A prank calls the guards (tp.exe `0x508a30`, WANDER-plan.md §4), but only on a cell with security: a guard spreads `RegionFX[3]` (security 10,
 radius 3) where he stands, so a prankster within three cells of a guard is seen. Then the free guard (idle or patrolling) **nearest the staff HQ**
@@ -344,6 +344,19 @@ happiness, illness and hunger divided by its distance + 1, and a guest's needs p
 −1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). Entertainers and guards carry their rows with them: an
 entertainer's `RegionFX[0]` adds 2 happiness on his cell and 1 beside it, a guard's `RegionFX[3]` the security above. The other sources (toilets,
 cameras, fireworks) are not modelled yet (GUEST-006).
+
+### Balloons and costumes
+
+Read in full in tp.exe (ECON-044). The use routine (`0x4fe1e0`) switches on the type's `UsageInfo.AppearanceEffect` (+0x15c) after the special
+ingredient: the balloon shops (1) give the guest a balloon, the costume shops (2) put a costume on, or take it back from a guest who already
+wears one ("Customer returning a costume"). A balloon lives the shop's quality of goods × 255 / 100, within 25 and 255; OpenTPW has no quality
+control, so the build's quality 50 gives 127. The life (`mRemainingBalloonLife`, +0x214) loses 1 on every needs phase (every fourth park turn,
+`0x501650`) while the guest is in the park and neither on a ride nor held by a guard; the balloon goes at 0, about two minutes after the purchase.
+
+A ride puts the balloon away (state 16, `0x501db0`) and gives it back after the visit when it still has life (state 15). A balloon prank or a
+guard's catch bursts the balloon but leaves its life, so it comes back after the guest's next ride. The challenge types 9 and 10 count the
+in-park guests holding a balloon or wearing a costume, as a truncated percentage of the in-park guests (`0x4d1746`). Balloons and costumes are
+not drawn yet.
 
 ### Walking
 

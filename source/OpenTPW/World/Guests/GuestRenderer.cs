@@ -119,7 +119,10 @@ public sealed class GuestRenderer : Entity
 	}
 
 	/// <summary>Engine position of a point in game-cell coordinates, on the heightfield (bilinear corner heights; holes keep their corner heights).</summary>
-	public static SVector3 CellToEngine( ModelHeightfield field, float cellX, float cellY )
+	public static SVector3 CellToEngine( ModelHeightfield field, float cellX, float cellY ) => CellToEngine( field, cellX, cellY, 0f );
+
+	/// <summary>The same point lifted by <paramref name="lift"/> original height units (the staff cursor sprite hangs 5 units above the ground).</summary>
+	public static SVector3 CellToEngine( ModelHeightfield field, float cellX, float cellY, float lift )
 	{
 		var x0 = Math.Clamp( (int)MathF.Floor( cellX ), 0, field.CellCountX - 1 );
 		var y0 = Math.Clamp( (int)MathF.Floor( cellY ), 0, field.CellCountZ - 1 );
@@ -127,7 +130,7 @@ public sealed class GuestRenderer : Entity
 		var fy = Math.Clamp( cellY - y0, 0, 1 );
 		var height = (field.GetCornerHeight( x0, y0 ) * (1 - fx) + field.GetCornerHeight( x0 + 1, y0 ) * fx) * (1 - fy)
 			+ (field.GetCornerHeight( x0, y0 + 1 ) * (1 - fx) + field.GetCornerHeight( x0 + 1, y0 + 1 ) * fx) * fy;
-		return OriginalParkPlacement.ToEngine( field, new SVector3( cellX * field.CellSizeX, height, cellY * field.CellSizeZ ) );
+		return OriginalParkPlacement.ToEngine( field, new SVector3( cellX * field.CellSizeX, height + lift, cellY * field.CellSizeZ ) );
 	}
 
 	/// <summary>Atlas, frame and mirroring for a guest seen with the given camera axes (engine space).</summary>

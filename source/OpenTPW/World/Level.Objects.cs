@@ -6,11 +6,31 @@ public partial class Level
 	/// <summary>Placed original objects (imported or built) with their build rules.</summary>
 	public ParkObjects Objects { get; private set; } = null!;
 	/// <summary>Catalog entry the build tool places, or null.</summary>
-	public ObjectCatalogEntry? BuildEntry { get; set; }
+	private ObjectCatalogEntry? buildEntry;
+	public ObjectCatalogEntry? BuildEntry
+	{
+		get => buildEntry;
+		set
+		{
+			if ( value != null )
+				StaffPlacement?.Cancel();
+			buildEntry = value;
+		}
+	}
 	/// <summary>Rotation in degrees (0/90/180/270) for the next built object.</summary>
 	public int BuildRotation { get; private set; }
 	/// <summary>Clicking removes the object under the cursor.</summary>
-	public bool IsRemovingObjects { get; set; }
+	private bool isRemovingObjects;
+	public bool IsRemovingObjects
+	{
+		get => isRemovingObjects;
+		set
+		{
+			if ( value )
+				StaffPlacement?.Cancel();
+			isRemovingObjects = value;
+		}
+	}
 
 	/// <summary>Creates the park's objects; each value is a point where a frame may end, with the share of the objects placed.</summary>
 	private IEnumerable<float> SetupObjects()
@@ -229,6 +249,7 @@ public partial class Level
 			LastActionMessage = $"Cannot build a path here: {check}.";
 			return false;
 		}
+		StaffPlacement?.Cancel();
 		CellTool.Enter( Paths, (x, y) );
 		return true;
 	}
@@ -239,6 +260,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell is not { } front )
 			return false;
+		StaffPlacement?.Cancel();
 		ride.RecomputeQueue( Guests.Grid );
 		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
 		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),

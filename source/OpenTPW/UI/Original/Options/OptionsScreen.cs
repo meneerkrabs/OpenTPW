@@ -558,7 +558,9 @@ public static class OptionsScreen
 		} );
 
 		void Back() => stack.Pop();
-		// [EXT:SETUP] Game files (game folder and CD), where the main page has its OpenTPW button
+		// [EXT:SETUP] Game files (game folder and CD), where the main page has its OpenTPW button. The browser chooses its
+		// game folder on the page before the game starts, so it has no Game files screen.
+		if ( !OperatingSystem.IsBrowser() )
 		screen.Add( new UiButton
 		{
 			Id = "gameFiles",

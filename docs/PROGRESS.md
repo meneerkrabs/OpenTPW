@@ -875,6 +875,9 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Front-end smoke follows the saved-park offer (October 14):** since entering an island with a saved park first offers to
+  continue it (79726a00), the native front-end smoke, which saves a Jungle park earlier on, met that dialog instead of the game
+  mode menu and stopped; it now checks the offer and takes "New park".
 - **Visitor click, backtrack and queue-join sounds (October 14):** traced in both executables. Opening a visitor's details
   (a park click or a roster activation) plays the visitor click `cat_kids` 129 (`0x1010B808` / tp.exe `0x4B79B0`). Backspace
   over a path cell with no tool on plays `cat_ui` 95 at the cell and removes it, as the original's "backtrack" key does

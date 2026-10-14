@@ -359,7 +359,9 @@ member mapping, channels and the corpus run of all 262 object scripts are in
   are unimplemented.
 - Animation playback only through the objects' effects (OBJECTS.md; rigid node
   tracks, vertex animation not decoded); EVENT types 3-9 and REPAIREFFECT play
-  their original sounds (the category routes are traced, AUDIO.md) while types
+  their original sounds (the category routes are traced, AUDIO.md); repair hide (0)
+  uses the same sampled placed sound-space origin and owned-loop cleanup as EVENT
+  types 3–9, while show keeps its qualified flat family 75 path. Types
   1/2 create particles in the original and remain unimplemented here; type 0
   is unsupported, not a positioned sound loop. No objects/particles, no ride-type
   controllers (TOUR/BUMP/COAST), MIN/SEC unimplemented, no light opcodes. TPW YEAR/MONTH/DAY/HOUR

@@ -619,9 +619,17 @@ public static class BonusNames
 		return null;
 	}
 
-	/// <summary>The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's language file (same file choice as <see cref="Read"/>), or null when both are empty.</summary>
+	/// <summary>Characters a placed object keeps of each sign line (buffers of 32 characters and a terminator).</summary>
+	public const int SignLineCharacters = 32;
+
+	/// <summary>
+	/// The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's language file (same file choice as <see cref="Read"/>), or null when both are empty.
+	/// Each line is cut to <see cref="SignLineCharacters"/> characters; line 1 loses a trailing "--" (<see cref="StripTrailingDashes"/>).
+	/// </summary>
 	// Same language-file choice as the name (RIDES-025).
-	// [APPROX:COMPAT-017] SIGNA/SIGNB taken as sign text lines 1/2 (the sign builder accepts two explicit texts; that the bonus loader passes these sections is not traced) — evidence needed: the bonus loader's call of the sign builder
+	// [BIN:TPW-EXE:0x00413600 object text] the object text file's NAME, SIGNA and SIGNB sections are parsed with the default "MISSING STRING"; SIGNA/SIGNB are copied into each placed object as two 32-character lines (0x413020/0x4130B0, called at 0x4DB6F9/0x4DB70D)
+	// [BIN:TPW-EXE:0x00468500 sign rebuild] the sign rebuild of the types with flag 0x8000000 reads line 1 through 0x4E2860 (which strips a trailing "--") and line 2 through 0x4E2920
+	// [APPROX:COMPAT-017] A language file without SIGNA or SIGNB leaves that line empty (both empty: null, the .sam name is kept) where the original shows its default "MISSING STRING" — evidence needed: which objects the original rebuilds signs for and what its line-1 fallback (0x78A374) is
 	public static (string Line1, string Line2)? ReadSignLines( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
@@ -637,7 +645,7 @@ public static class BonusNames
 				var first = sections.GetValueOrDefault( "SIGNA" ) ?? "";
 				var second = sections.GetValueOrDefault( "SIGNB" ) ?? "";
 				if ( first.Length > 0 || second.Length > 0 )
-					return (first, second);
+					return (StripTrailingDashes( Truncate( first ) ), Truncate( second ));
 			}
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
@@ -646,6 +654,12 @@ public static class BonusNames
 		}
 		return null;
 	}
+
+	private static string Truncate( string line ) => line.Length > SignLineCharacters ? line[..SignLineCharacters] : line;
+
+	/// <summary>A sign's line 1 as the original's reader returns it: a trailing "--" (two hyphens, on a line of at least two characters) is dropped.</summary>
+	// [BIN:TPW-EXE:0x004E2860 sign line 1] when the line is longer than one character and ends in two '-' (0x2D), it is copied without them
+	public static string StripTrailingDashes( string line ) => line.Length > 1 && line.EndsWith( "--", StringComparison.Ordinal ) ? line[..^2] : line;
 
 	/// <summary>Sections of a bonus text file: a section name line followed by its text line(s) up to a blank line.</summary>
 	public static IReadOnlyDictionary<string, string> Parse( byte[] bytes )

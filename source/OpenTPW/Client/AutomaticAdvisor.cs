@@ -11,7 +11,8 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class AutomaticAdvisor : IDisposable
 {
-	// [APPROX:ADVISOR-017] the clock starts at 0 when the automatic advisor is created (the original adds an offset word, +0x18 of its clock, whose writer is not traced), is sampled once per frame and stands still while the pause menu is open (the original's other pause callers are not mapped) — evidence needed: the clock offset writer and the screens that call 0x10110518
+	// [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300
+	// [APPROX:ADVISOR-017] the clock starts at 0 when the automatic advisor is created, is sampled once per frame and stands still while the pause menu is open — evidence needed: carrying the saved clock through an original save import (0x415140) and which screen each pause caller is (0x46B600, 0x47F020, 0x48C830, 0x49EFB0, 0x49F280, 0x4A3A30, 0x4A9380, 0x5F0B40)
 	private readonly PausableClock clock;
 	// Tests substitute a controllable speech state for the presentation (see the internal constructor).
 	private readonly Func<bool>? speechActive;
@@ -88,19 +89,21 @@ internal sealed class AutomaticAdvisor : IDisposable
 		Raise( AdvisorGameEvent.LevelStarted );
 	}
 
-	// [APPROX:ADVISOR-018] The advisor is only drawn while a response plays and only inside a level; leaving the level stops its speech — evidence needed: the advisor's entry/exit animation and idle visibility
+	// [BIN:TPW-EXE:0x005996D0 stop path] "Kill advisor" (0x429D60) hides the model; the stop path has six callers, level exit among them
 	public void DetachLevel()
 	{
 		if ( park != null )
 			park.EventRaised -= OnParkEvent;
 		park = null;
 		level = null;
-		presentation?.Silence();
+		presentation?.Kill();
 	}
 
 	private void OnParkEvent( ParkEvent item )
 	{
-		// [APPROX:ADVISOR-020] The economy's bankruptcy (six months in the red) and park open/close transitions stand in for the original CMsgEvent 2/3/4 producers (0x100CC464, 0x10108FD4, 0x10109118) — evidence needed: the producers' financial threshold and transition preconditions
+		// [BIN:TPW-EXE:0x004D0370 bankruptcy event] at the bank's month-end message (type 0xC via 0x4D02D0): balance < 0, previous balance (+0x11C) < 0 and ((now − turn entered red +0x120) × rate / 4) × 10^7 / 2.592·10^13 > 5 post event 2 every month while that holds; it does not close the park
+		// [BIN:TPW-EXE:0x00519EF0 open/close events] events 3/4 are posted on every press of the open/close button (control 0x4F3B1), also when the state does not change
+		// [APPROX:ADVISOR-020] The economy's bankruptcy (six months in the red) and park open/close transitions stand in for the original's event 2/3/4 producers, which post event 2 every month the red-time condition holds and events 3/4 on every button press — evidence needed: the economy's turn-entered-red and rate terms (ParkEconomy belongs to the economy work) and the button's repeat behaviour in OpenTPW
 		switch ( item.Kind )
 		{
 			case ParkEventKind.Bankrupt:
@@ -132,10 +135,11 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C)
 		if ( !GameOptions.Current.Advisor )
 		{
-			presentation?.Silence();
+			presentation?.Kill();
 			Controller.Update( () => AdvisorClock, () => GameTick, _ => 0u );
 			return;
 		}
+		presentation?.Update();
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
 	}
 
@@ -145,14 +149,15 @@ internal sealed class AutomaticAdvisor : IDisposable
 			return null;
 		try
 		{
-			presentation ??= new Advisor();
+			presentation ??= new Advisor( () => AdvisorClock );
 			if ( !presentation.SayResponse( responseId, level.LevelName, GameLanguage.IsSelected ? GameLanguage.Current : null ) )
 			{
 				Log.Warning( $"Advisor response {responseId} is not in {AdvisorResponses.RelativePath}." );
 				return null;
 			}
-			// [APPROX:ADVISOR-016] Returned span = speech length + 200 + 300 (the animation budget from audio length) + 1000; the original returns sequence + ending-clip duration + 1000 — evidence needed: decoded advisor sequence and ending-clip durations
-			return checked((uint)presentation.Duration.TotalMilliseconds + 200 + 300 + 1000);
+			// [BIN:TPW-EXE:0x005994AC response player return] the span is the sequence sum + 1000 + the length of clip 15 (a generated sequence already ends with clip 15, so it counts twice); the clip length is trailer word 2 × 1000 / 30, unsigned (0x474070), from the level advisor if loaded, else the global one (0x5989C0)
+			// [APPROX:ADVISOR-016] A fixed-sequence response (60 of 610) and a game without advisor clip archives return speech length + 200 + 300 + 1000 — evidence needed: the fixed sequences of table 0x76DC18 (0x50-byte rows; their clips and lengths)
+			return presentation.ResponseSpanMilliseconds;
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException or NotSupportedException or OverflowException )
 		{
@@ -228,9 +233,10 @@ internal sealed class AutomaticAdvisor : IDisposable
 		clock.RestoreMilliseconds( snapshot.AdvisorClockMilliseconds );
 	}
 
-	/// <summary>World pass: renders the speaking advisor into its own image (see <see cref="Draw"/>).</summary>
+	/// <summary>World pass: renders the shown advisor into its own image (see <see cref="Draw"/>).</summary>
+	// [APPROX:ADVISOR-018] The model is drawn from the response request to the end of its span (the clips are not drawn), where the original keeps it shown until the next Kill advisor — evidence needed: whether the clip-15 end (0x4735D0) hides the model
 	public void Render() =>
-		Image = presentation is { IsSpeaking: true } ? presentation.RenderImage( Screen.PixelSize ) : null;
+		Image = presentation is { IsDrawn: true } ? presentation.RenderImage( Screen.PixelSize ) : null;
 
 	/// <summary>
 	/// Draws the advisor image at its <see cref="Advisor.BoxRectangle"/> after the park HUD: the original draws the

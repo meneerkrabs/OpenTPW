@@ -444,7 +444,7 @@ public sealed partial class ParkHud
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
-			(UIStrings.ExitToLobby, host.ExitToLobby),
+			(UIStrings.ExitToLobby, () => { if ( !menu.IsRemoved && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};

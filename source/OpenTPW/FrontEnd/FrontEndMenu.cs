@@ -21,6 +21,8 @@ public sealed class FrontEndActions
 	/// <summary>Lightweight own-save availability for the selected theme; assets are checked only on actual resume.</summary>
 	public Func<string, ParkContinueEntry?> ContinueEntry { get; init; } = _ => null;
 	public Action<ParkContinueEntry>? ContinuePark { get; init; }
+	internal Func<string, AutomaticParkContinueEntry?> AutomaticEntry { get; init; } = _ => null;
+	internal Action<AutomaticParkContinueEntry>? ContinueAutomatic { get; init; }
 	public Action Quit { get; init; } = () => { };
 	public Func<UiScreenStack, Action, UiScreen>? CreateOptions { get; init; }
 	/// <summary>Called when the selected island changes (moves the lobby camera).</summary>

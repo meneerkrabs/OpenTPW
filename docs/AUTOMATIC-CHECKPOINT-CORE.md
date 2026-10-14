@@ -1,8 +1,8 @@
-# Automatic checkpoint core — application wiring pending
+# Automatic checkpoint core
 
-This isolated core does not install automatic saving, a lobby choice or an exit
-handler. Shared GameFlow, menu and progress-adapter wiring remains a separate
-reviewed slice. No existing manual, New, Continue, Quit or TPI route changes here.
+This core alone installs no application route. The separately reviewed
+[application wiring](AUTOMATIC-CHECKPOINT-INGRESS.md) owns normal exit and explicit
+automatic continuation. The core does not alter manual, New, Quit or TPI policy.
 
 `AutomaticThemeContinuation` owns only the generated
 `opentpw-{canonicalTPWTheme}-automatic-world.json` slot in a caller's save
@@ -46,12 +46,12 @@ propagates with that marker and cannot be retried as a pre-write rollback;
 committed before a failed checkpoint stays committed. This is not a two-file
 transaction, cross-process CAS, file lock or browser/OS-close durability claim.
 
-Future queued exit wiring must flush progress, capture/write immediately before
+Queued exit wiring must flush progress, capture/write immediately before
 retirement, catch only pre-retirement failures on the current HUD, and offer fresh
 retry or cancel-to-stay. Unsupported live loops/controllers may block capture
 indefinitely; no force-stop, discard, weakened snapshot or hidden New fallback is
 provided. Read-only visits, inspection, sandbox and TPI remain excluded by the
-future caller and current mode/edition guards. Ordinary manual continuation and
+application caller and current mode/edition guards. Ordinary manual continuation and
 New keep their existing behavior.
 
 Synthetic core controls run the actual own codec/atomic writer, semantic read
@@ -69,4 +69,4 @@ boundary, reject an incorrect flush receipt before capture, and retain a
 legitimate progress write when the current namespace changes during flush without
 writing an automatic checkpoint or retiring the old owner. Removing the receipt
 comparison makes the dedicated control fail. These are CPU core controls; they
-do not establish the pending application exit or menu wiring.
+do not establish the application renderer/lobby lifecycle.

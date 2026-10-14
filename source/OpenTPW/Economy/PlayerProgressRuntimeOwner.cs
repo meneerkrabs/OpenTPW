@@ -14,6 +14,7 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	public PlayerTicketLedger Ledger { get; }
 	public bool Dirty { get; private set; }
 	public string? Error { get; private set; }
+	internal string CommittedDigest => digest;
 	private bool Eligible => !disposed && active() && Ledger.Mode == ParkGameMode.FullSimulation &&
 		runtime.Start.Kind == ParkStartKind.FullSimulation && runtime.Economy.Mode == ParkGameMode.FullSimulation && runtime.Economy.Settings.CanEarnTickets;
 

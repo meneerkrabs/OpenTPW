@@ -1276,7 +1276,8 @@ internal sealed class M3GateRun
 	/// <summary>
 	/// Loop period P: admission slice A (ends at CRIT_UNLOCK, which clears the budget at 0xaf5e8), release slice B (sets
 	/// the WAIT and yields, 0xb06f8..0xb0708), then the slices until the WAIT resumes at now ≥ set + trunc(operand / speed)
-	/// (0xb067c), one per park turn; script speed 1 (speed bias 50, BOARD-plan A4). Bouncy.RSE: 1 + ⌈500 / 248⌉ = 4.
+	/// (0xb067c), one per park turn. The caller passes the WAIT already divided by the script speed (0.5 + bias / 100):
+	/// at bias 50 Bouncy.RSE gives 1 + ⌈500 / 248⌉ = 4; jungle Bouncy's InitSpeed 60 gives 1 + ⌈454 / 248⌉ = 3.
 	/// </summary>
 	internal static long BounceLoopPeriodTurns( int waitMilliseconds ) => 1 + (waitMilliseconds + ParkCalendar.TurnMilliseconds - 1) / ParkCalendar.TurnMilliseconds;
 
@@ -1462,7 +1463,7 @@ internal sealed class M3GateRun
 			reason = $"{pin.Name}: no WAIT literal at word {pin.WaitWord} or BOUNCE at word {pin.BounceWord}";
 			return null;
 		}
-		var period = BounceLoopPeriodTurns( wait.Value );
+		var period = BounceLoopPeriodTurns( RideAnimationTiming.TriggerDelay( wait.Value, item.Runtime.Script!.ScriptSpeed ) );
 		// WALK-plan W3: the entrance cell E, the front cell Q and the next queue cell B lie in a line (E is Q's neighbour
 		// towards the ride). W4: the ride's EntryCellStandPos is (0.5, 0.5).
 		var front = visitors.QueueCells[0];

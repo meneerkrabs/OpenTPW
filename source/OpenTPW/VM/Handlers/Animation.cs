@@ -179,7 +179,7 @@ public static partial class OpcodeHandlers
 				// [BIN:TPW-EXE:0x5535c7 TRIGWAITANIM compare] Without an object both wait handlers (0x5535c7..0x5535d4 and 0x552cd3) compare the out operand's raw code word + 1 with the token. The loader 0x5587f0 stores code raw and operands decode as variable when (word & 0xff000000) == 0x40000000, else as the sign-extended low 16 bits: a literal word 0x0000vvvv resumes once v equals the triggered AnimID, a variable word never matches (the Mac rule's tag 0xC0 is the same never-equal case).
 				var matched = vm.Effects is IRideAnimationQuery query && query.TryGetAnimationId( vm, channel, out var animationId )
 					? animationId + 1 == vm.TriggerWaitToken
-					: !duration.IsVariable && duration.Raw + 1 == vm.TriggerWaitToken;
+					: duration.Kind == RideScriptOperandKind.Literal && duration.Raw + 1 == vm.TriggerWaitToken;
 				if ( !matched )
 				{
 					vm.RepeatInstruction();

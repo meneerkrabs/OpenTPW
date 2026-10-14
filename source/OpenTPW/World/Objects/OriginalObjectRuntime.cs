@@ -551,7 +551,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
-			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null );
+			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null, call.VM.SpeedBias );
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			if ( screamChain != null )
 				ownedScreams.Add( screamChain );
@@ -565,7 +565,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.SINGLESCREAM )
 		{
-			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null );
+			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null, call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 		if ( call.Opcode == Opcode.EVENT )

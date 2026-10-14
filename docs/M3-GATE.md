@@ -218,12 +218,12 @@ DUR ≤ 30 s. Every term is read at run time:
 | --- | --- | --- |
 | T | 248 ms | `ParkCalendar.TurnMilliseconds` |
 | CAP, DUR | 5, 30 s | the script's `VAR_CAPACITY`, `VAR_DURATION` |
-| P (loop period) | 1 + ⌈500 / 248⌉ = **4** | the operand of the loop WAIT, read from the script (speed 1, BOARD-plan A4) |
+| P (loop period) | 1 + ⌈454 / 248⌉ = **3** | the operand of the loop WAIT, read from the script, divided by the script speed as WAIT does (0xb0658): jungle Bouncy's `InitSpeed` 60 gives 0.5 + 60/100 = 1.1, so WAIT 500 lasts 454 ms (Rides register round, October 14; at speed 1 it was 4) |
 | R (slot hold) | **121** | the UNBOUNCE rule: polls P·j + 1 turns after the BOUNCE; free once deadline < now and (now − start) mod 1000 < 200. For 8 ≤ DUR ≤ 30 this is 4·DUR + 1; for DUR ≤ 7 it is 29 turns, so the gate uses the rule, not the closed form |
-| H₀ | 1 + 3 + 11 + 1 + 1 + P = **21** | removal, move-up wait and move, one interlude, call, notice, next admission slice (BOARD-plan §7.1; `GuestSimulation` constants) |
+| H₀ | 1 + 3 + 11 + 1 + 1 + P = **20** | removal, move-up wait and move, one interlude, call, notice, next admission slice (BOARD-plan §7.1; `GuestSimulation` constants) |
 | w | **20** | the original's state-13 walk from slot 0 to the stand point, from its traced steering ([WALK-plan.md](reverse/WALK-plan.md) §9, `tools/ppc-analysis/lanes/walk/walk_evidence.py`): 12 with slot 0 at the entrance edge, 20 with the slot axis reversed; the link compass is not pinned, so the larger |
 | w₂ | **15** | the original's state-12 move-up from slots 1–3 to slot 0 (WALK-plan §9) |
-| H | 21 + 20 + 15 = **56** | H₀ + w + w₂ |
+| H | 20 + 20 + 15 = **55** | H₀ + w + w₂ |
 | C | **9** per queue cell | one queue walk across k cells to a slot takes at most k × C + w₂ updates: the bounded enumeration of OpenTPW's port of the traced step (WALK-plan §15), `[APPROX:GATE-006]` |
 | J(p) | (N − cell of p) × 9 + 15 | the join walk from the join cell to the slot of position p: **69** turns at p = 0 for N = 6, 24 at p = 20 |
 

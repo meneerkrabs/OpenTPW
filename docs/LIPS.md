@@ -197,6 +197,8 @@ header validation and before format continuity; a complete rate/channel/layer/
 emphasis change remains unsupported, and malformed/unsupported trailing headers
 are still refused. `MpegFrameCompletionBoundaryTests` covers these boundaries in
 synchronous and cooperative decoding with synthetic Layer I/LSF tails.
+
+Independent controls also retain a nonzero, CRC-protected, emphasized two-frame prefix when a supported incomplete frame precedes later bytes. All remaining bytes stay trailing; the decoder does not resynchronize past the partial frame. First-partial input yields no decoded frame/metadata, short final header fragments request no extra cooperative batch, and complete format changes or malformed/unsupported four-byte headers still refuse. The selected WAV exporter keeps its stricter trailing-byte rule and refuses a supported partial tail before creating an output directory. These are synthetic host decoder boundaries, not original-player recovery parity.
 The earlier Layer I switch fixture changed its header to advertise 208 bytes but
 kept only 136 bytes; it now uses a complete Layer II frame for the unchanged refusal
 assertion, while the former 136-byte clone has an explicit partial-tail regression.

@@ -14,8 +14,8 @@ public sealed record Mp2Audio( int SampleRate, int Channels, short[] Samples, in
 /// Clean-room MPEG Audio decoder for TPW raw SDT frame streams: MPEG-1/2 Layer I
 /// and MPEG-1/2 Layer II, using the shared 32-band polyphase synthesis filterbank.
 /// Layer I accepts mono, stereo, dual-channel and intensity joint stereo. Layer II
-/// accepts mono, stereo and dual channel with their version-specific allocation tables.
-/// Layer II joint stereo, free format, Layer III and MPEG-2.5 are rejected. CRC check words are
+/// accepts mono, stereo and dual channel, plus MPEG-1 intensity joint stereo.
+/// MPEG-2 Layer II joint stereo, free format, Layer III and MPEG-2.5 are rejected. CRC check words are
 /// verified when present (mismatches are counted, not concealed); a nonzero emphasis
 /// indication is applied as a de-emphasis filter after synthesis. See docs/LIPS.md.
 /// </summary>
@@ -189,23 +189,27 @@ public static partial class Mp2Decoder
 	}
 
 	/// <summary>
-	/// Layer I retains its existing 128/256-bit coverage. For supported nonjoint Layer II,
+	/// Layer I retains its existing 128/256-bit coverage. For supported Layer II,
 	/// ISO/IEC 11172-3 B.5 protects allocation plus transmitted scfsi (2.4.1.6: only
 	/// nonzero allocations have scfsi). Use the frame's version-specific table and add
 	/// two bits for each allocated channel/subband, excluding scalefactors and samples.
+	/// Joint bands transmit one allocation but retain both channels' scfsi.
 	/// </summary>
 	private static int ProtectedBits( ReadOnlySpan<byte> frame, Header header )
 	{
 		if ( header.Layer == 1 )
 			return 128 * header.Channels;
 		var bits = new Bits( frame, 48 );
+		var table = LayerTwoAllocation( header );
+		var bound = header.Mode == 1 ? Math.Min( (header.ModeExtension + 1) * 4, table.Sum( row => row.Count ) ) : 32;
 		var count = 0;
-		foreach ( var row in LayerTwoAllocation( header ) )
-			for ( var subband = 0; subband < row.Count; subband++ )
-				for ( var channel = 0; channel < header.Channels; channel++ )
+		var band = 0;
+		foreach ( var row in table )
+			for ( var subband = 0; subband < row.Count; subband++, band++ )
+				for ( var channel = 0; channel < (band < bound ? header.Channels : 1); channel++ )
 				{
 					count += row.Bits;
-					if ( bits.Read( row.Bits ) != 0 ) count += 2;
+					if ( bits.Read( row.Bits ) != 0 ) count += band < bound ? 2 : 2 * header.Channels;
 				}
 		return count;
 	}
@@ -273,7 +277,7 @@ public static partial class Mp2Decoder
 				: version == 3 ? Mpeg1LayerTwoBitrates[bitrateIndex] : Mpeg2Bitrates[bitrateIndex];
 			var sampleRate = Mpeg2SampleRates[rateIndex] * (version == 3 ? 2 : 1);
 			var mode = (int)(word >> 6) & 3;
-			if ( mode == 1 && layer == 2 )
+			if ( mode == 1 && layer == 2 && version != 3 )
 				throw new NotSupportedException( "Joint-stereo MPEG audio is not supported." );
 			if ( layer == 2 && version == 3 && (mode == 3 ? bitrate > 192 : bitrate is 32 or 48 or 56 or 80) )
 				throw new InvalidDataException( "MPEG-1 Layer II bitrate is not allowed for its channel mode." );
@@ -399,13 +403,17 @@ public static partial class Mp2Decoder
 		var channels = header.Channels;
 		var allocationTable = LayerTwoAllocation( header );
 		var subbandLimit = allocationTable.Sum( row => row.Count );
+		var bound = header.Mode == 1 ? Math.Min( (header.ModeExtension + 1) * 4, subbandLimit ) : subbandLimit;
 
 		var classes = new int[2, 32];
 		var subband = 0;
 		foreach ( var row in allocationTable )
 			for ( var count = 0; count < row.Count; count++, subband++ )
-				for ( var channel = 0; channel < channels; channel++ )
+			{
+				for ( var channel = 0; channel < (subband < bound ? channels : 1); channel++ )
 					classes[channel, subband] = row.Classes[bits.Read( row.Bits )];
+				if ( channels == 2 && subband >= bound ) classes[1, subband] = classes[0, subband];
+			}
 
 		var selection = new int[2, 32];
 		for ( subband = 0; subband < subbandLimit; subband++ )
@@ -443,7 +451,7 @@ public static partial class Mp2Decoder
 			var part = granule / 4;
 			for ( subband = 0; subband < subbandLimit; subband++ )
 			{
-				for ( var channel = 0; channel < channels; channel++ )
+				for ( var channel = 0; channel < (subband < bound ? channels : 1); channel++ )
 				{
 					var quantClass = classes[channel, subband];
 					if ( quantClass == 0 )
@@ -467,7 +475,11 @@ public static partial class Mp2Decoder
 							codes[index] = bits.Read( width );
 					}
 					for ( var index = 0; index < 3; index++ )
+					{
 						samples[(channel * 3 + index) * 32 + subband] = (2 * codes[index] + 1 - levels) / (float)levels * factors[channel, subband, part];
+						if ( channels == 2 && subband >= bound )
+							samples[(3 + index) * 32 + subband] = (2 * codes[index] + 1 - levels) / (float)levels * factors[1, subband, part];
+					}
 				}
 			}
 			for ( var index = 0; index < 3; index++ )

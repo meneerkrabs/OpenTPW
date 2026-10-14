@@ -106,7 +106,7 @@ Geometry, cross-edition equivalence and device timing remain separate gates.
 
 The speech banks are MPEG-2 (LSF) Layer II, 22,050 Hz mono, 48 kbps (640 of 641
 global entries; `z_error` is Layer I). Music banks are LSF Layer II stereo.
-`Mp2Decoder` now dispatches MPEG-1/2 Layer I and nonjoint Layer II from the
+`Mp2Decoder` now dispatches MPEG-1/2 Layer I and Layer II (MPEG-1 joint included) from the
 actual frame header, including sound effects whose bank-member suffix is still
 `.mp2`. The Layer I addition is in `Mp2Decoder.Layer1.cs`; both layers share the
 existing synthesis/window and signed 16-bit PCM output. Its synthesis window is
@@ -120,7 +120,7 @@ Verification: all 965 corpus Layer II streams that ffmpeg also decodes (speech a
 stereo music; same-name duplicates and 1-frame clips ffmpeg rejects excluded) decode to the same length as ffmpeg's `mp2` decoder with a maximum difference of
 **1 LSB** (≈81 dB SNR on speech). Layer II now accepts MPEG-1 mono/stereo/dual
 through standard allocation tables (the separate synthetic verification below),
-and still rejects joint stereo;
+and MPEG-1 intensity joint stereo (the follow-up below); MPEG-2 Layer II joint remains refused;
 Layer I accepts MPEG-1/2 mono, stereo, dual-channel and intensity joint stereo.
 Free format, Layer III and MPEG-2.5 remain unsupported. CRC check words are
 verified when protection_bit is 0 (mismatches are counted, not concealed); a
@@ -211,7 +211,7 @@ from [ISO/IEC 11172-3](https://previewnorm.com/iso/ISO%20IEC%2011172-3-1993%20PD
 §2.4.2.3 and Annex B.2a-d. The table is selected per frame from per-channel bitrate
 and sample rate. Low-table code15 uses 32767 levels and 15 bits; no library/table
 code was vendored. Header-derived SDT metadata and the existing selected WAV
-export inherit this support. Layer II joint, free format, MPEG-2.5 and Layer III
+export inherit this support. MPEG-2 Layer II joint, free format, MPEG-2.5 and Layer III
 remain unsupported; Layer I and the existing LSF maps stay unchanged.
 
 Only header/profile selection and Layer II table limits changed. SCFSI, grouping,
@@ -252,8 +252,9 @@ independent oracle for coverage. The original corpus inventory below was not
 rerun for this correction.
 
 Layer I's existing 128/256-bit coverage—including its joint-mode behavior—is
-unchanged and is not newly qualified here. Layer II joint stereo remains
-unsupported; MPEG-1 nonjoint frames use the same actual-field CRC rule below. The stored checkword, CrcChecks/CrcFailures and
+unchanged and is not newly qualified here. This correction covered nonjoint Layer II;
+the later MPEG-1 joint follow-up also counts actual transmitted fields. MPEG-1
+nonjoint frames use the same actual-field CRC rule below. The stored checkword, CrcChecks/CrcFailures and
 count-and-continue mismatch policy (AUDIO-014) remain; no muting, playback or save
 policy changes. The WAV exporter still refuses failed checks and now accepts
 correctly protected Layer II entries through the existing decoder.
@@ -526,3 +527,27 @@ The codec's CRC mismatch policy and de-emphasis realization are documented
 approximations (AUDIO-013/014): no shipped frame exercises either path, so the
 original player's concealment behaviour and filter realization remain unknown.
 Capture comparison remains necessary before claiming original fidelity.
+
+### MPEG-1 Layer II intensity joint stereo
+
+The version3 Layer II mode1 header now routes through the existing A/B/C/D tables.
+The effective shared-region boundary is `min((mode_extension+1)*4,sblimit)`.
+Allocation and sample triplets above that boundary are transmitted once; SCFSI
+and scalefactors still belong to each channel. The existing requantized sample is
+scaled separately for left/right and fed to the unchanged synthesis/rounding path.
+CRC includes the actual shared allocation once and both nonzero channel SCFSI
+fields. MPEG-2 LSF joint remains unsupported; no Layer I coverage policy changed.
+
+This follows [ISO/IEC11172-3](https://previewnorm.com/iso/ISO%20IEC%2011172-3-1993%20PDF.pdf)
+§2.4.1.6/2.4.2.3/2.4.3.3 and AnnexB.5; the effective boundary clamp is corroborated
+by [official FFmpeg Layer II source](https://www.ffmpeg.org/doxygen/9.0/mpegaudiodec__template_8c_source.html).
+Only numeric and field-order facts are used, with no vendor implementation copied.
+
+A dedicated independent field writer emits both channel factors and explicit
+protected fields; mathematical silence and independently encoded ordinary-stereo
+packets protect all boundaries, tables, shared/independent channels, ordered
+triplets, SCFSI patterns and CRC spans. Actual SDT metadata/WAV readback, source
+identity, strict output refusal and cooperative cancellation are also tested.
+The nonjoint231-vector/1LSB measurement above does not establish a joint reference
+envelope. Independent nonzero joint reference proof is a separate publication
+gate; no original assets, native player or full MPEG conformance are qualified.

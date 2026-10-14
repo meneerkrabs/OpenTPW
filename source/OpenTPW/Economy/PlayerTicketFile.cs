@@ -1,0 +1,104 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using OpenTPW.Online;
+
+namespace OpenTPW;
+
+/// <summary>Validated, atomic application-owned progress. Never reads or writes native gms.dat.</summary>
+internal static partial class PlayerTicketFile
+{
+	public const string FileName = "opentpw-player-progress.json";
+	public const int MaximumFileSize = 64 * 1024;
+	private const string FormatName = "opentpw-player-progress";
+	private static readonly JsonSerializerOptions Options = new()
+	{
+		UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+		AllowDuplicateProperties = false,
+		MaxDepth = 8,
+		Converters = { new ExactNameEnumConverter<ParkGameMode>(), new ExactNameEnumConverter<GoldenTicketKind>() }
+	};
+
+	// Non-Flags fields require one canonical name, not the built-in converter's comma-combined aliases.
+	private sealed class ExactNameEnumConverter<T> : JsonConverter<T> where T : struct, Enum
+	{
+		public override T Read( ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options )
+		{
+			if ( reader.TokenType != JsonTokenType.String ) throw new JsonException( "Expected one exact enum name." );
+			var name = reader.GetString();
+			if ( !Enum.TryParse<T>( name, out var value ) || Enum.GetName( value ) != name ) throw new JsonException( "Expected one exact enum name." );
+			return value;
+		}
+		public override void Write( Utf8JsonWriter writer, T value, JsonSerializerOptions options )
+			=> writer.WriteStringValue( Enum.GetName( value ) ?? throw new JsonException( "Unknown enum value." ) );
+	}
+
+	private static readonly ProgressJsonContext Context = new( Options );
+
+	[JsonSerializable( typeof( Data ) )]
+	private partial class ProgressJsonContext : JsonSerializerContext;
+
+	private sealed record Data
+	{
+		public required string Format { get; init; }
+		public required int Version { get; init; }
+		public required ParkGameMode Mode { get; init; }
+		public required int ExtraKeys { get; init; }
+		public required int SpentTickets { get; init; }
+		public required List<TicketData> Earned { get; init; }
+	}
+	private sealed record TicketData
+	{
+		public required string? Theme { get; init; }
+		public required GoldenTicketKind Kind { get; init; }
+	}
+
+	public static byte[] Serialize( PlayerTicketSnapshot snapshot )
+	{
+		var copy = PlayerTicketLedger.Restore( snapshot ).Capture();
+		return JsonSerializer.SerializeToUtf8Bytes( new Data { Format = FormatName, Version = 1, Mode = copy.Mode, ExtraKeys = copy.ExtraKeys,
+			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind } ).ToList() }, Context.Data );
+	}
+
+	public static PlayerTicketLedger Deserialize( ReadOnlySpan<byte> bytes )
+	{
+		if ( bytes.Length > MaximumFileSize ) throw new InvalidDataException( "Own player progress exceeds the size limit." );
+		Data? data;
+		try { data = JsonSerializer.Deserialize( bytes, Context.Data ); }
+		catch ( JsonException exception ) { throw new InvalidDataException( "Malformed own player progress.", exception ); }
+		if ( data == null || data.Format != FormatName || data.Version != 1 || data.Earned == null || data.Earned.Count > PlayerTicketLedger.MaximumIdentities || data.Earned.Any( item => item == null ) )
+			throw new InvalidDataException( "Invalid own player progress envelope." );
+		return PlayerTicketLedger.Restore( new( data.Mode, data.ExtraKeys, data.SpentTickets,
+			data.Earned.Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray() ) );
+	}
+
+	public static void Save( string path, PlayerTicketSnapshot snapshot )
+	{
+		var destination = OwnPath( path );
+		var bytes = Serialize( snapshot ); // Complete validation before touching destination or temporary files.
+		AtomicFile.Write( destination, bytes );
+	}
+
+	/// <summary>Absence is unknown history, distinct from an explicitly created empty own profile.</summary>
+	public static PlayerTicketLedger? LoadIfPresent( string path )
+	{
+		var destination = OwnPath( path );
+		try
+		{
+			using var stream = new FileStream( destination, FileMode.Open, FileAccess.Read, FileShare.Read );
+			if ( stream.Length > MaximumFileSize ) throw new InvalidDataException( "Own player progress exceeds the size limit." );
+			var bytes = new byte[stream.Length];
+			stream.ReadExactly( bytes );
+			return Deserialize( bytes );
+		}
+		catch ( FileNotFoundException ) { return null; }
+		catch ( DirectoryNotFoundException ) { return null; }
+	}
+
+	private static string OwnPath( string path )
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace( path );
+		if ( !Path.GetExtension( path ).Equals( ".json", StringComparison.OrdinalIgnoreCase ) )
+			throw new InvalidDataException( "Own player progress requires a JSON destination; native profiles are unsupported." );
+		return Path.GetFullPath( path );
+	}
+}

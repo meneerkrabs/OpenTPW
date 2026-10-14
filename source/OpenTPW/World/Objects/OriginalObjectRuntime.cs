@@ -87,9 +87,9 @@ public sealed partial class OriginalObjectRuntime
 				Script.SpeedBias = speed;
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
 			// [BIN:TPW-EXE:0x441970 guest predicate twin] the controller exists, +0x140 == 0, +0x3C bit 0 set and bit 1 clear, and it is not the coaster being edited (0x790fec); callers: 0x4dd920 counts test (Mac 0xdc834, X15), 0x4df290 reopen guard (0xde654), 0x4ffff0 queue state 11 (0xed244: a coaster (track type 3, 0x4e2b50) failing it gets 0x50be80(13), unlink 0x4ddd20, dismissal 0x5012f0, state 6); the open routine 0x4df390 logs "Opening non-openable ride" up to 5 times and opens anyway
-			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the +0x140 == 0 test and the not-being-edited exclusion are not modelled (OpenTPW has no such state: an edit un-completes the track) and the state 11 thought-13 exit (GUESTS.md) belongs to the guest and queue owner
+			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them) or crosses itself (the +0x140 == 0 test, CoasterRide.AcceptsGuests); the not-being-edited exclusion is not modelled (OpenTPW has no such state: an edit un-completes the track) and the state 11 thought-13 exit (GUESTS.md) belongs to the guest and queue owner
 			// A water ride takes guests only while its circuit is valid (the original's counts-test reads the track word the walk writes, TRACK-005).
-			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) && (Bump?.IsTrackValid ?? true) );
+			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.AcceptsGuests ?? true) && (Bump?.IsTrackValid ?? true) );
 		}
 	}
 

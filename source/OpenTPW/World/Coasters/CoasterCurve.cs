@@ -330,4 +330,29 @@ public static class CoasterTrig
 	public static float Entry( int index ) => Table[index & (Size - 1)];
 	public static float Sin( float angle ) => Table[(int)(angle * Scale) & (Size - 1)];
 	public static float Cos( float angle ) => Table[(int)((HalfPi + angle) * Scale) & (Size - 1)];
+
+	// ---- The PC runtime table (tp.exe 0x4708d0) -------------------------------------------------------
+
+	/// <summary>The scale of the PC table, <c>0x7b095c</c> = f32(4096 · f32(1/2π)), the constant 0x6feb9c being f32(0.15915494).</summary>
+	// [BIN:TPW-EXE:0x4708e5 table scale] 0x4708d0(4096): mask 0x7b0960 = 4095, count 0x7b4968 = 4096, scale 0x7b095c = f32(4096 · [0x6feb9c]) with [0x6feb9c] = 0x3e22f983 = f32(1/2π)
+	public static readonly float PcScale = 4096f * 0.15915494f;
+	/// <summary>The PC table: T[k] = f32(fsin(k/4096 · f32(2π))), the product exact in extended precision (<c>0x47090f..0x47092d</c>, [0x6feba0] = 0x40c90fdb).</summary>
+	// [BIN:TPW-EXE:0x47090f table entries] T[k] = f32(fsin(k / 4096.0f · [0x6feba0])), the division and the product in x87 extended precision (both exact for k < 4096)
+	private static readonly float[] PcTable = Enumerable.Range( 0, Size ).Select( k => (float)Math.Sin( (k / 4096.0) * (double)6.2831855f ) ).ToArray();
+	/// <summary>−π/2 as single (<c>0x6fdf78</c>, <c>0x6fe040</c>), subtracted to turn a sine index into a cosine index.</summary>
+	private const float MinusHalfPi = -1.5707964f;
+
+	/// <summary>Entry <paramref name="index"/> of the PC table (masked like the lookups).</summary>
+	public static float PcEntry( int index ) => PcTable[index & (Size - 1)];
+
+	/// <summary>sin a with the index rounded to nearest even, the default <c>fistp</c> of the module's lookups (the swing, <c>0x43c7be</c>).</summary>
+	// [BIN:TPW-EXE:0x43c7be nearest index] index = fistp(f32(scale · a)) & mask under the default control word (round to nearest even); the Mac lookup truncates
+	public static float PcSin( float angle ) => PcTable[(int)MathF.Round( PcScale * angle ) & (Size - 1)];
+	/// <summary>cos a with the nearest index: the index of f32((a − (−π/2)) · scale), the difference carried unrounded (<c>0x43c7d0..0x43c7e5</c>).</summary>
+	public static float PcCos( float angle ) => PcTable[(int)MathF.Round( (float)(((double)angle - MinusHalfPi) * PcScale) ) & (Size - 1)];
+
+	/// <summary>sin a with the truncating index of the self-intersection pass, which runs with the rounding mode set to truncate (<c>0x439ac4</c>).</summary>
+	public static float PcSinTruncated( float angle ) => PcTable[(int)(angle * PcScale) & (Size - 1)];
+	/// <summary>cos a with the truncating index: the pass stores f32(a − (−π/2)) first, then f32(scale · that) (<c>0x43a33b..0x43a35b</c>).</summary>
+	public static float PcCosTruncated( float angle ) => PcTable[(int)(PcScale * (angle - MinusHalfPi)) & (Size - 1)];
 }

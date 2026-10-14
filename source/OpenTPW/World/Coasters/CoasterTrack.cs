@@ -251,7 +251,7 @@ public sealed class CoasterTrack
 		var link = CheckLink( pylon, (x, y), (previous.X, previous.Y), Before( position - 1 ), entrance: previous.IsStation );
 		if ( link != CoasterPlaceResult.Ok )
 			return link;
-		// [APPROX:COAST-004] the track is not tested against terrain or scenery (asTrackCollisionPoints, fCollisionPossibleRadius) — evidence needed: the track collision routine and its callers
+		// [BIN:TPW-EXE:0x439ab0 track collision] the original tests the track against itself only (CoasterCollision, run on every rebuild): no terrain or scenery query exists in 0x439ab0, 0x439c40 or 0x43a2b0, so a pylon placement is never refused for what stands under or beside the track
 		var stack = CheckStack( world, owner, x, y, loopMode, moving );
 		if ( stack != CoasterPlaceResult.Ok )
 			return stack;

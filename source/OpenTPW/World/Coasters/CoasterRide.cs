@@ -172,6 +172,12 @@ public sealed class CoasterRide
 	/// <summary>Self-intersecting places of the track (controller <c>+0x140</c>); the guests refuse the coaster while it is nonzero (0x441970).</summary>
 	public int IntersectionCount { get; private set; }
 	public bool IsOperational => Track.IsRunnable && samples.Length >= 3;
+	/// <summary>
+	/// The guest predicate <c>0x441970</c>: the coaster is complete and its track crosses itself nowhere (controller <c>+0x140 == 0</c>); guests do not
+	/// join or board a coaster that fails it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x441988 guest predicate] +0x140 must be 0 (the self-intersection count of 0x439c40), +0x3C bit 0 set (complete) and bit 1 clear (circuit not open), and the coaster is not the one being edited (0x790fec: OpenTPW's edits un-complete the track)
+	public bool AcceptsGuests => IsOperational && IntersectionCount == 0;
 	/// <summary>Raised after a track edit that changes the samples (built, reopened, deleted).</summary>
 	public event Action<CoasterRide>? TrackChanged;
 
@@ -234,6 +240,7 @@ public sealed class CoasterRide
 		Rating = result with { CountedSections = counted };
 		var tail = nodes.Count - 1;
 		var platform = PlatformStartSample( samples, tail );
+		IntersectionCount = CoasterCollision.Run( NodesForCollision( nodes, samples ), samples ).Count;
 		PlatformStart = PlatformStartCoordinate( samples, knots, tail, Spacing );
 		// [BIN:TPW-EXE:0x43c72f braking start] ctl+0x134 = (n − 1) − v_last/spacing in the original's frame, where the end node coincides with the platform start (the closing pair ends at the second node) so the brake zone is the stretch before the platform; OpenTPW's end node starts the closing pair toward the station node at the platform's far end, so the same zone ends at the end node's first sample
 		BrakingStart = BrakingStartFor( platform, samples[BrakingSpeedSample( samples, tail )].Speed, Spacing );
@@ -246,10 +253,33 @@ public sealed class CoasterRide
 		return result.Trains;
 	}
 
-	/// <summary>The first sample of the closing pair (the pair that starts at the end node): the sample count when there is none.</summary>
+	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each knot and the radius of its pylon control.</summary>
+	// [BIN:STP-PPC:0x100457A0 node sample index] node +252 = the truncated sampler coordinate when the walk reaches the node: the last sample before its knot, or the sample on the knot when its t is 0 (0x43a060 reads it as the node's first sample)
+	private List<CoasterCollision.Node> NodesForCollision( IReadOnlyList<CoasterNode> nodes, IReadOnlyList<CoasterSample> samples )
+	{
+		var result = new List<CoasterCollision.Node>( nodes.Count );
+		for ( var index = 0; index < nodes.Count; index++ )
+		{
+			var first = -1;
+			for ( var sample = 1; sample < samples.Count && index > 0; sample++ )
+			{
+				if ( samples[sample].Section == index )
+				{
+					first = sample;
+					break;
+				}
+			}
+			var at = index == 0 ? 0 : first < 0 ? (result.Count > 0 ? result[^1].SampleIndex : 0) : samples[first].T == 0 ? first : first - 1;
+			var node = nodes[index];
+			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : Definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless ) );
+		}
+		return result;
+	}
+
+	/// <summary>The first sample of the closing pair (the pair that starts at the end node): the sample count when there is none (a pair cannot start at sample 0, the first knot).</summary>
 	internal static int PlatformStartSample( IReadOnlyList<CoasterSample> samples, int tailSection )
 	{
-		for ( var index = 0; index < samples.Count; index++ )
+		for ( var index = 1; index < samples.Count; index++ )
 		{
 			if ( samples[index].Section == tailSection )
 				return index;
@@ -346,6 +376,7 @@ public sealed class CoasterRide
 			UnloadAll( train );
 		MoveAdmissionToLeaving();
 		trains.Clear();
+		IntersectionCount = 0;
 		samples = Array.Empty<CoasterSample>();
 		Spacing = 0;
 		Rating = null;

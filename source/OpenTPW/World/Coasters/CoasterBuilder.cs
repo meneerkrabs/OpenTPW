@@ -187,7 +187,7 @@ public sealed class CoasterBuilder
 	}
 
 	/// <summary>Reopens a completed track for editing (removes the station end nodes, opens the circuit); refused while riders are on board.</summary>
-	// [BIN:STP-PPC:0x10045EAC rider predicate] the guest predicate requires riders +320 == 0
+	// [BIN:STP-PPC:0x10045EAC reopen guard] the Mac predicate adds riders +320 == 0 (written by passenger removal 0x3d6f8..0x3d85c); the PC predicate 0x441970 reads controller +0x140 instead, which is the self-intersection count (its only writers are 0x439c40 and 0x43ad50), so the rider test is the Mac's reading and OpenTPW keeps it as its own edit guard (COAST-030)
 	public bool Reopen()
 	{
 		if ( !Track.IsComplete || Ride.RidersOnBoard != 0 )

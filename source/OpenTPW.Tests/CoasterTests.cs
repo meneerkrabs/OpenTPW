@@ -1015,6 +1015,23 @@ public class CoasterTests
 		Assert.AreEqual( (0, 1), (train.Riders, ride.LeavingCount), "power back: the train unloads on its arrival" );
 	}
 
+	/// <summary>The PC runtime table (tp.exe 0x4708d0): 4096 entries of f32(fsin(k/4096 · f32(2π))), scale f32(4096 · f32(1/2π)); the swing rounds the index to nearest, the intersection pass truncates it.</summary>
+	[TestMethod]
+	public void ThePcSineTableAndItsNearestAndTruncatedIndices()
+	{
+		Assert.AreEqual( 4096f * 0.15915494f, CoasterTrig.PcScale );
+		Assert.AreEqual( 0f, CoasterTrig.PcEntry( 0 ) );
+		Assert.AreEqual( 1f, CoasterTrig.PcEntry( 1024 ), 1e-7f );
+		Assert.AreEqual( (float)Math.Sin( (300 / 4096.0) * (double)6.2831855f ), CoasterTrig.PcEntry( 300 ), "T[k] = f32(sin(k/4096 · f32(2π)))" );
+		// An angle whose scaled index is 100.6: the swing's fistp rounds to 101, the pass's truncating one gives 100.
+		var angle = 100.6f / CoasterTrig.PcScale;
+		Assert.AreEqual( CoasterTrig.PcEntry( 101 ), CoasterTrig.PcSin( angle ), "round to nearest (0x43c7be)" );
+		Assert.AreEqual( CoasterTrig.PcEntry( 100 ), CoasterTrig.PcSinTruncated( angle ), "truncate (0x43a2b0 under the control word of 0x439ac4)" );
+		// The cosine is the sine of the angle plus π/2, the sum carried unrounded by the swing and stored as single by the pass.
+		Assert.AreEqual( CoasterTrig.PcEntry( (int)Math.Round( (angle + 1.5707964f) * (double)CoasterTrig.PcScale ) ), CoasterTrig.PcCos( angle ), 1e-6f );
+		Assert.AreEqual( CoasterTrig.PcSin( -0.3f ), CoasterTrig.PcEntry( (int)Math.Round( -0.3f * CoasterTrig.PcScale ) ), "negative angles wrap by the mask" );
+	}
+
 	/// <summary>The suspended swing (tp.exe 0x43c76c..0x43ca45): with zero sample angles the roll is the wrapped approach of π toward atan2(−X, Y) at rate min(|F + g|·fForceMultiplier, 1).</summary>
 	[TestMethod]
 	public void SuspendedSwingFollowsThePcRestatement()

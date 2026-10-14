@@ -23,6 +23,7 @@ internal sealed partial class GameFlow
 		public required bool Original { get; init; }
 		public ParkVisitInfo? Visit { get; init; }
 		public Action<Level>? Ready { get; init; }
+		public Action<Level>? BeforeEnter { get; init; }
 		// The load profile's sections of a park built in one go, open across the frames (time between them is left out).
 		public LoadProfile.Section StartSection { get; init; }
 		public LoadProfile.Section LevelSection { get; init; }
@@ -46,8 +47,9 @@ internal sealed partial class GameFlow
 	/// is set; <paramref name="ready"/> runs once the park is entered (at once when it is built in one go).
 	/// </summary>
 	private void StartLevel( string levelName, bool original, bool developerPanels, bool overFrames, ParkVisitInfo? visit = null,
-		ParkStartKind start = ParkStartKind.OriginalSaveReference, Action<Level>? ready = null )
+		ParkStartKind start = ParkStartKind.OriginalSaveReference, Action<Level>? ready = null, Action<Level>? beforeEnter = null )
 	{
+		RequireProgressSaved();
 		// A language chosen just before the park applies before it is built, as the tear-down of a park built in one go applies it;
 		// one whose files are still coming waits for that tear-down. (Only a language chosen inside the park being left can still be
 		// pending here; the front end applies its choice at once. That park's screens keep their strings for its last frames, and a
@@ -56,6 +58,24 @@ internal sealed partial class GameFlow
 			ApplyPendingLanguage();
 		if ( !overFrames || pendingLanguage != null )
 		{
+			if ( beforeEnter != null )
+			{
+				using var candidateScene = new EntityConstructionScope();
+				Level? candidate = null;
+				try
+				{
+					candidate = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
+					beforeEnter( candidate );
+					RequireProgressSaved();
+					candidateScene.Detach();
+					TearDown( applyPendingLanguage: false );
+					candidateScene.Activate();
+					var entered = EnterLevel( candidate, levelName, original, visit );
+					ready?.Invoke( entered );
+				}
+				catch { candidate?.Dispose(); throw; }
+				return;
+			}
 			var level = StartLevel( levelName, original, developerPanels, visit, start );
 			ready?.Invoke( level );
 			return;
@@ -71,7 +91,7 @@ internal sealed partial class GameFlow
 			scene.Pause();
 			parkBuild = new ParkBuild
 			{
-				Scene = scene, Level = level, LevelName = levelName, Original = original, Visit = visit, Ready = ready,
+				Scene = scene, Level = level, LevelName = levelName, Original = original, Visit = visit, Ready = ready, BeforeEnter = beforeEnter,
 				StartSection = startSection, LevelSection = levelSection,
 			};
 			LoadProfile.Pause();
@@ -96,11 +116,18 @@ internal sealed partial class GameFlow
 			while ( !build.Constructed && !OverBudget() )
 				build.Constructed = !build.Level.Step();
 		}
-		catch
+		catch ( Exception error )
 		{
-			// The live scene stays as it was; the half-built park and its entities and materials go.
+			// Only the guarded New request turns expected delayed construction refusal into its own dialog.
 			parkBuild = null;
+			if ( build.BeforeEnter != null ) build.Level.Dispose();
 			build.Scene.Dispose();
+			if ( build.BeforeEnter != null && ProgressFailure( error ) )
+			{
+				build.LevelSection.Dispose(); build.StartSection.Dispose();
+				ShowProgressFailure( error );
+				return;
+			}
 			throw;
 		}
 		// Entering (retiring the live scene, park audio, HUD, then the park's first update and draw) waits for a frame of its own
@@ -116,15 +143,24 @@ internal sealed partial class GameFlow
 		build.LevelSection.Dispose();
 		try
 		{
+			RequireProgressSaved();
+			build.BeforeEnter?.Invoke( build.Level );
 			build.Scene.Detach();
 			using ( LoadProfile.Measure( "tear-down" ) )
 				TearDown( applyPendingLanguage: false );
 			build.Scene.Activate();
 		}
-		catch
+		catch ( Exception error )
 		{
-			// As a resumed park's failed switch: the candidate goes and the scope is released (Dispose does nothing once activated).
+			// A profile precommit refusal occurs before the previous world is retired.
+			if ( build.BeforeEnter != null || error is PlayerProgressSaveException ) build.Level.Dispose();
 			build.Scene.Dispose();
+			if ( error is PlayerProgressSaveException || build.BeforeEnter != null && ProgressFailure( error ) )
+			{
+				build.StartSection.Dispose();
+				ShowProgressFailure( error );
+				return;
+			}
 			throw;
 		}
 		var level = EnterLevel( build.Level, build.LevelName, build.Original, build.Visit );

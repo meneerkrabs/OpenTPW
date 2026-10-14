@@ -984,7 +984,8 @@ research batch was included in this merge.
   and every car counts down the duration the script set with `BUMP 13`; at 0 each car hands its riders to the leaving list, and with nobody left the ride goes back to loading
   while the cars stay. Closing, breakdown and `BUMP 16` follow the traced routines. Cars wander between the buoys on the shared integer physics. The real script of all four
   rides board, run and release 16 guests over several cycles in `BumperCarAssetTests`. A save from before the controller restores the ride freshly and hands its riders to
-  the leaving list. TRACK-015 narrowed; TRACK-029 (no chase yet), 030 (arena centre) and 031 (cars not drawn, no effects) added.
+  the leaving list. The cars chase one another as traced (a random other car for 90 ticks), crash with the traced code 5 (silent in the jungle), throw sparks and run the first car's engine voice, and are
+drawn from the ride's own car meshes with their riders' heads; bumper state is saved and hashed only for parks with a bumper ride. TRACK-015 retired; TRACK-030 (arena centre) and 031 (look and sound ids) added.
 - **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
   advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
   request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),

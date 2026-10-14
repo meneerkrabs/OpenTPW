@@ -121,7 +121,7 @@ public class Mpeg1LayerTwoTests
 	public void InvalidGroupedTripletAndUnsupportedContractsStayExplicit()
 	{
 		var bad = Frame( bands: new Band( 0, 0, Codes: new[] { 3, 2, 2 } ) ); Assert.ThrowsException<InvalidDataException>( () => Mp2Decoder.Decode( bad.Data ) );
-		foreach ( var bits in new[] { (3, 2, 1, false), (3, 2, 0, true), (0, 2, 3, false), (3, 1, 3, false) } )
+		foreach ( var bits in new[] { (2, 2, 1, false), (3, 2, 0, true), (0, 2, 3, false), (3, 1, 3, false) } )
 		{
 			var frame = Frame().Data; var header = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian( frame ); header = (header & ~((3u << 19) | (3u << 17) | (3u << 6))) | ((uint)bits.Item1 << 19) | ((uint)bits.Item2 << 17) | ((uint)bits.Item3 << 6); if ( bits.Item4 ) header &= ~(15u << 12); System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian( frame, header );
 			Assert.ThrowsException<NotSupportedException>( () => Mp2Decoder.Decode( frame ) );

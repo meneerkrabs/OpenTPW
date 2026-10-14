@@ -161,7 +161,8 @@ public class OriginalSaveImportTests
 		var advisor = Line( "[APPROX:SAVE-010] Advisor controller values not imported:" );
 		foreach ( var value in new[] { "time signature ", "sound ", "raw words 0x", "current record (", "mRequestedLastTutorial 0x", "mMessagePlaying " } )
 			StringAssert.Contains( advisor, value );
-		StringAssert.Contains( Line( "[APPROX:SAVE-008] Not imported:" ), "last balance (mLastBalance" );
+		StringAssert.Contains( Line( "[APPROX:SAVE-008] Not imported:" ), "batch balance " );
+		StringAssert.Contains( Line( "Bank words imported:" ), "withdrawals enabled, last balance " );
 		StringAssert.Contains( Line( "[APPROX:SAVE-008] Loan offers' Available flags not imported:" ), "OpenTPW offers " );
 		var challenges = Line( "[APPROX:SAVE-005]" );
 		foreach ( var value in new[] { "current challenge ", "next event time ", "switch bytes ", "Value ", "ActualThing " } )
@@ -264,7 +265,8 @@ public class OriginalSaveImportTests
 		Assert.IsFalse( economy.AvailableLoans.Any( item => item.Index == 1 ), "a bought offer is taken" );
 		Assert.AreEqual( -500, economy.Balance );
 		Assert.IsTrue( import.ParkClosed );
-		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-008]" ) && line.Contains( "in the red" ) ) );
+		Assert.AreEqual( (true, -700L, 0L), (economy.WithdrawalsEnabled, economy.LastBalance, economy.TurnEnteredRed), "the bank words: the payload's last balance is the balance − 200" );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Bank words imported:", StringComparison.Ordinal ) && line.Contains( "months in the red" ) ) );
 
 		var repaid = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Apply( repaid, Park( settings, Bank( settings, bought: (2, settings.Loans[2].Months) ) ) ) ).Message, "fully repaid" );

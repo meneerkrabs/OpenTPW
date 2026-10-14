@@ -23,9 +23,9 @@ public class WeatherVisualTests
 		public bool Snow { get; set; }
 		public float BoltLifetimeSeconds { get; set; } = 2f;
 		public List<NVector3> Tops { get; } = new();
-		public IReadOnlyList<NVector3> TakeBoltTops()
+		public IReadOnlyList<WeatherStrike> TakeStrikes()
 		{
-			var taken = Tops.ToList();
+			var taken = Tops.Select( WeatherStrike.Below ).ToList();
 			Tops.Clear();
 			return taken;
 		}

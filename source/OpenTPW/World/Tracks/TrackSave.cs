@@ -9,7 +9,7 @@ internal sealed record TrackSectionSaveData( int Kind, bool NoBuoy, int X, int Y
 /// <summary>One saved boat or kart: every integer field of the vehicle record and the guests aboard; the trailing fields are the kart's drawn heading, yaw, animation, effect latch and last height (zero in water saves and in saves from before the kart rides).</summary>
 internal sealed record BumpVehicleSaveData( int Slot, int Flags, int Variant, int X, int Y, int VX, int VY, int VX0, int VY0, int Speed, int Heading, int Spin, int Roll,
 	int Radius, int AccelBonus, int TargetX, int TargetY, int JitterX, int JitterY, int TargetBuoy, int Laps, int BuoyCountdown, int Age, int ObjectIndex,
-	int WallHits, int WallWindow, int Sprays, List<int> Riders, int VisualHeading = 0, int YawRate = 0, int YawDelta = 0, int Animation = 0, int EffectRequest = 0, int EffectLatch = 0, float Height = 0, int ChaseTarget = -1, bool Engine = false );
+	int WallHits, int WallWindow, int Sprays, List<int> Riders, int VisualHeading = 0, int YawRate = 0, int YawDelta = 0, int Animation = 0, int EffectRequest = 0, int EffectLatch = 0, float Height = 0, int ChaseTarget = -1, bool Engine = false, bool Smoke = false );
 
 /// <summary>One saved controller joined to its station by attraction id: the scalars the script set, the waiting and leaving guests and the boats.</summary>
 internal sealed record BumpControllerSaveData( int AttractionId, int Type, int Laps, int Performance, int Phase, int State, long TickCount, double TickRemainder, bool WaterRunning,
@@ -57,7 +57,7 @@ internal static class TrackSave
 		controller.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment ) ).ToList(),
 		controller.Vehicles.Select( vehicle => new BumpVehicleSaveData( vehicle.Slot, vehicle.Flags, vehicle.Variant, vehicle.X, vehicle.Y, vehicle.VX, vehicle.VY, vehicle.VX0, vehicle.VY0,
 			vehicle.Speed, vehicle.Heading, vehicle.Spin, vehicle.Roll, vehicle.Radius, vehicle.AccelBonus, vehicle.TargetX, vehicle.TargetY, vehicle.JitterX, vehicle.JitterY,
-			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine ) ).ToList() );
+			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine, vehicle.Smoke ) ).ToList() );
 
 	/// <summary>Writes the saved cells into the (freshly restored) track layer; the map's type bytes were restored with the layout.</summary>
 	public static void RestoreCells( ParkCellMap cells, TrackWorldSaveData saved )

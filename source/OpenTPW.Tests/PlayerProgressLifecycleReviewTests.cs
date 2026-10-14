@@ -50,13 +50,21 @@ public class PlayerProgressLifecycleReviewTests
 		public bool MoveNext() => fail ? throw new InvalidDataException( "Injected actual Level.Step construction refusal." ) : false;
 		public void Reset() => throw new NotSupportedException(); public void Dispose() { }
 	}
+	// Uninitialized CPU levels bypass field initializers. Keep the real disposal path with an empty renderer owner set.
+	private static Level EmptyLevel()
+	{
+		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		var field = typeof( Level ).GetField( "trackRenderers", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		field.SetValue( level, Activator.CreateInstance( field.FieldType ) );
+		return level;
+	}
 	[TestInitialize]
 	public void Setup()
 	{
 		fixture = new(); fixture.Initialize(); flow = Get<GameFlow>( fixture, "flow" ); menu = Get<FrontEndMenu>( fixture, "menu" ); context = Get<UiContext>( fixture, "context" ); root = Get<string>( fixture, "root" );
 		oldEntities = Entity.All; oldCamera = Camera.Mode; oldLevel = Level.Current; oldRenderer = Global.Render;
 		Entity.All = new(); Camera.Mode = new CameraMode(); Global.Render = (Renderer)RuntimeHelpers.GetUninitializedObject( typeof( Renderer ) );
-		live = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) ); runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+		live = EmptyLevel(); runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
 		Set( live, "<LevelName>k__BackingField", "jungle" ); Set( live, "<Park>k__BackingField", runtime ); Set( flow, "<Level>k__BackingField", live ); Level.Current = live; liveEntity = new();
 	}
 	[TestCleanup]
@@ -73,7 +81,7 @@ public class PlayerProgressLifecycleReviewTests
 	private void Pending() { var action = Get<Action?>( flow, "pending" ); Set( flow, "pending", null ); action?.Invoke(); }
 	private void Stage( Action commit, bool failStep = false, bool guarded = true )
 	{
-		staged = new(); var candidate = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		staged = new(); var candidate = EmptyLevel();
 		Set( candidate, "<LevelName>k__BackingField", "jungle" ); Set( candidate, "construction", new Steps( failStep ) ); Level.Current = candidate; candidateEntity = new(); Camera.Mode = new CameraMode();
 		staged.Pause();
 		var type = typeof( GameFlow ).GetNestedType( "ParkBuild", BindingFlags.NonPublic )!; var build = RuntimeHelpers.GetUninitializedObject( type );

@@ -1012,6 +1012,7 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Particle allocation test (October 14):** `ParticleSystemPortTests.TickAllocatesNothing` measures windows of 100 ticks until one is clean, so tiered-compilation allocations in a busy full run no longer fail it; a real per-tick allocation still never gives a clean window.
 - **Rides register round 2 (October 14):** the rides items were traced in tp.exe and the code follows what was found
   (docs/OBJECTS.md, "Retired and reclassified"). Names: the executable binds OBJECT_NAMES by Info.Id through a 281-row
   table (0x7488D8), `ObjectNameTable`, instead of the English matcher; 262 of 274 entries now bind (only the three tools of each

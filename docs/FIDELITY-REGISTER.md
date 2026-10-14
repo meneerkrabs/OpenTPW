@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **377 unresolved unique APPROX IDs**, 443 APPROX occurrences, 178 EXT occurrences, 173 DATA occurrences and 555 BIN occurrences.
+Current inventory: **377 unresolved unique APPROX IDs**, 444 APPROX occurrences, 178 EXT occurrences, 173 DATA occurrences and 555 BIN occurrences.
 
 Of these, 353 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -44,7 +44,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES | 35 | 35 |
 | SAVE | 16 | 16 |
 | TPI | 5 | 7 |
-| UI | 77 | 100 |
+| UI | 77 | 101 |
 | VM | 3 | 4 |
 | WALK | 10 | 10 |
 
@@ -391,7 +391,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-083 | Original-fidelity area (scope unadjudicated) | Enter or a second click on the selected applicant hires them; the original's list message 0x400 hires (0x49b988 → 0x507bf0), closes the window and posts 0x135 | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:61` |
 | UI-084 | Original-fidelity area (scope unadjudicated) | the initial sort column state of OpenTPW's lists (the generic sort 0x665a44 toggles the same column and starts a new column ascending; implemented with column 0 ascending initially) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:62` |
 | UI-085 | Original-fidelity area (scope unadjudicated) | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:63` |
-| UI-086 | Original-fidelity area (scope unadjudicated) | paths, queues and placed objects use plain coloured cells over the shipped theme map image; the layer toggles are the original's independent bits but their colours are not traced | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:64` |
+| UI-086 | Original-fidelity area (scope unadjudicated) | paths, queues and placed objects use plain coloured cells over the shipped theme map image; the layer toggles are the original's independent bits (the layer word starts as 1 in the original) but their colours and the control-to-category assignment are not traced, so all four category layers start on | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:64` |
 | UI-091 | Original-fidelity area (scope unadjudicated) | staff and visitor locators cycle actual actor positions and focus the host park camera; the original's 0x402 path (centre the camera on the cell, 0x4867b0, and close) is verified | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:65` |
 | UI-092 | Original-fidelity area (scope unadjudicated) | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire; the original dismisses with b_fire (1292) on the per-employee panel (0x4b6080, table 0x756f48, jump 0x4b5e5d) and confirms (UITEXT 0x18d) only when [0x78d90f] is set | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:66` |
 | UI-093 | Original-fidelity area (scope unadjudicated) | the ride view is entered with the E key on the selected ride, not the ride window's \\"Ride it!\\" button; the heading is the park camera's forward | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:67` |
@@ -539,8 +539,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-004 | `source/OpenTPW/UI/Original/UiWidgets.cs:432` | [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control — evidence needed: the meaning of the flag bits in control+0x44 |
 | AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:594` | [APPROX:AUDIO-005] the original chooses the next segment when the current one's data runs out, inside a mix-buffer fill, and keeps filling the same buffer (sound_shared GetDataChunk 0x10008CC4 → GetNextSample 0x10008E60 → CPlaceHolderSentence::SoundCallback 0x1001A1F0); OpenTPW chooses it when the current one starts, to decode in time, so the draw and the parameter are taken one segment early |
 | AUDIO-006 | `source/OpenTPW/Client/GameFlow.cs:354` | [APPROX:AUDIO-006] cells are counted by rectangle (Chebyshev distance); the original's area shape inside the radius is not traced |
-| AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:58` | [APPROX:AUDIO-007] the sound plays when the map window opens; the original slides a drawer out of the main panel |
-| AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:71` | [APPROX:AUDIO-007] the sound plays when the map window closes; the original slides a drawer back into the main panel |
+| AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:62` | [APPROX:AUDIO-007] the sound plays when the map window opens; the original slides a drawer out of the main panel |
+| AUDIO-007 | `source/OpenTPW/Hud/ParkHud.Map.cs:75` | [APPROX:AUDIO-007] the sound plays when the map window closes; the original slides a drawer back into the main panel |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:53` | [APPROX:AUDIO-007] the sound plays when the research window opens; the original slides a drawer out of the main panel |
 | AUDIO-007 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:66` | [APPROX:AUDIO-007] the sound plays when the research window closes; the original slides a drawer back into the main panel |
 | AUDIO-008 | `source/OpenTPW/Audio/GameAudio.cs:634` | [APPROX:AUDIO-008] the repair-start event stays 75 (family 1, index 0); the original picks among 75–90 by the object's repair-level field (+20) and two float operands — evidence needed: the repair-level field's source in the object runtime |
@@ -900,9 +900,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-084 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:134` | [APPROX:UI-084] the initial column state of this list is assumed to be its single sortable column, ascending — evidence needed: the original list's initial state |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.Staff.cs:120` | [APPROX:UI-084] the initial column state of each list (column 0 ascending here) — evidence needed: the initial state of each original list |
 | UI-084 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:96` | [APPROX:UI-084] the initial column state of this list is assumed to be its single sortable column, ascending — evidence needed: the original list's initial state |
-| UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:211` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
-| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:118` | [APPROX:UI-086] the layer colours are not traced — evidence needed: the original map layer colours |
-| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:231` | [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art — evidence needed: the original map layer colours |
+| UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:215` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:18` | [APPROX:UI-086] which category button owns which control (2434 bit 8, 2439 bit 1, 2451 bit 2, 2452 bit 4) is not traced, |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:122` | [APPROX:UI-086] the layer colours are not traced — evidence needed: the original map layer colours |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:235` | [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art — evidence needed: the original map layer colours |
 | UI-091 | `source/OpenTPW/Hud/ParkHud.Locate.cs:3` | [APPROX:UI-091] actual actor locators use host ID cycling and ground camera focus; the original's 0x402 path (centre the camera on the cell, 0x4867b0) is verified, the HUD locate-button handlers remain |
 | UI-091 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:115` | [APPROX:UI-091] the locator focuses a live simulated position; the original's 0x402 path is verified, the HUD locate-button handlers remain — evidence needed: those handlers |
 | UI-092 | `source/OpenTPW/Hud/ParkHud.Staff.cs:337` | [APPROX:UI-092] an explicit dismiss button with a confirmation below the portrait; the original dismisses with b_fire (1292) on the per-employee panel (0x4b6080, table 0x756f48, jump 0x4b5e5d) and confirms (UITEXT 0x18d) only when [0x78d90f] is set — evidence needed: porting that panel |
@@ -1083,7 +1084,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | park-summary | `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:14` | [EXT:park-summary] functional host summary; original information-screen layout remains unqualified |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | sandbox | `source/OpenTPW/Client/GameFlow.cs:320` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
-| sandbox-map | `source/OpenTPW/Hud/ParkHud.Map.cs:234` | [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content) |
+| sandbox-map | `source/OpenTPW/Hud/ParkHud.Map.cs:238` | [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content) |
 | sdt-wav-export | `source/OpenTPW/Client/SdtWavExport.cs:7` | [EXT:sdt-wav-export] application-owned export of current decoded PCM, without event mixing or native audio parity claims |
 | speed-buttons | `source/OpenTPW/Hud/HudStubs.cs:87` | [EXT:speed-buttons] the four speed buttons (pause, ×1, ×2, ×4) are an OpenTPW addition scaling the simulation clock by 0, 1, 2 and 4; the original's time keys are numpad −/+ (×0.8, ×1.25, clamped 0.25-2.0) and * (= 1.0) (0x40c3b0/0x40c3c0/0x40c3d0), and "Speed :" is a ride-panel statistic, not a game-speed control |
 | speed-buttons | `source/OpenTPW/Hud/ParkHud.cs:194` | [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0) |
@@ -1226,11 +1227,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:168` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
 | Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:185` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
 | Mac main HUD table 0x4ab38:50,48,49,51-55 | `source/OpenTPW/Hud/ParkHud.cs:175` | [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters |
-| Mac map table 0x5265e:-1 | `source/OpenTPW/Hud/ParkHud.Map.cs:134` | [DATA:Mac map table 0x5265e:-1] b_okay closes the map (help 1). |
-| Mac map table 0x5265e:2432,2450,2448,2449,2453 | `source/OpenTPW/Hud/ParkHud.Map.cs:103` | [DATA:Mac map table 0x5265e:2432,2450,2448,2449,2453] root, map content and three lower panels. |
-| Mac map table 0x5265e:2433,2436-2438,2440,2442 | `source/OpenTPW/Hud/ParkHud.Map.cs:109` | [DATA:Mac map table 0x5265e:2433,2436-2438,2440,2442] pan and zoom controls at table rectangles. |
-| Mac map table 0x5265e:2434,2439,2451,2452 | `source/OpenTPW/Hud/ParkHud.Map.cs:116` | [DATA:Mac map table 0x5265e:2434,2439,2451,2452] object-category map buttons. |
-| Mac map table 0x5265e:2441,2435,2444-2447,2455-2457 | `source/OpenTPW/Hud/ParkHud.Map.cs:123` | [DATA:Mac map table 0x5265e:2441,2435,2444-2447,2455-2457] track, actor and metric controls. |
+| Mac map table 0x5265e:-1 | `source/OpenTPW/Hud/ParkHud.Map.cs:138` | [DATA:Mac map table 0x5265e:-1] b_okay closes the map (help 1). |
+| Mac map table 0x5265e:2432,2450,2448,2449,2453 | `source/OpenTPW/Hud/ParkHud.Map.cs:107` | [DATA:Mac map table 0x5265e:2432,2450,2448,2449,2453] root, map content and three lower panels. |
+| Mac map table 0x5265e:2433,2436-2438,2440,2442 | `source/OpenTPW/Hud/ParkHud.Map.cs:113` | [DATA:Mac map table 0x5265e:2433,2436-2438,2440,2442] pan and zoom controls at table rectangles. |
+| Mac map table 0x5265e:2434,2439,2451,2452 | `source/OpenTPW/Hud/ParkHud.Map.cs:120` | [DATA:Mac map table 0x5265e:2434,2439,2451,2452] object-category map buttons. |
+| Mac map table 0x5265e:2441,2435,2444-2447,2455-2457 | `source/OpenTPW/Hud/ParkHud.Map.cs:127` | [DATA:Mac map table 0x5265e:2441,2435,2444-2447,2455-2457] track, actor and metric controls. |
 | Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:10` | [DATA:Mac research table 0x4c652] Visual row order differs from ResearchCategories[n] order. |
 | Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:112` | [DATA:Mac research table 0x4c652] Root, title, five panels and the main workload track. |
 | Mac research table 0x4c652:-1 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:150` | [DATA:Mac research table 0x4c652:-1] b_okay exits; help 1. |
@@ -1750,9 +1751,9 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/Level.Objects.cs:164` | [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444 |
 | STP-PPC:0x101503b0 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:88` | [BIN:STP-PPC:0x101503b0] bank balance/park value exclude each other and all cash-flow series; |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:89` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |
-| STP-PPC:0x1015644C drawer message 0x0b | `source/OpenTPW/Hud/ParkHud.Map.cs:57` | [BIN:STP-PPC:0x1015644C drawer message 0x0b] opening the map/research drawer plays cat_ui event 0x1C |
+| STP-PPC:0x1015644C drawer message 0x0b | `source/OpenTPW/Hud/ParkHud.Map.cs:61` | [BIN:STP-PPC:0x1015644C drawer message 0x0b] opening the map/research drawer plays cat_ui event 0x1C |
 | STP-PPC:0x1015644C drawer message 0x0b | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:52` | [BIN:STP-PPC:0x1015644C drawer message 0x0b] opening the map/research drawer plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)') |
-| STP-PPC:0x1015644C drawer message 0x10 | `source/OpenTPW/Hud/ParkHud.Map.cs:70` | [BIN:STP-PPC:0x1015644C drawer message 0x10] finishing the drawer's collapse plays cat_ui event 0xC2 (through the play-by-id helper 0x101383F8 at 0x101568DC) |
+| STP-PPC:0x1015644C drawer message 0x10 | `source/OpenTPW/Hud/ParkHud.Map.cs:74` | [BIN:STP-PPC:0x1015644C drawer message 0x10] finishing the drawer's collapse plays cat_ui event 0xC2 (through the play-by-id helper 0x101383F8 at 0x101568DC) |
 | STP-PPC:0x1015644C drawer message 0x10 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:65` | [BIN:STP-PPC:0x1015644C drawer message 0x10] finishing the drawer's collapse plays cat_ui event 0xC2 (through the play-by-id helper 0x101383F8 at 0x101568DC) |
 | STP-PPC:0x101598C4 object sign call | `source/OpenTPW/World/Objects/ObjectSigns.cs:69` | [BIN:STP-PPC:0x101598C4 object sign call] for objects built from the catalogue the sign text is that name string of the object's info record (no explicit text passed) |
 | STP-PPC:0x1015D220 new-player dialog | `source/OpenTPW/Economy/ParkEconomyContracts.cs:7` | [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0 |
@@ -1863,8 +1864,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPW-EXE:0x57F1F0-0x57F380 | `source/OpenTPW/World/Weather/WeatherVisualState.cs:80` | [BIN:TPW-EXE:0x57F1F0-0x57F380] the Windows executable's CRain::Draw agrees with the Mac engine on the field, the colour ramp and the streak |
 | TPW-EXE:0x5D96C0 | `source/OpenTPW/World/Lobby/LobbyEffects.cs:192` | [BIN:STP-PPC:0x1008FAA0 lobby sky] the current colour eases 1/16 toward the target each frame and fills the engine sky's whole colour ramp, so the sky is one flat colour; [BIN:TPW-EXE:0x5D96C0] the same |
 | TPW-EXE:0x5f186c | `source/OpenTPW/Hud/ParkHud.Map.cs:14` | [BIN:TPW-EXE:0x5f186c] each map category button XORs its own layer bit (the bits are 0x20, 8, 1, 2, 4 and 0x10, |
-| TPW-EXE:0x5f186c | `source/OpenTPW/Hud/ParkHud.Map.cs:117` | [BIN:TPW-EXE:0x5f186c] every category button toggles its own layer bit; OpenTPW draws all placed objects while none is on. |
-| TPW-EXE:0x5f35b0 map pan | `source/OpenTPW/Hud/ParkHud.Map.cs:82` | [BIN:TPW-EXE:0x5f35b0 map pan] the pan buttons and arrow keys move the view centre by one map unit (cell) whatever the zoom, |
+| TPW-EXE:0x5f186c | `source/OpenTPW/Hud/ParkHud.Map.cs:121` | [BIN:TPW-EXE:0x5f186c] every category button toggles its own layer bit; an object is drawn from its category's bit only. |
+| TPW-EXE:0x5f35b0 map pan | `source/OpenTPW/Hud/ParkHud.Map.cs:86` | [BIN:TPW-EXE:0x5f35b0 map pan] the pan buttons and arrow keys move the view centre by one map unit (cell) whatever the zoom, |
 | TPW-EXE:0x665a44 generic list sort, list attribute 0x10 | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:133` | [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends. |
 | TPW-EXE:0x665a44 generic list sort, list attribute 0x10 | `source/OpenTPW/Hud/ParkHud.Staff.cs:119` | [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends. |
 | TPW-EXE:0x665a44 generic list sort, list attribute 0x10 | `source/OpenTPW/Hud/ParkHud.VisitorWindow.cs:95` | [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends. |

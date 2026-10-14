@@ -12,8 +12,12 @@ public sealed partial class ParkHud
 	private UiScreen? mapScreen;
 	private MapViewState mapView = MapViewState.Default;
 	// [BIN:TPW-EXE:0x5f186c] each map category button XORs its own layer bit (the bits are 0x20, 8, 1, 2, 4 and 0x10,
-	// picked through the index table at 0x5f186c); the layers are independent toggles, not an exclusive filter.
-	private readonly HashSet<BuildCategory> mapCategories = new();
+	// picked through the index table at 0x5f186c); the layers are independent toggles, not an exclusive filter, and each
+	// category is drawn from its own bit only. The layer word ([object+0x18]) is set to 1 by the map object's static
+	// constructor (0x5f06a9-0x5f06c3), i.e. only the layer of control 2439 (bit 1) is on at the start.
+	// [APPROX:UI-086] which category button owns which control (2434 bit 8, 2439 bit 1, 2451 bit 2, 2452 bit 4) is not traced,
+	// so OpenTPW starts with all four category layers on instead of the single bit-1 layer.
+	private readonly HashSet<BuildCategory> mapCategories = new() { BuildCategory.Rides, BuildCategory.Shops, BuildCategory.Sideshows, BuildCategory.Features };
 	private readonly HashSet<StaffType> mapStaff = new();
 	public bool MapStaffRole( StaffType type ) => mapStaff.Contains( type );
 	public void ToggleMapStaff( StaffType type ) { if ( !mapStaff.Remove( type ) ) mapStaff.Add( type ); }
@@ -37,8 +41,8 @@ public sealed partial class ParkHud
 	public float MapZoom => mapView.Zoom;
 	public bool MapCategoryShown( BuildCategory category ) => mapCategories.Contains( category );
 	public void ToggleMapCategory( BuildCategory category ) { if ( !mapCategories.Remove( category ) ) mapCategories.Add( category ); }
-	/// <summary>Whether placed objects of a build category are drawn: all of them while no category layer is on, else the toggled-on categories.</summary>
-	public bool MapShowsCategory( int whichUiType ) => mapCategories.Count == 0 || mapCategories.Contains( (BuildCategory)whichUiType );
+	/// <summary>Whether placed objects of a build category are drawn: only those whose own layer is on.</summary>
+	public bool MapShowsCategory( int whichUiType ) => mapCategories.Contains( (BuildCategory)whichUiType );
 
 	public void OpenMapWindow()
 	{
@@ -114,7 +118,7 @@ public sealed partial class ParkHud
 		Button( "zoomOut", "b_minus", 262, Rect( 32, 1327, 90, 1385 ), () => ZoomMap( -1 ) );
 		Button( "zoomIn", "b_plus", 261, Rect( 218, 1327, 275, 1384 ), () => ZoomMap( 1 ) );
 		// [DATA:Mac map table 0x5265e:2434,2439,2451,2452] object-category map buttons.
-		// [BIN:TPW-EXE:0x5f186c] every category button toggles its own layer bit; OpenTPW draws all placed objects while none is on.
+		// [BIN:TPW-EXE:0x5f186c] every category button toggles its own layer bit; an object is drawn from its category's bit only.
 		// [APPROX:UI-086] the layer colours are not traced — evidence needed: the original map layer colours
 		CategoryButton( "rides", "b_sride", BuildCategory.Rides, 267, Rect( 64, 1409, 167, 1512 ) );
 		CategoryButton( "sideshows", "b_sshow", BuildCategory.Sideshows, 271, Rect( 184, 1409, 286, 1512 ) );
@@ -308,9 +312,12 @@ internal readonly record struct MapViewState( float Zoom, NVector2 Cell )
 	public (NVector2 Min, NVector2 Max) Source( int width, int height, bool original )
 	{
 		var centre = Centre( width, height );
-		var rect = ParkMapGeometry.CellImageRect( width, height, original, (int)MathF.Round( centre.X ), (int)MathF.Round( centre.Y ) );
+		// The centre may be fractional (the default middle of an even-sized map): interpolate between cell centres instead of rounding.
+		var cellX = (int)MathF.Floor( centre.X );
+		var cellY = (int)MathF.Floor( centre.Y );
+		var rect = ParkMapGeometry.CellImageRect( width, height, original, cellX, cellY );
 		var half = 0.5f / Zoom;
-		var middle = NVector2.Clamp( new NVector2( rect.X + rect.Width / 2, rect.Y + rect.Height / 2 ) / ParkMapGeometry.ImagePixels,
+		var middle = NVector2.Clamp( new NVector2( rect.X + rect.Width * (0.5f + centre.X - cellX), rect.Y + rect.Height * (0.5f + centre.Y - cellY) ) / ParkMapGeometry.ImagePixels,
 			new NVector2( half ), new NVector2( 1f - half ) );
 		return (middle - new NVector2( half ), middle + new NVector2( half ));
 	}

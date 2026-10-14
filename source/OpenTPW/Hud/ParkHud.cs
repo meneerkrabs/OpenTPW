@@ -120,7 +120,7 @@ public sealed partial class ParkHud
 	{
 		new( 255, 0, 0, 255 ), new( 250, 90, 0, 255 ), new( 255, 175, 0, 255 ), new( 255, 200, 0, 255 ), new( 255, 255, 150, 255 ), new( 255, 255, 255, 255 ),
 	};
-	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (balance + 999) / 1000, 0, CashColors.Length - 1 )];
+	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
 	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
 	/// <summary>The balance change shown beside the balance (Mac HUD table control 48): the sum of the changes of the last <see cref="CashChangeTracker.Seconds"/>; 0 when none is shown.</summary>

@@ -45,7 +45,8 @@ public class HudCashTests
 		Assert.AreEqual( new RgbaByte( 255, 200, 0, 255 ), ParkHud.CashColor( 3000 ) );
 		Assert.AreEqual( new RgbaByte( 255, 255, 150, 255 ), ParkHud.CashColor( 4000 ) );
 		Assert.AreEqual( new RgbaByte( 255, 255, 255, 255 ), ParkHud.CashColor( 5001 ) );
-		Assert.AreEqual( new RgbaByte( 255, 255, 255, 255 ), ParkHud.CashColor( long.MaxValue / 2 ) );
+		Assert.AreEqual( new RgbaByte( 255, 255, 255, 255 ), ParkHud.CashColor( long.MaxValue ), "no overflow near the maximum" );
+		Assert.AreEqual( new RgbaByte( 255, 0, 0, 255 ), ParkHud.CashColor( long.MinValue ) );
 	}
 
 	[TestMethod]

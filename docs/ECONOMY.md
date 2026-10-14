@@ -283,9 +283,9 @@ version-2 saves is still accepted, ignored and written as `false` (the stand-in 
 Original flow that OpenTPW does not reproduce (Mac, static; docs/reverse/PPC-scenarios.md, "Park
 entry"): leaving a park saves `<player>:<theme>:autosave.TPWS`, and the next entry resumes the
 newest save there, so each player keeps one running park per theme. A park entry also writes a
-`restart.INTS` snapshot. OpenTPW starts a new park on every front-end entry (UI-015).
+`restart.INTS` snapshot. OpenTPW starts a new park on every front-end entry (`[EXT:no-player-profiles]`).
 
-Not implemented: player profiles and the per-player mode choice (UI-015), theme keys and the
+Not implemented: player profiles and the per-player mode choice (`[EXT:no-player-profiles]`), theme keys and the
 Instant Action "no key check" rule (the front end has no key gate), the research and finance
 panels themselves (the HUD buttons have no panel, so the UITEXT 467 refusal is not shown), the
 Instant Action completion message (UITEXT 470), and the advisor rule filter by mode.

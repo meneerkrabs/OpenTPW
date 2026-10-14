@@ -1089,6 +1089,22 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   autorun focus rectangle, the speed buttons and time keys, the sandbox map and the overview detail rows are now documented
   `[EXT:...]` design decisions (UI-001, 038, 040, 043, 022, 902, 089, 906, 908 retired). The staff, locator, hire, dismissal,
   overview, camera-button, slider, fluid and key-table items are narrowed to what the executable leaves open (UI.md).
+- **UI register round 2 (October 14):** the second `tp.exe` read of the UI items. Comma now adds 90 degrees to the build angle
+  (one `RotateBuild` step) and full stop adds 270 (three steps), where they were swapped (UI-903 retired); leaving the build tool
+  resets the angle to 0, and holding exactly Ctrl at the placing click (or at the last click of a ride's queue) keeps the build
+  tool armed (UI-031 narrowed to the coaster and track sub-modes). Window lists follow the original's list control: the pointer
+  selects the hovered row, a click counts only when released within 500 ms and moved at most 6 px, a left click on an
+  applicant hires (and so starts the Place tool), a left click on an attraction or visitor row opens its info panel and keeps the
+  list, a right click centres the camera and closes (UI-083/910 keep the medium-confidence "button 0 is the left button"). Each
+  list keeps its last sort for the session (UI-045, UI-084 retired). The buy window's control 512 shows the cash balance
+  (UITEXT `0x1ca`/`0x1cb`, UI-048 retired); the HUD cash box is nine digits wide and centred on `i_dollar` (UI-021 retired);
+  the research effort sliders truncate a drag (UI-065 retired, UI-030 retired). Ctrl+H flips the global Popup help option and
+  the host persists it (UI-920 retired); the Confirmations option gates the dismissal prompt (UI-092 narrowed); the map window
+  pauses the park (UI-096 narrowed); Instant Action skips the enter-park sound (UI-942 narrowed); the pick-up button is the
+  original `b_pick` model with help 88 (UI-098 narrowed). Shortcut letters now come from the language's `KEYBOARD.str` except a
+  plain letter that is a camera-pan key (Dutch hire A keeps H; UI-012 narrowed). The advisor message 309 (response 569) is not
+  posted: its score is a field of the `Advisor.sam` balance object whose key is untraced (UI-097 narrowed). UI-015, 900, 909 and
+  931-935 are documented `[EXT:...]` decisions. 407 to 391 unresolved IDs.
 
 - **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
   (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0

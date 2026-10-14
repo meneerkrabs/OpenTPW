@@ -67,6 +67,13 @@ public interface IUiRowList
 	int RowAt( UiCanvas canvas, System.Numerics.Vector2 point );
 	void Select( int index );
 	void Scroll( int rows );
+	/// <summary>Whether moving the pointer over a row selects it (list attribute 0x80, tp.exe 0x6656a0).</summary>
+	bool HoverSelects => false;
+	/// <summary>
+	/// A completed click on row <paramref name="index"/> (<paramref name="left"/>: the left button, otherwise the right one); true when the list
+	/// handled it. False leaves the screen's default: a click selects, a second click on the selected row activates, a right click backs out.
+	/// </summary>
+	bool RowClicked( int index, bool left ) => false;
 }
 
 /// <summary>An element that follows the mouse while it is held (slider ball, scroll bar).</summary>

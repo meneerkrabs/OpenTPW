@@ -11,6 +11,7 @@ public class UiScreen
 {
 	private readonly List<UiElement> elements = new();
 	private UiElement? pressed;
+	private NVector2 lastMouse = new( -1, -1 );
 
 	public UiScreen( string name ) => Name = name;
 
@@ -62,7 +63,7 @@ public class UiScreen
 		Modal || elements.Any( element => element.Visible && element.ScreenRect( canvas ).Contains( point ) );
 
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
-	// [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out (the original's RMBCancelOn option, +0x39, defaults to 1) — evidence needed: the original input handling
+	// [APPROX:UI-012] hover focus follows the pointer, and the right click backs out of a modal screen whatever the RMBCancelOn option (+0x39, default 1; readers 0x4881ae, 0x488aa1, 0x48a7ab, 0x48aadb) says — evidence needed: what those readers do
 	public virtual bool Update( UiContext context, UiInput input )
 	{
 		if ( IsRemoved )
@@ -79,6 +80,10 @@ public class UiScreen
 			Focused = hit;
 		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
 			Focused = null;
+		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under a moved pointer (not under a pointer that stays put, so the arrow keys still move the selection)
+		if ( hit is IUiRowList { HoverSelects: true } hoverList && input.Mouse.X >= 0 && input.Mouse != lastMouse && hoverList.RowAt( canvas, input.Mouse ) is >= 0 and var hoverRow )
+			hoverList.Select( hoverRow );
+		lastMouse = input.Mouse;
 		var consumed = hit != null;
 		if ( input.LeftPressed )
 			pressed = hit;
@@ -87,12 +92,19 @@ public class UiScreen
 			drag.DragTo( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
-			if ( hit != null && (pressed == null || pressed == hit) )
+			// [BIN:TPW-EXE:0x65f6d1 click rule] a release is a click only within 500 ms of its press and without the pointer straying more than 6 px (UiInputSource)
+			if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick )
 				Click( canvas, hit, input.Mouse );
 			pressed = null;
 			if ( IsRemoved )
 				return true;
 		}
+		// [BIN:TPW-EXE:0x66563d list click] a click of the other button selects the row and posts 0x402 to the list's owner; the list decides what that does and whether the right click also backs out
+		var rightHandled = false;
+		if ( input.RightPressed && hit is IUiRowList rightList && input.Mouse.X >= 0 && rightList.RowAt( canvas, input.Mouse ) is >= 0 and var rightRow )
+			rightHandled = rightList.RowClicked( rightRow, false );
+		if ( IsRemoved )
+			return true;
 		if ( (hit is UiOptionRow or UiSlider || hit is UiButton { Adjusted: not null, WheelAdjusts: true }) && input.Wheel != 0 )
 			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
 		if ( hit is IUiRowList wheelList && input.Wheel != 0 )
@@ -134,7 +146,7 @@ public class UiScreen
 		}
 		if ( IsRemoved )
 			return true;
-		if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
+		if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal && !rightHandled) )
 		{
 			Back?.Invoke();
 			consumed = true;
@@ -150,6 +162,8 @@ public class UiScreen
 		if ( element is IUiRowList list )
 		{
 			var index = list.RowAt( canvas, point );
+			if ( index >= 0 && list.RowClicked( index, true ) )
+				return;
 			if ( index >= 0 && index == list.Selected )
 				element.Activate();
 			else if ( index >= 0 )

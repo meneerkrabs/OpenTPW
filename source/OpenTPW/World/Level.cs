@@ -634,7 +634,7 @@ public partial class Level : IDisposable
 			onlinePanel.Draw();
 		}
 		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
-			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
+			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
 		if ( OriginalTerrain != null && Guests != null && Guests.Grid.Cells.Version != renderedCellVersion )
 		{
 			renderedCellVersion = Guests.Grid.Cells.Version;
@@ -655,8 +655,10 @@ public partial class Level : IDisposable
 		riding || !leftDown || previousLeftDown || mouseCaptured ? WorldClickAction.None
 			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
 
-	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize )
+	/// <param name="modifierMask">The modifier mask held at the click (<see cref="Input.ModifierMask"/>: Shift 3, Ctrl 0xc, Alt 0x30); exactly Ctrl keeps the build tool armed after a placement.</param>
+	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize, int modifierMask = 0 )
 	{
+		clickModifierMask = modifierMask;
 		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
 		{
 			case WorldClickAction.PlacePrototype:

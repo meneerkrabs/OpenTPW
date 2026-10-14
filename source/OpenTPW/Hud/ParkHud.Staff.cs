@@ -34,8 +34,9 @@ public sealed partial class ParkHud
 	private UiButton? clearPatrolButton;
 	private StaffType? staffFilter = StaffType.Handyman;
 	private bool showingEmployedStaff;
-	private bool staffSortByWage;
-	private bool staffSortDescending;
+	// [BIN:TPW-EXE:0x49b85e hire list sort word 0x7523e4] the hire window writes its sort word back on a sort change, so the order outlives the window for the session (UI-084)
+	private bool staffSortByWage { get => Sorts.StaffByWage; set => Sorts.StaffByWage = value; }
+	private bool staffSortDescending { get => Sorts.StaffDescending; set => Sorts.StaffDescending = value; }
 	private int selectedStaffId;
 	private int staffFirstRow;
 	private Dictionary<StaffType, string[]>? staffNames;
@@ -120,7 +121,7 @@ public sealed partial class ParkHud
 	}
 
 	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends.
-	// [APPROX:UI-084] the initial column state of each list (column 0 ascending here) — evidence needed: the initial state of each original list
+	// [BIN:TPW-EXE:0x7523e4 hire list sort word] the word starts at 1 (column 0, ascending) and is written back on a change (0x49b85e); the session keeps it (ListSortMemory)
 	public void SortStaff( bool byWage )
 	{
 		staffSortDescending = staffSortByWage == byWage && !staffSortDescending;
@@ -138,7 +139,7 @@ public sealed partial class ParkHud
 	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). Without a park view the economy hires at once.
 	/// </summary>
 	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire handler] the handler posts advisor message 0x135 and closes the window
-	// [APPROX:UI-097] the advisor message 0x135 (309, "place your new staff member") is not in OpenTPW's advisor table (its text is filled at runtime and its row is unbound) and the queue cannot withdraw advice: the hint is an OpenTPW line of the message area, shown when the tool starts — evidence needed: the descriptor row and text of message 309
+	// [APPROX:UI-097] the advisor message 0x135 (309, "place your new staff member") is not posted: its descriptor row exists (table 0x76E300 of 56-byte rows built by 0x5a0a50; row 309 at 0x772698: all game modes, group 1, first response 0x239 = 569 = speech sample 587, one response, one pending duplicate) but its score callback 0x59e8c0 returns field +0x328 of the Advisor.sam balance object (0xfb3540), whose key is unidentified, so OpenTPW's advisor table (scored messages only) cannot hold it; the hint is an OpenTPW line of the message area, shown when the tool starts, and the queue cannot withdraw advice — evidence needed: the Advisor.sam key behind balance field +0x328 and the advice withdrawal
 	public bool HireSelectedStaff()
 	{
 		if ( showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.IsBankrupt )
@@ -223,6 +224,12 @@ public sealed partial class ParkHud
 	{
 		if ( !showingEmployedStaff || SelectedStaff == null || RejectReadOnlyAction() )
 			return;
+		// [BIN:TPW-EXE:0x4b5e5d dismiss] b_fire (control 0x50c) confirms with UITEXT 0x18d only when the Confirmations option (ConfirmDeleteOn, options byte 0x78d90f = +0x37) is on
+		if ( !GameOptions.Current.Confirmations )
+		{
+			DismissSelectedStaff();
+			return;
+		}
 		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee],
 			(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); DismissSelectedStaff(); }),
 			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
@@ -310,7 +317,7 @@ public sealed partial class ParkHud
 		3 => $"{member.Happiness}%",
 		_ => ""
 	};
-	// [APPROX:UI-081] applicant summary fields use the economy's expected monthly wage and grade-derived skill as text; the original shows a skill gauge (9346 = skill byte × 1024/5) and a mini balance (9349) and no grade or wage text — evidence needed: porting them
+	// [APPROX:UI-081] applicant summary fields use the economy's expected monthly wage and grade-derived skill as text; the original shows a skill gauge (9346 = skill byte × 1024/5) and a mini balance (9349, cash format UITEXT 0x1ca/0x1cb at 0x49b6df/0x49b720/0x49bfb3/0x49bfe7) and no grade or wage text — evidence needed: porting them (no further evidence needed)
 	private string CandidateStat( StaffCandidate candidate, int row ) => row switch
 	{
 		0 => CandidateName( candidate ),
@@ -332,6 +339,8 @@ public sealed partial class ParkHud
 		: SelectedCandidate is { } candidate ? CandidateStat( candidate, row ) : "";
 	/// <summary>The hire window's cash label (control 9366): UITEXT 0x1ca "Cash $ N" or 0x1cb "Cash -$ N" with the bare balance magnitude.</summary>
 	public string StaffCashText => !Status.HasEconomy ? "" : CashLabel( Status.Money );
+	/// <summary>The buy window's cash label (control 512): the same UITEXT 0x1ca/0x1cb text as the hire window's.</summary>
+	public string BuyCashText => StaffCashText;
 	private string CashLabel( long balance )
 	{
 		var template = strings[balance < 0 ? UIStrings.CashNegativeDollar : UIStrings.CashDollar];
@@ -360,7 +369,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiLabel { Id = "staffGrade", Text = () => SelectedGrade,
 			Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right, Fit = true,
 			Bounds = Rect( 722, 536, 957, 575 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-082] the selected role and grade are text in f_staffpic; the original draws a 3D candidate preview in control 9348's rectangle (0x49ba00) — evidence needed: that renderer
+		// [APPROX:UI-082] the selected role and grade are text in f_staffpic; the original draws a 3D candidate preview in control 9348's rectangle (0x49ba00) — evidence needed: porting that renderer (no further evidence needed)
 		screen.Add( new UiLabel { Id = "portraitText", Text = () => SelectedGrade.Length > 0 ? $"{SelectedRole}  {SelectedGrade}" : "",
 			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
 			Bounds = Rect( 513, 202, 723, 415 ), Anchor = UiAnchor.Center } );
@@ -401,15 +410,16 @@ public sealed partial class ParkHud
 		screen.Add( new UiButton { Id = "staffViewExt", Text = () => showingEmployedStaff ? HireTitle : strings[UIStrings.AllStaff],
 			Clicked = () => ShowEmployedStaff( !showingEmployedStaff ), Font = fonts => fonts.Label,
 			Bounds = Rect( 320, 610, 909, 690 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-092] an explicit dismiss button with a confirmation below the portrait; the original dismisses with b_fire (1292) on the per-employee panel (0x4b6080, table 0x756f48, jump 0x4b5e5d) and confirms (UITEXT 0x18d) only when [0x78d90f] is set — evidence needed: porting that panel
+		// [APPROX:UI-092] an explicit dismiss button below the portrait in the employee view; the original dismisses with b_fire (control 0x50c = 1292, rectangle (380,694)-(534,847), help UIHELPTEXT 89 "Left-click to dismiss the employee") on the per-employee panel (0x4b6080, table 0x756f48); the confirmation (UITEXT 0x18d) follows the Confirmations option as the original's [0x78d90f] gate does — evidence needed: porting that panel
 		dismissStaffButton = new UiButton { Id = "dismissStaff", Text = () => strings[UIStrings.DismissEmployee].Split( '\n' )[0].Trim(),
 			Clicked = ConfirmDismissSelectedStaff, Font = fonts => fonts.Label, Enabled = false,
 			Bounds = Rect( 320, 449, 909, 518 ), Anchor = UiAnchor.Center };
 		screen.Add( dismissStaffButton );
-		// [APPROX:UI-098] the pick-up button of the employee's info window (control 0x50e of the window handled at 0x4b5cb0, a window OpenTPW does not port) sits beside the portrait of the employee view with an OpenTPW label; its label and rectangle are untraced — evidence needed: the 0x50e control's text and rectangle
-		pickUpStaffButton = new UiButton { Id = "pickUpStaff", Text = () => strings.Extra( OpenTpwText.PickUpStaff ),
-			Clicked = () => PickUpSelectedStaff(), Font = fonts => fonts.Label, Enabled = false, Visible = true,
-			Bounds = Rect( 770, 300, 990, 400 ), Anchor = UiAnchor.Center };
+		// [BIN:TPW-EXE:0x4b5ed9 pick-up button] control 0x50e (1294) of the per-employee window (table 0x756f48) is a type-2 model button b_pick (name hash 0x1d406292) without a text label, rectangle (539,694)-(692,847), help UIHELPTEXT 88 "Left-click to pick up the employee"; it runs 0x505c50 and the window closes
+		// [APPROX:UI-098] the employee view is embedded in the hire window, whose stat rows occupy the original rectangle (539,694)-(692,847) of the separate per-employee window, so the button keeps the original model, size (153 x 153) and help at the right of the portrait — evidence needed: porting the per-employee window
+		pickUpStaffButton = new UiButton { Id = "pickUpStaff", Model = "b_pick", Help = strings.Help( 88 ),
+			Clicked = () => PickUpSelectedStaff(), Enabled = false, Visible = true,
+			Bounds = Rect( 770, 290, 923, 443 ), Anchor = UiAnchor.Center };
 		screen.Add( pickUpStaffButton );
 		// Approximation (UI-098, registered at the pick-up button): the employee window's patrol buttons (UIHELPTEXT 86 set, 87 clear) sit on the left of the portrait with OpenTPW labels; their models and rectangles are untraced
 		setPatrolButton = new UiButton { Id = "setPatrol", Text = () => strings.Extra( OpenTpwText.SetPatrolArea ), Help = strings.Help( 86 ),
@@ -421,9 +431,9 @@ public sealed partial class ParkHud
 		// [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles.
 		Model( "staffLocateFrame", "!f_plain", Rect( 526, 1191, 893, 1439 ) );
 		Model( "visitorLocateFrame", "!f_plain", Rect( 12, 1191, 379, 1439 ) );
-		// [APPROX:UI-909] the shipped b_svisit button art (the map window's visitors layer uses the same
-		// art) opens the All Visitors window from the visitor locate corner; its original handler and
-		// rectangle in this window are not decoded.
+		// [EXT:overview-entry-buttons] the shipped b_svisit button art (the map window's visitors layer uses the same
+		// art) opens the All Visitors window from the visitor locate corner; the original opens the overview windows
+		// with the A/S/V keys and cross-navigation buttons (UI-909), whose rectangles in this window are not decoded.
 		screen.Add( new UiButton { Id = "allVisitors", Model = "b_svisit", Clicked = OpenVisitorWindow, Enabled = level.Guests != null,
 			Bounds = Rect( 24, 1207, 127, 1310 ), Anchor = UiAnchor.Center } );
 		// The original staff window navigates to the visitor and attractions windows (UI-MAP 0x1014b124:
@@ -485,7 +495,18 @@ public sealed partial class ParkHud
 		public bool ArrowsSelect => true;
 		public void Select( int index ) => owner.SelectStaff( index );
 		public void Scroll( int rows ) => owner.ScrollStaff( rows );
-		// [APPROX:UI-083] Enter or a second row click hires the selected applicant; the original's list message 0x400 hires (0x49b988 → 0x507bf0), closes and posts 0x135 — evidence needed: the gesture producing 0x400 (input 0x11006/0x11007)
+		public bool HoverSelects => true;
+		// [BIN:TPW-EXE:0x6655a2 list click, 0x49b843 hire window] the applicant list (9358, attribute 0x291) selects the hovered row, and a click of button 0 (or a double click) posts 0x400, which the window routes to 0x49b988: the row's item, hire 0x507bf0, advisor message 0x135, close. Here the hire starts the Place tool, so the click starts placement.
+		// [APPROX:UI-083] button 0 is taken as the left button (medium confidence: the DirectInput order behind the 0xf0..0xf2 codes of 0x486ca1 is not traced); the right button (0x402) does nothing in this window and backs out as everywhere
+		public bool RowClicked( int index, bool left )
+		{
+			if ( !left )
+				return false;
+			Select( index );
+			owner.HireSelectedStaff();
+			return true;
+		}
+		// [EXT:staff-enter-hire] Enter hires the selected applicant too (no original key emits 0x400); it is the keyboard analogue of the click.
 		public override void Activate() => owner.HireSelectedStaff();
 		public override void Adjust( int direction ) => owner.SelectStaff( Math.Max( 0, Selected ) + direction );
 		public int RowAt( UiCanvas canvas, NVector2 point )

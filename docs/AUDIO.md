@@ -489,7 +489,7 @@ implemented yet.
 The option volumes are percentages (0–100) like the original's `{on, percent}` pairs, with the
 `DefaultVolume.*` defaults of `sound.sam` (effects 75, music 60, speech 75, movie 100; the globals holding them
 are medium confidence). Options files from before the change (0–10 steps) are migrated ×10 on load. Only the
-slider step granularity within 0–100 stays open (UI-030).
+slider step granularity within 0–100 is 1 (tp.exe `0x66b47d`, `0x66ad77`).
 
 ## Selected SDT entry to WAV (desktop)
 

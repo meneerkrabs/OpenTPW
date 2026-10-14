@@ -270,7 +270,7 @@ internal sealed partial class GameFlow : IDisposable
 		if ( entry.Sandbox )
 			StartLevel( "jungle", original: false, developerPanels: false, overFrames: overFrames, ready: level => level.LoadSandbox() );
 		else
-			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc
+			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen: GameType is derived from flag bits 0x2000000/0x1000000 of 0x7a1a8c (0x550ca0), set by a front-end toggle (0x4bbf63), and OpenTPW has no player profiles — evidence needed: whether a park file can carry the game type
 			StartLevel( entry.Level, original: true, developerPanels: false, overFrames: overFrames );
 	}
 
@@ -344,6 +344,9 @@ internal sealed partial class GameFlow : IDisposable
 		return level;
 	}
 
+	/// <summary>The window list sorts of this session, shared by every park's HUD (UI-084).</summary>
+	private readonly ListSortMemory listSorts = new();
+
 	private ParkHud CreateParkHud( Level level, IHudParkStatus status )
 	{
 		ParkHud? createdHud = null;
@@ -356,6 +359,8 @@ internal sealed partial class GameFlow : IDisposable
 			CreateOptions = CreateOptions,
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 			GoOnline = ShowOnline,
+			ListSorts = listSorts,
+			OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 		} );
 		return createdHud;
 	}

@@ -9,7 +9,7 @@ namespace OpenTPW.Hud;
 /// original key table's All Visitors key (V). No original layout table is decoded for this window,
 /// so its placement follows the proven staff/buy window geometry.
 /// </summary>
-// [APPROX:UI-907] window layout, list columns and detail placement follow the staff/buy table geometry; the decoded table (visitors 0x7506c8, six columns) is not ported — evidence needed: porting it
+// [APPROX:UI-907] window layout, list columns and detail placement follow the staff/buy table geometry; the decoded table (visitors 0x7506c8, six columns) is not ported, its list behaviour (attribute 0x291) is — evidence needed: porting it
 public sealed partial class ParkHud
 {
 	private static readonly UiRect VisitorContent = Rect( 1043, 441, 1729, 911 );
@@ -19,7 +19,7 @@ public sealed partial class ParkHud
 	private const int VisitorDetailRowCount = 6;
 
 	private UiScreen? visitorScreen;
-	private bool visitorSortDescending;
+	private bool visitorSortDescending { get => Sorts.VisitorDescending; set => Sorts.VisitorDescending = value; }
 	private int selectedVisitorId;
 	private int visitorFirstRow;
 	private string[]? kidStates;
@@ -55,7 +55,6 @@ public sealed partial class ParkHud
 	{
 		if ( VisitorWindowOpen )
 			return;
-		visitorSortDescending = false;
 		visitorFirstRow = 0;
 		selectedVisitorId = 0;
 		RefreshVisitorRows();
@@ -92,8 +91,7 @@ public sealed partial class ParkHud
 	public void ScrollVisitors( int rows ) => SetVisitorFirstRow( visitorFirstRow + rows );
 	public void SetVisitorFirstRow( int first ) => visitorFirstRow = Math.Clamp( first, 0, VisitorMaxFirstRow );
 
-	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends.
-	// [APPROX:UI-084] the initial column state of this list is assumed to be its single sortable column, ascending — evidence needed: the original list's initial state
+	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending, sort word 0x7508bc = 1), so the first press on column 0 descends, and the word is kept for the session (ListSortMemory).
 	public void SortVisitors()
 	{
 		visitorSortDescending = !visitorSortDescending;
@@ -104,15 +102,22 @@ public sealed partial class ParkHud
 			SelectVisitor( index );
 	}
 
-	/// <summary>Row activation (Enter or a second click): focuses the visitor's simulated position and leaves the list, like the locator buttons.</summary>
-	// [APPROX:UI-910] activation locates the visitor and closes the window; the original's message 0x402 centres the camera on the cell (0x4867b0) and closes, 0x400 opens the info panel and keeps the list — evidence needed: the gestures that produce them
+	/// <summary>A right click on a row (and Enter): focuses the visitor's simulated position and leaves the list, like the locator buttons.</summary>
+	// [BIN:TPW-EXE:0x66563d list click, 0x4867b0 locate] a click of the other button selects the row and posts 0x402, which centres the camera on the visitor's cell and closes the window; Enter has no original counterpart ([EXT:overview-enter-locate], the keyboard analogue)
 	public bool LocateSelectedVisitor() => LocateVisitor( SelectedVisitor );
+
+	/// <summary>A left click on a row: selects the visitor and plays the click; the window and its detail rows (the visitor's info panel) stay.</summary>
+	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which opens the visitor's info panel and keeps the list (button 0 = left is medium confidence, [APPROX:UI-910])
+	private void OpenSelectedVisitorInfo()
+	{
+		GameAudio.PlayVisitorClick();
+	}
 
 	/// <summary>Whether locating can run at all: the park camera over an original park's terrain.</summary>
 	public bool CanLocateVisitors => Camera.Mode is ParkCameraMode && level.OriginalPark != null;
 
 	/// <summary>Focuses a specific visitor's simulated position on the terrain (the locator flow of the staff window's visitor button).</summary>
-	// [APPROX:UI-091] the locator focuses a live simulated position; the original's 0x402 path is verified, the HUD locate-button handlers remain — evidence needed: those handlers
+	// [APPROX:UI-091] the locator focuses a live simulated position; the locator panels 0x4b3f60/0x4b4280 are not ported (Ctrl+S 0x40c590 → 0x481790, Ctrl+V 0x40c5a0 → 0x4817c0; per-employee cycling buttons 1293/1295, UI-904) — evidence needed: porting those panels
 	public bool LocateVisitor( Guest? guest )
 	{
 		if ( guest == null || Camera.Mode is not ParkCameraMode camera || level.OriginalPark is not { } park ||
@@ -190,7 +195,7 @@ public sealed partial class ParkHud
 			Bounds = Rect( 1742, 331, 1803, 391 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollVisitors( 1 ),
 			Bounds = Rect( 1742, 850, 1803, 910 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-910] the go-to button locates the selected visitor, like the row activation.
+		// [EXT:overview-select-button] the go-to button locates the selected visitor, like a right click on the row (the shipped b_goto art has no texture in ui.wad)
 		screen.Add( new UiButton { Id = "locateVisitor", Model = "b_gopeep", Clicked = () => LocateSelectedVisitor(), Enabled = false,
 			Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseVisitorWindow,
@@ -229,7 +234,19 @@ public sealed partial class ParkHud
 		public bool ArrowsSelect => true;
 		public void Select( int index ) => owner.SelectVisitor( index );
 		public void Scroll( int rows ) => owner.ScrollVisitors( rows );
-		// A row activation opens the visitor's status panel in the original, with its click (GameAudio.VisitorClickEvent).
+		public bool HoverSelects => true;
+		// [BIN:TPW-EXE:0x665c35 list dispatcher] attribute 0x291 lists: a left click selects the row and opens its info panel (the window's detail rows) and keeps the list; a right click selects the row, centres the camera on the visitor and closes
+		public bool RowClicked( int index, bool left )
+		{
+			Select( index );
+			if ( left )
+			{
+				owner.OpenSelectedVisitorInfo();
+				return true;
+			}
+			return owner.LocateSelectedVisitor();
+		}
+		// Enter keeps the keyboard analogue of the right click (no original counterpart, [EXT:overview-enter-locate]); it plays the visitor click as before.
 		public override void Activate()
 		{
 			GameAudio.PlayVisitorClick();

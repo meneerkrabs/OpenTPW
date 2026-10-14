@@ -17,11 +17,17 @@ public sealed class BuyListModel
 	private readonly Func<BuildItem, long> price;
 	private IReadOnlyList<BuildItem>? items;
 
-	public BuyListModel( IBuildCatalog catalog, Func<BuildItem, string> name, Func<BuildItem, long> price )
+	private readonly ListSortMemory memory;
+
+	/// <param name="memory">The session's remembered sort of this list (a fresh one starts by name ascending).</param>
+	public BuyListModel( IBuildCatalog catalog, Func<BuildItem, string> name, Func<BuildItem, long> price, ListSortMemory? memory = null )
 	{
 		this.catalog = catalog;
 		this.name = name;
 		this.price = price;
+		this.memory = memory ?? new ListSortMemory();
+		Sort = this.memory.BuyColumn;
+		SortDescending = this.memory.BuyDescending;
 	}
 
 	public BuildCategory Category { get; private set; } = BuildCategory.Rides;
@@ -91,6 +97,8 @@ public sealed class BuyListModel
 	{
 		SortDescending = Sort == column && !SortDescending;
 		Sort = column;
+		memory.BuyColumn = Sort;
+		memory.BuyDescending = SortDescending;
 		items = null;
 		Select( Math.Max( 0, SelectedIndex ) );
 	}

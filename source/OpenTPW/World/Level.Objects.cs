@@ -470,6 +470,21 @@ public partial class Level
 
 	public void RotateBuild() => BuildRotation = (BuildRotation + 90) % 360;
 
+	/// <summary>Returns the next built object to rotation 0, as leaving the build tool does.</summary>
+	// [BIN:TPW-EXE:0x52f3b6 leave build tool] leaving the tool through 0x52f200 (0x52f227: ebp = 0) stores 0 in the build angle (0x81d7a4)
+	public void ResetBuildRotation() => BuildRotation = 0;
+
+	private int clickModifierMask;
+
+	/// <summary>
+	/// True while the park click that is placing the build object holds exactly Ctrl: the HUD keeps the build tool armed instead of ending it.
+	/// </summary>
+	public bool KeepBuildToolOnPlace { get; private set; }
+
+	/// <summary>Whether a placing click with this modifier mask keeps the build tool armed: exactly Ctrl (mask 0xc), no Shift or Alt.</summary>
+	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] after a placement without an entrance `cmp di,0xc; je 0x525a06` keeps the tool armed (param 3 is the modifier mask of 0x486aa0, 0xc = Ctrl); otherwise 0x52f580(0,0) returns the tool to mode 0
+	internal static bool KeepsBuildTool( int modifierMask ) => modifierMask == 0xc;
+
 	/// <summary>Grid cell under the cursor (sandbox tiles or original cells).</summary>
 	public bool TryGetGridCell( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out int x, out int y )
 	{
@@ -582,7 +597,17 @@ public partial class Level
 		else if ( CellTool.IsActive && BuildEntry == null )
 			CellTool.Click( (x, y) );
 		else
-			PlaceObject( BuildEntry!, x, y, BuildRotation );
+		{
+			KeepBuildToolOnPlace = KeepsBuildTool( clickModifierMask );
+			try
+			{
+				PlaceObject( BuildEntry!, x, y, BuildRotation );
+			}
+			finally
+			{
+				KeepBuildToolOnPlace = false;
+			}
+		}
 	}
 
 	/// <summary>The remove tool: the object under the cursor, else a queue cell, else a path cell.</summary>

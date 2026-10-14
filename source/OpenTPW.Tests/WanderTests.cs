@@ -101,7 +101,7 @@ public class WanderTests
 	private static (GuestDecision.Outcome Outcome, string Calls) Decide( GuestDecision.Input input, bool wayOut = true, bool ride = true, bool wander = true, bool bin = false )
 	{
 		var calls = "";
-		var outcome = GuestDecision.Decide( input, () => { calls += "B"; return bin; }, () => { calls += "L"; return wayOut; }, () => { calls += "C"; return ride; }, () => { calls += "W"; return wander; } );
+		var outcome = GuestDecision.Decide( input, () => { calls += "B"; return bin; }, () => { calls += "L"; return wayOut; }, ( _, _ ) => { calls += "P"; return true; }, () => { calls += "C"; return ride; }, () => { calls += "W"; return wander; } );
 		return (outcome, calls);
 	}
 

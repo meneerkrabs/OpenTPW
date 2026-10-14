@@ -135,7 +135,7 @@ public class LitterTests
 	{
 		var calls = "";
 		var input = new GuestDecision.Input( 500, 450, 400, 50, 0, litter, 50, false, draw );
-		var outcome = GuestDecision.Decide( input, () => { calls += "B"; return bin; }, () => { calls += "L"; return true; }, () => { calls += "C"; return true; }, () => { calls += "W"; return true; } );
+		var outcome = GuestDecision.Decide( input, () => { calls += "B"; return bin; }, () => { calls += "L"; return true; }, ( _, _ ) => { calls += "P"; return true; }, () => { calls += "C"; return true; }, () => { calls += "W"; return true; } );
 		return (outcome, calls);
 	}
 

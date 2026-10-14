@@ -234,7 +234,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x05B8B8443FF0454B`, schema 15: litter moves from a park-wide count to map cells (the economy snapshot keeps the littered cells and a
+  (`0x74187CE603B2ACDC`, schema 16: the guests' prankery flag joins the hash, so the schema is bumped; the synthetic park has no pranksters
+  (PrankeryLikelihood 0), so only the hashed field changes the value. Vomit and stinkbombs now spread their RegionFX on the environment grid,
+  which the needs update reads (docs/reverse/WANDER-plan.md §7). Before that:
+  `0x05B8B8443FF0454B`, schema 15: litter moves from a park-wide count to map cells (the economy snapshot keeps the littered cells and a
   handyman's swept cell) and the guests gain a litter meter and a bin to walk to, so the schema is bumped and the run changes: a sale no longer
   adds litter to the park; a guest drops or bins its litter in state 6 and vomit stays on its cell (docs/reverse/WANDER-plan.md §6). Before that:
   `0x9EA19826749C30F7`, schema 14: optional awaiting-mechanic-arrival is gameplay state

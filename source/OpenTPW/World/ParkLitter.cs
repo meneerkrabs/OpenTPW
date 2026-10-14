@@ -44,6 +44,8 @@ public sealed class ParkLitter
 
 	public int Width { get; }
 	public int Height { get; }
+	/// <summary>The environment grid that vomit and stinkbombs spread their <c>RegionFX</c> on while they lie.</summary>
+	public ParkEnvironment Environment { get; } = new();
 	/// <summary>The level's cell map, for the litter share (null until a level attaches it: the share is then 0).</summary>
 	public ParkCellMap? Cells { get; set; }
 	/// <summary>Cells holding litter.</summary>
@@ -75,6 +77,7 @@ public sealed class ParkLitter
 		if ( Disabled || type == LitterType.None || !InBounds( x, y ) || types[Index( x, y )] != 0 )
 			return false;
 		var index = Index( x, y );
+		Spread( x, y, type, add: true );
 		types[index] = (byte)type;
 		collectors[index] = 0;
 		claimTurns[index] = 0;
@@ -90,6 +93,7 @@ public sealed class ParkLitter
 		if ( !InBounds( x, y ) || types[Index( x, y )] == 0 )
 			return false;
 		var index = Index( x, y );
+		Spread( x, y, (LitterType)types[index], add: false );
 		types[index] = 0;
 		collectors[index] = 0;
 		claimTurns[index] = 0;
@@ -97,6 +101,15 @@ public sealed class ParkLitter
 		Version++;
 		Changed?.Invoke( x, y, LitterType.None );
 		return true;
+	}
+
+	/// <summary>Vomit and a stinkbomb add their <c>RegionFX</c> (2 and 5) while they lie (tp.exe <c>0x004D8440</c>; the removal <c>0x004D9620</c> takes it back).</summary>
+	private void Spread( int x, int y, LitterType type, bool add )
+	{
+		if ( type == LitterType.Vomit )
+			Environment.Apply( RegionEffect.Vomit, x, y, add );
+		else if ( type == LitterType.Stinkbomb )
+			Environment.Apply( RegionEffect.Stinkbomb, x, y, add );
 	}
 
 	/// <summary>A handyman claims the litter (tp.exe <c>0x004D9600</c>: <c>+0x30</c> = his id, <c>+0x34</c> = the turn).</summary>
@@ -160,6 +173,7 @@ public sealed class ParkLitter
 		Array.Clear( types );
 		Array.Clear( collectors );
 		Array.Clear( claimTurns );
+		Environment.Clear();
 		Count = 0;
 		foreach ( var cell in cells )
 		{
@@ -168,6 +182,7 @@ public sealed class ParkLitter
 			var index = Index( cell.X, cell.Y );
 			if ( types[index] != 0 )
 				throw new InvalidDataException( $"Two litter items at ({cell.X}, {cell.Y})." );
+			Spread( cell.X, cell.Y, cell.Type, add: true );
 			types[index] = (byte)cell.Type;
 			collectors[index] = cell.Collector;
 			claimTurns[index] = cell.ClaimTurn;

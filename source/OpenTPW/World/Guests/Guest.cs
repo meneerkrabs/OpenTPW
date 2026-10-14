@@ -93,6 +93,8 @@ public sealed class Guest
 	public float Litter { get; internal set; }
 	/// <summary>The litter bin a guest in state 9 walks to (guest <c>+0x1dc</c>, the ride word's other use); 0 otherwise.</summary>
 	public int BinId { get; internal set; }
+	/// <summary>The prankery flag (guest <c>+0x1c0</c>, <c>mPrankeryIndex</c>): 0, or 100 (stinkbombs), 101 (litter) or 102 (balloons) for a prankster.</summary>
+	public int PrankFlag { get; internal set; }
 	public int Money { get; internal set; }
 	/// <summary>
 	/// The exit counter (guest <c>+444</c>, saved as <c>mExitLevel</c>): <c>PeepInfo.ExitLevel</c> plus a draw within ±<c>ExitLevelVar</c> at creation, one less on every

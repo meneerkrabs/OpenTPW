@@ -138,7 +138,8 @@ Each walk starts its job timer only on arrival.
   state 9, vomit on the cell, the handymen's sweep by cell (still without positions) and their litter grievance (ORACLE.md X20, X21).
 - **Phase 3b (ECON-022).** Staff patrol with the same destination inside their rectangle. The handyman's job search runs from its
   position (§4), and job timers start on arrival.
-- **Phase 4 (GUEST-007).** Pranks, on top of state 6, with the stinkbomb's and the vomit's RegionFX on the cell environment grid.
+- **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
+  environment grid that the needs update reads (ORACLE.md X18, X22).
 
 ## 6. Litter (high unless marked)
 
@@ -166,3 +167,26 @@ A map cell record (`[0x8023a0]`, 0x44 bytes) holds at most one item: `+0x2c` the
   (`0x4c8ba0`) and path, queue and type-9 cells (`0x4c8ae0`): the handymen strike when their ratio is above 0.2 (`0x509360`), the
   thought "too messy" (THOUGHTS 7) fires when the guest's own block is above 0.2 (`0x4fc8a0`, GUEST-009), and an advisor scorer reads
   the park's litter percentage (`0x4ccdf0`). Vomit and stinkbombs act through the environment grid (phase 4).
+
+## 7. Pranks (high unless marked)
+
+- **The flag.** The guest constructor's eighth draw (`0x4fb114`) makes a prankster: `+0x1c0` = 100 when the draw % 100 is below
+  `PeepInfo.PrankeryLikelihood` (settings word `0x7850dc`; 5 in the shipped `Standard.sam`), plus the thing id % 3; otherwise 0. So a
+  prankster is 100 (stinkbombs), 101 (litter) or 102 (balloons) for life. Nothing else writes the byte but the save code (`mPrankeryIndex`).
+- **The step, `0x4ff0f5`** (state 6, after the presentation turns, before the final choice): with the happiness byte below 15 (hard-coded;
+  the file's `PrankHappinessThreshold` and `PrankLikelihood` have no key in tp.exe) and the flag above `R % 101`:
+  - 100: when `R % 100` is below `PeepInfo.StinkbombLikelihood` (`0x7850e0`, 25) a stinkbomb (litter 8) on the cell and sound 0xcf;
+  - 101: litter `R % 5 + 1` on the cell;
+  - 102: the first other guest on the cell's thing list (game `+0x2b8 + 0x44 × cell id`, next at thing `+0xa`) holding a balloon
+    (`+0x210`, `mBalloonScript`) has it burst (`0x4fe950`, presentation only).
+  A prank (a litter prank even when its cell already holds litter) records guest event 15, sends message type 14 on the bus `0x788d3c`
+  (`{vtbl 0x7007a8, 0, prankster id, id % 3}`) and adds 1.0 to happiness, clamped. The step never returns early.
+- **Who hears it.** The advisor (thing type 11, `0x59b060`) queues message 0x7d, 0x7e or 0x7f (PrankSbomb, PrankLitter, PrankBalloon).
+  The staff pool (`0x508a30`) reads the security word of the prankster's cell: at 0 or below it "got away with it"; otherwise the nearest
+  free guard (state 0 or 1, squared distance) chases the kid (state 16), catches it on its cell (stats `mMisbehavingKids`), takes its
+  balloon and escorts it to a gate cell (states 17 and 18) (medium for the distance origin).
+- **The environment grid.** Vomit (RegionFX 2) and stinkbombs (RegionFX 5) add their effect while they lie (`0x4d8440`) and remove it
+  with the litter (`0x4d9620`). The writer `0x4d8480` (the Mac `0xd73a0`) adds `sign × coefficient / (|dx| + |dy| + 1)`, truncated,
+  to each word of every cell in the square radius, clipped to the map, without saturation. The guest's needs phase adds its cell's
+  happiness, illness and hunger words (`NeedsUpdate`, oracle F25). Shipped rows: vomit radius 1 (−1, +1, −1), stinkbomb radius 3
+  (−3, +3, −1).

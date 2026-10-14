@@ -230,6 +230,9 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
 	{
+		// [APPROX:HEADS-005] child/sound head tables are not saved; refuse rather than lose a rider's head
+		if ( Visitors.ChildHeadsOccupied() )
+			throw new InvalidOperationException( $"'{Entry.ArchivePath}': a child or sound script holds a rider head, which the park-resume snapshot cannot store." );
 		if (effects.HasLiveEventLoops)
 			throw new NotSupportedException("An attraction is still playing a looping EVENT or repair-hide sound. Live audio cannot be saved; stop the owning object or sound first.");
 		return new OriginalObjectRuntimeSnapshot

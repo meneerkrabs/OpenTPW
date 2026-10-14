@@ -333,6 +333,11 @@ public class BaseFileSystem
 		return !string.IsNullOrEmpty( archivePath );
 	}
 
+	/// <summary>
+	/// A watcher for the directory, not yet started: subscribe to its events, then set
+	/// <see cref="FileSystemWatcher.EnableRaisingEvents"/>. On macOS starting a watcher calls <c>sync()</c>, which
+	/// waits for every mounted file system, so it should only happen where watching is actually wanted.
+	/// </summary>
 	public FileSystemWatcher CreateWatcher( string relativeDir, string filter )
 	{
 		var directoryName = GetAbsolutePath( relativeDir );
@@ -346,8 +351,6 @@ public class BaseFileSystem
 							 | NotifyFilters.LastWrite
 							 | NotifyFilters.Security
 							 | NotifyFilters.Size;
-
-		watcher.EnableRaisingEvents = true;
 
 		return watcher;
 	}

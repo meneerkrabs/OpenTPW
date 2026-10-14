@@ -107,6 +107,7 @@ public class PortableFileSystemTests
 		Assert.IsFalse( fileSystem.IsArchive( Path.Combine( root, "nested", "file.txt" ) ) );
 		using var watcher = fileSystem.CreateWatcher( @"\nested", "*.txt" );
 		Assert.AreEqual( Path.Combine( root, "nested" ), watcher.Path );
+		Assert.IsFalse( watcher.EnableRaisingEvents, "the caller subscribes before starting it" );
 	}
 
 	[TestMethod]

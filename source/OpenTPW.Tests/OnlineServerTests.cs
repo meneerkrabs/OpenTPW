@@ -36,20 +36,62 @@ internal sealed class LoopbackServer : IAsyncDisposable
 	public string Directory { get; }
 	public Uri Url { get; }
 
+	/// <summary>
+	/// Building, starting or stopping the server takes well under a second; a stall (once a file watcher blocked in
+	/// the OS) fails the test with a clear message instead of hanging the whole suite. Requests are bounded by
+	/// <see cref="OnlineClient"/>'s own HttpClient timeout.
+	/// </summary>
+	public static readonly TimeSpan StartStopTimeout = TimeSpan.FromSeconds( 30 );
+
 	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null, Uri? url = null, IEmailSender? emailSender = null )
 	{
 		directory ??= Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
-		var app = ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
+		var dataDirectory = directory;
+		var build = Task.Run( () => ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
 		{
-			options.DataDirectory = directory;
+			options.DataDirectory = dataDirectory;
 			options.PasswordIterations = 1000;
 			// Most tests are about other features; TwoStepLoginTests turns two-step login on.
 			options.RequireTotp = false;
 			configure?.Invoke( options );
-		}, emailSender );
-		await app.StartAsync();
+		}, emailSender ) );
+		WebApplication app;
+		try
+		{
+			await Bounded( _ => build, "build" );
+			app = await build;
+		}
+		catch
+		{
+			// A build that finishes after the timeout still owns a host; dispose it whenever it arrives.
+			_ = build.ContinueWith( built => built.Result.DisposeAsync().AsTask(), TaskContinuationOptions.OnlyOnRanToCompletion );
+			throw;
+		}
+		try
+		{
+			await Bounded( app.StartAsync, "start" );
+		}
+		catch
+		{
+			await Bounded( _ => app.DisposeAsync().AsTask(), "shut down" );
+			throw;
+		}
 		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
 		return new LoopbackServer( app, directory, new Uri( address ) );
+	}
+
+	/// <summary>Runs one lifecycle step on a pool thread, so even synchronous work in it cannot outlast the timeout.</summary>
+	private static async Task Bounded( Func<CancellationToken, Task> step, string name )
+	{
+		using var cancel = new CancellationTokenSource( StartStopTimeout );
+		try
+		{
+			await Task.Run( () => step( cancel.Token ) ).WaitAsync( StartStopTimeout );
+		}
+		catch ( Exception exception ) when ( exception is TimeoutException || (exception is OperationCanceledException && cancel.IsCancellationRequested) )
+		{
+			throw new AssertFailedException( $"The loopback server did not {name} within {StartStopTimeout.TotalSeconds} seconds.", exception );
+		}
 	}
 
 	public async Task<OnlineClient> LoginAsync( string name, string password = "correct horse", bool register = true )
@@ -63,8 +105,14 @@ internal sealed class LoopbackServer : IAsyncDisposable
 
 	public async ValueTask DisposeAsync()
 	{
-		await app.StopAsync();
-		await app.DisposeAsync();
+		try
+		{
+			await Bounded( app.StopAsync, "stop" );
+		}
+		finally
+		{
+			await Bounded( _ => app.DisposeAsync().AsTask(), "shut down" );
+		}
 	}
 
 	public void DeleteData()
@@ -337,7 +385,8 @@ public class OnlineServerTests
 	[TestMethod]
 	public async Task ServersWithoutNewsGiveNoNews()
 	{
-		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" } );
+		// No appsettings.json watcher: on macOS starting one calls sync(2), which a stalled mounted volume blocks (see ServerProgram.Build).
+		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning", "--hostBuilder:reloadConfigOnChange=false" } );
 		await using var app = builder.Build();
 		await app.StartAsync();
 		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();

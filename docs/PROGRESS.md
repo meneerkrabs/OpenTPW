@@ -351,6 +351,10 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Thought bubbles are drawn, and staff think too, as in the original (tp.exe `0x50be80`, `0x506a40`, `0x4fa030`; GUEST-006, QUEUE-005;
+  [GUESTS.md](GUESTS.md) "Thoughts"). Guests and staff show the original bubbles above their heads (a burger for hunger, a drink for thirst,
+  a thumb up after a sideshow win, a sleeping face for a tired handyman, a protest sign for a striker). Staff think when unhappy, very happy,
+  tired, on strike or lost; a guest sent away by a queue edit is angry one time in three, as in the original.
 - Guests now think as in the original (tp.exe `0x4fc8a0`, `0x50be80`, `0x50be40`; GUEST-006, GUEST-009 narrowed, ARRIVAL-006;
   [GUESTS.md](GUESTS.md) "Thoughts"). On one needs phase in ten a guest picks from its needs, the litter around it ("Too messy", new) and its
   happiness, and keeps its thought otherwise. Rides and shops no longer set "Pleased" or "Dissatisfied" (only sideshows do), and the

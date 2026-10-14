@@ -239,7 +239,9 @@ reach my patrol area"); inside, the steps that leave it are removed, and with no
   fireworks (row 7 until the show runs), with the attraction word feeding the attraction score's distance match (docs/GUESTS.md).
   Phase 10b is the thoughts (the pick 0x4fc8a0 and the 22 setters of 0x50be80) and their bubbles.
 - **Phase 10b (GUEST-006, GUEST-009), done in the simulation.** The pick on one needs phase in ten, the event thoughts and the bubble's timer
-  (docs/GUESTS.md "Thoughts"). Open: the coaster and queue-edit "Angry" thoughts, the staff's thoughts 18-22 and drawing the bubbles.
+  (docs/GUESTS.md "Thoughts").
+- **Phase 10c (GUEST-006, QUEUE-005), done.** The staff's thoughts 18-22, the queue-edit "Angry" and the bubbles drawn from
+  `Generic/Thoughts`. Open: the failing coaster's "Angry" (`0x500650`).
 - **Phase 4 (GUEST-007, GUEST-006), done.** Pranks on top of state 6 (§7), with the stinkbomb's and the vomit's RegionFX on the cell
   environment grid that the needs update reads (ORACLE.md X18, X22).
 

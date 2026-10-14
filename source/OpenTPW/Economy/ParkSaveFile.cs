@@ -248,6 +248,13 @@ public static class ParkSaveFile
 		/// <summary>The points still to walk off the paths, as x, y, byte x, byte y quads (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? OffGridLeg { get; init; }
+		/// <summary>The member's thought, its bubble and the bubble's turn (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int Thought { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int BubbleThought { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long BubbleTurn { get; init; }
 
 		internal static StaffWorldData Capture( StaffMember member ) => new()
 		{
@@ -264,7 +271,10 @@ public static class ParkSaveFile
 			EffectCell = member.EffectCell is { } cell ? new[] { cell.X, cell.Y } : null,
 			RestAreaId = member.RestAreaId,
 			RideId = member.RideId,
-			OffGridLeg = member.OffGridLeg.Count == 0 ? null : member.OffGridLeg.SelectMany( point => new[] { point.X, point.Y, point.ByteX, point.ByteY } ).ToArray()
+			OffGridLeg = member.OffGridLeg.Count == 0 ? null : member.OffGridLeg.SelectMany( point => new[] { point.X, point.Y, point.ByteX, point.ByteY } ).ToArray(),
+			Thought = member.Thought,
+			BubbleThought = member.BubbleThought,
+			BubbleTurn = member.BubbleTurn
 		};
 
 		internal void Apply( StaffMember member )
@@ -283,6 +293,9 @@ public static class ParkSaveFile
 			member.RestAreaId = RestAreaId;
 			member.RideId = RideId;
 			member.OffGridLeg = OffGridLeg is { } leg ? leg.Chunk( 4 ).Select( point => (point[0], point[1], point[2], point[3]) ).ToList() : new();
+			member.Thought = Thought is 0 or (>= 18 and <= 22) ? Thought : throw new InvalidDataException( $"Staff thought {Thought} is not a staff thought." );
+			member.BubbleThought = BubbleThought is 0 or (>= 18 and <= 22) ? BubbleThought : throw new InvalidDataException( $"Staff bubble {BubbleThought} is not a staff thought." );
+			member.BubbleTurn = BubbleTurn >= 0 ? BubbleTurn : throw new InvalidDataException( "A staff bubble's turn is negative." );
 		}
 
 		/// <summary>The states a role's state machine takes: the shared 0–7 and the role's own.</summary>
@@ -484,7 +497,8 @@ public static class ParkSaveFile
 					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
 					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
-					WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea) ? StaffWorldData.Capture( member ) : null,
+					WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
+						|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0) ? StaffWorldData.Capture( member ) : null,
 					CellX = member.CellX,
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds

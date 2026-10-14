@@ -120,6 +120,13 @@ public sealed class StaffMember
 	public (int X, int Y)? EffectCell { get; set; }
 	/// <summary>The ride a mechanic walks to or works on [+0x218], 0 when none.</summary>
 	public int RideId { get; set; }
+	/// <summary>The member's thought (its thought object at <c>+0x30</c>, tp.exe <c>0x0050BE80</c>): 0, or the staff ids 18 (very happy), 19 (unhappy), 20 (tired),
+	/// 21 (going on strike) and 22 (no destination).</summary>
+	public int Thought { get; set; }
+	/// <summary>The thought the member's bubble shows, 0 without a bubble (see <see cref="GuestThoughts"/>).</summary>
+	public int BubbleThought { get; set; }
+	/// <summary>The park turn the member's last bubble appeared.</summary>
+	public long BubbleTurn { get; set; }
 	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
 	public int RestAreaId { get; set; }
 	/// <summary>

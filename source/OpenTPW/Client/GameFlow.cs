@@ -721,7 +721,13 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		}
 		if ( backdrop != Backdrop.Lobby )
+		{
+			lobbyEffects.StopRain();
 			return;
+		}
+		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
+		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
+			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => false, engineUnitsPerOriginal: 1f );
 		lobbyIslands.Clear();
 		foreach ( var (island, slot) in Lobby.Slots )
 		{
@@ -736,6 +742,7 @@ internal sealed partial class GameFlow : IDisposable
 	}
 
 	private readonly List<LobbyEffects.Island> lobbyIslands = new();
+	private WeatherRenderer? lobbyWeather;
 
 	/// <summary>Rebuilds the city's islands when its park list changes and points the lobby camera at the selected island.</summary>
 	private void UpdateCityScene( UI.CityLobbyScreen city )
@@ -792,6 +799,13 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
+		// [BIN:STP-PPC:engine_shared 0x1D4B4 lightning flash] LightningFlash() sets a flag; the rain render then draws one full-screen white quad for exactly one frame and clears it (lobby only)
+		// [APPROX:UI-018] the flash's blend flags (0x9A1) are not decoded: drawn as opaque white under the menus
+		if ( Level == null && lobbyEffects.Flash )
+		{
+			Context.Batch.AddRectangle( new UiRect( 0, 0, Context.Canvas.Width, Context.Canvas.Height ), new RgbaByte( 255, 255, 255, 255 ) );
+			lobbyEffects.Flash = false;
+		}
 		if ( Hud != null )
 		{
 			Hud.Draw( Context );

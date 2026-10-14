@@ -312,10 +312,11 @@ stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per 
   the rhythm of strikes and one-shots differs (UI-941).
 * **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(state & LIGHTNING) == 1` strikes; four draws place the top
   within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
-  flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt and
-  the flash are stepped but not drawn yet.
+  flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is
+  drawn by the park's weather renderer (CRain, "Weather visuals"), at the lobby's own scale; the flash is an opaque white
+  frame under the menus (its blend is not decoded).
 * **Rain**: 10^17 / (mean squared distance from the camera to the rainy islands)^4 drops, none below 20, at most 400
-  (`0x10094F8C`): about 173 at the orbit radius around hallow. Stepped, not drawn yet.
+  (`0x10094F8C`): about 173 at the orbit radius around hallow, drawn by the same renderer.
 * **Island one-shots**: a draw with `(state & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
   `cat_locallobbysfx` (`0x10095340`), replacing OpenTPW's earlier 5–15 s timer (AUDIO-017 is resolved).
 * **Sky**: one flat colour eased 1/16 of the way toward the island's `SKYCOLOUR` each tick (`0x1008FAA0`, tp.exe

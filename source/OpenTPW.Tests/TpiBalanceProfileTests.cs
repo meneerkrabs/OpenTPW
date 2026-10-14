@@ -18,8 +18,8 @@ public class TpiBalanceProfileTests
 		var fixedKeys = SamDocument.Parse( EconomyTestData.StandardText(), "TPW-test-schema" ).Entries
 			.Where( entry => !entry.Key.StartsWith( "LoanInfo[", StringComparison.Ordinal ) && !entry.Key.StartsWith( "ChallengesInThisLevel[", StringComparison.Ordinal ) )
 			.Select( entry => entry.Key ).Distinct( StringComparer.OrdinalIgnoreCase ).ToArray();
-		// 162 since the handymen's world reads PerGradeStaffConsts[g].IdleDuration and HandymanConstsPerGrade[g].DetectionRange
-		Assert.AreEqual( 162, fixedKeys.Length );
+		// 167 since the staff world reads PerGradeStaffConsts[g].IdleDuration, HandymanConstsPerGrade[g].DetectionRange and EntertainerConstsPerGrade[g].ActivationDistance
+		Assert.AreEqual( 167, fixedKeys.Length );
 	}
 
 	[TestMethod]

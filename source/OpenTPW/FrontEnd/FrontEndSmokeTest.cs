@@ -1373,7 +1373,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			// The pause-menu save earlier left an own jungle save: entering the island now offers it (FrontEndMenu.ShowThemeStart).
 			Require( flow.Menu!.Stack.Top?.Name == "themeStart", "entering an island with a saved park offers to continue it" );
-			Click( flow.Menu.Stack.Top!, "choice1" ); // New park
+			// the manual Continue, then the automatic Continue when the last exit left a checkpoint, New park and Back: New is next to last
+			var themeStart = flow.Menu.Stack.Top!;
+			var choices = Enumerable.Range( 0, 8 ).Count( index => themeStart.Find( $"choice{index}" ) != null );
+			Click( themeStart, $"choice{choices - 2}" );
 		} );
 		Wait( "game mode again", 3 );
 		Do( "choose Instant Action", () =>

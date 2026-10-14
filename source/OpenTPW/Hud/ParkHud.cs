@@ -618,13 +618,13 @@ public sealed partial class ParkHud
 			{
 				if ( !doorEconomy.IsParkOpen )
 					doorEconomy.OpenPark();
-				host.ParkDoorPressed?.Invoke( true );
+				host?.ParkDoorPressed?.Invoke( true );
 			}
 			if ( Input.Pressed( InputButton.ClosePark ) )
 			{
 				if ( doorEconomy.IsParkOpen )
 					doorEconomy.ClosePark();
-				host.ParkDoorPressed?.Invoke( false );
+				host?.ParkDoorPressed?.Invoke( false );
 			}
 		}
 

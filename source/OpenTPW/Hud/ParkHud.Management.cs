@@ -52,7 +52,7 @@ public sealed partial class ParkHud
 		else
 			economy.ClosePark();
 		// [BIN:TPW-EXE:0x00519EF0 park door routine] every press posts the advisor's game event 3 (open) or 4 (close), also when the park was already in that state or a bankrupt park refuses to open
-		host.ParkDoorPressed?.Invoke( opens );
+		host?.ParkDoorPressed?.Invoke( opens );
 	}
 
 	/// <summary>Changes the model's monthly training allocation without charging money early.</summary>

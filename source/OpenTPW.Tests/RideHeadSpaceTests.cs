@@ -142,9 +142,9 @@ public class RideHeadSpaceTests
 	}
 
 	[TestMethod]
-	public void EveryScriptKeepsItsOwnHeadTable()
+	public void ChildAndSoundScriptsHaveNoHeadTable()
 	{
-		// The Mac script init (0x100B2BA0) allocates a head table for every script, root, child and sound alike.
+		// [BIN:TPW-EXE:0x00558D2B script init] SPAWNCHILD and SPAWNSOUND create their script with thing id 0, which skips the head table; ADDHEAD and DELHEAD exit on the NULL table.
 		var childBytes = new Asm().I( Opcode.ADDHEAD, 77 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables );
 		var bridge = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 2, 25, 30 ) { Heads = RideHeadSpace.Of( new[] { 4, 5 }, 1 ) };
 		var bytes = new Asm().I( Opcode.HUSH, 7 ).I( Opcode.ADDHEAD, 7 ).I( Opcode.SPAWNCHILD, S( 0 ) )
@@ -159,20 +159,16 @@ public class RideHeadSpaceTests
 		script.Advance( Tick );
 		Assert.AreEqual( 1, bridge.Heads!.Hung().Count( x => x.Visitor == 7 ) );
 		Assert.AreEqual( 0, bridge.Heads.Hung().Count( x => x.Visitor == 77 ), "the root's table does not take the child's rider" );
-		Assert.AreEqual( 1, bridge.ChildHeadTableCount );
-		Assert.AreEqual( 2, bridge.HungHeads().Count() );
-		Assert.IsTrue( bridge.HungHeads().Any( x => x.Visitor == 77 ) );
-		Assert.IsTrue( bridge.ChildHeadsOccupied(), "a snapshot must refuse while a child holds a head" );
+		Assert.AreEqual( 1, bridge.HungHeads().Count(), "the child's ADDHEAD does nothing" );
+		Assert.IsFalse( bridge.HungHeads().Any( x => x.Visitor == 77 ) );
 		var withChild = new StateHasher();
 		bridge.AddCanonicalState( withChild );
-		// Stopping (or replacing, or removing) the child takes its table and its heads down.
+		// Stopping the child changes nothing: it never held a table.
 		script.RemoveChild();
-		Assert.AreEqual( 0, bridge.ChildHeadTableCount );
-		Assert.IsFalse( bridge.ChildHeadsOccupied() );
 		CollectionAssert.AreEqual( new[] { 7 }, bridge.HungHeads().Select( x => x.Visitor ).ToArray() );
 		var without = new StateHasher();
 		bridge.AddCanonicalState( without );
-		Assert.AreNotEqual( withChild.Value, without.Value );
+		Assert.AreEqual( withChild.Value, without.Value );
 		bridge.ReleaseAll();
 		Assert.IsFalse( bridge.HungHeads().Any() );
 	}

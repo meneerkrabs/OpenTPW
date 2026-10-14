@@ -272,9 +272,6 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	public OriginalObjectRuntimeSnapshot CaptureSnapshot()
 	{
-		// [APPROX:HEADS-005] child/sound head tables are not saved; refuse rather than lose a rider's head
-		if ( Visitors.ChildHeadsOccupied() )
-			throw new InvalidOperationException( $"'{Entry.ArchivePath}': a child or sound script holds a rider head, which the park-resume snapshot cannot store." );
 		if (effects.HasLiveEventLoops)
 			throw new NotSupportedException("An attraction is still playing a looping EVENT or repair-hide sound. Live audio cannot be saved; stop the owning object or sound first.");
 		return new OriginalObjectRuntimeSnapshot
@@ -517,7 +514,7 @@ public sealed partial class OriginalObjectRuntime
 /// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
 /// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
 /// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds (their other
-/// effects stay unimplemented). TPW YEAR/MONTH/DAY/HOUR sample host civil time; MIN/SEC remain unimplemented.
+/// effects stay unimplemented). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time.
 /// Everything else (objects/particles, the ride-type controllers TOUR/BUMP,
 /// screams, reverb) stays an unimplemented effect.
 /// </summary>
@@ -585,7 +582,10 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			case Opcode.MONTH:
 			case Opcode.DAY:
 			case Opcode.HOUR:
+			case Opcode.MIN:
+			case Opcode.SEC:
 				// [BIN:STP-PPC:0x100B2144 RSE civil time] YEAR/MONTH/DAY/HOUR use host time/localtime, not the park calendar (PPC-clock.md).
+				// [BIN:TPW-EXE:0x005567D8 civil time opcodes] opcodes 97-102 (YEAR, MONTH, DAY, HOUR, MIN, SEC; handlers 0x5565B2..0x55674E) each call time (0x67D3F0) and localtime (0x67D8E0) and store tm_year (raw), tm_mon + 1, tm_mday, tm_hour, tm_min or tm_sec in the result register (+0x48), written to the operand only when it is a variable; the branches test that register, so a literal operand sets only the flags
 				if ( !call.VM.World.TryReadCivilTime( out var civil ) )
 					break;
 				return call.Opcode switch
@@ -593,7 +593,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 					Opcode.YEAR => civil.Year - 1900,
 					Opcode.MONTH => civil.Month,
 					Opcode.DAY => civil.Day,
-					_ => civil.Hour
+					Opcode.HOUR => civil.Hour,
+					Opcode.MIN => civil.Minute,
+					_ => civil.Second
 				};
 			case Opcode.TRIGANIM:
 			case Opcode.WAITANIM:

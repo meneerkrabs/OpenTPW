@@ -28,8 +28,6 @@ REGISTERS = {
     "BLUEPRINT": "source/OpenTPW/World/Original/BlueprintApproximations.cs",
     "ARRIVAL": "source/OpenTPW/World/Guests/ArrivalApproximations.cs",
     "GUEST": "source/OpenTPW/World/Guests/GuestApproximations.cs",
-    "TPI": "source/OpenTPW/Client/ThemeParkIncApproximations.cs",
-    "VM": "source/OpenTPW/VM/VmApproximations.cs",
     "TRACK": "source/OpenTPW/World/Tracks/TrackApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}

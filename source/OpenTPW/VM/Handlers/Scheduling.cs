@@ -21,9 +21,27 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.WAIT, RideOpcodeStatus.Implemented, "STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`)" )]
 		public static void Wait( RideVM vm, Operand time ) => vm.WaitFor( RideAnimationTiming.TriggerDelay( time.Value, vm.ScriptSpeed ) );
 
-		// [APPROX:VM-901] The traced facts are STP-PPC 0xb0710–0xb0798: WAITABS stores now + operand as a 32-bit deadline word in the field WAIT uses (no script-speed division), its first encounter always yields, and later encounters wait while unsigned now < deadline. The port models that deadline in its non-wrapping double script clock, so the original's unsigned comparison, its 2^32 wrap and its zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled; a session that never nears 2^31 ms of scheduler clock cannot observe the difference.
-		[OpcodeHandler( Opcode.WAITABS, RideOpcodeStatus.Implemented, "STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901)" )]
-		public static void WaitAbsolute( RideVM vm, Operand time ) => vm.WaitForUnscaled( time.Value );
+		// [BIN:TPW-EXE:0x00553828 WAITABS] with the deadline word (+0xA0) at 0 the handler stores clock (0x402D70 → 0x4031E0) + the operand (a variable's value, or the literal sign-extended from 16 bits) as a 32-bit word, with no script-speed division (0x5538A4–0x5538CB), rewinds the program counter by 2 and yields; with a deadline set it waits while now is unsigned-below it (jb at 0x55386D), else clears the word to 0 and continues. A deadline that wraps to exactly 0 reads as not armed and arms again
+		// [BIN:STP-PPC:0xb0710 WAITABS] the Mac handler stores now + operand in the same word and compares unsigned
+		[OpcodeHandler( Opcode.WAITABS, RideOpcodeStatus.Implemented, "tp.exe 0x553828 and STP-PPC 0xb0710: despite the name the first encounter stores the 32-bit clock + operand (no WAIT speed division) in the shared deadline word and yields; later encounters wait while the clock is unsigned-below it; a wrapped deadline is already past and a deadline of exactly 0 arms again (Theme Park Inc corpus: 34 uses, literals 1..10000)" )]
+		public static void WaitAbsolute( RideVM vm, Operand time )
+		{
+			var wait = unchecked((uint)time.Value);
+			var now = vm.ClockMilliseconds32;
+			var deadline = unchecked(now + wait);
+			if ( deadline == 0 )
+			{
+				// The word reads as "not armed": the next execution stores again.
+				vm.RepeatInstruction();
+				vm.EndSlice();
+				return;
+			}
+			// The first encounter always yields; a deadline that is not ahead of the clock (a wrapped sum, or an operand of 0) is passed at the next servicing pass.
+			if ( deadline <= now )
+				vm.WaitUntil( vm.TimeMilliseconds );
+			else
+				vm.WaitFor( wait );
+		}
 
 		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted)" )]
 		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = unchecked((int)vm.ClockMilliseconds32);

@@ -39,7 +39,7 @@ public sealed class RideScriptWorld
 	}
 
 	/// <summary>Samples external host civil time; it is never reconstructed from scheduler or park turns.</summary>
-	// [APPROX:VM-902] managed host-local time is an external, unsaved/unhashed input; variable writes and flags remain VM state. Native timezone/clock changes and destination/flag ordering are unqualified (PPC-clock.md).
+	// [EXT:vm-host-time] the original reads the C runtime's local time on every execution (tp.exe 0x67D3F0/0x67D8E0), so YEAR to SEC are external inputs: managed host-local time here, neither saved nor hashed, while the variable writes and flags that follow are VM state. A replay needs the same samples (an OpenTPW replay design point; the tests and headless runs inject a fixed clock)
 	internal bool TryReadCivilTime( out DateTime value )
 	{
 		value = civilTime == null ? default : civilTime();

@@ -619,33 +619,36 @@ public static class BonusNames
 		return null;
 	}
 
+	/// <summary>The text of an object text key its language file lacks (the default the original sets before parsing, 0x6FD880).</summary>
+	public const string MissingString = "MISSING STRING";
+
 	/// <summary>Characters a placed object keeps of each sign line (buffers of 32 characters and a terminator).</summary>
 	public const int SignLineCharacters = 32;
 
 	/// <summary>
-	/// The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's language file (same file choice as <see cref="Read"/>), or null when both are empty.
+	/// The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's selected-language file (no English fallback), or null when the
+	/// archive has no file for that language. A section the file lacks reads <see cref="MissingString"/>.
 	/// Each line is cut to <see cref="SignLineCharacters"/> characters; line 1 loses a trailing "--" (<see cref="StripTrailingDashes"/>).
 	/// </summary>
-	// Same language-file choice as the name (RIDES-025).
+	// [BIN:TPW-EXE:0x00412C65 object definition constructor] the object text is read from the selected language's file only; without that file the definition's text pointers stay NULL (0x412C65/0x412C6B) and the caller keeps the .sam name
+	// [BIN:TPW-EXE:0x00413600 object text] before parsing, NAME, SIGNA, SIGNB and +0x500 are set to L"MISSING STRING" (0x6FD880, 0x41360D–0x41361D), so a file without a SIGNA or SIGNB key shows that string on the line
+	// [BIN:TPW-EXE:0x004E2860 sign line 1] an empty line 1 is formatted from the never-written .bss buffer 0x78A374 (the empty string), so an empty line stays empty
+	// [BIN:TPW-EXE:0x004DB6F9 placed object sign lines] a placed object copies line 1 with 0x413020 and line 2 with 0x4130B0, both reading the OBJECT_NAMES row (table 0x7488D8) when the object is listed there and otherwise def+0x4F8 (SIGNA) and def+0x4FC (SIGNB)
 	// [BIN:TPW-EXE:0x00413600 object text] the object text file's NAME, SIGNA and SIGNB sections are parsed with the default "MISSING STRING"; SIGNA/SIGNB are copied into each placed object as two 32-character lines (0x413020/0x4130B0, called at 0x4DB6F9/0x4DB70D)
 	// [BIN:TPW-EXE:0x00468500 sign rebuild] the sign rebuild of the types with flag 0x8000000 reads line 1 through 0x4E2860 (which strips a trailing "--") and line 2 through 0x4E2920
-	// [APPROX:COMPAT-017] A language file without SIGNA or SIGNB leaves that line empty (both empty: null, the .sam name is kept) where the original shows its default "MISSING STRING" — evidence needed: which objects the original rebuilds signs for and what its line-1 fallback (0x78A374) is
 	public static (string Line1, string Line2)? ReadSignLines( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
 		try
 		{
 			var files = entry.FileSystem.GetFiles( entry.ArchivePath ).Where( file => file.EndsWith( ".txt", StringComparison.OrdinalIgnoreCase ) ).ToArray();
-			foreach ( var wanted in new[] { language, GameLanguage.DefaultLanguage } )
+			var file = files.FirstOrDefault( candidate => string.Equals( Path.GetFileNameWithoutExtension( candidate ), language, StringComparison.OrdinalIgnoreCase ) );
+			if ( file != null )
 			{
-				var file = files.FirstOrDefault( candidate => string.Equals( Path.GetFileNameWithoutExtension( candidate ), wanted, StringComparison.OrdinalIgnoreCase ) );
-				if ( file == null )
-					continue;
 				var sections = Parse( entry.FileSystem.ReadAllBytes( entry.FileSystem.GetRelativePath( entry.FileSystem.GetAbsolutePath( file ) ) ) );
-				var first = sections.GetValueOrDefault( "SIGNA" ) ?? "";
-				var second = sections.GetValueOrDefault( "SIGNB" ) ?? "";
-				if ( first.Length > 0 || second.Length > 0 )
-					return (StripTrailingDashes( Truncate( first ) ), Truncate( second ));
+				var first = sections.GetValueOrDefault( "SIGNA" ) ?? MissingString;
+				var second = sections.GetValueOrDefault( "SIGNB" ) ?? MissingString;
+				return (StripTrailingDashes( Truncate( first ) ), Truncate( second ));
 			}
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )

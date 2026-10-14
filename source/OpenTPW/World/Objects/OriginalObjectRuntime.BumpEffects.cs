@@ -5,6 +5,8 @@ public sealed partial class OriginalObjectRuntime
 	private Func<int, int, float, System.Numerics.Vector3>? bumpToEngine;
 	private Func<System.Numerics.Vector3, Vector3?>? engineToSound;
 	private readonly Dictionary<int, AudioVoice> engineVoices = new();
+	/// <summary>The break-smoke emitter handle of each vehicle slot (presentation only).</summary>
+	private readonly Dictionary<int, ParticleRendererModule.EmitterRef> smokeEmitters = new();
 
 	/// <summary>Counts of the kart effects the host played, for the smoke checks and the tests (sounds submitted, particles requested).</summary>
 	public (int Sounds, int Particles, int Engines) BumpEffectStats { get; private set; }
@@ -44,8 +46,24 @@ public sealed partial class OriginalObjectRuntime
 					ParticleRequested?.Invoke( new ParticleEventRequest( AttractionId, 0, 1, 0, effect.Id, 1000, at, null, -1, -1 ) );
 				}
 				break;
+			case BumpEffectKind.EmitterStart:
+				if ( engine is { } start && !smokeEmitters.ContainsKey( effect.Slot ) )
+				{
+					BumpEffectStats = BumpEffectStats with { Particles = BumpEffectStats.Particles + 1 };
+					if ( ParticleRendererModule.StartEmitter( effect.Id, start ) is { } started )
+						smokeEmitters[effect.Slot] = started;
+				}
+				break;
+			case BumpEffectKind.EmitterMove:
+				if ( engine is { } moved && smokeEmitters.TryGetValue( effect.Slot, out var following ) )
+					ParticleRendererModule.MoveEmitter( following, moved );
+				break;
+			case BumpEffectKind.EmitterStop:
+				if ( smokeEmitters.Remove( effect.Slot, out var ended ) )
+					ParticleRendererModule.KillEmitter( ended );
+				break;
 			case BumpEffectKind.GlobalSound:
-				// [APPROX:TRACK-025] the global cat_rides sounds 12 and 24 are submitted through the global-rides route (EVENT type 5); which sound each id is was not read from the catalogue
+				// [BIN:TPW-EXE:0x00547170 effect player] the global cat_rides sounds 12 and 24 are submitted through the global-rides route (EVENT type 5), the category the original's DAT_00803A28 names
 				BumpEffectStats = BumpEffectStats with { Sounds = BumpEffectStats.Sounds + 1 };
 				GameAudio.PlayRseEvent( 5, (uint)effect.Id, sound );
 				break;
@@ -59,6 +77,9 @@ public sealed partial class OriginalObjectRuntime
 			case BumpEffectKind.EngineStart:
 				if ( EventMapEvent( BumpEffects.SlotEngine ) is { } engineEvent && GameAudio.PlayRseEvent( 3, (uint)engineEvent, sound ) is { } voice )
 				{
+					// a voice already held by the slot (a restored boat, a reused slot) ends first, so none is left running unreachable
+					if ( engineVoices.Remove( effect.Slot, out var previous ) )
+						previous.Stop();
 					BumpEffectStats = BumpEffectStats with { Engines = BumpEffectStats.Engines + 1 };
 					engineVoices[effect.Slot] = voice;
 				}
@@ -77,24 +98,32 @@ public sealed partial class OriginalObjectRuntime
 					halted.Stop();
 				break;
 			case BumpEffectKind.EngineParameter:
-				// [APPROX:TRACK-025] the engine's pitch parameter (EventMap VAR_PAR0 = speed / 3) is raised every tick, but the voice is a plain event voice: no parameter reaches it
+				// [APPROX:TRACK-025] the engine's pitch parameter (EventMap variable 10 = speed / 3, pushed into the voice by 0x51BC40 every tick) is raised, but the voice is a plain event voice: no parameter reaches it, and the voice does not follow its vehicle (the original moves it every tick, 0x51C270); the smoke emitter likewise sits at the car's reference point, not on its sparks node
 				break;
 		}
 	}
 
 	/// <summary>
-	/// After a restore: starts the engine voice of every live kart again (the voices start at the launch, which a restored race has passed). No launch particle is
+	/// After a restore: starts the engine voice of every live kart and boat and the break-smoke emitter of every smoking car again (the voices start at the launch, which a restored race has passed). No launch particle is
 	/// raised and no generator is drawn, so the simulation state is untouched.
 	/// </summary>
 	internal void ResumeBumpEffects()
 	{
-		if ( stopped || Bump is not { Template.IsWater: false } bump )
+		if ( stopped || Bump is not { } bump )
 			return;
+		foreach ( var vehicle in bump.Vehicles )
+		{
+			if ( vehicle.Smoke && !smokeEmitters.ContainsKey( vehicle.Slot ) && bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height ) is { } smokeAt )
+			{
+				if ( ParticleRendererModule.StartEmitter( BumpEffects.ParticleSmoke, smokeAt ) is { } started )
+					smokeEmitters[vehicle.Slot] = started;
+			}
+		}
 		if ( EventMapEvent( BumpEffects.SlotEngine ) is not { } engineEvent )
 			return;
 		foreach ( var vehicle in bump.Vehicles )
 		{
-			// a kart's voice runs for its whole race; a bumper car holds one only while it is flagged (the first carrying car of a running ride)
+			// a kart's or boat's voice runs for its whole life; a bumper car holds one only while it is flagged (the first carrying car of a running ride)
 			if ( engineVoices.ContainsKey( vehicle.Slot ) || bump.Template.IsBumper && !vehicle.Engine )
 				continue;
 			var engine = bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height );
@@ -109,6 +138,9 @@ public sealed partial class OriginalObjectRuntime
 
 	private void StopBumpEffects()
 	{
+		foreach ( var emitter in smokeEmitters.Values )
+			ParticleRendererModule.KillEmitter( emitter );
+		smokeEmitters.Clear();
 		foreach ( var voice in engineVoices.Values )
 			voice.Stop();
 		engineVoices.Clear();

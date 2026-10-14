@@ -6,6 +6,27 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Challenge chains, training and speed keys from tp.exe (October 14, 2026)
+
+A won challenge with a follow-up type no longer pays its prize: the original (`0x4d2fb0`) credits the prize only when the challenge
+has no follow-up, so a chain pays the prize of its last part (jungle's chain 7 → 8 now pays 30,000 instead of 37,500). A lost
+challenge is no longer marked finished (`0x4d3140` only counts the loss), so it can be offered again. The challenge check
+`0x4d1660` confirms the accumulated types and the balloon and costume census percentages (ECON-034 narrowed); the follow-up's
+same-object rule is registered as ECON-055. Training's 100 points per grade is read in `0x505a10` (ECON-008 retired; the
+Standard.sam comment's 1000 does not match the code). The clock's 31 ms substeps and three-turns-per-frame limit (`0x54e360`) and
+the speed keys (numpad +, − and *: × 1.25, × 0.8 within 0.25..2, reset) narrow ECON-001 and ECON-004.
+
+## Bank rules from tp.exe: bankruptcy timing and the withdrawals flag (October 14, 2026)
+
+The park's bankruptcy now follows the bank's month routine (`0x4d0370`) instead of counting month ends in the red. A debit that
+takes the balance from 0 or more below 0 stamps the park turn, and every debit keeps the balance after it (`0x4d01f0`); at a month
+end, a park whose balance and last balance are both below 0 counts the 30-day months since the stamp, and above 5 it is bankrupt
+(the original's message type 2, ECON-030). The bank's withdrawals flag is honoured: with it clear, debits, instalments and payoffs
+charge nothing, and instalments raise the year profit by their principal share. The three bank words are saved (older saves count
+the stamp back from their months in the red) and imported from original saves (SAVE-008 narrowed). An early payoff compares the
+balance as an unsigned word, so a balance below 0 does not refuse it (`0x4d0850`). ECON-005, 007 and 051 are narrowed to the
+traced routines; the determinism hash schema is 18.
+
 ## Automatic per-theme checkpoints (October 14, 2026)
 
 Exit to Lobby from a Theme Park World Full Simulation or Instant Action park now saves an automatic checkpoint for that theme
@@ -1131,6 +1152,18 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   a second; placed rides never take the idle restart); RIDES-022, 032, 036, 038, 043 and 044 are rewritten around what the
   PC shows. WAIT is divided by the script speed as well (`0xb0658`), screams use the script's speed word (AUDIO-016
   retired), and the M3 gate's boarding period follows the scaled WAIT (Belly Bounce: P 3, H 55).
+- **Track register round (October 14):** the kart and water register is read against tp.exe. The controller ticks once per
+  31 ms world substep (`0x54F4C4`, the bump module tick called at `0x54F55F`; the BUMP 13 duration unit stays 30), boats and
+  karts start at heading 0 (only bumper cars draw a random one), a water crossing's centre circle carries the 0x80 flag so
+  boats pass through each other there, and the kart bank has no clamp. The track line snaps X only when |dx| > |dy| and ends at
+  `start + 2 * floor((cursor - start) / 2)` (a tie goes to Y, the − direction rounds away from the start). Boats raise the spray
+  as particle 96, start an engine voice at the first launch and play BeamUpCar with a silent voice stop at the unload; the break
+  smoke is a persistent particle-2 emitter per carrying car, made by BUMP 8 and removed by the fix or the unload (it follows the
+  car every tick; the flag is saved, not hashed). The bumper chase was already ported as traced (TRACK-029 retired). Register:
+  TRACK-009, 011, 012, 013, 016, 017, 023, 024 and 029 retired; TRACK-020, 021, 027 and 028 become OpenTPW decisions
+  (`[EXT:...]`); TRACK-002, 005, 019, 025, 026, 030 and 031 narrowed (the station table of `0x52A1A0`, the arena formula of
+  `0x529E10`). The tick and heading changes move the boat, kart and bumper goldens and the track resume hashes; the pinned fixed
+  run and the hash schema are unchanged (DETERMINISM.md).
 - **Riders' heads on their traced seats (October 14):** a head is now attached through the model's own records, traced in
   the Mac binary: attribute record `i` belongs to node `Unknown46 + i`, a head id is the first record with flag `0x80` and
   that value, and the node-name guess is gone (Eruption's `Head1a` and the other previously unresolved ids now draw;

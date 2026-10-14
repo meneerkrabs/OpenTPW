@@ -71,12 +71,15 @@ ride's archive; all four water and all four kart archives load completely.
 48-byte header: u16 version 3, u16 magic 0xAB1E, u16 samples per cell 5, u16 100, u16 width, u16 height, u32 body offset 48, u32 maxima offset, u32 flags
 offset, six floats (the bounding box, at most 20). Body: (5w) × (5h) bytes of profile (about 0.4 world units per step), then w × h per-cell maxima and
 w × h zero flags. A piece profile is 2 × 2 cells (156 bytes), the station's 4 × 4 (480 bytes). The reader is bounded (1 MiB), strict about the
-offsets and the length, and rejects malformed files. Nothing consumes the data (TRACK-002, RIDES-014).
+offsets and the length, and rejects malformed files. The profile is the original's per-object height map (`[TPW-EXE:0x451640]`, called from the mesh loader
+`0x4629D0` after swapping the extension, checks magic 0xAB1E0003 and (5, 100), and rebuilds the map from the mesh with `0x451880` when the file is missing or the size
+differs); OpenTPW uses it only as the kart surface (TRACK-001, TRACK-002: the sampler mode that reads it, `0x4527F0`, is not traced).
 
 ## The tool (`TrackLineWriter`, `TrackBuilder`)
 
-`CellToolMode.WaterTrack = 16` and `KartTrack = 11`: the mode is the cell type the line writes. A click snaps to the dominant axis (a tie keeps X)
-and then to whole two-cell steps (rounding toward the start, TRACK-009; `[TPW-EXE:0x53AAC0]`). Each tile validates its four cells in the path
+`CellToolMode.WaterTrack = 16` and `KartTrack = 11`: the mode is the cell type the line writes. A click snaps to one axis (X only when |dx| > |dy|, a tie goes to Y)
+and to whole two-cell steps: the end is `start + 2 · floor((cursor − start) / 2)`, so an odd distance rounds toward the start in the + direction and away from it in the −
+direction (`[TPW-EXE:0x53AAC0]`, instruction level 0x53AAC0..0x53AB21; TRACK-009 retired October 14). The path tool's own snap (a tie keeps X) is a different routine. Each tile validates its four cells in the path
 tool's order (bounds, owned land, objects, terrain — water is allowed for water tracks, queues refuse), charges `Costs.WaterTrackCell` once when
 written (existing tiles are free and bump their overlap counter) and clears path cells (`[STP-PPC:0x10088CB8..0x10088DEC]`). A new tile takes
 the arm toward any neighbour whose arm already points at it (the station's open ends, an earlier line's end); consecutive tiles of a line connect.
@@ -87,8 +90,20 @@ closes and the queue tool starts. `Level.BuildTrack` is the headless entry.
 
 ### The station (TRACK-005)
 
-The 4 × 4 footprint holds two station tiles along the heading, on the rows beside the entrance (`TrackStation`). The circuit starts at the first one
-(`[TPW-EXE:0x52A970]`: the start cell is the station-derived cell shifted four cells by the rotation; which cell that is was not resolved). The heading
+The 4 × 4 footprint holds two station tiles along the heading, on the rows beside the entrance (`TrackStation`). The circuit starts at the first one.
+The original's station is the line of `0x52A1A0` (`[TPW-EXE:0x52A1A0]`: attraction, &exitX, &exitY, kind; kind 1 writes cell type 13 for karts, 2 type 18 for water). From the
+attraction cell (x, y) it runs the line routine `0x53AAC0` over the station segment, stores the segment start as the walk's start cell (`DAT_007639E0/E4`) and returns the exit
+cell:
+
+| rotation | station line (2 tiles) | walk start | exit | heading bit |
+| --- | --- | --- | --- | --- |
+| 0° | (x, y+1) → (x+2, y+1) | (x, y+1) | (x+4, y+1) | 0x04 +X |
+| 90° | (x+1, y) → (x+1, y−3) | (x+1, y) | (x+1, y−5) | 0x01 −Y |
+| 180° | (x−1, y−2) → (x−3, y−2) | (x−1, y−2) | (x−5, y−2) | 0x40 −X |
+| 270° | (x−2, y) → (x−2, y+2) | (x−2, y) | (x−2, y+4) | 0x10 +Y |
+
+The exit offsets equal the fixed offsets `0x529E10` adds to the controller reference (below). OpenTPW places its station on the footprint's first two tile columns; the
+relation of the attraction's +8/+0xC to OpenTPW's placement anchor and the line modes 0x80, 0x82 and 0x83 are not traced (TRACK-005). The heading
 follows the rotation (0° +X, 90° −Y, 180° −X, 270° +Y). The tile before the first station tile (`Entry`) is where the player's loop returns; the tile after
 the second (`Exit`) is where the first line starts.
 
@@ -117,10 +132,11 @@ duplicate tile ("Duplicate track section - IGNORED!", so a crossing walked twice
 | 8 (0x14) | pivot (X0 + 0x1800, Y0 + 0x1800); x ≤ and y ≤ | pivot + (−0x87C, −0x87C) |
 | 9 / 12 (0x44) | box at the tile centre, half extents (0xC20, s); 12 adds the add-on flag | centre |
 | 10 / 13 (0x11) | box, half extents (s, 0xC20) | centre |
-| 11 (crossing) | keep-in circle √(s² + 0xC00²) at the centre and four keep-out circles 0xC00 − s at the tile corners (their clipping is TRACK-017) | centre |
+| 11 (crossing) | keep-in circle √(s² + 0xC00²) at the centre and four keep-out circles 0xC00 − s at the tile corners, each clipped to the tile's interior (`0x54B2F0` case 11: flags `& ~0x14`, `~0x12`, `~0x0A`, `~0x0C`); water controllers add 0x80 to the centre circle (TRACK-017 retired) | centre |
 
 Object flags: 1 used; 0x02 a point with x ≤ the centre is inside, 0x04 x >, 0x08 y >, 0x10 y ≤ (all four = a full object); 0x20 box; 0x40 keep-out; 0x80
-reserved for water crossings; 0x100 add-on. `0x87C` is 3072 · cos 45°. The inside test, the adjacency test and the next-object search are ported from
+water crossing (the section builder sets it on the centre circle of a crossing for the water types −5, −8, −12 and −13, `[TPW-EXE:0x54B986]`; a vehicle inside such an object takes
+part in no vehicle–vehicle collision, as the mover or as the other vehicle, so boats pass through each other in a crossing); 0x100 add-on. `0x87C` is 3072 · cos 45°. The inside test, the adjacency test and the next-object search are ported from
 `0x5493F0`, `0x5491E0` and `0x549070`. The first two straights of the walk (the station) carry no buoy.
 
 Buoys: the station's finish buoy first (flag 4), then the section buoys in walk order. Water: the finish buoy lies 0xC00 from the station reference along
@@ -133,8 +149,11 @@ clamped to 100, from the section counts `0x545310` (`[TPW-EXE:0x4E0560]`) — th
 
 ## Boat physics (Q4)
 
-`BumpController`, `BumpVehicle`, `BumpMath`. All state is integer; the controller runs **30 ticks per second** (BUMP 13 stores seconds × 30; the rate is
-TRACK-011). Templates (`BumperTemplates`, `[TPW-EXE:0x764178]`, 14 records indexed by −type − 1): water types −5, −8, −12, −13 hold the same values; kart types
+`BumpController`, `BumpVehicle`, `BumpMath`. All state is integer; the controller ticks once per **31 ms world substep** (`BumpController.TickSeconds = 0.031`, about 32.26 ticks per
+second: the game loop adds 0x1F to its clock per substep, `[TPW-EXE:0x54F4C4]`, and calls the bump module tick `0x546C80` from it, `[TPW-EXE:0x54F55F]`; TRACK-011 retired October 14).
+The duration unit of BUMP 13 stays 30 per second of the script (it stores seconds × 30, the original's constant), so a duration of 30 units lasts 0.93 s. A new vehicle starts at
+heading 0 and drawn heading 0 (TRACK-012 and TRACK-023 retired: the 0xAC-byte record is zeroed and no water or kart launch writes +0x50 or +0x54); only a bumper car takes a random heading
+at its first launch. A save from before the 31 ms tick may carry a tick clock up to 1/30 s; it restores and runs off on the next advance. Templates (`BumperTemplates`, `[TPW-EXE:0x764178]`, 14 records indexed by −type − 1): water types −5, −8, −12, −13 hold the same values; kart types
 −4, −7, −9, −10 too (the model range differs).
 
 | Field | Water | Kart |
@@ -160,8 +179,9 @@ Performance 0..100 (the script's speed bias, default 50) interpolates each pair 
   error is below `clamp(distance / 512, 22, 48)`; velocity `+= table · a · 4 / 1024`.
 - **Integration** (`0x547F50`): `v = v · d / 1024` with d the damping (1000 while the ride is broken, × 7/10 under flag 0x80000), the post-damping velocity is kept
   for the collisions, `position += v`. Water boats also keep a wall-hit spin (decays by 0.998 above 0x30), a roll `spin / 128` clamped to ±16 and a spray
-  chance every 32nd tick from the module LCG (counter only, TRACK-016). The LCG `s · 214013 + 2531011` only gates cosmetics; gameplay draws use the world
-  generator (the park's seeded stream, DET-013).
+  chance every 32nd tick from the module LCG: in phase 2, `(s >> 16) & 7 == 2` raises particle 96 (`P_EFFECT_SmallSplash`) at the boat (`[TPW-EXE:0x5480B7]`; TRACK-016 retired). The LCG
+  `s · 214013 + 2531011` only gates cosmetics; gameplay draws use the world generator (the park's seeded stream, DET-013). A boat's first launch (`0x54A909`) starts an engine voice
+  from the ride's EventMap slot 0 (kept until the boat unloads); the water types have no crash cue, no horn and no smoke, and their templates hold one model (no variants).
 - **Walls** (`0x5497B0`): outside its object a boat first looks for another object that holds it; else the velocity is reflected about the radial direction
   (circle: rotation by `2(h_radial − 128) − 256 − (h_v − 256) − h_v`, × restitution; box: the offending component flips), the boat is projected back to the
   wall and, for water, the spin gets ∓0x30 × the penetration. **Keep-out** (`0x5494D0`): moving into a keep-out circle adds the normal speed ×
@@ -170,8 +190,8 @@ Performance 0..100 (the script's speed bias, default 50) interpolates each pair 
   next buoy. The pairs run in both roles, as in the original.
 - **Laps and unload** (`0x5474B0`, `0x54A040`, `0x54AE50`): at the finish buoy the lap counter (starts at the controller's laps, −1 for water) increments; reaching 0 turns
   the boat to the unload point (flag 0x20); within the buoy radius it retires, its guests go to the leaving list and the count falls. Otherwise it is relaunched.
-  Capturing a buoy aims at the next one with a fresh jitter (new value on x, the previous on y). The unload also plays particle 15 (BeamUpCar) and EventMap slot 1
-  (not played, TRACK-016). When the last boat is gone the original resets the controller to loading (state 1) — except for the water types −5, −8, −12 and −13, which
+  Capturing a buoy aims at the next one with a fresh jitter (new value on x, the previous on y). The unload plays particle 15 (BeamUpCar) for every type, and a boat's engine voice
+  ends silently (`0x51C300`); the kart types play EventMap slot 1 over theirs. When the last boat is gone the original resets the controller to loading (state 1) — except for the water types −5, −8, −12 and −13, which
   the routine's type switch skips (`0x54AE50`); OpenTPW follows that reading, so a water ride stays in phase 2.
 
 ### BUMP commands
@@ -187,7 +207,7 @@ The PC dispatch (`0x554726..0x554A3D`, table at `0x556A18`) differs from the fir
 | 4 | launch a boat: needs phase ≠ 0 and fewer than the maximum; takes the waiting guests |
 | 5 | track valid (the walk's verdict) |
 | 6 / 7 | close / open (water opens straight into phase 2; closing sends waiting guests to the leaving list) |
-| 8 / 9 | broken (state 2) or worn out (state 1) for a nonzero parameter, fixed (0) for zero (TRACK-013) |
+| 8 / 9 | broken (state 2) or worn out (state 1) for a nonzero parameter, fixed (0) for zero; BUMP 8 also starts or removes the break smoke emitters (below); BUMP 9 with 0 calls the same fix routine as BUMP 8 with 0 (`0x5548C3` → `0x544E50`), which kills the emitters only when the old state was broken, and a jungle bumper car (type −1) plays animation 12 at the break and 5 at the fix; the worn state is read only by the kart exhaust branch (TRACK-013 retired) |
 | 10 | eject all boats and close |
 | 11 | boats running (also into the variable) |
 | 12 | load the waiting guests into the first empty boat |
@@ -201,7 +221,7 @@ writes it to `VAR_LETMEOFF` when the boat has unloaded.
 ## Rendering
 
 `TrackRenderer`: one entity per piece part per tile, the mesh baked with its rest transform; the tile turns counter-clockwise by its rotation about its own
-centre (the original's one-cell instance offset is unresolved, TRACK-003) and stands on the mean ground height of its four cells; boats are
+centre (the original's one-cell instance offset is unresolved, TRACK-003; the `Bumper.*Adjust` keys are the station-reference offsets, not a mesh pivot) and stands on the mean ground height of its four cells; boats are
 `wr_ring.md2` at `position / 307.2` model units. A boat's height, pitch and roll follow the original's four probes (`[TPW-EXE:0x546280]`): ± the vehicle radius
 along the facing and across it, each the highest surface triangle under the point (here the piece's water meshes, `TrackSurface`; the station tiles use one water
 height), else the terrain; the mean is the height, the front/back and right/left differences the pitch and roll. The original's surface-face flag (bit 0x8000 of the
@@ -227,14 +247,30 @@ exist (the hash schema stays at 14). The digest covers every restored boat field
 
 `TrackSelectorTests` (the 16 masks, adjustments, tables, templates), `TrackCircuitTests` (tool, cost, clearing, closed loop, open track, tee refusal, crossing,
 bridges), `BumpControllerTests` (sine table, section and buoy geometry golden values, commands, a golden boat run, determinism, collisions, saves),
-`HmpFileTests`, `TrackSaveTests` (shape check, codec, round trip, hash gating) and, with `OPENTPW_GAME_PATH`, `TrackAssetTests` (the kits and profiles of all eight
+`TrackRegisterRoundTests` (the 31 ms tick, start headings, the crossing flag and its effect on boat collisions, spray, engine voice and unload cues, the break smoke emitter, the unclamped bank), `HmpFileTests`, `TrackSaveTests` (shape check, codec, round trip, hash gating) and, with `OPENTPW_GAME_PATH`, `TrackAssetTests` (the kits and profiles of all eight
 ride archives, the real `Wateride.RSE` against the controller). The native smoke run lays a small closed circuit on the Jungle level and runs a boat, and the park-resume smoke with `OPENTPW_SMOKE_WATER=1` (both phases) buys the ride, saves a park with a boat on the water, restores it through the menu load and matches 600 continuation ticks of canonical hashes.
 The golden values freeze this implementation of the traced rules; they are not captures of the original game.
 
+## Design decisions and retired items (October 14 register round)
+
+OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
+
+- `[EXT:track-pool-overflow-refused]` (was TRACK-020): a circuit that overflows the section, collision-object or buoy pool is refused. The original skips sections silently when the section pool
+  is full, **crashes** when the collision-object pool overflows (it logs "Out of Collision Objects" and writes the flags through a null pointer, `0x54B1E0`, `0x54B97E`, `0x54BAC8`) and
+  drops buoys ("Out of Buoys").
+- `[EXT:track-tile-owner]` (was TRACK-021): every tile records its ride (`TrackCell.Owner`). The original's 40-byte cell has no owner field; its vehicles can cross into a neighbour ride's adjacent objects (TRACK-019).
+- `[EXT:legacy-kart-save]` (was TRACK-027): a park-resume save from before the kart or bumper controllers restores its rides freshly (save compatibility).
+- `[EXT:late-kart-guard]` (was TRACK-028): `BUMP 4` on a kart ride in phase 3 is refused. The original creates a kart whose relaunch gives it no movement flags (`0x54A040`), so it never moves and keeps the
+  controller's count above 0, which blocks the race reset; no shipped script issues `BUMP 4` in phase 3.
+- `[EXT:kart-roll-convention]`: the absolute sign of a kart's roll (above).
+
+Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start heading), 016 (boat spray, engine voice, unload), 017 (crossing flag), 024 (bank clamp), 029 (chase, already ported).
+Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 025, 026, 030, 031 (texts in the register).
+
 ## Open points
 
-- Jumps and tunnels, the bumper cars' arena centre and look (TRACK-030, 031), the water animation and arm masks, the boats' spray particles (TRACK-016), the
-  kart sounds' catalogue ids and the engine pitch (TRACK-025), the advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre and look (TRACK-030, 031), the water animation and arm masks, the
+  engine voice parameter and the voices' position updates (TRACK-025), the advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 
@@ -283,16 +319,24 @@ The controller raises `BumpEffect`s (`BumpController.Effect`); the runtime plays
 | crash | impulse above 130, once per tick per pair | request 3: global `cat_rides` 12 |
 | horn | phase 2, every 32 ticks, speed above 230 | request 2: the module LCG draws every tick until `(lcg & 0x70000) == 0`, then EventMap slot 3 |
 | exhaust | worn, every 32 ticks, speed above 80 | draw r = (lcg >> 16) & 7: r < 2 particle 1 (Sparks), r = 2 particle 10 + request 1 (`cat_rides` 24) |
-| engine | every tick | EventMap slot 0; pitch parameter speed / 3 (raised, not applied: TRACK-025) |
-| smoke | broken | particle 2 every 32 ticks (cadence assumed: TRACK-025) |
+| engine | every tick | EventMap slot 0; the parameter speed / 3 is raised, not applied, and the voice does not follow its vehicle (TRACK-025) |
+| smoke | `BUMP 8` break | a persistent particle-2 emitter per car (below) |
 | animation | speed above 40 / at most 40 | 5 / 12 (the hovering karts stay on 5) |
 
 ### Drawing
 
+**Break smoke** (TRACK-023 and TRACK-025 retired): `BUMP 8` with a nonzero parameter (`0x544C80`) creates, for every car of the controller that carries guests (flag 0x4000), has a sparks
+node and no emitter yet, a particle-2 (Smoke) emitter (`0x521E60`) stored in the car's +0x2C; `0x547F50` moves it to the node every tick (`0x51FE30`), and the fix (`BUMP 8` with 0,
+`0x544E50`) and the unload (`0x54AE50`) destroy it (`0x51FEB0`). It is not phase-gated and cars created later get none; water boats have no sparks node. In OpenTPW the controller raises
+`EmitterStart`, `EmitterMove` (every tick) and `EmitterStop` effects and the runtime keeps one `ParticleSystem` emitter handle per car slot (`ParticleSystem.Move` repositions it); the
+flag is saved with the car (`Smoke`) but is presentation state and not in the hash, and a resume restarts the emitters of smoking cars. The emitter sits at the car's position, not on
+its sparks node.
+
 `TrackRenderer` is one per family. A kart is drawn along its drawn heading (+0x54, which follows the velocity by (angle difference × speed / 1000) per tick) with the
 four-probe height, pitch and roll over the piece's `.hmp` profile (2-unit samples of 0.4 units; the profile equals the mesh's top surface sample for sample, TRACK-001).
 Space and fantasy karts hover 1.6 units above the front/back mean with a sine bob (±0.43 units, period 512/6 ticks), have no roll of their own, bank into turns
-(TRACK-024) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (TRACK-026).
+(`roll += yaw / 13 · π/2` with no clamp, `[TPW-EXE:0x5469C3]`; TRACK-024 retired. The original's roll is the negative of this pose's slope roll with the bank added in its own sign, so the
+bank's sign relative to the slope is the original's and the absolute roll sign is a rendering convention, `[EXT:kart-roll-convention]`) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (TRACK-026).
 `--debug-kart-track` (Debug builds) places Dino Karts with a circuit, three karts and a long race for captures.
 
 ### Saves
@@ -349,7 +393,7 @@ first car without riders); when the cars are full or ten seconds passed after th
 **Saves**: a bumper controller is saved like a kart's (phase, state, duration, guest lists, cars); it has no sections. A park-resume save from before the controller restores
 the ride freshly (TRACK-027) and hands the riders it still held to the new leaving list.
 
-**Chase** (`0x54A040`, `0x5474B0`): at a relaunch a car that is neither chasing nor just bumped draws `rand & 0xF`; at 0..2, with two or more cars, it locks onto a random other car that is not unloading
+**Chase** (TRACK-029 retired: the choice and the flag-4 step are ported as traced, the round-2 report matches this text point by point): at a relaunch a car that is neither chasing nor just bumped draws `rand & 0xF`; at 0..2, with two or more cars, it locks onto a random other car that is not unloading
 (+0x80 = its slot, countdown 90, flags `(flags & 0xFFEBFF85) | 0x8004`). Each step the countdown falls; at 0, or when the target's flags `& 0x40021` are not exactly 1 (bumped or going home), the car relaunches.
 Otherwise it aims at the target's position plus its velocity times the ticks to reach it (at most 24), pulled onto the arena rim when outside, and steers there with the shared steering.
 

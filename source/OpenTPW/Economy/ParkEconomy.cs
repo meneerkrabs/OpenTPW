@@ -25,6 +25,8 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>Months in the red before bankruptcy (TAG_SYSTEM 123–127: warnings at 3 and 5, bankrupt after 6).</summary>
 	// [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)]
 	public const int MonthsInRedForBankruptcy = 6;
+	/// <summary>The bank's month in the red: 30 days of park time (tp.exe <c>0x004D0370</c> divides by <c>0x1792F8648000</c>, 30 × 864e9 in 100 ns units).</summary>
+	public const long SecondsPerMonthInRed = 30 * ParkCalendar.SecondsPerDay;
 
 	private readonly SortedDictionary<int, ParkObjectState> objects = new();
 	private readonly List<LoanAccount> loans = new();
@@ -69,7 +71,14 @@ public sealed class ParkEconomy : IParkEconomy
 	public bool IsParkOpen { get; private set; }
 	public int EntranceFee { get; private set; }
 	public bool IsBankrupt { get; private set; }
+	/// <summary>Whole 30-day months since the park went into the red, as the last month end counted them (0 in the black).</summary>
 	public int MonthsInRed { get; private set; }
+	/// <summary>The bank's <c>mWithdrawalsEnabled</c> (+0x114): when clear, a debit charges nothing (tp.exe <c>0x004D01F0</c>). Set in every shipped save.</summary>
+	public bool WithdrawalsEnabled { get; private set; } = true;
+	/// <summary>The bank's <c>mLastBalance</c> (+0x11C): the balance after the last debit; credits leave it.</summary>
+	public long LastBalance { get; private set; }
+	/// <summary>The bank's turn-entered-red stamp (+0x120): the park turn of the debit that took the balance from 0 or more below 0.</summary>
+	public long TurnEnteredRed { get; private set; }
 	/// <summary>The park's litter by map cell (dropped by guests, swept by handymen; docs/reverse/WANDER-plan.md §6).</summary>
 	public ParkLitter Litter { get; } = new();
 	public int TicketsSpent { get; private set; }
@@ -98,10 +107,37 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void Post( LedgerCategory category, long amount )
 	{
+		if ( !ParkLedger.IsIncome( category ) && !WithdrawalsEnabled )
+			return;
 		var wasInBlack = Ledger.Balance >= 0;
 		Ledger.Post( category, amount );
+		if ( !ParkLedger.IsIncome( category ) )
+			RecordDebit();
 		if ( wasInBlack && Ledger.Balance < 0 )
 			Raise( ParkEventKind.InTheRed, Ledger.Balance );
+	}
+
+	// [BIN:TPW-EXE:0x4d01f0 bank debit] with mWithdrawalsEnabled (+0x114) set, a debit takes the amount off the balance; when the new balance is below 0
+	// and mLastBalance (+0x11C) was 0 or more it stamps the current park turn (world +0x1DA70C) at +0x120, then stores the new balance as mLastBalance.
+	// A credit (0x004D0190) touches neither word; with the flag clear the debit changes nothing at all
+	private void RecordDebit()
+	{
+		if ( Ledger.Balance < 0 && LastBalance >= 0 )
+			TurnEnteredRed = ParkCalendar.Turn( Tick );
+		LastBalance = Ledger.Balance;
+	}
+
+	/// <summary>
+	/// Whole 30-day months the park has been in the red (tp.exe <c>0x004D0370</c>): 0 unless both the balance and the balance after
+	/// the last debit are below 0, else the park time since the turn-entered-red stamp (<c>0x004F88B0</c>: turns × 15000 / 4 seconds)
+	/// divided by 30 days.
+	/// </summary>
+	public int MonthsSinceEnteringRed()
+	{
+		if ( Balance >= 0 || LastBalance >= 0 )
+			return 0;
+		var turns = Math.Max( 0, ParkCalendar.Turn( Tick ) - TurnEnteredRed );
+		return (int)Math.Min( int.MaxValue, turns * ParkCalendar.SecondsPerTurn / SecondsPerMonthInRed );
 	}
 
 	// ---------------------------------------------------------------- time
@@ -117,7 +153,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public void Advance( long ticks )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( ticks );
-		// [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state
+		// A bankrupt park stops (ECON-030, EndMonth)
 		for ( long step = 0; step < ticks && !IsBankrupt; step++ )
 		{
 			var previousTurn = ParkCalendar.Turn( Tick );
@@ -770,19 +806,28 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		ConsiderStrikes();
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
-		// [APPROX:ECON-051] the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) — evidence needed: the writer of the flag and when the original clears it
+		// [BIN:TPW-EXE:0x4d0370 bank month] the instalment is deducted only with mWithdrawalsEnabled (+0x114) set, as a debit that keeps mLastBalance and the
+		// turn-entered-red stamp; the year profit then gains back the principal share either way, so with the flag clear the instalment raises the profit by it
+		// [APPROX:ECON-051] the withdrawals flag is imported from an original save and kept, and no OpenTPW action clears it — evidence needed: the writer that clears +0x114 (every shipped save has it set)
 		foreach ( var loan in loans.OrderBy( item => item.OfferIndex ).ToList() )
 		{
 			var (account, paid) = LoanMath.Pay( loan );
-			Post( LedgerCategory.LoanPayments, paid );
-			Ledger.ChargeLoanInterest( LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
+			var interest = LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount );
+			if ( WithdrawalsEnabled )
+			{
+				Post( LedgerCategory.LoanPayments, paid );
+				Ledger.ChargeLoanInterest( interest );
+			}
+			else
+				Ledger.ChargeLoanInterest( interest - paid );
 			Raise( ParkEventKind.LoanPayment, paid, 0, account.OfferIndex );
 			var position = loans.IndexOf( loan );
 			if ( account.MonthsRemaining <= 0 )
 			{
 				loans.RemoveAt( position );
 				// [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes
-				// [APPROX:ECON-007] reopening has no original credit-eligibility gate — evidence needed: implement the traced credit predicate and qualify its cross-edition behavior
+				// [BIN:TPW-EXE:0x4d0750 take loan] taking a loan only needs its bought flag (+0x28) clear: no credit test
+				// [APPROX:ECON-007] a repaid loan is offered again at once; the PPC offer test 0x100CC9E8 has no confirmed PC counterpart — evidence needed: the PC routine that lists the loan offers
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}
@@ -804,20 +849,21 @@ public sealed class ParkEconomy : IParkEconomy
 			DroppedAdmissions += monthlyAdmissions[0];
 			monthlyAdmissions.RemoveAt( 0 );
 		}
-		if ( Balance < 0 )
+		// [BIN:TPW-EXE:0x4d0370 bank month] after the instalments, a park whose balance and mLastBalance are both below 0 counts the 30-day months since
+		// the turn-entered-red stamp; above 5 it posts message type 2 (0x0040F630, bus DAT_00788D3C), at every month end while it stays so
+		var previousMonthsInRed = MonthsInRed;
+		MonthsInRed = MonthsSinceEnteringRed();
+		if ( MonthsInRed >= MonthsInRedForBankruptcy )
 		{
-			MonthsInRed++;
-			if ( MonthsInRed >= MonthsInRedForBankruptcy )
-			{
-				IsBankrupt = true;
-				IsParkOpen = false;
-				Raise( ParkEventKind.Bankrupt, MonthsInRed );
-			}
-			else if ( MonthsInRed is 3 or 5 )
-				Raise( ParkEventKind.BankruptcyWarning, MonthsInRed );
+			IsBankrupt = true;
+			IsParkOpen = false;
+			Raise( ParkEventKind.Bankrupt, MonthsInRed );
 		}
-		else
-			MonthsInRed = 0;
+		// [APPROX:ECON-030] message type 2 is taken as bankruptcy: the park closes and the simulation stops, and the TAG_SYSTEM warnings come when the count reaches 3 and 5 — evidence needed: the receiver of message type 2 and the writer of the warnings
+		else if ( previousMonthsInRed < 5 && MonthsInRed >= 5 )
+			Raise( ParkEventKind.BankruptcyWarning, 5 );
+		else if ( previousMonthsInRed < 3 && MonthsInRed >= 3 )
+			Raise( ParkEventKind.BankruptcyWarning, 3 );
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
@@ -1325,11 +1371,14 @@ public sealed class ParkEconomy : IParkEconomy
 	public bool TryRepayLoan( int offerIndex )
 	{
 		var account = loans.FirstOrDefault( item => item.OfferIndex == offerIndex ) ?? throw new InvalidOperationException( $"Loan {offerIndex} is not outstanding." );
-		if ( account.RemainingBalance > Balance )
+		// [BIN:TPW-EXE:0x4d0850 loan payoff] "Cannot afford to pay off loan" when the balance is below M × the months left as unsigned words, so a balance below 0 never refuses
+		if ( unchecked( (uint)(int)Balance < (uint)(int)account.RemainingBalance ) )
 			return false;
 		Post( LedgerCategory.LoanPayments, account.RemainingBalance );
 		// [BIN:STP-PPC:0x100CCC78 loan payoff] months repaid are cleared before they are read again, so the profit is charged the share of the whole term (q x N), even after a partial repayment (ORACLE F13)
-		Ledger.ChargeLoanInterest( LoanMath.PayoffInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
+		// [BIN:TPW-EXE:0x4d0850 loan payoff] the debit is skipped with mWithdrawalsEnabled clear, and the profit still gains the payoff less that share
+		var interest = LoanMath.PayoffInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount );
+		Ledger.ChargeLoanInterest( WithdrawalsEnabled ? interest : interest - account.RemainingBalance );
 		loans.Remove( account );
 		takenOffers.Remove( offerIndex );
 		Raise( ParkEventKind.LoanRepaid, account.RemainingBalance, 0, offerIndex );
@@ -1528,6 +1577,15 @@ public sealed class ParkEconomy : IParkEconomy
 		loans.AddRange( boughtLoans );
 		takenOffers.Clear();
 		takenOffers.UnionWith( loans.Select( loan => loan.OfferIndex ) );
+	}
+
+	/// <summary>Restores the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp (an original save's or OpenTPW's).</summary>
+	internal void RestoreBankWords( bool withdrawalsEnabled, long lastBalance, long turnEnteredRed )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegative( turnEnteredRed );
+		WithdrawalsEnabled = withdrawalsEnabled;
+		LastBalance = lastBalance;
+		TurnEnteredRed = turnEnteredRed;
 	}
 
 	internal void RestoreState( long tick, GameSpeed speed, bool open, int fee, bool bankrupt, int monthsInRed, IEnumerable<LitterCell> litter, int ticketsSpent, int nextObjectId,

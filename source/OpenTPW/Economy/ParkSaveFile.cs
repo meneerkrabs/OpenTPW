@@ -47,6 +47,12 @@ public static class ParkSaveFile
 		public required int EntranceFee { get; init; }
 		public required bool Bankrupt { get; init; }
 		public required int MonthsInRed { get; init; }
+		/// <summary>The bank's withdrawals flag (absent in older saves: set).</summary>
+		public bool? WithdrawalsEnabled { get; init; }
+		/// <summary>The balance after the last debit (absent in older saves: the saved balance).</summary>
+		public long? LastBalance { get; init; }
+		/// <summary>The park turn the balance went below 0 (absent in older saves: counted back from <see cref="MonthsInRed"/>).</summary>
+		public long? TurnEnteredRed { get; init; }
 		/// <summary>
 		/// Legacy: saves before per-cell litter kept a park-wide count of litter items in hundredths. It has no cells to land on, so it is
 		/// accepted, ignored and written 0 (kept in the record: the determinism hashes cover the save's text); the litter is <see cref="Litter"/>.
@@ -421,6 +427,9 @@ public static class ParkSaveFile
 			EntranceFee = park.EntranceFee,
 			Bankrupt = park.IsBankrupt,
 			MonthsInRed = park.MonthsInRed,
+			WithdrawalsEnabled = park.WithdrawalsEnabled,
+			LastBalance = park.LastBalance,
+			TurnEnteredRed = park.TurnEnteredRed,
 			Litter = park.Litter.Snapshot().Select( cell => new LitterData { X = cell.X, Y = cell.Y, Type = (int)cell.Type, Collector = cell.Collector, ClaimTurn = cell.ClaimTurn } ).ToList(),
 			TicketsSpent = park.TicketsSpent,
 			TicketItems = park.TicketItems.Order().ToList(),
@@ -585,6 +594,7 @@ public static class ParkSaveFile
 		}
 		Require( data.Tick >= 0 && Enum.IsDefined( data.Speed ) && Enum.IsDefined( data.Mode ), "clock" );
 		Require( data.EntranceFee >= 0 && data.MonthsInRed >= 0 && data.LitterScaled >= 0 && data.TicketsSpent >= 0, "park values" );
+		Require( data.TurnEnteredRed is not { } enteredRed || enteredRed >= 0 && enteredRed <= ParkCalendar.Turn( data.Tick ), "turn entered red" );
 		var littered = new HashSet<(int, int)>();
 		foreach ( var cell in data.Litter )
 			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
@@ -698,6 +708,9 @@ public static class ParkSaveFile
 				TotalProfit = item.Statistics[8]
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
+		// Older saves keep only the months in the red: the stamp is counted back so that the bank counts as many 30-day months
+		park.RestoreBankWords( data.WithdrawalsEnabled ?? true, data.LastBalance ?? data.Ledger.Balance,
+			data.TurnEnteredRed ?? LegacyTurnEnteredRed( ParkCalendar.Turn( data.Tick ), data.MonthsInRed, data.Ledger.Balance ) );
 		park.Staff.Restore( data.Staff.Members.Select( member => new StaffMember
 		{
 			Id = member.Id,
@@ -793,5 +806,13 @@ public static class ParkSaveFile
 		if ( extension.Equals( ".tpws", StringComparison.OrdinalIgnoreCase ) || extension.Equals( ".tpwi", StringComparison.OrdinalIgnoreCase ) )
 			throw new InvalidDataException( "Original TPWS/TPWI files are never written or read as OpenTPW park saves." );
 		return Path.GetFullPath( path );
+	}
+
+	private static long LegacyTurnEnteredRed( long turn, int monthsInRed, long balance )
+	{
+		if ( balance >= 0 || monthsInRed <= 0 )
+			return balance < 0 ? turn : 0;
+		var turns = (monthsInRed * ParkEconomy.SecondsPerMonthInRed + ParkCalendar.SecondsPerTurn - 1) / ParkCalendar.SecondsPerTurn;
+		return Math.Max( 0, turn - turns );
 	}
 }

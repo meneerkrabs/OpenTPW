@@ -37,8 +37,8 @@ internal sealed class LoopbackServer : IAsyncDisposable
 	public Uri Url { get; }
 
 	/// <summary>
-	/// Starting or stopping the server takes well under a second; a stall (once a file watcher blocked in the OS)
-	/// fails the test with a clear message instead of hanging the whole suite. Requests are bounded by
+	/// Building, starting or stopping the server takes well under a second; a stall (once a file watcher blocked in
+	/// the OS) fails the test with a clear message instead of hanging the whole suite. Requests are bounded by
 	/// <see cref="OnlineClient"/>'s own HttpClient timeout.
 	/// </summary>
 	public static readonly TimeSpan StartStopTimeout = TimeSpan.FromSeconds( 30 );
@@ -47,36 +47,50 @@ internal sealed class LoopbackServer : IAsyncDisposable
 	{
 		directory ??= Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
 		var dataDirectory = directory;
-		// Build is synchronous, so it runs on a pool thread that a stall can strand without blocking the test.
-		var app = await Bounded( Task.Run( () => ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
+		var build = Task.Run( () => ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
 		{
 			options.DataDirectory = dataDirectory;
 			options.PasswordIterations = 1000;
 			// Most tests are about other features; TwoStepLoginTests turns two-step login on.
 			options.RequireTotp = false;
 			configure?.Invoke( options );
-		}, emailSender ) ), "build" );
-		using ( var cancel = new CancellationTokenSource( StartStopTimeout ) )
-			await Bounded( app.StartAsync( cancel.Token ), "start" );
+		}, emailSender ) );
+		WebApplication app;
+		try
+		{
+			await Bounded( _ => build, "build" );
+			app = await build;
+		}
+		catch
+		{
+			// A build that finishes after the timeout still owns a host; dispose it whenever it arrives.
+			_ = build.ContinueWith( built => built.Result.DisposeAsync().AsTask(), TaskContinuationOptions.OnlyOnRanToCompletion );
+			throw;
+		}
+		try
+		{
+			await Bounded( app.StartAsync, "start" );
+		}
+		catch
+		{
+			await Bounded( _ => app.DisposeAsync().AsTask(), "shut down" );
+			throw;
+		}
 		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
 		return new LoopbackServer( app, directory, new Uri( address ) );
 	}
 
-	private static async Task<T> Bounded<T>( Task<T> task, string step )
+	/// <summary>Runs one lifecycle step on a pool thread, so even synchronous work in it cannot outlast the timeout.</summary>
+	private static async Task Bounded( Func<CancellationToken, Task> step, string name )
 	{
-		await Bounded( (Task)task, step );
-		return await task;
-	}
-
-	private static async Task Bounded( Task task, string step )
-	{
+		using var cancel = new CancellationTokenSource( StartStopTimeout );
 		try
 		{
-			await task.WaitAsync( StartStopTimeout );
+			await Task.Run( () => step( cancel.Token ) ).WaitAsync( StartStopTimeout );
 		}
-		catch ( Exception exception ) when ( exception is TimeoutException or OperationCanceledException )
+		catch ( Exception exception ) when ( exception is TimeoutException || (exception is OperationCanceledException && cancel.IsCancellationRequested) )
 		{
-			throw new AssertFailedException( $"The loopback server did not {step} within {StartStopTimeout.TotalSeconds} seconds.", exception );
+			throw new AssertFailedException( $"The loopback server did not {name} within {StartStopTimeout.TotalSeconds} seconds.", exception );
 		}
 	}
 
@@ -91,9 +105,14 @@ internal sealed class LoopbackServer : IAsyncDisposable
 
 	public async ValueTask DisposeAsync()
 	{
-		using ( var cancel = new CancellationTokenSource( StartStopTimeout ) )
-			await Bounded( app.StopAsync( cancel.Token ), "stop" );
-		await Bounded( app.DisposeAsync().AsTask(), "shut down" );
+		try
+		{
+			await Bounded( app.StopAsync, "stop" );
+		}
+		finally
+		{
+			await Bounded( _ => app.DisposeAsync().AsTask(), "shut down" );
+		}
 	}
 
 	public void DeleteData()

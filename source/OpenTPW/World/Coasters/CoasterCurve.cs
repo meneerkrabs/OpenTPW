@@ -42,6 +42,12 @@ public struct CoasterSample
 /// </summary>
 public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false );
 
+/// <summary>
+/// One cross-section slice of the drawn track mesh: the curve point at a parameter step of one knot pair, the yaw and
+/// pitch of its tangent, the roll and the pair's section (the node the pair starts at).
+/// </summary>
+public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float Pitch, float Roll, int Section, float T );
+
 /// <summary>Samples of a closed track and their spacing in world units.</summary>
 public sealed record CoasterSampling( CoasterSample[] Samples, float Spacing )
 {
@@ -166,23 +172,69 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		return (yaw, MathF.Atan2( -tangent.Y, z ));
 	}
 
+	/// <summary>The knot controls of every knot; an open chain's end knots have no neighbour on one side, so that chord is 1.0.</summary>
+	private static (SVector3 Back, SVector3 Forward)[] Controls( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed )
+	{
+		var count = knots.Count;
+		var controls = new (SVector3 Back, SVector3 Forward)[count];
+		for ( var index = 0; index < count; index++ )
+		{
+			var knot = knots[index];
+			// [BIN:STP-PPC:0x100326DC loop knot sides] with node flag 0x80 clear a loop pylon's back side always uses K and its forward side K when the next node has flag 0x40, else 1.7 (0x80 set mirrors this, 0x10032600..0x100326D8); plain knots use fCurviness
+			var backFactor = knot.LoopPylon ? knot.LoopSideFactor : curviness;
+			var forwardFactor = knot.LoopPylon ? knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent : curviness;
+			// [BIN:STP-PPC:0x10032990 knot chord] without a neighbour the chord is 1.0
+			var backChord = closed || index > 0 ? Chord( knots[(index - 1 + count) % count].Position, knot.Position ) : 1f;
+			var forwardChord = closed || index < count - 1 ? Chord( knot.Position, knots[(index + 1) % count].Position ) : 1f;
+			controls[index] = KnotControls( knot.Position, knot.Direction, backChord, forwardChord, backFactor, forwardFactor );
+		}
+		return controls;
+	}
+
+	/// <summary>Slices per knot pair of the drawn track mesh.</summary>
+	// [BIN:TPW-EXE:0x43f030 mesh slice parameters] the mesh builder 0x43eb70 walks the nodes; for the link to the next node 0x43f030 lists 0xb values i/10 over one knot pair (plus run boundaries where the cross section changes), and 0x43f4e0 emits one slice per value
+	public const int SliceSegments = 10;
+
+	/// <summary>
+	/// The cross-section slices of the track mesh (<c>0x43f4e0</c>): the curve evaluated at k/<paramref name="segments"/> of every knot pair
+	/// (<c>0x43e1b0</c>), the yaw and pitch of the Bézier derivative and the knot-interpolated roll. A closed chain wraps from its last knot to the
+	/// first; an open chain (a track still being built) ends with the last knot's own slice.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43e6b0 slice frame] the slice position is the cubic Bézier of the knot pair (0x43e1b0: P0, P0 + T+/3, P1 + T−/3, P1 at +0x40/+0x4c/+0x34/+0x40), its yaw and pitch come from the tangent and its roll from the second rail; the roll here is the interpolated knot roll (APPROX:COAST-017)
+	// [APPROX:COAST-026] the mesh slices use the 10 uniform steps per knot pair of the original but not its extra slices at cross-section changes (the dry/wet blends of the flumes) or at pylon-mesh track tags (one knot per node here) — evidence needed: the run list builder 0x4402d0 and the blend path of 0x43fd60 run on a real flume track
+	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments )
+	{
+		ArgumentNullException.ThrowIfNull( knots );
+		var count = knots.Count;
+		if ( count < 2 || segments < 1 )
+			return Array.Empty<CoasterSlice>();
+		var controls = Controls( knots, curviness, closed );
+		var pairs = closed ? count : count - 1;
+		var slices = new List<CoasterSlice>( pairs * segments + 1 );
+		for ( var pair = 0; pair < pairs; pair++ )
+		{
+			var next = (pair + 1) % count;
+			var last = !closed && pair == pairs - 1 ? segments : segments - 1;
+			for ( var step = 0; step <= last; step++ )
+			{
+				var t = (float)step / segments;
+				var position = Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
+				var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
+				var (yaw, pitch) = tangent.LengthSquared() > 0 ? Orientation( tangent ) : (0f, 0f);
+				var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * t;
+				slices.Add( new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t ) );
+			}
+		}
+		return slices.ToArray();
+	}
+
 	public CoasterSampling Sample( IReadOnlyList<CoasterKnot> knots, float curviness )
 	{
 		ArgumentNullException.ThrowIfNull( knots );
 		var count = knots.Count;
 		if ( count < 2 )
 			throw new ArgumentException( "A closed track needs at least two knots.", nameof( knots ) );
-		var controls = new (SVector3 Back, SVector3 Forward)[count];
-		for ( var index = 0; index < count; index++ )
-		{
-			var knot = knots[index];
-			var previous = knots[(index - 1 + count) % count];
-			var next = knots[(index + 1) % count];
-			// [BIN:STP-PPC:0x100326DC loop knot sides] with node flag 0x80 clear a loop pylon's back side always uses K and its forward side K when the next node has flag 0x40, else 1.7 (0x80 set mirrors this, 0x10032600..0x100326D8); plain knots use fCurviness
-			var backFactor = knot.LoopPylon ? knot.LoopSideFactor : curviness;
-			var forwardFactor = knot.LoopPylon ? knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent : curviness;
-			controls[index] = KnotControls( knot.Position, knot.Direction, Chord( previous.Position, knot.Position ), Chord( knot.Position, next.Position ), backFactor, forwardFactor );
-		}
+		var controls = Controls( knots, curviness, closed: true );
 		var samples = new List<CoasterSample>();
 		SVector3 Point( int pair, float t )
 		{

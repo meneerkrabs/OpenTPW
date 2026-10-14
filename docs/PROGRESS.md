@@ -943,6 +943,7 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+<<<<<<< HEAD
 - **Desktop setup chooses TPW or experimental TPI (October 14):** the setup window offers Theme Park World or the experimental Theme Park Inc / Sim Coaster
   (`[EXT:tpi-viewer]`, building and guests only, no economy or campaign) with an edition-aware inspection that refuses mixed or wrong-edition folders and
   needs an available world; the TPI choice is stored beside the TPW paths in `setup.json` and starts through `--load-original-level`. An ordinary desktop
@@ -953,6 +954,18 @@ research batch was included in this merge.
   Review fixes: a saved, old or detected folder holding Theme Park Inc data no longer passes as Theme Park World (the window opens instead of every start failing);
   `--setup` with an explicit tool mode refuses before any window; a stale or timed-out choice keeps the window open with the typed folder and a reason; and
   Options > Game files reports a timed-out check as such.
+=======
+- **Coasters drawn with their original track, pylons and cars (October 14):** the track is the `coaster.sam` cross section
+  extruded along the curve (ten slices per knot pair, V every six units) with the real track textures, so the minecart track
+  has rails and sleepers, the Gorilla Thrilla a rope, the flumes water that flows and a ratcheted dry section where they
+  climb, and chain lifts a scrolling chain. Pylons are the StdPylon/LoopPylon models stretched by their loft clip to the node
+  height and turned by their rotate clip; cars are the car models posed on the samples with roll, pitch and yaw and spaced by
+  their own length. A track under construction is the curve through the placed pylons and a ghost pylon at the cursor instead
+  of straight green lines. Traced from tp.exe (rebuild 0x43eb70, slice emitter 0x43f4e0/0x43fd60, loader 0x42fad0, car pose
+  0x43ce20, edit step 0x435d50); COAST-026 is narrowed and COAST-033..035 added (docs/COASTERS.md). Rider heads in the cars
+  and the dry/wet blend sections are not done.
+
+>>>>>>> origin/main
 - **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
   first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy
   `[EXT:explicit-world-seed]`.

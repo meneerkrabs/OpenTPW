@@ -33,6 +33,8 @@ public sealed class StaffMember
 	public bool AwaitingJobArrival { get; set; }
 	/// <summary>Object instance the employee works on, 0 when none.</summary>
 	public int AssignedInstanceId { get; set; }
+	/// <summary>The littered cell a handyman sweeps (tp.exe <c>+0x218</c>, <c>mTargetLitterCell</c>), null when his job is not a sweep.</summary>
+	public (int X, int Y)? LitterCell { get; set; }
 	/// <summary>Actual host actor position in cell units; null until attached to a world. Native saves use X/Y divided by 256.</summary>
 	public float? CellX { get; set; }
 	public float? CellY { get; set; }

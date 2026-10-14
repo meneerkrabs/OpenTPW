@@ -334,6 +334,8 @@ public sealed partial class OriginalObjectRuntime
 			HungerEffect = settings.GetInt( "UsageInfo.HungerEffect" ),
 			VomitEffect = settings.GetInt( "UsageInfo.VomitEffect" ),
 			HappinessEffect = settings.GetInt( "UsageInfo.HappinessEffect" ),
+			// [DATA:<object>.sam:UsageInfo.LitterEffect] type +0x154, added to the guest's litter meter by the use routine (tp.exe 0x004FE1E0)
+			LitterEffect = settings.GetInt( "UsageInfo.LitterEffect" ),
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods] type +320, the price test's base (tp.exe 0x004FDE50; the key table order InitCostOfGoods, ThirstEffect, HungerEffect, VomitEffect, HappinessEffect)
 			InitCostOfGoods = settings.Has( "UsageInfo.InitCostOfGoods" ) ? settings.GetInt( "UsageInfo.InitCostOfGoods" ) : 0,
 			GoldenTicketCost = settings.GetInt( "UsageInfo.GoldenTicketCost" ),

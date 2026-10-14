@@ -227,7 +227,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x9EA19826749C30F7`, schema 14: optional awaiting-mechanic-arrival is gameplay state
+  (`0x05B8B8443FF0454B`, schema 15: litter moves from a park-wide count to map cells (the economy snapshot keeps the littered cells and a
+  handyman's swept cell) and the guests gain a litter meter and a bin to walk to, so the schema is bumped and the run changes: a sale no longer
+  adds litter to the park; a guest drops or bins its litter in state 6 and vomit stays on its cell (docs/reverse/WANDER-plan.md §6). Before that:
+  `0x9EA19826749C30F7`, schema 14: optional awaiting-mechanic-arrival is gameplay state
   in the canonical economy snapshot. Missing/false is omitted for legacy jobs; true
   waiting and started work must hash differently. The fixed headless run itself
   remains unchanged; only its schema word changes. Before that:

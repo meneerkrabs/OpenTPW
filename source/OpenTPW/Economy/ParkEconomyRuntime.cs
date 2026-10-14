@@ -43,6 +43,7 @@ public sealed class ParkEconomyRuntime
 		guests.ArrivalsHalted = () => Economy.IsBankrupt;
 		Economy.GuestStatistics = Guests;
 		Economy.RideOperations = Guests;
+		AttachLitter( guests );
 		if ( Import is { ParkClosed: true } )
 			Log.Trace( "Park economy: the imported park is closed, as saved." );
 		else if ( openParkOnAttach )
@@ -169,7 +170,15 @@ public sealed class ParkEconomyRuntime
 		{
 			Economy.GuestStatistics = Guests;
 			Economy.RideOperations = Guests;
+			AttachLitter( Guests.Guests );
 		}
 		return world;
+	}
+
+	/// <summary>The litter lies on the guests' cell map (for the litter share); an online visit drops none (the original's game type 1).</summary>
+	private void AttachLitter( GuestSimulation guests )
+	{
+		Economy.Litter.Cells = guests.Grid.Cells;
+		Economy.Litter.Disabled = guests.OnlineVisit;
 	}
 }

@@ -95,6 +95,10 @@ EXPECTED = {
     ('tpw-exe-wander-destination', 'plan'): AGREE,
     # The rule a step reads is the current cell's own link; with links on either side 164 differ (inputs with one-sided links).
     ('tpw-exe-wander-destination', 'either-side-links'): (164, ((24, 31), 1062577813)),
+    # X20 (littering a cell 0x4d93b0, ECON-020): one item per cell, nothing online, the sprite offset from the cell-id reseed.
+    ('tpw-exe-litter-drop', 'plan'): AGREE,
+    # X21 (state 9, the walk to a bin 0x4fff20, GUEST-005): the bin's sound on arrival, else litter on the cell; the meter empties.
+    ('tpw-exe-bin-walk', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -796,6 +800,13 @@ class Oracle(CoastTests, unittest.TestCase):
     def test_wander_destination_follows_guest_wander(self):
         for side in ('plan', 'either-side-links'):
             self.check(('tpw-exe-wander-destination', side))
+
+    # ------------------------------------------------------------------ X20 / X21: litter
+    def test_litter_drop_keeps_one_item_per_cell(self):
+        self.check(('tpw-exe-litter-drop', 'plan'))
+
+    def test_bin_walk_bins_or_drops_the_litter(self):
+        self.check(('tpw-exe-bin-walk', 'plan'))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

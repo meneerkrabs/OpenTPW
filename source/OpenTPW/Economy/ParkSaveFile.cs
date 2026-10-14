@@ -47,7 +47,13 @@ public static class ParkSaveFile
 		public required int EntranceFee { get; init; }
 		public required bool Bankrupt { get; init; }
 		public required int MonthsInRed { get; init; }
-		public required long LitterScaled { get; init; }
+		/// <summary>
+		/// Legacy: saves before per-cell litter kept a park-wide count of litter items in hundredths. It has no cells to land on, so it is
+		/// accepted, ignored and written 0; the litter is <see cref="Litter"/>.
+		/// </summary>
+		public long LitterScaled { get; init; }
+		/// <summary>Every littered cell with its type and claim (absent in older saves: a clean park).</summary>
+		public List<LitterData> Litter { get; init; } = new();
 		public required int TicketsSpent { get; init; }
 		/// <summary>Info ids bought with golden tickets (absent in older saves: none).</summary>
 		public List<int> TicketItems { get; init; } = new();
@@ -186,12 +192,26 @@ public static class ParkSaveFile
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public bool AwaitingJobArrival { get; init; }
 		public required int AssignedInstanceId { get; init; }
+		/// <summary>The littered cell a handyman sweeps (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? LitterCell { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public float? CellX { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public float? CellY { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public double TravelSeconds { get; init; }
+	}
+
+	public sealed class LitterData
+	{
+		public required int X { get; init; }
+		public required int Y { get; init; }
+		/// <summary>The cell's litter (1..5 ordinary, 6 the sprite fallback, 7 vomit, 8 stinkbomb).</summary>
+		public required int Type { get; init; }
+		/// <summary>The handyman who claimed it (0: nobody).</summary>
+		public int Collector { get; init; }
+		public long ClaimTurn { get; init; }
 	}
 
 	public sealed class ResearchData
@@ -236,7 +256,7 @@ public static class ParkSaveFile
 			EntranceFee = park.EntranceFee,
 			Bankrupt = park.IsBankrupt,
 			MonthsInRed = park.MonthsInRed,
-			LitterScaled = park.LitterScaled,
+			Litter = park.Litter.Snapshot().Select( cell => new LitterData { X = cell.X, Y = cell.Y, Type = (int)cell.Type, Collector = cell.Collector, ClaimTurn = cell.ClaimTurn } ).ToList(),
 			TicketsSpent = park.TicketsSpent,
 			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
@@ -309,6 +329,7 @@ public static class ParkSaveFile
 					BusyTurns = member.BusyTicks,
 					AwaitingJobArrival = member.AwaitingJobArrival,
 					AssignedInstanceId = member.AssignedInstanceId,
+					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
 					CellX = member.CellX,
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
@@ -395,6 +416,10 @@ public static class ParkSaveFile
 		}
 		Require( data.Tick >= 0 && Enum.IsDefined( data.Speed ) && Enum.IsDefined( data.Mode ), "clock" );
 		Require( data.EntranceFee >= 0 && data.MonthsInRed >= 0 && data.LitterScaled >= 0 && data.TicketsSpent >= 0, "park values" );
+		var littered = new HashSet<(int, int)>();
+		foreach ( var cell in data.Litter )
+			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
+				&& cell.Collector >= 0 && littered.Add( (cell.X, cell.Y) ), $"litter at ({cell.X}, {cell.Y})" );
 		Require( data.Ledger.MonthIndex == ParkCalendar.MonthIndex( data.Tick ), "ledger month matches the clock" );
 		Require( data.Ledger.History.Count <= ParkLedger.MaximumHistoryMonths && data.MonthlyAdmissions.Count <= ParkLedger.MaximumHistoryMonths, "history length" );
 		Require( data.Ledger.CurrentTotals.Values.All( value => value >= 0 ) && data.Ledger.History.All( month => month.Totals.Values.All( value => value >= 0 ) ), "ledger totals" );
@@ -414,6 +439,8 @@ public static class ParkSaveFile
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
+			Require( member.LitterCell is null || (member.Type == StaffType.Handyman && member.LitterCell.Length == 2 && member.AssignedInstanceId == 0
+				&& data.Litter.Any( cell => cell.X == member.LitterCell[0] && cell.Y == member.LitterCell[1] && cell.Collector == member.Id )), $"staff {member.Id} litter job" );
 			if ( member.AwaitingJobArrival )
 			{
 				var job = data.Objects.FirstOrDefault( item => item.Id == member.AssignedInstanceId );
@@ -448,7 +475,8 @@ public static class ParkSaveFile
 			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ) );
 		park.Ledger.RestoreProfitThisYear( data.Ledger.ProfitThisYear );
 		park.RestoreTicketItems( data.TicketItems );
-		park.RestoreState( data.Tick, data.Speed, data.ParkOpen, data.EntranceFee, data.Bankrupt, data.MonthsInRed, data.LitterScaled, data.TicketsSpent, data.NextObjectId, data.DroppedAdmissions,
+		park.RestoreState( data.Tick, data.Speed, data.ParkOpen, data.EntranceFee, data.Bankrupt, data.MonthsInRed,
+			data.Litter.Select( cell => new LitterCell( cell.X, cell.Y, (LitterType)cell.Type, cell.Collector, cell.ClaimTurn ) ), data.TicketsSpent, data.NextObjectId, data.DroppedAdmissions,
 			data.Objects.Select( item => new ParkObjectState
 			{
 				Id = item.Id,
@@ -493,6 +521,7 @@ public static class ParkSaveFile
 			BusyTicks = BusyTurnsOf( member ),
 			AwaitingJobArrival = member.AwaitingJobArrival,
 			AssignedInstanceId = member.AssignedInstanceId,
+			LitterCell = member.LitterCell is { Length: 2 } litter ? (litter[0], litter[1]) : null,
 			CellX = member.CellX,
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds

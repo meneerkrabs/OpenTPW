@@ -907,7 +907,8 @@ internal sealed class M3GateRun
 		var queueCells = queueRide?.QueueCells.ToHashSet() ?? new HashSet<(int X, int Y)>();
 		int stoodOnQueueCells = 0, boardedFromQueueCells = 0;
 		long repairs = 0, repairsNeeded = 0, wagesPaid = 0, wagesEvents = 0;
-		long litterPeak = economy.LitterScaled, litterCleaned = 0, litterDropped = 0, previousLitter = economy.LitterScaled;
+		long litterPeak = economy.Litter.Count, litterCleaned = 0, litterDropped = 0, previousLitter = economy.Litter.Count;
+		var litterWaited = false;
 		var repairWindow = RepairWindow();
 		var pendingRepairs = new List<(int Instance, long Tick, long Deadline, bool Reported)>();
 		long maxRepairTicks = 0;
@@ -1166,15 +1167,22 @@ internal sealed class M3GateRun
 				pendingRepairs[index] = job with { Reported = true };
 			}
 
-			litterPeak = Math.Max( litterPeak, economy.LitterScaled );
-			// Litter left from an earlier tick must shrink at the next park-hour update (every turn runs at least one).
-			if ( previousLitter > 0 && ParkCalendar.Turn( economy.Tick ) != ParkCalendar.Turn( economy.Tick - 1 ) && economy.LitterScaled != 0 && economy.LitterScaled >= previousLitter )
-				litterNotCleaned.Add( tick, $"tick {tick}: litter {previousLitter / (double)ParkEconomy.LitterScale} -> {economy.LitterScaled / (double)ParkEconomy.LitterScale} items at the park-hour update of turn {ParkCalendar.Turn( economy.Tick )}" );
-			if ( economy.LitterScaled < previousLitter )
-				litterCleaned += previousLitter - economy.LitterScaled;
-			else if ( economy.LitterScaled > previousLitter )
-				litterDropped += economy.LitterScaled - previousLitter;
-			previousLitter = economy.LitterScaled;
+			var litter = economy.Litter.Count;
+			litterPeak = Math.Max( litterPeak, litter );
+			// A free handyman claims unclaimed litter at the turn's dispatch: litter left unclaimed beside a free handyman for two turns is a violation.
+			if ( ParkCalendar.Turn( economy.Tick ) != ParkCalendar.Turn( economy.Tick - 1 ) )
+			{
+				var waiting = economy.Litter.Littered().Any( cell => economy.Litter.CollectorAt( cell.X, cell.Y ) == 0 )
+					&& economy.Staff.OfType( StaffType.Handyman ).Any( member => member.IsAvailable && !economy.Staff.Strikes.IsActive( member.Type ) );
+				if ( waiting && litterWaited )
+					litterNotCleaned.Add( tick, $"tick {tick}: unclaimed litter beside a free handyman for two turns (turn {ParkCalendar.Turn( economy.Tick )})" );
+				litterWaited = waiting;
+			}
+			if ( litter < previousLitter )
+				litterCleaned += previousLitter - litter;
+			else if ( litter > previousLitter )
+				litterDropped += litter - previousLitter;
+			previousLitter = litter;
 
 			if ( tick % minuteTicks == 0 )
 				MinuteHashes.Add( ComputeGateHash() );
@@ -1918,7 +1926,7 @@ internal sealed class M3GateRun
 		else if ( (litterPeak > 0 || litterDropped > 0) && litterCleaned == 0 )
 			problems.Add( "handyman cleaned no litter although litter existed" );
 		if ( litterNotCleaned.Count > 0 )
-			problems.Add( $"litter not reduced at {litterNotCleaned.Count} park-hour update(s)" );
+			problems.Add( $"litter left unclaimed beside a free handyman at {litterNotCleaned.Count} turn(s)" );
 		var evidence = new JsonObject
 		{
 			["wagePayments"] = wageEvents,
@@ -1932,10 +1940,10 @@ internal sealed class M3GateRun
 			["longestRepairSeconds"] = Math.Round( maxRepairTicks / (double)FixedStepClock.TicksPerSecond, 3 ),
 			["repairsPendingAtEnd"] = pendingRepairs,
 			["firstOverdueRepair"] = repairOverdue.FirstDetail,
-			["litterPeakItems"] = litterPeak / (double)ParkEconomy.LitterScale,
-			["litterDroppedItems"] = litterDropped / (double)ParkEconomy.LitterScale,
-			["litterCleanedItems"] = litterCleaned / (double)ParkEconomy.LitterScale,
-			["litterWindow"] = $"one park turn: litter present before a turn's park-hour update must shrink there ({ParkCalendar.SecondsPerTurn} s per turn >= {ParkCalendar.SecondsPerHour} s per hour; ParkEconomy.CleanLitter runs every hour)",
+			["litterPeakItems"] = litterPeak,
+			["litterDroppedItems"] = litterDropped,
+			["litterCleanedItems"] = litterCleaned,
+			["litterWindow"] = "two park turns: a free handyman claims unclaimed litter at the next turn's dispatch (ParkEconomy.DispatchHandymen) and sweeps it for WorkDuration[grade] turns",
 			["firstUncleanedLitter"] = litterNotCleaned.FirstDetail,
 			["attractionStateOfRepair"] = placed.FirstOrDefault( item => item.Role == "attraction" ) is { } ride && economy.TryGetObject( ride.EconomyInstance, out var state ) ? state.StateOfRepair : null,
 			["problems"] = problems.Count == 0 ? "none" : string.Join( "; ", problems )
@@ -1983,7 +1991,7 @@ internal sealed class M3GateRun
 		Add( economy.Tick );
 		Add( economy.Balance );
 		Add( (long)economy.Random.State );
-		Add( economy.LitterScaled );
+		Add( economy.Litter.Count );
 		Add( economy.Staff.Members.Count );
 		foreach ( var category in Enum.GetValues<LedgerCategory>() )
 			Add( economy.Ledger.CurrentTotals.GetValueOrDefault( category ) );

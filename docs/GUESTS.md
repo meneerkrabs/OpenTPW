@@ -298,12 +298,25 @@ Traced and executed (x86 findings X18, X19, [ORACLE.md](reverse/ORACLE.md) secti
 between deciding (state 6, `DoingNothing`) and walking to a wander destination (state 7, `WalkingAround`). Once per park turn in state 6 it draws one number R and acts on the first test that applies:
 
 1. **Cheering** when more than 100 turns have passed since its last activity and its happiness byte is above 80.
-2. **Vomiting** when its illness byte is 100 and R % 3 is 0: illness drops to 0.
-3. **Leaving** by the [lifecycle](#lifecycle) test.
-4. **R % 3 = 0:** a major decision, if more than 30 turns have passed since the decision stamp (the turn it last entered a queue or last failed a decision). It picks an attraction (state 10), or it pauses ("can't decide"), loses `SmallHappinessChange` and stamps the turn.
-5. **R % 3 = 1:** a wander. The guest takes R′ % 5 + 1 random steps along the path links (never straight back while another way is open, one more step if it ends where it started) and walks the shortest route to a random point in the first quarter of the last cell. If there is no destination, it stamps the turn.
+2. **Vomiting** when its illness byte is 100 and R % 3 is 0: illness drops to 0 and vomit stays on its cell ([below](#litter)).
+3. **Litter** when its litter meter byte is at least 90: it walks to a bin in reach, or drops its litter on its cell and goes on ([below](#litter)).
+4. **Leaving** by the [lifecycle](#lifecycle) test.
+5. **R % 3 = 0:** a major decision, if more than 30 turns have passed since the decision stamp (the turn it last entered a queue or last failed a decision). It picks an attraction (state 10), or it pauses ("can't decide"), loses `SmallHappinessChange` and stamps the turn.
+6. **R % 3 = 1:** a wander. The guest takes R′ % 5 + 1 random steps along the path links (never straight back while another way is open, one more step if it ends where it started) and walks the shortest route to a random point in the first quarter of the last cell. If there is no destination, it stamps the turn.
 
 An activity (cheering, vomiting, can't decide) holds the guest for ten park turns (the original's state 8). On arriving, a walking guest picks another destination with a chance of one in four, otherwise it decides again. A new park's guests make their first major decision at turn 31.
+
+### Litter
+
+Traced and executed (x86 findings X18, X20, X21, [ORACLE.md](reverse/ORACLE.md) section 7.15; [WANDER-plan.md](reverse/WANDER-plan.md) §6); implemented in `ParkLitter` and
+`GuestSimulation`. Every use of an attraction adds its `UsageInfo.LitterEffect` to the guest's litter meter (0..100; drinks and burgers 50, ice cream 25). In
+state 6 a guest whose meter byte is at least 90 looks for a litter bin (`UsageInfo.HoldsLitter`) less than 3 cells away (squared distance below 9) that a
+route reaches, the nearest first. It walks there (state 9) and throws its litter away; with no bin in reach it drops its litter on its own cell (one of five
+kinds) and decides on. Either way the meter empties. Vomit lies on the cell where the guest was sick.
+
+A cell holds one item of litter: what falls on a littered cell is lost. Litter stays until a handyman sweeps it; it does not decay or spread. An online visit
+drops none. The handymen strike over litter when the littered cells exceed 0.2 of the path and queue cells. Handymen have no position yet (ECON-022): a free
+handyman takes the first unclaimed littered cell, scanning columns from the left, and sweeps it for `WorkDuration` park turns.
 
 ### Walking
 

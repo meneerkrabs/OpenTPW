@@ -105,6 +105,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int InitCostOfGoods { get; set; }
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
 	public int HappinessEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.LitterEffect</c> (tp.exe type <c>+0x154</c>).</summary>
+	public int LitterEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>).</summary>
 	public int GoldenTicketCost { get; set; }
 	/// <summary>Type <c>Upgrades[0].CostOfUpgrade</c> (<c>+440</c>).</summary>

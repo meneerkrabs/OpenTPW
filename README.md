@@ -83,8 +83,8 @@ What works today, with your own original game data:
   [coasters](https://opentpw.io/docs/COASTERS.html)).
 - **Guests, economy and staff:** guests arrive, walk the paths and use rides, shops, sideshows and
   toilets. The 31 root scripts that use ADDHEAD in the fantasy, hallow, jungle and space themes can
-  show riders' heads where the model's head nodes resolve; missing node mappings and the original
-  attachment rules remain qualified (HEADS-001–005), and coaster and tour cars do not show riders
+  show riders' heads at the nodes the model's head records name, with the traced frame and roll; the
+  head size, depth and slot stream remain qualified (HEADS-001, 004, 005), and coaster and tour cars do not show riders
   yet. Money, loans, wages, research, objectives, golden tickets and keys run on the original
   settings files ([guests](https://opentpw.io/docs/GUESTS.html), [economy](https://opentpw.io/docs/ECONOMY.html)).
 - **Park door and rides:** the park door (the entry-price screen's door button, Ctrl-O and Ctrl-C) opens
@@ -129,8 +129,8 @@ What works today, with your own original game data:
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](https://opentpw.io/docs/PS2.html)).
 
 Not done yet: go-kart and water ride tracks, rider heads on coaster and tour cars, unresolved flat-ride
-head attachments, ride particle effects (RSE EVENT types 1 and 2; the positioned ride sounds play),
-additional staff actions and their sounds, the original weather visuals (drawn now as procedural
+head attachments, the particle effects of the other callers (ride smoke, flying cars, litter; RSE EVENT types 1 and 2 are drawn,
+[particles](https://opentpw.io/docs/PARTICLES.html)), additional staff actions and their sounds, the original weather visuals (drawn now as procedural
 approximations), the visitor click and visitor panel sounds (selecting visitors works), global lobby
 effects, the path tool's link-end and undo sounds, and the exact original rules in places where
 OpenTPW still uses a documented approximation. The

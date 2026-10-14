@@ -17,8 +17,9 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.ENDSLICE, RideOpcodeStatus.Implemented, "name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it" )]
 		public static void EndSlice( RideVM vm ) => vm.EndSlice();
 
-		[OpcodeHandler( Opcode.WAIT, RideOpcodeStatus.Implemented, "docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`)" )]
-		public static void Wait( RideVM vm, Operand time ) => vm.WaitFor( time.Value );
+		// [BIN:STP-PPC:0xb0658 WAIT] the first encounter stores now + trunc(operand / script speed) as the deadline (0xb06f8) and yields; later slices resume once now >= deadline (docs/reverse/BOARD-plan.md). The division is taken in single precision like the triggers' (TriggerDelay)
+		[OpcodeHandler( Opcode.WAIT, RideOpcodeStatus.Implemented, "STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`)" )]
+		public static void Wait( RideVM vm, Operand time ) => vm.WaitFor( RideAnimationTiming.TriggerDelay( time.Value, vm.ScriptSpeed ) );
 
 		// [APPROX:VM-901] The traced facts are STP-PPC 0xb0710–0xb0798: WAITABS stores now + operand as a 32-bit deadline word in the field WAIT uses (no script-speed division), its first encounter always yields, and later encounters wait while unsigned now < deadline. The port models that deadline in its non-wrapping double script clock, so the original's unsigned comparison, its 2^32 wrap and its zero-deadline re-arm sentinel (docs/reverse/PPC-clock.md) are not modelled; a session that never nears 2^31 ms of scheduler clock cannot observe the difference.
 		[OpcodeHandler( Opcode.WAITABS, RideOpcodeStatus.Implemented, "STP-PPC 0xb0710: despite the name the first encounter stores now + operand (no WAIT speed division) in the shared deadline field and yields; later encounters resume once the clock passes it (Theme Park Inc corpus: 34 uses, literals 1..10000; VM-901)" )]

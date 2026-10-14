@@ -105,6 +105,9 @@ public sealed class ObjectCatalogEntry
 	/// They are kept apart from <see cref="Settings"/> as the original's object loader does (<see cref="CoasterDefinition.FromEntry"/> reads them).
 	/// </summary>
 	public ObjectSettings? SharedSettings { get; internal set; }
+
+	/// <summary>The settings the coaster loader reads (definition, cross sections, pylons, car types): coaster.sam alone, or the object settings for an entry without shared files (synthetic ones).</summary>
+	public ObjectSettings CoasterSettings => SharedSettings ?? Settings;
 	/// <summary>Number of OBJECT_NAMES entries the name uses (1 or 2).</summary>
 	public int ObjectNameLength { get; internal set; }
 	public string ModelPath { get; }

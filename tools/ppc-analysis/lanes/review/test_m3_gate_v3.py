@@ -327,7 +327,7 @@ class MutationsRound3(v1.Mutations):
     def test_handyman_idle_after_first_clean_fails(self):
         row = self.rows('idle-handyman-after-first-clean')['staff.work']
         self.assertEqual('fail', row['verdict'], row)
-        self.assertIn('litter not reduced', row['evidence']['problems'])
+        self.assertIn('unclaimed beside a free handyman', row['evidence']['problems'])  # litter by cell: claims, not a shrinking store
         self.assertIsNotNone(row['firstViolationTick'])
 
     def test_queue_built_without_the_economy_fails_build_queue(self):
@@ -451,7 +451,8 @@ class MutationsRound3(v1.Mutations):
         # held 60 turns fail too. Both are stricter, not looser.
         row = self.rows('hold-slots-longer')['queues.no-stuck-queue']
         self.assertEqual('fail', row['verdict'], row)
-        self.assertIn('179 turns after becoming head > bound 178', row['evidence']['firstViolation'])
+        # Litter by cell (ORACLE.md 7.15) moves the guests' walks (bins, the litter step), so the observed values moved with it.
+        self.assertIn('203 turns after becoming head > bound 202', row['evidence']['firstViolation'])
         self.assertEqual(0, row['evidence']['attraction']['headNotReadyViolations'])
         row = self.rows('head-delayed-60-turns')['queues.no-stuck-queue']
         self.assertEqual('fail', row['verdict'], row)

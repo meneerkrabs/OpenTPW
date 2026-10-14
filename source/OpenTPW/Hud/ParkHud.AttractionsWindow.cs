@@ -52,7 +52,27 @@ public sealed partial class ParkHud
 	/// <see cref="AttractionItems"/> stays live for callers outside the frame.
 	/// </summary>
 	private IReadOnlyList<AttractionListRow> attractionRows = Array.Empty<AttractionListRow>();
-	private IReadOnlyList<AttractionListRow> RefreshAttractionRows() => attractionRows = AttractionItems;
+	private readonly Dictionary<int, AttractionBusinessStats> attractionBusinessStats = new();
+	private readonly record struct AttractionBusinessStats( long CustomersLastMonth, long ProfitLastMonth, long TotalProfit );
+
+	private IReadOnlyList<AttractionListRow> RefreshAttractionRows()
+	{
+		attractionBusinessStats.Clear();
+		var finance = FinanceEconomy;
+		var economy = GameEditions.Current == GameEdition.ThemeParkWorld && !level.IsReadOnlyVisit
+			&& ReferenceEquals( finance, level.Park?.Economy ) ? finance : null;
+		AttractionListRow Project( OriginalObject item )
+		{
+			var row = AttractionRow( item );
+			if ( economy != null && row.Category == attractionCategory && item is not PrototypeRide && level.GetEconomyInstance( item ) is int instance
+				&& economy.TryGetObject( instance, out var state ) && state.InfoId == item.Entry.InfoId
+				&& (row.Category == BuildCategory.Shops && state.Kind == ParkObjectKind.Shop
+					|| row.Category == BuildCategory.Sideshows && state.Kind == ParkObjectKind.Sideshow) )
+				attractionBusinessStats[row.AttractionId] = new( state.CustomersLastMonth, state.ProfitLastMonth, state.TotalProfit );
+			return row;
+		}
+		return attractionRows = ParkAttractionRoster.Rows( level.ListAttractions().Select( Project ), attractionCategory, attractionSortDescending );
+	}
 	private AttractionListRow SelectedAttractionRow => attractionRows.FirstOrDefault( row => row.AttractionId == selectedAttractionId );
 	private int AttractionMaxFirstRow => ParkAttractionRoster.MaxFirstRow( attractionRows.Count, StaffVisibleRows );
 	private int AttractionRowIndex( int id )
@@ -180,9 +200,21 @@ public sealed partial class ParkHud
 	private (string Label, string Value)[] AttractionDetailRows( in AttractionListRow row )
 	{
 		var notSimulated = strings.Extra( OpenTpwText.NotSimulated );
-		var rows = ParkAttractionRoster.StatRows( row )
-			.Select( stat => (strings[stat.Label], Value: stat.Value ?? notSimulated) )
-			.ToList();
+		var statistics = ParkAttractionRoster.StatRows( row );
+		if ( attractionBusinessStats.TryGetValue( row.AttractionId, out var business ) )
+			for ( var index = 0; index < statistics.Length; index++ )
+			{
+				var label = statistics[index].Label;
+				var value = label switch
+				{
+					UIStrings.CustomersLastMonthShop or UIStrings.CustomersLastMonthGame => business.CustomersLastMonth.ToString( System.Globalization.CultureInfo.InvariantCulture ),
+					UIStrings.ProfitLastMonthShop or UIStrings.ProfitLastMonthGame => FormatMoney( business.ProfitLastMonth ),
+					UIStrings.TotalProfitShop or UIStrings.TotalProfitGame => FormatMoney( business.TotalProfit ),
+					_ => statistics[index].Value
+				};
+				statistics[index] = (label, value);
+			}
+		var rows = statistics.Select( stat => (strings[stat.Label], Value: stat.Value ?? notSimulated) ).ToList();
 		rows.Add( (strings.Extra( OpenTpwText.QueueLength ), row.QueueLength.ToString( System.Globalization.CultureInfo.InvariantCulture )) );
 		rows.Add( (strings.Extra( OpenTpwText.RidingNow ), row.Riders.ToString( System.Globalization.CultureInfo.InvariantCulture )) );
 		return rows.ToArray();

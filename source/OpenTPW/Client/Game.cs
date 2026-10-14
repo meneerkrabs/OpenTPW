@@ -18,6 +18,15 @@ internal static class Game
 			TgqPngExport.Run(args[tgqExportIndex + 1], frameIndex, args[tgqExportIndex + 3]);
 			return;
 		}
+		var sdtExportIndex = Array.IndexOf( args, "--export-sdt-wav" );
+		if ( sdtExportIndex >= 0 )
+		{
+			if ( sdtExportIndex + 3 >= args.Length || args.Skip( sdtExportIndex + 1 ).Take( 3 ).Any( value => value.StartsWith( "--" ) )
+				|| !uint.TryParse( args[sdtExportIndex + 2], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var sampleNumber ) )
+				throw new ArgumentException( "--export-sdt-wav requires <local.sdt> <1-based entry number> <new.wav> (docs/AUDIO.md)." );
+			SdtWavExport.Run( args[sdtExportIndex + 1], sampleNumber, args[sdtExportIndex + 3] );
+			return;
+		}
 		var fshExportIndex = Array.IndexOf(args, "--export-fsh-png");
 		if (fshExportIndex >= 0)
 		{

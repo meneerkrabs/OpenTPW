@@ -405,3 +405,41 @@ implemented yet.
 
 The option volumes keep their 0–10 steps (UI-030); the original stores percentages whose
 defaults are `DefaultVolume.*` in `sound.sam` (effects 75, music 60, speech 75, movie 100).
+
+## Selected SDT entry to WAV (desktop)
+
+`--export-sdt-wav <local.sdt> <1-based entry number> <new.wav>` exports one explicit
+entry through the existing CPU `SoundBank` and `Mp2Decoder`, before game assets,
+window or profile setup. Entry numbering follows the original bank offset table;
+damaged earlier entries do not shift the selection. The decoder's interleaved
+signed 16-bit samples, sample rate and mono/stereo channel count are written with
+the already-pinned NAudio WAV writer, without resampling, gain, mixing or float
+conversion. Container sample-rate hints and the unqualified raw sample field
+are not used as a duration or PCM-size oracle.
+
+Supported payloads are MPEG-1/2 Layer I and MPEG-1/2 Layer II (MPEG-1 joint included) as implemented
+by the existing decoder (MPEG1-LAYER2-VERIFICATION.md records the synthetic
+MPEG-1 addition). Layer III, MPEG-2.5, free format and
+MPEG-2 Layer II joint stereo remains unsupported; raw WAV/NONE payloads are not treated
+as MPEG. There is no event/category lookup, weighted variant selection, sentence
+or loop flattening, playback, or audio/LIP timing export. This exports current
+decoded samples and does not qualify original audio or native playback semantics.
+
+The export-only policy refuses missing/damaged entries, zero complete frames,
+failed CRCs and unconsumed MPEG tails other than the known single zero SDT pad.
+The existing 16 MiB decoder input bound is checked before allocating the selected
+payload through an additive caller-limited `GetMpeg` overload; existing callers
+retain their previous behavior. No new codec or arbitrary valid-output memory
+or storage-quota guarantee is claimed. Large valid decoded clips still require
+the existing decoder's complete PCM buffer.
+
+Decode and validation finish before output directories or files are created.
+An existing output file is refused. WAV header finalization completes on an owned
+`CreateNew` temporary file before `Flush(true)` and a non-overwriting move;
+failure removes only that owned temporary. The operation does not overwrite the
+input, an existing target or unrelated temporary files. Synthetic bank/decode/WAV
+readback and actual CLI controls cover sample identity, rate/channels, stable
+selection, damaged/truncated and unsupported input, early payload bounds and
+output integrity. Original assets, devices, GPU/browser execution and native
+audio parity are unqualified. This desktop-only helper is excluded from the
+browser compile; the shared reader and decoder remain available there.

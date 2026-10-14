@@ -17,6 +17,8 @@ namespace ImGuiNET
 	{
 		private static readonly ImGuiIOPtr io = new();
 		public static ImGuiIOPtr GetIO() => io;
+		// Opaque availability token for the always-present managed IO; not a native pointer. Never dereference it.
+		public static IntPtr GetCurrentContext() => new( 1 );
 	}
 }
 

@@ -110,7 +110,7 @@ public sealed partial class ParkHud
 
 	// [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original
 	public string MoneyText => !Status.HasEconomy ? "" : FormatMoney( Status.Money );
-	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( amount ) ).Replace( "  ", " " );
+	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
 	/// <summary>The balance change shown beside the balance (Mac HUD table control 48): the sum of the changes of the last <see cref="CashChangeTracker.Seconds"/>; 0 when none is shown.</summary>
 	public long CashChange => cashTracker.Change;
@@ -279,6 +279,7 @@ public sealed partial class ParkHud
 		} ) );
 
 		AddShopPriceButton();
+		AddRideUpgradeButton();
 		hud.DrawOverlay = DrawMessages;
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
@@ -543,6 +544,7 @@ public sealed partial class ParkHud
 			rideButton.Enabled = level.IsReadOnlyVisit && (IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate )));
 
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
+		UpdateRideUpgradeButton( input );
 		TrackCashChange( context.Delta );
 		SampleHappiness( context.Delta );
 		var paused = Paused;

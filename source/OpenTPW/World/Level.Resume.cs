@@ -8,6 +8,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
+		RequireResumableCatalogueDefaults();
 		var prototype = CapturePrototypeSnapshot();
 		var runtimes = Objects.Objects.Select( item =>
 		{

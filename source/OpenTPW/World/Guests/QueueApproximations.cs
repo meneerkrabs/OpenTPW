@@ -16,7 +16,7 @@ public static class QueueApproximations
 		("QUEUE-008", "toilets wear by use and handymen clean them, but the online branch of the wear step and the dirty-toilet message handlers are not modelled"),
 		("QUEUE-009", "the queue facing change's sign comes from the 1-in-10 draw"),
 		("QUEUE-010", "guests leaving a queue reappear on its join cell at once"),
-		("QUEUE-011", "objects use upgrade level 0 for the queue limit inputs"),
+		("QUEUE-011", "exact completed economy tiers drive ordinary TPW factory-owned catalogue defaults and fallback capacity; live VM CAP/DUR remain authored, and native reset/performance behavior is unverified"),
 		("QUEUE-012", "queue cells need allowed terrain and no object footprint"),
 		("QUEUE-013", "a queue has at most 25 cells"),
 		("QUEUE-014", "queues are laid cell by cell from the entrance's outside cell, each touching the back cell"),

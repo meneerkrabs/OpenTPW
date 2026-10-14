@@ -46,6 +46,9 @@ public sealed class MapFile : BaseFormat
 	private const int MapChunkHeaderBytes = 8 + OpaqueHeaderValueCount * 4;
 
 	public string Title { get; private set; } = "";
+
+	/// <summary>Copied, read-only 32-byte title slot, including the terminator and uninterpreted padding.</summary>
+	public IReadOnlyList<byte> RawTitleSlot { get; private set; } = Array.Empty<byte>();
 	public int Width { get; private set; }
 	public int Height { get; private set; }
 
@@ -57,6 +60,53 @@ public sealed class MapFile : BaseFormat
 
 	public MapFile( string path ) => ReadFromFile( path );
 	public MapFile( Stream stream ) => ReadFromStream( stream );
+
+	/// <summary>Encodes the parsed raw fields, preserving title padding, opaque words and every cell bit.</summary>
+	// [EXT:tp2m-writer] reader-contract serialization, not native writer or save interoperability parity
+	public byte[] Encode() => Encode( Width, Height, RawTitleSlot, OpaqueHeaderValues, Cells );
+
+	/// <summary>Writes validated raw fields at the current position without closing, flushing or truncating output.</summary>
+	public void Write( Stream output ) => Write( output, Width, Height, RawTitleSlot, OpaqueHeaderValues, Cells );
+
+	/// <summary>Encodes explicitly supplied raw fields under the existing reader limits; no title or terrain conversion.</summary>
+	public static byte[] Encode( int width, int height, IReadOnlyList<byte> rawTitleSlot, IReadOnlyList<uint> opaqueHeaderValues, IReadOnlyList<byte> cells )
+	{
+		ArgumentNullException.ThrowIfNull( rawTitleSlot );
+		ArgumentNullException.ThrowIfNull( opaqueHeaderValues );
+		ArgumentNullException.ThrowIfNull( cells );
+		var cellCount = (long)width * height;
+		var byteCount = 4L + TitleBytes + 8 + MapChunkHeaderBytes + cellCount + 8;
+		if ( width < 1 || height < 1 || width > MaximumDimension || height > MaximumDimension || cellCount > MaximumCells || byteCount > MaximumFileBytes )
+			throw new ArgumentException( "MAP dimensions are zero or exceed the existing reader limits." );
+		if ( rawTitleSlot.Count != TitleBytes || opaqueHeaderValues.Count != OpaqueHeaderValueCount || cells.Count != cellCount )
+			throw new ArgumentException( "MAP raw title, header or cell count does not match its shape." );
+		Span<byte> title = stackalloc byte[TitleBytes];
+		for ( var index = 0; index < title.Length; index++ ) title[index] = rawTitleSlot[index];
+		if ( title.IndexOf( (byte)0 ) < 0 )
+			throw new ArgumentException( "MAP raw title slot is not NUL-terminated.", nameof( rawTitleSlot ) );
+		var data = new byte[(int)byteCount];
+		"TP2M"u8.CopyTo( data );
+		title.CopyTo( data.AsSpan( 4 ) );
+		"MAP "u8.CopyTo( data.AsSpan( 4 + TitleBytes ) );
+		BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 8 + TitleBytes ), (uint)(MapChunkHeaderBytes + cellCount) );
+		var payload = data.AsSpan( 12 + TitleBytes );
+		BinaryPrimitives.WriteUInt32LittleEndian( payload, (uint)width );
+		BinaryPrimitives.WriteUInt32LittleEndian( payload[4..], (uint)height );
+		for ( var index = 0; index < OpaqueHeaderValueCount; index++ )
+			BinaryPrimitives.WriteUInt32LittleEndian( payload[(8 + index * 4)..], opaqueHeaderValues[index] );
+		for ( var index = 0; index < cellCount; index++ ) payload[MapChunkHeaderBytes + index] = cells[index];
+		"END "u8.CopyTo( data.AsSpan( data.Length - 8 ) );
+		return data;
+	}
+
+	/// <summary>Validates and encodes all raw fields before the first write; I/O failure may leave a partial caller-owned output.</summary>
+	public static void Write( Stream output, int width, int height, IReadOnlyList<byte> rawTitleSlot, IReadOnlyList<uint> opaqueHeaderValues, IReadOnlyList<byte> cells )
+	{
+		ArgumentNullException.ThrowIfNull( output );
+		if ( !output.CanWrite ) throw new NotSupportedException( "MAP output stream is not writable." );
+		var data = Encode( width, height, rawTitleSlot, opaqueHeaderValues, cells );
+		output.Write( data );
+	}
 
 	public byte GetCell( int column, int row )
 	{
@@ -131,6 +181,7 @@ public sealed class MapFile : BaseFormat
 		if ( !sawMap )
 			throw new InvalidDataException( "MAP chunk is missing." );
 		Title = Encoding.ASCII.GetString( title[..terminator] );
+		RawTitleSlot = Array.AsReadOnly( title.ToArray() );
 	}
 
 	private void ReadMapChunk( ReadOnlySpan<byte> chunk )

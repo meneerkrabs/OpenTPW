@@ -26,23 +26,31 @@ the one the TPWI `SYSG` records use (docs/TPWS-PAYLOAD.md).
 
 | Theme | Entries | Buildable | Rides | Shops | Sideshows | Features | Upgrades | OBJECT_NAMES bound | With script |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| jungle | 70 | 58 | 18 | 8 | 5 | 36 | 3 | 58 | 67 |
-| hallow | 70 | 58 | 20 | 8 | 4 | 35 | 3 | 56 | 67 |
-| space | 68 | 56 | 21 | 8 | 4 | 32 | 3 | 54 | 65 |
-| fantasy | 66 | 55 | 17 | 8 | 4 | 35 | 2 | 52 | 63 |
+| jungle | 70 | 58 | 18 | 8 | 5 | 36 | 3 | 67 | 67 |
+| hallow | 70 | 58 | 20 | 8 | 4 | 35 | 3 | 67 | 67 |
+| space | 68 | 56 | 21 | 8 | 4 | 32 | 3 | 65 | 65 |
+| fantasy | 66 | 55 | 17 | 8 | 4 | 35 | 2 | 63 | 63 |
 
 Per theme, 6 entries are fixed items (`Info.DontApplyOffset 1`: bus, gates,
 seaplane, lights, ferry, end; `Info.WhichUIType 4`) and 3 are tools without
 occupied cells (Mystery ride 100, Buy Land 101, Clear Land 102). "Buildable" =
 `WhichUIType` 0–3, not fixed, not a tool, not a track upgrade (upgrades attach to
-a ride's track, which is not implemented).
+a ride's track, which is not implemented). This is the executable's build-menu rule
+(filler 0x4AAF70: the definition's `WhichUIType` equals the tab, `AddOn.UpgradesId`
+is 0 and its model loaded; tools and fixed items have `WhichUIType` 4), and it gives
+the same set on the whole corpus; the original also needs the item to be available or researched.
 
 Settings layers (`ObjectSettings`): the category default file beside the
 archives (`Rides.sam`, `Shops.sam`, `SideShow.sam`, `Features.sam`,
-`Upgrades.sam`), then shared archive files without `Info.Id` (`coaster.sam`),
-then the object's own `.sam`. `Easy_*.sam` (difficulty) and `Online_*.sam` are
-not applied. The order is inferred from the files' comments and overrides, not
-traced. The generic `SettingsFile` cannot read quoted names or `---` blocks,
+`Upgrades.sam`), then the object's own `.sam`; `Easy_<object>.sam` is layered last
+in Instant Action when it exists (traced, STP-PPC 0x10119328), `Online_*.sam` is not applied. The
+object loader 0x413C10 builds the same stack (the caller's base file, `<object>.sam`, in game type 2
+`Easy_<object>.sam`). A shared archive file without `Info.Id` (only `coaster.sam`, in the 12
+TrackMaster archives) is not part of that stack: for track type 3 the loader reads it into a separate settings
+object that goes to the TrackMaster loader 0x42FAD0, and `ObjectCatalogEntry.SharedSettings` /
+`CoasterDefinition.FromEntry` do the same here (its keys are `asTextureData`, `asCrossSection*`,
+`asPylonControls`, `sCoasterType`, `sTrainType`, `asCarTypes`; no object or category file sets one,
+so the coaster definitions equal the old merged ones). The generic `SettingsFile` cannot read quoted names or `---` blocks,
 hence `ObjectSettingsFile`. Values stay raw (`Settings`, `Upgrades[n]`);
 convenience accessors: `BuildCost` (`Upgrades[0].CostOfUpgrade`, "cash cost
 when buying this item"), `InitialCapacity`, `HasQueue`, `IsChoosable`,
@@ -58,29 +66,40 @@ RSE), animation members (below) and auxiliary geometry (vehicles, track pieces,
 pylons). All 274 main models parse as geometry; all 911 animation members parse
 and bind to their main model's nodes; 5,629 material slots resolve to textures
 in `<archive>/textures`, `<archive>/gtexture` or `/levels/<theme>/sharetex`
-except two (hallow ogre upgrade: unnamed slot; space rocket: `s_leg3` not
+(with the Low detail preset, TEXTUREQUALITY 0 or 1, `<archive>/stexture` and `/levels/<theme>/ssharete`
+replace `textures` and `sharetex`; they hold every texture the full folders hold, the startup
+choice of 0x54DCF0) except two (hallow ogre upgrade: unnamed slot; space rocket: `s_leg3` not
 shipped). 31 floor meshes have more than 16 texture slots and are split by
 material for the 16-slot shader.
 
 ### Names (OBJECT_NAMES.str)
 
-The `.sam` files carry no string index. OBJECT_NAMES holds one block per theme,
-each ending with "Traffic Lights"; rides use two entries ("Inca" + "Totem"),
-other objects one. An entry is bound when its English `Info.Name` equals one
-entry or two consecutive entries (ignoring case, spaces, accents) in the block
-with most matches; `DisplayName` then comes from the selected language's
-table at that index. 220 of 274 bind. Unbound (keep the .sam name):
-Loudspeakers ("Speaker: …" entries cannot be assigned to speaker1…4 without
-evidence), `Sign1`, Gates/Lights/End/Plane, tools, and renamed rides (Thrill
-Grill = "The Firepit", Bounce On Iggy = "Cosmic Bounce", Star Tours,
-Butterfly Nest, Kid Creosote). Confidence: high for bound entries (string
-equality), the binding rule itself is inferred.
+The `.sam` files carry no string index; the executable binds names by `Info.Id` through a
+static table of 281 rows `(Info.Id, first, second)` at 0x7488D8 (the name getter 0x4146B0 walks it
+by id; an id outside it gives an empty name). `ObjectNameTable` holds those rows (values derived
+from the executable, no bytes committed); `first` and `second` are OBJECT_NAMES indices, `second` = 1
+(the empty string) when the object has one entry ("Inca" + "Totem" for rides, one entry for the rest;
+every `second` is 1 or `first` + 1). The texts are joined with a space (a trailing `-` of the first
+text is cut and the two joined without it), as before (`ObjectNames.Join`); `DisplayName` comes from
+the selected language's table. 262 of 274 entries bind; the 12 unbound ones are the three tools of each
+theme (ids 100–102), which keep their `.sam` name here where the original shows an empty name. The English
+name matcher this replaces missed the loudspeakers, gates, signs, lights, seaplane and several renamed rides
+(Thrill Grill = "The Firepit", Bounce On Iggy = "Cosmic Bounce", Star Tours, Butterfly Nest, Kid Creosote), and
+bound the fantasy Fountain (4417) and the space Crater (3407) to the wrong entry (now 246 and 359).
+The caller 0x412FB0 uses the archive's own text-file `NAME` first (bonus objects) and the table otherwise.
 
 ## Shape, footprint and rotation
 
-`Info.Shape` rows (`ObjectShape`): `*` occupied, `.` free, `2` entrance,
-`S`/`N`/`E` exit, `<`/`>` coaster station ends, `+` track-upgrade cells, `W`
-(bonus Snake only, unknown, treated as occupied).
+`Info.Shape` rows (`ObjectShape`) use the symbol table of the executable (0x7396C8, parser
+0x402720; 19 symbols, anything else is "Illegal map character", at most 20 columns). Each symbol has a cell
+type and a compass bit (`ObjectShapeSymbols`): `.` free (0), `*` occupied (4), `Q` (3), `@` (1) and `#` (16)
+(types of unknown placement meaning, counted as occupied here), `+` upgrade cells (11), entrances (9) `8` `6` `2`
+`4` `O` with bits N E S W N, exits (10) `N` `E` `S` `W` `X` with bits N E S W N, and track ends (23) `D`
+(no bit), `>` (E) and `<` (W). The bits are 0x01 N, 0x04 E, 0x10 S, 0x40 W. The loader 0x413410 keeps the
+first entrance and first exit cell with their direction byte, so the open side belongs to the symbol, not to the
+edge the cell lies on: an exit opens towards its bit, an entrance opposite to it (the guest walks in along the bit).
+With text-down N (−V), text-up S (+V), right E (+U) and left W (−U) every corpus shape (209 access cells) opens
+as before; that axis mapping is medium confidence (RIDES-012). The bonus Snake's `W` is a west exit, not an occupied cell.
 
 Local coordinates: `U` = column = model +X, `V` = rows counted from the **last**
 text row = model +Z; one cell = 10 MD2 units. Evidence:
@@ -180,9 +199,10 @@ the fixed gate's worm face, the queue-bin fires (RIDES-035; the mixing and
 fallback rules are MD2-900..902) — and the renderer swaps the bound texture of
 the material slots that show the slot, with no reallocation while the frame
 holds. Node-state bit 0x10
-(clip node lists, toggle tracks) hides the node's mesh (RIDES-042). Still shown
-as stored: the 12-byte block (0x4000, RIDES-041); not applied: path parameters
-(0x200/0x400).
+(clip node lists, toggle tracks) hides the node's mesh (RIDES-042). The 12-byte block (0x4000) holds one stored pose per tick (duration + 1 poses
+of `count` positions); the PC sampler (0x471860, 0x4718F7) replaces vertex i by entry `index[i]` of pose
+`trunc(time)` with no blending (its "interpolation" weighs one address by t and 1 − t) and `ObjectAnimator` does the same
+(see MD2-MODELS.md); not applied: path parameters (0x200/0x400).
 
 ## Scripts in the world
 
@@ -274,7 +294,9 @@ defaults come from the game's own `Rides.sam` etc.
 Names: bonus objects are not in OBJECT_NAMES. Each archive has UTF-16 text
 files per language (`english.txt`, `German.txt`, `Dutch.txt`, … also languages
 the game does not ship) with `NAME`, `SIGNA`, `SIGNB` sections; `DisplayName`
-uses the selected language, then English, then the `.sam` name (never fails).
+uses the selected language, then English, then the `.sam` name (never fails; the original reads only
+the selected language file, 0x41F350, and falls back to the id table, which holds no bonus id except
+3301: RIDES-025).
 E.g. `_snake_1` (.sam "Snake") is "Slither" — a name the base OBJECT_NAMES
 already reserves at jungle index 22 — and "Rutschbahn" in German.
 
@@ -286,11 +308,18 @@ bonus root is set (observed: Dizzy Dinos animating).
 
 ## Remaining gates
 
-The 12-byte vertex block (0x4000), path parameters and texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
+Path parameters and the draw-path reader of texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
 TOUR controllers, kart controllers and track building (karts, water ride jumps and
 tunnels; Splish Splash runs its BUMP controller on a built circuit, [TRACKS.md](TRACKS.md)); visitor simulation behind the bridge; `.hmp` ground deformation;
-original build rules and costs; animation tick rate; the meaning of `W`, `N`,
-`E`, `<`, `>`; the object-list update route (RIDES-032).
+original build rules and costs; animation tick rate; the placement meaning of the cell types 1, 3, 11 and 16
+(`@`, `Q`, `+`, `#`); the object-list update route (RIDES-032).
+
+Open point, not registered and not implemented (found in RIDES round 2): in Instant Action (game type 2) the
+original's category walk 0x413930 does not load an object that has no `Easy_<object>.sam` at all
+(0x413AC4..0x413ADD: `Easy_` load result != 1 jumps to 0x413B3A, which runs the object's deleting destructor).
+OpenTPW layers the `Easy_` file only when it exists and loads every object. Following the original would change
+which objects the Instant Action catalog holds (for instance the jungle coaster1, coaster3, incagod, tourride and
+volcano archives have no `Easy_` file), so it needs a decision first.
 
 ## Approximation register
 
@@ -302,39 +331,47 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | RIDES-003 | World/Objects/ObjectAnimator.cs | Finished clip holds its last pose (AnimID 14 path traced: 0xa7498, 0xa68ac, 0xa694c); the next trigger restores against the ended clip, while the original passes the AnimID-14 slot as the old clip (0xa692c–0xa6948) | Capture after a clip ends; the object's AnimID-14 table slot; the ride-data sources of object flags 0x8 (stop) and 0x10 (hold) |
-| RIDES-009 | World/Objects/ObjectCatalog.cs:381 | shared (non-Info.Id) .sam files sit between category defaults and the object file; `Easy_<file>` is layered last in Instant Action (traced, STP-PPC 0x10119328) | which base file the binary's object loader is given |
-| RIDES-010 | World/Objects/ObjectCatalog.cs:451 | OBJECT_NAMES index by English name equality | Binary name-index table |
-| RIDES-011 | World/Objects/ObjectShape.cs:74 | Shape symbols N/E exit, `<`/`>` station ends, `+` upgrade, `W` occupied | Saves/captures with these objects |
-| RIDES-012 | World/Objects/ObjectShape.cs:138 | Access cells open across first/last row, then columns | Saves with side entrances |
+| RIDES-011 | World/Objects/ObjectShape.cs | Uses inferred: type 11 (`+`) as track-upgrade cells over the parent ride's track, the track ends `<` `>` (type 23, directions W/E) as coaster station ends; the symbol types and direction bits are the executable's table (0x7396C8) | The placement code that consumes the cell types |
+| RIDES-012 | World/Objects/ObjectShape.cs | Access cells open towards the compass bit of their symbol: an exit towards it, an entrance opposite to it (N −V, S +V, E +U, W −U; `2` opens to −V). The bit-to-axis mapping is medium confidence: every corpus shape agrees, but no reader of the direction bytes (def+0x49C/+0x4A8) was traced | The placement code that reads def+0x49C/+0x4A8 |
 | RIDES-013 | World/Objects/ObjectShape.cs:103 | 180° and non-square rotations follow the rigid rotation | Save with such objects |
 | RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
 | RIDES-015 | World/Objects/ParkObjects.cs:190 | Imported and built objects start open | TPWS ride state, original build behaviour |
-| RIDES-017 | World/Objects/ObjectCatalog.cs:124 | Buildable = WhichUIType 0–3, not fixed/tool/upgrade | Original build-menu contents |
 | RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
-| RIDES-019 | World/Objects/ParkObjects.cs:209 | Levels without save get Gates, Lights, Bus | Original fixed-item spawning |
+| RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates, Lights and Bus. The original creates Gates and Lights at world setup (0x5156A0); its arrival vehicle is bus, seaplane or ferry at random per arrival (LCG at 0x51A2F0, the current vehicle is reused) and End is created elsewhere (0x516B00). Not implemented: the arrival owner's vehicle choice | The arrival code (ARRIVAL register) |
 | RIDES-021 | World/Level.Objects.cs:46 | Build centred on clicked cell; cursor ray hits Z = 0 | Original build cursor behaviour |
-| RIDES-022 | World/Objects/ObjectAssets.cs | Texture search archive textures → gtexture → sharetex. PC (tp.exe): 0x461a60 → 0x46e670 sets the model directory, `<dir>\textures` and `<theme>\sharetex` (0x46e650); lookup 0x46ead0 tries `<dir>\textures\<name>` as .wct then .tga, then assigns sharetex without an existence check, else logs "Could not load texture…"; GTexture only in the coaster loader 0x42fad0 | The globals 0x78d968, 0x785874 and 0x79d86c & 0x800 that 0x54dcf0 uses to pick stexture/ssharete |
 | RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |
-| RIDES-024 | World/Objects/ObjectCatalog.cs:276 | Bonus archives merge; Info.Id collision skips the bonus entry | Original behaviour with dropped-in WADs |
-| RIDES-025 | World/Objects/ObjectCatalog.cs:545 | Bonus name: language file → English → .sam name | Original bonus-name lookup |
-| RIDES-026 | World/Objects/OriginalObject.cs:12 | 1 MD2 unit = 0.2 engine units | None (engine convention) |
+| RIDES-024 | World/Objects/ObjectCatalog.cs | Bonus archives merge; this port skips a bonus entry whose Info.Id is taken. The original dedupes by archive name (0x41EDE0) and loads Info.Id duplicates too, its id lookups (0x412E90/0x412EF0) taking the first definition in directory order | The directory order of the original's category walk; how a `_name_N` archive finds its `_name.sam` |
+| RIDES-025 | World/Objects/ObjectCatalog.cs | Bonus name: selected language file, then English, then the .sam name. The original reads only `<selected language>.txt` (0x41F350) and falls back to the id table (empty for bonus ids except 3301); the English and .sam fallbacks are an OpenTPW extension for languages an archive lacks (third-party content) | None needed for the shipped archives (all 35 carry the four shipped languages) |
 
 | RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |
-| RIDES-030 | World/Objects/ObjectAssets.cs | Non-finite texture coordinates (10 vertices of the Theme Park Inc `natnav` "subtank" mesh) are drawn as (0, 0) | The original renderer's handling of them |
-| RIDES-031 | World/Objects/ObjectShape.cs | Shape symbol `@` (only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`") is an occupied cell | TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
+| RIDES-031 | World/Objects/ObjectShape.cs | Shape symbols `@` (type 1; only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`"), `Q` (3) and `#` (16) are cell types of their own in the executable's table, not the occupied type 4; their placement meaning is untraced and they count as occupied here | The consumer of the shape cell types; TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
 | RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route. PC: render callback 0x463030 (model record +0x140, set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 updates instances without it via 0x473c70(inst, 0, 8) without posing and clears it on the others; object flag 0x00400000 is set at 0x4737e8 when a non-looping clip ends with nothing deferred, flags & 0x10 set and & 0x8 clear (also sets 0x40000000, holds the last frame). The list-pass route is not modelled | The renderer's call site of the +0x140 callback |
-| RIDES-033 | VM/RideVM.cs | Script speed = 0.5 + bias / 100 (0x551769); the bias is the ride's SPEED: ride init `Upgrades[0].InitSpeed` when above 0 (0x4db51c..0x4db54c), children copy the parent's (0x551888), creation default 50 (0x558c3c), setter 0x55a300. Not modelled: ride-settings apply (0x4af440 → 0x4dd6e0) and upgrade completion `Upgrades[level].InitSpeed` (0x4df8f0), as live upgrades keep the authored values (QUEUE-011) | The host's ride-settings change flow |
-| RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks apply to rendering (MD2-900..902); the original's draw-path reader of a slot's current frame is not traced, so the binding follows this port's material-slot mapping | The reader of a texture slot's current frame |
-| RIDES-036 | World/Objects/ObjectAnimator.cs | The UV pass always runs. PC: option word 0x7b4980 has one write (0x4740d0, called once with 0 from 0x457a90), so bit 0x10 is always clear (gate 0x47219a); node bit 0x4000 is taken as clear | The writers of node bit 0x4000 |
-| RIDES-038 | VM/Handlers/Animation.cs | TRIGANIMSPEED with a speed operand of 0 or below faults. PC 0x552f2e..0x552feb: operand stored at +0xe4 as 16 bits, deadline `idiv` by the full operand (0 is a divide fault); a negative speed gives a decreasing frame whose end test in 0x4735d0 never fires | Pose sampling at negative frames |
+| RIDES-033 | VM/RideVM.cs | Script speed = 0.5 + bias / 100 (0x551769); the bias is the ride's SPEED: ride init `Upgrades[0].InitSpeed` when above 0 (0x4db51c..0x4db54c), children copy the parent's (0x551888), creation default 50 (0x558c3c), setter 0x55a300, and upgrade completion (0x4DF8F0) sets `Upgrades[level].InitSpeed` when above 0 (also capacity from +0x198 and duration from +0x1A0, which QUEUE-011 keeps authored). Not modelled: ride-settings speed changes (UI command 0x4af440 → 0x4dd6e0), as OpenTPW has no ride speed control | The ride-settings UI of the original |
+| RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks apply to rendering (MD2-900..902). PC writer: clip update 0x4721F0 runs 0x470C90, which writes the slot record at model+0x50+slot·8 (frame at +2, dirty bit 0x04 in byte +1); no reader of the frame or the dirty bit was found, so the binding follows this port's material-slot mapping | The draw-path reader of a texture slot's current frame (a runtime write watchpoint on a slot's +2, or the D3D texture-bind code) |
 | RIDES-040 | World/Objects/ParkObjects.cs | Theme Park Inc fixed scene records saved at (0, 0) use their local model origin | The original fixed-scene transform fields and a game capture |
-| RIDES-041 | World/Objects/ObjectAnimator.cs | 12-byte vertex block (record flag 0x4000) parsed, stored mesh shown | A reader of the record +40 floats or of node bit 0x800 |
 | RIDES-042 | World/Objects/ObjectAnimator.cs | Node-state bit 0x10 (node lists at clip start, toggles ≤ 0) hides the node's mesh | The draw-path reader of node bit 0x10, or captures |
-| RIDES-043 | World/Objects/ObjectAnimator.cs | Relative-animation models (header flag 0x4) play vertex and UV tracks in set mode, as the PC object loader does: 0x461f10 keeps flag 4 only with inner argument bit 0x20000 (else logs "Ride %s has relative animation incorrectly set" and strips it); 0x4629d0 maps outer 0x1000000 to inner 0x20000; only the TrackMaster loader 0x42fad0 passes it (0x1013405), the object loader 0x413c10 passes 0x50c00/0x450c00/0xb24a9/0x4b24a9/0xc0. Add mode for TrackMaster coaster models is not modelled | A TrackMaster coaster model with header flag 4 |
-| RIDES-044 | VM/RideVM.cs | The shared scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read starts at 0 when the park's script world is created and advances with the script ticks. PC: script deadlines use the scaled timer 0x785970 (0x402d70 → 0x4031e0) plus +0x44/+0x48; saves store it ('SSEM' at 0x41555a, read into +0x4c by 0x402e30) | The timer value when a new park starts (needs a capture) and GETTIME's PC handler |
+| RIDES-044 | VM/RideVM.cs | The scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read starts at 0 when the park's script world is created and advances with the script ticks. The PC clock is the app-lifetime scaled timer 0x785970 (started at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader 0x415270, never reset for a new park), so a new park's first script sees the time since program start; the two differ only in absolute GETTIME values, since every deadline is relative | GETTIME's PC handler (to show it is only used for differences) |
 | MD2-900 | World/Objects/ObjectAnimator.cs | A texture-frame slot mixes like the node components: ascending channels and tracks, the last non-null frame wins (hyenasm1 carries two tracks on one slot; the constant 0 loses to the face cycle), null before the first key keeps the previous frame (initially 0), and a slot no clip addresses shows frame 0 again; the fixed-item pose hold is not extended to frames | The original draw-path reader of a slot's current frame (the clip update 0xa56f8 only writes it) |
 | MD2-901 | World/Objects/ObjectAnimator.cs | Texture-frame keys naming a frame outside the slot's frame names, or a slot the model does not have (Pmegacostm slot 12), are ignored | The original's behaviour on an out-of-range frame or slot |
 | MD2-902 | World/Objects/OriginalObject.cs | A frame whose art no searched texture directory has (including Theme Park Inc `tvsim` slot 39 frame 3, `lt1.tga`) keeps the effective selected frame; the renderer registers decoded-art availability with the animator so save history retains that visible frame | The original's fallback for a missing frame file |
+
+### Retired and reclassified (RIDES round 2, October 14)
+
+Traced in tp.exe (`TPW-EXE`) and no longer approximations:
+
+- `APPROX:RIDES-009`: shared `.sam` files are not part of the object's settings stack (0x413C10); `coaster.sam` is read on its own for track type 3 and given to the TrackMaster loader 0x42FAD0 (`SharedSettings`). The values were already identical.
+- `APPROX:RIDES-010`: names bind by Info.Id through the table at 0x7488D8 (see Names).
+- `APPROX:RIDES-017`: the build-menu filler 0x4AAF70 lists `WhichUIType` = tab, `AddOn.UpgradesId` = 0, model loaded and available; the corpus agrees. The two land-tool entries it appends to tab 3 belong to the UI register.
+- `APPROX:RIDES-022`: the low-detail texture folders (`stexture`, `ssharete`) are used exactly when the active detail has TEXTUREQUALITY 0 or 1 (the Low preset; startup 0x54DCF0 → 0x4688B0). `ObjectAssets.UsesLowDetailTextures` follows the preset when an object's textures are looked up (the original picks once at startup, so objects loaded before a preset change keep their textures).
+- `APPROX:RIDES-036`: the UV pass gate (0x47219A) is open for authored nodes: option bit 0x10 is never set and node bit 0x4000 is only written for the generated ground-conforming base node (0x46A81D).
+- `APPROX:RIDES-041`: the PC sampler reads the 12-byte block (0x4718F7); see MD2-MODELS.md. The earlier finding that no reader existed was wrong.
+- `APPROX:RIDES-043`: objects load in set mode (loader 0x461F10 strips header flag 4 unless the TrackMaster loader asks for it). The Add-mode remainder for TrackMaster coaster models moved to COAST-026.
+
+Reclassified as OpenTPW conventions (no original rule to recover): `[EXT:md2-engine-scale]` (formerly `APPROX:RIDES-026`, the 0.2 presentation scale),
+`[EXT:malformed-texture-coordinates]` (formerly `APPROX:RIDES-030`, non-finite texture coordinates drawn as (0, 0); the original passes raw floats to Direct3D) and
+`[EXT:trig-anim-speed-guard]` (formerly `APPROX:RIDES-038`: the corpus has 4 TRIGANIMSPEED uses, all literal 1800–4000, so the guard against 0 and negative speeds only meets malformed input).
+
+Narrowed: RIDES-011, 012, 019, 024, 025, 031, 033, 035 and 044 (rows above); RIDES-013, 015, 021, 023, 028, 032, 040 stay as they were.
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

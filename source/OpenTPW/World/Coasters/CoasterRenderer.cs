@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// tops; and each train as one box per car at its position. Flat colours from a small palette texture through the
 /// sprite shader, one dynamic vertex buffer, both windings.
 /// </summary>
-// [APPROX:COAST-026] tracks are drawn as a flat-coloured box-section tube along the samples with box pylons and box cars; the original extrudes the coaster.sam cross sections (asCrossSectionPoints/Edges, winch section) with the track textures and draws the pylon and car MD2 meshes — evidence needed: the track mesh builder and the pylon/car placement of the coaster renderer
+// [APPROX:COAST-026] tracks are drawn as a flat-coloured box-section tube along the samples with box pylons and box cars; the original extrudes the coaster.sam cross sections (asCrossSectionPoints/Edges, winch section) with the track textures and draws the pylon and car MD2 meshes — evidence needed: the track mesh builder and the pylon/car placement of the coaster renderer; the coaster MD2 models' Add-mode animation (the TrackMaster loader 0x42fad0 passes inner argument 0x20000, so header flag 4 stays: vertex and UV keys are added to a per-update base copy, the add paths of 0x471860) is not modelled either (formerly the remainder of RIDES-043)
 public sealed class CoasterRenderer : Entity
 {
 	private const float TrackHalfWidth = 3f;

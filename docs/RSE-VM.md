@@ -86,7 +86,10 @@ implementation against those inputs, not equivalence to an executed PC game.
   timestamp; a script created later starts at the clock's current value. The
   WAITANIM(_CH) deadlines use the same 32-bit clock word; WAIT, SETTIMER and the
   wake times count from the script's own creation, which only shifts their base.
-  The clock starts at 0 with the park's script world (RIDES-044).
+  The clock starts at 0 with the park's script world (RIDES-044): the PC clock is the app-lifetime scaled
+  timer 0x785970 (started once at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader
+  0x415270, never reset for a new park), so a new park's first script sees the time since program start;
+  the two differ only in absolute `GETTIME` values, as every deadline is relative.
 - `JSR`/`RETURN` use a LIFO stack limited to the header stack size (every
   script that uses JSR declares ≥ 3); the old VM used a FIFO queue.
 - Children: `SPAWNCHILD` and `SPAWNSOUND` load a script from the parent's
@@ -314,6 +317,15 @@ and VAR_RUNNING = 0 because nobody boarded. All five clip requests resolve.
 `TotemWithoutAnObjectWaitsOnItsFirstWaitAnim` pins the same script with no host:
 like the original's null-object path its first WAITANIM gets 0 ms and waits
 `INT32_MAX` ms, so nothing else happens.
+
+The script speed is `0.5 + SPEED / 100` (0x551769) with SPEED the ride's speed bias: ride init writes
+`Upgrades[0].InitSpeed` when above 0 (0x4DB51C..0x4DB54C), children copy the parent's (0x551888), the default is 50,
+and upgrade completion (0x4DF8F0) writes the new level's `InitSpeed` when above 0, in the same routine that sets capacity from
++0x198 and duration from +0x1A0 (`OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`; CAP and DUR stay
+authored, QUEUE-011). A completed upgrade therefore changes the speed of every later `WAIT`, animation trigger and wait
+of that ride's scripts. Ride-settings speed changes (UI command 0x4AF440 → ride SetSpeed 0x4DD6E0) are not modelled
+(RIDES-033 narrowed): OpenTPW has no ride speed control. A TRIGANIMSPEED operand of 0 or below faults
+(`[EXT:trig-anim-speed-guard]`, formerly RIDES-038: the corpus has four uses, all literal 1800 to 4000).
 
 ## Sandbox Totem
 

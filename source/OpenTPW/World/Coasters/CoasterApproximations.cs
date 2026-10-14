@@ -25,7 +25,7 @@ public static class CoasterApproximations
 		("COAST-023", "COAST-DISPATCH: COAST 6's two upper bounds (definition +0x318 fleet sockets, first train definition +8) are not applied; seats are split evenly over the cars; departures at the release headway when full or after 5 s; arriving trains wait before a busy station"),
 		("COAST-024", "COAST-INCOMPLETE: guests do not join or board a coaster that is not complete and closed; the guest predicate 0x441970's +0x140 == 0 and not-the-coaster-being-edited tests are not modelled, nor the queue state 11 thought-13 exit"),
 		("COAST-025", "COAST-SAVE: the own-format park save holds the tracks, trains, riders and generator state; the original's coaster chunks between EMAK and SAOC are read structurally (SaveCoasterBlock: header, auxiliary links, sections, links; train payload raw, cell/Info.Id joins only; nonempty TPW runtime import refused) and never written"),
-		("COAST-026", "COAST-RENDER: tracks, pylons and cars are drawn as flat-coloured boxes, not the coaster.sam cross sections and MD2 meshes"),
+		("COAST-026", "COAST-RENDER: tracks, pylons and cars are drawn as flat-coloured boxes, not the coaster.sam cross sections and MD2 meshes (whose Add-mode vertex and UV animation, TrackMaster loader 0x42fad0, is not modelled)"),
 		("COAST-027", "COAST-RNG: the coaster generator starts from the world seed, not one C-library rand() draw"),
 		("COAST-028", "COAST-TOOL: the coaster tool's mouse and key controls and its ghost marker are OpenTPW's; the tool refuses no pylon for money"),
 		("COAST-029", "COAST-STATION: the station node stands at '>', the end node at '<' at fInitialPylonLoftHeight"),

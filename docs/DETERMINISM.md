@@ -204,6 +204,19 @@ snapshots restore at the creation value). No pinned hash moved. The scripted-obj
 waits (`out / script speed`) and its WAITs (`operand / script speed`, STP-PPC 0xb0658) are now shorter, which moves
 every later timestamp of its 30 s trace by up to about 1.2 s.
 
+Rides register round 2 (October 14): upgrade completion now sets the script speed bias to the new level's `InitSpeed` when
+above 0 (tp.exe 0x4DF8F0; `OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`, called from
+`Level.ApplyCompletedCatalogueTier` only; a resume or import still seeds the tier without touching the bias, since the saved VM
+state restores it). The bias is already in the script digest and snapshot, so no schema change is needed, and no pinned
+hash moved: the fixed run's synthetic park completes no upgrade, and the upgrade tests assert the bias directly
+(`CompletedTierSetsTheScriptSpeedBiasToThatLevelsInitSpeed`). A saved park that completed an upgrade under the older build keeps
+the bias it saved; only upgrades completed after this change move it (a ride that speeds up changes the timing of every later
+`WAIT` and animation trigger of its scripts, so such a run does not replay a recording made before). The other changes of the round
+(object names, shape symbols, the 12-byte vertex poses, the low-detail texture folders, `coaster.sam` as its own settings) touch no
+simulation state; the pins they moved are presentation and data pins: the catalog "named" counts, the MD2 corpus table-byte and
+unsupported-flag counts, the vertex-track census (609 clips play, none limited) and the frozen sign baseline (seven signs whose
+name changed; the five newly named signs are pinned in `RidesRound2CorpusTests`).
+
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the
 same process.

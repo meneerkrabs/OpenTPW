@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// </summary>
 public readonly record struct ObjectPlacement( int X, int Y, int Rotation, System.Numerics.Vector2 GridOrigin, float BaseHeight )
 {
-	// [APPROX:RIDES-026] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; no game rule) — evidence needed: none (engine convention)
+	// [EXT:md2-engine-scale] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; the original has no such game rule) — OpenTPW's presentation convention (formerly RIDES-026)
 	public const float ModelScale = 0.2f;
 	public const float CellSize = 10 * ModelScale;
 

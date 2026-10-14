@@ -934,6 +934,29 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Rides register round 2 (October 14):** the rides items were traced in tp.exe and the code follows what was found
+  (docs/OBJECTS.md, "Retired and reclassified"). Names: the executable binds OBJECT_NAMES by Info.Id through a 281-row
+  table (0x7488D8), `ObjectNameTable`, instead of the English matcher; 262 of 274 entries now bind (only the three tools of each
+  theme do not), the gates, signs, lights, seaplane, loudspeakers and renamed rides get their names, and the fantasy
+  Fountain and the space Crater point at the right entry (RIDES-010 retired; COMPAT-016 cites the table). Shapes: every
+  symbol comes from the executable's 19-row table (0x7396C8) with a cell type and a compass bit; the entrances `8 6 4 O`, the
+  exits `X` and `W` and the cells `Q # D` exist now, the open side of an access cell comes from its symbol (exit: its bit,
+  entrance: the opposite), all 209 corpus access cells open as before, and the bit-to-axis mapping stays APPROX (RIDES-012,
+  medium confidence). 12-byte vertex block: the PC sampler does read it (0x4718F7). The table holds one pose per tick
+  (duration + 1 poses, all 30 records), the sampler shows pose `trunc(time)` with no blending, and `ObjectAnimator` does the
+  same; 19 of the 30 records (speakers, rocks, tree, droid, plane) were drawn wrong before, and the 10 catalog clips that were
+  reported as limitations play now (RIDES-041 retired; docs/MD2-MODELS.md corrected). Upgrade completion sets the script
+  speed bias to the new level's `InitSpeed` when above 0 (0x4DF8F0, RIDES-033 narrowed to the unmodelled ride-settings UI).
+  Low detail: `stexture` and `ssharete` replace `textures` and `sharetex` exactly when the active detail has TEXTUREQUALITY 0
+  or 1, and they hold every texture the full folders hold (RIDES-022 retired). `coaster.sam` is the coaster's own settings
+  as in the loader (0x413C10, 0x42FAD0; RIDES-009 retired, values identical). Also retired: RIDES-017 (build-menu filler
+  0x4AAF70), RIDES-036 (UV pass gate) and RIDES-043 (objects load in set mode; the TrackMaster Add-mode remainder moved to
+  COAST-026); reclassified as OpenTPW conventions: RIDES-026 (`[EXT:md2-engine-scale]`), RIDES-030
+  (`[EXT:malformed-texture-coordinates]`) and RIDES-038 (`[EXT:trig-anim-speed-guard]`, the corpus has four literal uses
+  from 1800 to 4000); narrowed: RIDES-011, 012, 019 (the original picks bus, seaplane or ferry per arrival with the LCG at
+  0x51A2F0, not implemented here), 024, 025, 031, 033, 035 and 044. Open and not implemented: in Instant Action the
+  original does not load an object without `Easy_<object>.sam` (0x413AC4), which would change the objects of that catalog
+  (docs/OBJECTS.md, "Remaining gates"). Re-pins: see docs/DETERMINISM.md.
 - **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
   first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy
   `[EXT:explicit-world-seed]`.

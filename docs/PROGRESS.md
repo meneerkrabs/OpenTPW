@@ -944,6 +944,9 @@ research batch was included in this merge.
   0x43ce20, edit step 0x435d50); COAST-026 is narrowed and COAST-033..035 added (docs/COASTERS.md). Rider heads in the cars
   and the dry/wet blend sections are not done.
 
+- **MULT traced (October 14):** the RSE interpreter's case 48 in tp.exe (`0x553eb9`) confirms OpenTPW's MULT: destination
+  first, `a × b` with a 32-bit wrap, the product in the flag word and a variable destination. VM-900 is retired, and DET-002 (the explicit world seed) is reclassified as OpenTPW's replay policy
+  `[EXT:explicit-world-seed]`.
 - **Server tests no longer hang on macOS (October 14):** `ServerProgram.Build` turns off appsettings.json reload-on-change
   (`--hostBuilder:reloadConfigOnChange=false`, which a later argument can override). The server binds its options once, so the
   watcher did nothing, and on macOS starting it calls `sync(2)`, which never returns while a mounted volume (here a stalled SMB

@@ -315,7 +315,10 @@ public partial class Level : IDisposable
 				SetupGuests( OriginalPark );
 			yield return 0.9f;
 			using ( LoadProfile.Measure( "paths" ) )
+			{
 				SetupPaths();
+				SetupTracks();
+			}
 			if ( OriginalTerrain != null && Guests != null )
 			{
 				var cells = Guests.Grid.Cells;
@@ -740,6 +743,8 @@ public partial class Level : IDisposable
 		ExitRideView();
 		ExitFreeWalk();
 		onlinePanel?.Dispose();
+		trackRenderer?.Dispose();
+		trackRenderer = null;
 		DetachOverlay();
 		TextOverlay?.Dispose();
 	}

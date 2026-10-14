@@ -118,6 +118,10 @@ internal sealed partial class ParkResumeSmokeTest
 			Log.Trace( $"Park-resume fixture: developer Totem placed and opened (attraction {totem.Visitors.AttractionId}, queue at {totem.Visitors.EntranceCell})." );
 		}
 
+		// The water variant's bought Splish Splash with a closed circuit (OPENTPW_SMOKE_WATER=1, ParkResumeSmokeTest.Water.cs).
+		if ( WaterVariant )
+			PlaceWaterFixture( spineEnd );
+
 		// Staff for the staff world to travel.
 		foreach ( var type in new[] { StaffType.Mechanic, StaffType.Entertainer } )
 		{
@@ -355,7 +359,7 @@ internal sealed partial class ParkResumeSmokeTest
 	{
 		for ( var step = 0; step < PopulateAdvancesPerFrame; step++ )
 		{
-			if ( RichMoment() )
+			if ( RichMoment() && WaterReady() )
 			{
 				Log.Trace( $"Park-resume populate: rich state after {populateTicks} ticks ({DescribeGuests()})." );
 				stage = Stage.Save;

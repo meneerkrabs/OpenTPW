@@ -41,6 +41,7 @@ public partial class Level
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot(),
 			Coasters = CaptureCoastersSnapshot(),
+			Tracks = CaptureTracksSnapshot(),
 			Prototype = prototype,
 			AssetHashes = assets
 		};
@@ -103,6 +104,9 @@ public partial class Level
 		// The coasters go last: their stations were placed above (each placement reset the track to its station
 		// node), and this restores the saved tracks, controller state, trains and riders over them.
 		RestoreCoastersSnapshot( snapshot.Coasters );
+		RestoreTracksSnapshot( snapshot.Tracks );
+		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
+		UpdateTrackRendering();
 		renderedCellVersion = Guests.Grid.Cells.Version;
 	}
 

@@ -324,6 +324,21 @@ internal static class Game
 			Render.PostUpdate += new WorldCapture( capturePath, frames, args.Contains( "--capture-interface" ), pose, sequence.Count, sequence.Interval ).Update;
 		}
 #if DEBUG
+		// [EXT:debug-water-track] smoke-only (Debug builds): once the original level is up, places a water ride with a closed circuit near the
+		// park's paths and points the camera at it, so captures show the track tiles and a boat (docs/TRACKS.md).
+		if ( args.Contains( "--debug-water-track" ) )
+		{
+			var demoFrames = 0;
+			Render.PostUpdate += BuildWaterDemo;
+			void BuildWaterDemo()
+			{
+				if ( flow.Level is not { WaterTracks: not null } demoLevel || ++demoFrames < 30 )
+					return;
+				Render.PostUpdate -= BuildWaterDemo;
+				if ( demoLevel.BuildDemoWaterRide() == null )
+					Log.Warning( "--debug-water-track: no site with room for a water ride and its circuit." );
+			}
+		}
 		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
 		// converter as soon as the park's weather exists, so captures can show rain/snow/lightning without waiting
 		// for the season's rolls. The drops, bolts and thunder still come from ParkWeather's normal machinery;

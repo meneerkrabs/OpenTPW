@@ -132,6 +132,9 @@ public static partial class Mp2Decoder
 			for ( var batchFrame = 0; batchFrame < frameBudget && data.Length - offset >= 4; batchFrame++ )
 			{
 				var header = Header.Parse( data[offset..] );
+				// Only complete frames establish or change the decoded stream's format.
+				if ( header.FrameBytes > data.Length - offset )
+					return false;
 				if ( frames == 0 )
 				{
 					(sampleRate, channels, layer, emphasis) = (header.SampleRate, header.Channels, header.Layer, header.Emphasis);
@@ -140,8 +143,6 @@ public static partial class Mp2Decoder
 				}
 				else if ( header.SampleRate != sampleRate || header.Channels != channels || header.Layer != layer || header.Emphasis != emphasis )
 					throw new NotSupportedException( $"MP2 frame {frames} changes sample rate, channel count, layer or emphasis." );
-				if ( header.FrameBytes > data.Length - offset )
-					return false;
 				if ( header.Crc )
 				{
 					crcChecks++;

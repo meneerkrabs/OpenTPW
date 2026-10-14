@@ -191,6 +191,16 @@ implementation. The selected merged implementation retains the combined factor
 arithmetic pinned to all 882 original Mac factors and the separately recorded
 56,410,752-sample corpus comparison above.
 
+The final incomplete supported frame is reported as `TrailingBytes` without
+changing the completed prefix's format/PCM/counters. Completion is checked after
+header validation and before format continuity; a complete rate/channel/layer/
+emphasis change remains unsupported, and malformed/unsupported trailing headers
+are still refused. `MpegFrameCompletionBoundaryTests` covers these boundaries in
+synchronous and cooperative decoding with synthetic Layer I/LSF tails.
+The earlier Layer I switch fixture changed its header to advertise 208 bytes but
+kept only 136 bytes; it now uses a complete Layer II frame for the unchanged refusal
+assertion, while the former 136-byte clone has an explicit partial-tail regression.
+
 ### MPEG-1 nonjoint Layer II (October 14 follow-up)
 
 The decoder now accepts mono, stereo and dual-channel MPEG-1 Layer II at

@@ -6,20 +6,30 @@ the game itself. Ordinary interactive startup shows the desktop edition starter 
 
 ## How the game folder is chosen
 
-In this order; the first that applies wins:
+An ordinary desktop start (Finder or Explorer, no arguments) goes straight in with the
+saved choice, as before the edition choice existed. In this order; the first that applies wins:
 
 1. `--game-path <folder>` on the command line.
 2. `OPENTPW_GAME_PATH`.
-3. The folder saved by an earlier setup (`setup.json`, below).
-4. The folder in the old application setting (`Settings.Default.GamePath`, whose
-   default is `C:\Program Files (x86)\Bullfrog\Theme Park World`).
+3. The saved choice in `setup.json` (below): for Theme Park World the saved `gamePath`,
+   which must still pass inspection; for the experimental Theme Park Inc the saved folder
+   and world, which start that world directly.
+4. The folder in the old application setting (`LegacySettings.GamePath`, read from the
+   old settings file only, whose default is `C:\Program Files (x86)\Bullfrog\Theme Park World`).
 5. Automatic detection (`InstallationFinder`): the folder of the OpenTPW executable
    and its parent; on Windows the `Bullfrog Productions Ltd` and `Electronic Arts`
    registry keys (every string value that names an existing folder, because the
    installer's value name is not known) and the usual Program Files folders; Wine and
    CrossOver prefixes on macOS and Linux; mounted discs (`/Volumes`, `/media`,
    `/run/media`, `/mnt`, Windows drives) holding `TP.ICD`, `TP.exe` or a `Data` folder.
-6. The setup window.
+
+A Theme Park World start then shows the CD autorun screen as before. The setup window
+opens only:
+
+- on a first start, when none of the above resolves a usable folder;
+- when the saved Theme Park Inc folder or world is missing or invalid (it asks again
+  instead of stopping with an error), which includes a re-inspection that times out;
+- with `--setup`.
 
 The first two are developer overrides and are used as given, so a wrong path still
 fails with the old message. Every other folder must pass `GameInstallation.Inspect`,
@@ -57,7 +67,7 @@ the game folder is known.
 
 The welcome page offers **Theme Park World** and **Theme Park Inc / Sim Coaster (Experimental)**. The experimental choice requires positively identified TPI files and an explicit available **arabian**, **science** or **water** world; Polar and Director are not supported world names. Start re-inspects the chosen folder before remembering it or launching. A changed folder invalidates its inspection, and cancellation does not change settings.
 
-`setup.json` keeps the existing TPW `gamePath`, CD and bonus paths, and adds `selectedEdition` (0 = TPW, 1 = TPI), `themeParkIncPath` and `themeParkIncWorld`. Old files default to TPW. The TPI choice never overwrites the TPW path and never borrows its CD. `--setup` opens the starter explicitly. `--no-autorun`, `OPENTPW_NO_AUTORUN=1` and `showAutorun: false` skip the ordinary starter; a remembered explicit TPI choice is revalidated and launches its selected world directly. Explicit CLI/environment paths and gameplay/tool modes take precedence over that remembered choice. In particular, the existing headless `--m3-gate` and `--m4-gate` commands neither open the starter nor acquire a remembered experimental world. Combining either with `--setup` refuses before a window or configuration change; missing TPW data also refuses instead of falling through to the wizard.
+`setup.json` keeps the existing TPW `gamePath`, CD and bonus paths, and adds `selectedEdition` (0 = TPW, 1 = TPI), `themeParkIncPath` and `themeParkIncWorld`. Old files default to TPW. The TPI choice never overwrites the TPW path and never borrows its CD. `--setup` opens the starter explicitly; an ordinary start does not (see [How the game folder is chosen](#how-the-game-folder-is-chosen)). A remembered explicit TPI choice is revalidated and launches its selected world directly, or opens the starter when its folder or world is gone. Explicit CLI/environment paths and gameplay/tool modes take precedence over that remembered choice. In particular, the existing headless `--m3-gate` and `--m4-gate` commands neither open the starter nor acquire a remembered experimental world. Combining either with `--setup` refuses before a window or configuration change; missing TPW data also refuses instead of falling through to the wizard.
 
 TPI Start feeds the existing `--load-original-level` experimental flow rather than the TPW lobby. It has the existing capability limits: no TPI economy, campaign, native saves, advisor or original interface. No original `autorun.exe` or installer is executed, and no TPI autorun artwork is required. Folder inspection is not proof that every world asset decodes successfully; normal runtime validation still applies. Synthetic CPU tests cover selection, migration, stale results and the actual no-window saved-selection resolver. Native starter drawing, GPU gameplay and original-edition parity remain unqualified.
 
@@ -69,7 +79,10 @@ optional CD for music and movies and the optional bonus content, changes them wi
 platform's folder dialog and removes the CD or the bonus content. The CD is stored in
 `setup.json` and passed to the game as `--cd-data` unless that option or `OPENTPW_CD_DATA`
 is given. The game reads its data at start-up, so
-changes apply after a restart. `--setup` still opens the first-run window.
+changes apply after a restart. `--setup` still opens the first-run window. On desktop an **Edition...** button
+(the browser has no Game files screen) switches between Theme Park World and the experimental Theme Park Inc: the
+Theme Park Inc folder and world are checked with the same edition-aware inspection as the setup window, stored in
+`setup.json`, and used from the next start (the screen says so).
 
 The folder dialog is the platform's own: `osascript` (`choose folder`) on macOS,
 `zenity` or `kdialog` on Linux, and the Windows `IFileOpenDialog` folder picker.

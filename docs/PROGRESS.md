@@ -918,6 +918,13 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Desktop setup chooses TPW or experimental TPI (October 14):** the setup window offers Theme Park World or the experimental Theme Park Inc / Sim Coaster
+  (`[EXT:tpi-viewer]`, building and guests only, no economy or campaign) with an edition-aware inspection that refuses mixed or wrong-edition folders and
+  needs an available world; the TPI choice is stored beside the TPW paths in `setup.json` and starts through `--load-original-level`. An ordinary desktop
+  start does not open the window: it uses the saved choice, then the old setting, then detection, and only a first start with no usable folder, a missing or
+  invalid saved TPI folder or world (including a timed-out re-inspection) or `--setup` opens it. Options > Game files has an Edition button for switching
+  on desktop, effective at the next start. The TPI/TPW world lists come from `GameEditions` instead of a copy. Tests cover direct TPW and TPI starts, the
+  wizard cases and the edition switch persisting to `setup.json`.
 - **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
   applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
   places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a

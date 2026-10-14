@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **407 unresolved unique APPROX IDs**, 490 APPROX occurrences, 184 EXT occurrences, 189 DATA occurrences and 778 BIN occurrences.
+Current inventory: **407 unresolved unique APPROX IDs**, 490 APPROX occurrences, 189 EXT occurrences, 189 DATA occurrences and 778 BIN occurrences.
 
 Of these, 383 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -879,7 +879,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPI-902 | `source/OpenTPW/Client/GameFlow.ThemeParkInc.cs:30` | [APPROX:TPI-902] the guests and scripts that run here are the ported Theme Park World rules over Theme Park Inc data |
 | TPI-903 | `source/OpenTPW/Client/GameFlow.ThemeParkInc.cs:11` | [APPROX:TPI-903] the slice's frame is gated by OpenTPW's capability policy, not by traced Theme Park Inc behaviour |
 | TPI-903 | `source/OpenTPW/Client/Setup/GameEdition.cs:81` | [APPROX:TPI-903] the slice's capability gates are OpenTPW's honest limits, not traced Theme Park Inc behaviour |
-| TPI-903 | `source/OpenTPW/Client/Setup/GameEdition.cs:185` | [APPROX:TPI-903] the slice's stated limits are OpenTPW's honest capability gates, not traced Theme Park Inc behaviour |
+| TPI-903 | `source/OpenTPW/Client/Setup/GameEdition.cs:191` | [APPROX:TPI-903] the slice's stated limits are OpenTPW's honest capability gates, not traced Theme Park Inc behaviour |
 | TPI-904 | `source/OpenTPW/Client/ThemeParkIncHud.cs:423` | [APPROX:TPI-904] the tools follow the traced Theme Park World flow; Theme Park Inc's own build tools are untraced |
 | TRACK-001 | `source/OpenTPW/World/Tracks/TrackRenderer.cs:108` | [APPROX:TRACK-001] a tile stands on the mean ground height of its four cells (the height profile .hmp and the original's height source are not decoded) |
 | TRACK-001 | `source/OpenTPW/World/Tracks/TrackRenderer.cs:245` | [APPROX:TRACK-001] a tile's base is the mean ground of its four cells, the surface faces are the pieces' water meshes (TrackSurface) or, for karts, their .hmp profile, and the station tiles use one water height (boats) or the straight piece's floor (karts) above the ground; the face-flag test and the surface object lookup of the original are not reproduced |
@@ -1216,11 +1216,16 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:108` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:146` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:298` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:727` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:576` | [EXT:tpi-viewer] a saved experimental Theme Park Inc world starts directly; a stale folder or world opens the wizard. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:750` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:303` | [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world, |
+| tpi-viewer | `source/OpenTPW/Client/Setup/DesktopSetupSelection.cs:31` | [EXT:tpi-viewer] an experimental Theme Park Inc choice starts that world through the viewer slice |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:106` | [EXT:tpi-viewer] Theme Park Inc runs an experimental slice (docs/THEME-PARK-INC.md), not the supported game |
+| tpi-viewer | `source/OpenTPW/Client/Setup/GameInstallation.cs:76` | [EXT:tpi-viewer] the edition and world checks of the experimental Theme Park Inc selection |
 | tpi-viewer | `source/OpenTPW/Render/Assets/Texture.cs:124` | [EXT:tpi-viewer] &#96;.fsh&#96; textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014. |
+| tpi-viewer | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:146` | [EXT:tpi-viewer] choosing the experimental Theme Park Inc edition; the browser has no Game files screen at all. |
+| tpi-viewer | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:183` | [EXT:tpi-viewer] experimental Theme Park Inc slice; the original game has one edition per install |
 | tpi-viewer | `source/OpenTPW/World/Level.cs:183` | [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the |
 | ui-anchors | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [EXT:ui-anchors] anchors keep the authored distance to the nearest edge on non-4:3 outputs; the original (1999) ran fixed 4:3 modes, so widescreen layout is an OpenTPW design decision |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:49` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |

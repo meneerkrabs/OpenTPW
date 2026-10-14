@@ -42,7 +42,7 @@ public class DesktopStarterIndependentReviewTests
 	public void ExplicitHeadlessModesHaveNoRememberedEditionOrStarterPolicy( string flag )
 	{
 		Assert.IsFalse( DesktopSetupSelection.CanUseRememberedEdition( new[] { flag }, null, null ) );
-		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { flag }, null, null, new( Tpw, null ) ) );
+		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { flag } ) );
 	}
 	[TestMethod]
 	public void OldConfigurationUsesTpwWithoutRewritingMigrationOrOtherFields()
@@ -58,7 +58,9 @@ public class DesktopStarterIndependentReviewTests
 	{
 		new SetupSettings( Tpw, null, ShowAutorun: false, SelectedEdition: (GameEdition)value, ThemeParkIncPath: Tpi, ThemeParkIncWorld: "science" ).Save( SetupSettings.GetDefaultPath() );
 		var bytes = File.ReadAllBytes( SetupSettings.GetDefaultPath() ); Settings.Default.GamePath = "prior-memory";
-		Assert.ThrowsException<InvalidDataException>( () => Game.ResolveDesktopGameFolder( new[] { "--no-autorun" }, null, ( _, _ ) => throw new AssertFailedException( "Invalid saved enum cannot auto-open." ) ) );
+		var shown = 0;
+		Assert.IsNull( Game.ResolveDesktopGameFolder( new[] { "--no-autorun" }, null, ( _, _ ) => { shown++; return null; } ), "An unknown saved edition opens the wizard and never auto-starts." );
+		Assert.AreEqual( 1, shown );
 		Assert.AreEqual( "prior-memory", Settings.Default.GamePath ); CollectionAssert.AreEqual( bytes, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );
 	}
 
@@ -76,10 +78,13 @@ public class DesktopStarterIndependentReviewTests
 	public void ActualWizardResultWorldRemovedAfterValidationCannotSaveOrReplacePath()
 	{
 		new SetupSettings( Tpw, "old-cd", "old-bonus" ).Save( SetupSettings.GetDefaultPath() ); var bytes = File.ReadAllBytes( SetupSettings.GetDefaultPath() ); Settings.Default.GamePath = "prior-memory";
-		Assert.ThrowsException<DirectoryNotFoundException>( () => Game.ResolveDesktopGameFolder( new[] { "--setup" }, null, ( _, _ ) =>
+		var asked = 0;
+		Assert.IsNull( Game.ResolveDesktopGameFolder( new[] { "--setup" }, null, ( _, _ ) =>
 		{
+			if ( asked++ > 0 ) return null; // the wizard opens again after the failed re-inspection; the player closes it
 			Assert.IsTrue( GameInstallation.Inspect( Tpi, GameEdition.ThemeParkInc ).IsUsable ); Directory.Delete( Path.Combine( Tpi, "Data/levels/science" ) ); return new( Tpi, null, GameEdition.ThemeParkInc, "science" );
 		} ) );
+		Assert.AreEqual( 2, asked );
 		Assert.AreEqual( "prior-memory", Settings.Default.GamePath ); CollectionAssert.AreEqual( bytes, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );
 	}
 
@@ -119,7 +124,7 @@ public class DesktopStarterIndependentReviewTests
 	public void ExplicitSetupAndHeadlessGateConflictRefusesBeforeDiscoveryAndWindow( string flag )
 	{
 		new SetupSettings( Tpw, null, SelectedEdition: GameEdition.ThemeParkInc, ThemeParkIncPath: Tpi, ThemeParkIncWorld: "science" ).Save( SetupSettings.GetDefaultPath() ); var before = File.ReadAllBytes( SetupSettings.GetDefaultPath() );
-		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { "--setup", flag }, null, null, SetupSettings.Load( SetupSettings.GetDefaultPath() ) ) );
+		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { "--setup", flag } ) );
 		Assert.ThrowsException<ArgumentException>( () => Game.ResolveDesktopGameFolder( new[] { "--setup", flag }, null,
 			( _, _ ) => throw new AssertFailedException( "Conflicting explicit headless setup cannot open a window." ), () => throw new AssertFailedException( "Conflict must refuse before discovery." ) ) );
 		CollectionAssert.AreEqual( before, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );

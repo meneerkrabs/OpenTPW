@@ -73,8 +73,9 @@ public static class GameInstallation
 			problems.Add( "These files match the supplied Theme Park Inc / Sim Coaster retail edition, which is not supported yet. Choose Theme Park World files." );
 
 		var detected = edition == null ? null : GameEditions.Detect( dataDirectory );
-		var tpwThemes = new[] { "jungle", "fantasy", "hallow", "space" };
-		var worlds = edition == null ? Array.Empty<string>() : new[] { "arabian", "science", "water" }.Where( world => GameLanguage.FindEntry( dataDirectory, "levels/" + world, true ) != null ).ToArray();
+		// [EXT:tpi-viewer] the edition and world checks of the experimental Theme Park Inc selection
+		var tpwThemes = GameEditions.ThemeParkWorldThemes;
+		var worlds = edition == null ? Array.Empty<string>() : GameEditions.ThemeParkIncWorlds.Where( world => GameLanguage.FindEntry( dataDirectory, "levels/" + world, true ) != null ).ToArray();
 		if ( edition != null )
 		{
 			var mixed = worlds.Length > 0 && tpwThemes.Any( world => GameLanguage.FindEntry( dataDirectory, "levels/" + world, true ) != null );

@@ -28,6 +28,7 @@ internal sealed class DesktopSetupSelection( SetupSettings saved )
 	public bool CanStart => Report is { IsUsable: true } && Enum.IsDefined( Edition )
 		&& (Edition == GameEdition.ThemeParkWorld || World != null && GameEditions.IsViewableLevel( World ) && Report.Worlds.Contains( World, StringComparer.OrdinalIgnoreCase ));
 
+	// [EXT:tpi-viewer] an experimental Theme Park Inc choice starts that world through the viewer slice
 	public string[] LaunchArguments( string[] args )
 	{
 		if ( !CanStart ) throw new InvalidOperationException( "Choose matching game files and an available world." );
@@ -56,8 +57,10 @@ internal sealed class DesktopSetupSelection( SetupSettings saved )
 		GamePathResolution.IsInteractive( args ) && string.IsNullOrWhiteSpace( commandLine ) && string.IsNullOrWhiteSpace( environment )
 		&& !HasExplicitMode( args );
 
-	public static bool ShouldShowStarter( string[] args, string? commandLine, string? environment, SetupSettings saved ) =>
-		GamePathResolution.IsInteractive( args ) && !HasHeadlessGate( args ) && (args.Contains( "--setup" ) ||
-			string.IsNullOrWhiteSpace( commandLine ) && string.IsNullOrWhiteSpace( environment ) && saved.ShowAutorun
-			&& !AutorunLauncher.IsDisabled( args, saved ) && !HasExplicitMode( args ));
+	/// <summary>
+	/// The wizard opens on request only (<c>--setup</c>); an ordinary start uses the saved choice and the wizard appears
+	/// only when no usable folder resolves or the saved folder/world is no longer valid (docs/SETUP.md).
+	/// </summary>
+	public static bool ShouldShowStarter( string[] args ) =>
+		GamePathResolution.IsInteractive( args ) && !HasHeadlessGate( args ) && args.Contains( "--setup" );
 }

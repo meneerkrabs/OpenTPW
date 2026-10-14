@@ -69,16 +69,102 @@ public class DesktopEditionStarterTests
 	}
 
 	[TestMethod]
-	public void StarterNeverInterceptsExplicitPathsToolsOrGameplayModes()
+	public void StarterOpensOnlyOnRequestAndNeverInterceptsExplicitToolsOrHeadlessModes()
 	{
-		var saved = new SetupSettings( null, null );
-		Assert.IsTrue( DesktopSetupSelection.ShouldShowStarter( Array.Empty<string>(), null, null, saved ) );
-		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( Array.Empty<string>(), "cli", null, saved ) );
-		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( Array.Empty<string>(), null, "env", saved ) );
+		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( Array.Empty<string>() ), "An ordinary start must not open the wizard." );
+		Assert.IsTrue( DesktopSetupSelection.ShouldShowStarter( new[] { "--setup" } ) );
 		foreach ( var mode in new[] { "--headless", "--inspect-model", "--sandbox", "--front-end", "--load-original-level", "--no-autorun", "--advisor-say", "--advisor-response", "--visit-park", "--park-resume-file", "--capture-camera" } )
-			Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { mode }, null, null, saved ) );
-		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( Array.Empty<string>(), null, null, saved with { ShowAutorun = false } ) );
-		Assert.IsTrue( DesktopSetupSelection.ShouldShowStarter( new[] { "--setup" }, null, null, saved with { ShowAutorun = false } ) );
+			Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { mode } ) );
+		Assert.IsFalse( DesktopSetupSelection.ShouldShowStarter( new[] { "--setup", "--m3-gate" } ) );
+	}
+
+	/// <summary>Runs the real resolver against a throw-away configuration directory; the callbacks see every wizard and discovery call.</summary>
+	private static void WithConfig( string root, Action<SetupSettings> save, Action<Func<string[], (string[]? Args, int Wizards)>> action, Func<SetupSettings, InstallationDiscoveryResult?, SetupWizard.Result?>? wizardResult = null )
+	{
+		var previousConfig = Environment.GetEnvironmentVariable( "OPENTPW_CONFIG_DIR" );
+		var previousOverride = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		var previousPath = Settings.Default.GamePath;
+		try
+		{
+			Environment.SetEnvironmentVariable( "OPENTPW_CONFIG_DIR", Path.Combine( root, "config", "OpenTPW" ) );
+			Environment.SetEnvironmentVariable( "OPENTPW_GAME_PATH", null );
+			save( new SetupSettings( null, null ) );
+			action( args =>
+			{
+				var wizards = 0;
+				var result = Game.ResolveDesktopGameFolder( args, null, ( saved, discovery ) => { wizards++; return wizardResult?.Invoke( saved, discovery ); },
+					() => new( Array.Empty<InstallationReport>(), false, null ) );
+				return (result, wizards);
+			} );
+		}
+		finally
+		{
+			Settings.Default.GamePath = previousPath;
+			Environment.SetEnvironmentVariable( "OPENTPW_CONFIG_DIR", previousConfig );
+			Environment.SetEnvironmentVariable( "OPENTPW_GAME_PATH", previousOverride );
+		}
+	}
+
+	[TestMethod]
+	public void OrdinaryStartWithSavedValidTpwStartsDirectlyWithoutWizard()
+	{
+		WithFolder( false, root => WithConfig( root, _ => new SetupSettings( root, null ).Save( SetupSettings.GetDefaultPath() ), resolve =>
+		{
+			var bytes = File.ReadAllBytes( SetupSettings.GetDefaultPath() );
+			var (args, wizards) = resolve( Array.Empty<string>() );
+			Assert.AreEqual( 0, wizards ); CollectionAssert.AreEqual( Array.Empty<string>(), args );
+			Assert.AreEqual( root, Settings.Default.GamePath );
+			CollectionAssert.AreEqual( bytes, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );
+		} ) );
+	}
+
+	[TestMethod]
+	public void OrdinaryStartWithSavedTpiStartsThatWorldDirectly()
+	{
+		WithFolder( true, root => WithConfig( root, _ => new SetupSettings( "tpw", null, SelectedEdition: GameEdition.ThemeParkInc, ThemeParkIncPath: root, ThemeParkIncWorld: "science" ).Save( SetupSettings.GetDefaultPath() ), resolve =>
+		{
+			var (args, wizards) = resolve( Array.Empty<string>() );
+			Assert.AreEqual( 0, wizards ); CollectionAssert.AreEqual( new[] { "--load-original-level", "science" }, args );
+			Assert.AreEqual( root, Settings.Default.GamePath );
+		} ) );
+	}
+
+	[TestMethod]
+	public void FirstStartWithNoUsableFolderOpensWizard()
+	{
+		WithFolder( false, root => WithConfig( root, _ => { }, resolve =>
+		{
+			var (args, wizards) = resolve( Array.Empty<string>() );
+			Assert.AreEqual( 1, wizards ); Assert.IsNull( args, "Closing the wizard cancels the start." );
+		}, ( _, _ ) => null ) );
+	}
+
+	[TestMethod]
+	public void MissingSavedTpiFolderOrWorldOpensWizardInsteadOfThrowing()
+	{
+		WithFolder( true, root => WithConfig( root, _ => { }, resolve =>
+		{
+			var missing = new SetupSettings( null, null, SelectedEdition: GameEdition.ThemeParkInc, ThemeParkIncPath: Path.Combine( root, "gone" ), ThemeParkIncWorld: "science" );
+			missing.Save( SetupSettings.GetDefaultPath() );
+			var (args, wizards) = resolve( Array.Empty<string>() );
+			Assert.AreEqual( 1, wizards ); Assert.IsNull( args );
+			(missing with { ThemeParkIncPath = root, ThemeParkIncWorld = "polar" }).Save( SetupSettings.GetDefaultPath() );
+			(args, wizards) = resolve( Array.Empty<string>() );
+			Assert.AreEqual( 1, wizards ); Assert.IsNull( args );
+			(missing with { ThemeParkIncPath = null, ThemeParkIncWorld = null }).Save( SetupSettings.GetDefaultPath() );
+			(args, wizards) = resolve( Array.Empty<string>() );
+			Assert.AreEqual( 1, wizards ); Assert.IsNull( args );
+		}, ( _, _ ) => null ) );
+	}
+
+	[TestMethod]
+	public void SetupFlagOpensWizardEvenWithValidSavedChoice()
+	{
+		WithFolder( false, root => WithConfig( root, _ => new SetupSettings( root, null ).Save( SetupSettings.GetDefaultPath() ), resolve =>
+		{
+			var (args, wizards) = resolve( new[] { "--setup" } );
+			Assert.AreEqual( 1, wizards ); Assert.IsNull( args );
+		}, ( _, _ ) => null ) );
 	}
 
 	[TestMethod]
@@ -104,8 +190,9 @@ public class DesktopEditionStarterTests
 				(saved with { ThemeParkIncWorld = "polar" }).Save( SetupSettings.GetDefaultPath() );
 				var badBytes = File.ReadAllBytes( SetupSettings.GetDefaultPath() );
 				Settings.Default.GamePath = "live-prior";
-				var exception = Assert.ThrowsException<System.Reflection.TargetInvocationException>( () => method.Invoke( null, new object?[] { new[] { "--no-autorun" }, null } ) );
-				Assert.IsInstanceOfType( exception.InnerException, typeof( DirectoryNotFoundException ) );
+				var wizards = 0;
+				Assert.IsNull( Game.ResolveDesktopGameFolder( new[] { "--no-autorun" }, null, ( _, _ ) => { wizards++; return null; } ) );
+				Assert.AreEqual( 1, wizards, "A stale saved world opens the wizard instead of throwing." );
 				Assert.AreEqual( "live-prior", Settings.Default.GamePath );
 				CollectionAssert.AreEqual( badBytes, File.ReadAllBytes( SetupSettings.GetDefaultPath() ) );
 			}

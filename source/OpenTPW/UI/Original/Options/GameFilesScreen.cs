@@ -14,8 +14,10 @@ public static class GameFilesScreen
 		Create( stack, strings, settingsPath, (path, cancellation) => InstallationDiscovery.InspectAsync( path, cancellation: cancellation ) );
 
 	internal static UiScreen Create( UiScreenStack stack, UiStringTable strings, string? settingsPath,
-		Func<string, CancellationToken, Task<InstallationDiscoveryResult>> inspect )
+		Func<string, CancellationToken, Task<InstallationDiscoveryResult>> inspect,
+		Func<string, GameEdition, CancellationToken, Task<InstallationDiscoveryResult>>? editionInspect = null )
 	{
+		editionInspect ??= ( path, edition, cancellation ) => InstallationDiscovery.InspectAsync( path, edition, cancellation );
 		settingsPath ??= SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( settingsPath );
 		var gamePath = saved.GamePath ?? LegacySettings.GamePath ?? "";
@@ -141,6 +143,10 @@ public static class GameFilesScreen
 		screen.Add( new UiLabel { Id = "status", Text = () => status, Font = fonts => fonts.Small, Wrap = true, Bounds = new UiRect( x, window.Bottom - 270, width, 100 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "back", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
 			Bounds = new UiRect( x, window.Bottom - 150, 420, 104 ), Anchor = UiAnchor.Center } );
+		// [EXT:tpi-viewer] choosing the experimental Theme Park Inc edition; the browser has no Game files screen at all.
+		var editionButton = screen.Add( new UiButton { Id = "edition", Text = () => strings.Extra( OpenTpwText.Edition ),
+			Clicked = () => stack.Push( CreateEdition( stack, strings, settingsPath, editionInspect, () => { saved = SetupSettings.Load( settingsPath ); status = strings.Extra( OpenTpwText.EditionRestart ); } ) ),
+			Bounds = new UiRect( x + 460, window.Bottom - 150, 560, 104 ), Anchor = UiAnchor.Center } );
 		screen.Back = stack.Pop;
 		screen.Updating += _ =>
 		{
@@ -160,12 +166,146 @@ public static class GameFilesScreen
 				inspection = null;
 				inspected = null;
 			}
+			editionButton.Enabled = picker == null && inspection == null;
 			changeGame.Enabled = changeCd.Enabled = changeBonus.Enabled = picker == null && inspection == null;
 			typeGame.Enabled = typeCd.Enabled = typeBonus.Enabled = inspection == null;
 			removeCd.Enabled = cdPath != null && picker == null && inspection == null;
 			removeBonus.Enabled = bonusShown != null && picker == null && inspection == null;
 		};
 		screen.Focus( changeGame );
+		return screen;
+	}
+
+	/// <summary>
+	/// The edition choice (docs/SETUP.md): Theme Park World, or the experimental Theme Park Inc folder and world. Both go
+	/// through the edition-aware inspection of the setup window, and the choice is stored in setup.json for the next start.
+	/// </summary>
+	// [EXT:tpi-viewer] experimental Theme Park Inc slice; the original game has one edition per install
+	internal static UiScreen CreateEdition( UiScreenStack stack, UiStringTable strings, string settingsPath,
+		Func<string, GameEdition, CancellationToken, Task<InstallationDiscoveryResult>> inspect, Action changed )
+	{
+		var saved = SetupSettings.Load( settingsPath );
+		var status = "";
+		Task<InstallationDiscoveryResult>? picker = null;
+		Task<InstallationDiscoveryResult>? inspection = null;
+		Action<InstallationReport>? inspected = null;
+		Action<string>? pickerTarget = null;
+		var lifetime = new CancellationTokenSource();
+		var screen = new UiScreen( "edition" );
+		screen.Removed = () => { lifetime.Cancel(); lifetime.Dispose(); };
+		var window = UiDialogs.CenteredWindow( 1500, 1000 );
+		UiDialogs.AddWindow( screen, window, "w_med", () => strings.Extra( OpenTpwText.Edition ) );
+
+		void Store( SetupSettings settings )
+		{
+			try
+			{
+				settings.Save( settingsPath );
+				saved = settings;
+				status = strings.Extra( OpenTpwText.EditionRestart );
+				changed();
+			}
+			catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+			{
+				status = exception.Message;
+			}
+		}
+
+		void Inspect( string path, GameEdition edition, Action<InstallationReport> apply )
+		{
+			if ( inspection != null ) return;
+			inspected = apply;
+			inspection = inspect( path, edition, lifetime.Token );
+		}
+
+		string? PreferredWorld( InstallationReport report ) =>
+			report.Worlds.FirstOrDefault( world => string.Equals( world, saved.ThemeParkIncWorld, StringComparison.OrdinalIgnoreCase ) ) ?? report.Worlds.FirstOrDefault();
+
+		void SelectTpw()
+		{
+			var path = saved.GamePath ?? LegacySettings.GamePath;
+			if ( string.IsNullOrWhiteSpace( path ) ) { status = strings.Extra( OpenTpwText.FolderNotUsable ); return; }
+			Inspect( path, GameEdition.ThemeParkWorld, report =>
+			{
+				if ( !report.IsUsable ) { status = strings.Extra( OpenTpwText.FolderNotUsable ); return; }
+				Store( saved with { SelectedEdition = GameEdition.ThemeParkWorld, GamePath = report.Path } );
+			} );
+		}
+
+		void SelectTpiFolder( string path ) => Inspect( path, GameEdition.ThemeParkInc, report =>
+		{
+			if ( !report.IsUsable || PreferredWorld( report ) is not { } world || !GameEditions.IsViewableLevel( world ) ) { status = strings.Extra( OpenTpwText.ExperimentalNotUsable ); return; }
+			Store( saved with { SelectedEdition = GameEdition.ThemeParkInc, ThemeParkIncPath = report.Path, ThemeParkIncWorld = world.ToLowerInvariant() } );
+		} );
+
+		void Browse( Action<string> target, string? initial )
+		{
+			if ( picker != null ) return;
+			if ( !FolderPicker.IsAvailable ) { stack.Push( PathEntry( stack, strings, initial, target ) ); return; }
+			pickerTarget = target;
+			picker = InstallationDiscovery.PickAsync( strings.Extra( OpenTpwText.ExperimentalFolder ), initial, lifetime.Token );
+		}
+
+		void SelectTpi()
+		{
+			if ( string.IsNullOrWhiteSpace( saved.ThemeParkIncPath ) ) { Browse( SelectTpiFolder, null ); return; }
+			SelectTpiFolder( saved.ThemeParkIncPath );
+		}
+
+		void NextWorld()
+		{
+			if ( string.IsNullOrWhiteSpace( saved.ThemeParkIncPath ) ) { status = strings.Extra( OpenTpwText.ExperimentalNotUsable ); return; }
+			Inspect( saved.ThemeParkIncPath, GameEdition.ThemeParkInc, report =>
+			{
+				if ( !report.IsUsable || report.Worlds.Count == 0 ) { status = strings.Extra( OpenTpwText.ExperimentalNotUsable ); return; }
+				var current = report.Worlds.ToList().FindIndex( world => string.Equals( world, saved.ThemeParkIncWorld, StringComparison.OrdinalIgnoreCase ) );
+				Store( saved with { ThemeParkIncWorld = report.Worlds[(current + 1) % report.Worlds.Count].ToLowerInvariant() } );
+			} );
+		}
+
+		var x = window.X + 120;
+		var width = window.Width - 340;
+		string EditionName( GameEdition edition ) => strings.Extra( edition == GameEdition.ThemeParkInc ? OpenTpwText.EditionThemeParkInc : OpenTpwText.EditionThemeParkWorld );
+		screen.Add( new UiLabel { Id = "current", Text = () => EditionName( saved.SelectedEdition ), Bounds = new UiRect( x, window.Y + 160, width, 70 ), Anchor = UiAnchor.Center } );
+		var tpw = screen.Add( new UiButton { Id = "editionTpw", Text = () => EditionName( GameEdition.ThemeParkWorld ), Clicked = SelectTpw,
+			Bounds = new UiRect( x, window.Y + 260, 640, 104 ), Anchor = UiAnchor.Center } );
+		var tpi = screen.Add( new UiButton { Id = "editionTpi", Text = () => EditionName( GameEdition.ThemeParkInc ), Clicked = SelectTpi,
+			Bounds = new UiRect( x + 680, window.Y + 260, 640, 104 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "tpiFolderLabel", Text = () => strings.Extra( OpenTpwText.ExperimentalFolder ), Bounds = new UiRect( x, window.Y + 420, width, 70 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "tpiFolder", Text = () => saved.ThemeParkIncPath ?? strings.Extra( OpenTpwText.NoFolder ), Font = fonts => fonts.Small, Color = UiColors.Value, Wrap = true,
+			Bounds = new UiRect( x, window.Y + 494, width, 110 ), Anchor = UiAnchor.Center } );
+		var tpiChange = screen.Add( new UiButton { Id = "tpiFolderChange", Text = () => strings.Extra( OpenTpwText.ChangeFolder ), Clicked = () => Browse( SelectTpiFolder, saved.ThemeParkIncPath ),
+			Bounds = new UiRect( x, window.Y + 616, 420, 104 ), Anchor = UiAnchor.Center } );
+		var tpiType = screen.Add( new UiButton { Id = "tpiFolderType", Text = () => strings.Extra( OpenTpwText.EnterFolderPath ),
+			Clicked = () => stack.Push( PathEntry( stack, strings, saved.ThemeParkIncPath, SelectTpiFolder ) ),
+			Bounds = new UiRect( x + 460, window.Y + 616, 420, 104 ), Anchor = UiAnchor.Center } );
+		var world = screen.Add( new UiButton { Id = "tpiWorld", Text = () => strings.Extra( OpenTpwText.ExperimentalWorld ) + " " + (saved.ThemeParkIncWorld ?? strings.Extra( OpenTpwText.NoFolder )), Clicked = NextWorld,
+			Bounds = new UiRect( x + 920, window.Y + 616, 400, 104 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "status", Text = () => status, Font = fonts => fonts.Small, Wrap = true, Bounds = new UiRect( x, window.Bottom - 270, width, 100 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "back", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
+			Bounds = new UiRect( x, window.Bottom - 150, 420, 104 ), Anchor = UiAnchor.Center } );
+		screen.Back = stack.Pop;
+		screen.Updating += _ =>
+		{
+			if ( picker is { IsCompleted: true } )
+			{
+				var chosen = picker.Status == TaskStatus.RanToCompletion ? picker.Result.Reports.FirstOrDefault()?.Path : null;
+				if ( chosen != null ) pickerTarget?.Invoke( chosen );
+				picker = null;
+				pickerTarget = null;
+			}
+			if ( inspection is { IsCompleted: true } )
+			{
+				if ( inspection.IsCompletedSuccessfully && inspection.Result.Reports.FirstOrDefault() is { } report )
+					inspected?.Invoke( report );
+				else status = strings.Extra( OpenTpwText.ExperimentalNotUsable );
+				inspection = null;
+				inspected = null;
+			}
+			tpw.Enabled = tpi.Enabled = tpiChange.Enabled = world.Enabled = picker == null && inspection == null;
+			tpiType.Enabled = inspection == null;
+		};
+		screen.Focus( tpw );
 		return screen;
 	}
 

@@ -265,7 +265,9 @@ toilets, other ride types, RunsContinuously 0, DUR ≥ 31) are judged by the two
 rules only, and the row lists them with the reason.
 
 Reported: τ_max = CAP·H + R + 1 − (DUR + 1 s)/T = **277 turns = 68.696 s** (QUEUE-plan
-§9b form) and W_max = W(Qmax − 1) = 24 + 1,782 = **1,806 turns = 447.888 s**. The τ the run implies
+§9b form) and W_max = W(Qmax − 1) = 24 + 1,782 = **1,806 turns = 447.888 s**. These figures and the baseline
+below were taken at script speed 1 (P 4, H 56). Since the rides register round (October 14) the loop WAIT follows the
+ride's script speed, so Belly Bounce has P 3 and H 55, and τ_max is 272 turns = 67.456 s. The τ the run implies
 (`τ_measured`) is evidence, not a threshold. The walk terms w and w₂ come from WALK-plan
 §12 (the original's speed floor), and the GATE-003 tag (τ = 0) is gone. The two
 walk-related assumptions of review GATE-V4 (B1/B2) are retired by WALK-I:

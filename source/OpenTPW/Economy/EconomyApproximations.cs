@@ -41,7 +41,7 @@ public static class EconomyApproximations
 		("ECON-052", "the original refuses a pick-up in the staff state 13 besides 4, 5, 7 and 18, and plays script 0x14 (slot 3, one frame) for state 6; OpenTPW's StaffJob has neither state, so the pick-up rule refuses only the jobs it has (strike walks, strike, in hand, escorting) and no clip plays state 6", "what the staff states 6 and 13 are (the state setter 0x5054D0 and the handlers 0x4D4810, 0x4D6410)"),
 		("ECON-053", "a staff member carried at save time is saved dropped on its old cell and the tool ends (the original saves it in state 7 with the pool's mStaffMemberPickedUp, and nothing re-creates the carry tool after a load, so it probably stays stuck)", "a load of an original save made while carrying"),
 		("ECON-054", "a mechanic put down off the path network (a drop on grass or a queue) is not dispatched: the original's walk from such a cell to the network is untraced, and a reserved ride would wait for an arrival that cannot happen", "what the mechanic state machine (0x4DA490) does from a cell off the paths"),
-		("ECON-055", "a follow-up must target the same object as the challenge it follows; the original carries the satisfying object (+0x2e, set by types 14, 15 and 18) into the follow-up slot instead", "how the follow-up types read the carried object"),
+		("ECON-055", "a follow-up of the same object as the challenge it follows is preferred, else the first open one of the follow-up type (0x4d2b60); the original carries the satisfying object (+0x2e, set by types 14, 15 and 18) into the follow-up slot instead", "how the follow-up types read the carried object"),
 	};
 
 	private static bool logged;

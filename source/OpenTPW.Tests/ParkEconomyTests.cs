@@ -889,6 +889,14 @@ public class ParkEconomyTests
 		Assert.AreEqual( 1, failed.Single( item => item.Kind == ParkEventKind.ChallengeFailed ).InfoId );
 		Assert.IsFalse( failing.Objectives.Finished.Contains( 1 ), "a lost challenge is not completed (0x4d3140)" );
 		Assert.AreEqual( 600 + 270, failing.Objectives.NextOfferDay );
+		failing.AdvanceDays( 270 );
+		Assert.IsNotNull( failing.Objectives.Current, "the next offer comes 270 days later" );
+		for ( var offer = 0; offer < 20 && failing.Objectives.Current?.DefinitionIndex != 1; offer++ )
+		{
+			failing.DeclineChallenge();
+			failing.AdvanceDays( 270 );
+		}
+		Assert.AreEqual( 1, failing.Objectives.Current?.DefinitionIndex, "the lost challenge is offered again" );
 	}
 
 	[TestMethod]

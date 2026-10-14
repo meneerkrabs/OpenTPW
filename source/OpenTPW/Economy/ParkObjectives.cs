@@ -158,7 +158,7 @@ public sealed class ParkObjectives
 	public static long Target( ChallengeDefinition definition ) => definition.Type is >= 30 and <= 33 ? 1 : definition.Type == 18 ? Math.Max( 1, definition.TargetValue ) : definition.TargetValue;
 
 	/// <summary>Daily challenge processing; returns the events to publish and the prize won (0 when none).</summary>
-	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again; the next offer waits DaysAfterCompletedChallenge as after a win
+	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win
 	// [APPROX:ECON-035] offers wait for accept/decline (the offer dialog 0x4d2c50 keeps +0x3da set until it is answered); a won challenge is marked finished, where 0x4d2fb0 marks the slot at the current index, which the follow-up offer has already moved on — evidence needed: challenge flow captures
 	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure )
 	{
@@ -209,9 +209,10 @@ public sealed class ParkObjectives
 		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.FollowupType == 0 ? definition.Prize : 0, Describe( definition ));
 		if ( definition.FollowupType != 0 )
 		{
-			// [APPROX:ECON-055] the follow-up must target the same object; the original carries the satisfying object (+0x2e, set by types 14, 15 and 18) into the follow-up slot instead — evidence needed: how the follow-up types read the carried object
-			var followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
-				.FirstOrDefault( item => item.Type == definition.FollowupType && item.TargetObject == definition.TargetObject && !finished.Contains( item.Index ) );
+			// [APPROX:ECON-055] a follow-up of the same object is preferred, else the first open one of the type as in 0x4d2b60; the original carries the satisfying object (+0x2e, set by types 14, 15 and 18) into the follow-up slot instead — evidence needed: how the follow-up types read the carried object
+			var open = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
+				.Where( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) ).ToList();
+			var followup = open.FirstOrDefault( item => item.TargetObject == definition.TargetObject ) ?? open.FirstOrDefault();
 			if ( followup != null )
 			{
 				Current = new ActiveChallenge( followup.Index, day, false, 0, 0, 0 );

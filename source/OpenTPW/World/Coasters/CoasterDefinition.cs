@@ -105,6 +105,12 @@ public sealed class CoasterDefinition
 	public float ForceMultiplier { get; private set; } = 0.2f;
 	public float InitialPylonLoftHeight { get; private set; } = 10f;
 	public int MaxTrains { get; private set; } = 1;
+	/// <summary>
+	/// <c>fEntranceSizeInterval</c> (definition <c>+796</c> = <c>+0x31c</c>): copied unconditionally, so 0 when the settings do not
+	/// name it. The station window narrows toward its middle by this fraction (<c>0x43b750</c>).
+	/// </summary>
+	// [BIN:STP-PPC:0x1002FFB0 entrance interval] definition +796 ← settings 15220, unconditional; [BIN:TPW-EXE:0x42f717] definition +0x31c ← settings +0x3b74, unconditional; read only by the station window 0x43b750
+	public float EntranceSizeInterval { get; private set; }
 	/// <summary>Minimum headway between trains in milliseconds.</summary>
 	public int TrainReleaseRate { get; private set; } = 15000;
 	public float InitialSickness { get; private set; }
@@ -247,6 +253,7 @@ public sealed class CoasterDefinition
 		definition.ForceMultiplier = Float( Coaster + "fForceMultiplier", definition.ForceMultiplier );
 		definition.InitialPylonLoftHeight = Float( Coaster + "fInitialPylonLoftHeight", definition.InitialPylonLoftHeight );
 		definition.MaxTrains = Int( Coaster + "uiMaxTrains", definition.MaxTrains );
+		definition.EntranceSizeInterval = TryFloat( values, Coaster + "fEntranceSizeInterval", out var entranceInterval ) ? entranceInterval : 0f;
 		definition.TrainReleaseRate = Int( Coaster + "uiTrainReleaseRate", definition.TrainReleaseRate );
 		definition.InitialSickness = Float( Coaster + "fInitialSickness", definition.InitialSickness );
 		definition.InitialExcitement = Float( Coaster + "fInitialExcitement", definition.InitialExcitement );

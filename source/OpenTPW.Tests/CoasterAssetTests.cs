@@ -44,6 +44,7 @@ public class CoasterAssetTests
 			Assert.AreEqual( (10f, 100f), (definition.StandardPylon.MinHeight, definition.StandardPylon.MaxHeight), $"{id} heights" );
 			Assert.IsTrue( definition.StandardPylon.MaxStackedPylons is 3 or 4, $"{id} stack" );
 			Assert.AreEqual( 5f, definition.WinchSpeed, "no PC coaster sets a motion key besides the flumes' acceleration and friction" );
+			Assert.AreEqual( 0f, definition.EntranceSizeInterval, $"{id}: no PC coaster.sam names fEntranceSizeInterval, so the station window is the full span (copied unconditionally, 0x42f717)" );
 			Assert.AreEqual( 3, definition.StandardPylon.MinPlaceDistance );
 			Assert.AreEqual( 8, definition.StandardPylon.MaxPlaceDistance );
 			if ( definition.HasLoopPylon )
@@ -79,7 +80,7 @@ public class CoasterAssetTests
 			ride.Command( 5, 0 );
 			for ( var tick = 0; tick < 20 * 60; tick++ )
 				ride.Advance( Tick );
-			Assert.IsTrue( ride.Trains.Any( train => train.State == CoasterTrainState.Running ), $"{entry.InfoId} dispatches" );
+			Assert.IsTrue( ride.Trains.All( train => train.Speed > 0 ), $"{entry.InfoId}: every train circulates and none stops" );
 		}
 	}
 
@@ -159,7 +160,7 @@ public class CoasterAssetTests
 			guests.Tick( Tick );
 			runtime.Simulate( Tick );
 			peakRiders = Math.Max( peakRiders, ride.RidersOnBoard );
-			ranWithRiders |= ride.Trains.Any( train => train.State == CoasterTrainState.Running && train.Riders > 0 );
+			ranWithRiders |= ride.Trains.Any( train => train.Speed > 0 && train.Riders > 0 );
 		}
 		Assert.IsTrue( ride.Initialised && !ride.Closed, "Coaster.RSE ran COAST 8 and opened the controller" );
 		Assert.AreEqual( CoasterRating.GuestExcitement( rating.Excitement ), runtime.Visitors.ExcitementLevel, "guests see trunc(0.5 E + 50)" );
@@ -178,7 +179,7 @@ public class CoasterAssetTests
 		Assert.IsTrue( ride.Closed );
 		Assert.AreEqual( 0, ride.RidersOnBoard );
 		Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_ONRIDE ) );
-		Assert.IsFalse( ride.Trains.Any( train => train.State == CoasterTrainState.Running ), "trains finished their lap" );
+		Assert.IsTrue( ride.Trains.All( train => train.Speed > 0 ), "closed trains keep circulating, empty" );
 		Assert.AreEqual( runtime.Visitors.BoardedTotal, runtime.Visitors.ReleasedTotal );
 
 		var beforeDelete = economy.Balance;

@@ -69,10 +69,10 @@ public class CoasterSaveTests
 		var (builder, ride, _) = NewCoaster();
 		BuildRunningCoaster( builder, ride );
 		Assert.IsTrue( ride.Trains.Count >= 1, "completion placed trains" );
-		// Let the boarding train dispatch (full or after five seconds) and run into the circuit with its riders.
-		for ( var tick = 0; tick < 30 * 60 && !(ride.Trains[0].State is CoasterTrainState.Running or CoasterTrainState.Holding && ride.Trains[0].Position > 3); tick++ )
+		// The train seats the two waiting guests as its cars roll through the station window and runs into the circuit with them.
+		for ( var tick = 0; tick < 30 * 60 && !(ride.Trains[0].Position > 3 && ride.Trains[0].Position < ride.Samples.Count / 2 && ride.RidersOnBoard == 2 && !ride.Trains[0].Flags.HasFlag( CoasterTrainFlags.InStation )); tick++ )
 			ride.Advance( Tick );
-		Assert.IsTrue( ride.Trains[0].State is CoasterTrainState.Running or CoasterTrainState.Holding, "the first train is out on the circuit" );
+		Assert.IsFalse( ride.Trains[0].Flags.HasFlag( CoasterTrainFlags.InStation ), "the first train is out on the circuit" );
 		Assert.AreEqual( 2, ride.RidersOnBoard, "both riders are aboard the moving train" );
 
 		var captured = CoasterSave.CaptureRide( ride, attractionId: 7 );
@@ -95,6 +95,87 @@ public class CoasterSaveTests
 		}
 		Assert.AreEqual( Hash( ride ), Hash( resumed ), "the continuation is deterministic" );
 		Assert.AreEqual( ride.RidersOnBoard, resumed.RidersOnBoard );
+	}
+
+	[TestMethod]
+	public void GuestsWaitingOnTheAdmissionRingAndBoardingSeatsRoundTrip()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		Assert.AreEqual( (2, 0), (ride.AdmissionCount, ride.RidersOnBoard), "COAST 1 put the guests on the admission ring" );
+		var captured = CoasterSave.CaptureRide( ride, attractionId: 7 );
+		CollectionAssert.AreEqual( new[] { 101, 102 }, captured.Admission );
+		var resumed = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		resumed.RestoreSnapshot( ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( captured ) ) );
+		Assert.AreEqual( Hash( ride ), Hash( resumed ), "the ring is part of the canonical state" );
+		// Save again while the first train is seating them: the boarding lists and flags cross the codec too.
+		for ( var tick = 0; tick < 240 * 60 && !(ride.Trains.Any( train => train.BoardingCars.Any( car => car.Count > 0 ) )); tick++ )
+		{
+			ride.Advance( Tick );
+			resumed.Advance( Tick );
+		}
+		Assert.IsTrue( ride.Trains.Any( train => train.BoardingCars.Any( car => car.Count > 0 ) ), "a train seated a guest" );
+		var again = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( ride, attractionId: 7 ) ) );
+		var second = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		second.RestoreSnapshot( again );
+		Assert.AreEqual( Hash( ride ), Hash( second ) );
+		for ( var tick = 0; tick < 120 * 60; tick++ )
+		{
+			ride.Advance( Tick );
+			second.Advance( Tick );
+		}
+		Assert.AreEqual( Hash( ride ), Hash( second ), "the continuation is deterministic" );
+	}
+
+	/// <summary>
+	/// A save from before the original's station rule (trains with a state and a boarding clock, no flags, no admission ring) still
+	/// loads: a boarding train keeps its guests at the station and they ride when it leaves; an unloading train hands its riders to the
+	/// leaving ring; a running or waiting train keeps them on the lap.
+	/// </summary>
+	[TestMethod]
+	public void AnOldSaveWithDispatchStatesLoadsIntoTheStationRule()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		ride.Command( 6, 6 );
+		var captured = CoasterSave.CaptureRide( ride, attractionId: 7 );
+		// The JSON of an old save has none of the new members.
+		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkResumeJson.Serialize( captured ) )!.AsObject();
+		json.Remove( "Admission" );
+		foreach ( var train in json["Trains"]!.AsArray() )
+		{
+			var node = train!.AsObject();
+			foreach ( var member in new[] { "Flags", "FirstBoardingCar", "LastBoardingCar", "BoardingCars" } )
+				node.Remove( member );
+		}
+		var old = ParkResumeJson.Deserialize<CoasterRideSaveData>( System.Text.Encoding.UTF8.GetBytes( json.ToJsonString() ) );
+		Assert.IsNull( old.Admission );
+		Assert.IsTrue( old.Trains.All( train => train.Flags is null && train.BoardingCars is null ) );
+
+		CoasterRide Load( int state, int[] riders )
+		{
+			var cars = Enumerable.Range( 0, old.Trains[0].Cars.Count ).Select( _ => new List<int>() ).ToList();
+			cars[0].AddRange( riders );
+			var trains = old.Trains.Select( ( train, index ) => index == 0 ? train with { State = state, Cars = cars } : train ).ToList();
+			var resumed = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+			resumed.RestoreSnapshot( old with { Trains = trains, Leaving = new List<int>() } );
+			return resumed;
+		}
+
+		var boarding = Load( CoasterRide.LegacyBoardingState, new[] { 501, 502 } );
+		Assert.AreEqual( 2, boarding.Trains[0].BoardingCars[0].Count, "a boarding train's guests are seated at the station" );
+		Assert.IsTrue( boarding.Trains[0].Flags.HasFlag( CoasterTrainFlags.InStation ) );
+		for ( var tick = 0; tick < 120 * 60 && boarding.Trains[0].Flags.HasFlag( CoasterTrainFlags.InStation ); tick++ )
+			boarding.Advance( Tick );
+		Assert.AreEqual( (2, 0), (boarding.Trains[0].Cars[0].Count, boarding.LeavingCount), "they ride the lap when the train leaves the station" );
+
+		var unloading = Load( CoasterRide.LegacyUnloadingState, new[] { 601, 602 } );
+		Assert.AreEqual( (0, 2), (unloading.RidersOnBoard, unloading.LeavingCount), "an unloading train's riders wait for COAST 3" );
+		Assert.AreEqual( 601, unloading.Command( 3, 0 ) );
+
+		var running = Load( CoasterRide.LegacyRunningState, new[] { 701 } );
+		Assert.AreEqual( (1, 0), (running.Trains[0].Cars[0].Count, running.LeavingCount) );
+		Assert.AreEqual( 0, running.AdmissionCount );
 	}
 
 	/// <summary>
@@ -173,7 +254,7 @@ public class CoasterSaveTests
 			new( 0, 6, 10f, 0f, false, 0, false, true, (uint)CoasterTrack.StationEndFlags, 0f )
 		};
 		var track = new CoasterTrackSaveData( (2, 6), (0, 6), true, true, 8, nodes );
-		var train = new CoasterTrainSaveData( 12.5f, 30f, (int)CoasterTrainState.Running, 5.0, new List<List<int>> { new(), new(), new(), new() } );
+		var train = new CoasterTrainSaveData( 12.5f, 30f, CoasterRide.LegacyRunningState, 5.0, new List<List<int>> { new(), new(), new(), new() } );
 		return new CoasterRideSaveData( 1, track, true, false, 0, 60, 16, 105f, 1234, 45.5, 40.0, new List<CoasterTrainSaveData> { train }, new List<int>() );
 	}
 

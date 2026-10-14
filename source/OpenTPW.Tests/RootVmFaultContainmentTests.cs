@@ -187,7 +187,7 @@ public class RootVmFaultContainmentTests
 			Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
 			coaster.Command( 8, 0 ); coaster.Command( 5, 0 ); coaster.Command( 6, 6 ); coaster.Board( 101 );
 			runtime.Script!.Effect( Opcode.HUSH, new[] { new Operand( runtime.Script, new RideScriptOperand( RideScriptOperandKind.Literal, 101 ), -1 ) } );
-			Assert.AreEqual( 1, coaster.RidersOnBoard ); Assert.AreEqual( 1, runtime.Visitors.Riders.Count );
+			Assert.AreEqual( 1, coaster.AdmissionCount ); Assert.AreEqual( 1, runtime.Visitors.Riders.Count );
 			Assert.IsTrue( world.Coasters.Rides.Contains( coaster ) );
 			runtime.Simulate( Tick );
 			Assert.AreEqual( RideVMState.Faulted, runtime.Script.State );

@@ -646,47 +646,52 @@ public class CoasterTests
 
 		ride.Command( 8, 0 );
 		Assert.AreEqual( CoasterRating.GuestExcitement( rating.Excitement ), ride.GuestExcitement );
-		Assert.AreEqual( 0, ride.Command( 2, 0 ), "closed: no room" );
-		ride.Command( 5, 0 );
 		ride.Command( 6, 6 );
-		Assert.AreEqual( 6, ride.Command( 2, 0 ) );
+		Assert.AreEqual( 6, ride.Command( 2, 0 ), "the room is the capacity of one train: no state or train enters it (0x43b1f0)" );
+		ride.Command( 5, 0 );
 		ride.Board( 101 );
 		ride.Board( 102 );
 		Assert.AreEqual( 4, ride.Command( 2, 0 ) );
-		Assert.AreEqual( 2, ride.RidersOnBoard );
+		Assert.AreEqual( (2, 0), (ride.AdmissionCount, ride.RidersOnBoard), "COAST 1 seats nobody: the guests wait for a train in the station" );
 		var train = ride.Trains[0];
-		Assert.AreEqual( CoasterTrainState.Boarding, train.State );
 
-		var departed = false;
+		// The train never stops: it seats the waiting guests while its cars roll through the window, runs the lap with them and unloads them on arrival.
+		var seated = false;
 		var returned = false;
+		var minimumSpeed = float.MaxValue;
 		var maximum = 0f;
 		for ( var tick = 0; tick < 240 * 60 && !returned; tick++ )
 		{
 			ride.Advance( Tick );
-			departed |= train.State == CoasterTrainState.Running;
+			minimumSpeed = MathF.Min( minimumSpeed, train.Speed );
 			maximum = MathF.Max( maximum, train.Position );
-			returned = departed && train.State == CoasterTrainState.Unloading;
+			seated |= ride.RidersOnBoard == 2;
+			returned = seated && ride.LeavingCount == 2;
 		}
-		Assert.IsTrue( departed && returned, "the train left after the boarding time and came back to unload" );
+		Assert.IsTrue( seated && returned, "the guests boarded, rode a lap and were unloaded on arrival" );
+		Assert.IsTrue( minimumSpeed > 0, $"a train never stops, its lowest speed was {minimumSpeed}" );
 		Assert.IsTrue( maximum > ride.Samples.Count * 0.9f );
-		Assert.AreEqual( 0, ride.Command( 2, 0 ), "no room while unloading" );
+		Assert.AreEqual( 0, ride.RidersOnBoard );
 		var off = new[] { ride.Command( 3, 0 ), ride.Command( 3, 0 ), ride.Command( 3, 0 ) };
 		CollectionAssert.AreEquivalent( new[] { 101, 102, 0 }, off );
-		ride.Advance( Tick );
-		Assert.AreEqual( CoasterTrainState.Boarding, train.State );
 
-		// Closing stops departures; the boarding train stays.
+		// Closing moves the guests still waiting for a seat to the leaving ring; trains keep circulating, empty.
+		ride.Board( 103 );
+		Assert.AreEqual( 1, ride.AdmissionCount );
 		ride.Command( 5, 1 );
+		Assert.AreEqual( (0, 1), (ride.AdmissionCount, ride.LeavingCount), "0x43b390 moves the admission ring to the leaving ring" );
+		Assert.AreEqual( 103, ride.Command( 3, 0 ) );
 		for ( var tick = 0; tick < 60 * 60; tick++ )
+		{
 			ride.Advance( Tick );
-		Assert.AreEqual( CoasterTrainState.Boarding, train.State );
-		Assert.AreEqual( 0, ride.Command( 2, 0 ) );
+			Assert.IsTrue( ride.Trains.All( other => other.Speed > 0 ), "closed trains keep circulating" );
+		}
+		Assert.AreEqual( 6, ride.Command( 2, 0 ), "the room does not look at the state either" );
 
-		// Breakdown (COAST 4 1) also blocks room.
+		// Breakdown (COAST 4 1) is mode 64.
 		ride.Command( 5, 0 );
 		ride.Command( 4, 1 );
 		Assert.IsTrue( ride.IsBroken && ride.ControllerStateFlag == 64 && ride.PowerFactor == 0, "COAST 4 1 is mode 64" );
-		Assert.AreEqual( 0, ride.Command( 2, 0 ) );
 		ride.Command( 4, 2 );
 		Assert.IsTrue( !ride.IsBroken && ride.ControllerStateFlag == 32 && ride.PowerFactor == 1, "COAST 4 2 is mode 32" );
 		ride.Command( 4, 3 );
@@ -695,18 +700,22 @@ public class CoasterTests
 		Assert.AreEqual( 16, ride.ControllerStateFlag );
 
 		// Reopening is refused with riders on board; deleting lets them off through COAST 3.
-		ride.Board( 103 );
+		ride.Board( 104 );
+		for ( var tick = 0; tick < 120 * 60 && ride.RidersOnBoard == 0; tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( 1, ride.RidersOnBoard, "the next train that passes the station seats the guest" );
 		Assert.IsFalse( builder.Reopen() );
 		builder.Delete();
 		Assert.IsFalse( ride.IsOperational );
 		Assert.AreEqual( 1, ride.Track.Nodes.Count, "only the station node is left" );
 		Assert.IsFalse( ride.World.HasPylon( 24, 20 ) );
-		Assert.AreEqual( 103, ride.Command( 3, 0 ) );
+		Assert.AreEqual( 104, ride.Command( 3, 0 ) );
 		Assert.AreEqual( 0, ride.RidersOnBoard );
 	}
 
+	/// <summary>The trains of a station circulate side by side; none ever stops, and each one unloads and seats in turn as its cars pass the window.</summary>
 	[TestMethod]
-	public void TwoTrainsKeepTheStationForOneAtATime()
+	public void TwoTrainsPassTheStationWithoutStopping()
 	{
 		var settings = PcSettings();
 		settings["sCoasterType.uiTrainReleaseRate"] = "1000";
@@ -717,11 +726,21 @@ public class CoasterTests
 		Assert.IsTrue( ride.Trains.Count >= 2, $"{ride.Trains.Count} trains for a {ride.Rating!.Value.LapTime} s lap" );
 		ride.Command( 8, 0 );
 		ride.Command( 5, 0 );
-		for ( var tick = 0; tick < 120 * 60; tick++ )
+		var arrivals = new int[ride.Trains.Count];
+		var wasIn = new bool[ride.Trains.Count];
+		for ( var tick = 0; tick < 240 * 60; tick++ )
 		{
 			ride.Advance( Tick );
-			Assert.IsTrue( ride.Trains.Count( train => train.State is CoasterTrainState.Boarding or CoasterTrainState.Unloading ) <= 1 );
+			for ( var index = 0; index < ride.Trains.Count; index++ )
+			{
+				Assert.IsTrue( ride.Trains[index].Speed > 0, $"train {index} never stops" );
+				var inStation = ride.Trains[index].Flags.HasFlag( CoasterTrainFlags.InStation );
+				if ( inStation && !wasIn[index] )
+					arrivals[index]++;
+				wasIn[index] = inStation;
+			}
 		}
+		Assert.IsTrue( arrivals.All( count => count >= 1 ), $"every train passed the station window: {string.Join( ", ", arrivals )}" );
 	}
 
 	/// <summary>
@@ -739,11 +758,10 @@ public class CoasterTests
 		ride.Command( 8, 0 );
 		ride.Command( 5, 0 );
 		var train = ride.Trains[0];
-		for ( var tick = 0; tick < 120 * 60 && !(train.State == CoasterTrainState.Running && train.Position > 0); tick++ )
-			ride.Advance( Tick );
-		Assert.AreEqual( CoasterTrainState.Running, train.State );
+		Assert.AreEqual( 0f, train.Speed, "a new train starts at rest (0x436dd7)" );
+		ride.Advance( Tick );
 		var minimum = ride.Definition.MinSpeed * ride.PowerFactor;
-		Assert.IsTrue( train.Speed > 0 && train.Speed < minimum / 2, $"first running frame: speed {train.Speed}, M {minimum}" );
+		Assert.IsTrue( train.Speed > 0 && train.Speed < minimum / 2, $"first frame: speed {train.Speed}, M {minimum}" );
 	}
 
 	[TestMethod]
@@ -918,18 +936,23 @@ public class CoasterTests
 		Assert.AreEqual( (64, 0f), (ride.ControllerStateFlag, ride.PowerFactor), "the scripted breakdown cuts the power" );
 		for ( var tick = 0; tick < 300 * 60; tick++ )
 			ride.Advance( Tick );
-		Assert.IsTrue( ride.Trains.All( train => train.Speed == 0 ), "without floors the trains brake and decay to a stop" );
-		Assert.IsTrue( ride.Trains.Any( train => train.State is CoasterTrainState.Boarding or CoasterTrainState.Unloading ), "and nothing leaves the station" );
+		Assert.IsTrue( ride.Trains.All( train => train.Speed == 0 ), "without floors the trains coast and decay to a stop" );
+		var flags = ride.Trains.Select( train => train.Flags ).ToArray();
+		for ( var tick = 0; tick < 30 * 60; tick++ )
+			ride.Advance( Tick );
+		CollectionAssert.AreEqual( flags, ride.Trains.Select( train => train.Flags ).ToArray(), "the station step is skipped in mode 64" );
 		ride.Command( 4, 0 );
 		Assert.AreEqual( 1f, ride.PowerFactor );
+		Assert.IsTrue( ride.Trains.All( train => train.Flags.HasFlag( CoasterTrainFlags.Headway ) && !train.Flags.HasFlag( CoasterTrainFlags.Bumped ) ), "leaving mode 64 flags every train 0x80 (0x435947)" );
 		var moved = false;
 		for ( var tick = 0; tick < 30 * 60 && !moved; tick++ )
 		{
 			ride.Advance( Tick );
-			moved = ride.Trains.Any( train => train.State == CoasterTrainState.Running && train.Speed > 0 );
+			moved = ride.Trains.Any( train => train.Speed > 0 );
 		}
 		Assert.IsTrue( moved, "power back: trains run again" );
 	}
+
 	/// <summary>COAST 5 is gated (0x43b2f0): a repeated open or close changes nothing; COAST 6 floors at 0 (0x43b330).</summary>
 	[TestMethod]
 	public void CloseGateAndCapacityFloor()
@@ -971,7 +994,7 @@ public class CoasterTests
 		Assert.AreEqual( (80, CoasterRide.SpeedCapFor( ride.Definition, 80 )), (ride.SpeedSetting, ride.SpeedCap ), "a station script whose ride has InitSpeed 80" );
 	}
 
-	/// <summary>In mode 64 the station step is skipped (0x43b8b0): an unloaded train does not move on to boarding until the power is back.</summary>
+	/// <summary>In mode 64 the station step is skipped (0x43b8b0): a train on the platform does not unload until the power is back.</summary>
 	[TestMethod]
 	public void BreakdownSkipsTheStationStep()
 	{
@@ -982,13 +1005,14 @@ public class CoasterTests
 		ride.Command( 8, 0 );
 		var train = ride.Trains[0];
 		ride.Command( 4, 1 );
-		train.State = CoasterTrainState.Unloading;
+		train.CarLists[0].Add( 7 );
 		for ( var tick = 0; tick < 120; tick++ )
 			ride.Advance( Tick );
-		Assert.AreEqual( CoasterTrainState.Unloading, train.State );
+		Assert.AreEqual( (1, 0), (train.Riders, ride.LeavingCount), "the rider stays on the train in mode 64" );
+		Assert.IsFalse( train.Flags.HasFlag( CoasterTrainFlags.InStation ) );
 		ride.Command( 4, 0 );
 		ride.Advance( Tick );
-		Assert.AreEqual( CoasterTrainState.Boarding, train.State );
+		Assert.AreEqual( (0, 1), (train.Riders, ride.LeavingCount), "power back: the train unloads on its arrival" );
 	}
 
 	/// <summary>The suspended swing (tp.exe 0x43c76c..0x43ca45): with zero sample angles the roll is the wrapped approach of π toward atan2(−X, Y) at rate min(|F + g|·fForceMultiplier, 1).</summary>

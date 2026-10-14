@@ -10,9 +10,18 @@ namespace OpenTPW;
 /// <param name="Bank">The auto-bank the knots pass stores on the node (node <c>+216</c>).</param>
 internal sealed record CoasterNodeSaveData( int X, int Y, float Height, float T, bool LoopPylon, int StackIndex, bool IsStation, bool IsStationEnd, uint Flags, float Bank );
 
-/// <summary>One saved train: its front's position and speed, its state, its boarding clock and the riders of each car.</summary>
-/// <param name="State">The <see cref="CoasterTrainState"/> as its int value.</param>
-internal sealed record CoasterTrainSaveData( float Position, float Speed, int State, double BoardingSince, List<List<int>> Cars );
+/// <summary>
+/// One saved train: its front's position and speed, the riders of each car on the lap and, with the original's station rule,
+/// its flags, boarding span and the guests seated at the station in each car. A save made before that rule has no flags
+/// (<see cref="Flags"/> null): its <see cref="State"/> (0 boarding, 1 running, 2 waiting before the station, 3 unloading) and
+/// boarding clock are the old stop-and-dispatch model's, and <see cref="CoasterRide.RestoreSnapshot"/> migrates them.
+/// </summary>
+/// <param name="State">The old model's train state as its int value; written as 1 by this version and read only to migrate a save without flags.</param>
+/// <param name="BoardingSince">The old model's boarding clock; written as 0 and ignored.</param>
+/// <param name="Flags">The <see cref="CoasterTrainFlags"/> as their raw int; null in a save from before the station rule.</param>
+/// <param name="BoardingCars">The guests seated at the station in each car (they ride when the train leaves); null in an older save.</param>
+internal sealed record CoasterTrainSaveData( float Position, float Speed, int State, double BoardingSince, List<List<int>> Cars,
+	int? Flags = null, int FirstBoardingCar = 0, int LastBoardingCar = 0, List<List<int>>? BoardingCars = null );
 
 /// <summary>
 /// A saved track: the station end cells, the ordered nodes (the station node first, then the pylons in build order,
@@ -28,8 +37,10 @@ internal sealed record CoasterTrackSaveData( (int X, int Y)? DepartCell, (int X,
 /// leave through <c>COAST 3</c>. The curve samples, rating, winch sections and braking point are re-derived from the
 /// restored track on load (the rebuild is the same deterministic pass completion ran), so they are never saved.
 /// </summary>
-/// <param name="LastDispatch">Park time of the last dispatch, or null while no train has ever been dispatched (the live <c>-∞</c> initial value, which JSON cannot carry).</param>
-internal sealed record CoasterRideSaveData( int AttractionId, CoasterTrackSaveData Track, bool Initialised, bool Closed, int BreakdownState, int SpeedSetting, int SeatsPerTrain, float SpeedCap, long PaidCost, double TimeSeconds, double? LastDispatch, List<CoasterTrainSaveData> Trains, List<int> Leaving );
+/// <param name="LastDispatch">The old model's last departure time; written as null and ignored (trains no longer depart on a decision).</param>
+/// <param name="Admission">The guests <c>COAST 1</c> handed over that wait for a train in the station to seat them; null in a save from before the admission ring.</param>
+internal sealed record CoasterRideSaveData( int AttractionId, CoasterTrackSaveData Track, bool Initialised, bool Closed, int BreakdownState, int SpeedSetting, int SeatsPerTrain, float SpeedCap, long PaidCost, double TimeSeconds, double? LastDispatch, List<CoasterTrainSaveData> Trains, List<int> Leaving,
+	List<int>? Admission = null );
 
 /// <summary>The coasters of one saved park (the park-resume envelope's optional coaster part): every live coaster in creation order, which is attraction-id order.</summary>
 internal sealed record CoasterWorldSaveData
@@ -94,11 +105,12 @@ internal static class CoasterSave
 		ArgumentNullException.ThrowIfNull( ride );
 		var track = ride.Track;
 		var nodes = track.Nodes.Select( node => new CoasterNodeSaveData( node.X, node.Y, node.Height, node.T, node.LoopPylon, node.StackIndex, node.IsStation, node.IsStationEnd, (uint)node.Flags, node.Bank ) ).ToList();
-		var trains = ride.Trains.Select( train => new CoasterTrainSaveData( train.Position, train.Speed, (int)train.State, train.BoardingSince, train.Cars.Select( car => car.ToList() ).ToList() ) ).ToList();
+		var trains = ride.Trains.Select( train => new CoasterTrainSaveData( train.Position, train.Speed, CoasterRide.LegacyRunningState, 0, train.Cars.Select( car => car.ToList() ).ToList(),
+			(int)train.Flags, train.FirstBoardingCar, train.LastBoardingCar, train.BoardingCars.Select( car => car.ToList() ).ToList() ) ).ToList();
 		return new CoasterRideSaveData( attractionId,
 			new CoasterTrackSaveData( track.DepartCell, track.ReturnCell, track.IsClosed, track.IsComplete, track.Version, nodes ),
 			ride.Initialised, ride.Closed, ride.BreakdownState, ride.SpeedSetting, ride.SeatsPerTrain, ride.SpeedCap, ride.PaidCost, ride.TimeSeconds,
-			double.IsNegativeInfinity( ride.LastDispatch ) ? null : ride.LastDispatch,
-			trains, ride.LeavingRiders.ToList() );
+			null,
+			trains, ride.LeavingRiders.ToList(), ride.AdmissionGuests.ToList() );
 	}
 }

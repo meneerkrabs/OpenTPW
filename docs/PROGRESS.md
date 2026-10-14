@@ -881,6 +881,9 @@ research batch was included in this merge.
   (`0x10112430` / `0x40BDA0`). A queue line ending on a path is the join (validator code 8) instead of a refusal, and plays
   `cat_ui` 139 at that cell (`0x100711CC` / `0x527587`). `cat_ui` 95 had been mislabelled a visitor-panel sound and 139 a
   path-tool link-end; AUDIO-023 keeps only 139's second source (path linking to a queue).
+- **README's open list corrected (October 14):** RSE EVENT types 1 and 2 are particle effects, not sounds (the positioned
+  ride sounds of the other types already play); the weather is drawn, as procedural approximations; visitors can be selected,
+  and what remains of the visitor click is its sound and the visitor panel's sounds.
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.

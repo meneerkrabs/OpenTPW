@@ -509,6 +509,9 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	public Func<int> Steps { get; set; } = () => 2;
 	public Func<int> Value { get; set; } = () => 0;
 	public Action<int>? Changed { get; set; }
+	/// <summary>Truncate a drag position to its value instead of taking the nearest value (the original's slider class, used by the research effort sliders).</summary>
+	// [BIN:TPW-EXE:0x66afc9 slider drag] value = min + trunc((thumbLeft - trackLeft) * (max - min) / (trackWidth - thumbWidth)); the research effort sliders 0xd2d0b..0xd2d0f are this class with SetRange(0,100) (0x4aa6bd..0x4aa725)
+	public bool Truncates { get; set; }
 	public override bool Focusable => Visible && Enabled;
 
 	/// <summary>
@@ -532,7 +535,8 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 		if ( travel <= 0 )
 			return 0;
 		var fraction = (authoredX - Track.X - KnobSize.X / 2) / travel;
-		return Math.Clamp( (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
+		fraction = Math.Clamp( fraction, 0f, 1f );
+		return Math.Clamp( Truncates ? (int)MathF.Floor( fraction * (steps - 1) + 1e-4f ) : (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
 	}
 
 	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point ) => SetFromMouse( canvas, point );

@@ -54,6 +54,14 @@ public static partial class Input
 	private static readonly HashSet<Key> frameKeys = new();
 	internal static bool IsFrameKeyDown( Key key ) => frameKeys.Contains( key );
 
+	/// <summary>Modifier mask of a Shift/Ctrl/Alt state as the original builds it: Shift 3, Ctrl 0xc, Alt 0x30.</summary>
+	// [BIN:TPW-EXE:0x486aa0 modifier mask] GetAsyncKeyState of VK_SHIFT (0x10), VK_CONTROL (0x11) and VK_MENU (0x12) gives 3, 0xc and 0x30, or-ed together
+	internal static int ModifierMask( bool shift, bool control, bool alt ) => (shift ? 3 : 0) | (control ? 0xc : 0) | (alt ? 0x30 : 0);
+
+	/// <summary>The modifier mask of the keys held this frame (either side of each modifier counts).</summary>
+	internal static int ModifierMaskDown => ModifierMask( IsFrameKeyDown( Key.ShiftLeft ) || IsFrameKeyDown( Key.ShiftRight ),
+		IsFrameKeyDown( Key.ControlLeft ) || IsFrameKeyDown( Key.ControlRight ), IsFrameKeyDown( Key.AltLeft ) || IsFrameKeyDown( Key.AltRight ) );
+
 	/// <summary>
 	/// Queues a physical key press for the next frame only (the native smoke tests' keyboard steps): the key
 	/// reads as held through its <see cref="InputButton"/> bindings for exactly one frame and is released the
@@ -172,6 +180,7 @@ public static partial class Input
 	/// </summary>
 	internal static void UpdateButtons()
 	{
+		RefreshKeyboardStrings();
 		var injected = injectedKeys.SelectMany( scope => scope.Keys ).ToArray();
 		injectedKeys.Clear();
 		frameKeys.Clear();

@@ -10,7 +10,7 @@ public sealed partial class ParkHud
 
 	private void AddShopPriceButton()
 	{
-		// [APPROX:UI-933] host price editor occupies the editable information arm's free ride-view slot; decimal input follows the existing nonnegative int API, not native slider geometry/ranges.
+		// [EXT:shop-price-editor] the host price editor occupies the editable information arm's free ride-view slot; decimal input follows the existing nonnegative int API; there is no original rule to match
 		shopPriceButton = hud.Add( new UiButton
 		{
 			Id = "shopPrice", Text = () => strings[SelectedObject?.Entry.WhichUIType == (int)BuildCategory.Shops ? UIStrings.SalePrice : UIStrings.PriceOfGame],

@@ -35,7 +35,7 @@ public sealed class GameOptions
 
 	// [BIN:TPW-EXE:sound.sam DefaultVolume] defaults SFX 75, Music 60, Speech 75, Movie 100 (percent). The globals holding them are medium confidence.
 	// The movie volume is scaled by 1023 / 100 for the movie device.
-	// [APPROX:UI-030] the slider's step granularity within 0..100 (the original slider travel is not traced; OpenTPW steps 1 %).
+	// [BIN:TPW-EXE:0x4a4490 volume sliders] the options volume sliders get SetRange(0,100) (0x66b47d: min 0, max 100), an integer value and line and page steps of 1 (slider constructor 0x66ad77/0x66adc9), so OpenTPW's 1 % steps over 0..100 are the original's granularity.
 	public int SoundEffectsVolume { get; set; } = 75;
 	public int MusicVolume { get; set; } = 60;
 	public int SpeechVolume { get; set; } = 75;

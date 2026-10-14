@@ -18,30 +18,40 @@ public class ParticleSystemTests
 	[TestInitialize]
 	public void Init() => Log = new();
 
+	/// <summary>The density at which the templates run as authored ((value * 1024) >> 10).</summary>
+	internal const int Authored = 1024;
+
+	/// <summary>A pool at the authored density, so a synthetic template's rates, cap and burst mean what they say.</summary>
+	internal static ParticleSystem New( IReadOnlyList<ParticleTemplate> templates, int density = Authored, int particleCount = ParticleSystem.DefaultParticleCount,
+		Func<int, int, int>? ground = null, bool lowDetail = false, IReadOnlyList<ParticleEffectorTemplate>? effectors = null ) =>
+		new ParticleSystem( templates, density, particleCount, ground, lowDetail, effectors );
+
 	/// <summary>A template whose fields are set by (offset, size, value); everything else is zero.</summary>
-	private static ParticleTemplate Template( params (int Offset, int Size, int Value)[] fields )
+	internal static ParticleTemplate Template( params (int Offset, int Size, int Value)[] fields )
 	{
 		var bytes = new byte[ParticleTemplate.Size];
 		foreach ( var (offset, size, value) in fields )
 			BitConverter.GetBytes( value ).AsSpan( 0, size ).CopyTo( bytes.AsSpan( offset ) );
-		// no death effects, no child unless stated
-		foreach ( var offset in new[] { 0x10, 0x98, 0xB4 } )
+		// no death effects, no child unless stated (+0x10 is a word, +0x98 and +0xB4 are dwords)
+		if ( !fields.Any( field => field.Offset == 0x10 ) )
+			BitConverter.GetBytes( (short)-1 ).CopyTo( bytes, 0x10 );
+		foreach ( var offset in new[] { 0x98, 0xB4 } )
 			if ( !fields.Any( field => field.Offset == offset ) )
-				BitConverter.GetBytes( (short)-1 ).CopyTo( bytes, offset );
+				BitConverter.GetBytes( -1 ).CopyTo( bytes, offset );
 		if ( !fields.Any( field => field.Offset == 0xA2 ) )
 			BitConverter.GetBytes( (short)1000 ).CopyTo( bytes, 0xA2 );
 		return new ParticleTemplate( bytes );
 	}
 
-	private static (int, int, int) Life( int value ) => (0x20, 4, value);
-	private static (int, int, int) Immortal() => (0x26, 1, 1);
-	private static (int, int, int) Burst( int value ) => (0x60, 4, value);
-	private static (int, int, int) Cap( int value ) => (0x64, 4, value);
-	private static (int, int, int) Rates( int a, int b, int c, int d ) => (0x68, 4, (a & 0xFF) | (b & 0xFF) << 8 | (c & 0xFF) << 16 | (d & 0xFF) << 24);
-	private static (int, int, int) ParticleLife( int value ) => (0x78, 4, value);
+	internal static (int, int, int) Life( int value ) => (0x20, 4, value);
+	internal static (int, int, int) Immortal() => (0x26, 1, 1);
+	internal static (int, int, int) Burst( int value ) => (0x60, 4, value);
+	internal static (int, int, int) Cap( int value ) => (0x64, 4, value);
+	internal static (int, int, int) Rates( int a, int b, int c, int d ) => (0x68, 4, (a & 0xFF) | (b & 0xFF) << 8 | (c & 0xFF) << 16 | (d & 0xFF) << 24);
+	internal static (int, int, int) ParticleLife( int value ) => (0x78, 4, value);
 
 	/// <summary>A list of 105 templates, every one inert except the given ones.</summary>
-	private static List<ParticleTemplate> Pool( params (int Id, ParticleTemplate Template)[] given )
+	internal static List<ParticleTemplate> Pool( params (int Id, ParticleTemplate Template)[] given )
 	{
 		var list = Enumerable.Range( 0, 105 ).Select( _ => Template( Life( 1 ), Cap( 500 ), ParticleLife( 10 ) ) ).ToList();
 		foreach ( var (id, template) in given )
@@ -49,14 +59,14 @@ public class ParticleSystemTests
 		return list;
 	}
 
-	private static ParticleSystem Run( ParticleSystem system, int ticks )
+	internal static ParticleSystem Run( ParticleSystem system, int ticks )
 	{
 		for ( var index = 0; index < ticks; index++ )
 			system.Tick();
 		return system;
 	}
 
-	private static readonly (int, int, int) Origin = (0, 0, 0);
+	internal static readonly (int, int, int) Origin = (0, 0, 0);
 
 	// ---- template file ----
 
@@ -155,7 +165,7 @@ public class ParticleSystemTests
 		Assert.IsTrue( file.Templates.All( template => template.Control == 1000 || template.Name.Length == 0 ), "the loader default control is 1000" );
 
 		// the shipped data drives the pool: a firework rocket explodes, its explosion chains the laser ring, and everything ends
-		var system = new ParticleSystem( file.Templates );
+		var system = New( file.Templates );
 		Assert.IsTrue( system.Create( 3, (0, 0, 0) ) >= 0 );
 		var seen = new HashSet<int>();
 		for ( var tick = 0; tick < 400; tick++ )
@@ -175,22 +185,22 @@ public class ParticleSystemTests
 	public void RefusesEffectsOutsideTheTableAndLowDetailTemplates()
 	{
 		var pool = Pool( (5, Template( Life( 3 ), (0xC1, 1, 1) )) );
-		var system = new ParticleSystem( pool );
+		var system = New( pool );
 		Assert.AreEqual( -1, system.Create( -1, Origin ) );
 		Assert.AreEqual( -1, system.Create( 105, Origin ) );
 		Assert.AreEqual( -1, system.Create( 100000, Origin ) );
 		Assert.IsTrue( system.Create( 104, Origin ) >= 0, "104 is the last valid effect" );
 		Assert.IsTrue( system.Create( 5, Origin ) >= 0, "the low-detail flag only matters with low detail on" );
-		var low = new ParticleSystem( pool, lowDetail: true );
+		var low = New( pool, lowDetail: true );
 		Assert.AreEqual( -1, low.Create( 5, Origin ), "template byte +0xC1 refuses under low detail" );
 		Assert.IsTrue( low.Create( 6, Origin ) >= 0 );
-		Assert.AreEqual( -1, new ParticleSystem( new[] { pool[0] } ).Create( 50, Origin ), "a table shorter than the id" );
+		Assert.AreEqual( -1, New( new[] { pool[0] } ).Create( 50, Origin ), "a table shorter than the id" );
 	}
 
 	[TestMethod]
 	public void HandleIsSlotWithGeneration()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 2 ) )) ) );
+		var system = New( Pool( (1, Template( Life( 2 ) )) ) );
 		var first = system.Create( 1, Origin );
 		Assert.AreEqual( 0, first & 0xFFFF );
 		Assert.IsTrue( system.IsAlive( first ) );
@@ -207,7 +217,7 @@ public class ParticleSystemTests
 	public void BurstAndPerQuarterRatesCountParticles()
 	{
 		// Sparks-like: a 12 tick emitter, rates 5/3/1/1 per quarter; the particles outlive the test
-		var system = new ParticleSystem( Pool( (1, Template( Life( 12 ), Burst( 4 ), Cap( 500 ), Rates( 5, 3, 1, 1 ), ParticleLife( 1000 ) )) ) );
+		var system = New( Pool( (1, Template( Life( 12 ), Burst( 4 ), Cap( 500 ), Rates( 5, 3, 1, 1 ), ParticleLife( 1000 ) )) ) );
 		system.Create( 1, Origin );
 		Assert.AreEqual( 4, system.LiveParticles, "the burst is emitted by the constructor" );
 		system.Tick();
@@ -221,15 +231,15 @@ public class ParticleSystemTests
 	[TestMethod]
 	public void NegativeRateEmitsOneParticlePerPeriodAndCapsStop()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 20 ), Cap( 500 ), Rates( -5, -5, -5, -5 ), ParticleLife( 1000 ) )) ) );
+		var system = New( Pool( (1, Template( Life( 20 ), Cap( 500 ), Rates( -5, -5, -5, -5 ), ParticleLife( 1000 ) )) ) );
 		system.Create( 1, Origin );
 		Run( system, 21 );
-		Assert.AreEqual( 4, system.LiveParticles, "one particle every five ticks over twenty: ages 0, 5, 10, 15" );
+		Assert.AreEqual( 4, system.LiveParticles, "the counter starts at 0: ticks 1, 6, 11 and 16 spawn one particle each" );
 
-		var capped = new ParticleSystem( Pool( (1, Template( Life( 20 ), Cap( 3 ), Rates( 5, 5, 5, 5 ), ParticleLife( 1000 ) )) ) );
+		var capped = New( Pool( (1, Template( Life( 20 ), Cap( 3 ), Rates( 5, 5, 5, 5 ), ParticleLife( 1000 ) )) ) );
 		capped.Create( 1, Origin );
 		Run( capped, 10 );
-		Assert.AreEqual( 3, capped.LiveParticles, "the per-emitter cap" );
+		Assert.AreEqual( 5, capped.LiveParticles, "the cap is checked once per tick, so a tick's rate (5) may overshoot it (3), and no further tick emits" );
 	}
 
 	[TestMethod]
@@ -237,33 +247,67 @@ public class ParticleSystemTests
 	{
 		var scaled = Template( Life( 5 ), Burst( 10 ), Cap( 500 ), ParticleLife( 1000 ) );
 		var fixedBurst = Template( Life( 5 ), Burst( 10 ), Cap( 500 ), ParticleLife( 1000 ), (0xC0, 1, 1) );
-		foreach (var (density, expected, expectedFixed) in new[] { (500, 5, 10), (1000, 10, 10), (2000, 20, 10) })
+		// [BIN:TPW-EXE:0x521D60] the burst becomes (burst * density) >> 10: 1024 is as authored
+		foreach (var (density, expected, expectedFixed) in new[] { (500, 4, 10), (1024, 10, 10), (2000, 19, 10) })
 		{
-			var system = new ParticleSystem( Pool( (1, scaled), (2, fixedBurst) ), density );
+			var system = New( Pool( (1, scaled), (2, fixedBurst) ), density );
 			system.Create( 1, Origin );
 			Assert.AreEqual( expected, system.LiveParticles, $"density {density}" );
 			system.Create( 2, Origin );
 			Assert.AreEqual( expected + expectedFixed, system.LiveParticles, $"density {density}, template +0xC0" );
 		}
-		Assert.AreEqual( 500, new ParticleSystem( Pool(), 1 ).Density, "the density setting is clamped to 500..2000" );
+		Assert.AreEqual( 1, New( Pool(), 0 ).Density, "a density of 0 becomes 1" );
+		Assert.AreEqual( 500, new ParticleSystem( Pool() ).Density, "the default is the options' PARTICLEDENSITY value, 500" );
+	}
+
+	[TestMethod]
+	public void DensityScalesRatesCapAndBurstByTheNativeFormula()
+	{
+		// rate bytes: (density * rate) >> 10 clamped to 127, 0 becomes 1, negative rates are scaled too (a floor shift); zero stays zero; cap (word) and burst only when > 0, at least 1
+		int Rate( int density, int rate, int quarter = 0 )
+		{
+			var system = New( Pool( (1, Template( Life( 100 ), Cap( 1000 ), Rates( rate, rate, rate, rate ), ParticleLife( 1000 ) )) ), density );
+			system.Create( 1, Origin );
+			Run( system, 2 );
+			return system.LiveParticles;
+		}
+		Assert.AreEqual( 2, Rate( 500, 5 ), "5 * 500 >> 10" );
+		Assert.AreEqual( 5, Rate( 1024, 5 ) );
+		Assert.AreEqual( 1, Rate( 100, 1 ), "a result of 0 becomes 1" );
+		Assert.AreEqual( 0, Rate( 1024, 0 ), "a zero rate stays zero" );
+		Assert.AreEqual( 127, Rate( 2000, 100 ), "clamped to 127" );
+		// negative -5 at 500: (-5 * 500) >> 10 = -3: one particle every 3 ticks (a higher density makes it faster, a lower one slower)
+		var slow = New( Pool( (1, Template( Life( 100 ), Cap( 30000 ), Rates( -5, -5, -5, -5 ), ParticleLife( 1000 ) )) ), 500 );
+		slow.Create( 1, Origin );
+		Run( slow, 1 + 9 );
+		Assert.AreEqual( 3, slow.LiveParticles, "ticks 1, 4, 7 spawn" );
+		var cap = New( Pool( (1, Template( Life( 100 ), Burst( 40 ), Cap( 20 ), ParticleLife( 1000 ) )) ), 500 );
+		cap.Create( 1, Origin );
+		Assert.AreEqual( 19, cap.LiveParticles, "the burst scales to (40 * 500) >> 10 = 19 and ignores the cap" );
+		var one = New( Pool( (1, Template( Life( 100 ), Burst( 1 ), Cap( 1 ), ParticleLife( 1000 ) )) ), 100 );
+		one.Create( 1, Origin );
+		Assert.AreEqual( 1, one.LiveParticles, "a burst that scales to 0 becomes 1" );
+		var negative = New( Pool( (1, Template( Life( 100 ), Burst( -3 ), Cap( 20 ), ParticleLife( 1000 ) )) ), 500 );
+		negative.Create( 1, Origin );
+		Assert.AreEqual( 0, negative.LiveParticles, "a negative burst is neither scaled nor emitted" );
 	}
 
 	[TestMethod]
 	public void ParticleLifeJittersByAQuarter()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 1 ), Burst( 200 ), Cap( 500 ), ParticleLife( 40 ) )) ) );
+		var system = New( Pool( (1, Template( Life( 1 ), Burst( 200 ), Cap( 500 ), ParticleLife( 40 ) )) ) );
 		system.Create( 1, Origin );
 		Assert.AreEqual( 200, system.LiveParticles );
 		system.Tick(); // the skipped first call
 		Run( system, 29 );
-		Assert.AreEqual( 200, system.LiveParticles, "no particle lives less than 30 ticks (40 - 25%)" );
+		Assert.AreEqual( 200, system.LiveParticles, "no particle lives less than 31 ticks (40 +- 9: sar % (40 >> 2) is at most 9 either way)" );
 		var alive = new List<int>();
 		for ( var tick = 0; tick < 25; tick++ )
 		{
 			system.Tick();
 			alive.Add( system.LiveParticles );
 		}
-		Assert.AreEqual( 0, system.LiveParticles, "none outlives 50 ticks (40 + 25%)" );
+		Assert.AreEqual( 0, system.LiveParticles, "none outlives 50 ticks" );
 		Assert.IsTrue( alive.Any( count => count > 0 && count < 200 ), "the lives are spread, not one value" );
 		Assert.AreEqual( 0, system.LiveEmitters, "the emitter ended too" );
 	}
@@ -274,7 +318,7 @@ public class ParticleSystemTests
 		var colours = Enumerable.Range( 0, 16 ).SelectMany( index => new[] { (0xD8 + index * 4, 4, unchecked((int)(0xFF000000u | (uint)(index * 16 + 5)))) } ).ToArray();
 		var fields = new List<(int, int, int)> { Life( 1 ), Burst( 1 ), Cap( 500 ), ParticleLife( 40 ), (0x94, 2, 11), (0x96, 2, 16), (0x74, 4, 800), (0xA6, 2, 2200) };
 		fields.AddRange( colours );
-		var system = new ParticleSystem( Pool( (1, Template( fields.ToArray() )) ) );
+		var system = New( Pool( (1, Template( fields.ToArray() )) ) );
 		system.Create( 1, Origin );
 		var sprites = new List<ParticleSprite>();
 		system.Snapshot( sprites );
@@ -305,7 +349,7 @@ public class ParticleSystemTests
 		var fields = new List<(int, int, int)> { Life( 1 ), Burst( 40 ), Cap( 500 ), ParticleLife( 1000 ), (0x58, 4, 1) };
 		for ( var index = 0; index < 16; index++ )
 			fields.Add( (0xD8 + index * 4, 4, unchecked((int)(0x80000000u | (uint)(index << 16)))) );
-		var system = new ParticleSystem( Pool( (1, Template( fields.ToArray() )) ) );
+		var system = New( Pool( (1, Template( fields.ToArray() )) ) );
 		system.Create( 1, Origin );
 		var sprites = new List<ParticleSprite>();
 		system.Snapshot( sprites );
@@ -317,7 +361,7 @@ public class ParticleSystemTests
 	public void ParticlesDoNotMoveOnTheirSpawnTickAndStoreSixtyFourthsOfAUnit()
 	{
 		// base particle velocity 12 on x, no drag or gravity
-		var system = new ParticleSystem( Pool( (1, Template( Life( 1 ), Burst( 1 ), Cap( 500 ), ParticleLife( 1000 ), (0x38, 4, 12) )) ) );
+		var system = New( Pool( (1, Template( Life( 1 ), Burst( 1 ), Cap( 500 ), ParticleLife( 1000 ), (0x38, 4, 12) )) ) );
 		system.Create( 1, (10 * 1024, 20 * 1024, 30 * 1024) );
 		var sprites = new List<ParticleSprite>();
 		system.Snapshot( sprites );
@@ -332,21 +376,23 @@ public class ParticleSystemTests
 	}
 
 	[TestMethod]
-	public void ParticleDragAndGravityActOnVelocity()
+	public void ParticleDragAndGravityActOnVelocityAlsoOnTheSpawnTick()
 	{
-		// drag 512/1024 halves the velocity per tick; gravity 1 lowers y by one per tick (Y is up)
-		var system = new ParticleSystem( Pool( (1, Template( Life( 1 ), Burst( 1 ), Cap( 500 ), ParticleLife( 1000 ), (0x38, 4, 64), (0x7C, 4, 512), (0x80, 4, 1) )) ) );
+		// drag 512/1024 halves the velocity per tick (truncating); gravity 1 lowers vy by one per tick (Y is up)
+		var system = New( Pool( (1, Template( Life( 1 ), Burst( 1 ), Cap( 500 ), ParticleLife( 1000 ), (0x38, 4, 64), (0x7C, 4, 512), (0x80, 4, 1) )) ) );
 		system.Create( 1, Origin );
-		Run( system, 2 ); // the skipped call, then the spawn tick
+		Run( system, 2 ); // the skipped call, then the spawn tick: drag and gravity apply (vx 32, vy -1), only the move is skipped
 		var sprites = new List<ParticleSprite>();
+		system.Snapshot( sprites );
+		Assert.AreEqual( (0, 0), (sprites[0].X, sprites[0].Y), "the spawn tick does not move the particle" );
 		system.Tick();
 		system.Snapshot( sprites );
-		Assert.AreEqual( 32, sprites[0].X, "64 - 64 * 512 / 1024, then x += 32" );
-		Assert.AreEqual( -1, sprites[0].Y );
+		Assert.AreEqual( 16, sprites[0].X, "vx 32 - 16 = 16, then x += 16" );
+		Assert.AreEqual( -2, sprites[0].Y, "vy -1 - trunc(-1 * 512 / 1024) = -1, gravity -> -2" );
 		system.Tick();
 		system.Snapshot( sprites );
-		Assert.AreEqual( 32 + 16, sprites[0].X );
-		Assert.AreEqual( -1 - 2, sprites[0].Y, "vy falls by the gravity each tick" );
+		Assert.AreEqual( 16 + 8, sprites[0].X );
+		Assert.AreEqual( -2 - 2, sprites[0].Y, "vy -2 - (-1) = -1, gravity -> -2" );
 	}
 
 	[TestMethod]
@@ -354,9 +400,9 @@ public class ParticleSystemTests
 	{
 		// +0xB0 = 12: the speed of a type-2 effect; a unit direction (1024 = 1) scales it
 		var template = Template( Life( 1 ), Burst( 1 ), Cap( 500 ), ParticleLife( 1000 ), (0x38, 4, 99), (0xB0, 4, 12) );
-		var plain = new ParticleSystem( Pool( (1, template) ) );
+		var plain = New( Pool( (1, template) ) );
 		plain.Create( 1, Origin );
-		var directed = new ParticleSystem( Pool( (1, template) ) );
+		var directed = New( Pool( (1, template) ) );
 		Assert.IsTrue( directed.CreateDirected( 1, Origin, (0, 1024, 0) ) >= 0 );
 		var sprites = new List<ParticleSprite>();
 		Run( plain, 3 );
@@ -365,7 +411,7 @@ public class ParticleSystemTests
 		Run( directed, 3 );
 		directed.Snapshot( sprites );
 		Assert.AreEqual( (0, 12, 0), (sprites[0].X, sprites[0].Y, sprites[0].Z), "type 2: direction * speed / 1024 set before the burst" );
-		var diagonal = new ParticleSystem( Pool( (1, template) ) );
+		var diagonal = New( Pool( (1, template) ) );
 		diagonal.CreateDirected( 1, Origin, (724, 724, 0) );
 		Run( diagonal, 3 );
 		diagonal.Snapshot( sprites );
@@ -379,7 +425,7 @@ public class ParticleSystemTests
 		var sprites = new List<ParticleSprite>();
 		ParticleSprite Drawn( int? control )
 		{
-			var system = new ParticleSystem( Pool( (1, Template( fields )) ) );
+			var system = New( Pool( (1, Template( fields )) ) );
 			system.Create( 1, (1024, 2048, 3072), control );
 			Run( system, 3 );
 			system.Snapshot( sprites );
@@ -398,7 +444,7 @@ public class ParticleSystemTests
 	{
 		// the emitter drifts 10 on x per tick; particles stay where they are born
 		var template = Template( Life( 100 ), Cap( 500 ), Rates( 1, 1, 1, 1 ), ParticleLife( 1000 ), (0x28, 4, 2), (0x2C, 4, 10) );
-		var system = new ParticleSystem( Pool( (1, template) ) );
+		var system = New( Pool( (1, template) ) );
 		system.Create( 1, Origin );
 		Run( system, 6 );
 		var sprites = new List<ParticleSprite>();
@@ -410,27 +456,37 @@ public class ParticleSystemTests
 	}
 
 	[TestMethod]
-	public void EmitterBouncesOnTheGroundCallback()
+	public void EmitterBouncesOnTheGroundFunctionWhenItsFlagIsSet()
 	{
-		var template = Template( Life( 100 ), Cap( 500 ), Rates( 1, 1, 1, 1 ), ParticleLife( 1000 ), (0x28, 4, 2), (0x76, 2, 50) );
-		var system = new ParticleSystem( Pool( (1, template) ), ground: ( x, z ) => 0 );
-		system.Create( 1, Origin );
-		Run( system, 30 );
+		// [BIN:TPW-EXE:0x520E00] the ground branch runs only for word +0x76 != 0; the original's ground function is a stub returning 0
+		var bouncing = Template( Life( 100 ), Cap( 500 ), Rates( 1, 1, 1, 1 ), ParticleLife( 1000 ), (0x28, 4, 2), (0x76, 2, 1) );
+		var free = Template( Life( 100 ), Cap( 500 ), Rates( 1, 1, 1, 1 ), ParticleLife( 1000 ), (0x28, 4, 2) );
 		var sprites = new List<ParticleSprite>();
-		system.Snapshot( sprites );
-		Assert.IsTrue( sprites.Count >= 20 );
-		Assert.IsTrue( sprites.All( sprite => sprite.Y >= 0 ), "particles are born on or above the ground the callback reports" );
-		var free = new ParticleSystem( Pool( (1, template) ) );
-		free.Create( 1, Origin );
-		Run( free, 30 );
-		free.Snapshot( sprites );
-		Assert.IsTrue( sprites.Any( sprite => sprite.Y < 0 ), "without the callback the emitter falls through" );
+		foreach ( var ground in new Func<int, int, int>?[] { null, ( x, z ) => 0 } )
+		{
+			var system = New( Pool( (1, bouncing) ), ground: ground );
+			system.Create( 1, Origin );
+			Run( system, 30 );
+			system.Snapshot( sprites );
+			Assert.IsTrue( sprites.Count >= 20 );
+			Assert.IsTrue( sprites.All( sprite => sprite.Y >= 0 ), "the emitter bounces on the plane the ground function reports (null: the stub's 0)" );
+		}
+		var raised = New( Pool( (1, bouncing) ), ground: ( x, z ) => 16 * 64 );
+		raised.Create( 1, (0, 2048, 0) );
+		Run( raised, 30 );
+		raised.Snapshot( sprites );
+		Assert.IsTrue( sprites.All( sprite => sprite.Y >= 64 ), "terrain at 64 (1/64 unit) keeps the particles above it" );
+		var falling = New( Pool( (1, free) ) );
+		falling.Create( 1, Origin );
+		Run( falling, 30 );
+		falling.Snapshot( sprites );
+		Assert.IsTrue( sprites.Any( sprite => sprite.Y < 0 ), "without the flag the emitter falls through" );
 	}
 
 	[TestMethod]
 	public void FinishedEmitterWaitsForItsParticlesAndThenFreesItsSlot()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 2 ), Burst( 3 ), Cap( 500 ), ParticleLife( 20 ) )) ) );
+		var system = New( Pool( (1, Template( Life( 2 ), Burst( 3 ), Cap( 500 ), ParticleLife( 20 ) )) ) );
 		system.Create( 1, Origin );
 		Run( system, 10 );
 		Assert.AreEqual( 1, system.LiveEmitters, "the emitter's life ended, its particles did not" );
@@ -443,7 +499,7 @@ public class ParticleSystemTests
 	public void ImmortalEmittersNeverEndUntilKilledAndKillSkipsTheDeathEffect()
 	{
 		var pool = Pool( (1, Template( Life( 0 ), Immortal(), Burst( 1 ), Cap( 500 ), ParticleLife( 5 ), (0x10, 2, 2) )), (2, Template( Life( 1 ), Burst( 1 ), ParticleLife( 5 ) )) );
-		var system = new ParticleSystem( pool );
+		var system = New( pool );
 		var handle = system.Create( 1, Origin );
 		Run( system, 200 );
 		Assert.IsTrue( system.IsAlive( handle ), "an immortal emitter ignores its life" );
@@ -458,7 +514,7 @@ public class ParticleSystemTests
 	public void EmitterDeathStartsItsDeathEffect()
 	{
 		var pool = Pool( (3, Template( Life( 3 ), Cap( 500 ), ParticleLife( 5 ), (0x10, 2, 60) )), (60, Template( Life( 6 ), Cap( 500 ), ParticleLife( 5 ), (0xB4, 2, 63) )), (63, Template( Life( 20 ), Cap( 1 ), ParticleLife( 5 ) )) );
-		var system = new ParticleSystem( pool );
+		var system = New( pool );
 		system.Create( 3, Origin );
 		CollectionAssert.AreEqual( new[] { 3 }, system.LiveEffects().ToArray() );
 		var seen = new List<int[]>();
@@ -478,7 +534,7 @@ public class ParticleSystemTests
 	{
 		var parent = Template( Life( 30 ), Cap( 500 ), ParticleLife( 5 ), (0xB4, 2, 2), (0xB8, 1, 1), (0x2C, 4, 64) );
 		var child = Template( Life( 30 ), Burst( 0 ), Cap( 500 ), Rates( 1, 1, 1, 1 ), ParticleLife( 1000 ) );
-		var system = new ParticleSystem( Pool( (1, parent), (2, child) ) );
+		var system = New( Pool( (1, parent), (2, child) ) );
 		system.Create( 1, Origin );
 		Run( system, 11 );
 		var sprites = new List<ParticleSprite>();
@@ -486,7 +542,7 @@ public class ParticleSystemTests
 		Assert.IsTrue( sprites.Count > 5 );
 		Assert.IsTrue( sprites.Max( sprite => sprite.X ) >= 64 * 5, "the child's particles are born where the moving parent is" );
 
-		var loose = new ParticleSystem( Pool( (1, Template( Life( 30 ), Cap( 500 ), ParticleLife( 5 ), (0xB4, 2, 2), (0x2C, 4, 64) )), (2, child) ) );
+		var loose = New( Pool( (1, Template( Life( 30 ), Cap( 500 ), ParticleLife( 5 ), (0xB4, 2, 2), (0x2C, 4, 64) )), (2, child) ) );
 		loose.Create( 1, Origin );
 		Run( loose, 11 );
 		loose.Snapshot( sprites );
@@ -496,7 +552,7 @@ public class ParticleSystemTests
 	[TestMethod]
 	public void SlotsRunOutAfterOneHundredTwentyEmittersAndComeBack()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 0 ), Immortal(), Cap( 500 ), ParticleLife( 5 ) )) ) );
+		var system = New( Pool( (1, Template( Life( 0 ), Immortal(), Cap( 500 ), ParticleLife( 5 ) )) ) );
 		var handles = Enumerable.Range( 0, ParticleSystem.EmitterSlots ).Select( _ => system.Create( 1, Origin ) ).ToArray();
 		Assert.IsTrue( handles.All( handle => handle >= 0 ) );
 		Assert.AreEqual( 120, system.LiveEmitters );
@@ -511,7 +567,7 @@ public class ParticleSystemTests
 	[TestMethod]
 	public void HugeBurstStopsAtTheFirstRefusal()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 3 ), Burst( int.MaxValue ), Cap( int.MaxValue ), ParticleLife( 1000 ) )) ), particleCount: 100 );
+		var system = New( Pool( (1, Template( Life( 3 ), Burst( 1000000 ), Cap( 30000 ), ParticleLife( 1000 ) )) ), particleCount: 100 );
 		var watch = System.Diagnostics.Stopwatch.StartNew();
 		Assert.IsTrue( system.Create( 1, Origin ) >= 0 );
 		Assert.AreEqual( 100, system.LiveParticles, "the burst fills the pool and stops" );
@@ -528,13 +584,13 @@ public class ParticleSystemTests
 	[TestMethod]
 	public void ParticlePoolExhaustionStopsEmissionWithoutFailing()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 3 ), Burst( 500 ), Cap( 500 ), Rates( 20, 20, 20, 20 ), ParticleLife( 1000 ) )) ), particleCount: 100 );
+		var system = New( Pool( (1, Template( Life( 3 ), Burst( 500 ), Cap( 500 ), Rates( 20, 20, 20, 20 ), ParticleLife( 1000 ) )) ), particleCount: 100 );
 		Assert.AreEqual( 100, system.Capacity, "the pool clamps to at least 100 particles" );
 		system.Create( 1, Origin );
 		Run( system, 5 );
 		Assert.AreEqual( 100, system.LiveParticles );
-		Assert.AreEqual( 100, new ParticleSystem( Pool(), particleCount: 5 ).Capacity );
-		Assert.AreEqual( 32767, new ParticleSystem( Pool(), particleCount: 99999 ).Capacity );
+		Assert.AreEqual( 100, New( Pool(), particleCount: 5 ).Capacity );
+		Assert.AreEqual( 32767, New( Pool(), particleCount: 99999 ).Capacity );
 	}
 
 	[TestMethod]
@@ -549,11 +605,11 @@ public class ParticleSystemTests
 			system.Snapshot( sprites );
 			return sprites;
 		}
-		var a = Play( new ParticleSystem( Pool( (1, Template( fields )) ) ) );
-		var b = Play( new ParticleSystem( Pool( (1, Template( fields )) ) ) );
+		var a = Play( New( Pool( (1, Template( fields )) ) ) );
+		var b = Play( New( Pool( (1, Template( fields )) ) ) );
 		Assert.IsTrue( a.Count > 10 );
 		CollectionAssert.AreEqual( a, b, "the same inputs give the same particles" );
-		var reused = new ParticleSystem( Pool( (1, Template( fields )) ) );
+		var reused = New( Pool( (1, Template( fields )) ) );
 		Play( reused );
 		Run( reused, 50 );
 		reused.Clear();
@@ -563,22 +619,25 @@ public class ParticleSystemTests
 	}
 
 	[TestMethod]
-	public void RadialBurstSpreadsEveryDirection()
+	public void RadialBurstIsHorizontalAndReplacesTheBaseVelocity()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 1 ), Burst( 200 ), Cap( 500 ), ParticleLife( 1000 ), (0x5C, 4, 37) )) ) );
+		// [BIN:TPW-EXE:0x520B8F] x = cos * (u % R) / 256, z = sin * (u % R) / 256, y = sar % R; the base velocity and its jitter are not added
+		var system = New( Pool( (1, Template( Life( 1 ), Burst( 200 ), Cap( 500 ), ParticleLife( 1000 ), (0x5C, 4, 37), (0x38, 4, 999), (0x50, 2, 5) )) ) );
 		system.Create( 1, Origin );
 		Run( system, 3 );
 		var sprites = new List<ParticleSprite>();
 		system.Snapshot( sprites );
 		Assert.AreEqual( 200, sprites.Count );
-		Assert.IsTrue( sprites.All( sprite => Math.Abs( Math.Sqrt( (double)sprite.X * sprite.X + (double)sprite.Y * sprite.Y + (double)sprite.Z * sprite.Z ) - 37 ) < 2.5 ), "speed 37 in every direction" );
-		Assert.IsTrue( sprites.Any( sprite => sprite.X > 20 ) && sprites.Any( sprite => sprite.X < -20 ) && sprites.Any( sprite => sprite.Y > 20 ) && sprites.Any( sprite => sprite.Y < -20 ) );
+		Assert.IsTrue( sprites.All( sprite => Math.Abs( sprite.X ) <= 36 && Math.Abs( sprite.Z ) <= 36 && Math.Abs( sprite.Y ) <= 36 ), "no base velocity of 999, every axis within R - 1" );
+		Assert.IsTrue( sprites.All( sprite => Math.Sqrt( (double)sprite.X * sprite.X + (double)sprite.Z * sprite.Z ) < 37 ), "the horizontal speed is u % R, below R" );
+		Assert.IsTrue( sprites.Any( sprite => sprite.X > 20 ) && sprites.Any( sprite => sprite.X < -20 ) && sprites.Any( sprite => sprite.Z > 20 ) && sprites.Any( sprite => sprite.Z < -20 ), "every horizontal direction" );
+		Assert.IsTrue( sprites.Any( sprite => sprite.Y > 20 ) && sprites.Any( sprite => sprite.Y < -20 ), "the vertical part is a signed draw" );
 	}
 
 	[TestMethod]
 	public void AdvanceRunsWholeThirtyOneMillisecondTicks()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 1000 ), Cap( 500 ), ParticleLife( 5 ) )) ) );
+		var system = New( Pool( (1, Template( Life( 1000 ), Cap( 500 ), ParticleLife( 5 ) )) ) );
 		system.Create( 1, Origin );
 		Assert.AreEqual( 0, system.Advance( 0.01f ) );
 		Assert.AreEqual( 0, system.Advance( float.NaN ) );
@@ -590,9 +649,11 @@ public class ParticleSystemTests
 	[TestMethod]
 	public void EmitterBoundsCoverTheLiveParticles()
 	{
-		var system = new ParticleSystem( Pool( (1, Template( Life( 1 ), Burst( 50 ), Cap( 500 ), ParticleLife( 1000 ), (0x44, 4, 100), (0x48, 4, 0), (0x4C, 4, 100) )) ) );
+		var system = New( Pool( (1, Template( Life( 1 ), Burst( 50 ), Cap( 500 ), ParticleLife( 1000 ), (0x44, 4, 100), (0x48, 4, 0), (0x4C, 4, 100) )) ) );
 		system.Create( 1, (1024, 1024, 1024) );
 		var bounds = new List<ParticleEmitterBounds>();
+		Assert.AreEqual( 0, system.CollectBounds( bounds ), "the bounds are rebuilt by the particle update, not by the spawn" );
+		Run( system, 2 );
 		Assert.AreEqual( 1, system.CollectBounds( bounds ) );
 		var sprites = new List<ParticleSprite>();
 		system.Snapshot( sprites );

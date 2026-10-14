@@ -2,6 +2,12 @@ namespace OpenTPW;
 
 public partial class Level
 {
+	/// <summary>Captures the level's particle pool for a park-resume save (set by the particle renderer module; null in headless hosts).</summary>
+	internal static Func<Level, ParticleSystemState?>? ParticlesCaptured { get; set; }
+
+	/// <summary>Rebuilds the saved particle pool in a resumed park (set by the particle renderer module; null in headless hosts).</summary>
+	internal static Action<Level, ParticleSystemState>? ParticlesResumed { get; set; }
+
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,
 		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null )
@@ -44,6 +50,7 @@ public partial class Level
 			Tracks = CaptureTracksSnapshot(),
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
+			Particles = ParticlesCaptured?.Invoke( this ),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
@@ -89,6 +96,9 @@ public partial class Level
 			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY );
 			Weather.RestoreSnapshot( snapshot.Weather );
 		}
+		// the particle pool's emitters and effectors (no particles), rebuilt by the renderer module when the host draws
+		if ( snapshot.Particles != null )
+			ParticlesResumed?.Invoke( this, snapshot.Particles );
 		if ( snapshot.Gate != null )
 			(Gate ?? throw new InvalidDataException( "The saved park gate is unavailable." )).RestoreSnapshot( snapshot.Gate );
 		if ( snapshot.Staff != null )

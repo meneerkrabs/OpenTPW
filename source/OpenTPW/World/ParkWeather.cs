@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// rain's target, lightning strikes count down and thunder follows a strike a few turns later. The sound side is
 /// reproduced, and the drops, snow and bolts are drawn by the CRain port (<see cref="WeatherRenderer"/>).
 /// </summary>
-// [APPROX:AUDIO-031] the forecast's warning is presented by an unverified OpenTPW approximation (AUDIO-905..907), and the drawn drops, snow and bolts follow the traced CRain with the approximations AUDIO-900..904 — evidence needed: the forecast's message handler
+// [EXT:forecast-presentation] the PC has no forecast message: event type 2 (the forecast, built by 0x40f240 and broadcast by 0x40fb10) has a single subscriber, the weather thing itself (0x511fa9/0x511fb8, handler 0x5127a0, which only schedules or applies), and no weather text exists in the Language tables, so the forecast banner, wording and cadence are OpenTPW's own (AUDIO-905..907 are extensions); the drawn drops, snow and bolts follow the traced CRain with the approximations AUDIO-900..904
 /// <remarks>
 /// The sim advances once per park turn (248 ms, <see cref="ParkCalendar.Turn"/>), and the day is the calendar's
 /// (<see cref="ParkCalendar.DayIndex"/>). The Mac binary's weather-tick gate is not located; the turn is the cadence
@@ -22,9 +22,10 @@ namespace OpenTPW;
 // [BIN:STP-PPC:0x10103438-0x1010346c thunder] a strike sets the thunder countdown to max(0, ThunderStartsThisFarAway − bolts) + rand % ThunderRandomiser when it is idle (bolts fired this period, before the strike)
 // [BIN:STP-PPC:0x101034c8-0x10103518 thunder at the top] the thunder plays at the last bolt's top (x, 300, z) when its countdown ends
 // [APPROX:AUDIO-025] December is row 4 of the season roll (0x101037D4, season = month / 3): its tolerance and chance are DaysOfWarning (+0x4B8) and DaysBetweenChanges (+0x4BC), confirmed; its average is the unnamed word at +0x4B4 between the Seasons array and DaysOfWarning, which only the .sam loader writes — 4 stands for it
-// [APPROX:AUDIO-026] the forecast's apply day is roll day + DaysOfWarning on the day index, and the roll is taken on the first turn of its day — evidence needed: the Mac's day comparison units ("now" against +0x20)
-// [APPROX:AUDIO-027] the first quality is rolled at park entry from the entry day's season and the drops start at 0 — evidence needed: the Mac's initial roll (not traced)
-// [APPROX:AUDIO-030] the random draws come from the park's weather stream, not the world LCG; the Mac's seed source is not traced
+// [BIN:TPW-EXE:0x51295c weather roll and apply] everything runs on game-clock timestamps (0x4f8690; the unit is 10^7 per second, 0x4f8770), not day indices: a roll happens when now >= lastChanged (+0x10) + max(0, DaysBetweenChanges - DaysOfWarning) days and no forecast is pending (flag +0x2c); the forecast handler (0x5127a0) stores the pending time now + DaysOfWarning days (+0x20), the quality (+0x28), the flag and mLastForecasted; the apply (now >= +0x20, unless mOverridden +0x64) runs the converter 0x512f00, which sets the quality and lastChanged = now (0x512f5b), and the same tick falls through to the roll test
+// [BIN:TPW-EXE:0x511f70 weather constructor] quality = the season's roll (0x512e10), lastChanged = 0, drops, target and lightning 0, wind 90/0.5; the converter 0x512f00 is not called, so the constructed quality has no effect (no rain or snow) and, because lastChanged is 0, the first update rolls a forecast at once, applied DaysOfWarning days later
+// [APPROX:AUDIO-026] the schedule runs on game seconds sampled at the park turn (ParkCalendar.Seconds), and "lastChanged = 0" is modelled by a first roll due at the first step (the park clock starts at 0, the original's is far past it); the PC's tick mapping (10^7 units per second against the park turn) is the residual
+// [EXT:weather-stream] the weather's random draws (roll, lightning and thunder countdowns) come from the park's own weather stream; the PC draws them from the world LCG 0x516330 (world +0x1da708 = ror13(s * 0x19660D + 0x3C6EF35F), the rotated value stored, |value| returned; seeded from time(NULL) at world creation 0x51586b, setter 0x516370), shared by about 139 call sites, so reproducing its draw order needs every user of that LCG (docs/DETERMINISM.md)
 public sealed class ParkWeather
 {
 	/// <summary>The height of a bolt's top (<c>FUN_00512c50</c> sky point, the fork's and the Mac's 300).</summary>
@@ -39,9 +40,11 @@ public sealed class ParkWeather
 	private bool started;
 	private long lastTurn;
 	private long lastChanged;
-	private long nextRollDay;
+	/// <summary>Game seconds (<see cref="ParkCalendar.Seconds"/>) from which the next forecast may be rolled (the original's lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days).</summary>
+	private long nextRollAt;
 	private int? pendingQuality;
-	private long applyDay;
+	/// <summary>Game seconds at which the pending forecast applies (the pending time +0x20: the roll's time + DaysOfWarning days).</summary>
+	private long applyAt;
 	private int lightningCountdown;
 	private int bolts;
 	private int thunderCountdown;
@@ -90,11 +93,11 @@ public sealed class ParkWeather
 		{
 			started = true;
 			lastTurn = turn;
-			var day = ParkCalendar.DayIndex( tick );
-			lastChanged = day;
-			CurrentDay = day;
-			ApplyQuality( Roll( tick ) );
-			nextRollDay = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning );
+			CurrentDay = ParkCalendar.DayIndex( tick );
+			// [BIN:TPW-EXE:0x511f70 weather constructor] the constructed quality is the season's roll but is never converted (no rain or snow), and lastChanged is 0, so the first update rolls a forecast at once
+			Quality = Roll( tick );
+			lastChanged = 0;
+			nextRollAt = 0;
 			return;
 		}
 		while ( lastTurn < turn )
@@ -108,7 +111,7 @@ public sealed class ParkWeather
 	public int? Forecast => pendingQuality;
 
 	/// <summary>The day the pending forecast applies on; valid while <see cref="Forecast"/> holds one.</summary>
-	internal long ForecastApplyDay => applyDay;
+	internal long ForecastApplyDay => applyAt / ParkCalendar.SecondsPerDay;
 
 	/// <summary>The day index the weather's schedule last stepped to (the forecast countdown's "now").</summary>
 	internal long CurrentDay { get; private set; }
@@ -138,7 +141,7 @@ public sealed class ParkWeather
 		if ( !started )
 			throw new InvalidOperationException( "The weather has not taken its first step, so a debug forecast has no day to apply on." );
 		pendingQuality = Math.Clamp( quality, 1, 100 );
-		applyDay = CurrentDay + settings.DaysOfWarning;
+		applyAt = lastTurn * ParkCalendar.SecondsPerTurn + settings.DaysOfWarning * ParkCalendar.SecondsPerDay;
 	}
 
 	/// <summary>Takes the bolt tops whose thunder has come due since the last call (the frame plays them).</summary>
@@ -184,11 +187,13 @@ public sealed class ParkWeather
 		public required ulong RandomState { get; init; }
 		public required bool Started { get; init; }
 		public required long LastTurn { get; init; }
+		/// <summary>Game seconds of the last applied change (0 until the first forecast applies; the schedule is in game seconds, saves from before it held day indices).</summary>
 		public required long LastChanged { get; init; }
+		/// <summary>Game seconds from which the next forecast may be rolled (0: at the first step).</summary>
 		public required long NextRollDay { get; init; }
 		/// <summary>The forecast's rolled quality, null while none is pending (<see cref="Forecast"/>).</summary>
 		public int? PendingQuality { get; init; }
-		/// <summary>The day the pending quality applies on; 0 while none is pending.</summary>
+		/// <summary>The game second the pending quality applies at; 0 while none is pending.</summary>
 		public required long ApplyDay { get; init; }
 		public required int Quality { get; init; }
 		public required bool Snow { get; init; }
@@ -213,9 +218,9 @@ public sealed class ParkWeather
 		Started = started,
 		LastTurn = lastTurn,
 		LastChanged = lastChanged,
-		NextRollDay = nextRollDay,
+		NextRollDay = nextRollAt,
 		PendingQuality = pendingQuality,
-		ApplyDay = applyDay,
+		ApplyDay = applyAt,
 		Quality = Quality,
 		Snow = Snow,
 		Rain = Rain,
@@ -286,9 +291,9 @@ public sealed class ParkWeather
 		// on the first frame, before the next turn (248 ms) steps the day.
 		CurrentDay = ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( snapshot.LastTurn ) );
 		lastChanged = snapshot.LastChanged;
-		nextRollDay = snapshot.NextRollDay;
+		nextRollAt = snapshot.NextRollDay;
 		pendingQuality = snapshot.PendingQuality;
-		applyDay = snapshot.ApplyDay;
+		applyAt = snapshot.ApplyDay;
 		Quality = snapshot.Quality;
 		Snow = snapshot.Snow;
 		Rain = snapshot.Rain;
@@ -308,19 +313,21 @@ public sealed class ParkWeather
 
 	internal void Step( long tick )
 	{
-		var day = ParkCalendar.DayIndex( tick );
-		CurrentDay = day;
-		if ( pendingQuality is int next && day >= applyDay )
+		var now = ParkCalendar.Seconds( tick );
+		CurrentDay = ParkCalendar.DayIndex( tick );
+		// [BIN:TPW-EXE:0x5128a0 weather apply] a pending forecast applies once now reaches its time: the converter sets the quality and lastChanged = now
+		if ( pendingQuality is int next && now >= applyAt )
 		{
 			pendingQuality = null;
-			lastChanged = day;
+			lastChanged = now;
 			ApplyQuality( next );
-			nextRollDay = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning );
+			nextRollAt = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning ) * ParkCalendar.SecondsPerDay;
 		}
-		else if ( pendingQuality == null && day >= nextRollDay )
+		// [BIN:TPW-EXE:0x51295c weather roll] with no forecast pending (also in the tick that just applied one) the roll is due at lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days
+		if ( pendingQuality == null && now >= nextRollAt )
 		{
 			pendingQuality = Roll( tick );
-			applyDay = day + settings.DaysOfWarning;
+			applyAt = now + settings.DaysOfWarning * ParkCalendar.SecondsPerDay;
 		}
 		Ramp();
 		Bolts();

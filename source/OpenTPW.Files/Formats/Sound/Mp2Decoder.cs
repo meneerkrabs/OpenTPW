@@ -137,15 +137,17 @@ public static partial class Mp2Decoder
 				if ( frames == 0 )
 				{
 					(sampleRate, channels, layer, emphasis) = (header.SampleRate, header.Channels, header.Layer, header.Emphasis);
+					// [EXT:mpeg-deemphasis] de-emphasis of a stream that signals it is an OpenTPW decoder choice (a first-order bilinear shelf of the published 50/15 us and J.17 curves): every shipped frame (411,333 Layer I/II frames in all .sdt banks) has emphasis 0, so the original's decoder (not located) cannot be observed with shipped data
 					if ( emphasis != 0 )
 						deEmphasis = new DeEmphasis( emphasis, sampleRate );
 				}
 				else if ( header.SampleRate != sampleRate || header.Channels != channels || header.Layer != layer || header.Emphasis != emphasis )
 					throw new NotSupportedException( $"MP2 frame {frames} changes sample rate, channel count, layer or emphasis." );
+				// [EXT:mpeg-crc] a failed frame CRC is counted while the frame still decodes (an OpenTPW decoder robustness choice): every shipped frame has protection_bit 1 (no CRC word)
 				if ( header.Crc )
 				{
 					crcChecks++;
-					// [APPROX:AUDIO-014] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
+					// [EXT:mpeg-crc-policy] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
 					// recommends concealment (muting or repeating), and no shipped TPW frame carries a CRC word — evidence
 					// needed: the original player's behaviour on a failed frame CRC
 					if ( !VerifyCrc( data.Slice( offset, header.FrameBytes ), header ) )
@@ -357,7 +359,7 @@ public static partial class Mp2Decoder
 	/// frequencies). The network's absolute 18.75 dB pad cancels in the encoder/decoder
 	/// round trip, so both curves are realized at unity gain at DC.
 	/// </summary>
-	// [APPROX:AUDIO-013] the standards specify only the analogue de-emphasis characteristic; this realization is the
+	// [EXT:mpeg-deemphasis-filter] the standards specify only the analogue de-emphasis characteristic; this realization is the
 	// bilinear transform of the first-order shelf at the stream's sample rate, J.17 normalized to unity DC gain —
 	// evidence needed: the original decoder's filter realization or an emphasised original stream
 	private sealed class DeEmphasis

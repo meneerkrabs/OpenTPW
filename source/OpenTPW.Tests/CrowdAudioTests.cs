@@ -184,10 +184,10 @@ public class CrowdAudioTests
 			Assert.AreEqual( 1, mixer.Voices.Count( voice => !voice.IsFinished ) );
 		} );
 		Assert.IsTrue( sequence.Select( item => item.Sample ).Distinct().Count() > 2,
-			"the frozen global draw previously alternated only two clips from a seven-clip section" );
+			"the shared advancing chooser varies the clips of a seven-clip section" );
 		for ( var index = 1; index < sequence.Length; index++ )
 			Assert.AreNotEqual( sequence[index - 1], sequence[index], "catalogue anti-repeat still applies" );
-		Assert.AreEqual( 11u, system.Seed, "presentation sample selection leaves the traced global chooser frozen" );
+		Assert.AreNotEqual( 11u, system.Seed, "[BIN:TPW-EXE:0x6bc6ce] the crowd's sample draws advance the one shared chooser" );
 		GameAudio.SetCrowd( 0 );
 		Assert.IsNull( GameAudio.Crowd );
 		Assert.IsTrue( sentence.IsStopped );
@@ -197,13 +197,13 @@ public class CrowdAudioTests
 	}
 
 	[TestMethod]
-	public void TheUnchangedGlobalSentenceChooserStillAlternatesOnlyTwoClips()
+	public void ASentenceStartedWithoutACallbackDrawsFromTheSameSharedChooser()
 	{
 		var sentence = system.StartSentence( kids, GameAudio.CrowdEvent, AudioChannel.Effects )!;
 		sentence.Parameter = 12;
 		var sequence = ReadSequence( sentence, 32 );
-		Assert.AreEqual( 2, sequence.Select( item => item.Sample ).Distinct().Count() );
-		Assert.AreEqual( 11u, system.Seed );
+		Assert.IsTrue( sequence.Select( item => item.Sample ).Distinct().Count() > 2 );
+		Assert.AreNotEqual( 11u, system.Seed );
 		sentence.Stop();
 	}
 
@@ -214,9 +214,7 @@ public class CrowdAudioTests
 		{
 			GameAudio.EnterPark( "missing", seed );
 			GameAudio.SetCrowd( 12 );
-			var sequence = ReadSequence( GameAudio.Crowd!, 32 );
-			Assert.AreEqual( seed, system.Seed );
-			return sequence;
+			return ReadSequence( GameAudio.Crowd!, 32 );
 		}
 		var first = Run( 11 );
 		CollectionAssert.AreEqual( first, Run( 11 ) );
@@ -229,18 +227,14 @@ public class CrowdAudioTests
 		GameAudio.EnterPark( "missing", seed: 11 );
 		GameAudio.SetCrowd( 12 );
 		ReadSequence( GameAudio.Crowd!, 8 );
-		var random = (DeterministicRandom)typeof( GameAudio ).GetField( "crowdRandom", BindingFlags.NonPublic | BindingFlags.Static )!.GetValue( null )!;
-		var state = random.State;
+		var state = system.Seed;
+		Assert.AreNotEqual( 11u, state );
 		GameAudio.SetCrowd( 0 );
-		Assert.AreEqual( state, random.State, "walking away does not consume or reset choices" );
+		Assert.AreEqual( state, system.Seed, "walking away does not consume or reset choices" );
 		mixer.Mix( 1 );
 		GameAudio.SetCrowd( 12 );
-		Assert.AreSame( random, typeof( GameAudio ).GetField( "crowdRandom", BindingFlags.NonPublic | BindingFlags.Static )!.GetValue( null ) );
-		var reference = new DeterministicRandom( state );
-		reference.Next( 1 << 16 );
-		Assert.AreEqual( reference.State, random.State, "restart takes the next sample draw from the retained state" );
+		Assert.AreNotEqual( state, system.Seed, "restart takes its draws from the retained shared state" );
 		ReadSequence( GameAudio.Crowd!, 8 );
-		Assert.AreEqual( 11u, system.Seed );
 	}
 
 	[TestMethod]
@@ -262,7 +256,6 @@ public class CrowdAudioTests
 		CollectionAssert.AreEqual( original, varied, "only the clip within each selected section changes" );
 		Assert.AreEqual( (0, 0.6f), varied[0] );
 		Assert.IsTrue( varied.Skip( 1 ).All( item => item == (1, 0.8f) ) );
-		Assert.AreEqual( 11u, system.Seed );
 	}
 
 	[TestMethod]
@@ -352,12 +345,14 @@ public class CrowdAudioTests
 	[TestMethod]
 	public void UnmatchedVolumeParametersPreserveTheFrozenRandomFallbackAndFirstMaskWins()
 	{
+		// the fallback is the advancing random draw, so each pair starts from the same chooser state
+		int Fresh( SoundEntry sound, byte? code = null, int parameter = 0 ) { system.Reseed( 11 ); return system.Volume( sound, code, parameter ); }
 		foreach ( var sound in new[] { VolumeSound( 14, 22, 19, 1 ), VolumeSound( 14, 22, 7, 2 ),
 			VolumeSound( 14, 22, 19, 1, 7, 1 ), VolumeSound( 14, 22, 0, 0, 7, 2 ) } )
-			Assert.AreEqual( system.Volume( sound ), system.Volume( sound, 7, 100 ), "an unrelated selector or pitch-only mask does not change volume" );
+			Assert.AreEqual( Fresh( sound ), Fresh( sound, 7, 100 ), "an unrelated selector or pitch-only mask does not change volume" );
 		var matching = VolumeSound( 14, 22, 7, 1 );
-		Assert.AreEqual( system.Volume( matching ), system.Volume( matching, null, 100 ), "unwired sentence codes preserve existing volume" );
-		Assert.AreEqual( system.Volume( matching ), system.Volume( matching with { Raw = Array.Empty<byte>() }, 7, 100 ) );
+		Assert.AreEqual( Fresh( matching ), Fresh( matching, null, 100 ), "unwired sentence codes preserve existing volume" );
+		Assert.AreEqual( Fresh( matching ), Fresh( matching with { Raw = Array.Empty<byte>() }, 7, 100 ) );
 	}
 
 	[TestMethod]

@@ -22,6 +22,8 @@ public readonly record struct ParticleKeyResult( ParticleKeyStatus Status, int A
 public sealed class ParticleKeyResolver
 {
 	public const uint EventSelector = 0x100;
+	/// <summary>The selector an EVENT sound's key is looked up with (tp.exe <c>0x556b90</c> passes 0x200 to <c>0x44b220</c>); particles use <see cref="EventSelector"/>.</summary>
+	public const uint SoundSelector = 0x200;
 	public const float NativeDirectionMultiplier = 1024f;
 	private readonly ModelFile model;
 
@@ -35,7 +37,7 @@ public sealed class ParticleKeyResolver
 
 	/// <summary>Resolve against the caller's current model-space hierarchy matrices (ObjectAnimator.NodeTransforms),
 	/// or explicitly supplied bind matrices. The resolver neither advances animation nor reads a camera.
-	/// Only selector 0x100 is qualified for particles. Negative keys require the unqualified native box/height fallback.
+	/// Selector 0x100 is qualified for particles and 0x200 for sounds. Negative keys require the unqualified native box/height fallback.
 	/// No extra position offset is inferred from the optional native output direction pointer.</summary>
 	// [BIN:STP-PPC:0x1019B298 model key lookup] matches attribute Value and selector mask; first matching entry wins
 	// [BIN:STP-PPC:0x1019AE64 lookup construction] entry i selects header word +0x46 plus i; +0x44 selects mesh versus dummy records
@@ -46,7 +48,7 @@ public sealed class ParticleKeyResolver
 	{
 		ArgumentNullException.ThrowIfNull( nodeTransforms );
 		ParticleKeyResult Refuse( ParticleKeyStatus status, int attribute = -1, int node = -1 ) => new( status, attribute, node, null, null );
-		if ( selector != EventSelector )
+		if ( selector != EventSelector && selector != SoundSelector )
 			return Refuse( ParticleKeyStatus.UnsupportedSelector );
 		if ( key < 0 )
 			return Refuse( ParticleKeyStatus.UnsupportedFallback );

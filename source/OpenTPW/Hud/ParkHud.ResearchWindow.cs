@@ -49,8 +49,7 @@ public sealed partial class ParkHud
 		researchScreen ??= CreateResearchScreen();
 		Stack.Push( researchScreen );
 		researchScreen.Focus( researchScreen.Find( "exit" ) );
-		// [BIN:STP-PPC:0x1015644C drawer message 0x0b] opening the map/research drawer plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)')
-		// [APPROX:AUDIO-007] the sound plays when the research window opens; the original slides a drawer out of the main panel
+		// [BIN:TPW-EXE:0x4a1737 drawer open] opening the map/research drawer (message 0xA) plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)')
 		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
 	}
 
@@ -62,9 +61,9 @@ public sealed partial class ParkHud
 			Stack.Pop();
 		if ( Stack.Top == researchScreen )
 			Stack.Pop();
-		// [BIN:STP-PPC:0x1015644C drawer message 0x10] finishing the drawer's collapse plays cat_ui event 0xC2 (through the play-by-id helper 0x101383F8 at 0x101568DC)
-		// [APPROX:AUDIO-007] the sound plays when the research window closes; the original slides a drawer back into the main panel
-		GameAudio.PlayUi( GameAudio.DrawerCloseEvent );
+		// [BIN:TPW-EXE:0x4a186f drawer close] a close plays cat_ui 0x1C when it starts and 0xC2 when the slide finishes (0x4a1947); OpenTPW has no slide, so both play at once
+		// [EXT:drawer-window] the research screen is a window that opens and closes at once where the original slides a drawer out of the main panel (docs/AUDIO.md; UI register)
+		GameAudio.PlayDrawerClose();
 	}
 
 	private string ResearchItemName( ResearchCategory category )

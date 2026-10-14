@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// so pause, park end and reload follow the weather's own state. The banner is an OpenTPW presentation
 /// (AUDIO-905): the original's forecast message handler is not traced.
 /// </summary>
-// [APPROX:AUDIO-905] the forecast shows as a banner line at the top centre, drawn in the overlay pass with the original GAME8AA BF4 font above every screen (the chat overlay's channel); which surface the original warned on is unknown — evidence needed: the original's forecast message handler
+// [EXT:forecast-banner] the forecast shows as a banner line at the top centre, drawn in the overlay pass with the original GAME8AA BF4 font above every screen (the chat overlay's channel); which surface the original warned on is unknown — evidence needed: the original's forecast message handler
 public sealed class WeatherForecastPresenter : Entity
 {
 	/// <summary>Upper bound of one step's delta, so a hitch after a stall cannot jump the transient line's clock.</summary>

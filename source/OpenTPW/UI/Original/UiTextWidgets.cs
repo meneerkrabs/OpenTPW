@@ -133,8 +133,11 @@ public sealed class UiScrollList : UiElement, IUiRowList
 
 	public override void Activate()
 	{
-		if ( Selected >= 0 && Selected < Rows().Count )
-			RowActivated?.Invoke( Selected );
+		if ( Selected < 0 || Selected >= Rows().Count )
+			return;
+		// [BIN:TPW-EXE:0x485780 UI message hook] a row activation is a control message like any other, so it clicks
+		GameAudio.PlayUi( GameAudio.ClickEvent );
+		RowActivated?.Invoke( Selected );
 	}
 
 	/// <summary>Row index under <paramref name="point"/> (framebuffer pixels), or -1.</summary>

@@ -54,6 +54,15 @@ public sealed class CoasterPylonControl
 	/// <summary>Pylon mesh height at loft parameter t = 0 and t = 1 (+188/+192).</summary>
 	public float MeshHeightLow { get; internal set; }
 	public float MeshHeightHigh { get; internal set; }
+	/// <summary>How far above the track dummy of the pylon below the next pylon of a stack stands (+0xc4).</summary>
+	public float StackOffset { get; internal set; }
+	/// <summary>The loft clip's mapping of the height parameter (+0xd0..+0xdc): clip fraction = clamp(t · Multiplier + Add, StartCap, EndCap).</summary>
+	public float LoftStartCap { get; internal set; }
+	public float LoftEndCap { get; internal set; } = 1;
+	public float LoftMultiplier { get; internal set; } = 1;
+	public float LoftAdd { get; internal set; }
+	/// <summary>Whether the pylon model has set the mesh heights, the stack offset and the raised minimum (<see cref="CoasterDefinition.ApplyPylonModel"/>).</summary>
+	public bool HasModelHeights { get; internal set; }
 
 	public bool IsLoop => (Flags & CoasterPylonFlags.Loop) != 0;
 	public bool IsTrough => (Flags & CoasterPylonFlags.Trough) != 0;
@@ -68,7 +77,7 @@ public sealed class CoasterPylonControl
 /// unconditionally (absent = 0). No PC <c>.sam</c> sets a motion, distance, angle or rating key, so the PC game
 /// runs on these defaults.
 /// </summary>
-// [APPROX:COAST-014] the coaster rules are traced in the Mac PowerPC binary and their Windows twins in tp.exe (TPW-EXE) agree for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330), the mode setter 0x435730, the speed setter 0x43b2b0, the guest predicates, the excitement to guests and the debit 0x4d01f0; differences: COAST 6's literal 0 floor (the Mac reading takes a global) and the x87 lookup-table trigonometry of the swing; the validator, cost, curve sampler and hop are not compared — evidence needed: those routines in tp.exe
+// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 and the hop 0x43ce20; the differences are COAST 6's literal 0 floor (the Mac reading takes a global), the round-to-nearest sine-table indices (fistp) of the PC where the Mac and C# truncate (the swing uses the PC rule; the validator's and curve's Mac tables truncate), x87 arithmetic, the three-node station (COAST-029) and the creation parameters of the end node; the cost routine 0x447830 is not compared — evidence needed: 0x447830 against the Mac cost 0x1004B168
 public sealed class CoasterDefinition
 {
 	/// <summary><c>Bumper.WhichTrackType</c> of a coaster (<c>0xe2fe4</c>: type record +156 == 3).</summary>
@@ -105,6 +114,12 @@ public sealed class CoasterDefinition
 	public float ForceMultiplier { get; private set; } = 0.2f;
 	public float InitialPylonLoftHeight { get; private set; } = 10f;
 	public int MaxTrains { get; private set; } = 1;
+	/// <summary>
+	/// <c>fEntranceSizeInterval</c> (definition <c>+796</c> = <c>+0x31c</c>): copied unconditionally, so 0 when the settings do not
+	/// name it. The station window narrows toward its middle by this fraction (<c>0x43b750</c>).
+	/// </summary>
+	// [BIN:STP-PPC:0x1002FFB0 entrance interval] definition +796 ← settings 15220, unconditional; [BIN:TPW-EXE:0x42f717] definition +0x31c ← settings +0x3b74, unconditional; read only by the station window 0x43b750
+	public float EntranceSizeInterval { get; private set; }
 	/// <summary>Minimum headway between trains in milliseconds.</summary>
 	public int TrainReleaseRate { get; private set; } = 15000;
 	public float InitialSickness { get; private set; }
@@ -200,7 +215,7 @@ public sealed class CoasterDefinition
 		return pylon;
 	}
 
-	// [APPROX:COAST-015] the pylon mesh heights at loft t = 0 and t = 1 (+188/+192) are taken as fMinHeight and fMaxHeight; the original reads them from the pylon MD2 loft animation — evidence needed: the loft animation reader that fills pylon +188/+192
+	// [APPROX:COAST-015] without the pylon model (no game data) the pylon mesh heights at loft t = 0 and t = 1 (+188/+192) are taken as fMinHeight and fMaxHeight; ApplyPylonModel replaces them with the model's track dummy heights h0 and h1 when the model is read
 	private static void SetMeshHeights( CoasterPylonControl pylon )
 	{
 		pylon.MeshHeightLow = pylon.MinHeight;
@@ -221,6 +236,46 @@ public sealed class CoasterDefinition
 	/// an entry without shared files (synthetic ones) falls back to its object settings.
 	/// </summary>
 	public static CoasterDefinition FromEntry( ObjectCatalogEntry entry ) => FromSettings( entry.CoasterSettings );
+
+	/// <summary>
+	/// The definition of a catalogue coaster with its pylon models read: the settings over the defaults, then each pylon's mesh heights h0 and h1, its
+	/// raised minimum and its stack offset from the model (<c>0x42fad0</c> → <c>0x430590</c>). A pylon model the archive lacks keeps the settings' heights.
+	/// </summary>
+	public static CoasterDefinition FromCatalogEntry( ObjectCatalogEntry entry )
+	{
+		ArgumentNullException.ThrowIfNull( entry );
+		var definition = FromEntry( entry );
+		using var assets = new CoasterAssets( entry, definition );
+		foreach ( var loop in new[] { false, true } )
+		{
+			if ( !loop || definition.HasLoopPylon )
+			{
+				if ( assets.GetPylon( loop ) is { } rig )
+					definition.ApplyPylonModel( loop, rig );
+			}
+		}
+		return definition;
+	}
+
+	/// <summary>
+	/// Takes a pylon's heights from its model (<c>0x430590</c>): h0 and h1 are the track dummy's heights at the two loft poses, fMinHeight is raised to h0
+	/// when it is below, and the stack offset is the stack dummy's height above h0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4309a4 pylon heights] pylon +0xbc = h0, +0xc0 = h1, +0x68 (fMinHeight) = max(fMinHeight, h0) (0x4309a4..0x4309bb), +0xc4 = stack dummy Y − h0 or 0
+	internal void ApplyPylonModel( bool loop, CoasterPylonRig rig )
+	{
+		// The original applies h0 and h1 as they come (0x4309a4 has no guard on h1 <= h0, and a missing dummy reads the constant 0 at 0x6fde74).
+		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip (the Gorilla coaster 3180's loop pylon, h0 = h1 =
+		// 9.47, below its own raised minimum 10) and keeps the settings' heights: with h1 <= h0 every node of that pylon would stand at h0.
+		if ( rig.TagNode < 0 || rig.TagHigh <= rig.TagLow )
+			return;
+		var pylon = Pylon( loop );
+		pylon.MeshHeightLow = rig.TagLow;
+		pylon.MeshHeightHigh = rig.TagHigh;
+		pylon.MinHeight = MathF.Max( pylon.MinHeight, rig.TagLow );
+		pylon.StackOffset = rig.StackOffset;
+		pylon.HasModelHeights = true;
+	}
 
 	/// <summary>
 	/// Builds the definition from the (layered) settings keys: <c>sCoasterType.*</c>, <c>sTrainType.*</c> and
@@ -253,6 +308,7 @@ public sealed class CoasterDefinition
 		definition.ForceMultiplier = Float( Coaster + "fForceMultiplier", definition.ForceMultiplier );
 		definition.InitialPylonLoftHeight = Float( Coaster + "fInitialPylonLoftHeight", definition.InitialPylonLoftHeight );
 		definition.MaxTrains = Int( Coaster + "uiMaxTrains", definition.MaxTrains );
+		definition.EntranceSizeInterval = TryFloat( values, Coaster + "fEntranceSizeInterval", out var entranceInterval ) ? entranceInterval : 0f;
 		definition.TrainReleaseRate = Int( Coaster + "uiTrainReleaseRate", definition.TrainReleaseRate );
 		definition.InitialSickness = Float( Coaster + "fInitialSickness", definition.InitialSickness );
 		definition.InitialExcitement = Float( Coaster + "fInitialExcitement", definition.InitialExcitement );
@@ -324,6 +380,11 @@ public sealed class CoasterDefinition
 		pylon.MaxHeight = Float( "fMaxHeight", pylon.MaxHeight );
 		pylon.MaxStackedPylons = Int( "uiMaxStackedPylons", pylon.MaxStackedPylons );
 		pylon.CollisionPossibleRadius = Float( "fCollisionPossibleRadius", pylon.CollisionPossibleRadius );
+		// [BIN:TPW-EXE:0x42ef05 loft keys] pylon +0xd0 = fLoftAnimStartCap, +0xd4 = fLoftAnimEndCap, +0xd8 = fLoftAnimMultiplier, +0xdc = fLoftAnimAdd, each copied from the settings (+0x3914..+0x3920) when nonzero; no PC coaster.sam sets them, so the defaults 0, 1, 1, 0 stand
+		pylon.LoftStartCap = Float( "fLoftAnimStartCap", pylon.LoftStartCap );
+		pylon.LoftEndCap = Float( "fLoftAnimEndCap", pylon.LoftEndCap );
+		pylon.LoftMultiplier = Float( "fLoftAnimMultiplier", pylon.LoftMultiplier );
+		pylon.LoftAdd = Float( "fLoftAnimAdd", pylon.LoftAdd );
 		pylon.StraightDotThreshold = Float( "fPylonStraightDotThreshold", pylon.StraightDotThreshold );
 		pylon.CostPerUnit = Rate( "fCostPerUnit" );
 		pylon.CostPer2DLength = Rate( "fCostPer2DLength" );

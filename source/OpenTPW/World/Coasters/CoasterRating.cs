@@ -262,7 +262,11 @@ public sealed class CoasterRating
 			samples[^1].Force = samples[^2].Force;
 		}
 		if ( definition.IsSuspended && count > 0 )
-			Swing( definition, samples, CoasterRide.BrakingStartFor( count, samples[CoasterRide.BrakingSpeedSample( samples, tailSection ?? samples.Max( sample => sample.Section ) )].Speed, spacing ) );
+		{
+			var tail = tailSection ?? samples.Max( sample => sample.Section );
+			var platform = CoasterRide.PlatformStartSample( samples, tail );
+			Swing( definition, samples, CoasterRide.BrakingStartFor( platform, samples[CoasterRide.BrakingSpeedSample( samples, tail )].Speed, spacing ), platform );
+		}
 		var (sickness, excitement) = rating.Final();
 		var trains = TrainCount( lap, definition.TrainReleaseRate, definition.MaxTrains );
 		return (new CoasterRatingResult( sickness, excitement, 0, count * spacing, maxHeight, maxSpeed, lap, trains ), winch);
@@ -274,10 +278,11 @@ public sealed class CoasterRating
 
 	/// <summary>The suspended cars' swing: each sample's roll follows the force plus gravity in the sample frame, fading over the braking zone.</summary>
 	// [BIN:TPW-EXE:0x43c76c suspended swing] (0x43c76c..0x43ca45, definition flag 0x8, sample stride 0x38) per sample with prev starting at π: F = sample force (+0x20..+0x28) + definition gravity (+0x60..+0x68); F is rotated into the sample frame by the angles −yaw (+0x10, X/Z), −pitch (+0x14, Y/Z) and −old roll (+0x18, X/Y) through the runtime sine table (0x7b0968, mask 0x7b0960, scale 0x7b095c); θ = atan2(−X, Y) (0x46f230); d = fmod(θ − prev + 3π, 2π) − π; rate = min(|F′|·definition +0x6C fForceMultiplier, 1); w = fmod(prev + d·rate + 3π, 2π) − π; roll = w − π (+2π when below −π); past the braking start (controller +0x134, computed just before from the tail node's sample) roll ×= 1 − clamp((i − b)/(n − b), 0, 1); prev = w. The Mac rule (0x100400D8..0x10040438) is the same restated; COAST-018 narrowed
-	// [APPROX:COAST-018] the sine table of the swing is libm (double sin/cos) instead of the runtime table (index = round(scale·angle) & mask, whose size and scale are initialised at run time and not traced), and the x87 intermediates (80-bit) are single or double rounded here — evidence needed: the table initialisation behind 0x7b095c/0x7b0960/0x7b0968 and an x87 capture; the rotation order and signs are read from the instructions
-	private static void Swing( CoasterDefinition definition, CoasterSample[] samples, float brakingStart )
+	// [BIN:TPW-EXE:0x4708d0 swing table] the runtime table is 4096 entries T[k] = f32(fsin(k/4096 · f32(2π))) with scale f32(4096 · f32(1/2π)) and mask 4095 (CoasterTrig.PcSin/PcCos); the index is fistp of the scaled angle, rounded to nearest even (0x43c7be..0x43c7cd, 0x43c7d0..0x43c7e5)
+	// [APPROX:COAST-032] the x87 intermediates of the rotation (80-bit, stored as single at 0x43c816, 0x43c824 and the like) are carried in double here and rounded to single where the original stores; the control word (precision control) at run time is not captured — evidence needed: the FPU control word of a running tp.exe or an x87-exact oracle of 0x43c450
+	private static void Swing( CoasterDefinition definition, CoasterSample[] samples, float brakingStart, float totalSamples )
 	{
-		var total = (float)samples.Length;
+		var total = totalSamples;
 		var previous = MathF.PI;
 		for ( var index = 0; index < samples.Length; index++ )
 		{
@@ -285,14 +290,14 @@ public sealed class CoasterRating
 			var x = sample.Force.X + definition.GravityX;
 			var y = sample.Force.Y + definition.GravityY;
 			var z = sample.Force.Z + definition.GravityZ;
-			var sin = Math.Sin( -(double)sample.Yaw );
-			var cos = Math.Cos( -(double)sample.Yaw );
+			double sin = CoasterTrig.PcSin( -sample.Yaw );
+			double cos = CoasterTrig.PcCos( -sample.Yaw );
 			(x, z) = ((float)(sin * z + cos * x), (float)(cos * z - sin * x));
-			sin = Math.Sin( -(double)sample.Pitch );
-			cos = Math.Cos( -(double)sample.Pitch );
+			sin = CoasterTrig.PcSin( -sample.Pitch );
+			cos = CoasterTrig.PcCos( -sample.Pitch );
 			(y, z) = ((float)(cos * y - sin * z), (float)(sin * y + cos * z));
-			sin = Math.Sin( -(double)sample.Bank );
-			cos = Math.Cos( -(double)sample.Bank );
+			sin = CoasterTrig.PcSin( -sample.Bank );
+			cos = CoasterTrig.PcCos( -sample.Bank );
 			(x, y) = ((float)(cos * x - sin * y), (float)(sin * x + cos * y));
 			var target = (float)Math.Atan2( -x, y );
 			var difference = (float)(((target - (double)previous + ThreePi) % TwoPiDouble) - MathF.PI);

@@ -13,6 +13,19 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class CoasterPresentationTests
 {
+	/// <summary>The scrolling textures move by the power factor × elapsed seconds (0x435adf..0x435b20): the same shift for every scrolling texture, wrapped, stopped by a breakdown.</summary>
+	[TestMethod]
+	public void ScrollingTexturesAdvanceByThePowerFactorTimesElapsedTime()
+	{
+		var phase = 0f;
+		for ( var frame = 0; frame < 3; frame++ )
+			phase = CoasterRenderer.AdvanceScroll( phase, 1f, 0.25f );
+		Assert.AreEqual( 0.75f, phase, 1e-6f );
+		Assert.AreEqual( 0.25f, CoasterRenderer.AdvanceScroll( phase, 1f, 0.5f ), 1e-6f, "wraps above 1" );
+		Assert.AreEqual( phase, CoasterRenderer.AdvanceScroll( phase, 0f, 10f ), "mode 64: the power factor is 0 and the texture stands still" );
+		Assert.AreEqual( 0.6f, CoasterRenderer.AdvanceScroll( 0.5f, 0.5f, 0.2f ), 1e-6f );
+	}
+
 	[TestInitialize]
 	public void Init() => Log = new();
 

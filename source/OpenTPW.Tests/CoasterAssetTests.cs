@@ -57,6 +57,7 @@ public class CoasterAssetTests
 			Assert.AreEqual( (10f, 100f), (definition.StandardPylon.MinHeight, definition.StandardPylon.MaxHeight), $"{id} heights" );
 			Assert.IsTrue( definition.StandardPylon.MaxStackedPylons is 3 or 4, $"{id} stack" );
 			Assert.AreEqual( 5f, definition.WinchSpeed, "no PC coaster sets a motion key besides the flumes' acceleration and friction" );
+			Assert.AreEqual( 0f, definition.EntranceSizeInterval, $"{id}: no PC coaster.sam names fEntranceSizeInterval, so the station window is the full span (copied unconditionally, 0x42f717)" );
 			Assert.AreEqual( 3, definition.StandardPylon.MinPlaceDistance );
 			Assert.AreEqual( 8, definition.StandardPylon.MaxPlaceDistance );
 			if ( definition.HasLoopPylon )
@@ -68,6 +69,65 @@ public class CoasterAssetTests
 		Assert.AreEqual( (1.5f, 0.8f, 6, 30000, 4), (temple.AccelerationPerHeight, temple.FrictionMultiplier, temple.MaxTrains, temple.TrainReleaseRate, temple.MaxCars) );
 		Assert.AreEqual( 10000, coasters[1180].BuildCost, "the station price" );
 		Assert.AreEqual( 12500, coasters[1190].BuildCost );
+	}
+
+	/// <summary>
+	/// The pylon heights come from the pylon models (<c>0x430590</c>): h0 and h1 are the heights of the track dummy the model's attribute record names,
+	/// fMinHeight is raised to h0, and the stack offset is the stack dummy's height above h0 (non-zero for two of the Space and Halloween standard pylons).
+	/// </summary>
+	[TestMethod]
+	public void PylonHeightsAndStackOffsetsComeFromTheModelsTrackAndStackDummies()
+	{
+		var seen = 0;
+		var skipped = 0;
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			var plain = CoasterDefinition.FromSettings( entry.CoasterSettings );
+			using var assets = new CoasterAssets( entry, definition );
+			foreach ( var loop in new[] { false, true } )
+			{
+				if ( loop && !definition.HasLoopPylon )
+					continue;
+				var rig = assets.GetPylon( loop );
+				if ( rig == null )
+					continue;
+				var pylon = definition.Pylon( loop );
+				if ( rig.TagNode < 0 || rig.TagHigh <= rig.TagLow )
+				{
+					Assert.IsFalse( pylon.HasModelHeights, $"{entry.InfoId} loop {loop}: a model whose track dummy does not move with the loft keeps the settings' heights" );
+					Assert.AreEqual( plain.Pylon( loop ).MinHeight, pylon.MinHeight );
+					Assert.AreEqual( plain.Pylon( loop ).MeshHeightHigh, pylon.MeshHeightHigh );
+					skipped++;
+					continue;
+				}
+				Assert.IsTrue( pylon.HasModelHeights, $"{entry.InfoId} loop {loop}" );
+				Assert.AreEqual( (rig.TagLow, rig.TagHigh, rig.StackOffset), (pylon.MeshHeightLow, pylon.MeshHeightHigh, pylon.StackOffset) );
+				Assert.AreEqual( MathF.Max( plain.Pylon( loop ).MinHeight, rig.TagLow ), pylon.MinHeight, $"{entry.InfoId}: fMinHeight raised to h0 (0x4309a4)" );
+				Assert.AreEqual( plain.Pylon( loop ).MaxHeight, pylon.MaxHeight );
+				seen++;
+			}
+		}
+		Assert.IsTrue( seen >= 18, $"{seen} pylon models read" );
+		Assert.IsTrue( skipped >= 1, "coaster 3180's loop pylon is stuck at h0 = h1 and is skipped" );
+		CoasterPylonRig Rig( int id, bool loop )
+		{
+			var entry = PcCoasters().Single( candidate => candidate.InfoId == id );
+			var definition = CoasterDefinition.FromSettings( entry.CoasterSettings );
+			using var assets = new CoasterAssets( entry, definition );
+			return assets.GetPylon( loop )!;
+		}
+		var gorilla = Rig( 1190, false );
+		Assert.AreEqual( (15.558132f, 95.55653f), (gorilla.TagLow, gorilla.TagHigh), "the Gorilla Thrilla pylon: the doc's 15.56 and 95.56" );
+		Assert.AreEqual( "TrackDummyCentre", gorilla.Model.Nodes[gorilla.TagNode].Name );
+		var skull = Rig( 3190, false );
+		Assert.AreEqual( "TrackHeightDummy", skull.Model.Nodes[skull.TagNode].Name, "attribute 0x800000 names dummy number 1, not the TrackCentreDummy the name search would take" );
+		Assert.AreEqual( (30f, 120f), (MathF.Round( skull.TagLow, 3 ), skull.TagHigh) );
+		var spooky = Rig( 3185, false );
+		Assert.AreEqual( "STACK_DUMMY", spooky.Model.Nodes[spooky.StackNode].Name );
+		Assert.AreEqual( 7.776738f, spooky.StackOffset, 1e-3f, "stack dummy Y − h0" );
+		Assert.AreEqual( 3.7566833f, Rig( 3180, false ).StackOffset, 1e-3f );
+		Assert.AreEqual( 0f, Rig( 1180, false ).StackOffset, "the stack dummy of this model is dummy number 1, the track dummy's neighbour at the same height" );
 	}
 
 	/// <summary>Every PC coaster builds the same circuit on a flat site, completes, rates within [0, 100] and runs.</summary>
@@ -92,7 +152,7 @@ public class CoasterAssetTests
 			ride.Command( 5, 0 );
 			for ( var tick = 0; tick < 20 * 60; tick++ )
 				ride.Advance( Tick );
-			Assert.IsTrue( ride.Trains.Any( train => train.State == CoasterTrainState.Running ), $"{entry.InfoId} dispatches" );
+			Assert.IsTrue( ride.Trains.All( train => train.Speed > 0 ), $"{entry.InfoId}: every train circulates and none stops" );
 		}
 	}
 
@@ -103,7 +163,16 @@ public class CoasterAssetTests
 	/// deleting removes every pylon without a refund.
 	/// </summary>
 	[TestMethod]
-	public void GuestsRideACoasterBuiltHeadlesslyOnJungle()
+	public void GuestsRideACoasterBuiltHeadlesslyOnJungle() => RideScenario( deleteWhileRiding: false );
+
+	/// <summary>
+	/// Deleting a running coaster (and removing its station) while guests ride, sit seated at the station and wait on the admission ring releases every
+	/// one of them: nobody stays in the Using state and the bridge's boarded and released totals match.
+	/// </summary>
+	[TestMethod]
+	public void DeletingARunningCoasterReleasesItsRidersAndAdmittedGuests() => RideScenario( deleteWhileRiding: true );
+
+	private static void RideScenario( bool deleteWhileRiding )
 	{
 		var park = OriginalPark.Load( "jungle", readShippedSave: false );
 		var terrain = new OriginalParkGrid( park );
@@ -165,6 +234,27 @@ public class CoasterAssetTests
 			return guest;
 		} ).ToArray();
 
+		if ( deleteWhileRiding )
+		{
+			// Run until guests are on board or seated and others are admitted or queued, then take the coaster away mid-ride.
+			var cut = false;
+			for ( var tick = 0; tick < 240 * 60 && !cut; tick++ )
+			{
+				guests.Tick( Tick );
+				runtime.Simulate( Tick );
+				cut = ride.RidersOnBoard >= 2 && (ride.AdmissionCount > 0 || spawned.Any( guest => guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.GoingToRide ));
+			}
+			Assert.IsTrue( cut, "guests were riding while others waited" );
+			Assert.IsTrue( spawned.Any( guest => guest.State == GuestState.Using ), "a guest is using the coaster" );
+			builder.Delete();
+			runtime.Stop();
+			for ( var tick = 0; tick < 120 * 60; tick++ )
+				guests.Tick( Tick );
+			Assert.IsFalse( spawned.Any( guest => guest.State == GuestState.Using ), $"no guest stays in Using: {string.Join( ", ", spawned.Select( guest => guest.State ) )}" );
+			Assert.AreEqual( runtime.Visitors.BoardedTotal, runtime.Visitors.ReleasedTotal, "every boarded guest was released" );
+			return;
+		}
+
 		var peakRiders = 0;
 		var ranWithRiders = false;
 		for ( var tick = 0; tick < 240 * 60 && runtime.Visitors.ReleasedTotal < 2; tick++ )
@@ -172,7 +262,7 @@ public class CoasterAssetTests
 			guests.Tick( Tick );
 			runtime.Simulate( Tick );
 			peakRiders = Math.Max( peakRiders, ride.RidersOnBoard );
-			ranWithRiders |= ride.Trains.Any( train => train.State == CoasterTrainState.Running && train.Riders > 0 );
+			ranWithRiders |= ride.Trains.Any( train => train.Speed > 0 && train.Riders > 0 );
 		}
 		Assert.IsTrue( ride.Initialised && !ride.Closed, "Coaster.RSE ran COAST 8 and opened the controller" );
 		Assert.AreEqual( CoasterRating.GuestExcitement( rating.Excitement ), runtime.Visitors.ExcitementLevel, "guests see trunc(0.5 E + 50)" );
@@ -191,7 +281,7 @@ public class CoasterAssetTests
 		Assert.IsTrue( ride.Closed );
 		Assert.AreEqual( 0, ride.RidersOnBoard );
 		Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_ONRIDE ) );
-		Assert.IsFalse( ride.Trains.Any( train => train.State == CoasterTrainState.Running ), "trains finished their lap" );
+		Assert.IsTrue( ride.Trains.All( train => train.Speed > 0 ), "closed trains keep circulating, empty" );
 		Assert.AreEqual( runtime.Visitors.BoardedTotal, runtime.Visitors.ReleasedTotal );
 
 		var beforeDelete = economy.Balance;

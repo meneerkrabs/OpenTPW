@@ -312,7 +312,7 @@ public class CoasterSaveAssetTests
 			runtime.Simulate( Tick );
 			maximumAboard = Math.Max( maximumAboard, runtime.Visitors.Riders.Count );
 			var inHandOver = false;
-			foreach ( var rider in ride.Trains.SelectMany( train => train.Cars ).SelectMany( car => car ).Concat( ride.LeavingRiders ) )
+			foreach ( var rider in ride.Trains.SelectMany( train => train.Cars.Concat( train.BoardingCars ) ).SelectMany( car => car ).Concat( ride.AdmissionGuests ).Concat( ride.LeavingRiders ) )
 			{
 				if ( Accepted( rider ) )
 				{
@@ -336,7 +336,7 @@ public class CoasterSaveAssetTests
 		Assert.AreNotEqual( RideVMState.Faulted, runtime.Script!.State, runtime.Script.FaultMessage );
 		Assert.IsTrue( ride.Initialised, "the station script initialised its controller (COAST 8)" );
 		Assert.IsTrue( maximumAboard > 0, "guests boarded the running coaster through the real script" );
-		Assert.IsTrue( handOverRiderTicks > 0, "the boarding hand-over window is real (a rider in a car before the bridge marks it aboard)" );
+		Assert.IsTrue( handOverRiderTicks > 0, "the boarding hand-over window is real (a guest on the admission ring or in a car before the bridge marks it aboard)" );
 		Assert.IsTrue( handOverClosed, "the hand-over closes: the script consumes VAR_LETMEON and the rider is marked aboard" );
 		// The snapshotted pair agrees with the live rule: the hand-over rider is the called guest, WaitingToBoard,
 		// aboard nobody, while the coaster part holds it in a car.
@@ -348,8 +348,8 @@ public class CoasterSaveAssetTests
 		Assert.AreEqual( GuestState.WaitingToBoard, savedGuest.State );
 		Assert.AreEqual( runtime.AttractionId, savedGuest.AttractionId );
 		CollectionAssert.Contains( bridge.Queue.ToArray(), handOverRider );
-		Assert.IsTrue( boundaryCoaster!.Trains
-			.Any( train => train.Cars.Any( car => car.Contains( handOverRider ) ) ), "the coaster part holds the hand-over rider in a car" );
+		Assert.IsTrue( boundaryCoaster!.Admission!.Contains( handOverRider ) || boundaryCoaster.Trains
+			.Any( train => train.Cars.Concat( train.BoardingCars! ).Any( car => car.Contains( handOverRider ) ) ), "the coaster part holds the hand-over rider on the admission ring or in a car" );
 	}
 
 	private static int SeedOf( OriginalObjectRuntime runtime ) => runtime.Script!.Seed;

@@ -36,20 +36,48 @@ internal sealed class LoopbackServer : IAsyncDisposable
 	public string Directory { get; }
 	public Uri Url { get; }
 
+	/// <summary>
+	/// Starting or stopping the server takes well under a second; a stall (once a file watcher blocked in the OS)
+	/// fails the test with a clear message instead of hanging the whole suite. Requests are bounded by
+	/// <see cref="OnlineClient"/>'s own HttpClient timeout.
+	/// </summary>
+	public static readonly TimeSpan StartStopTimeout = TimeSpan.FromSeconds( 30 );
+
 	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null, Uri? url = null, IEmailSender? emailSender = null )
 	{
 		directory ??= Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
-		var app = ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
+		var dataDirectory = directory;
+		// Build is synchronous, so it runs on a pool thread that a stall can strand without blocking the test.
+		var app = await Bounded( Task.Run( () => ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
 		{
-			options.DataDirectory = directory;
+			options.DataDirectory = dataDirectory;
 			options.PasswordIterations = 1000;
 			// Most tests are about other features; TwoStepLoginTests turns two-step login on.
 			options.RequireTotp = false;
 			configure?.Invoke( options );
-		}, emailSender );
-		await app.StartAsync();
+		}, emailSender ) ), "build" );
+		using ( var cancel = new CancellationTokenSource( StartStopTimeout ) )
+			await Bounded( app.StartAsync( cancel.Token ), "start" );
 		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
 		return new LoopbackServer( app, directory, new Uri( address ) );
+	}
+
+	private static async Task<T> Bounded<T>( Task<T> task, string step )
+	{
+		await Bounded( (Task)task, step );
+		return await task;
+	}
+
+	private static async Task Bounded( Task task, string step )
+	{
+		try
+		{
+			await task.WaitAsync( StartStopTimeout );
+		}
+		catch ( Exception exception ) when ( exception is TimeoutException or OperationCanceledException )
+		{
+			throw new AssertFailedException( $"The loopback server did not {step} within {StartStopTimeout.TotalSeconds} seconds.", exception );
+		}
 	}
 
 	public async Task<OnlineClient> LoginAsync( string name, string password = "correct horse", bool register = true )
@@ -63,8 +91,9 @@ internal sealed class LoopbackServer : IAsyncDisposable
 
 	public async ValueTask DisposeAsync()
 	{
-		await app.StopAsync();
-		await app.DisposeAsync();
+		using ( var cancel = new CancellationTokenSource( StartStopTimeout ) )
+			await Bounded( app.StopAsync( cancel.Token ), "stop" );
+		await Bounded( app.DisposeAsync().AsTask(), "shut down" );
 	}
 
 	public void DeleteData()
@@ -337,7 +366,8 @@ public class OnlineServerTests
 	[TestMethod]
 	public async Task ServersWithoutNewsGiveNoNews()
 	{
-		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" } );
+		// No appsettings.json watcher: on macOS starting one calls sync(2), which a stalled mounted volume blocks (see ServerProgram.Build).
+		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning", "--hostBuilder:reloadConfigOnChange=false" } );
 		await using var app = builder.Build();
 		await app.StartAsync();
 		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();

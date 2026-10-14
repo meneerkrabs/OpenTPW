@@ -217,6 +217,12 @@ public sealed class CoasterDefinition
 	public static CoasterDefinition FromSettings( ObjectSettings settings ) => FromValues( settings.Values );
 
 	/// <summary>
+	/// The definition of a catalog entry from its own coaster.sam settings (<see cref="ObjectCatalogEntry.SharedSettings"/>), as the TrackMaster loader 0x42FAD0 receives them;
+	/// an entry without shared files (synthetic ones) falls back to its object settings.
+	/// </summary>
+	public static CoasterDefinition FromEntry( ObjectCatalogEntry entry ) => FromSettings( entry.SharedSettings ?? entry.Settings );
+
+	/// <summary>
 	/// Builds the definition from the (layered) settings keys: <c>sCoasterType.*</c>, <c>sTrainType.*</c> and
 	/// <c>asPylonControls[0|1].*</c>. Only nonzero values replace a default; the pylon cost rates are copied as given.
 	/// </summary>

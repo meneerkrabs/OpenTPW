@@ -99,6 +99,12 @@ public sealed class ObjectCatalogEntry
 	public string DisplayName { get; internal set; }
 	/// <summary>Index of the first OBJECT_NAMES entry of this object (names may span two entries), or null.</summary>
 	public int? ObjectNameIndex { get; internal set; }
+
+	/// <summary>
+	/// The archive's shared (non-Info.Id) .sam files on their own (the TrackMaster <c>coaster.sam</c> of the 12 track rides), or null when it has none.
+	/// They are kept apart from <see cref="Settings"/> as the original's object loader does (<see cref="CoasterDefinition.FromEntry"/> reads them).
+	/// </summary>
+	public ObjectSettings? SharedSettings { get; internal set; }
 	/// <summary>Number of OBJECT_NAMES entries the name uses (1 or 2).</summary>
 	public int ObjectNameLength { get; internal set; }
 	public string ModelPath { get; }
@@ -125,7 +131,7 @@ public sealed class ObjectCatalogEntry
 	/// <summary>Shapes without occupied cells (Mystery ride, Buy Land, Clear Land) are tools, not objects.</summary>
 	public bool IsTool => !Shape.OccupiedCells.Any();
 	/// <summary>Can be placed from a build menu: shown in a UI category, not a fixed item or tool. Upgrades attach to a ride's track.</summary>
-	// [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents
+	// [BIN:TPW-EXE:0x004AAF70 build menu filler] the build-menu filler lists a definition when its model loaded (def+0x508 == 0), its WhichUIType (def+0x4AC, copied from +0x4C at the end of 0x413410) equals the tab, AddOn.UpgradesId (def+0x284) is 0 and the control record 0x4D3D10(id)+0x10 is non-zero (availability or research); tools and fixed items are not filtered by name, their data has WhichUIType 4, and every upgrade-category object has AddOn.UpgradesId != 0, which gives this rule on the whole corpus
 	public bool IsBuildable => WhichUIType is >= 0 and <= 3 && !IsFixedItem && !IsTool && Category != ObjectCategory.Upgrade;
 	/// <summary><c>Info.RideTypeStringIndex</c>: ITEMTYPES.str entry (e.g. 12 "Vertical Drop" for the Totem), or null.</summary>
 	public int? RideTypeIndex => Settings.Has( "Info.RideTypeStringIndex" ) ? Settings.GetInt( "Info.RideTypeStringIndex" ) : null;
@@ -301,7 +307,7 @@ public sealed class ObjectCatalog
 				yield return null;
 			foreach ( var entry in bonusEntries )
 			{
-				// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
+				// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; the original dedupes by archive name (0x41ede0 → 0x424cf0, _stricmp) and loads Info.Id duplicates too, its id lookups (0x412e90/0x412ef0) taking the first definition in directory order, while this port skips the later bonus entry with a taken Info.Id — evidence needed: the directory order of the original's category walk (FindFirstFile) and how a _name_N archive finds its _name.sam (the loader asks for "<name>.sam" through the name at def+0x18 from 0x41ec30)
 				if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
 					Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
 				else
@@ -410,11 +416,10 @@ public sealed class ObjectCatalog
 		}
 		if ( main == null )
 			return null;
-		// [APPROX:RIDES-009] Shared (non-Info.Id) .sam files sit between the category defaults and the object file — evidence needed: which base file the binary's object loader is given
+		// [BIN:TPW-EXE:0x00413C10 object loader] the object's settings stack is the base file the caller names, then <object>.sam, then Easy_<object>.sam in game type 2; a shared (non-Info.Id) file such as coaster.sam is never merged into it: only for track type 3 (0x4141EB) it is loaded into a separate settings object (0x41420B) that goes with the model to the TrackMaster loader 0x42FAD0 (0x4142DE)
 		var layers = new List<ObjectSettingsFile>();
 		if ( defaults != null )
 			layers.Add( defaults );
-		layers.AddRange( shared );
 		layers.Add( main );
 		// [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_<object file> is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline
 		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
@@ -450,6 +455,8 @@ public sealed class ObjectCatalog
 				script = candidates[0];
 		}
 		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber );
+		if ( shared.Count > 0 )
+			entry.SharedSettings = new ObjectSettings( shared );
 		if ( bonusNumber != null )
 			entry.DisplayName = BonusNames.Read( entry ) ?? entry.SettingsName;
 		return entry;
@@ -460,16 +467,13 @@ public sealed class ObjectCatalog
 }
 
 /// <summary>
-/// Binds catalog entries to OBJECT_NAMES.str. The table holds one block per theme, each ending with
-/// "Traffic Lights"; rides use two entries ("Inca", "Totem"), other objects one. No index field exists in
-/// the .sam files, so an entry is bound when its English <c>Info.Name</c> equals one entry or two
-/// consecutive entries (ignoring case, spaces and accents) inside the theme's block; the block is the one
-/// with most matches. Unmatched objects (e.g. "Loudspeaker", "Gates") keep their .sam name.
+/// Binds catalog entries to OBJECT_NAMES.str through the original's Info.Id table (<see cref="ObjectNameTable"/>): each row names
+/// the first and the second entry of an object ("Inca", "Totem"; index 1 = no second part). An object whose id is not in the table
+/// keeps its .sam name here (the original shows an empty name).
 /// </summary>
 public static class ObjectNames
 {
 	public const string FileName = "OBJECT_NAMES.str";
-	public const string BlockTerminator = "Traffic Lights";
 
 	public static void Apply( ObjectCatalog catalog )
 	{
@@ -477,7 +481,7 @@ public static class ObjectNames
 		if ( english == null )
 			return;
 		var localized = GameLanguage.IsSelected ? TryLoadCurrent() ?? english : english;
-		foreach ( var (entry, index, length) in Match( catalog.Entries.Where( entry => !entry.IsBonus ).ToList(), english ) )
+		foreach ( var (entry, index, length) in Bind( catalog.Entries.Where( entry => !entry.IsBonus ).ToList() ) )
 		{
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
@@ -491,6 +495,7 @@ public static class ObjectNames
 	/// ends in '-' is joined to the next one without the space and the dash (compound words in Danish and similar).
 	/// </summary>
 	// [BIN:STP-PPC:0x1011A08C object name builder] name = first + (" " when the second is not empty) + second; when the first ends in '-' the dash is cut and the two are concatenated
+	// [BIN:TPW-EXE:0x0041474E object name join] the PC builder agrees: a trailing '-' on the first text is cut and the texts are joined with "%s%s", otherwise "%s%s%s" with a space only when the second text is not empty
 	public static string Join( IEnumerable<string> texts )
 	{
 		var parts = texts.ToArray();
@@ -499,65 +504,19 @@ public static class ObjectNames
 		return string.Join( " ", parts.Where( text => text.Length > 0 ) );
 	}
 
-	/// <summary>Pure matching step, exposed for tests.</summary>
-	// [APPROX:RIDES-010] OBJECT_NAMES index bound by English name equality within the theme block — evidence needed: binary name-index table
-	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Match( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<string> names )
+	/// <summary>
+	/// Pure binding step, exposed for tests: the entries whose Info.Id is in the table, with the first OBJECT_NAMES index and the
+	/// number of consecutive entries (1 when the second index is the empty string, else 2; every table row's second index follows its first).
+	/// </summary>
+	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Bind( IReadOnlyList<ObjectCatalogEntry> entries )
 	{
-		var blocks = new List<(int Start, int End)>();
-		var start = 0;
-		for ( var index = 0; index < names.Count; index++ )
+		var bound = new List<(ObjectCatalogEntry, int, int)>();
+		foreach ( var entry in entries )
 		{
-			if ( names[index] == BlockTerminator )
-			{
-				blocks.Add( (start, index) );
-				start = index + 1;
-			}
+			if ( ObjectNameTable.TryGet( entry.InfoId, out var first, out var second ) )
+				bound.Add( (entry, first, second == ObjectNameTable.EmptyIndex ? 1 : 2) );
 		}
-		if ( blocks.Count == 0 )
-			blocks.Add( (0, names.Count - 1) );
-		List<(ObjectCatalogEntry, int, int)>? best = null;
-		foreach ( var (blockStart, blockEnd) in blocks )
-		{
-			var matches = new List<(ObjectCatalogEntry, int, int)>();
-			foreach ( var entry in entries )
-			{
-				var wanted = Normalize( entry.SettingsName );
-				if ( wanted.Length == 0 )
-					continue;
-				var found = -1;
-				var length = 1;
-				for ( var index = blockStart; index <= blockEnd && found < 0; index++ )
-				{
-					if ( Normalize( names[index] ) == wanted )
-						found = index;
-				}
-				for ( var index = blockStart; index < blockEnd && found < 0; index++ )
-				{
-					if ( names[index].Length > 0 && Normalize( names[index] + names[index + 1] ) == wanted )
-					{
-						found = index;
-						length = 2;
-					}
-				}
-				if ( found >= 0 )
-					matches.Add( (entry, found, length) );
-			}
-			if ( best == null || matches.Count > best.Count )
-				best = matches;
-		}
-		return best!.AsReadOnly();
-	}
-
-	internal static string Normalize( string text )
-	{
-		var decomposed = text.Normalize( NormalizationForm.FormD );
-		var builder = new StringBuilder();
-		foreach ( var character in decomposed )
-		{
-			if ( char.IsLetterOrDigit( character ) && CharUnicodeInfo.GetUnicodeCategory( character ) != UnicodeCategory.NonSpacingMark )
-				builder.Append( char.ToLowerInvariant( character ) );
-		}
-		return builder.ToString();
+		return bound.AsReadOnly();
 	}
 
 	private static string[]? TryLoad( string language )
@@ -594,7 +553,7 @@ public static class ObjectNames
 /// </summary>
 public static class BonusNames
 {
-	// [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files
+	// [APPROX:RIDES-025] The original reads only <selected language>.txt (0x41f350, language buffer 0xf7f230) from the bonus archive and falls back to the OBJECT_NAMES id table (empty for bonus ids except 3301) with no English or .sam fallback; this port also tries English and then the .sam Info.Name for a language the archive lacks (OpenTPW extension for third-party content; all 35 shipped bonus archives carry the four shipped languages)
 	public static string? Read( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;

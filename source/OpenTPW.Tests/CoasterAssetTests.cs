@@ -35,7 +35,7 @@ public class CoasterAssetTests
 	{
 		var coasters = PcCoasters().ToDictionary( entry => entry.InfoId );
 		CollectionAssert.AreEquivalent( new[] { 1180, 1185, 1190, 2180, 2185, 2190, 3180, 3185, 3190, 4180, 4185, 4190 }, coasters.Keys.ToArray() );
-		var definitions = coasters.ToDictionary( pair => pair.Key, pair => CoasterDefinition.FromSettings( pair.Value.Settings ) );
+		var definitions = coasters.ToDictionary( pair => pair.Key, pair => CoasterDefinition.FromEntry( pair.Value ) );
 		CollectionAssert.AreEquivalent( new[] { 1185, 2185, 4180 }, definitions.Where( pair => pair.Value.IsTrough ).Select( pair => pair.Key ).ToArray(), "the three flumes" );
 		Assert.AreEqual( 9, definitions.Values.Count( definition => definition.HasLoopPylon ) );
 		foreach ( var (id, definition) in definitions )
@@ -64,7 +64,7 @@ public class CoasterAssetTests
 		foreach ( var entry in PcCoasters() )
 		{
 			var world = new CoasterWorld( 3 );
-			var ride = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world, entry.DisplayName );
+			var ride = new CoasterRide( CoasterDefinition.FromEntry( entry ), world, entry.DisplayName );
 			var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
 			builder.SetStation( (20, 20), (17, 20) );
 			builder.Height = 40;

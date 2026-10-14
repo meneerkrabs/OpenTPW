@@ -286,17 +286,15 @@ public sealed class SoundEventSystem
 		if ( TryDecoded( category, sample, out var cached ) )
 			return cached;
 		Mp2Audio? audio = null;
-		var mpeg = category.GetBank( sample.BankNumber )?.GetMpeg( sample.SampleNumber );
-		if ( mpeg != null )
+		var bank = category.GetBank( sample.BankNumber );
+		try
 		{
-			try
-			{
-				audio = Mp2Decoder.Decode( mpeg );
-			}
-			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
-			{
-				Log.Trace( $"Sound {category.Name} bank {sample.BankNumber} sample {sample.SampleNumber}: {exception.Message}" );
-			}
+			var mpeg = bank?.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes );
+			if ( mpeg != null ) audio = Mp2Decoder.Decode( mpeg );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
+		{
+			Log.Trace( $"Sound {category.Name} bank {sample.BankNumber} sample {sample.SampleNumber}: {exception.Message}" );
 		}
 		return RememberDecoded( category, sample, audio, retainLong );
 	}
@@ -313,17 +311,15 @@ public sealed class SoundEventSystem
 	private async Task<Mp2Audio?> DecodeCooperatively( SoundCategory category, SoundSample sample, Func<Task>? yieldBatch )
 	{
 		Mp2Audio? audio = null;
-		var mpeg = category.GetBank( sample.BankNumber )?.GetMpeg( sample.SampleNumber );
-		if ( mpeg != null )
+		var bank = category.GetBank( sample.BankNumber );
+		try
 		{
-			try
-			{
-				audio = await Mp2Decoder.DecodeCooperativelyAsync( mpeg, yieldBatch: yieldBatch );
-			}
-			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
-			{
-				Log.Trace( $"Sound {category.Name} bank {sample.BankNumber} sample {sample.SampleNumber}: {exception.Message}" );
-			}
+			var mpeg = bank?.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes );
+			if ( mpeg != null ) audio = await Mp2Decoder.DecodeCooperativelyAsync( mpeg, yieldBatch: yieldBatch );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
+		{
+			Log.Trace( $"Sound {category.Name} bank {sample.BankNumber} sample {sample.SampleNumber}: {exception.Message}" );
 		}
 		return RememberDecoded( category, sample, audio, retainLong: true );
 	}

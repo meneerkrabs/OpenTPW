@@ -428,8 +428,15 @@ decoded samples and does not qualify original audio or native playback semantics
 The export-only policy refuses missing/damaged entries, zero complete frames,
 failed CRCs and unconsumed MPEG tails other than the known single zero SDT pad.
 The existing 16 MiB decoder input bound is checked before allocating the selected
-payload through an additive caller-limited `GetMpeg` overload; existing callers
-retain their previous behavior. No new codec or arbitrary valid-output memory
+payload through the caller-limited `GetMpeg` overload. Runtime synchronous and
+cooperative sample decodes now pass the same existing bound before payload reads;
+oversized entries retain the decoder's null/trace/failed-cache behavior without
+allocating the refused payload. Bank loading remains outside the content-error
+catch; source-length I/O errors and scheduler cancellation still propagate.
+The default unrestricted `GetMpeg` API and codec/playback/loop ownership remain
+unchanged. `RuntimeSoundInputPreflightTests` exercises sparse synthetic oversized
+records, the exact boundary, valid PCM/cache, changed-source and cancellation
+controls; original assets and native/device timing were not exercised. No new codec or arbitrary valid-output memory
 or storage-quota guarantee is claimed. Large valid decoded clips still require
 the existing decoder's complete PCM buffer.
 

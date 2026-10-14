@@ -301,6 +301,8 @@ public sealed partial class ParkHud
 			else if ( CancelCamcorder() ) { }
 			else if ( level.IsCoasterToolActive )
 				level.ExitCoasterTool();
+			else if ( level.StaffPlacement is { IsActive: true } staffTool )
+				staffTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else
@@ -355,6 +357,7 @@ public sealed partial class ParkHud
 		if ( item.Entry is not { } entry )
 			return;
 		level.CellTool.Cancel();
+		level.StaffPlacement?.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -653,12 +656,13 @@ public sealed partial class ParkHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
+		var staffToolClick = !rideOwnsInput && UpdateStaffTool( input, inPark && !mouseCaptured.Value );
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
-			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value );
-		var toolClick = visitorClick || rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
+			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } );
+		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && input.LeftReleased && !toolPress )
+		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
 			toolPress = false;
@@ -671,6 +675,44 @@ public sealed partial class ParkHud
 		}
 		Status.Update( context.Delta );
 		return overUi || consumed || toolClick;
+	}
+
+	private bool staffCursorSet;
+
+	/// <summary>
+	/// The staff tools' HUD side (hire placement and carrying): the cursor, the hovered cell, right click leaves, a left click on a valid cell completes it.
+	/// A click on an invalid cell does nothing and the tool stays; the park view's other clicks (guest selection, the path tool) wait while it runs.
+	/// </summary>
+	// [APPROX:UI-100] the tools' cursor 9 (Data/ui/cursors/c_carry.ani) is the closest cursor OpenTPW has, Input.CursorTypes.Carry (Ccar.tga): the in-park pointer is the system pointer and .ani cursors are not loaded; the dangling sprite hangs over the hovered cell's centre instead of the exact mouse point — evidence needed: the original cursor renderer
+	private bool UpdateStaffTool( UiInput input, bool inPark )
+	{
+		var tool = level.StaffPlacement;
+		if ( tool == null || !tool.IsActive )
+		{
+			if ( staffCursorSet )
+			{
+				staffCursorSet = false;
+				Input.CursorType = Input.CursorTypes.Normal;
+			}
+			return false;
+		}
+		staffCursorSet = true;
+		Input.CursorType = Input.CursorTypes.Carry;
+		// the same capture gate as the visitor selection: a press on an ImGui overlay is not a park click
+		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		{
+			tool.Cancel();
+			return toolPress = true;
+		}
+		if ( inPark )
+			tool.Hover( cursorX, cursorY );
+		else
+			tool.Hover( null, null );
+		if ( !inPark || !input.LeftPressed )
+			return false;
+		// a click on an invalid cell only logs in the original ("Can't put staff here"): no player text, the tool stays
+		tool.Click( cursorX, cursorY );
+		return toolPress = true;
 	}
 
 	/// <summary>
@@ -821,7 +863,10 @@ public sealed partial class ParkHud
 		if ( level.Blueprint is not { } blueprint )
 			return;
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
-		if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
+		if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
+			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell (tp.exe 0x53c8d0, its texture 1 of an untraced table) is the blueprint's red face
+			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
+		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
 			foreach ( var cell in ghost.Line )
 			{

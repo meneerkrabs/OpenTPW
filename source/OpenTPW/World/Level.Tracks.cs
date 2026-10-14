@@ -99,6 +99,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
 			return false;
+		StaffPlacement?.Cancel();
 		CellTool.Cancel();
 		CellTool.Enter( new TrackLineWriter( waterTracks, () => RewalkTrack( station ), waterTracks.OwnerOf( layout ) ), layout.Exit );
 		trackToolStation = station;

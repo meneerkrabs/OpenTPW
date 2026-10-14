@@ -39,6 +39,9 @@ public static class EconomyApproximations
 		("ECON-049", "the back-of-queue link test (tp.exe 0x4DE4A0: connection bits beyond the link) is not modelled: OpenTPW takes the queue as connected; the maintenance flag (mRequestedService, +0x64) is the ride panel's call for a mechanic", "the queue tool's connection writes"),
 		("ECON-050", "the gate census reads the imported guest grid, which preserves paths but not every original outside, approach or footprint cell type; unpreserved cells remain type 0 and can be counted as park ground", "original cell-type provenance in the guest-grid import"),
 		("ECON-051", "the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping)", "the writer of the flag and when the original clears it"),
+		("ECON-052", "the original refuses a pick-up in the staff state 13 besides 4, 5, 7 and 18, and plays script 0x14 (slot 3, one frame) for state 6; OpenTPW's StaffJob has neither state, so the pick-up rule refuses only the jobs it has (strike walks, strike, in hand, escorting) and no clip plays state 6", "what the staff states 6 and 13 are (the state setter 0x5054D0 and the handlers 0x4D4810, 0x4D6410)"),
+		("ECON-053", "a staff member carried at save time is saved dropped on its old cell and the tool ends (the original saves it in state 7 with the pool's mStaffMemberPickedUp, and nothing re-creates the carry tool after a load, so it probably stays stuck)", "a load of an original save made while carrying"),
+		("ECON-054", "a mechanic put down off the path network (a drop on grass or a queue) is not dispatched: the original's walk from such a cell to the network is untraced, and a reserved ride would wait for an arrival that cannot happen", "what the mechanic state machine (0x4DA490) does from a cell off the paths"),
 	};
 
 	private static bool logged;

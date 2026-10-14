@@ -13,7 +13,18 @@ public partial class Level : IDisposable
 	private ParkLayout parkLayout = null!;
 	internal SandboxTextOverlay TextOverlay { get; private set; } = null!;
 	public PrototypeRide? PlacedRide { get; private set; }
-	public bool IsPlacing { get; set; }
+	private bool isPlacing;
+	/// <summary>The prototype ride is being placed; starting it ends a staff tool (one park tool at a time).</summary>
+	public bool IsPlacing
+	{
+		get => isPlacing;
+		set
+		{
+			if ( value )
+				StaffPlacement?.Cancel();
+			isPlacing = value;
+		}
+	}
 	public string LastActionMessage { get; private set; } = "";
 	/// <summary>Imported original level data; null for the generic sandbox.</summary>
 	public OriginalPark? OriginalPark { get; private set; }
@@ -551,6 +562,7 @@ public partial class Level : IDisposable
 
 	public void Update()
 	{
+		StaffPlacement?.Reconcile();
 		StaffWorld?.Synchronize();
 		if ( RideView?.Ride.IsDeleted == true )
 			ExitRideView();
@@ -717,12 +729,18 @@ public partial class Level : IDisposable
 	public ulong ComputeStateHash() => Streams.ComputeStateHash();
 
 	/// <summary>Writes the park economy and every random stream to an OpenTPW park save.</summary>
-	public void SavePark( string path ) => Streams.SavePark( path );
+	public void SavePark( string path )
+	{
+		StaffPlacement?.PrepareForSave();
+		Streams.SavePark( path );
+	}
 
 	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
 	public void LoadPark( string path )
 	{
+		// a load that fails leaves the economy, and so the staff tool and its pending flag, as they were
 		Streams.LoadPark( path );
+		StaffPlacement?.Abandon();
 		AttachStaffWorld();
 		// The gate holds the economy it was built over; the load replaced it.
 		if ( Park != null && Gate != null )

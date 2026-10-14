@@ -916,6 +916,18 @@ research batch was included in this merge.
   with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
   live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
   playing a scream" after the first ride cycle).
+- **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
+  applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
+  places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a
+  Pick up button (refused on strike, in hand, escorting or on an unsuitable cell) that starts the Carry tool; a valid click drops the member on the cell
+  centre, idle, with no steering state, litter or toilet claim, and a mechanic loses its ride so the dispatch runs again; the patrol rectangle is never
+  touched, cancelling drops it back where it was, a new pick-up first drops the previous member, and a save drops a carried member on its old cell.
+  Staff are drawn as camera-facing sprites of `esprites.wad` through `StaffRenderer` (folder by role and theme, bank from the member, clip by job:
+  stand, walk at full or half rate, sweep, repair, research, strike, guard carry), resting members are hidden, and the tool shows the slot 6 dangling
+  sprite over the hovered cell and a red ground marker on invalid cells. The only change in `StaffWorldSimulation` is the `Synchronize` condition that
+  leaves a member in hand without a position alone. New register IDs ECON-052/053, GUEST-013..016 and UI-097..100; tests `StaffPlacementTests`,
+  `StaffSpriteTests`, `StaffSpriteAssetTests`; the native jungle smoke hires, places, draws (GPU readback), picks up and drops a handyman
+  ([STAFF-PLACEMENT.md](STAFF-PLACEMENT.md)).
 - **Browser options no longer stop the game (October 14):** the browser has no .NET configuration system, so opening
   Options → Game files read the old `Settings.Default` and stopped the game with "Configuration system failed to
   initialize". The browser chooses its game folder on the page, so it no longer shows that button, and the old settings are

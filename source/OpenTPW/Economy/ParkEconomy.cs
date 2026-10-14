@@ -578,7 +578,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( jobs.Count == 0 )
 			return;
 		var role = Settings[StaffType.Mechanic];
-		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => !DrivenByWorld( member ) && member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
+		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => !DrivenByWorld( member ) && member.IsAvailable && (MechanicJobWorld?.CanStartJobs( member ) ?? true) && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
 		{
 			if ( jobs.Count == 0 )
 				break;

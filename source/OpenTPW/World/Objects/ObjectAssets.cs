@@ -134,17 +134,24 @@ public static class ObjectAssets
 	/// </summary>
 	// [BIN:TPW-EXE:0x0054DCF0 low-detail texture set] startup calls 0x4688B0(low); low = 1 selects "stexture"/"ssharete" (0x7AF650/0x7AF720). Without dialog.tcf the operand is GraphicalOptions.TEXTUREQUALITY (0x785874, option row 1 of the table at 0x7442C0) being 0 or 1; with dialog.tcf (0x78D968) it is the saved preset flag 0x800 (the Low preset, 0x44DE20); low.sam sets TEXTUREQUALITY 1, med.sam 2 and high.sam 3
 	public static bool UsesLowDetailTextures => LowDetailTexturesOverride
-		?? (GameEditions.Current == GameEdition.ThemeParkWorld && IGraphicsSettings.Instance is { } graphics
-			&& graphics.GetPresetValues( graphics.Current.Preset ) is { } detail && detail.TextureQuality <= 1);
+		?? (GameEditions.Current == GameEdition.ThemeParkWorld && !TexturePack.Enhanced && IGraphicsSettings.Instance is { } graphics
+			&& (graphics.Current.Preset == GraphicsPreset.Custom || graphics.GetPresetValues( graphics.Current.Preset ) != null) && graphics.Detail.TextureQuality <= 1);
 
 	/// <summary>Directories searched for an object's textures: its archive, then the theme's shared textures (game data).</summary>
 	// [BIN:TPW-EXE:0x0046EAD0 texture lookup] 0x461a60 → 0x46e670 sets the model directory, <dir>\textures (<dir>\stexture in the low-detail set) and <theme>\sharetex (<theme>\ssharete) (0x46e650); the lookup 0x46ead0 tries <dir>\textures\<name> as .wct then .tga, then assigns the shared texture without an existence check, else logs "Could not load texture…"; GTexture is only set by the coaster loader 0x42fad0, so the archive's gtexture (12 track-ride archives) stays in both sets
 	public static IEnumerable<(BaseFileSystem FileSystem, string Directory)> TextureDirectories( ObjectCatalogEntry entry )
 	{
 		var low = UsesLowDetailTextures;
-		yield return (entry.FileSystem, $"{entry.ArchivePath}/{(low ? "stexture" : "textures")}");
+		// [EXT:low-detail-texture-fallback] the low sets are searched first, then the full folders: a few objects name textures that exist only in `textures`
+		// (fantasy gokarts hivesign01/02, space gates Sen_sgn1/2, jungle totem tp_sign), where the original would find none. A selected texture pack replaces
+		// the full textures by path, so with a pack the low set is not used at all (UsesLowDetailTextures).
+		if ( low )
+			yield return (entry.FileSystem, $"{entry.ArchivePath}/stexture");
+		yield return (entry.FileSystem, $"{entry.ArchivePath}/textures");
 		yield return (entry.FileSystem, $"{entry.ArchivePath}/gtexture");
-		yield return (FileSystem, $"/levels/{entry.Theme}/{(low ? "ssharete" : "sharetex")}");
+		if ( low )
+			yield return (FileSystem, $"/levels/{entry.Theme}/ssharete");
+		yield return (FileSystem, $"/levels/{entry.Theme}/sharetex");
 	}
 
 	/// <summary>Finds an MD2 material's texture (.wct) by name, or null when no searched directory has it.</summary>

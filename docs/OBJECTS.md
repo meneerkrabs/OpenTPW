@@ -67,7 +67,7 @@ pylons). All 274 main models parse as geometry; all 911 animation members parse
 and bind to their main model's nodes; 5,629 material slots resolve to textures
 in `<archive>/textures`, `<archive>/gtexture` or `/levels/<theme>/sharetex`
 (with the Low detail preset, TEXTUREQUALITY 0 or 1, `<archive>/stexture` and `/levels/<theme>/ssharete`
-replace `textures` and `sharetex`; they hold every texture the full folders hold, the startup
+replace `textures` and `sharetex`; they hold every texture the full folders hold except six slots, which the search finds in `textures` (`[EXT:low-detail-texture-fallback]`: the low folders are searched first, then the full ones; a selected texture pack replaces the full textures by path, so with a pack the low set is not used), the startup
 choice of 0x54DCF0) except two (hallow ogre upgrade: unnamed slot; space rocket: `s_leg3` not
 shipped). 31 floor meshes have more than 16 texture slots and are split by
 material for the 16-slot shader.
@@ -86,6 +86,8 @@ theme (ids 100–102), which keep their `.sam` name here where the original show
 name matcher this replaces missed the loudspeakers, gates, signs, lights, seaplane and several renamed rides
 (Thrill Grill = "The Firepit", Bounce On Iggy = "Cosmic Bounce", Star Tours, Butterfly Nest, Kid Creosote), and
 bound the fantasy Fountain (4417) and the space Crater (3407) to the wrong entry (now 246 and 359).
+The table is Theme Park World's: Theme Park Inc ships another OBJECT_NAMES.str, so Theme Park Inc keeps the English-name matcher (`[EXT:tpi-object-name-matcher]`).
+The four End items (ids 1605, 2605, 3605, 4605) bind to entry 0, the empty string; they keep their `.sam` name as display name.
 The caller 0x412FB0 uses the archive's own text-file `NAME` first (bonus objects) and the table otherwise.
 
 ## Shape, footprint and rotation

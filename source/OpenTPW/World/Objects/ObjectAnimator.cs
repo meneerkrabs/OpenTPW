@@ -428,12 +428,13 @@ public sealed class ObjectAnimator
 		foreach ( var track in clip.Animation.Tracks )
 		{
 			tracks[track.NodeIndex] = track;
-			if ( (track.Flags & ModelAnimationTrack.VertexAnimationFlag) != 0 && GetVertexLimitation( track, clip.Animation.Duration ) is { } limitation )
+			if ( (track.Flags & (ModelAnimationTrack.VertexAnimationFlag | ModelAnimationTrack.VertexLayoutFlag)) != 0 && GetVertexLimitation( track, clip.Animation.Duration ) is { } limitation )
 				vertexLimitations.Add( $"{clip.Name} node {track.NodeIndex}: {limitation}" );
 			else
 			{
 				vertices[track.NodeIndex] = track.VertexAnimation;
-				poses[track.NodeIndex] = track.VertexPose;
+				// The sampler reads the block only with both 0x1000 and 0x4000 (0x4718E5, 0x4718EE); the fit is validated for every 0x4000 record above.
+				poses[track.NodeIndex] = (track.Flags & ModelAnimationTrack.VertexAnimationFlag) != 0 ? track.VertexPose : null;
 			}
 			if ( track.UvAnimation != null )
 			{

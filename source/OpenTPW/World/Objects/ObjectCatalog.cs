@@ -101,7 +101,7 @@ public sealed class ObjectCatalogEntry
 	public int? ObjectNameIndex { get; internal set; }
 
 	/// <summary>
-	/// The archive's shared (non-Info.Id) .sam files on their own (the TrackMaster <c>coaster.sam</c> of the 12 track rides), or null when it has none.
+	/// The archive's shared (non-Info.Id) .sam files on their own (the TrackMaster <c>coaster.sam</c> of the 12 Theme Park World track rides, and Theme Park Inc's <c>bumper.sam</c>), or null when it has none.
 	/// They are kept apart from <see cref="Settings"/> as the original's object loader does (<see cref="CoasterDefinition.FromEntry"/> reads them).
 	/// </summary>
 	public ObjectSettings? SharedSettings { get; internal set; }
@@ -477,6 +477,7 @@ public sealed class ObjectCatalog
 public static class ObjectNames
 {
 	public const string FileName = "OBJECT_NAMES.str";
+	public const string BlockTerminator = "Traffic Lights";
 
 	public static void Apply( ObjectCatalog catalog )
 	{
@@ -484,12 +485,16 @@ public static class ObjectNames
 		if ( english == null )
 			return;
 		var localized = GameLanguage.IsSelected ? TryLoadCurrent() ?? english : english;
-		foreach ( var (entry, index, length) in Bind( catalog.Entries.Where( entry => !entry.IsBonus ).ToList() ) )
+		var entries = catalog.Entries.Where( entry => !entry.IsBonus ).ToList();
+		// The Info.Id table is tp.exe's; Theme Park Inc ships another OBJECT_NAMES.str (other order and length) and keeps the English-name matcher.
+		var bound = GameEditions.Current == GameEdition.ThemeParkWorld ? Bind( entries ) : Match( entries, english );
+		foreach ( var (entry, index, length) in bound )
 		{
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
-			if ( index + length <= localized.Length )
-				entry.DisplayName = Join( localized.Skip( index ).Take( length ) );
+			// An empty bound name (the four End items, entry 0) keeps the .sam name as display name.
+			if ( index + length <= localized.Length && Join( localized.Skip( index ).Take( length ) ) is { Length: > 0 } name )
+				entry.DisplayName = name;
 		}
 	}
 
@@ -505,6 +510,67 @@ public static class ObjectNames
 		if ( parts.Length == 2 && parts[0].EndsWith( '-' ) )
 			return parts[0][..^1] + parts[1];
 		return string.Join( " ", parts.Where( text => text.Length > 0 ) );
+	}
+
+	/// <summary>Pure matching step, exposed for tests.</summary>
+	// [EXT:tpi-object-name-matcher] Theme Park Inc object names: OBJECT_NAMES entries bound by English name equality within the theme block (the Info.Id table is tp.exe's; the TPI executable's own binding is not traced) — the original TPI rule is unknown
+	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Match( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<string> names )
+	{
+		var blocks = new List<(int Start, int End)>();
+		var start = 0;
+		for ( var index = 0; index < names.Count; index++ )
+		{
+			if ( names[index] == BlockTerminator )
+			{
+				blocks.Add( (start, index) );
+				start = index + 1;
+			}
+		}
+		if ( blocks.Count == 0 )
+			blocks.Add( (0, names.Count - 1) );
+		List<(ObjectCatalogEntry, int, int)>? best = null;
+		foreach ( var (blockStart, blockEnd) in blocks )
+		{
+			var matches = new List<(ObjectCatalogEntry, int, int)>();
+			foreach ( var entry in entries )
+			{
+				var wanted = Normalize( entry.SettingsName );
+				if ( wanted.Length == 0 )
+					continue;
+				var found = -1;
+				var length = 1;
+				for ( var index = blockStart; index <= blockEnd && found < 0; index++ )
+				{
+					if ( Normalize( names[index] ) == wanted )
+						found = index;
+				}
+				for ( var index = blockStart; index < blockEnd && found < 0; index++ )
+				{
+					if ( names[index].Length > 0 && Normalize( names[index] + names[index + 1] ) == wanted )
+					{
+						found = index;
+						length = 2;
+					}
+				}
+				if ( found >= 0 )
+					matches.Add( (entry, found, length) );
+			}
+			if ( best == null || matches.Count > best.Count )
+				best = matches;
+		}
+		return best!.AsReadOnly();
+	}
+
+	internal static string Normalize( string text )
+	{
+		var decomposed = text.Normalize( NormalizationForm.FormD );
+		var builder = new StringBuilder();
+		foreach ( var character in decomposed )
+		{
+			if ( char.IsLetterOrDigit( character ) && CharUnicodeInfo.GetUnicodeCategory( character ) != UnicodeCategory.NonSpacingMark )
+				builder.Append( char.ToLowerInvariant( character ) );
+		}
+		return builder.ToString();
 	}
 
 	/// <summary>

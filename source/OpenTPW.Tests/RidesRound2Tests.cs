@@ -108,7 +108,7 @@ public class RidesRound2Tests
 			CollectionAssert.AreEqual( new[] { "/levels/jungle/rides/totem/textures", "/levels/jungle/rides/totem/gtexture", "/levels/jungle/sharetex" },
 				ObjectAssets.TextureDirectories( entry ).Select( item => item.Directory ).ToArray() );
 			ObjectAssets.LowDetailTexturesOverride = true;
-			CollectionAssert.AreEqual( new[] { "/levels/jungle/rides/totem/stexture", "/levels/jungle/rides/totem/gtexture", "/levels/jungle/ssharete" },
+			CollectionAssert.AreEqual( new[] { "/levels/jungle/rides/totem/stexture", "/levels/jungle/rides/totem/textures", "/levels/jungle/rides/totem/gtexture", "/levels/jungle/ssharete", "/levels/jungle/sharetex" },
 				ObjectAssets.TextureDirectories( entry ).Select( item => item.Directory ).ToArray() );
 		}
 		finally
@@ -157,6 +157,70 @@ public class RidesRound2Tests
 			IGraphicsSettings.Instance = previous;
 			GameEditions.Select( edition );
 		}
+	}
+
+	[TestMethod]
+	public void ObjectNamesBindThroughTheTableOnlyForThemeParkWorld()
+	{
+		var edition = GameEditions.Current;
+		try
+		{
+			// Theme Park Inc ships another OBJECT_NAMES.str: the table of tp.exe must not name its objects.
+			GameEditions.Select( GameEdition.ThemeParkInc );
+			var entries = new[] { SyntheticEntry( 1150, "Miniature Dreadnoughts" ) };
+			Assert.AreEqual( 0, ObjectNames.Match( entries, new[] { "x", "y" } ).Count );
+			GameEditions.Select( GameEdition.ThemeParkWorld );
+			Assert.AreEqual( 1, ObjectNames.Bind( entries ).Count );
+		}
+		finally
+		{
+			GameEditions.Select( edition );
+		}
+	}
+
+	private static ObjectCatalogEntry SyntheticEntry( int id, string name ) => new( "jungle", ObjectCategory.Feature, "/levels/jungle/features/x", new ObjectSettings( new[]
+	{
+		new ObjectSettingsFile( $"Info.Id\t{id}\nInfo.Name\t\"{name}\"\n", "x.sam" )
+	} ), ObjectShape.Single, "/x.MD2", null, null, Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(),
+		Array.Empty<string>(), new BaseFileSystem( Path.GetTempPath() ), null );
+
+	[TestMethod]
+	public void ASelectedTexturePackKeepsTheFullTextureFolders()
+	{
+		var edition = GameEditions.Current;
+		var previous = IGraphicsSettings.Instance;
+		try
+		{
+			GameEditions.Select( GameEdition.ThemeParkWorld );
+			Stream? Low( string path ) => path == "/low.sam" ? new MemoryStream( System.Text.Encoding.ASCII.GetBytes( "GraphicalOptions.TEXTUREQUALITY\t1\n" ) ) : null;
+			IGraphicsSettings.Instance = new GraphicsSettingsService( Low, new GraphicsSettings { Preset = GraphicsPreset.Low }, null, () => CompatibilityFlags.Original );
+			Assert.IsTrue( ObjectAssets.UsesLowDetailTextures );
+			// A selected pack replaces the full textures by path, so the low set (whose paths the pack does not cover) is skipped.
+			var property = typeof( TexturePack ).GetProperty( nameof( TexturePack.Enhanced ) )!;
+			property.SetValue( null, true );
+			try
+			{
+				Assert.IsFalse( ObjectAssets.UsesLowDetailTextures );
+			}
+			finally
+			{
+				property.SetValue( null, false );
+			}
+			Assert.IsTrue( ObjectAssets.UsesLowDetailTextures );
+		}
+		finally
+		{
+			IGraphicsSettings.Instance = previous;
+			GameEditions.Select( edition );
+		}
+	}
+
+	[TestMethod]
+	public void EndItemsKeepTheirSamNameWhenTheBoundNameIsEmpty()
+	{
+		Assert.IsTrue( ObjectNameTable.TryGet( 1605, out var first, out var second ) );
+		Assert.AreEqual( (0, ObjectNameTable.EmptyIndex), (first, second) );
+		Assert.AreEqual( "", ObjectNames.Join( new[] { "" } ) );
 	}
 
 	[TestMethod]
@@ -361,6 +425,27 @@ public class RidesRound2CorpusTests
 		CollectionAssert.AreEqual( Array.Empty<string>(), different );
 	}
 
+	/// <summary>Objects that name textures present only in `textures` still resolve them in the low-detail set (the fallback).</summary>
+	[TestMethod]
+	public void CorpusLowDetailSetFallsBackToTexturesForTextureOnlyNames()
+	{
+		try
+		{
+			ObjectAssets.LowDetailTexturesOverride = true;
+			foreach ( var (theme, archive, texture) in new[] { ("fantasy", "gokarts", "hivesign01"), ("space", "gates", "Sen_sgn1"), ("jungle", "totem", "tp_sign") } )
+			{
+				var entry = ObjectCatalog.Load( theme ).Entries.Single( candidate => candidate.ArchiveName == archive );
+				var path = ObjectAssets.ResolveTexturePath( entry, texture );
+				Assert.IsNotNull( path, $"{theme}/{archive}:{texture}" );
+				StringAssert.Contains( path, "/textures/", $"{theme}/{archive}:{texture}" );
+			}
+		}
+		finally
+		{
+			ObjectAssets.LowDetailTexturesOverride = null;
+		}
+	}
+
 	[TestMethod]
 	public void CorpusLowDetailSetResolvesEveryTextureTheFullSetResolves()
 	{
@@ -387,8 +472,8 @@ public class RidesRound2CorpusTests
 				}
 			}
 		}
-		// RIDES-022: the low-detail folders hold every texture the full folders hold (the 4 missing slots are the registered ogre/rocket cases).
-		Assert.AreEqual( (5629, 4, 4, 5625), (slots, fullMissing, lowMissing, lowDirectory) );
+		// RIDES-022: the low-detail folders hold every texture the full folders hold (the 4 missing slots are the registered ogre/rocket cases; 6 slots found only via the textures fallback).
+		Assert.AreEqual( (5629, 4, 4, 5619), (slots, fullMissing, lowMissing, lowDirectory) );
 		CollectionAssert.AreEqual( Array.Empty<string>(), lowOnlyMissing.ToArray() );
 	}
 }

@@ -100,7 +100,7 @@ public sealed class PrototypeRide : OriginalObject
 	internal static string ResolveTexturePath( BaseFileSystem fileSystem, string textureName )
 	{
 		var name = textureName.TrimEnd( '\0' );
-		foreach ( var directory in new[] { $"{ArchivePath}/textures", "/levels/jungle/sharetex" } )
+		foreach ( var directory in ObjectAssets.TextureDirectories( ObjectCatalog.Load( "jungle" ).Get( InfoId ) ).Select( item => item.Directory ).Where( directory => fileSystem.DirectoryExists( directory ) ) )
 		{
 			var path = fileSystem.GetFiles( directory ).FirstOrDefault( entry => string.Equals( Path.GetFileNameWithoutExtension( entry ), name, StringComparison.OrdinalIgnoreCase ) );
 			if ( path != null )

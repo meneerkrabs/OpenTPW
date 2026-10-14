@@ -28,6 +28,8 @@ public sealed class GuestRenderer : Entity
 	private bool deleted;
 
 	public bool Visible { get; set; } = true;
+	/// <summary>Which guests this renderer draws (null: all): the kids' renderer leaves guests in costume to the costume renderer.</summary>
+	public Func<Guest, bool>? Draws { get; init; }
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
 
@@ -163,8 +165,13 @@ public sealed class GuestRenderer : Entity
 	}
 
 	/// <summary>Picks the current visible in-park sprite without touching render resources or simulation state.</summary>
-	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection)
+	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection) =>
+		PickVisitor(mouse, viewport, view, projection, out _);
+
+	/// <summary>The picked guest and its depth, so the kids' and the costumes' renderers can be picked together.</summary>
+	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out float depth)
 	{
+		depth = float.PositiveInfinity;
 		if (!Visible || deleted || material == null || atlases.Count == 0)
 			return null;
 		var right = new SVector3(view.M11, view.M21, view.M31);
@@ -173,19 +180,20 @@ public sealed class GuestRenderer : Entity
 		var best = float.PositiveInfinity;
 		foreach (var guest in simulation.Guests)
 		{
-			if (!guest.IsVisible || !simulation.IsInPark(guest) || !float.IsFinite(guest.DrawX) || !float.IsFinite(guest.DrawY) ||
+			if (!guest.IsVisible || Draws?.Invoke(guest) == false || !simulation.IsInPark(guest) || !float.IsFinite(guest.DrawX) || !float.IsFinite(guest.DrawY) ||
 				!float.IsFinite(guest.HeadingX) || !float.IsFinite(guest.HeadingY) || !float.IsFinite(guest.DrawDistanceWalked) || guest.Type < 0)
 				continue;
 			var (atlasIndex, frameIndex, mirror) = SelectSprite(guest, right, forward);
 			var feet = CellToEngine(field, guest.DrawX, guest.DrawY);
-			if (!Hud.GuestWorldPicker.TryHit(feet, atlases[atlasIndex].Frames[frameIndex], mirror, view, projection, viewport, mouse, out var depth))
+			if (!Hud.GuestWorldPicker.TryHit(feet, atlases[atlasIndex].Frames[frameIndex], mirror, view, projection, viewport, mouse, out var hit))
 				continue;
-			if (depth < best || (depth == best && (picked == null || guest.Id < picked.Id)))
+			if (hit < best || (hit == best && (picked == null || guest.Id < picked.Id)))
 			{
-				best = depth;
+				best = hit;
 				picked = guest;
 			}
 		}
+		depth = best;
 		return picked;
 	}
 
@@ -204,7 +212,7 @@ public sealed class GuestRenderer : Entity
 		var count = 0;
 		foreach ( var guest in simulation.Guests )
 		{
-			if ( !guest.IsVisible )
+			if ( !guest.IsVisible || Draws?.Invoke( guest ) == false )
 				continue;
 			var (atlasIndex, frameIndex, mirror) = SelectSprite( guest, right, forward );
 			var atlas = atlases[atlasIndex];

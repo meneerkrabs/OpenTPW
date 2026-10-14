@@ -324,6 +324,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Balloons and costumes are drawn, as in the original (tp.exe `0x4fa030`, `0x4f9f00`, `0x4fe950`; GUEST-017; [GUESTS.md](GUESTS.md)
+  "Rendering"). A guest in costume walks in the theme's costume (Jungle's tiger, Fantasy's knight, and so on), and riders in costume show
+  the costume head where the theme has one. Balloons in four colours hang over their guests, trail behind and dip while they walk, bob, and
+  show their burst frame when they pop. The texture pack builder now includes the balloon and costume sprites, and
+  `--debug-guest-looks` dresses guests for captures.
 - Guests now buy balloons and costumes, as in the original (tp.exe `0x4fe1e0`, `0x501650`, `0x501db0`; ECON-044, GUEST-007;
   [GUESTS.md](GUESTS.md) "Balloons and costumes"). A balloon shop gives a balloon that lives 127 needs phases (about two minutes) at the
   build's quality of goods; a ride puts it away and gives it back. A costume shop puts a costume on, and a second visit returns it. Balloon

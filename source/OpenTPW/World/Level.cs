@@ -61,6 +61,12 @@ public partial class Level : IDisposable
 	public GuestRenderer? GuestRenderer { get; private set; }
 	/// <summary>Heads of riders on rides that have ADDHEAD (docs/GUESTS.md, "Riders' heads").</summary>
 	public RideHeadRenderer? RideHeadRenderer { get; private set; }
+	/// <summary>Draws the guests in costume with the theme's costume set (null when the theme ships none: they keep their kid sprite).</summary>
+	public GuestRenderer? CostumeRenderer { get; private set; }
+	/// <summary>Draws the heads of riders in costume with the theme's costume heads (Jungle and Space only).</summary>
+	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
+	/// <summary>Draws the guests' balloons.</summary>
+	public BalloonRenderer? BalloonRenderer { get; private set; }
 	/// <summary>The default world seed (<see cref="WorldSeed.DefaultValue"/>); with it the guest stream keeps its old seed.</summary>
 	public const ulong GuestSeed = WorldSeed.DefaultValue;
 	/// <summary>The one seed every simulation random stream of this level derives from (docs/DETERMINISM.md).</summary>
@@ -366,10 +372,32 @@ public partial class Level : IDisposable
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
-		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
+		// A guest in costume is drawn with the theme's costume set (sprite category 2, tp.exe 0x004FE65E: +0x20 from 0x00541F70(2)), its head on a ride with the costume heads where the theme has them
+		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
+		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = costumes.Count == 0 ? null : guest => !guest.InCostume };
+		if ( costumes.Count > 0 )
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume };
+		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
-		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
+		if ( costumeHeads.Count > 0 )
+		{
+			CostumeHeadRenderer = new RideHeadRenderer( Guests, costumeHeads, Objects ) { Draws = guest => guest.InCostume };
+			CostumeHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
+		}
+		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadBalloons() );
+		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
+	}
+
+	/// <summary>The visitor under the mouse, in or out of costume: the nearer of the two renderers' picks.</summary>
+	internal Guest? PickVisitor( System.Numerics.Vector2 mouse, System.Numerics.Vector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection )
+	{
+		float kidDepth = float.PositiveInfinity, costumeDepth = float.PositiveInfinity;
+		var kid = GuestRenderer?.PickVisitor( mouse, viewport, view, projection, out kidDepth );
+		var costumed = CostumeRenderer?.PickVisitor( mouse, viewport, view, projection, out costumeDepth );
+		if ( kid == null || costumed == null )
+			return kid ?? costumed;
+		return costumeDepth < kidDepth || (costumeDepth == kidDepth && costumed.Id < kid.Id) ? costumed : kid;
 	}
 
 	/// <summary>

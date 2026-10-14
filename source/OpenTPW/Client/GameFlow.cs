@@ -507,6 +507,7 @@ internal sealed partial class GameFlow : IDisposable
 		GameAudio.Update();
 		UpdateGlobeView();
 		Camera.Update();
+		UpdateLobbyEffects();
 		Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
@@ -690,6 +691,11 @@ internal sealed partial class GameFlow : IDisposable
 			}
 			Camera.SetCameraMode<LobbyCameraMode>();
 		}
+		// The globe plays its own music and ambience while it is up (GameAudio.EnterGlobe).
+		if ( wanted == Backdrop.Globe )
+			GameAudio.EnterGlobe();
+		else if ( backdrop == Backdrop.Globe )
+			GameAudio.LeaveGlobe();
 		backdrop = wanted;
 		if ( Globe != null )
 			Globe.Visible = wanted == Backdrop.Globe;
@@ -698,6 +704,36 @@ internal sealed partial class GameFlow : IDisposable
 		if ( Lobby != null )
 			Lobby.Visible = wanted == Backdrop.Lobby;
 	}
+
+	/// <summary>The front end's island effects (sky, rain, lightning and the island one-shots), seeded once from the clock like the original's.</summary>
+	private readonly LobbyEffects lobbyEffects = new( (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds() );
+
+	/// <summary>Steps the lobby's island effects for this frame and plays the sounds they raise; the globe eases the sky to its own colour.</summary>
+	private void UpdateLobbyEffects()
+	{
+		if ( Lobby == null )
+			return;
+		if ( backdrop == Backdrop.Globe )
+		{
+			lobbyEffects.StepGlobe( Time.Delta );
+			return;
+		}
+		if ( backdrop != Backdrop.Lobby )
+			return;
+		lobbyIslands.Clear();
+		foreach ( var (island, slot) in Lobby.Slots )
+		{
+			var (x, y) = Lobby.Definition.PositionOf( slot );
+			lobbyIslands.Add( new LobbyEffects.Island( island, x, y ) );
+		}
+		var (thunders, oneShots) = lobbyEffects.Step( Time.Delta, lobbyIslands, Camera.Position.X, Camera.Position.Y );
+		for ( var index = 0; index < thunders; index++ )
+			GameAudio.PlayLobbyThunder();
+		foreach ( var oneShot in oneShots )
+			GameAudio.PlayLobbyOneShot( oneShot );
+	}
+
+	private readonly List<LobbyEffects.Island> lobbyIslands = new();
 
 	/// <summary>Rebuilds the city's islands when its park list changes and points the lobby camera at the selected island.</summary>
 	private void UpdateCityScene( UI.CityLobbyScreen city )
@@ -744,10 +780,9 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		else
 		{
-			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky
-			// Lobby sky: the SKYCOLOUR of the selected island behind the 3D scene.
+			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] Lobby sky: one flat colour eased toward the nearest island's SKYCOLOUR (LobbyEffects), behind the 3D scene.
 			backgroundBatch.Clear();
-			var sky = Menu?.Selected.SkyColour ?? ((byte)40, (byte)90, (byte)160);
+			var sky = lobbyEffects.HasSky ? lobbyEffects.Sky : Menu?.Selected.SkyColour ?? ((byte)40, (byte)90, (byte)160);
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), new RgbaByte( sky.R, sky.G, sky.B, 255 ) );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			foreach ( var entity in Entity.All.ToArray() )

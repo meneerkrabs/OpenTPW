@@ -4,9 +4,9 @@ namespace OpenTPW;
 /// The park's weather: the original's weather thing (model 15), one quality re-rolled each cycle. The quality alone
 /// decides the weather (<see cref="Snow"/>, <see cref="Rain"/>, <see cref="Lightning"/>), the drops ramp toward the
 /// rain's target, lightning strikes count down and thunder follows a strike a few turns later. The sound side is
-/// reproduced, and the drops, snow and bolts are drawn by the visual approximation (<see cref="WeatherRenderer"/>).
+/// reproduced, and the drops, snow and bolts are drawn by the CRain port (<see cref="WeatherRenderer"/>).
 /// </summary>
-// [APPROX:AUDIO-031] the forecast's warning is presented by an unverified OpenTPW approximation (AUDIO-905..907), and the drawn drops, snow and bolts remain unverified procedural approximations (AUDIO-900..904) — evidence needed: the weather renderer (FUN_0057d300 family) and the forecast's message handler
+// [APPROX:AUDIO-031] the forecast's warning is presented by an unverified OpenTPW approximation (AUDIO-905..907), and the drawn drops, snow and bolts follow the traced CRain with the approximations AUDIO-900..904 — evidence needed: the forecast's message handler
 /// <remarks>
 /// The sim advances once per park turn (248 ms, <see cref="ParkCalendar.Turn"/>), and the day is the calendar's
 /// (<see cref="ParkCalendar.DayIndex"/>). The Mac binary's weather-tick gate is not located; the turn is the cadence
@@ -74,6 +74,11 @@ public sealed class ParkWeather
 	public int CurrentDrops { get; private set; }
 	/// <summary>The drops the rain is ramping to (<c>+0x34</c>).</summary>
 	public int TargetDrops { get; private set; }
+	/// <summary>How long a drawn bolt lives, in milliseconds (<c>WeatherEffects.LightningTime</c>, 2000 in the shipped Standard.sam).</summary>
+	// [DATA:Standard.sam:WeatherEffects.LightningTime] 2000 ms in every shipped layer; presentation only, never read by the simulation
+	public int LightningTimeMilliseconds => settings.LightningTime;
+	/// <summary>The most drops the renderer may draw (<c>WeatherEffects.MaxRaindrops</c>).</summary>
+	public int MaxRaindrops => settings.MaxRaindrops;
 	/// <summary>The level-driven rain voice (0 to 100): the current drops over the cap, in any weather band until the drops reach 0
 	/// (the Mac's ramp sends it at 0x103394..0x1033a4 regardless of the band; the snow stop at 0x103ce0 ends a separate voice).</summary>
 	public int RainLevel => settings.MaxRaindrops > 0 ? Math.Clamp(CurrentDrops * 100 / settings.MaxRaindrops, 0, 100) : 0;
@@ -153,6 +158,13 @@ public sealed class ParkWeather
 		while ( boltTops.Count > 0 )
 			struck.Add( boltTops.Dequeue() );
 		return struck;
+	}
+
+	/// <summary>Moves the bolt tops struck since the last call into <paramref name="into"/> as System.Numerics vectors, allocating nothing.</summary>
+	internal void DrainBoltTops( List<System.Numerics.Vector3> into )
+	{
+		while ( boltTops.Count > 0 )
+			into.Add( boltTops.Dequeue().GetSystemVector3() );
 	}
 
 	/// <summary>Bound for the pending bolt tops: strikes come at most once a park turn, and hosts drain them per frame.</summary>
@@ -409,7 +421,7 @@ public sealed class ParkWeather
 		IReadOnlyList<int> Averages, IReadOnlyList<int> Tolerances, IReadOnlyList<int> Chances,
 		int DaysOfWarning, int DaysBetweenChanges, int SpeedOfChange,
 		int SnowLow, int SnowHigh, int RainLow, int RainHigh, int LightningLow, int LightningHigh,
-		int LightningCountdownSpeed, int LightningCountdownFrom, int ThunderStartsThisFarAway, int ThunderRandomiser, int MaxRaindrops )
+		int LightningCountdownSpeed, int LightningCountdownFrom, int ThunderStartsThisFarAway, int ThunderRandomiser, int MaxRaindrops, int LightningTime )
 	{
 		// The shipped values (the global layer of the original's Standard.sam; the jungle and the other themes restate them).
 		private static readonly int[] DefaultAverages = { 75, 80, 90, 50 };
@@ -441,7 +453,8 @@ public sealed class ParkWeather
 				standard.GetInt( "WeatherEffects.LightningCountdownFrom", 500, optional: true ),
 				standard.GetInt( "WeatherEffects.ThunderStartsThisFarAway", 10, optional: true ),
 				standard.GetInt( "WeatherEffects.ThunderRandomiser", 2, optional: true ),
-				standard.GetInt( "WeatherEffects.MaxRaindrops", 600, optional: true ) );
+				standard.GetInt( "WeatherEffects.MaxRaindrops", 600, optional: true ),
+				standard.GetInt( "WeatherEffects.LightningTime", 2000, optional: true ) );
 		}
 	}
 }

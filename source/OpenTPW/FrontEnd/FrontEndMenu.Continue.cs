@@ -8,6 +8,8 @@ public sealed partial class FrontEndMenu
 	// [APPROX:UI-931] the theme entry offers distinct New/Continue actions for an own save; the native per-player theme-entry flow is not reproduced — evidence needed: original profile/theme-entry UI behavior
 	private void ShowThemeStart()
 	{
+		// The enter action's sound as the camera would fly into the island (cat_globallobbysfx 4).
+		GameAudio.PlayEnterPark();
 		var saved = actions.ContinuePark == null ? null : actions.ContinueEntry( Selected.Level );
 		if ( saved == null )
 		{

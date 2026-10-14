@@ -482,6 +482,12 @@ public sealed class RideVM
 	// [APPROX:RIDES-033] Script speed stays 1.0 (the creation bias 50); the native writers of the bias (0x100B2A34, 0x100B5B18) are not modelled — evidence needed: what those callers store and when
 	public const float ScriptSpeed = 1f;
 
+	/// <summary>
+	/// The signed bias at script +192 (0xC0), set to 50 at script creation (Mac 0xb3154/0xb318c; tp.exe 0x558c3c, 16-bit store 0x32).
+	/// The ride-script loop (tp.exe 0x5516b0, 0x5517e1..0x5517ef) hands it to the coaster speed setter 0x43b2b0 every pass.
+	/// </summary>
+	public const int SpeedBias = 50;
+
 	/// <summary>WAIT4ANIM deadline (script +164) in script-clock milliseconds; 0 = none. Each trigger overwrites it.</summary>
 	internal double Wait4AnimDeadline { get; set; }
 

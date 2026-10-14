@@ -875,6 +875,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Coaster register round (October 14):** the coaster register read against the Windows tp.exe. COAST-013 is retired
+  (the guest rating `0x4e0560` discards the sickness). COAST 5 is gated as in `0x43b2f0`, COAST 6 floors at the literal 0
+  instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
+  mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
+  narrowed to what remains. No determinism or coaster pin moved.
 - **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
   (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
   the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points

@@ -930,4 +930,97 @@ public class CoasterTests
 		}
 		Assert.IsTrue( moved, "power back: trains run again" );
 	}
+	/// <summary>COAST 5 is gated (0x43b2f0): a repeated open or close changes nothing; COAST 6 floors at 0 (0x43b330).</summary>
+	[TestMethod]
+	public void CloseGateAndCapacityFloor()
+	{
+		var (builder, _) = NewCoaster();
+		BuildCircuit( builder );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
+		var ride = builder.Ride;
+		ride.Command( 8, 0 );
+		Assert.IsTrue( ride.Closed );
+		ride.Command( 5, 1 );
+		Assert.IsTrue( ride.Closed, "close while closed: no change" );
+		ride.Command( 5, 0 );
+		Assert.IsFalse( ride.Closed );
+		ride.Command( 5, 0 );
+		Assert.IsFalse( ride.Closed, "open while open: no change" );
+		ride.Command( 5, 7 );
+		Assert.IsTrue( ride.Closed, "any nonzero closes" );
+		ride.Command( 6, -5 );
+		Assert.AreEqual( 0, ride.SeatsPerTrain, "the lower bound is the literal 0" );
+		ride.Command( 6, 0 );
+		Assert.AreEqual( 0, ride.SeatsPerTrain );
+		ride.Command( 6, 3 );
+		Assert.AreEqual( 3, ride.SeatsPerTrain );
+	}
+
+	/// <summary>COAST 8 applies the script speed bias 50 (0x5516b0 → 0x43b2b0 → 0x43c3d0): setting 50, cap = lerp(80, 130, 0.5).</summary>
+	[TestMethod]
+	public void CoasterEightAppliesTheScriptSpeedBias()
+	{
+		var (builder, _) = NewCoaster();
+		var ride = builder.Ride;
+		Assert.AreEqual( (60, 110f), (ride.SpeedSetting, ride.SpeedCap), "the constructor's setting 60 before the script runs" );
+		ride.Command( 8, 0 );
+		Assert.AreEqual( RideVM.SpeedBias, ride.SpeedSetting );
+		Assert.AreEqual( CoasterRide.SpeedCapFor( ride.Definition, 50 ), ride.SpeedCap );
+		Assert.AreEqual( 105f, ride.SpeedCap );
+	}
+
+	/// <summary>In mode 64 the station step is skipped (0x43b8b0): an unloaded train does not move on to boarding until the power is back.</summary>
+	[TestMethod]
+	public void BreakdownSkipsTheStationStep()
+	{
+		var (builder, _) = NewCoaster();
+		BuildCircuit( builder );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
+		var ride = builder.Ride;
+		ride.Command( 8, 0 );
+		var train = ride.Trains[0];
+		ride.Command( 4, 1 );
+		train.State = CoasterTrainState.Unloading;
+		for ( var tick = 0; tick < 120; tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( CoasterTrainState.Unloading, train.State );
+		ride.Command( 4, 0 );
+		ride.Advance( Tick );
+		Assert.AreEqual( CoasterTrainState.Boarding, train.State );
+	}
+
+	/// <summary>The suspended swing (tp.exe 0x43c76c..0x43ca45): with zero sample angles the roll is the wrapped approach of π toward atan2(−X, Y) at rate min(|F + g|·fForceMultiplier, 1).</summary>
+	[TestMethod]
+	public void SuspendedSwingFollowsThePcRestatement()
+	{
+		var settings = PcSettings();
+		settings["sCoasterType.bIsSuspendedCoaster"] = "1";
+		var definition = CoasterDefinition.FromValues( settings );
+		var samples = new CoasterSample[6];
+		var heights = new[] { 0f, 0f, 3f, 1f, 4f, 0f };
+		for ( var index = 0; index < samples.Length; index++ )
+			samples[index] = new CoasterSample { Position = new SVector3( 3 * index, heights[index], 0 ), Bank = 0.7f };
+		CoasterRating.RatePass( definition, samples, 3, 110, tailSection: 0 );
+		double Wrap( double value ) => ((value + 3 * (double)MathF.PI) % (2 * (double)MathF.PI)) - MathF.PI;
+		const double previous = MathF.PI; // the expectation is checked on the first sample, whose previous angle is the start value π
+		for ( var index = 0; index < samples.Length; index++ )
+		{
+			// Zero yaw and pitch; the roll is rotated through the old roll 0.7 (the rating pass left it in place: no winch bank).
+			var x = (double)samples[index].Force.X + definition.GravityX;
+			var y = (double)samples[index].Force.Y + definition.GravityY;
+			Assert.IsTrue( samples[index].Bank is >= -MathF.PI and <= MathF.PI, "the roll stays within ±π" );
+			if ( index != 0 )
+				continue;
+			var (cos, sin) = (Math.Cos( -0.7 ), Math.Sin( -0.7 ));
+			(x, y) = (cos * x - sin * y, sin * x + cos * y);
+			var theta = Math.Atan2( -x, y );
+			var d = Wrap( theta - previous );
+			var rate = Math.Min( Math.Sqrt( x * x + y * y ) * definition.ForceMultiplier, 1 );
+			var w = Wrap( previous + d * rate );
+			var roll = w - Math.PI;
+			if ( roll < -Math.PI )
+				roll += 2 * Math.PI;
+			Assert.AreEqual( roll, samples[index].Bank, 1e-3, "sample 0" );
+		}
+	}
 }

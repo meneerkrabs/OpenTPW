@@ -70,7 +70,8 @@ public sealed partial class OriginalObjectRuntime
 			// [DATA:<object>.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration
 			SetVariable( nameof( RideVariables.VAR_DURATION ), entry.Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "InitDuration" ) ?? 0 );
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
-			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the callers of the completion predicates 0x10045DA4/0x10045EAC in the guest and queue code are not traced — evidence needed: what 0x100DC834, 0x100DE654 and 0x100ED244 do with 0x10045EAC
+			// [BIN:TPW-EXE:0x441970 guest predicate twin] the controller exists, +0x140 == 0, +0x3C bit 0 set and bit 1 clear, and it is not the coaster being edited (0x790fec); callers: 0x4dd920 counts test (Mac 0xdc834, X15), 0x4df290 reopen guard (0xde654), 0x4ffff0 queue state 11 (0xed244: a coaster (track type 3, 0x4e2b50) failing it gets 0x50be80(13), unlink 0x4ddd20, dismissal 0x5012f0, state 6); the open routine 0x4df390 logs "Opening non-openable ride" up to 5 times and opens anyway
+			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the +0x140 == 0 test and the not-being-edited exclusion are not modelled (OpenTPW has no such state: an edit un-completes the track) and the state 11 thought-13 exit (GUESTS.md) belongs to the guest and queue owner
 			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) );
 		}
 	}

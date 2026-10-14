@@ -29,7 +29,7 @@ internal sealed partial class SandboxSmokeTest
 	private readonly TourSmokeRun tourSmoke = new();
 
 	/// <summary>Whether the tour phase is finished or never started (the smoke test completes after it).</summary>
-	private bool TourSmokeSettled => tourSmoke.Done || level.OriginalPark == null || (!tourSmoke.Started && kartSmoke.Done && TourEntry() == null);
+	private bool TourSmokeSettled => tourSmoke.Done || level.OriginalPark == null || (!tourSmoke.Started && bumperSmoke.Done && TourEntry() == null);
 
 	private ObjectCatalogEntry? TourEntry() => level.Objects.Catalog.Entries.Where( item => item.Category == ObjectCategory.Ride && item.ScriptPath != null
 		&& item.Settings.GetInt( "Bumper.WhichTrackType" ) == 0 && item.ScriptPath.Contains( "tour", StringComparison.OrdinalIgnoreCase ) ).OrderBy( item => item.InfoId ).FirstOrDefault();
@@ -41,7 +41,7 @@ internal sealed partial class SandboxSmokeTest
 			return;
 		if ( !run.Started )
 		{
-			if ( !kartSmoke.Done || frame < 6 || TourEntry() == null )
+			if ( !bumperSmoke.Done || frame < 6 || TourEntry() == null )
 				return;
 			StartTourSmoke( run );
 			return;

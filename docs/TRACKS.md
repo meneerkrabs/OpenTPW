@@ -1,8 +1,8 @@
 # Kart and water ride tracks
 
-Phase 1 of the original kart and water tracks: **one water ride, Splish Splash on the Jungle level, end to end** (the data tables, the track
-tool, the circuit walk, the section geometry, the boat physics and the script bridge). Kart rides share the piece tables, the templates and the
-tool, but have no controller yet (TRACK-015). Rules are traced from the Mac container (`STP-PPC`) and the Windows `tp.exe` (`TPW-EXE`, through the
+Phase 1 of the original kart and water tracks was **one water ride, Splish Splash on the Jungle level, end to end** (the data tables, the track
+tool, the circuit walk, the section geometry, the boat physics and the script bridge). Phase 2 adds **the go-karts in all four themes**, run end to end
+for the Jungle's Dino Karts (see "Go-karts" below); they share the piece tables, the templates, the tool and the controller with the water rides. Rules are traced from the Mac container (`STP-PPC`) and the Windows `tp.exe` (`TPW-EXE`, through the
 shared REA session over the decrypted executable); every approximation carries a `TRACK-` ID in
 [the register](FIDELITY-REGISTER.md).
 
@@ -22,7 +22,7 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
 - Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`.
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
 
-Not in phase 1: kart controllers and races (the kart cell, tool and tables exist), jumps and tunnels (add-ons), the tee pieces' arm masks and the
+Not in phases 1 and 2: jumps and tunnels (add-ons), the tee pieces' arm masks and the
 water texture animation, sounds and particles of the boats, advisor messages, the three other themes' water rides were checked for data only (the
 tables and kits load for all four; only the Jungle ride was run).
 
@@ -233,7 +233,123 @@ The golden values freeze this implementation of the traced rules; they are not c
 
 ## Open points
 
-- Kart controllers (grid start, races, followers, kart sounds), jumps and tunnels, the water animation and arm masks, boat particles and sounds, the
-  advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+- Jumps and tunnels, the bumper cars' chase mode, effects and drawing (TRACK-015, 029, 030, 031), the water animation and arm masks, the boats' spray particles (TRACK-016), the
+  kart sounds' catalogue ids and the engine pitch (TRACK-025), the advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
+
+## Go-karts (phase 2)
+
+Source: `[TPW-EXE:0x544F90, 0x549DB0, 0x54A040, 0x5474B0, 0x547F50, 0x547170, 0x546C80, 0x546280, 0x545890, 0x54AE50]`. The rides: Dino Karts (jungle, 1150,
+type −4), Crypt Karts (Halloween, 2150, −7, two riders per car), Space Racers (3150, −9) and Bumble Buggies (fantasy, 4150, −10); each has a `GoKarts.RSE` and an
+`EventMap.RSE`. Rocky Racers is not a kart ride. Kart tiles are cell type 11 (station tiles 13) and use the kart piece kit `gk_trck*` of the ride's own archive;
+`Level.KartTracks` is the kart builder next to `WaterTracks`, both over one cell layer, and `Level.BuilderOf` picks the one of a station. A tile costs
+`Costs.KartTrackCell`.
+
+| Theme | Template | Model base, count | Riders per car | Hover |
+| --- | --- | --- | --- | --- |
+| jungle | −4 | 0, 4 (`gk_blue`, green, orange, purple) | 1 | no |
+| hallow | −7 | 0, 4 | 2 | no |
+| space | −9 | 1, 4 (`gk_shadow` is mesh 0) | 1 | yes |
+| fantasy | −10 | 1, 1 (`gk_blue` only) | 1 | yes |
+
+The mesh of a kart is `count % count_of_template + base`, counted with the new kart. The kart meshes carry the dummies: head seats (class `0x100000B1`, number 1,
+and 2 in the Halloween karts), the sparks node (`0x131`) and the camera (`0x1031`).
+
+### The race
+
+- **Grid** (`0x545890`): eight grid buoys (flag 2) then the finish buoy (flag 4). Slot i lies (8 − i − 2) × 0x400 along the flow and 0x400 across, even slots on the
+  positive side; the finish buoy 0xC00 behind the station; the orientation word swaps the axes (bit 1) and flips x (bit 2) and y (bit 4). The station reference is the
+  spawn and the unload point.
+- **Loading**: the script opens the ride (`BUMP 7`, phase 0 → 1), boards each guest (`BUMP 1`) and creates a kart (`BUMP 4`: the pending guests ride, lap counter =
+  controller laps, animation 12, particle 15, engine voice). In phase 1 the n-th kart aims at the n-th grid buoy in grid mode (flags `0x10048`) and parks within a
+  quarter of the buoy radius (flag `0x80000`: damping × 0.7, no thrust; its target becomes the buoy after the finish).
+- **Start** (`BUMP 3`, phase 1 → 2): every kart clears `0x80000` and grid mode, takes the controller's laps (`BUMP 14` stored −3 from the ride's `InitDuration`) and is
+  relaunched with a thrust bias (3 − (draw & 7)) × accel / 9, drawn again at every relaunch (every lap).
+- **Laps and the end**: crossing the finish buoy counts the lap (not when the phase is 0 or 3); at 0 the kart ends its run, and in phase 2 the first finisher sets the
+  phase to 3 ("GoKart Race Over"); the others go home at their next crossing. A closed ride (`BUMP 6`) does the same through phase 0. A finished kart drives to the unload
+  point, hands its riders to the leaving list (particle 15, EventMap slot 1) and is freed; the last kart out sets the phase back to 1 (water rides skip that reset).
+- **Broken** (`BUMP 8`, state 2): no thrust, no turning, damping 1000, the lap countdown paused. **Worn** (`BUMP 9`, state 1) only changes the exhaust (no shipped
+  script issues it).
+
+### Effects
+
+The controller raises `BumpEffect`s (`BumpController.Effect`); the runtime plays them through the existing hosts: `GameAudio.PlayRseEvent` (types 5 for the global
+`cat_rides`, 3 for the ride's level events, the ids read from the ride's `EventMap.RSE`: jungle 194/195/199, Halloween 165/166/170, space 167/168/172, fantasy
+134/135/139 for engine/stop/horn) and `OriginalObjectRuntime.ParticleRequested` (so `ParticleRendererModule` draws them).
+
+| Effect | Trigger | Output |
+| --- | --- | --- |
+| crash | impulse above 130, once per tick per pair | request 3: global `cat_rides` 12 |
+| horn | phase 2, every 32 ticks, speed above 230 | request 2: the module LCG draws every tick until `(lcg & 0x70000) == 0`, then EventMap slot 3 |
+| exhaust | worn, every 32 ticks, speed above 80 | draw r = (lcg >> 16) & 7: r < 2 particle 1 (Sparks), r = 2 particle 10 + request 1 (`cat_rides` 24) |
+| engine | every tick | EventMap slot 0; pitch parameter speed / 3 (raised, not applied: TRACK-025) |
+| smoke | broken | particle 2 every 32 ticks (cadence assumed: TRACK-025) |
+| animation | speed above 40 / at most 40 | 5 / 12 (the hovering karts stay on 5) |
+
+### Drawing
+
+`TrackRenderer` is one per family. A kart is drawn along its drawn heading (+0x54, which follows the velocity by (angle difference × speed / 1000) per tick) with the
+four-probe height, pitch and roll over the piece's `.hmp` profile (2-unit samples of 0.4 units; the profile equals the mesh's top surface sample for sample, TRACK-001).
+Space and fantasy karts hover 1.6 units above the front/back mean with a sine bob (±0.43 units, period 512/6 ticks), have no roll of their own, bank into turns
+(TRACK-024) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (TRACK-026).
+`--debug-kart-track` (Debug builds) places Dino Karts with a circuit, three karts and a long race for captures.
+
+### Saves
+
+The vehicle record carries the kart fields (drawn heading, yaw rate and change, animation, effect request and latch, last height; flags, lap counter, thrust bias and
+target were already saved); the controller's phase is the saved state. The kart fields join the digest of kart controllers only, so water saves keep their hashes.
+
+### Tests
+
+`KartControllerTests` (grid for every orientation, slot targets and parking, the eight-kart limit, model index per type, hover flags, the start and the bias, bias
+re-roll per lap, race end and leaving order, phase 1 after the last kart, close, BUMP 13/14, broken, horn, crash, exhaust, animation, pose maths, saves) and, with
+`OPENTPW_GAME_PATH`, `TrackAssetTests` (the four `GoKarts.RSE` BUMP sequences pinned, templates, meshes, dummies and EventMap ids of the four rides, and Dino Karts' real
+script through a race). The native smoke test has a kart phase: the circuit from the kart tool's clicks, two karts parked on the grid, a lap and the unload, a capture
+(`artifacts/native-smoke-original-kart-track.png`), the removal.
+
+### Findings of phase 2
+
+The trace's corrections: `BUMP 5` reads the track-valid flag, `BUMP 8` has no return value, `BUMP 17` 1 stops the pieces; the × ¾ corner thrust applies to any vehicle whose
+object lacks all four quadrant bits. The lap count of a kart script is `VAR_DURATION`, which the ride's `InitDuration` (3) sets at creation
+(`[TPW-EXE:0x4db565]`). Still open: the `cat_rides` catalogue ids, the add-on handler `0x548E80` (jumps, tunnels), what else besides `BUMP 9` sets the worn state, and whether
+the late-to-grid extra lap is observable (the code reproduces it as written).
+
+## Bumper cars (October 14)
+
+Source: `[TPW-EXE:0x544840, 0x544A10, 0x544F90, 0x544B50, 0x549B80, 0x549DB0, 0x549C60, 0x54A040, 0x5474B0, 0x54AC70, 0x54AD90, 0x54AE50, 0x545890]`. The bumper rides
+are `jungle/rides/bumper` (type −1), `hallow/rides/bumper` (−6), `space/rides/bumper` (−14) and `fantasy/rides/bbugs` (Bumble Bugs, −11): `Bumper.WhichTrackType` 0
+with a negative `Bumper.BumperType`. They have no track; `BumperTemplates.ForRide` gives them a `BumpController` (`BumperTemplate.IsBumper`, `BumpController.HasTrack`
+false, `IsTrackValid` true as the attraction's constructor leaves it). Before this controller existed the four `bumper.RSE` scripts boarded their guests with `BUMP 1`
+and `BUMP 12` and then waited for `BUMP 2` for ever: a headless probe of the jungle ride boarded 16 guests and released none.
+
+**The script cycle** (all four scripts; Bumble Bugs differs in detail): `BUMP 7` opens; a loop keeps `VAR_CARS` equal to `VAR_CAPACITY` (`BUMP 4` makes a car, `BUMP 16`
+unloads an empty one, never when every car holds a guest); each boarding guest is `BUMP 1 VAR_LETMEON` (pending list) followed by `BUMP 12` (the pending guest goes into the
+first car without riders); when the cars are full or ten seconds passed after the last boarding, `BUMP 13 VAR_DURATION` stores seconds × 30 in the controller's duration,
+`BUMP 3` starts; then the script loops on `BUMP 2 VAR_LETMEOFF` until `VAR_ONRIDE` is 0, handling breakdown (`BUMP 8`), wear (`BUMP 9`) and closing (`BUMP 6`) on the way.
+
+**Controller rules** (all traced):
+
+- Open (`0x544840`): phase 1 whatever it was. Close (`0x544A10`): pending guests to the leaving list, phase 0, every car gets laps 0 and flags `(flags & 0xFFFFBFA1) | 0x10020`.
+- Create (`0x549DB0`, `BUMP 4`): needs a phase ≠ 0 and fewer cars than the type's maximum (8); the car carries `0x4000` until its first launch, the mesh is
+  `count % ModelCount + ModelBase`. The first launch (`0x54A040`) draws up to 100 random spots (radius = `rand % arena radius`, a random angle) around the station until no car overlaps,
+  clears `0x4000` (an empty car neither steers nor thrusts), takes a random heading and sets the wall-stuck counter to −1.
+- Load (`0x549B80`, `BUMP 12`): the first car without riders takes the pending guests, flags `0x84000` (carrying, slowed: no thrust) and the controller's duration.
+- Start (`0x544F90`): phase 1 → 2; every car clears `0x80000|0x40`, takes the duration as its counter and is relaunched. The jungle type also switches carrying cars to animation 5.
+- Arena (`0x545890`): one full keep-in circle at the station centre (radius 0x1200 jungle, 0x1100 fantasy, 0x1600 hallow and space) and eight buoys on a ring (radius 0xC00, 0xB00,
+  0x1000) turned 45° at a time with the 8-bit sine factors. No sections, no finish buoy.
+- Wandering (relaunch): flags `(flags & 0xFFFBFF89) | 0x10008 | 0x8000`; the target is a random buoy, or one time in four (rand & 0xF ≤ 3, only when already wandering) the buoy after the current;
+  buoy countdown 3, so a car changes its mind after three captures. The shared steering, walls and car-car collisions of the other controllers apply.
+- **Session end** (`0x5474B0`): the duration counts down one per tick while the ride runs (phase 2) and is not broken; at 0 a car drops `0x4000` and gets flags `0x10020`. A car with
+  `0x20` hands **every rider** to the front of the leaving list at once (`0x54AC70`); when no rider is left anywhere in the controller the phase becomes 1 ("loading"), the car's flags
+  `&= 0xFFFFFF81` and its animation 12. The cars are not unloaded: they stay, ready for the next session. `BUMP 2` then returns the guests one by one.
+- `BUMP 16` (`0x54AD90` is called with its flag constant 1: the first empty car, else the first car) retires a car at once; the last one going back sets the phase to 1, as for karts.
+- The ride's excitement uses the controller formula like karts and water (level × 60 % plus the piece terms, which are 0 here).
+
+**Saves**: a bumper controller is saved like a kart's (phase, state, duration, guest lists, cars); it has no sections. A park-resume save from before the controller restores
+the ride freshly (TRACK-027) and hands the riders it still held to the new leaving list.
+
+**Open**: chase mode (TRACK-029), the arena centre (TRACK-030), drawing and effects (TRACK-031).
+
+**Tests**: `BumperCarAssetTests` (with `OPENTPW_GAME_PATH`): each theme's real script with 16 guests for ten simulated minutes: every guest boards and is released, the ride cycles at least twice,
+nobody stays in `GuestState.Using`, the phase returns to loading after each session; `BumpControllerTests` pins the arena, the duration countdown and the release.

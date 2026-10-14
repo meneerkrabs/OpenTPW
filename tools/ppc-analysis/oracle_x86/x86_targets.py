@@ -2028,6 +2028,63 @@ FINDER_TARGET = Target(
     notes=['No stubs but the debug print. Synthetic cell records at [0x8023a0] (litter type +0x2c, collector word +0x30) and a park '
            'object whose scratch buffer at +0x1f020 the routine fills; the cell id of the out word is compared.'])
 
+# ============================================================================== tp.exe guard choice 0x5099c0 (ECON-022, GUEST-007)
+GUARD_ENTRY = 0x5099C0          # thiscall (receiver, out, prankster cell id), ret 8
+GUARD_RANGES = [(0x5099C0, 0x509ADF), (0x4D6330, 0x4D6348), (DEBUG_PRINT, DEBUG_PRINT + 1)]
+GUARD_LIST = 0x1DA744           # game word: the first guard's thing index; each guard's next at +0x210
+
+
+def guard_binary(sb: Sandbox, x: dict, log) -> int:
+    """The thing index the routine writes to its out word (0: none free)."""
+    game = bind_game(sb)
+    guards = x['guards']
+    sb.write(game + GUARD_LIST, 'H', 1 if guards else 0)
+    for i, (state, gx, gy) in enumerate(guards):
+        index = i + 1
+        thing = sb.object(0x220, {0x5: ('B', gx), 0x7: ('B', gy), 0x19C: ('I', state), 0x210: ('H', index + 1 if index < len(guards) else 0)})
+        sb.write(POINTS_THINGS + 20 * index, 'I', thing)
+    hx, hy = x['origin']
+    receiver = sb.object(0x10, {0x5: ('B', hx), 0x7: ('B', hy)})
+    out = sb.object(4, {0: ('H', 0xBEEF)})
+    px, py = x['prankster']
+    result = sb.call(GUARD_ENTRY, args=(out, py * 128 + px + 1), this=receiver)
+    if result.esp_delta != 0:
+        raise AssertionError(f'stack off by {result.esp_delta}')
+    return sb.read(out, 'H')
+
+
+def guard_plan(x: dict) -> int:
+    """StaffWorldSimulation.ChooseGuard: in list order the guards in state 0 or 1, the smallest dx² + dy² from the receiver's (the staff HQ's)
+    cell, the first on a tie; the prankster's cell plays no part. The guard's thing index (1-based here), or 0."""
+    best, chosen = None, 0
+    hx, hy = x['origin']
+    for i, (state, gx, gy) in enumerate(x['guards']):
+        if state not in (0, 1):
+            continue
+        distance = (gx - hx) ** 2 + (gy - hy) ** 2
+        if best is None or distance < best:
+            best, chosen = distance, i + 1
+    return chosen
+
+
+def guard_inputs(rng: random.Random, n: int) -> list:
+    def make() -> dict:
+        origin = rng.choice([(0, 0), (0, 0), (rng.randrange(0, 128), rng.randrange(0, 128)), (127, 127)])
+        guards = []
+        for _ in range(rng.randrange(0, 7)):
+            cell = rng.choice([(rng.randrange(0, 128), rng.randrange(0, 128)), (3, 4), (4, 3), (0, 5), (5, 0), (127, 0)])
+            guards.append((rng.choice([0, 1, 1, 0, 2, 3, 4, 5, 7, 16, 18, 19]),) + cell)
+        return {'origin': origin, 'guards': guards, 'prankster': (rng.randrange(0, 128), rng.randrange(0, 128))}
+    return [make() for _ in range(n + 20)]
+
+
+GUARD_TARGET = Target(
+    'tpw-exe-guard-choice', 'tpw', 'tp.exe guard choice 0x5099c0', 'WANDER-plan §4 / StaffWorldSimulation.ChooseGuard (ECON-022)',
+    GUARD_ENTRY, GUARD_RANGES, lambda t: {}, guard_binary, guard_plan, guard_inputs,
+    notes=['No stubs but the debug print; the state test 0x4d6330 runs. Synthetic guard things in the thing table 0x7cfb90 (cell bytes +5, +7, '
+           'state +0x19c, next word +0x210) behind the game word +0x1da744, and a receiver thing with its cell bytes; the out word is compared. '
+           'Cells with equal squared distance test the tie rule; the prankster cell argument varies and must not matter.'])
+
 # ============================================================================== TPI Game.exe: the same four rules
 # Addresses are virtual addresses of the TPI no-CD Game.exe at its preferred base (SHA-256 77ea0c41...90d967a).
 # The game object keeps the world state at moved offsets (RNG +0x1eab3c, tick +0x1eab40, weather handle +0x1eab58,
@@ -2647,5 +2704,5 @@ COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
-           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET,
+           SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
            TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS

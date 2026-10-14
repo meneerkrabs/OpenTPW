@@ -165,22 +165,22 @@ internal static class ParkResumeSaveFile
 						$"a train of coaster {ride.AttractionId} holds {train.Cars.Count} cars, not the definition's {definition.MaxCars}" );
 			}
 		}
-		// Tracks: every live water ride must be saved with a controller of its template's type, and no controller may exceed its template's vehicle limit.
-		var liveWaterRides = new Dictionary<int, BumperTemplate>();
+		// Tracks: every live track ride (water or kart) must be saved with a controller of its template's type, and no controller may exceed its template's vehicle limit.
+		var liveTrackRides = new Dictionary<int, BumperTemplate>();
 		for ( var index = 0; index < snapshot.Layout.Objects.Count; index++ )
 		{
 			var record = snapshot.Layout.Objects[index]!;
 			var entry = catalog.Find( record.InfoId )!;
 			if ( entry.Settings != null && !snapshot.Runtimes[index].State.Stopped
-				&& BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { IsWater: true } template )
-				liveWaterRides[record.AttractionId] = template;
+				&& BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
+				liveTrackRides[record.AttractionId] = template;
 		}
 		var savedControllers = snapshot.Tracks?.Controllers ?? new List<BumpControllerSaveData>();
-		Require( savedControllers.Count == liveWaterRides.Count && savedControllers.All( controller => liveWaterRides.ContainsKey( controller.AttractionId ) ),
-			$"the save holds {savedControllers.Count} track controllers, but the park places {liveWaterRides.Count} live water rides" );
+		Require( TrackControllersMatch( liveTrackRides, savedControllers.Select( controller => controller.AttractionId ).ToList() ),
+			$"the save holds {savedControllers.Count} track controllers, but the park places {liveTrackRides.Count} live track rides" );
 		foreach ( var controller in savedControllers )
 		{
-			var template = liveWaterRides[controller.AttractionId];
+			var template = liveTrackRides[controller.AttractionId];
 			Require( controller.Type == template.Type, $"track controller {controller.AttractionId} has type {controller.Type}, not its ride's {template.Type}" );
 			Require( controller.Vehicles.Count <= template.MaxVehicles, $"track controller {controller.AttractionId} holds {controller.Vehicles.Count} boats, above {template.MaxVehicles}" );
 		}
@@ -815,9 +815,19 @@ internal static class ParkResumeSaveFile
 					&& vehicle.Radius is >= 0 and <= 0x10000 && Small( vehicle.Laps, 1000 ) && vehicle.Variant is >= 0 and < 256 && vehicle.Age >= 0 && vehicle.WallHits >= 0 && vehicle.WallWindow >= 0 && vehicle.Sprays >= 0
 					&& Small( vehicle.BuoyCountdown, 0x10000 ),
 					$"a boat of track controller {controller.AttractionId} has a scalar out of range" );
+				Require( vehicle.VisualHeading is >= 0 and < BumpMath.Turn && Small( vehicle.YawRate, 0x10000 ) && Small( vehicle.YawDelta, 0x10000 ) && vehicle.Animation is 0 or 5 or 12
+					&& vehicle.EffectRequest is >= 0 and <= 5 && vehicle.EffectLatch is >= 0 and <= 5 && float.IsFinite( vehicle.Height ) && Math.Abs( vehicle.Height ) < 1e6f,
+					$"a vehicle of track controller {controller.AttractionId} has a kart field out of range" );
 			}
 		}
 	}
+
+	/// <summary>
+	/// Whether the saved controllers fit the live track rides: every water ride has one and none belongs to a ride the park does not place; a kart ride may lack one,
+	/// because a save from before the kart controllers carries none (the restore migrates it, TRACK-027).
+	/// </summary>
+	internal static bool TrackControllersMatch( IReadOnlyDictionary<int, BumperTemplate> liveRides, IReadOnlyCollection<int> savedAttractions ) =>
+		liveRides.Where( ride => ride.Value.IsWater ).All( ride => savedAttractions.Contains( ride.Key ) ) && savedAttractions.All( liveRides.ContainsKey );
 
 	/// <summary>
 	/// The coaster part's pure consistency (null means the park held no coasters — saves from before the coaster slice):

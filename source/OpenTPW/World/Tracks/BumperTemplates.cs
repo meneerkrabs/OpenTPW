@@ -25,7 +25,14 @@ public sealed record BumperTemplate( int Type, int Laps, int VehicleRadius, int 
 	public bool IsWater => Type is -5 or -8 or -12 or -13;
 	/// <summary>Types −4, −7, −9, −10.</summary>
 	public bool IsKart => Type is -4 or -7 or -9 or -10;
+	/// <summary>Types −1 (jungle), −6 (hallow), −11 (fantasy) and −14 (space): the bumper cars, which drive free inside an arena and have no track.</summary>
+	public bool IsBumper => Type is -1 or -6 or -11 or -14;
 	public TrackFamily Family => IsWater ? TrackFamily.Water : IsKart ? TrackFamily.Kart : TrackFamily.None;
+	/// <summary>The radius of the bumper arena's keep-in circle (collision object +0xC): 0x1200 jungle, 0x1100 fantasy, 0x1600 hallow and space.</summary>
+	// [BIN:TPW-EXE:0x00545890 bumper arena] the keep-in circle (flags 0x1F) at the station centre has radius 0x1200 for type −1, 0x1100 for −11 and 0x1600 for the other bumper types; the eight buoys lie on a ring of radius 0xC00, 0xB00 and 0x1000
+	public int ArenaRadius => Type switch { -1 => 0x1200, -11 => 0x1100, _ => 0x1600 };
+	/// <summary>The radius of the ring the eight bumper buoys lie on.</summary>
+	public int RingRadius => Type switch { -1 => 0xC00, -11 => 0xB00, _ => 0x1000 };
 	/// <summary>The lateral slack inside a track section: half width minus the vehicle radius (257 for the water rides).</summary>
 	public int Slack => HalfWidth - VehicleRadius;
 }
@@ -64,5 +71,7 @@ public static class BumperTemplates
 	/// matching type of the other themes), or null when the ride has no kart or water track.
 	/// </summary>
 	public static BumperTemplate? ForRide( int whichTrackType, int bumperType ) =>
-		whichTrackType is 1 or 2 && TryGet( bumperType ) is { } template && template.Family == (whichTrackType == 2 ? TrackFamily.Water : TrackFamily.Kart) ? template : null;
+		TryGet( bumperType ) is not { } template ? null
+		: whichTrackType == 0 ? (template.IsBumper ? template : null)
+		: whichTrackType is 1 or 2 && template.Family == (whichTrackType == 2 ? TrackFamily.Water : TrackFamily.Kart) ? template : null;
 }

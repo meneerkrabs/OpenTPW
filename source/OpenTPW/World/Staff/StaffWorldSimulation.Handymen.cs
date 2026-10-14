@@ -3,8 +3,11 @@ namespace OpenTPW;
 /// <summary>A toilet for the handymen's search: its economy object id, its cell and the path cell in front of it (thing <c>+0x36</c>).</summary>
 public readonly record struct ToiletSite( int Id, (int X, int Y) Cell, (int X, int Y) Access );
 
-/// <summary>A staff voice the state machine drew this turn (cat_staff walking or idle, at the member's position in cells).</summary>
-public readonly record struct StaffVoice( StaffType Type, bool Walking, float CellX, float CellY );
+/// <summary>
+/// A sound the staff state machines played this turn, at a position in cells: a walking or idle voice (<paramref name="Event"/> 0: the role's
+/// cat_staff pair), or a cat_staff event of its own (a performance's end, a guard's chase and catch), or with <paramref name="Kids"/> a cat_kids event.
+/// </summary>
+public readonly record struct StaffVoice( StaffType Type, bool Walking, float CellX, float CellY, uint Event = 0, bool Kids = false );
 
 /// <summary>
 /// The handymen's state machine and walk (tp.exe <c>0x004D73C0</c>, docs/reverse/WANDER-plan.md §4): once per park turn each handyman
@@ -18,7 +21,7 @@ public sealed partial class StaffWorldSimulation
 	private readonly List<StaffVoice> voices = new();
 	private const int MaxQueuedVoices = 64;
 
-	/// <summary>The staff voices drawn since the last call (the handymen's walking and idle voices).</summary>
+	/// <summary>The staff sounds played since the last call (the walking and idle voices and the work sounds of the members this world drives).</summary>
 	public IReadOnlyList<StaffVoice> TakeVoices()
 	{
 		var taken = voices.ToArray();
@@ -26,52 +29,99 @@ public sealed partial class StaffWorldSimulation
 		return taken;
 	}
 
-	/// <summary>Whether this world runs the handymen (their voices then come from <see cref="TakeVoices"/>).</summary>
-	public bool DrivesHandymen => true;
+	/// <summary>Whether this world runs the handymen, entertainers and guards (their voices then come from <see cref="TakeVoices"/>).</summary>
+	public bool DrivesStaff => true;
+
+	/// <summary>The guests a guard catches and an entertainer performs for; null: none (guards chase nobody, entertainers find no audience).</summary>
+	public IGuardGuests? Guests { get; set; }
 
 	// [BIN:TPW-EXE:0x004D73C0 handyman update] once per park turn after the pre-update 0x004D7060 (the speed 0x004FA870 and, while idle, a litter scan every IdleDuration turns): 0 idle until the turn passes +0x200 + IdleDuration[grade] (0x00785330 + 16 × grade); 1 patrol: one walk step, the walk drain while walking (0x005066A0), the job search on arrival or stuck; 8 to litter (0x004D7580); 9 sweep (0x004D76A0); 10 to a toilet (0x004D7790); 11 clean until the turn passes +0x214 + WorkDuration[grade] (0x004DFD80, 0x004DF390); every other state runs the generic staff handler
-	// [APPROX:ECON-022] handymen in a level walk and search as the original (WANDER-plan §4, StaffWorldSimulation), but their rest and strike are the economy's without the walks to the rest or strike area, a toilet claim ends when the walk to it fails instead of lapsing after 100 turns, the player's maintenance request (mRequestedService) and patrol rectangle have no control, a handyman steps without the guests' separation, and a toilet's access cell is its join or entrance cell; a headless economy without a world keeps its own dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: none (read, tp.exe 0x004D73C0 / 0x004D7100); the rest and strike walks and the controls are their own items
-	public void UpdateHandymen( ParkEconomy economy, long turn )
+	// [APPROX:ECON-022] all staff in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation), with the shared walks to a rest area and to the strike area, but they step without the guests' separation, a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance) and is not sent after a prankster until he is back on the paths, a rest ends when its rest area is sold, a resting member stays on the map (no staff model is drawn yet), a toilet claim ends when the walk to it fails instead of lapsing after 100 turns, a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour, a mechanic's finder scans the objects from the first (the original starts one further on each search) and his repair does not wait for the ride's fix animation, a mechanic's claim also ends when his walk fails or the ride no longer needs him, an entertainer's performance has no animation and the guests do not turn to watch, the guard list's order is the hire order, a prank reaches the guards at once, a picked-up entertainer's or guard's row stays on the cell he was lifted from, and a guard carries a caught guest to the park entrance when the ticket booth is no path cell; a headless economy without a world keeps its own handyman dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: none (read, tp.exe 0x004D73C0 / 0x004D7100, 0x004D4810 / 0x004D46D0, 0x004D6410 / 0x00508A30 / 0x004D6790, 0x005029F0, 0x004DA490 / 0x004DA5B0, 0x00506A40 / 0x00505FE0 / 0x005061D0 / 0x00506300)
+	// [BIN:TPW-EXE:0x0050B360 staff update] each staff thing in list order: the type's pre-update, then its state handler (4 mechanic 0x00505490 / 0x004DA490, 5 handyman 0x004D7060 / 0x004D73C0, 6 entertainer 0x004D4660 / 0x004D4810, 7 guard 0x004D6360 / 0x004D6410, 8 researcher 0x00502960 / 0x005029F0)
+	public void UpdateStaff( ParkEconomy economy, long turn )
 	{
 		// the voices wait for the audio until it takes them; a run that never takes them keeps only the latest
 		if ( voices.Count > MaxQueuedVoices )
 			voices.RemoveRange( 0, voices.Count - MaxQueuedVoices );
 		Synchronize();
-		foreach ( var member in economy.Staff.OfType( StaffType.Handyman ).ToList() )
+		foreach ( var member in economy.Staff.Members.Where( economy.DrivenByWorld ).ToList() )
 		{
 			var placed = member.Navigation == null;
 			if ( !Place( member ) )
 				continue;
+			// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
+			economy.MoveStaffEffect( member, Cell( member ) );
 			switch ( member.State )
 			{
 				case StaffState.PickedUp:
-					member.Job = HandymanJob.PickedUp;
+					// a guard picked up while escorting sets the guest down where he stands (0x004D65D0 state 7)
+					if ( member.Job == StaffJob.Escorting && member.TargetGuestId != 0 )
+					{
+						SetDown( economy, member );
+						member.TargetGuestId = 0;
+					}
+					member.Job = StaffJob.PickedUp;
 					continue;
-				case StaffState.OnStrike:
-					member.Job = HandymanJob.Striking;
-					continue;
-				case StaffState.Resting:
-					member.Job = HandymanJob.Resting;
-					continue;
+				// a strike or rest the economy started without a walk (an older save): the member strikes or rests where he stands
+				case StaffState.OnStrike when member.Job is not (StaffJob.ToStrike or StaffJob.Striking):
+					member.Job = StaffJob.Striking;
+					break;
+				case StaffState.Resting when member.Job is not (StaffJob.ToRestArea or StaffJob.Resting):
+					member.Job = StaffJob.Resting;
+					break;
 			}
-			if ( placed )
+			if ( placed && member.Type is StaffType.Handyman or StaffType.Mechanic )
 			{
 				// a timed job of the headless dispatch (an older save) ends unfinished; a new handyman searches at once (the constructor
-				// 0x004D6B60 runs the job search)
+				// 0x004D6B60 runs the job search), and so does a mechanic placed with a dispatched job
+				var dispatched = member.BusyTicks > 0;
 				DropDispatchedJob( economy, member );
-				Search( economy, member, turn );
+				if ( member.Type == StaffType.Handyman )
+					Search( economy, member, turn );
+				else if ( dispatched )
+					SearchMechanic( economy, member, turn );
 			}
-			else if ( member.Job is HandymanJob.PickedUp or HandymanJob.Striking or HandymanJob.Resting or HandymanJob.ToRestArea or HandymanJob.ToStrike )
+			else if ( member.Job == StaffJob.PickedUp )
 			{
-				// Back from a rest or a strike: the original's rest end (0x00506D10) sets state 0 and runs the job search in the same update.
-				SetJob( economy, member, HandymanJob.Idle, turn );
-				Search( economy, member, turn );
+				// set down by the player (0x00505EA0 sets state 0): the type's search runs in the same update
+				SetJob( economy, member, StaffJob.Idle, turn );
+				SearchByType( economy, member, turn );
 			}
 			else
-				UpdateHandyman( economy, member, turn );
+			{
+				// the pre-update's speed step (0x004FA870 through 0x00505490, shared with the guests)
+				(member.SmoothedSpeed, _, var maxSpeed, var maxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, 0 );
+				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting or StaffJob.ToStrike or StaffJob.Striking )
+					UpdateRestOrStrike( economy, member, turn, maxSpeed, maxForce );
+				else
+				{
+					switch ( member.Type )
+					{
+						case StaffType.Handyman: UpdateHandyman( economy, member, turn, maxSpeed, maxForce ); break;
+						case StaffType.Entertainer: UpdateEntertainer( economy, member, turn, maxSpeed, maxForce ); break;
+						case StaffType.Guard: UpdateGuard( economy, member, turn, maxSpeed, maxForce ); break;
+						case StaffType.Researcher: UpdateResearcher( economy, member, turn, maxSpeed, maxForce ); break;
+						case StaffType.Mechanic: UpdateMechanic( economy, member, turn, maxSpeed, maxForce ); break;
+					}
+				}
+			}
 			var navigation = member.Navigation!;
 			member.CellX = navigation.X / (float)Fixed16.One;
 			member.CellY = navigation.Y / (float)Fixed16.One;
+		}
+		CountRestingStaff( economy );
+	}
+
+	/// <summary>The type's search, run when a member is set down or ends a rest (0x00506D10 dispatches by type: 5 0x004D7100, 6 0x004D46D0, 7 0x004D63D0, 8 0x00502C70).</summary>
+	private void SearchByType( ParkEconomy economy, StaffMember member, long turn )
+	{
+		switch ( member.Type )
+		{
+			case StaffType.Handyman: Search( economy, member, turn ); break;
+			case StaffType.Entertainer: SearchEntertainer( economy, member, turn ); break;
+			case StaffType.Guard: SearchGuard( economy, member, turn ); break;
+			case StaffType.Researcher: SearchResearcher( economy, member, turn ); break;
+			case StaffType.Mechanic: SearchMechanic( economy, member, turn ); break;
 		}
 	}
 
@@ -104,25 +154,24 @@ public sealed partial class StaffWorldSimulation
 		return true;
 	}
 
-	private void UpdateHandyman( ParkEconomy economy, StaffMember member, long turn )
+	private void UpdateHandyman( ParkEconomy economy, StaffMember member, long turn, int maxSpeed, int maxForce )
 	{
-		// the pre-update 0x004D7060: the movement routine's speed step (0x004FA870, shared with the guests), then an idle handyman scans for litter every IdleDuration turns
-		(member.SmoothedSpeed, _, var maxSpeed, var maxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, 0 );
+		// the rest of the pre-update 0x004D7060: an idle handyman scans for litter every IdleDuration turns
 		var cell = Cell( member );
 		var settings = economy.Settings;
-		if ( member.Job == HandymanJob.Idle && unchecked( (uint)turn ) % (uint)Math.Max( 1, settings.IdleDuration[member.Grade] ) == 0
+		if ( member.Job == StaffJob.Idle && unchecked( (uint)turn ) % (uint)Math.Max( 1, settings.IdleDuration[member.Grade] ) == 0
 			&& FindLitter( economy.Litter, cell, member.Id, DetectionRange( economy, member ) ) != null )
 			// the search runs in the pre-update; the state handler then runs the state it chose in the same update
 			Search( economy, member, turn );
 		var work = settings[StaffType.Handyman].WorkDuration[member.Grade];
 		switch ( member.Job )
 		{
-			case HandymanJob.Idle:
+			case StaffJob.Idle:
 				Voice( economy, member, walking: false );
 				if ( unchecked( (uint)turn ) <= unchecked( (uint)(settings.IdleDuration[member.Grade] + member.IdleStamp) ) )
 					return;
 				break;
-			case HandymanJob.Patrol:
+			case StaffJob.Patrol:
 				Voice( economy, member, walking: true );
 				if ( Walk( member, maxSpeed, maxForce ) == WalkResult.Walking )
 				{
@@ -130,7 +179,7 @@ public sealed partial class StaffWorldSimulation
 					return;
 				}
 				break;
-			case HandymanJob.ToLitter:
+			case StaffJob.ToLitter:
 				if ( member.LitterCell is not { } target || economy.Litter.CollectorAt( target.X, target.Y ) != member.Id )
 				{
 					member.LitterCell = null;
@@ -144,12 +193,12 @@ public sealed partial class StaffWorldSimulation
 						// 0x004FA930 puts him on the destination point; the sweep's time starts now
 						var navigation = member.Navigation!;
 						(navigation.X, navigation.Y) = (navigation.TargetX, navigation.TargetY);
-						SetJob( economy, member, HandymanJob.Sweeping, turn );
+						SetJob( economy, member, StaffJob.Sweeping, turn );
 						return;
 				}
 				member.LitterCell = null;
 				break;
-			case HandymanJob.Sweeping:
+			case StaffJob.Sweeping:
 				StaffVitals.Work( member );
 				if ( unchecked( (uint)(work + member.JobStamp) ) >= unchecked( (uint)turn ) )
 					return;
@@ -157,25 +206,25 @@ public sealed partial class StaffWorldSimulation
 				economy.Litter.Remove( cell.X, cell.Y );
 				member.LitterCell = null;
 				break;
-			case HandymanJob.ToToilet:
+			case StaffJob.ToToilet:
 				switch ( Walk( member, maxSpeed, maxForce ) )
 				{
 					case WalkResult.Walking:
 						return;
 					case WalkResult.Arrived when Toilets?.Invoke().FirstOrDefault( site => site.Id == member.ToiletId ) is { } site && site.Access == cell
 						&& economy.TryGetObject( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id:
-						SetJob( economy, member, HandymanJob.Cleaning, turn );
+						SetJob( economy, member, StaffJob.Cleaning, turn );
 						return;
 				}
 				ReleaseToilet( economy, member );
-				SetJob( economy, member, HandymanJob.Idle, turn );
+				SetJob( economy, member, StaffJob.Idle, turn );
 				return;
-			case HandymanJob.Cleaning:
+			case StaffJob.Cleaning:
 				StaffVitals.Work( member );
 				if ( unchecked( (uint)turn ) <= unchecked( (uint)(work + member.JobStamp) ) )
 					return;
 				economy.FinishToiletClean( member );
-				SetJob( economy, member, HandymanJob.Idle, turn );
+				SetJob( economy, member, StaffJob.Idle, turn );
 				return;
 		}
 		Search( economy, member, turn );
@@ -189,14 +238,8 @@ public sealed partial class StaffWorldSimulation
 	private void Search( ParkEconomy economy, StaffMember member, long turn )
 	{
 		var settings = economy.Settings;
-		var energy = StaffVitals.Byte( member.Energy );
-		if ( energy > settings.RestLevel )
-			member.BaseSpeed = energy < 100 ? GuestSpeed.BaseSpeeds[energy / 20] : GuestSpeed.BaseSpeeds[^1];
-		if ( economy.HandymanStrikeOrRest( member ) )
-		{
-			member.Job = member.State == StaffState.OnStrike ? HandymanJob.Striking : HandymanJob.Resting;
+		if ( StrikeOrRest( economy, member, turn ) )
 			return;
-		}
 		var cell = Cell( member );
 		if ( !StaffVitals.IsBelowRestLevel( member.Energy, settings.RestLevel ) )
 		{
@@ -207,7 +250,7 @@ public sealed partial class StaffWorldSimulation
 				if ( Route( member, litter, bx, by ) )
 				{
 					economy.Litter.Claim( litter.X, litter.Y, member.Id, turn );
-					SetJob( economy, member, HandymanJob.ToLitter, turn );
+					SetJob( economy, member, StaffJob.ToLitter, turn );
 					return;
 				}
 				member.LitterCell = null;
@@ -218,11 +261,11 @@ public sealed partial class StaffWorldSimulation
 				if ( economy.TryGetObject( toilet.Id, out var state ) )
 					state.MechanicId = member.Id;
 				Route( member, toilet.Access, GuestWander.CentreByte, GuestWander.CentreByte );
-				SetJob( economy, member, HandymanJob.ToToilet, turn );
+				SetJob( economy, member, StaffJob.ToToilet, turn );
 				return;
 			}
 		}
-		SetJob( economy, member, Patrol( economy, member, cell ) ? HandymanJob.Patrol : HandymanJob.Idle, turn );
+		SetJob( economy, member, Patrol( economy, member, cell ) ? StaffJob.Patrol : StaffJob.Idle, turn );
 	}
 
 	/// <summary>
@@ -260,16 +303,18 @@ public sealed partial class StaffWorldSimulation
 			return null;
 		var range = DetectionRange( economy, member );
 		ToiletSite? found = null;
+		var best = uint.MaxValue;
 		foreach ( var toilet in economy.Toilets() )
 		{
 			if ( toilet.MechanicId != 0 && toilet.MechanicId != member.Id || sites.FirstOrDefault( item => item.Id == toilet.Id ) is not { Id: > 0 } site )
 				continue;
 			var dx = site.Cell.X - cell.X;
 			var dy = site.Cell.Y - cell.Y;
-			if ( !ParkEconomy.IsDirtyToilet( toilet ) || dx * dx + dy * dy >= range * range )
+			var distance = (uint)(dx * dx + dy * dy);
+			if ( !(toilet.MaintenanceRequested && distance < best || ParkEconomy.IsDirtyToilet( toilet ) && distance < (uint)(range * range)) )
 				continue;
 			if ( grid.FindPath( cell.X, cell.Y, site.Access.X, site.Access.Y ).Count > 0 )
-				found = site;
+				(found, best) = (site, distance);
 		}
 		return found;
 	}
@@ -281,14 +326,42 @@ public sealed partial class StaffWorldSimulation
 		member.ToiletId = 0;
 	}
 
-	/// <summary>A patrol destination (<see cref="GuestWander"/>, the staff's 0x004F9490): true when one is set.</summary>
+	/// <summary>
+	/// A patrol destination (<see cref="GuestWander"/>, the staff's 0x004F9490), kept inside the member's patrol rectangle: a member outside it walks to a
+	/// random reachable cell inside it, and one whose every step leaves it does the same. True when a destination is set.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F9490 staff patrol area] for staff (types 4..8) a cell outside the rectangle (0x00506ED0: +0x20A and +0x20C are its corners' cell ids, inclusive) first tries 0x00506F30; when that fails ("I can't reach my patrol area", message 0x16) the wander runs without the rectangle; inside it, the candidates outside it are removed, and when none is left 0x00506F30 runs ("I'm inside my patrol area but can't get anywhere else within it" when it fails)
 	private bool Patrol( ParkEconomy economy, StaffMember member, (int X, int Y) cell )
 	{
 		var area = member.PatrolArea;
-		if ( GuestWander.Pick( grid, cell, () => (uint)(economy.Random.NextUInt64() >> 33),
-			( x, y ) => x >= area.X0 && x <= area.X1 && y >= area.Y0 && y <= area.Y1 ) is not { } destination )
-			return false;
-		return Route( member, destination.Cell, destination.ByteX, destination.ByteY );
+		bool InArea( int x, int y ) => x >= area.X0 && x <= area.X1 && y >= area.Y0 && y <= area.Y1;
+		var keepToArea = true;
+		if ( !InArea( cell.X, cell.Y ) )
+		{
+			if ( EnterPatrolArea( economy, member ) )
+				return true;
+			keepToArea = false;
+		}
+		if ( GuestWander.Pick( grid, cell, () => Draw( economy ), keepToArea ? InArea : null, out var areaBlocked ) is { } destination )
+			return Route( member, destination.Cell, destination.ByteX, destination.ByteY );
+		return areaBlocked && EnterPatrolArea( economy, member );
+	}
+
+	/// <summary>
+	/// A walk to a random cell of the patrol rectangle (tp.exe <c>0x00506F30</c>): up to 30 tries of two world draws (x, y) for a path cell a route reaches.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00506F30 into the patrol area] x = draw % (x1 − x0 + 1) + x0, y = draw % (y1 − y0 + 1) + y0; a path cell (0x004D8300, 0x00536310) that the route 0x004FA530 reaches ends the search; after 30 tries "Could not find or reach a destination" and message 0x16
+	private bool EnterPatrolArea( ParkEconomy economy, StaffMember member )
+	{
+		var area = member.PatrolArea;
+		for ( var tries = 0; tries < 30; tries++ )
+		{
+			var x = (int)(Draw( economy ) % (uint)(area.X1 - area.X0 + 1)) + area.X0;
+			var y = (int)(Draw( economy ) % (uint)(area.Y1 - area.Y0 + 1)) + area.Y0;
+			if ( grid.IsWalkable( x, y ) && Route( member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
+				return true;
+		}
+		return false;
 	}
 
 	/// <summary>Sets the member's walk to a point of <paramref name="cell"/> along the shortest route; false when none reaches it.</summary>
@@ -306,40 +379,76 @@ public sealed partial class StaffWorldSimulation
 
 	private enum WalkResult { Arrived, Walking, Stuck }
 
-	/// <summary>One walk step (tp.exe <c>0x004FA2A0</c>): arrived, walking, or stuck when the route ahead lost a path cell.</summary>
+	/// <summary>
+	/// One walk step (tp.exe <c>0x004FA2A0</c>): arrived, walking, or stuck when the route ahead lost a path cell. A walk with an off-grid leg goes on
+	/// past its path end along the leg's points; it arrives at the last one.
+	/// </summary>
 	private WalkResult Walk( StaffMember member, int maxSpeed, int maxForce )
 	{
 		var navigation = member.Navigation!;
-		if ( navigation.Arrived )
-			return WalkResult.Arrived;
-		foreach ( var (x, y) in navigation.Route )
+		if ( !navigation.Arrived )
 		{
-			if ( !grid.IsWalkable( x, y ) )
+			if ( !navigation.OffGrid )
 			{
-				navigation.SetDestination( navigation.X, navigation.Y, [] );
-				return WalkResult.Stuck;
+				foreach ( var (x, y) in navigation.Route )
+				{
+					if ( !grid.IsWalkable( x, y ) )
+					{
+						navigation.SetDestination( navigation.X, navigation.Y, [] );
+						member.OffGridLeg.Clear();
+						return WalkResult.Stuck;
+					}
+				}
 			}
+			if ( !navigation.Step( maxSpeed, maxForce, navigation.OffGrid ? static ( _, _ ) => true : navigation.IsOnWalk ) )
+				return WalkResult.Walking;
 		}
-		return navigation.Step( maxSpeed, maxForce, navigation.IsOnWalk ) ? WalkResult.Arrived : WalkResult.Walking;
+		if ( member.OffGridLeg.Count > 0 )
+		{
+			NextLeg( member );
+			return WalkResult.Walking;
+		}
+		// back on a path cell, the member walks the grid again
+		if ( navigation.OffGrid && grid.IsWalkable( navigation.Cell.X, navigation.Cell.Y ) )
+			navigation.OffGrid = false;
+		return WalkResult.Arrived;
 	}
 
 	/// <summary>
-	/// The handyman's state setter (tp.exe <c>0x004D7330</c> and the staff setter <c>0x005054D0</c>): the walks to a job take the speed bonus,
-	/// a sweep or a clean stamps its start, and idling stamps the turn when it follows a patrol (else 0, so the next update searches).
+	/// The roles' state setters (tp.exe <c>0x004D7330</c> handyman, <c>0x004D65D0</c> guard, and the staff setter <c>0x005054D0</c>): the walks to a
+	/// job and a chase take the speed bonus, a sweep, a clean or a performance stamps its start, a chase sets its timer, and idling stamps the turn
+	/// when it follows a patrol (else 0, so the next update searches).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D7330 handyman state setter] 8 and 10: +0xC2 = 25 (0x0075C7F2); 9 and 11: +0x214 = the turn; others through 0x005054D0, whose state 0 sets +0x200 to the turn after state 1 and to 0 otherwise and +0xC2 to 0 (0x0075C7F0)
-	private static void SetJob( ParkEconomy economy, StaffMember member, HandymanJob job, long turn )
+	// [BIN:TPW-EXE:0x004D65D0 guard state setter] 0: the target +0x212 = 0, then 0x005054D0(0); 16: +0xC2 = 25 (0x0075C7F2) and the chase timer +0x214 = GuardConstsPerGrade[grade].WorkDuration (0x00785498 + 8 × grade); 18, 19 and the others: +0xC2 = 0 (0x0075C7F0); 7 from 18 sets the guest down first
+	private static void SetJob( ParkEconomy economy, StaffMember member, StaffJob job, long turn )
 	{
 		switch ( job )
 		{
-			case HandymanJob.ToLitter or HandymanJob.ToToilet:
+			case StaffJob.ToLitter or StaffJob.ToToilet:
 				member.SpeedBonus = GuestSpeed.ToiletBonus;
 				break;
-			case HandymanJob.Sweeping or HandymanJob.Cleaning:
+			case StaffJob.Sweeping or StaffJob.Cleaning or StaffJob.Performing or StaffJob.Researching:
 				member.JobStamp = turn;
 				break;
-			case HandymanJob.Idle:
-				member.IdleStamp = member.Job == HandymanJob.Patrol ? turn : 0;
+			case StaffJob.Idle:
+				member.IdleStamp = member.Job == StaffJob.Patrol ? turn : 0;
+				member.SpeedBonus = 0;
+				if ( member.Type == StaffType.Guard )
+					member.TargetGuestId = 0;
+				break;
+			case StaffJob.Chasing:
+				member.SpeedBonus = GuestSpeed.ToiletBonus;
+				member.JobStamp = economy.Settings[StaffType.Guard].WorkDuration[member.Grade];
+				break;
+			case StaffJob.Patrol or StaffJob.Escorting or StaffJob.ReturningFromEscort when member.Type == StaffType.Guard:
+				member.SpeedBonus = 0;
+				break;
+			// the shared setter 0x005054D0: 4 (to the strike) takes the bonus 25 (0x0075C7F2), 5 (striking) clears it and the heading
+			case StaffJob.ToStrike:
+				member.SpeedBonus = GuestSpeed.ToiletBonus;
+				break;
+			case StaffJob.Striking:
 				member.SpeedBonus = 0;
 				break;
 		}
@@ -347,18 +456,34 @@ public sealed partial class StaffWorldSimulation
 		// the display state (0x005064F0)
 		member.State = job switch
 		{
-			HandymanJob.Idle => StaffState.Idle,
-			HandymanJob.Patrol => StaffState.Patrolling,
+			StaffJob.Idle => StaffState.Idle,
+			StaffJob.Patrol => StaffState.Patrolling,
+			StaffJob.ToRestArea or StaffJob.Resting => StaffState.Resting,
+			StaffJob.ToStrike or StaffJob.Striking => StaffState.OnStrike,
+			StaffJob.PickedUp => StaffState.PickedUp,
 			_ => StaffState.Working
 		};
 	}
 
-	/// <summary>The walking or idle voice: a world draw whose low four bits are 0 plays cat_staff 160 or 161 (tp.exe <c>0x004D73C0</c>, states 1 and 0).</summary>
+	/// <summary>
+	/// The walking or idle voice: a world draw whose low four bits are 0 plays the role's cat_staff pair (handyman 160/161, entertainer 164/165,
+	/// guard 166/167; tp.exe <c>0x004D73C0</c>, <c>0x004D4810</c>, <c>0x004D6410</c>, states 1 and 0).
+	/// </summary>
 	private void Voice( ParkEconomy economy, StaffMember member, bool walking )
 	{
-		if ( (economy.Random.NextUInt64() >> 33 & 0xF) == 0 )
+		if ( (Draw( economy ) & 0xF) == 0 )
 			voices.Add( new StaffVoice( member.Type, walking, member.CellX ?? 0, member.CellY ?? 0 ) );
 	}
+
+	/// <summary>A cat_staff event of the member's own at its position (or, with <paramref name="kids"/>, a cat_kids event at <paramref name="cell"/>).</summary>
+	private void Sound( StaffMember member, uint eventId, bool kids = false, (int X, int Y)? cell = null )
+	{
+		var (x, y) = cell is { } at ? (at.X + 0.5f, at.Y + 0.5f) : (member.Navigation!.X / (float)Fixed16.One, member.Navigation.Y / (float)Fixed16.One);
+		voices.Add( new StaffVoice( member.Type, false, x, y, eventId, kids ) );
+	}
+
+	/// <summary>One draw of the world generator (tp.exe <c>0x00516330</c>; OpenTPW's economy stream, DET-014).</summary>
+	private static uint Draw( ParkEconomy economy ) => (uint)(economy.Random.NextUInt64() >> 33);
 
 	private static (int X, int Y) Cell( StaffMember member ) => member.Navigation!.Cell;
 

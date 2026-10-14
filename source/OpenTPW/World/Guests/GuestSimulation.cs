@@ -470,6 +470,19 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.DrawDistanceWalked = guest.StepFromDistance + (guest.DistanceWalked - guest.StepFromDistance) * t;
 	}
 
+	/// <summary>
+	/// Presentation only: where the guest was drawn <paramref name="turnsAgo"/> park turns ago along its last step, the fraction clamped to −1..2 as
+	/// tp.exe <c>0x004F9F00</c> does with its flag 0 (the balloon's trailing point).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F9F00 position at a fraction] previous position (+0x190, +0x194) + (current − previous) × t, t clamped to 0..1 with the flag set and to −1..2 without it, in world units (cells × 10)
+	public (float X, float Y) DrawPositionBefore( Guest guest, float turnsAgo )
+	{
+		if ( guest.StepTick < 0 )
+			return (guest.X, guest.Y);
+		var t = Math.Clamp( Math.Clamp( (TickCount - guest.StepTick) / TicksPerTurn, 0f, 1f ) - turnsAgo, -1f, 2f );
+		return (guest.StepFromX + (guest.X - guest.StepFromX) * t, guest.StepFromY + (guest.Y - guest.StepFromY) * t);
+	}
+
 	private const float TicksPerTurn = ParkCalendar.TicksPerSecond * ParkCalendar.TurnMilliseconds / 1000f;
 
 	private void UpdateState( Guest guest, float dt )

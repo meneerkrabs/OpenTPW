@@ -355,8 +355,8 @@ control, so the build's quality 50 gives 127. The life (`mRemainingBalloonLife`,
 
 A ride puts the balloon away (state 16, `0x501db0`) and gives it back after the visit when it still has life (state 15). A balloon prank or a
 guard's catch bursts the balloon but leaves its life, so it comes back after the guest's next ride. The challenge types 9 and 10 count the
-in-park guests holding a balloon or wearing a costume, as a truncated percentage of the in-park guests (`0x4d1746`). Balloons and costumes are
-not drawn yet.
+in-park guests holding a balloon or wearing a costume, as a truncated percentage of the in-park guests (`0x4d1746`). How they are drawn:
+see Rendering.
 
 ### Walking
 
@@ -698,7 +698,20 @@ with up to eight kid atlases (`GuestSpriteAtlas`, 1024-wide RGBA, built on the
 CPU from `.FPC`). Direction comes from the guest's heading relative to the
 camera; the walk frame advances 10 frames per cell walked. Sprite world size
 (0.045 engine units per pixel, ≈ one cell per kid height) is an approximation.
-Not drawn: costumes, balloons, thought bubbles, shadows, riders' bodies on a ride (their heads are drawn, see below).
+Not drawn: thought bubbles, shadows, riders' bodies on a ride (their heads are drawn, see below).
+
+**Costumes.** A guest in costume is drawn by a second `GuestRenderer` with the theme's costume set (`esprites.wad/<theme>/Costumes`: Jungle
+`SPR_TI`, Fantasy `SPR_BK`, Hallow `SPR_HK`, Space `SPR_SK`; one set per theme, so the original's draw among them, `0x541f70(2)`, always
+picks it). The sets share the kids' animation slots. On a ride, its head comes from the theme's costume heads (Jungle and Space; the other
+themes ship none, and the rider keeps its kid head).
+
+**Balloons.** `BalloonRenderer` draws each held balloon from `Generic/Balloons/SPR_BL`: four colours (red, green, blue, yellow), each a whole
+and a burst frame, the colour drawn anew whenever the balloon appears (after a purchase or a ride; `0x541fd0`). The placement follows
+`0x4fa030`: the balloon hangs at the guest's position 0.35 of a park turn behind (`0x4f9f00`), one unit up, lowered by twice the distance
+between that point and the guest in world units (ten per cell), and bobbing through a 20-entry table (0 to 0.2, scaled by 1.5). A
+balloon that bursts (its life ends, a prank, a guard's catch) shows its burst frame for a moment; one put away for a ride just goes.
+GUEST-017 lists what is approximated (the colour stream, the bob's pace, the burst's length and fade). The developer option
+`--debug-guest-looks` gives every second guest a balloon and every third a costume as they appear, for captures.
 
 ## Riders' heads
 

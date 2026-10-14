@@ -49,3 +49,10 @@ mode/extra/spent arithmetic, strict JSON, size bounds, failed validation preserv
 a previous file, rename refusal/temporary cleanup, and changed-source reload.
 There is no original profile interoperability, multislot UI, global mystery-spend
 transaction, TPI progression, native parity or actual theme-gate qualification.
+
+A separate correction review covers every pair of ticket names whose bitwise
+combination would be a defined value (112 pairs), plus all four mode pairs. They
+are refused even when the supplied theme is valid for that forged result. Exact
+names apply to decoded JSON strings: legitimate Unicode escapes for the same
+known name remain accepted and serialize back to the unchanged canonical tokens
+for both modes and all twelve kinds.

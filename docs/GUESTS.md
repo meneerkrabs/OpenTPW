@@ -619,7 +619,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-008 | Toilets wear by use (tp.exe `0x4e2440`: 0.05 × the guest's toilet byte) and handymen clean them back to 100 after WorkDuration park turns (`0x4d7880`, state 11, `0x4dfd80`), so the worn-toilet exit fires; the online branch of the wear step and the dirty-toilet message handlers are not modelled | What the two message handlers do with the toilet's cell |
 | QUEUE-009 | Facing-change sign from the 1-in-10 draw | The sign selection in `0xed244` |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once | The state-6 transition after a queue exit |
-| QUEUE-011 | Upgrade level 0 for QWTC/InitSpeed | None (OpenTPW does not apply upgrade levels to objects) |
+| QUEUE-011 | Exact completed economy tier for ordinary TPW catalogue queue defaults/fallback capacity; live VM CAP/DUR retained | Native completion reset, operating-state synchronization and performance effects |
 | QUEUE-012 | Queue cells need allowed terrain and no object | The queue tool's validity checks |
 | QUEUE-013 | At most 25 cells per queue | The queue tool (`0x70b98..0x8c7c0`) |
 | QUEUE-014 | Laid cell by cell from the front, each touching the back | The queue tool's placement rules (UI-031) |
@@ -724,3 +724,13 @@ queue; seat attachment of riders;
 heads of riders on coaster and tour cars (the car models carry head records, see
 "Riders' heads"); costumes, thought bubbles, balloons; save/load of guest state;
 which `PeepTypes` entry uses which kid set.
+
+### Catalogue upgrade defaults
+
+Ordinary scripted Theme Park World rides now resolve the exact SAM `Upgrades[L]` row of their mapped economy instance. Fresh/imported construction seeds that tier before execution. Completion updates catalogue queue metadata and fallback capacity only; it leaves all current VM variables, flags, waits, rider/queue lists and head slots intact. A positive current `VAR_CAPACITY` remains authoritative for admission, so CAP1 intentionally stays1 even when the tier's fallback default becomes3. `InitSpeed` remains a queue/default input and never changes `RideVM.ScriptSpeed`, animations or controller coefficients. This is the conservative host contract qualified by QUEUE-011, not native reset or full performance parity.
+
+Whole-park resume already saves the economy's `Level`; staged binding derives the tier before runtime/script-world/guest restoration. Saved VM values overwrite fresh seeds afterward. No new schema or write-provenance state is added. Exact instance/object identity, factory parameter-record ownership, sparse/missing rows, duplicate completions, stopped/removed owners and no-economy/read-only/TPI boundaries are checked. Nonzero imported/resumed tiers that cannot resolve a row fail reconstruction rather than use tier0. A legacy tier0 entry without its row reports an explicit refusal and keeps prior construction semantics. Coasters and developer prototypes keep their existing controllers and receive no catalogue-tier mutation. A custom public queue record cannot be overwritten, even when its values equal the factory record.
+
+The entry-only queue factory keeps its level0 compatibility behavior. Tier-specific resolution uses exact row labels and existing raw seed/queue clamp semantics; no guessed duration units, sliders, refunds, physical seats or upgrade UI are introduced. Retained live operating values may differ from new catalogue defaults. A broader VM-to-queue projection or native upgrade reset needs a separate contract and evidence.
+
+Catalogue-default snapshot eligibility is checked before capture or file writing. Ordinary bound scripted TPW rides must retain factory-owned queue metadata and match their completed economy tier. Custom or refused tier metadata is not repaired during saving. Matching stopped owners and live CAP values different from the fallback remain supported; legacy unbound tier0 defaults, including catalogues without row0, retain compatibility. No new save fields record write provenance.

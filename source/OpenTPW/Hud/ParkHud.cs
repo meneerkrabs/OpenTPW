@@ -279,6 +279,7 @@ public sealed partial class ParkHud
 		} ) );
 
 		AddShopPriceButton();
+		AddRideUpgradeButton();
 		hud.DrawOverlay = DrawMessages;
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
@@ -543,6 +544,7 @@ public sealed partial class ParkHud
 			rideButton.Enabled = level.IsReadOnlyVisit && (IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate )));
 
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
+		UpdateRideUpgradeButton( input );
 		TrackCashChange( context.Delta );
 		SampleHappiness( context.Delta );
 		var paused = Paused;

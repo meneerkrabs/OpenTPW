@@ -13,6 +13,12 @@ public partial class Level
 		return reason.Length == 0;
 	}
 
+	/// <summary>Pure action preflight using the same owner/binding policy as completion and capture.</summary>
+	internal bool CanBuyCatalogueUpgrade( OriginalObject owner, ParkObjectState state ) =>
+		economyInstances.TryGetValue( owner, out var instance ) && instance == state.Id
+		&& CatalogueOwner( owner, instance, out var current, out _ ) && ReferenceEquals( state, current )
+		&& state.Level >= 0 && state.Level < int.MaxValue && owner.Runtime.CanBuyCatalogueTier( state.Level, state.Level + 1 );
+
 	private void InitializeCatalogueBinding( OriginalObject owner, int instance, bool alreadyBound )
 	{
 		// Shops/features/coasters/prototypes keep their existing controllers and construction semantics.

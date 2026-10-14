@@ -179,11 +179,12 @@ into the shared state (`0xfb1f20`; sites `0x6bc810`, `0x6bc680`, `0x6bc090`, `0x
 paragraph followed the Mac reading (a draw never stores its successor; only the
 library init `0x100118C8` writes `CAudioPlaceHolder::mRandomSeed`), which contradicts
 the PC instructions; the PC reading is used and the Mac reading is to be rechecked
-(docs/AUDIO.md "Mac versus PC"). Because UI clicks and audio-device timing now move the
-chooser, the park saves its state so a resume continues the same draws (AUDIO-037),
-and keeps it out of the canonical hash so that presentation draws cannot change the
-replay state (DET-plan §3 D9, §4.5). The state after a park entry is the world seed's
-`SoundStream`, not the clock, so tests and replays are reproducible.
+(docs/AUDIO.md "Mac versus PC"). Because UI clicks and mixer-timed sentence segments now move the
+chooser, its state depends on wall-clock events whenever sound is on: it is not a
+replay guarantee. The park still saves it (AUDIO-037) and reseeds it from the world
+seed at entry, so headless (`--mute`) runs and tests start from a known state, and it
+stays out of the canonical hash and out of the resume smoke test's composite hash
+(DET-plan §3 D9, §4.5).
 
 A park started from an original save (SAVE-I, docs/ECONOMY.md "Original save
 import") sets the economy's tick, bank, loans, objects and staff before its first
@@ -215,8 +216,9 @@ in its own snapshot, `ParkWeather.ParkWeatherSnapshot`), so no hash pin moves: t
 expectations (`ParkWeatherTests`, `WeatherForecastTests`, `SnapshotJsonRoundtripTests`), which were
 rewritten to the timestamp rules with the reasons in their messages, and the snapshot fields
 `LastChanged`/`NextRollDay`/`ApplyDay`, which now hold game seconds. A resumed save written before this
-change held day indices there, so a forecast pending in it resumes at the wrong time; no save version
-was bumped because the weather is outside the hash and a wrong forecast only shifts one weather change.
+change held day indices there; `ParkWeather.MigrateSchedule` recognises them (all three values within
+`DayIndex + DaysOfWarning + DaysBetweenChanges + 1` of a park at least a day old) and multiplies them by
+86,400 on restore, so no save version was bumped.
 
 The weather's own draws still come from its own stream, not from the PC's world LCG (`0x516330`:
 `world +0x1da708 = ror13(s·0x19660D + 0x3C6EF35F)`, the rotated value stored and `|value|` returned,

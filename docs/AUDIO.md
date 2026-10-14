@@ -38,6 +38,11 @@ for every sound type (`0x5575c7` on; tp.exe):
   rectangle, scaled by 10 with a one-cell offset): the middle of the rotated bounds of its shape,
   `(min + max + 1) * 5` per axis, at the object's base height. A fixed item (authored in park
   coordinates, no footprint) uses its model origin;
+* **census**: across every shipped ride of the four themes (262 objects, 308 scripts; `EventKeyCensusTests`, run with the
+  game data), the sound EVENTs of types 3-9 have 339 negative keys (the footprint middle), 17 keys >= 0 and no variable
+  keys; all 17 resolve with selector `0x200` against their own model (0 missing, 0 unsupported), so no shipped ride loses a
+  sound. A node without a matrix (flags 0x30 clear) plays at the footprint middle (the original reads a zero default,
+  the park's corner, which OpenTPW does not copy);
 * an **unknown key** logs `RSSE: Invalid Node ID` (`0x556d2c`), returns 0 and plays **nothing**
   (`0x5575e5`). OpenTPW used to fall back to flat.
 
@@ -190,7 +195,7 @@ QueryPerformanceCounter) and is never saved.
 OpenTPW draws everything from that one chooser (`SoundEventSystem`; the crowd's separate stream and
 AUDIO-035 are retired). The state is seeded from the clock when the sound service starts, but a park
 **reseeds it from its world seed at entry and saves it with the park** (`WorldRandomState.SoundSeed`;
-it is not part of the canonical hash), so replays, tests and the resume checks are reproducible: that
+it is not part of the canonical hash), so headless runs and tests start from a known state (with sound on the draws follow wall-clock events, so it is not a replay guarantee): that
 is AUDIO-037, an approximation of the original's clock seed.
 
 **Mac versus PC.** `SoundEvents.cs` used to follow the Mac reading (the seed is never stored: the only
@@ -281,7 +286,7 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Lobby music | `cat_locallobbymusic` 1 (sentence) of the selected level | the front end's selected island | `0x10095A24` (start `0x1009598C`, registration `0x100BC4C0`) |
 | Lobby ambience | `cat_locallobbysfx` 2 (sentence) of the selected level | as above, looping | `0x10095A50` |
 | Lobby island one-shots | `cat_locallobbysfx` 3, 4, 5 on the lobby generator's draws | the front end shows (see "Lobby effects") | `0x10095340`–`0x10095450` |
-| Start-up sound | `cat_ui` 0xD2 (flat one-shot, flags 0x200) | once, when the sound service starts | tp.exe `0x54de6a` (start-up init `0x54dcf0`, called from WinMain at `0x45abed`) |
+| Start-up sound | `cat_ui` 0xD2 (flat one-shot, flags 0x200) | once, when the front end first shows (OpenTPW does not play it for a run that loads a park directly) | tp.exe `0x54de6a` (start-up init `0x54dcf0`, called from WinMain at `0x45abed`) |
 | Control click | `cat_ui` 0x1F | every activated control, front end included (control message 0x100) | tp.exe `0x485780` (a global hook, `0x658d9f`/`0x658e42` call it for every control message); Mac `0x10137FD0` |
 | Map/research drawer | `cat_ui` 0x1C open, 0x1C then 0xC2 close | the map and research windows | tp.exe `0x4a14f0` (open `0x4a1737`, close `0x4a186f`, slide end `0x4a1947`) |
 | Error feedback | `cat_ui` 0x1D | a rejected purchase or placement | `0x10139A40` (buy window callers `0x10163AFC`/`0x10163BFC`) |
@@ -478,8 +483,10 @@ not day indices, and OpenTPW's `ParkWeather` follows it on game seconds sampled 
   `DaysBetweenChanges` <= `DaysOfWarning` rolls again at once).
 * The residual (AUDIO-026): OpenTPW models `lastChanged = 0` as a first roll due at the first step (its
   clock starts at 0, the original's is far past it), and the PC's tick mapping against the park turn is
-  not reproduced. The snapshot's `LastChanged`/`NextRollDay`/`ApplyDay` fields now hold game seconds
-  (a save from before this change held day indices; its pending forecast resumes at the wrong time).
+  not reproduced. The snapshot's `LastChanged`/`NextRollDay`/`ApplyDay` fields now hold game seconds; a save
+  from before this change held day indices, and `ParkWeather.MigrateSchedule` converts it on restore: for a started
+  weather at least a day old whose three values are all <= `DayIndex + DaysOfWarning + DaysBetweenChanges + 1`
+  they can only be day indices and are multiplied by 86,400.
 * The weather's draws come from the park's own weather stream (`[EXT:weather-stream]`); the PC draws them from the
   world LCG `0x516330` (`ror13(s * 0x19660D + 0x3C6EF35F)`, the rotated value stored; seeded with
   `time(NULL)` at world creation, `0x51586b`), shared by about 139 call sites, so reproducing its draw
@@ -522,7 +529,7 @@ implemented yet.
 | AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
 | AUDIO-025 | December's average is the storage of the unnamed type-0 `.sam` schema record after `Seasons` (`0x741d80`), taken as 4; its tolerance and chance are confirmed | The generic `.sam` loader's type-0 case (if it stores nothing the average would be 0, not 4) |
 | AUDIO-026 | The schedule runs on game seconds sampled at the park turn (roll at `lastChanged + max(0, DaysBetweenChanges - DaysOfWarning)` days, apply at the roll's time + `DaysOfWarning` days, the apply falling through to the roll test); the first roll is due at the first step | The PC tick mapping (10^7 units a second) against the park turn |
-| AUDIO-037 | The sound chooser is seeded from the clock at start-up (as the original) but a park reseeds it from its world seed at entry and saves it with the park, so replays, tests and resume checks are reproducible; the original's chooser is clock-seeded and unsaved | None (a deliberate determinism choice) |
+| AUDIO-037 | The sound chooser is seeded from the clock at start-up (as the original) but a park reseeds it from its world seed at entry and saves it with the park, so headless runs and tests start from a known state (not a replay guarantee with sound on); the original's chooser is clock-seeded and unsaved | None (a deliberate determinism choice) |
 | AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops; the parallax is a per-frame delta (equal to the original's wrapped absolute position x 0.1 only up to the sign it is added with; the 0.3 factor under camera modes `0x790ab0 & 0x16` is not reproduced) | The sign with which the offset is added to the drops, and the blend states |
 | AUDIO-901 | Snow reuses the rain's drop count but falls slower with a sinusoidal sway | The original's snow motion |
 | AUDIO-902 | The bolt is a jittered polyline from the strike's top (height 300) to the heightfield, shown for a fixed flash time at the strike | The original's bolt shape, segmenting and flash timing |

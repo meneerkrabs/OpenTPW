@@ -277,12 +277,35 @@ public sealed class ParkWeather
 	}
 
 	/// <summary>
+	/// A save from before the timestamp schedule holds day indices in <c>LastChanged</c>, <c>NextRollDay</c> and <c>ApplyDay</c>; a current one holds game
+	/// seconds. A started weather whose park is at least a day old and whose three values all lie within the days that can have passed plus the
+	/// forecast and cycle lengths (<c>DayIndex + DaysOfWarning + DaysBetweenChanges + 1</c>) can only be day indices (game seconds that small would be
+	/// under a day after the park's start), so they are multiplied by <see cref="ParkCalendar.SecondsPerDay"/>.
+	/// </summary>
+	internal ParkWeatherSnapshot MigrateSchedule( ParkWeatherSnapshot snapshot )
+	{
+		if ( !snapshot.Started || snapshot.LastTurn < 0 || snapshot.LastTurn > long.MaxValue / ParkCalendar.SecondsPerTurn
+			|| snapshot.LastTurn * ParkCalendar.SecondsPerTurn < ParkCalendar.SecondsPerDay )
+			return snapshot;
+		var limit = ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( snapshot.LastTurn ) ) + settings.DaysOfWarning + settings.DaysBetweenChanges + 1;
+		if ( Math.Max( snapshot.LastChanged, Math.Max( snapshot.NextRollDay, snapshot.ApplyDay ) ) > limit )
+			return snapshot;
+		return snapshot with
+		{
+			LastChanged = snapshot.LastChanged * ParkCalendar.SecondsPerDay,
+			NextRollDay = snapshot.NextRollDay * ParkCalendar.SecondsPerDay,
+			ApplyDay = snapshot.ApplyDay * ParkCalendar.SecondsPerDay
+		};
+	}
+
+	/// <summary>
 	/// Continues this weather (a fresh instance of the same park, seed and settings) from a validated
 	/// snapshot: the draw stream, the schedule, the converted state and the due thunder all resume instead
 	/// of re-rolling. Call before the first <see cref="AdvanceTo"/> of the restored level.
 	/// </summary>
 	public void RestoreSnapshot( ParkWeatherSnapshot snapshot )
 	{
+		snapshot = MigrateSchedule( snapshot );
 		ValidateSnapshot( snapshot );
 		random.Restore( snapshot.RandomState );
 		started = snapshot.Started;

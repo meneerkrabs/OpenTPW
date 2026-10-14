@@ -60,8 +60,8 @@ public sealed partial class OriginalObjectRuntime
 				position = Finite(toSound(pose.EnginePosition!.Value));
 				return position == null ? EventAnchorStatus.InvalidNode : EventAnchorStatus.Play;
 			case ParticleKeyStatus.UnsupportedNode:
-				// a key whose node has no matrix: the original reads the zero default (0x556c08), not an invalid node
-				position = Vector3.Zero;
+				// a key whose node has no matrix: the original reads a zero default (0x556c08), the park's corner, not an invalid node; OpenTPW plays it at the footprint middle (flat without a placement)
+				position = ReadFootprintMiddle();
 				return EventAnchorStatus.Play;
 			default:
 				Log.Trace($"RSSE: Invalid Node ID (EVENT key {key}).");

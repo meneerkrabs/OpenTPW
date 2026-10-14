@@ -116,6 +116,34 @@ public class ParkWeatherTests
 	}
 
 	[TestMethod]
+	public void ASaveHoldingDayIndicesIsMigratedToGameSecondsAndACurrentOneIsNot()
+	{
+		var weather = new ParkWeather( Jungle(), 4, 10, 10 );
+		weather.AdvanceTo( 0 );
+		weather.AdvanceTo( ParkCalendar.TickAtDay( 5 ) );
+		var seconds = weather.CaptureSnapshot();
+		Assert.IsTrue( seconds.NextRollDay > 100, "a current snapshot holds game seconds" );
+		// the same schedule as a pre-timestamp save wrote it: day indices (limit = day 5 + 4 + 7 + 1 = 17)
+		var days = seconds with { LastChanged = 2, NextRollDay = 5, ApplyDay = 9, PendingQuality = 30 };
+		var migrated = new ParkWeather( Jungle(), 4, 10, 10 ).MigrateSchedule( days );
+		Assert.AreEqual( (2L * 86400, 5L * 86400, 9L * 86400), (migrated.LastChanged, migrated.NextRollDay, migrated.ApplyDay) );
+		var restored = new ParkWeather( Jungle(), 4, 10, 10 );
+		restored.RestoreSnapshot( days );
+		Assert.AreEqual( 9, restored.ForecastApplyDay, "the forecast resumes on its day" );
+		// a current snapshot is left alone, and so is one over the limit by a single day
+		Assert.AreEqual( seconds, restored.MigrateSchedule( seconds ) );
+		var over = seconds with { LastChanged = 0, NextRollDay = 18, ApplyDay = 0 };
+		Assert.AreEqual( over, restored.MigrateSchedule( over ) );
+		var atLimit = seconds with { LastChanged = 0, NextRollDay = 17, ApplyDay = 0 };
+		Assert.AreEqual( 17L * 86400, restored.MigrateSchedule( atLimit ).NextRollDay );
+		// a park under a day old cannot tell the two apart and keeps its values; an unstarted weather has nothing to migrate
+		var young = seconds with { LastTurn = 10, LastChanged = 0, NextRollDay = 5, ApplyDay = 0 };
+		Assert.AreEqual( young, restored.MigrateSchedule( young ) );
+		var unstarted = new ParkWeather( Jungle(), 4, 10, 10 ).CaptureSnapshot();
+		Assert.AreEqual( unstarted, restored.MigrateSchedule( unstarted ) );
+	}
+
+	[TestMethod]
 	public void ARollIsDueAtItsTimestampNotAtADayBoundary()
 	{
 		// [BIN:TPW-EXE:0x51295c] roll when now >= lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days, on timestamps, not day indices

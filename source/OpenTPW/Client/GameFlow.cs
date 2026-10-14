@@ -524,6 +524,7 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		}
 		GameAudio.EnsureStarted();
+		GameAudio.PlayStartupSound();
 		GameAudio.Update();
 		UpdateGlobeView();
 		Camera.Update();

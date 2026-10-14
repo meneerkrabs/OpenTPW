@@ -1011,7 +1011,7 @@ research batch was included in this merge.
   a placed scape sentence plays as a positioned sentence for the park's life (AUDIO-020); the listener helper takes the eye in the
   camera modes `0x790ab0 & 0x16` and the midpoint otherwise (AUDIO-021); the weather's constructed quality is never applied and the first
   update rolls a forecast at once, with the schedule on game-clock timestamps instead of day indices and the apply falling through to the
-  roll test (AUDIO-026/027; the snapshot's schedule fields now hold game seconds); screams, the repair sound and EVENT sounds are
+  roll test (AUDIO-026/027; the snapshot's schedule fields now hold game seconds, older day-index saves are migrated on restore); screams, the repair sound and EVENT sounds are
   positioned at the ride's footprint middle, the object and the key's model node (selector 0x200), and an unknown EVENT key plays nothing
   (AUDIO-032/008/908); the refused path click plays at the clicked cell (also fixing `Level.CellSoundPosition`, which returned a
   height/ground mix); `cat_ui` 0xD2 plays once at start-up; every front-end list line and row clicks like a button (AUDIO-012); the

@@ -18,8 +18,19 @@ public static class GameAudio
 	/// <summary>The sound the application plays once at start-up (<c>cat_ui</c> 0xD2, submitted flat by the start-up initialisation <c>0x54dcf0</c> at <c>0x54de6a</c>-<c>0x54de7d</c>, right after it registers the global categories).</summary>
 	// [BIN:TPW-EXE:0x54de6a start-up sound] WinMain (0x45a960, call at 0x45abed) runs the start-up init 0x54dcf0, which registers the global categories (0x51eae0) and submits cat_ui event 210 (a one-shot, flags 0x200) flat
 	public const uint StartupEvent = 0xD2;
-	/// <summary>Plays the start-up sound (<see cref="StartupEvent"/>) once; null when sound or the event is missing.</summary>
-	internal static AudioVoice? PlayStartupSound() => events?.Play( Ui, StartupEvent, AudioChannel.Effects );
+	private static bool startupPlayed;
+
+	/// <summary>
+	/// Plays the start-up sound (<see cref="StartupEvent"/>) once per process, when the front end first shows (a real application start;
+	/// a run that loads a level directly never plays it over the park music); null when already played, or when sound or the event is missing.
+	/// </summary>
+	internal static AudioVoice? PlayStartupSound()
+	{
+		if ( startupPlayed || events == null )
+			return null;
+		startupPlayed = true;
+		return StartupVoice = events.Play( Ui, StartupEvent, AudioChannel.Effects );
+	}
 
 	/// <summary>The click every control activation plays (<c>0x10137FD0</c>: a 0x100 message from a control plays <c>cat_ui</c> 0x1F).</summary>
 	public const uint ClickEvent = 0x1F;
@@ -153,7 +164,6 @@ public static class GameAudio
 		Staff = SoundCategory.TryLoad( FileSystem, "/global/sound", "cat_staff" );
 		// [BIN:STP-PPC:0x100BC438 lobby registration] the global lobby effects category registered at sound-manager offset 40
 		GlobalLobbySfx = SoundCategory.TryLoad( FileSystem, "/global/sound", "cat_globallobbysfx" );
-		StartupVoice = PlayStartupSound();
 		Log.Trace( $"Sound: {(mixer.HasDevice ? "SDL audio" : "no device")}, ducking {mixer.DuckingLevel:P0}, UI events {Ui?.Catalog.Events.Count ?? 0}, speech events {Speech?.Catalog.Events.Count ?? 0}." );
 		return true;
 	}

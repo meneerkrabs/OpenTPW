@@ -39,6 +39,7 @@ public class AudioRegisterRound2Tests
 		Field( "events", system );
 		foreach ( var name in new[] { "Ui", "Ambient", "Rides", "Kids", "Staff", "LevelAmbient", "LevelRides" } )
 			Field( $"<{name}>k__BackingField", null );
+		Field( "startupPlayed", false );
 		foreach ( var name in new[] { "rain", "weatherRain", "placedAmbients", "placedSentences", "crowd", "music" } )
 			Field( name, null );
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
@@ -184,6 +185,17 @@ public class AudioRegisterRound2Tests
 		Assert.IsFalse( voice.Loops, "a one-shot with flags 0x200" );
 		Assert.AreEqual( 4, voice.Frames, "event 0xD2's sample, not the click's" );
 		Assert.AreEqual( 1, mixer.Voices.Count );
+		Assert.IsNull( GameAudio.PlayStartupSound(), "once per process: a front end shown again does not replay it" );
+		Assert.AreEqual( 1, mixer.Voices.Count );
+	}
+
+	[TestMethod]
+	public void StartingTheSoundServiceAloneDoesNotPlayTheStartUpSound()
+	{
+		// a run that enters a park directly (--load-original-level) must not play it over the park music
+		Use( "Ui", Category( (0xD2, 0x200, 4) ) );
+		Assert.AreEqual( 0, mixer.Voices.Count );
+		Assert.IsFalse( (bool)typeof( GameAudio ).GetField( "startupPlayed", BindingFlags.Static | BindingFlags.NonPublic )!.GetValue( null )! );
 	}
 
 	// ---- AUDIO-019 ----
@@ -341,10 +353,18 @@ public class AudioRegisterRound2Tests
 		Assert.AreEqual( 1, mixer.Voices.Count, "a button" );
 		new UiListItem { Bounds = new UiRect( 0, 0, 10, 10 ) }.Activate();
 		Assert.AreEqual( 2, mixer.Voices.Count, "a list line (the load screen)" );
-		var rows = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a", "b" } };
+		var rows = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a", "b" }, RowActivated = _ => { } };
 		rows.Select( 1 );
 		rows.Activate();
 		Assert.AreEqual( 3, mixer.Voices.Count, "a selected row of a list" );
+		var silent = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" } };
+		silent.Select( 0 );
+		silent.Activate();
+		Assert.AreEqual( 3, mixer.Voices.Count, "a list with nothing to activate does not click" );
+		var refusing = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" }, ClicksOnActivate = false, RowActivated = _ => { } };
+		refusing.Select( 0 );
+		refusing.Activate();
+		Assert.AreEqual( 3, mixer.Voices.Count, "an owner that clicks itself after accepting the activation is not clicked for" );
 		new UiButton { Bounds = new UiRect( 0, 0, 10, 10 ), Enabled = false }.Activate();
 		Assert.AreEqual( 3, mixer.Voices.Count, "a disabled control sends no message" );
 		Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null ), "flat" );

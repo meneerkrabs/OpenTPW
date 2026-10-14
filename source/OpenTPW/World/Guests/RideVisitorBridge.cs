@@ -891,13 +891,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		if ( IsBroken )
 		{
+			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too; it is
+			// admitted from only while open. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
 			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 )
-			{
 				CheckAdmission( turn );
-				EnterBrokenState();
-			}
-			else
-				DismissHead();
+			EnterBrokenState();
 			return;
 		}
 		CheckAdmission( turn );

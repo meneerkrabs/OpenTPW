@@ -74,11 +74,17 @@ precommit failure, tracking and retirement qualifications.
 
 The front-end smoke uses a fresh temporary save directory. Its plan now asserts
 that `newProgress` is a `ProgressChoiceScreen` and that the progress file is absent
-before injecting the actual starter-consent button click. It then uses the
-existing 40-frame park-load wait; the timeout is not enlarged and no history is
-preseeded. CPU regression controls drive those actual queued smoke steps and
+before injecting the actual starter-consent button click. It then waits in the
+queued readiness check for completed construction, the activated Jungle level
+and its HUD. It reports a progress failure dialog explicitly and retains the
+strict 3,000-frame budget; no history is preseeded. The former 40-frame delay
+could reach the original post-load assertion while construction was still
+active. CPU regression controls drive those actual queued smoke steps and
 menu/admission callbacks with synthetic theme metadata, checking successful
-consent, Back cancellation and preservation of known zero-key history.
+consent, Back cancellation and preservation of known zero-key history. Additional
+controller controls wait beyond 40 frames, reject a wrong theme or missing HUD,
+report a real failure dialog, and retain the strict noncompletion bound. These
+CPU controls model activation fields; native runs use actual construction state.
 
 The original native smoke objection is not counted as a successful native rerun.
 These CPU controls do not exercise native text readback, the GPU/window, original

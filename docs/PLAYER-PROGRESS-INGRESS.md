@@ -54,3 +54,10 @@ Synthetic controls use actual menu dispatch, guarded GameFlow bindings, isolated
 candidate precommit seams, real temporary/rename refusal, actual economy awards,
 loaded runtime replacement and dirty retirement/retry. Terrain/GPU/windowed
 candidate activation and original shipped metadata have not been freshly executed.
+
+Independent ingress controls also pin declared zero cost without resetting Full
+or Instant Action history, raw-byte digest changes, theme lease changes, late
+candidate precommit refusal, bounded profile reads, checked award amounts and
+exact runtime unsubscribe. A failed dirty level-queue flush retains the pending
+action, live world and its hash, then persists the earned identity on retry.
+These controls do not qualify cross-process writes or rendered activation.

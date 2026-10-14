@@ -21,6 +21,13 @@ internal sealed partial class FrontEndSmokeTest
 			Require( !File.Exists( SaveFileSystem.GetAbsolutePath( PlayerTicketFile.FileName ) ), "no progress file exists before consent" );
 			Click( consent!, "choice0" );
 		} );
-		Wait( "park loads", 40 );
+		steps.Enqueue( ("jungle park construction completes and activates its HUD", () =>
+		{
+			Require( flow.Menu?.Stack.Top?.Name != "progressFailed" && flow.Hud?.Stack.Top?.Name != "progressFailed",
+				"park construction must not end in a progress failure dialog" );
+			// Use the existing queued readiness protocol and strict MaximumFrames budget. Construction may
+			// take more than forty frames; allocated candidate fields alone do not mean it is activated.
+			return !flow.BuildingPark && flow.Level?.OriginalPark?.LevelName == "jungle" && flow.Hud != null;
+		} ) );
 	}
 }

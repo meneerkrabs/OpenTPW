@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.FrontEnd;
+using OpenTPW.Hud;
 using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
@@ -63,4 +64,64 @@ public class FrontEndProgressSmokeTests
 		Frame(); Assert.ThrowsException<InvalidOperationException>( () => { for ( var frame = 0; frame < 5; frame++ ) Frame(); } );
 		CollectionAssert.AreEqual( before, File.ReadAllBytes( Profile ) ); Assert.AreEqual( 0, Get<int>( fixture, "built" ) );
 	}
+	private void Building( bool value )
+	{
+		var type = typeof( GameFlow ).GetNestedType( "ParkBuild", BindingFlags.NonPublic )!;
+		Set( flow, "parkBuild", value ? RuntimeHelpers.GetUninitializedObject( type ) : null! );
+	}
+	private void Activated( string theme = "jungle", bool hud = true )
+	{
+		var original = (OriginalPark)RuntimeHelpers.GetUninitializedObject( typeof( OriginalPark ) ); Set( original, "<LevelName>k__BackingField", theme );
+		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) ); Set( level, "<OriginalPark>k__BackingField", original );
+		var parkHud = hud ? (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) ) : null;
+		if ( parkHud != null ) Set( parkHud, "<Stack>k__BackingField", new UiScreenStack() );
+		Set( flow, "<Level>k__BackingField", level ); Set( flow, "<Hud>k__BackingField", parkHud! );
+	}
+	private void AfterPark( Action action ) => Get<Queue<(string Name, Func<bool> Step)>>( smoke, "steps" ).Enqueue( ("original post-load assertion", () => { action(); return true; }) );
+	[TestMethod]
+	public void ActualSmokeControllerWaitsBeyondFortyFramesForActivation()
+	{
+		for ( var n = 0; n < 6; n++ ) Frame();
+		Building( true ); var reached = false;
+		AfterPark( () => { Assert.IsFalse( flow.BuildingPark ); Assert.IsNotNull( flow.Level ); Assert.IsNotNull( flow.Hud ); reached = true; } );
+		for ( var n = 0; n < 120; n++ ) Frame(); Assert.IsFalse( reached );
+		Activated(); Frame(); Assert.IsFalse( reached, "An allocated HUD/level cannot bypass active construction." );
+		Building( false ); Frame(); Assert.IsTrue( reached );
+	}
+	[TestMethod]
+	public void WrongThemeCannotCompleteParkReadiness()
+	{
+		for ( var n = 0; n < 6; n++ ) Frame(); Activated( "fantasy" );
+		var reached = false; AfterPark( () => reached = true );
+		for ( var n = 0; n < 120; n++ ) Frame(); Assert.IsFalse( reached );
+		Activated(); Frame(); Assert.IsTrue( reached );
+	}
+	[TestMethod]
+	public void MissingHudCannotCompleteParkReadiness()
+	{
+		for ( var n = 0; n < 6; n++ ) Frame(); Activated( hud: false );
+		var reached = false; AfterPark( () => reached = true );
+		for ( var n = 0; n < 120; n++ ) Frame(); Assert.IsFalse( reached );
+		Activated(); Frame(); Assert.IsTrue( reached );
+	}
+	[TestMethod]
+	public void ActualProgressFailureStopsReadinessWithDiagnosis()
+	{
+		for ( var n = 0; n < 6; n++ ) Frame();
+		typeof( GameFlow ).GetMethod( "ShowProgressFailure", BindingFlags.Instance | BindingFlags.NonPublic, null,
+			new[] { typeof( string ), typeof( string ) }, null )!.Invoke( flow, new object?[] { "synthetic build failure", null } );
+		Assert.AreEqual( "progressFailed", menu.Stack.Top!.Name );
+		var error = Assert.ThrowsException<InvalidOperationException>( Frame );
+		StringAssert.Contains( error.Message, "progress failure dialog" );
+	}
+	[TestMethod]
+	public void NoncompletionStillUsesStrictOriginalFrameBudget()
+	{
+		for ( var n = 0; n < 6; n++ ) Frame(); Building( true );
+		while ( Get<int>( smoke, "frame" ) < 2999 ) Frame();
+		var error = Assert.ThrowsException<InvalidOperationException>( Frame );
+		StringAssert.Contains( error.Message, "finish within 3000 frames" );
+		StringAssert.Contains( error.Message, "jungle park construction" );
+	}
+
 }

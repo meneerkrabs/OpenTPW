@@ -80,20 +80,11 @@ public sealed partial class StaffWorldSimulation
 				economy.MoveStaffEffect( member, Cell( member ) );
 		if ( Guests?.CellOf( guestId ) is not { } cell || economy.Litter.Environment.At( cell.X, cell.Y ).Security < 1 )
 			return;
-		StaffMember? guard = null;
-		var best = int.MaxValue;
-		foreach ( var member in economy.Staff.OfType( StaffType.Guard ) )
-		{
-			if ( member.Navigation == null || member.State is StaffState.PickedUp or StaffState.OnStrike or StaffState.Resting
-				|| member.Job is not (StaffJob.Idle or StaffJob.Patrol) )
-				continue;
-			var (x, y) = Cell( member );
-			var distance = x * x + y * y;
-			if ( distance < best )
-				(guard, best) = (member, distance);
-		}
-		if ( guard == null )
+		var guards = economy.Staff.OfType( StaffType.Guard ).Where( member => member.Navigation != null
+			&& member.State is not (StaffState.PickedUp or StaffState.OnStrike or StaffState.Resting) ).ToList();
+		if ( ChooseGuard( guards.Select( member => (member.Job, Cell( member )) ), StaffHqCell ) is not { } index )
 			return;
+		var guard = guards[index];
 		// [BIN:TPW-EXE:0x004D6260 chase start] too tired (0x00506680): nothing; else cat_staff 136 at the guard, the target +0x212 = the guest, a route to its cell: state 16, else nothing (the target stays)
 		if ( StaffVitals.IsBelowRestLevel( guard.Energy, economy.Settings.RestLevel ) )
 			return;
@@ -101,6 +92,34 @@ public sealed partial class StaffWorldSimulation
 		guard.TargetGuestId = guestId;
 		if ( Route( guard, cell, GuestWander.CentreByte, GuestWander.CentreByte ) )
 			SetJob( economy, guard, StaffJob.Chasing, economy.Turn );
+	}
+
+	/// <summary>The staff HQ's cell: the thing sits at (0, 0) in every shipped and played save, and the guard choice measures from it.</summary>
+	public static readonly (int X, int Y) StaffHqCell = (0, 0);
+
+	/// <summary>
+	/// The guard choice (tp.exe <c>0x005099C0</c>): among the guards in list order, those idle or patrolling, the one with the smallest squared distance
+	/// from <paramref name="origin"/> (the staff HQ, not the prankster), the first on a tie; its index, or null when none is free.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005099C0 guard choice] executed by the x86 oracle (ORACLE.md X24): the prankster's cell argument is never read; d = dx² + dy² from the receiver's cell bytes +5 and +7, unsigned, strictly smaller replaces, the best starting at 0xFFFFFFFF; states 0 and 1 only (0x004D6330)
+	public static int? ChooseGuard( IEnumerable<(StaffJob Job, (int X, int Y) Cell)> guards, (int X, int Y) origin )
+	{
+		int? chosen = null;
+		var best = uint.MaxValue;
+		var index = 0;
+		foreach ( var (job, cell) in guards )
+		{
+			if ( job is StaffJob.Idle or StaffJob.Patrol )
+			{
+				var dx = cell.X - origin.X;
+				var dy = cell.Y - origin.Y;
+				var distance = (uint)(dx * dx + dy * dy);
+				if ( distance < best )
+					(chosen, best) = (index, distance);
+			}
+			index++;
+		}
+		return chosen;
 	}
 
 	/// <summary>

@@ -219,6 +219,15 @@ public class GuardEntertainerTests
 	}
 
 	[TestMethod]
+	public void TheGuardChoiceTakesTheFreeGuardNearestTheOriginFirstOnATie()
+	{
+		var guards = new (StaffJob, (int, int))[] { (StaffJob.Chasing, (0, 1)), (StaffJob.Patrol, (3, 4)), (StaffJob.Idle, (4, 3)), (StaffJob.Idle, (0, 6)) };
+		Assert.AreEqual( 1, StaffWorldSimulation.ChooseGuard( guards, (0, 0) ), "the chaser is not free; 3² + 4² ties 4² + 3², the first wins" );
+		Assert.AreEqual( 3, StaffWorldSimulation.ChooseGuard( guards, (0, 7) ) );
+		Assert.IsNull( StaffWorldSimulation.ChooseGuard( guards.Take( 1 ), (0, 0) ) );
+	}
+
+	[TestMethod]
 	public void ANewGuardStandsWithHisRowDownBeforeHisFirstTurn()
 	{
 		var f = new Fixture();

@@ -339,7 +339,7 @@ public class OriginalSaveImportTests
 		var pending = new[]
 		{
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 188, 1000, 0, -1, 0, 0 ),
-			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 200, 1000, 1, -1, 0, 0 ),
+			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 90, 1000, 1, -1, 0, 0 ),
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 128, 20, 1, 1, 1, 0 ),
 		};
 		var history = new Dictionary<int, (uint, int, byte, uint)> { [0] = (1, 0, 1, 0), [129] = (400, 1, 1, 2), [77] = (9, 0, 1, 0) };
@@ -357,7 +357,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( new AdvisorMessageHistory( 1, 0, true, 0 ), controller.Queue.GetHistory( 0 ) );
 		Assert.AreEqual( new AdvisorMessageHistory( 400, 1, true, 2 ), controller.Queue.GetHistory( 129 ) );
 		Assert.AreEqual( AdvisorMessageHistory.Empty, controller.Queue.GetHistory( 106 ) );
-		StringAssert.Contains( report, "dropped 1 pending advice of unbound messages (200)" );
+		StringAssert.Contains( report, "dropped 1 pending advice of unbound messages (90)" );
 		StringAssert.Contains( report, "1 unbound history entries" );
 		StringAssert.Contains( report, "[APPROX:ADVISOR-022]" );
 		StringAssert.Contains( report, "message 128 thing 0 secondary 0 score overridden 0" );

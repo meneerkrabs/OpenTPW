@@ -15,8 +15,11 @@ internal enum AdvisorGameEvent
 	ResetForEasyMode = 10,
 }
 
-/// <summary>A scored advice message: descriptor fields plus the Advisor.sam key of its configured score.</summary>
-internal readonly record struct AdvisorMessageDefinition( int MessageId, int FirstResponseId, int ResponseCount, byte Group, byte MaximumPendingDuplicates, string ScoreKey );
+/// <summary>
+/// A scored advice message: descriptor fields plus the Advisor.sam key of its configured score. <paramref name="GameMode"/> is the
+/// descriptor's game-mode selector (0: full simulation only, 1: Instant Action only, 2: always).
+/// </summary>
+internal readonly record struct AdvisorMessageDefinition( int MessageId, int FirstResponseId, int ResponseCount, byte Group, byte MaximumPendingDuplicates, string ScoreKey, byte GameMode = 2 );
 
 /// <summary>
 /// The rows of the original 351-record descriptor table reached by the wired game events
@@ -34,6 +37,29 @@ internal static class AdvisorTables
 		new( 128, 308, 2, 0, 1, "ParkNowOpen.Score" ),
 		new( 129, 310, 2, 0, 1, "ParkNowClosed.Score" ),
 		new( 323, 587, 1, 1, 1, "PrebuiltPark.Score" ),
+	};
+
+	/// <summary>The Advisor.sam key of the score every help message carries.</summary>
+	// [BIN:TPW-EXE:0x0059E8C0 context-help score] the score callback of the 82 help descriptors returns the balance field at +0x328, the Advisor.sam key HelpMessage.ContextHelpScore (1000 shipped; HelpMessage.Score is 1000 too)
+	public const string HelpScoreKey = "HelpMessage.ContextHelpScore";
+
+	private static IReadOnlyList<AdvisorMessageDefinition>? help;
+
+	/// <summary>The help messages (<see cref="AdvisorHelpTable"/>) as definitions with the shared help score.</summary>
+	public static IReadOnlyList<AdvisorMessageDefinition> HelpMessages => help ??= AdvisorHelpTable.Messages
+		.Select( message => new AdvisorMessageDefinition( message.MessageId, message.FirstResponseId, message.ResponseCount, message.Group, message.MaximumPendingDuplicates, HelpScoreKey, message.GameMode ) )
+		.ToArray();
+
+	/// <summary>The bound game-event messages and the help messages.</summary>
+	public static IEnumerable<AdvisorMessageDefinition> AllMessages => Messages.Concat( HelpMessages );
+
+	/// <summary>Whether a message's game-mode selector admits the game type (2 = Instant Action, else the full simulation).</summary>
+	// [BIN:TPW-EXE:0x0059C0A0 descriptor score] selector 2 always passes, 0 passes only while the game-mode global 0xFB3B7C is 0, 1 only while it is 2; any other state scores -1 and nothing is said
+	public static bool GameModeAccepts( byte selector, int gameType ) => selector switch
+	{
+		0 => gameType == 0,
+		1 => gameType == 2,
+		_ => true,
 	};
 
 	/// <summary>
@@ -80,7 +106,7 @@ internal sealed class AdvisorBalance
 			throw new InvalidDataException( $"{source} is {bytes.Length} bytes; advisor settings are limited to {MaximumBytes}." );
 		var settings = new SamSettings( new[] { SamDocument.Parse( Encoding.Latin1.GetString( bytes ), source ) } );
 		var groups = new Dictionary<int, (uint, bool, uint)>();
-		foreach ( var group in AdvisorTables.Messages.Select( message => (int)message.Group ).Distinct() )
+		foreach ( var group in AdvisorTables.AllMessages.Select( message => (int)message.Group ).Distinct() )
 		{
 			// [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g
 			var prefix = $"MessageGroups[{group}].";
@@ -95,18 +121,20 @@ internal sealed class AdvisorBalance
 			MinimumTimeAnyMessage = settings.GetInt( "GeneralAdvisor.MinTimeAnyMessage" ),
 			MinimumTimeSameMessage = settings.GetInt( "GeneralAdvisor.MinTimeSameMessage" ),
 			Groups = groups,
-			Scores = AdvisorTables.Messages.ToDictionary( message => message.ScoreKey, message => settings.GetInt( message.ScoreKey ), StringComparer.OrdinalIgnoreCase ),
+			// The help score is optional: a settings file without it leaves the help silent instead of disabling the advisor.
+			Scores = AdvisorTables.AllMessages.Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
+				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey ? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
 		};
 	}
 
-	public IEnumerable<AdvisorMessageDescriptor> Descriptors() => AdvisorTables.Messages.Select( message =>
+	public IEnumerable<AdvisorMessageDescriptor> Descriptors() => AdvisorTables.AllMessages.Select( message =>
 	{
 		var group = Groups[message.Group];
 		return new AdvisorMessageDescriptor( message.MessageId, message.FirstResponseId, message.ResponseCount, message.Group,
 			group.RepeatGroups, group.SayOnlyOnce, group.DiscardAfterSlaps, message.MaximumPendingDuplicates );
 	} );
 
-	public int ScoreOf( int messageId ) => Scores[AdvisorTables.Messages.Single( message => message.MessageId == messageId ).ScoreKey];
+	public int ScoreOf( int messageId ) => Scores[AdvisorTables.AllMessages.Single( message => message.MessageId == messageId ).ScoreKey];
 }
 
 /// <summary>
@@ -139,6 +167,34 @@ internal sealed class AdvisorController
 		foreach ( var messageId in AdvisorTables.AdviceFor( gameEvent, gameType ) )
 			result.Add( (messageId, Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ) ), liveGameTick, tutorialEnabled )) );
 		return result;
+	}
+
+	/// <summary>
+	/// A window or tool asks for its help (the original's 0x486B00): the message becomes pending advice with the help score, subject to
+	/// the queue's admission rules (tutorial option, once-only, slaps, duplicates, repeat interval) and to the descriptor's game-mode
+	/// selector. Returns null for a message the controller has no descriptor for, or one the game mode excludes.
+	/// </summary>
+	public AdvisorQueueAdmission? Advise( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled )
+	{
+		var definition = AdvisorTables.AllMessages.FirstOrDefault( message => message.MessageId == messageId );
+		if ( definition.ScoreKey == null || !AdvisorTables.GameModeAccepts( definition.GameMode, gameType ) )
+			return null;
+		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ) ), liveGameTick, tutorialEnabled );
+	}
+
+	/// <summary>The window or tool no longer needs its help (the original's 0x486B40): see <see cref="AdvisorScoreQueue.Withdraw"/>.</summary>
+	public AdvisorWithdrawal Withdraw( int messageId, uint advisorClock ) => Queue.Withdraw( messageId, advisorClock );
+
+	/// <summary>
+	/// The interface mode changed: the help of the tools and modes is withdrawn (<see cref="AdvisorUiHelp.ModeHelpMessages"/>); true when
+	/// one of them was being spoken.
+	/// </summary>
+	public bool WithdrawModeHelp( uint advisorClock )
+	{
+		var cancelled = false;
+		foreach ( var messageId in AdvisorUiHelp.ModeHelpMessages )
+			cancelled |= Queue.Withdraw( messageId, advisorClock ).SpeechCancelled;
+		return cancelled;
 	}
 
 	/// <summary>

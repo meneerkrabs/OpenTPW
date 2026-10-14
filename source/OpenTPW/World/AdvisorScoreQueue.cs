@@ -32,6 +32,9 @@ internal readonly record struct AdvisorQueueAdmission( AdvisorEligibility Eligib
 
 internal readonly record struct AdvisorResponseSelection( int Slot, AdvisorPendingAdvice Advice, int Variant, int ResponseId );
 
+/// <summary>What withdrawing a message did: pending records dropped, and whether its speech was cut off.</summary>
+internal readonly record struct AdvisorWithdrawal( int PendingRemoved, bool SpeechCancelled );
+
 /// <summary>One pending advice record's own-format state for a park save (a free slot is null).</summary>
 internal sealed record AdvisorPendingAdviceSnapshot( int MessageId, int Score, int ResponseVariantOverride, bool OverrideOnlyOnce );
 
@@ -84,6 +87,8 @@ internal sealed class AdvisorScoreQueue
 	public int MinimumScore { get; }
 	public uint LastActionStarted { get; private set; }
 	public uint LastActionDuration { get; private set; }
+	/// <summary>The message whose response started last (what the original keeps at controller +0x16EC); null before the first one and after a restore.</summary>
+	public int? CurrentMessageId { get; private set; }
 	public int Count => slots.Count( slot => slot != null );
 	public bool IsAttemptOutstanding => playbackAttempt.HasValue;
 
@@ -174,6 +179,8 @@ internal sealed class AdvisorScoreQueue
 			snapshot.History!.ToDictionary( pair => pair.Key, pair => new AdvisorMessageHistory( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ) );
 		LastActionStarted = snapshot.LastActionStarted;
 		LastActionDuration = snapshot.LastActionDuration;
+		// The speech does not resume after a load, so no message is current.
+		CurrentMessageId = null;
 	}
 
 	/// <summary>
@@ -325,5 +332,35 @@ internal sealed class AdvisorScoreQueue
 		// [BIN:STP-PPC:0x10008A10 action reservation] returned playback span plus 1000
 		LastActionStarted = advisorClockAfterAttempt;
 		LastActionDuration = unchecked(returnedPlaybackSpan + 1000);
+		// [BIN:TPW-EXE:0x0059A550 advisor update] the played message is stored at controller +0x16EC after a successful playback
+		CurrentMessageId = pending.Advice.MessageId;
+	}
+
+	/// <summary>
+	/// Withdraws <paramref name="messageId"/> (the original's "unadvise", 0x486B40 → 0x59AA70): every pending record of that message is
+	/// dropped; and when it is the message being spoken (the action is busy and it is the current message) the speech is cut off: the
+	/// message does not count as played any more, its slap count goes up by one (so a help message that is cut off three times is discarded
+	/// for good, its group's DiscardAfterSlaps) and the action reservation ends, which frees the controller for the next advice at once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059AA70 unadvise] drops the pending records with the message (0x59AA94-0x59AAB8); if the busy test (now < +0xD8 + +0xDC) holds and +0x16EC is the message, it stops the speech (0x5994E0), clears the played byte (+0xE8), adds one to the slap count (+0xEC) and zeroes +0xDC
+	public AdvisorWithdrawal Withdraw( int messageId, uint advisorClock )
+	{
+		var removed = 0;
+		for ( var index = 0; index < Capacity; index++ )
+		{
+			if ( slots[index]?.MessageId != messageId )
+				continue;
+			slots[index] = null;
+			removed++;
+		}
+		var cancelled = false;
+		if ( descriptors.ContainsKey( messageId ) && CurrentMessageId == messageId && IsBusy( advisorClock ) )
+		{
+			cancelled = true;
+			var old = GetHistory( messageId );
+			history[messageId] = old with { HasBeenPlayed = false, SlapCount = unchecked(old.SlapCount + 1) };
+			LastActionDuration = 0;
+		}
+		return new AdvisorWithdrawal( removed, cancelled );
 	}
 }

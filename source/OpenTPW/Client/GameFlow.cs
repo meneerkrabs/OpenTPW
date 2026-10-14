@@ -357,6 +357,8 @@ internal sealed partial class GameFlow : IDisposable
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 			GoOnline = ShowOnline,
 			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
+			WindowOpened = window => Advisor?.OnWindowOpened( window ),
+			WindowClosed = window => Advisor?.OnWindowClosed( window ),
 		} );
 		return createdHud;
 	}

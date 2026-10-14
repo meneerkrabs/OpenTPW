@@ -48,7 +48,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		try
 		{
 			var balance = AdvisorBalance.Load();
-			Log.Trace( $"Advisor scoring: {AdvisorBalance.Path}, minimum score {balance.MinimumScore}, {AdvisorTables.Messages.Length} bound messages ({string.Join( ", ", AdvisorTables.Messages.Select( message => $"{message.MessageId}: {message.ScoreKey} {balance.ScoreOf( message.MessageId )}" ) )})." );
+			Log.Trace( $"Advisor scoring: {AdvisorBalance.Path}, minimum score {balance.MinimumScore}, {AdvisorTables.AllMessages.Count()} bound messages ({string.Join( ", ", AdvisorTables.Messages.Select( message => $"{message.MessageId}: {message.ScoreKey} {balance.ScoreOf( message.MessageId )}" ) ) + $", and the help messages at {balance.Scores.GetValueOrDefault( AdvisorTables.HelpScoreKey )}"})." );
 			return new AutomaticAdvisor( new AdvisorController( balance ) );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException or UnauthorizedAccessException or OverflowException )
@@ -115,6 +115,50 @@ internal sealed class AutomaticAdvisor : IDisposable
 			return;
 		Raise( open ? AdvisorGameEvent.ParkNowOpen : AdvisorGameEvent.ParkNowClosed );
 	}
+
+	/// <summary>
+	/// A HUD window opened: the interface mode changed (the help of the tools is withdrawn) and the window's help message, if it has
+	/// one (<see cref="AdvisorUiHelp.Windows"/>), is posted with the help score, which beats the other pending advice. It waits for a
+	/// speech that is running.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00486B00 advise] the window builders post their message (the title-string identified windows of AdvisorUiHelp) through 0x486B00 as they open, which builds the record (0x59B590, score from the descriptor's callback) and queues it (0x59A940)
+	public void OnWindowOpened( string window )
+	{
+		if ( level == null )
+			return;
+		OnModeChanged();
+		if ( AdvisorUiHelp.MessageFor( window ) is not { } message )
+			return;
+		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
+		Log.Trace( $"Advisor help for window {window}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
+	}
+
+	/// <summary>
+	/// A HUD window closed: its help message is withdrawn. Pending help is dropped; help being spoken is cut off at once (the advisor
+	/// vanishes within a frame, the message counts as not played and gains a slap).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00486B40 unadvise] the window close handlers withdraw their message through 0x486B40 → 0x59AA70
+	public void OnWindowClosed( string window )
+	{
+		if ( level == null || AdvisorUiHelp.MessageFor( window ) is not { } message )
+			return;
+		var withdrawal = Controller.Withdraw( message, AdvisorClock );
+		if ( withdrawal.SpeechCancelled )
+			CutOffSpeech();
+		Log.Trace( $"Advisor help for window {window} withdrawn: message {message}, {withdrawal.PendingRemoved} pending dropped{(withdrawal.SpeechCancelled ? ", speech cut off" : "")}." );
+	}
+
+	/// <summary>The interface mode changed (a window or tool took over): the help of the tools and modes is withdrawn.</summary>
+	// [BIN:TPW-EXE:0x0052F200 interface mode change] a changed mode withdraws the ten tool and mode help messages (AdvisorUiHelp.ModeHelpMessages)
+	public void OnModeChanged()
+	{
+		if ( level != null && Controller.WithdrawModeHelp( AdvisorClock ) )
+			CutOffSpeech();
+	}
+
+	/// <summary>A withdrawn message was being spoken: the advisor stops and vanishes (the original's slap path 0x5994E0 → "Kill advisor" 0x429D60).</summary>
+	// [APPROX:ADVISOR-027] The slap sound the cut-off plays (0x27F-0x281 through 0x51BFC0 once the speech handle is stopped) is not played and the last-tutorial copy the queue keeps at controller +0x16D0 (0x59A940) is not kept — evidence needed: the sound ids' samples in the global bank and the reader of +0x16D0/+0x16E8 (0x59A550)
+	private void CutOffSpeech() => presentation?.Kill();
 
 	private void Raise( AdvisorGameEvent gameEvent )
 	{

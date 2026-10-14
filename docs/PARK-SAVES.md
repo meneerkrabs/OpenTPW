@@ -111,6 +111,7 @@ refused this way before anything is replaced.
 | Economy | the full economy record (bank, loans, ledger, objects with price/level/repair/statistics, staff, research, challenges, golden tickets, RNG streams) and the exact attraction-to-economy-instance links, so two identical rides never swap their money |
 | Litter | every littered cell with its type and the claiming handyman (in the economy record); a save from before litter by cell had a park-wide count instead, which loads as a clean park (logged) |
 | World | the fixed-step clock, the sound-event seed, weather with its pending thunder, the park gate, staff positions, and the advisor's pending advice and history when the park had them |
+| Particles | the particle pool's live emitters and effectors with its generator, generation counters and free-list order, when any effect was live (an optional presentation part, docs/PARTICLES.md): the particles themselves are not saved and screen-space emitters are killed on load, as in the original's PART/PTCL block; not part of the world hash |
 | Header | theme, world seed, gameplay mode and start kind, park name, save date |
 
 ## Limits

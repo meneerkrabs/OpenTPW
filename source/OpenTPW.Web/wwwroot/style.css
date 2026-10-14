@@ -1,16 +1,121 @@
 /* Kept out of index.html so the page needs no inline styles (content security policy, docs/SERVER.md). */
-:root { color-scheme: dark; }
-html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 15px system-ui, sans-serif; }
+/* The setup screen borrows the original's fairground look (a night sky, bunting, balloons, a gold-rimmed panel and chunky
+   buttons) with CSS and inline SVG only: no original art, and no web fonts (the policy allows none). */
+:root {
+	color-scheme: dark;
+	--gold: #ffd23f;
+	--gold-dark: #e8890c;
+	--gold-edge: #8a4a00;
+	--red: #d7263d;
+	--ink: #2b1240;
+	--panel: #3a1d6e;
+	--panel-light: #5b2fa0;
+	--cream: #fff6d8;
+	--fun: "Arial Rounded MT Bold", "Arial Rounded MT", "Trebuchet MS", "Verdana", system-ui, sans-serif;
+}
+html, body { margin: 0; height: 100%; background: #000; color: var(--cream); font: 15px var(--fun); }
 #canvas { display: block; width: 100vw; height: 100vh; outline: none; }
-#setup { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; padding: 16px; text-align: center; background: #101418; }
+
+#setup {
+	position: fixed; inset: 0; overflow: auto;
+	display: grid; place-content: center; justify-items: center; gap: 4px; padding: 56px 16px 24px;
+	text-align: center;
+	background:
+		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cg fill='%23fff'%3E%3Ccircle cx='20' cy='30' r='1.2' opacity='.8'/%3E%3Ccircle cx='95' cy='12' r='.8' opacity='.6'/%3E%3Ccircle cx='150' cy='60' r='1.4' opacity='.9'/%3E%3Ccircle cx='60' cy='110' r='.9' opacity='.5'/%3E%3Ccircle cx='130' cy='150' r='1.1' opacity='.7'/%3E%3Ccircle cx='30' cy='165' r='.7' opacity='.5'/%3E%3C/g%3E%3C/svg%3E"),
+		radial-gradient(ellipse at 50% 115%, #ff8a3d 0%, #c2306b 22%, transparent 55%),
+		radial-gradient(ellipse at 50% 40%, #3b2a8f 0%, #1b0f4a 55%, #0b0624 100%);
+}
 #setup[hidden] { display: none; }
-#status { min-height: 1.4em; color: #9ab; }
-label { display: inline-block; padding: 10px 18px; border-radius: 8px; background: #3b4cc0; color: #fff; cursor: pointer; }
+
+/* Bunting along the top: triangles in the candy colours. */
+.bunting {
+	position: fixed; top: 0; left: 0; right: 0; height: 34px; pointer-events: none;
+	background:
+		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='34'%3E%3Cpath d='M0 2 Q80 14 160 2' fill='none' stroke='%23fff6d8' stroke-width='2'/%3E%3Cpath d='M4 4 L36 7 L20 30Z' fill='%23d7263d'/%3E%3Cpath d='M44 8 L76 10 L60 33Z' fill='%23ffd23f'/%3E%3Cpath d='M84 10 L116 8 L100 33Z' fill='%2329b6d1'/%3E%3Cpath d='M124 7 L156 4 L140 30Z' fill='%2366c23a'/%3E%3C/svg%3E") repeat-x;
+}
+
+/* Two balloons drifting at the sides. */
+.balloon {
+	position: fixed; width: 70px; height: 120px; pointer-events: none; opacity: .9;
+	background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 120'%3E%3Cpath d='M35 82 Q30 100 38 118' fill='none' stroke='%23fff6d8' stroke-width='1.5'/%3E%3Cellipse cx='35' cy='38' rx='30' ry='36' fill='%23d7263d'/%3E%3Cpath d='M30 73 L40 73 L35 81Z' fill='%23a51b2e'/%3E%3Cellipse cx='24' cy='24' rx='7' ry='11' fill='%23fff' opacity='.45'/%3E%3C/svg%3E");
+	animation: drift 7s ease-in-out infinite alternate;
+}
+.balloon-left { left: 6vw; top: 22vh; }
+.balloon-right {
+	right: 7vw; top: 48vh; width: 56px; height: 96px; animation-delay: -3s;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 120'%3E%3Cpath d='M35 82 Q42 100 32 118' fill='none' stroke='%23fff6d8' stroke-width='1.5'/%3E%3Cellipse cx='35' cy='38' rx='30' ry='36' fill='%2329b6d1'/%3E%3Cpath d='M30 73 L40 73 L35 81Z' fill='%231a7f93'/%3E%3Cellipse cx='24' cy='24' rx='7' ry='11' fill='%23fff' opacity='.45'/%3E%3C/svg%3E");
+}
+@keyframes drift { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-22px) rotate(4deg); } }
+@media (max-width: 640px) { .balloon { display: none; } .panel { padding: 14px 16px 10px; } .panel p { margin: 8px 0; } }
+@media (prefers-reduced-motion: reduce) { .balloon { animation: none; } }
+
+/* The logo: fat yellow letters with a dark outline, the way the original's title sits over the park. */
+h1 {
+	margin: 0 0 6px; font: 900 clamp(48px, 10vw, 96px)/1 var(--fun); letter-spacing: 1px;
+	transform: rotate(-3deg);
+	filter: drop-shadow(0 6px 0 rgba(0, 0, 0, .45));
+}
+h1 span { display: inline-block; -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill; }
+.logo-open { color: var(--cream); transform: translateY(-6px); }
+.logo-tpw { color: var(--gold); -webkit-text-stroke-color: var(--red); text-shadow: 0 -3px 0 #fff3a6; margin-left: 4px; }
+
+/* The panel: a gold-rimmed ticket. */
+.panel {
+	box-sizing: border-box; width: min(560px, calc(100vw - 40px)); padding: 18px 26px 14px;
+	border: 5px solid var(--gold); border-radius: 26px;
+	background: linear-gradient(180deg, var(--panel-light) 0%, var(--panel) 100%);
+	box-shadow: inset 0 0 0 3px rgba(255, 255, 255, .18), 0 0 0 4px var(--gold-edge), 0 14px 30px rgba(0, 0, 0, .55);
+}
+.panel p { margin: 10px 0; line-height: 1.45; }
+.intro { font-size: 16px; }
+code { padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, .3); color: var(--gold); font: 600 14px ui-monospace, monospace; }
+.note { display: inline-block; margin-top: 6px; font-size: 13px; color: #d9c8f5; }
+
 input { display: none; }
-button { padding: 10px 18px; border: 0; border-radius: 8px; background: #3b4cc0; color: #fff; font: inherit; cursor: pointer; }
-button.secondary { padding: 6px 12px; background: #2a3138; color: #ddd; }
-select { padding: 6px 8px; border-radius: 6px; background: #1c2228; color: #ddd; border: 1px solid #3a444e; font: inherit; }
-#play { margin-top: 8px; font-weight: 600; }
+.field { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; max-width: 100%; font-weight: 700; color: var(--gold); }
+.field select { max-width: 100%; min-width: 0; }
+
+/* Chunky gold buttons that press down. */
+button, label.button {
+	display: inline-block; padding: 11px 26px;
+	border: 3px solid var(--gold-edge); border-radius: 999px;
+	background: linear-gradient(180deg, #fff1a0 0%, var(--gold) 40%, var(--gold-dark) 100%);
+	color: var(--ink); font: 800 17px var(--fun); text-shadow: 0 1px 0 rgba(255, 255, 255, .6);
+	box-shadow: 0 5px 0 var(--gold-edge), 0 8px 14px rgba(0, 0, 0, .4);
+	cursor: pointer; transition: transform .08s, box-shadow .08s, filter .15s;
+}
+button:hover, label.button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+button:active, label.button:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--gold-edge), 0 3px 6px rgba(0, 0, 0, .4); }
+button:focus-visible, label.button:focus-within, select:focus-visible { outline: 3px solid #29b6d1; outline-offset: 3px; }
+button.secondary {
+	padding: 6px 14px; font-size: 13px; border-color: #5a1220; color: var(--cream); text-shadow: none;
+	background: linear-gradient(180deg, #f2667a 0%, var(--red) 100%); box-shadow: 0 3px 0 #5a1220;
+}
+#play { margin-top: 8px; padding: 13px 42px; font-size: 21px; }
+/* With kept files Play leads; choosing a folder again becomes the quieter, blue button. */
+#kept:not([hidden]) ~ p label.button {
+	padding: 8px 20px; font-size: 15px; border-color: #0f5866; color: var(--cream); text-shadow: none;
+	background: linear-gradient(180deg, #6fd6e8 0%, #29b6d1 45%, #16889e 100%); box-shadow: 0 4px 0 #0f5866, 0 6px 12px rgba(0, 0, 0, .4);
+}
+
+select {
+	padding: 6px 30px 6px 12px; border: 3px solid var(--gold-edge); border-radius: 999px;
+	background: var(--cream) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1 L6 7 L11 1' fill='none' stroke='%232b1240' stroke-width='2.2'/%3E%3C/svg%3E") no-repeat right 10px center;
+	color: var(--ink); font: 700 14px var(--fun); appearance: none; cursor: pointer;
+}
+
+#status {
+	display: inline-block; min-height: 1.4em; margin-top: 4px; padding: 6px 14px; border-radius: 14px;
+	background: rgba(0, 0, 0, .28); color: #bfe9f2; font-size: 14px;
+}
+#status:empty { visibility: hidden; }
 #kept[hidden], #keepRow[hidden], button[hidden] { display: none; }
-#loading { position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: rgba(16, 20, 24, .85); color: #fff; font-weight: 600; }
+
+#loading {
+	position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); padding: 10px 22px;
+	border: 3px solid var(--gold-edge); border-radius: 999px;
+	background: linear-gradient(180deg, #fff1a0 0%, var(--gold) 45%, var(--gold-dark) 100%);
+	color: var(--ink); font: 800 16px var(--fun); box-shadow: 0 5px 0 var(--gold-edge), 0 8px 16px rgba(0, 0, 0, .5);
+}
 #loading[hidden] { display: none; }
+#keptSize { white-space: nowrap; }

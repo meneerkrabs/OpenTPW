@@ -510,6 +510,15 @@ native IDCT/colour parity. Decode and PNG encoding finish before output creation
 a privately owned CreateNew temporary file is flushed, moved without overwrite,
 and cleaned on failure. Existing output and foreign temporary files are preserved.
 
+Independent CPU controls additionally distinguish video ordinals from three
+interleaved undecodable audio chunks, reject every truncated container prefix and
+invalid unselected chunk sizes/trailing bytes, and verify actual early CLI export
+preserves renderer/asset identity without profile creation. A Darwin-only CLI
+FIFO handshake also creates a foreign destination after the initial precheck and
+before valid input is delivered: the non-overwriting move refuses, foreign bytes
+remain unchanged and the owned temporary is removed. This qualifies that controlled
+host race, not cross-platform crash durability or original movie behavior.
+
 `TgqPngExportTests` checks first/last and distinct frames, square/non-square raster
 readback against current codec pixels, invalid indices and selected payloads,
 strict unselected-header refusal, undecoded audio/unselected bodies, source-byte

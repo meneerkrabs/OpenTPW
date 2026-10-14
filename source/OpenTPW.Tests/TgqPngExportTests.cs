@@ -131,4 +131,77 @@ public class TgqPngExportTests
 		Assert.IsFalse( File.Exists( output ) ); Assert.AreEqual( 1, Directory.GetFiles( root ).Length );
 	}
 
+	[TestMethod]
+	public void ReviewerVideoOrdinalIgnoresMoreInterleavedAudioChunksThanPictures()
+	{
+		var input = Input();
+		var source = new TgqMovieFile( new MemoryStream( File.ReadAllBytes( input ) ) );
+		byte[] ExistingChunk( string tag )
+		{
+			var chunk = source.Chunks.Single( item => item.FourCC == tag );
+			return File.ReadAllBytes( input ).AsSpan( chunk.Offset, chunk.Size ).ToArray();
+		}
+		var bytes = ExistingChunk( "SCHl" ).Concat( Chunk( "SCCl", new byte[] { 3, 0, 0, 0 } ) )
+			.Concat( Chunk( "SCDl", new byte[] { 1 } ) ).Concat( Chunk( "pIQT", Frame( false ) ) )
+			.Concat( Chunk( "SCDl", new byte[] { 2 } ) ).Concat( Chunk( "pIQT", Frame( true ) ) )
+			.Concat( Chunk( "SCDl", new byte[] { 3 } ) ).Concat( Chunk( "SCEl", Array.Empty<byte>() ) ).ToArray();
+		File.WriteAllBytes( input, bytes );
+		var movie = new TgqMovieFile( new MemoryStream( bytes ) );
+		Assert.AreEqual( 2, movie.VideoFrameCount ); Assert.AreEqual( 3, movie.AudioBlockCount );
+		var output = Path.Combine( root, "video-last.png" );
+		Export( input, 1, output );
+		var png = ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha );
+		Assert.AreEqual( (byte)100, png.Data[0] );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => Export( input, 2, Path.Combine( root, "absent", "audio-is-not-video.png" ) ) );
+		Assert.IsFalse( Directory.Exists( Path.Combine( root, "absent" ) ) );
+	}
+
+	[TestMethod]
+	public void ReviewerEveryTruncatedContainerPrefixRefusesWithoutOutputMutation()
+	{
+		var input = Input(); var original = File.ReadAllBytes( input );
+		var output = Path.Combine( root, "absent", "prefix.png" );
+		for ( var size = 0; size < original.Length; size++ )
+		{
+			File.WriteAllBytes( input, original[..size] );
+			Assert.ThrowsException<InvalidDataException>( () => Export( input, 1, output ), $"prefix {size}" );
+			Assert.IsFalse( Directory.Exists( Path.Combine( root, "absent" ) ) );
+		}
+		File.WriteAllBytes( input, original );
+		Export( input, 1, Path.Combine( root, "complete.png" ) );
+	}
+
+	[TestMethod]
+	public void ReviewerInvalidChunkSizeOrMissingFinalMarkerIsNotBypassedForAnEarlierSelection()
+	{
+		var input = Input(); var original = File.ReadAllBytes( input );
+		var movie = new TgqMovieFile( new MemoryStream( original ) );
+		var audio = movie.Chunks.Single( chunk => chunk.FourCC == "SCDl" );
+		var corrupt = original.ToArray();
+		BinaryPrimitives.WriteUInt32LittleEndian( corrupt.AsSpan( audio.Offset + 4 ), uint.MaxValue );
+		File.WriteAllBytes( input, corrupt );
+		Assert.ThrowsException<InvalidDataException>( () => Export( input, 0, Path.Combine( root, "absent", "chunk.png" ) ) );
+		File.WriteAllBytes( input, original.Concat( new byte[] { 0 } ).ToArray() );
+		Assert.ThrowsException<InvalidDataException>( () => Export( input, 0, Path.Combine( root, "absent", "after-end.png" ) ) );
+		Assert.IsFalse( Directory.Exists( Path.Combine( root, "absent" ) ) );
+	}
+
+	[TestMethod]
+	public void ReviewerActualCliKeepsAssetAndRendererIdentityAndCreatesNoProfile()
+	{
+		var input = Input(); var output = Path.Combine( root, "cli.png" );
+		var beforeRender = Global.Render; var beforeFiles = FileSystem;
+		var beforeConfig = Environment.GetEnvironmentVariable( "OPENTPW_CONFIG_DIR" );
+		var config = Path.Combine( root, "new-profile" );
+		try
+		{
+			Environment.SetEnvironmentVariable( "OPENTPW_CONFIG_DIR", config );
+			Game.Run( new[] { "--export-tgq-png", input, "1", output, "--setup", "--game", Path.Combine( root, "no-assets" ), "--shader-hot-reload" } );
+			Assert.AreSame( beforeRender, Global.Render ); Assert.AreSame( beforeFiles, FileSystem );
+			Assert.IsFalse( Directory.Exists( config ) );
+			Assert.AreEqual( (byte)100, ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha ).Data[0] );
+		}
+		finally { Environment.SetEnvironmentVariable( "OPENTPW_CONFIG_DIR", beforeConfig ); }
+	}
+
 }

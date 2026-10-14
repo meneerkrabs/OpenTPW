@@ -179,4 +179,62 @@ public class ParticleEventRequestTests
 		Assert.AreEqual(ParticleEventPreparationStatus.Prepared, retained.Status); Assert.IsNotNull(retained.Request);
 	}
 
+	private static void Run(OriginalObjectRuntime runtime, Func<RideVMTests.Asm, RideVMTests.Asm> script)
+	{
+		using var stream = new MemoryStream(script(new RideVMTests.Asm()).I(Opcode.ENDSLICE).Build(Array.Empty<string>()));
+		var vm = new RideVM(stream, new RideVMOptions { Effects = runtime.Script!.Effects, World = runtime.Script.World });
+		vm.Advance(FixedStepClock.TickDuration); Assert.AreNotEqual(RideVMState.Faulted, vm.State); vm.Stop();
+	}
+	[TestMethod]
+	public void AddObjKeepsTheParticleHandleUnderItsSlotAndKillObjEndsEveryRecordOfTheSlot()
+	{
+		var started = new List<ParticleEventRequest>(); var killed = new List<int>(); var next = 0x10000;
+		var previousStarter = OriginalObjectRuntime.ParticleStarter; var previousKiller = OriginalObjectRuntime.ParticleKiller;
+		OriginalObjectRuntime.ParticleStarter = request => { started.Add(request); return next++; }; OriginalObjectRuntime.ParticleKiller = killed.Add;
+		try
+		{
+			var placed = Placed();
+			// [BIN:TPW-EXE:0x551F5F] ADDOBJ type key effect slot; types 1 and 2 start particle effects through the EVENT dispatcher with control 1000
+			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 7, 43, 5).I(Opcode.ADDOBJ, 2, 7, 44, 5).I(Opcode.ADDOBJ, 1, 7, 45, 6).I(Opcode.ADDOBJ, 3, 7, 46, 5).I(Opcode.ADDOBJ, 1, 99, 47, 5));
+			CollectionAssert.AreEqual(new[] { (1, 43), (2, 44), (1, 45) }, started.Select(r => (r.Type, r.EffectId)).ToArray(), "type 3 and an unresolved key start nothing");
+			Assert.IsTrue(started.All(r => r.Control == 1000 && !r.AtWorldOrigin));
+			Assert.IsNotNull(started[1].EngineUnitDirection, "type 2 carries the key's direction");
+			Assert.IsNull(placed.Runtime.LastParticleEventAttempt, "ADDOBJ does not touch the EVENT diagnostic");
+			Assert.AreEqual(ParticleEventPreparationStatus.UnresolvedKey, placed.Runtime.LastParticleObjectAttempt!.Value.Status);
+			Run(placed.Runtime, a => a.I(Opcode.KILLOBJ, 5));
+			CollectionAssert.AreEquivalent(new[] { 0x10000, 0x10001 }, killed, "both records of slot 5, none of slot 6");
+			Run(placed.Runtime, a => a.I(Opcode.KILLOBJ, 5));
+			Assert.AreEqual(2, killed.Count, "the records are gone");
+			Run(placed.Runtime, a => a.I(Opcode.KILLOBJ, 6));
+			CollectionAssert.AreEquivalent(new[] { 0x10000, 0x10001, 0x10002 }, killed);
+			// a start that returned no handle keeps no record; the scoped effect is refused before the dispatcher
+			OriginalObjectRuntime.ParticleStarter = request => 0;
+			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 7, 43, 9).I(Opcode.ADDOBJ, 1, 7, 0x8001, 9).I(Opcode.KILLOBJ, 9));
+			Assert.AreEqual(3, killed.Count);
+			// stopping the object forgets its records: the effects it started keep running
+			OriginalObjectRuntime.ParticleStarter = request => next++;
+			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 7, 43, 8));
+			placed.Runtime.Stop(); Assert.IsNull(placed.Runtime.LastParticleObjectAttempt);
+			placed.Runtime.KillParticleObjects(8); Assert.AreEqual(3, killed.Count);
+		}
+		finally { OriginalObjectRuntime.ParticleStarter = previousStarter; OriginalObjectRuntime.ParticleKiller = previousKiller; }
+	}
+	[TestMethod]
+	public void AKeyEntryWithoutAMatrixStartsTheEffectAtTheWorldOrigin()
+	{
+		var bytes = File.ReadAllBytes(Path.Combine(root, "model.MD2")); BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x1b0), 0x100); File.WriteAllBytes(Path.Combine(root, "origin.MD2"), bytes);
+		var origin = new ObjectCatalogEntry("jungle", ObjectCategory.Ride, "/synthetic", new ObjectSettings(new[] { new ObjectSettingsFile("Info.Id 1100\n", "synthetic.sam") }),
+			new ObjectShape(new[] { "*" }), "/origin.MD2", null, "/script.RSE", new[] { "/child.RSE" }, Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem(root), null);
+		var placed = new OriginalObject(origin, new ObjectPlacement(3, 4, 0, new N.Vector2(-7, 11), 9));
+		var received = new List<ParticleEventRequest>(); Action<ParticleEventRequest> handler = received.Add; OriginalObjectRuntime.ParticleRequested += handler;
+		try
+		{
+			Emit(placed.Runtime, 2); var attempt = placed.Runtime.LastParticleEventAttempt!.Value;
+			Assert.AreEqual((ParticleEventPreparationStatus.Prepared, ParticleKeyStatus.ResolvedAtWorldOrigin), (attempt.Status, attempt.KeyStatus));
+			var request = attempt.Request!.Value; Assert.IsTrue(request.AtWorldOrigin); Assert.AreEqual(N.Vector3.Zero, request.EnginePosition); Assert.IsNull(request.EngineUnitDirection);
+			Assert.AreEqual(1, received.Count, "the request is announced like any prepared EVENT");
+		}
+		finally { OriginalObjectRuntime.ParticleRequested -= handler; }
+	}
+
 }

@@ -4,29 +4,61 @@ using SVector3 = System.Numerics.Vector3;
 namespace OpenTPW;
 
 /// <summary>
-/// Connects the object scripts' EVENT 1/2 requests to the level's particle renderer, created by the first request. Hosts
-/// without a renderer (plain simulation tests) and levels without the particle files stay particle-free.
+/// Connects the object scripts' EVENT 1/2 and ADDOBJ 1/2 requests to the level's particle renderer, created by the first request (or by a
+/// resumed park that held live emitters). Hosts without a renderer (plain simulation tests) and levels without the particle files stay
+/// particle-free.
 /// </summary>
 internal static class ParticleRendererModule
 {
 	private static WeakReference<Level>? unavailableFor;
 
 	[ModuleInitializer]
-	internal static void Attach() => OriginalObjectRuntime.ParticleRequested += Start;
+	internal static void Attach()
+	{
+		OriginalObjectRuntime.ParticleRequested += request => Start( request );
+		OriginalObjectRuntime.ParticleStarter = Start;
+		OriginalObjectRuntime.ParticleKiller = Kill;
+		Level.ParticlesCaptured = Capture;
+		Level.ParticlesResumed = Resume;
+	}
 
-	private static void Start( ParticleEventRequest request )
+	private static ParticleRenderer? RendererOf( Level level ) =>
+		ParticleRenderer.Current is { } current && ReferenceEquals( current.Level, level ) ? current : null;
+
+	/// <summary>Starts a prepared request and returns the pool's handle (-1 when nothing started).</summary>
+	private static int Start( ParticleEventRequest request )
 	{
 		if ( global::Global.Render == null || Level.Current is not { } level )
-			return;
-		var renderer = ParticleRenderer.Current is { } current && ReferenceEquals( current.Level, level ) ? current : Create( level );
+			return -1;
+		var renderer = RendererOf( level ) ?? Create( level );
 		if ( renderer == null )
+			return -1;
+		// [BIN:TPW-EXE:0x5573D0 dispatcher] the key's world position * 1024 truncated (a key without a matrix is the world origin); a control other than 1000 is set after creation
+		var position = request.AtWorldOrigin ? (0, 0, 0) : ToNative( level, request.EnginePosition );
+		if ( request.Type == 2 && (request.AtWorldOrigin || request.EngineUnitDirection != null) )
+		{
+			var direction = request.AtWorldOrigin ? (0, 0, (int)ParticleKeyResolver.NativeDirectionMultiplier) : ToNativeDirection( request.EngineUnitDirection!.Value );
+			return renderer.Particles.CreateDirected( request.EffectId, position, direction, request.Control );
+		}
+		return renderer.Particles.Create( request.EffectId, position, request.Control );
+	}
+
+	private static void Kill( int handle )
+	{
+		if ( Level.Current is { } level && RendererOf( level ) is { } renderer )
+			renderer.Particles.Kill( handle );
+	}
+
+	/// <summary>The live emitters and effectors of the level's pool for a park-resume save, or null when there are none.</summary>
+	private static ParticleSystemState? Capture( Level level ) => RendererOf( level )?.Particles.Capture();
+
+	/// <summary>Rebuilds the saved pool for a resumed park (no particles, as in the original's load): creates the renderer and restores it.</summary>
+	private static void Resume( Level level, ParticleSystemState state )
+	{
+		if ( global::Global.Render == null )
 			return;
-		var position = ToNative( level, request.EnginePosition );
-		// the resolver's control (1000) is the template's own draw scale, which the constructor already copies
-		if ( request.Type == 2 && request.EngineUnitDirection is { } direction )
-			renderer.Particles.CreateDirected( request.EffectId, position, ToNativeDirection( direction ) );
-		else
-			renderer.Particles.Create( request.EffectId, position );
+		var renderer = RendererOf( level ) ?? Create( level );
+		renderer?.Particles.Restore( state );
 	}
 
 	private static ParticleRenderer? Create( Level level )
@@ -38,7 +70,8 @@ internal static class ParticleRendererModule
 			var templates = new ParticleTemplateFile( "/Particle/Tp2.plb" );
 			var atlas = ParticleSpriteAtlas.Load();
 			if ( atlas != null )
-				return new ParticleRenderer( new ParticleSystem( templates.Templates ), atlas, position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f) );
+				return new ParticleRenderer( new ParticleSystem( templates.Templates, effectors: templates.EffectorTemplates ), atlas,
+					position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f) );
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidDataException or NullReferenceException )
 		{
@@ -66,9 +99,9 @@ internal static class ParticleRendererModule
 		return new SVector3( engine.X, engine.Z, engine.Y ) / scale;
 	}
 
-	/// <summary>The native position of an engine position: original units times 1024, Y up (the dispatcher's unit before the constructor's >> 4).</summary>
-	// [BIN:STP-PPC:0x100AF9E8 EVENT dispatcher] position * 1024 into the constructor
-	// [APPROX:PTCL-906] the conversion inverts OpenTPW's placement and the settings are not wired (density 1000, 2048 particles, no terrain callback)
+	/// <summary>The native position of an engine position: original units times 1024, Y up, truncated toward zero (the dispatcher's unit before the constructor's >> 4).</summary>
+	// [BIN:TPW-EXE:0x5573D0 EVENT dispatcher] world position * 1024.0 (constant 0x700FDC) through _ftol, which truncates
+	// [APPROX:PTCL-906] the conversion inverts OpenTPW's placement; the pool runs with the options' default density (PARTICLEDENSITY 500), 2048 particles and the original's flat-zero ground stub, and the density option is not exposed
 	internal static (int X, int Y, int Z) ToNative( Level level, SVector3 engine )
 	{
 		var original = ToOriginal( level, engine );
@@ -76,9 +109,10 @@ internal static class ParticleRendererModule
 	}
 
 	/// <summary>The native direction of an engine unit direction (Z up): original axes (Y up), times 1024.</summary>
-	// [BIN:STP-PPC:0x100AC7F0 particle key resolver] the direction is normalised and multiplied by 1024
+	// [BIN:TPW-EXE:0x556B90 particle key resolver] the direction is normalised and multiplied by 1024
 	internal static (int X, int Y, int Z) ToNativeDirection( SVector3 engineUnit ) =>
 		(Fixed( engineUnit.X ), Fixed( engineUnit.Z ), Fixed( engineUnit.Y ));
 
-	private static int Fixed( float value ) => (int)MathF.Round( Math.Clamp( value, -1e6f, 1e6f ) * ParticleKeyResolver.NativeDirectionMultiplier );
+	// [BIN:TPW-EXE:0x67A830 _ftol] the control word is set to chop: the conversion truncates toward zero
+	internal static int Fixed( float value ) => (int)(Math.Clamp( value, -1e6f, 1e6f ) * (double)ParticleKeyResolver.NativeDirectionMultiplier);
 }

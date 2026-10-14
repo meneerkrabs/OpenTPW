@@ -94,6 +94,11 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	public PrototypeRideSaveData? Prototype { get; init; }
 	/// <summary>
+	/// The particle pool's live emitters and effectors with its generator, or null when none was live (an optional presentation part, like the
+	/// original's PART/PTCL save block: no particles are saved, screen-space emitters are killed on load; it is not part of the world hash).
+	/// </summary>
+	public ParticleSystemState? Particles { get; init; }
+	/// <summary>
 	/// SHA-256 manifest of the assets the park depends on: canonical expected-asset identifier → 64 lowercase hex
 	/// characters. Computed from verified catalog/game-data paths at load; a saved path is never read back.
 	/// </summary>

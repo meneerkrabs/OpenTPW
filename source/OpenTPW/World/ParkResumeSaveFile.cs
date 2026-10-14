@@ -448,6 +448,11 @@ internal static class ParkResumeSaveFile
 		}
 
 		// Optional parts: present means structurally valid; the destination park re-validates against its settings.
+		if ( snapshot.Particles != null )
+		{
+			var particleReason = ParticleSystem.ValidateState( snapshot.Particles );
+			Require( particleReason == null, particleReason ?? "" );
+		}
 		if ( snapshot.Weather is { } weather )
 		{
 			Require( weather.PendingStrikes != null, "the weather snapshot has no pending-strike list" );

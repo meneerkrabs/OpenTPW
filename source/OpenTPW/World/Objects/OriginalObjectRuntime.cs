@@ -653,6 +653,17 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null, call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
+		// ADDOBJ type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
+		if ( call.Opcode == Opcode.ADDOBJ )
+		{
+			ride.ObserveParticleObject(call);
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		if ( call.Opcode == Opcode.KILLOBJ )
+		{
+			ride.KillParticleObjects(call.Argument(0));
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
 		if ( call.Opcode == Opcode.EVENT )
 		{
 			if (call.Argument(0) is 1 or 2) ride.ObserveParticleEvent(call);

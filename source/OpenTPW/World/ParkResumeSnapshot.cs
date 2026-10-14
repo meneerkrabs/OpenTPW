@@ -83,6 +83,11 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	public CoasterWorldSaveData? Coasters { get; init; }
 	/// <summary>
+	/// The park's kart and water tracks, or null when it held no track tile and no controller: the cell layer, every water ride's controller with its
+	/// boats and guests, joined by attraction id (the part joined the envelope with the track slice, docs/TRACKS.md; earlier saves carry none).
+	/// </summary>
+	public TrackWorldSaveData? Tracks { get; init; }
+	/// <summary>
 	/// The developer prototype Totem, or null when the park had none: where it stands, its runtime and script state
 	/// and its economy association, joined by attraction id (the part joined the envelope with the prototype slice;
 	/// saves from before it carry no part and hold no prototype).

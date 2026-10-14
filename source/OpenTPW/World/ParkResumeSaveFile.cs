@@ -165,6 +165,25 @@ internal static class ParkResumeSaveFile
 						$"a train of coaster {ride.AttractionId} holds {train.Cars.Count} cars, not the definition's {definition.MaxCars}" );
 			}
 		}
+		// Tracks: every live water ride must be saved with a controller of its template's type, and no controller may exceed its template's vehicle limit.
+		var liveWaterRides = new Dictionary<int, BumperTemplate>();
+		for ( var index = 0; index < snapshot.Layout.Objects.Count; index++ )
+		{
+			var record = snapshot.Layout.Objects[index]!;
+			var entry = catalog.Find( record.InfoId )!;
+			if ( entry.Settings != null && !snapshot.Runtimes[index].State.Stopped
+				&& BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { IsWater: true } template )
+				liveWaterRides[record.AttractionId] = template;
+		}
+		var savedControllers = snapshot.Tracks?.Controllers ?? new List<BumpControllerSaveData>();
+		Require( savedControllers.Count == liveWaterRides.Count && savedControllers.All( controller => liveWaterRides.ContainsKey( controller.AttractionId ) ),
+			$"the save holds {savedControllers.Count} track controllers, but the park places {liveWaterRides.Count} live water rides" );
+		foreach ( var controller in savedControllers )
+		{
+			var template = liveWaterRides[controller.AttractionId];
+			Require( controller.Type == template.Type, $"track controller {controller.AttractionId} has type {controller.Type}, not its ride's {template.Type}" );
+			Require( controller.Vehicles.Count <= template.MaxVehicles, $"track controller {controller.AttractionId} holds {controller.Vehicles.Count} boats, above {template.MaxVehicles}" );
+		}
 		var instancesById = snapshot.Economy.Objects.ToDictionary( item => item.Id );
 		var bindingsByAttraction = snapshot.EconomyBindings.ToDictionary( binding => binding.AttractionId );
 		foreach ( var record in snapshot.Layout.Objects )
@@ -411,6 +430,7 @@ internal static class ParkResumeSaveFile
 
 		ValidateGuests( snapshot );
 		ValidateCoasters( snapshot );
+		ValidateTracks( snapshot );
 
 		// Clock: the clock's own pure validator, on a fresh instance it never mutates.
 		new FixedStepClock().ValidateSnapshot( snapshot.Clock! );
@@ -721,6 +741,63 @@ internal static class ParkResumeSaveFile
 			Require( guestIds.Contains( guestId ), $"attraction {attractionId}'s queue holds guest {guestId}, which does not exist" );
 		foreach ( var (guestId, attractionId) in aboardOf )
 			Require( guestIds.Contains( guestId ), $"attraction {attractionId}'s riders hold guest {guestId}, which does not exist" );
+	}
+
+	/// <summary>
+	/// The track part's pure consistency (null means the park held no track tile and no controller): every cell in the map with a known track type and a
+	/// parent that is a tile origin, every controller joined to one placed object by a strictly increasing attraction id, the bounded scalars, sections,
+	/// boats (unique slots, finite integers) and guest lists. The catalog checks (which rides are water rides, the vehicle limit) are
+	/// <see cref="ValidateSnapshot"/>'s, and the restore re-walks every circuit against the saved sections.
+	/// </summary>
+	private static void ValidateTracks( ParkResumeSnapshot snapshot )
+	{
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"World save is inconsistent: {message}." );
+		}
+		if ( snapshot.Tracks is not { } tracks )
+			return;
+		Require( tracks.Cells != null && tracks.Controllers != null, "the track part holds no cell or controller list" );
+		Require( tracks.Cells!.Count <= TrackSave.MaximumCells, $"the track part holds {tracks.Cells.Count} cells, above {TrackSave.MaximumCells}" );
+		Require( tracks.Controllers!.Count <= TrackSave.MaximumControllers, $"the track part holds {tracks.Controllers.Count} controllers, above {TrackSave.MaximumControllers}" );
+		var width = snapshot.Layout!.Cells!.Width;
+		var height = snapshot.Layout.Cells.Height;
+		var seen = new HashSet<(int X, int Y)>();
+		var mapTypes = snapshot.Layout.Cells.Cells!.ToDictionary( item => (item.X, item.Y), item => item.Type );
+		foreach ( var cell in tracks.Cells )
+		{
+			Require( cell != null, "a track cell is missing" );
+			Require( (uint)cell.X < (uint)width && (uint)cell.Y < (uint)height, $"track cell ({cell.X}, {cell.Y}) is outside the cell map" );
+			Require( seen.Add( (cell.X, cell.Y) ), $"track cell ({cell.X}, {cell.Y}) is saved twice" );
+			Require( TrackCellTypes.IsWalkable( cell.Type ) || cell.Type == TrackCellTypes.Extension, $"track cell ({cell.X}, {cell.Y}) has type {cell.Type}, which is no track type" );
+			Require( (cell.Mask & ~0x55) == 0, $"track cell ({cell.X}, {cell.Y}) has connection bits 0x{cell.Mask:X}, outside 0x55" );
+			Require( cell.Type != TrackCellTypes.Extension || (uint)cell.Parent < (uint)(width * height), $"track extension cell ({cell.X}, {cell.Y}) names parent {cell.Parent}, outside the cell map" );
+			Require( mapTypes.TryGetValue( (cell.X, cell.Y), out var mapType ) && mapType == cell.Type, $"track cell ({cell.X}, {cell.Y}) of type {cell.Type} is not that type in the saved cell map" );
+		}
+		var placedAttractions = snapshot.Layout.Objects!.Select( record => record!.AttractionId ).ToHashSet();
+		var previous = 0;
+		foreach ( var controller in tracks.Controllers )
+		{
+			Require( controller != null, "a track controller is missing" );
+			Require( controller.AttractionId > previous, $"track controller {controller.AttractionId} does not follow {previous} in attraction order" );
+			Require( placedAttractions.Contains( controller.AttractionId ), $"the track part names attraction {controller.AttractionId}, which the park does not place" );
+			previous = controller.AttractionId;
+			Require( controller.Sections.Count <= TrackSave.MaximumSections, $"track controller {controller.AttractionId} holds {controller.Sections.Count} sections" );
+			Require( controller.Phase is >= 0 and <= 3 && controller.State is >= 0 and <= 2, $"track controller {controller.AttractionId} has phase {controller.Phase} or state {controller.State} out of range" );
+			Require( controller.Performance is >= 0 and <= 100, $"track controller {controller.AttractionId} has performance {controller.Performance} outside 0..100" );
+			Require( controller.TickCount >= 0 && double.IsFinite( controller.TickRemainder ) && controller.TickRemainder >= 0, $"track controller {controller.AttractionId} has a bad tick clock" );
+			Require( controller.Pending.Count + controller.Leaving.Count <= TrackSave.MaximumGuests && controller.Pending.Concat( controller.Leaving ).All( guest => guest > 0 ),
+				$"track controller {controller.AttractionId} holds an invalid guest list" );
+			var slots = new HashSet<int>();
+			foreach ( var vehicle in controller.Vehicles )
+			{
+				Require( vehicle != null && vehicle.Slot is >= 0 and < BumpController.VehiclePool && slots.Add( vehicle.Slot ), $"track controller {controller.AttractionId} holds a boat with a bad or repeated slot" );
+				Require( vehicle.Heading is >= 0 and < BumpMath.Turn && vehicle.Riders.Count <= TrackSave.MaximumGuests && vehicle.Riders.All( guest => guest > 0 ),
+					$"a boat of track controller {controller.AttractionId} has a bad heading or rider list" );
+				Require( vehicle.ObjectIndex >= -1 && vehicle.TargetBuoy >= -1, $"a boat of track controller {controller.AttractionId} has a negative object or buoy index" );
+			}
+		}
 	}
 
 	/// <summary>

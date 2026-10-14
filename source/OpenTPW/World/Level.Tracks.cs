@@ -1,0 +1,261 @@
+namespace OpenTPW;
+
+/// <summary>Kart and water ride tracks (docs/TRACKS.md): the track tool, the stations' tiles and circuit walks, the controllers' state and the track renderer.</summary>
+public partial class Level
+{
+	private TrackBuilder? waterTracks;
+	private readonly Dictionary<OriginalObject, TrackStation> trackStations = new();
+	private TrackRenderer? trackRenderer;
+	private bool trackRenderFailed;
+
+	/// <summary>The headless water track builder over the level's cell map (null in the generic sandbox).</summary>
+	public TrackBuilder? WaterTracks => waterTracks;
+	private OriginalObject? trackToolStation;
+	/// <summary>The water ride whose track the track tool lays, or null when the tool is off.</summary>
+	public OriginalObject? TrackToolStation => CellTool.Writer is TrackLineWriter ? trackToolStation : null;
+	/// <summary>The stations of the level's water rides with their tile layout.</summary>
+	public IReadOnlyDictionary<OriginalObject, TrackStation> TrackStations => trackStations;
+	/// <summary>Tile and boat instances the track renderer holds.</summary>
+	public (int Tiles, int Boats) TrackInstances => (trackRenderer?.TileCount ?? 0, trackRenderer?.BoatCount ?? 0);
+
+	private void SetupTracks()
+	{
+		if ( Guests == null )
+			return;
+		waterTracks = new TrackBuilder( Guests.Grid.Cells, TrackFamily.Water, () => Park?.Economy, Objects.Grid, IsPathBlocked );
+		Objects.ObjectPlaced += OnTrackStationPlaced;
+		Objects.ObjectRemoved += OnTrackStationRemoved;
+		foreach ( var item in Objects.Objects )
+			OnTrackStationPlaced( item );
+	}
+
+	private void OnTrackStationPlaced( OriginalObject item )
+	{
+		if ( waterTracks == null || item.Runtime.Bump is not { } bump || item.IsDeleted )
+			return;
+		var station = TrackStation.FromPlacement( item.Placement.X, item.Placement.Y, item.Placement.Rotation );
+		trackStations[item] = station;
+		var centre = TrackStation.Centre( station.First );
+		bump.SetStation( centre.X, centre.Y, station.Heading );
+		// A restored park carries its tiles and boats in the save's track part; the restore walks the circuit then.
+		if ( resumeState != null )
+			return;
+		waterTracks.PlaceStation( station );
+		RewalkTrack( item );
+	}
+
+	private void OnTrackStationRemoved( OriginalObject item )
+	{
+		if ( waterTracks == null || !trackStations.Remove( item, out var station ) )
+			return;
+		if ( TrackToolStation == item )
+			CellTool.Cancel();
+		trackToolStation = null;
+		DemolishTrack( station );
+		item.Runtime.Bump?.Rebuild( TrackCircuit.Invalid( "removed" ) );
+	}
+
+	/// <summary>
+	/// Removes the track of a station: every tile connected to its station tiles through the arms, then the station tiles. Nothing is charged or refunded.
+	/// </summary>
+	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
+	// [APPROX:TRACK-007] the demolition clears every tile connected to the station through the arms and pays nothing: the original's one Spend (2 × the cell cost scaled by a percentage) has an untraced sign and percentage — evidence needed: 0x100E2424 and the Spend's direction
+	private void DemolishTrack( TrackStation station )
+	{
+		if ( waterTracks == null )
+			return;
+		var reached = new HashSet<(int X, int Y)>();
+		var pending = new Stack<(int X, int Y)>();
+		foreach ( var tile in station.Tiles )
+			pending.Push( tile );
+		while ( pending.Count > 0 )
+		{
+			var (x, y) = pending.Pop();
+			if ( !reached.Add( (x, y) ) )
+				continue;
+			var cell = waterTracks.Tracks.Get( x, y );
+			if ( !cell.IsOrigin )
+				continue;
+			foreach ( var heading in TrackHeading.All )
+			{
+				if ( (cell.Mask & heading) != 0 )
+					pending.Push( (x + TrackStation.TileCells * TrackHeading.Dx( heading ), y + TrackStation.TileCells * TrackHeading.Dy( heading )) );
+			}
+		}
+		foreach ( var (x, y) in reached )
+			waterTracks.RemoveTile( x, y );
+		waterTracks.RemoveStation( station );
+	}
+
+	/// <summary>
+	/// Walks the circuit of <paramref name="item"/> again after a track edit: the controller takes the new sections and validity (the boats leave and the
+	/// ride closes, as a re-walk does in the original), and a valid circuit ends the track tool and starts the queue tool.
+	/// </summary>
+	public TrackCircuit? RewalkTrack( OriginalObject item )
+	{
+		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || item.Runtime.Bump is not { } bump )
+			return null;
+		var circuit = TrackCircuitWalker.WalkAndRefresh( waterTracks, station );
+		bump.Rebuild( circuit );
+		if ( !circuit.IsValid )
+			return circuit;
+		LastActionMessage = $"The track is complete: {circuit.Steps.Count} tiles.";
+		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; an invalid one plays animation 12 on the pieces and the tool continues from the last end
+		// [APPROX:TRACK-006] the advisor and event messages the original raises after a walk (ids 0xCC, 0x151, 0xB8, 0xD6) are not shown: their texts and triggers are not resolved — evidence needed: the message table at 0x0059B590
+		if ( TrackToolStation == item )
+		{
+			CellTool.Cancel();
+			trackToolStation = null;
+			if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
+				EnterQueueTool( item.Visitors );
+		}
+		return circuit;
+	}
+
+	/// <summary>Starts the water track tool on a station: the line starts at the tile after the station's exit.</summary>
+	public bool EnterTrackTool( OriginalObject station )
+	{
+		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
+			return false;
+		CellTool.Cancel();
+		CellTool.Enter( new TrackLineWriter( waterTracks, () => RewalkTrack( station ) ), layout.Exit );
+		trackToolStation = station;
+		return true;
+	}
+
+	/// <summary>Ends the track tool.</summary>
+	public void ExitTrackTool()
+	{
+		if ( TrackToolStation != null )
+			CellTool.Cancel();
+		trackToolStation = null;
+	}
+
+	/// <summary>
+	/// Lays the snapped straight track line from <paramref name="from"/> toward <paramref name="to"/> for a station (headless API; the track tool commits
+	/// through the same writer): tiles two cells apart, charged <c>Costs.WaterTrackCell</c> each. Read-only visits and levels without tracks lay nothing.
+	/// </summary>
+	public SegmentResult? BuildTrack( OriginalObject station, (int X, int Y) from, (int X, int Y) to )
+	{
+		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.ContainsKey( station ) )
+		{
+			LastActionMessage = "Cannot build a track here.";
+			return null;
+		}
+		var result = new TrackLineWriter( waterTracks, () => RewalkTrack( station ) ).Commit( from, to );
+		LastActionMessage = result.Completed ? $"Built {result.Built.Count} track tiles for ${result.Charged}." : $"Cannot build a track here: {result.StoppedBy}.";
+		return result;
+	}
+
+	/// <summary>Updates the track renderer: tile instances after a layer change, boats at their positions.</summary>
+	private void UpdateTrackRendering()
+	{
+		if ( trackRenderFailed || waterTracks == null )
+			return;
+		var first = trackStations.Keys.FirstOrDefault( item => !item.IsDeleted );
+		if ( first == null )
+		{
+			trackRenderer?.Dispose();
+			trackRenderer = null;
+			return;
+		}
+		try
+		{
+			if ( trackRenderer == null )
+			{
+				var entry = first.Entry;
+				var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, TrackFamily.Water );
+				trackRenderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ) );
+			}
+			trackRenderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
+		{
+			trackRenderFailed = true;
+			Log.Warning( $"The track renderer was disabled: {exception.Message}" );
+		}
+	}
+
+	/// <summary>
+	/// Places a water ride with a small closed circuit near the park's initial path and points the park camera at it (the debug flag
+	/// <c>--debug-water-track</c>, for captures; the park pays for the ride when it is available and for the tiles). Null when no site has room.
+	/// </summary>
+	// [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the water track tool for the player
+	internal OriginalObject? BuildDemoWaterRide()
+	{
+		if ( IsReadOnlyVisit || waterTracks == null || Guests == null || OriginalPark == null )
+			return null;
+		var entry = Objects.Catalog.Buildable.Where( item => item.Settings.GetInt( "Bumper.WhichTrackType" ) == 2 ).OrderBy( item => item.InfoId ).FirstOrDefault();
+		if ( entry == null )
+			return null;
+		var grid = Objects.Grid;
+		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height && Objects.FindAt( x, y ) == null
+			&& grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed && Guests.Grid.Cells.RawTypeAt( x, y ) == 0;
+		var near = Guests.Grid.Cells.Width > 0 ? (X: Guests.Grid.CountX / 2, Y: Guests.Grid.CountY / 2) : (X: 0, Y: 0);
+		var path = Enumerable.Range( 0, Guests.Grid.CountX * Guests.Grid.CountY ).Select( index => (X: index % Guests.Grid.CountX, Y: index / Guests.Grid.CountX) ).Where( cell => Guests.Grid.IsWalkable( cell.X, cell.Y ) ).ToArray();
+		if ( path.Length > 0 )
+			near = (path.Sum( cell => cell.X ) / path.Length, path.Sum( cell => cell.Y ) / path.Length);
+		foreach ( var cell in Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
+			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
+		{
+			var anchor = GetCentredAnchor( entry, cell.X, cell.Y, 0 );
+			if ( Objects.Check( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed
+				|| !Enumerable.Range( anchor.X - 2, 9 ).All( x => Enumerable.Range( anchor.Y - 1, 8 ).All( y => Free( x, y ) ) ) )
+				continue;
+			var station = PlaceObject( entry, cell.X, cell.Y, 0 ) ?? Objects.TryPlace( entry, anchor.X, anchor.Y, 0, out _ );
+			if ( station == null || !trackStations.TryGetValue( station, out var layout ) || !EnterTrackTool( station ) )
+				return null;
+			foreach ( var offset in new (int X, int Y)[] { (4, 4), (-2, 4), (-2, 0) } )
+				CellTool.Click( (layout.First.X + offset.X, layout.First.Y + offset.Y) );
+			CellTool.Cancel();
+			var centre = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, layout.First.X + 2, layout.First.Y + 2 );
+			(Camera.Mode as ParkCameraMode)?.SetPose( new Vector3( centre.X, centre.Y, 0 ), 22, -20 );
+			Log.Trace( $"--debug-water-track: {entry.DisplayName} at {layout.First} with a {(station.Runtime.Bump!.IsTrackValid ? "valid" : "invalid")} circuit of {waterTracks.Tiles().Count()} tiles; camera on engine ({centre.X:0.#}, {centre.Y:0.#})." );
+			return station;
+		}
+		return null;
+	}
+
+	// ---- Park-resume snapshot -----------------------------------------------------------------------
+
+	/// <summary>The park-resume track part, or null when the park holds no track tile and no controller. Call between simulation ticks.</summary>
+	internal TrackWorldSaveData? CaptureTracksSnapshot() => Guests == null ? null : TrackSave.Capture( Guests.Grid.Cells, Objects.ScriptWorld.Bumpers,
+		Objects.Objects.Where( item => item.Runtime.Bump != null ).Select( item => (item.Runtime.AttractionId, item.Runtime.Bump!) ) );
+
+	/// <summary>
+	/// Restores the saved tracks into this candidate level, after the objects were placed and their runtimes restored: the cells go back into the layer, each
+	/// station's circuit is walked and checked against the saved sections and validity, then the controller state and boats are restored. Throws
+	/// <see cref="InvalidDataException"/> on any mismatch.
+	/// </summary>
+	internal void RestoreTracksSnapshot( TrackWorldSaveData? saved )
+	{
+		var controllers = Objects.Objects.Where( item => item.Runtime.Bump != null && !item.IsDeleted ).ToList();
+		if ( saved == null )
+		{
+			if ( controllers.Any( item => item.Runtime.Bump!.Vehicles.Count > 0 ) )
+				throw new InvalidDataException( "The park holds boats but the save carries no track part." );
+			return;
+		}
+		if ( Guests == null || waterTracks == null )
+			throw new InvalidDataException( "The saved park has tracks, but this level has no track layer." );
+		TrackSave.RestoreCells( Guests.Grid.Cells, saved );
+		foreach ( var entry in saved.Controllers )
+		{
+			var station = controllers.FirstOrDefault( item => item.Runtime.AttractionId == entry.AttractionId )
+				?? throw new InvalidDataException( $"The save holds a track controller for attraction {entry.AttractionId}, which this park does not place as a water ride." );
+			var bump = station.Runtime.Bump!;
+			if ( bump.Type != entry.Type )
+				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s controller type {bump.Type} is not the saved {entry.Type}." );
+			var circuit = RewalkTrack( station ) ?? throw new InvalidDataException( $"Attraction {entry.AttractionId} has no track station." );
+			if ( circuit.IsValid != entry.IsTrackValid )
+				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s circuit walks {(circuit.IsValid ? "valid" : "invalid")}, the save says {(entry.IsTrackValid ? "valid" : "invalid")}." );
+			var rebuilt = bump.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment ) ).ToList();
+			if ( !rebuilt.SequenceEqual( entry.Sections ) )
+				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s walked sections do not match the saved ones." );
+			bump.Restore( entry );
+		}
+		if ( controllers.Count != saved.Controllers.Count )
+			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count} water rides." );
+		Objects.ScriptWorld.Bumpers.CosmeticState = saved.CosmeticState;
+	}
+}

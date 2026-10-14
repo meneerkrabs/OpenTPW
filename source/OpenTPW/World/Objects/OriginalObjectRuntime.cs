@@ -15,6 +15,7 @@ public sealed partial class OriginalObjectRuntime
 	private bool wasRunning;
 	private bool stopped;
 	private readonly OriginalObjectEffects effects;
+	private readonly RideScriptWorld scriptWorld;
 
 	/// <param name="world">The park's script world; it also allocates the attraction id. Null: a world of its own.</param>
 	public OriginalObjectRuntime( ObjectCatalogEntry entry, RideScriptWorld? world = null, int? seed = null, bool open = true )
@@ -32,6 +33,7 @@ public sealed partial class OriginalObjectRuntime
 		ArgumentNullException.ThrowIfNull( entry );
 		Entry = entry;
 		world ??= new RideScriptWorld();
+		scriptWorld = world;
 		if ( attractionId is { } restored )
 		{
 			AttractionId = restored;
@@ -45,6 +47,13 @@ public sealed partial class OriginalObjectRuntime
 		{
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
+		}
+		// A water ride (Bumper.WhichTrackType 2) gets a bump-ride controller; kart rides keep the shared tables only (docs/TRACKS.md).
+		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { IsWater: true } template )
+		{
+			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers );
+			world.Bumpers.Add( Bump );
+			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
@@ -71,7 +80,8 @@ public sealed partial class OriginalObjectRuntime
 			SetVariable( nameof( RideVariables.VAR_DURATION ), entry.Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "InitDuration" ) ?? 0 );
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
 			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the callers of the completion predicates 0x10045DA4/0x10045EAC in the guest and queue code are not traced — evidence needed: what 0x100DC834, 0x100DE654 and 0x100ED244 do with 0x10045EAC
-			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) );
+			// A water ride takes guests only while its circuit is valid (the original's counts-test reads the track word the walk writes, TRACK-005).
+			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) && (Bump?.IsTrackValid ?? true) );
 		}
 	}
 
@@ -80,6 +90,8 @@ public sealed partial class OriginalObjectRuntime
 	public int AttractionId { get; }
 	/// <summary>The coaster controller of a coaster station (<c>Bumper.WhichTrackType 3</c>), else null.</summary>
 	public CoasterRide? Coaster { get; }
+	/// <summary>The bump-ride controller of a water ride (<c>Bumper.WhichTrackType 2</c>), else null (docs/TRACKS.md).</summary>
+	public BumpController? Bump { get; }
 	public ModelFile Model { get; }
 	public ObjectAnimator Animator { get; }
 	/// <summary>The object's original script, or null for the few objects without one.</summary>
@@ -160,6 +172,12 @@ public sealed partial class OriginalObjectRuntime
 			return;
 		}
 		Coaster?.Advance( deltaSeconds );
+		if ( Bump != null )
+		{
+			// the script speed bias is pushed to the controller as its performance on every script tick ([BIN:TPW-EXE:0x005516B0 RSSE tick] 0x00545180)
+			Bump.SetPerformance( ScriptPerformance );
+			Bump.Advance( deltaSeconds );
+		}
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
 		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
@@ -180,9 +198,23 @@ public sealed partial class OriginalObjectRuntime
 			Coaster.ClearTrains();
 			Coaster.World.Remove( Coaster );
 		}
+		ReleaseBump();
 		Script?.Stop();
 		Animator.StopAll();
 	}
+
+	/// <summary>The boats leave and the controller leaves the world (a removed or faulted water ride).</summary>
+	private void ReleaseBump()
+	{
+		if ( Bump == null )
+			return;
+		Bump.EjectAll();
+		scriptWorld.Bumpers.Remove( Bump );
+	}
+
+	/// <summary>The performance (0..100) the script's speed bias gives the controller; the creation bias is 50.</summary>
+	// [BIN:TPW-EXE:0x005516B0 RSSE tick] every script tick pushes the script performance (+0x30, 0..100, default 50) to the controller (0x00545180); the ride's InitSpeed bias is the same word (RIDES-033)
+	internal int ScriptPerformance => 50;
 
 	// ---- Park-resume snapshot ----
 
@@ -266,6 +298,7 @@ public sealed partial class OriginalObjectRuntime
 				Coaster.ClearTrains();
 				Coaster.World.Remove( Coaster );
 			}
+			ReleaseBump();
 			Script?.Stop();
 			Animator.StopAll();
 			if ( snapshot.StoppedScriptFault is { } fault )
@@ -522,6 +555,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.COAST && ride.Coaster != null )
 			return ride.Coaster.Perform( call );
+		// The water ride's BUMP commands go to its controller (docs/TRACKS.md); the visitor opcodes keep the guest protocol (BUMP 1 and 2 only move guest ids).
+		if ( call.Opcode == Opcode.BUMP && ride.Bump is { } bump )
+			return bump.Command( call.Argument( 0 ), call.OperandCount > 1 ? call.Argument( 1 ) : 0 );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
 		// Routed EVENT and repair-hide sounds can use the placed origin; scream/show placement and reverb remain unimplemented.

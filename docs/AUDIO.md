@@ -417,8 +417,9 @@ the already-pinned NAudio WAV writer, without resampling, gain, mixing or float
 conversion. Container sample-rate hints and the unqualified raw sample field
 are not used as a duration or PCM-size oracle.
 
-Supported payloads remain MPEG-1/2 Layer I and MPEG-2 LSF Layer II as implemented
-by the existing decoder. MPEG-1 Layer II, Layer III, MPEG-2.5, free format and
+Supported payloads are MPEG-1/2 Layer I and nonjoint MPEG-1/2 Layer II as implemented
+by the existing decoder (MPEG1-LAYER2-VERIFICATION.md records the synthetic
+MPEG-1 addition). Layer III, MPEG-2.5, free format and
 Layer II joint stereo remain unsupported; raw WAV/NONE payloads are not treated
 as MPEG. There is no event/category lookup, weighted variant selection, sentence
 or loop flattening, playback, or audio/LIP timing export. This exports current

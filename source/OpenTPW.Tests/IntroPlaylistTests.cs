@@ -45,8 +45,14 @@ public class IntroPlaylistTests
 		Assert.IsFalse( gate.Poll( true ) );
 		Assert.IsFalse( gate.Poll( false ) );
 		Assert.IsTrue( gate.Poll( true ), "a fresh press skips" );
-		Assert.IsTrue( gate.Poll( true ), "input still held also skips the next movie, as in the original" );
+		Assert.IsTrue( gate.Armed );
+		gate.Rearm();
+		Assert.IsFalse( gate.Armed, "a movie ending re-arms the wait" );
+		Assert.IsFalse( gate.Poll( true ), "input still held after the previous movie does not skip the next one" );
+		Assert.IsFalse( gate.Armed );
 		Assert.IsFalse( gate.Poll( false ) );
+		Assert.IsTrue( gate.Armed );
+		Assert.IsTrue( gate.Poll( true ) );
 	}
 
 	[TestMethod]

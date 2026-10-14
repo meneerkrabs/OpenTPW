@@ -97,7 +97,7 @@ public sealed class LobbyDefinition
 
 	/// <summary>Centre of ISLANDCAMERAPOSITION slot <paramref name="slot"/> (0–9) in MD2 lobby coordinates (x, z).</summary>
 	public (float X, float Z) PositionOf( int slot ) =>
-		// [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete
+		// [DATA:lobby.txt:ISLANDCAMERAPOSITION slots 0-9] every slot is defined, so this fallback is unreachable with the shipped data; kept as a defensive default
 		IslandPositions.TryGetValue( slot, out var position ) ? position : (400 + slot * 200, 400);
 
 	private static float Number( IReadOnlyList<string> arguments, int index ) =>

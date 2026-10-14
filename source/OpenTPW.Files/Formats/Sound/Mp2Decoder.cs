@@ -47,8 +47,7 @@ public static partial class Mp2Decoder
 
 	// ISO/IEC 11172-3 Table 3-B.3 synthesis window D[0..256], in units of 2^-16
 	// (the standard's nine-decimal values are exact multiples of 1/65536).
-	// [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's
-	// D[1] and D[256] and by ≤1 LSB corpus output vs ffmpeg — evidence needed: full comparison with the published standard text
+	// [BIN:TPW-EXE:0x0070BD08 synthesis window] the original's table of 544 floats (17 rows of 32, each row's 16 taps stored twice) holds −0.5·D[32·tap+row] for these values (read by 0x6C9270); the whole table was compared with this array and its mirrored extension
 	private static readonly int[] HalfWindow =
 	{
 		0, -1, -1, -1, -1, -1, -1, -2, -2, -2, -2, -3, -3, -4, -4, -5,

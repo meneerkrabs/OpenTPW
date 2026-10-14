@@ -70,6 +70,9 @@ public static class GameAudio
 	/// <summary>The visitor click: <c>cat_kids</c> 129, flat, every time the visitor status panel is opened.</summary>
 	// [BIN:STP-PPC:0x1010B808 visitor status panel open] stores the visitor, builds its dialog, plays cat_kids 129 (mode 0, no position) unconditionally and shows the panel; called by a park-view click on a visitor, a roster row activation, the map's visitor markers and the selection strip; [BIN:TPW-EXE:0x4B79B0] the same
 	public const uint VisitorClickEvent = 129;
+	/// <summary>A prankster's stinkbomb: <c>cat_kids</c> 207 at the prankster.</summary>
+	// [BIN:TPW-EXE:0x004FF289 stinkbomb sound] after the stinkbomb's litter (0x004D93B0, type 8) the prank plays bank 0x00803A24 (cat_kids, loaded at 0x0051EBFE) event 0xCF through 0x004FAA00, which places it at the thing's model position (+0xC)
+	public const uint StinkbombEvent = 207;
 	private static SoundEventSystem? events;
 	private static SoundSentence? music;
 	private static SoundSentence? crowd;
@@ -505,14 +508,16 @@ public static class GameAudio
 	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn with an independent host stream.
 	/// </summary>
 	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer handler draws the world random at each walking/idle turn and plays at (draw & 0xF) == 0 — the gate is traced for all roles (0x100D5EAC, 0x100D6434, 0x100D9BAC, 0x100D9F10, 0x100D2DDC, 0x100D2E44, 0x100D4EF0, 0x100D4E18, 0x100F0460, 0x100F0630)
-	// [APPROX:AUDIO-024] the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the handlers' turn boundary and world draw order
-	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn )
+	// [APPROX:AUDIO-024] except the handymen (whose state machine draws their voices, PlayStaffVoices), the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the other roles' state machines (their handlers' turn boundary and world draw order)
+	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn, bool handymenDrawOwnVoices = false )
 	{
 		if ( events == null || turn == staffTurn )
 			return;
 		staffTurn = turn;
 		foreach ( var member in staff )
 		{
+			if ( handymenDrawOwnVoices && member.Type == StaffType.Handyman )
+				continue;
 			if ( staffRandom.Next( 16 ) != 0 )
 				continue;
 			if ( !staffVoiceLogged )
@@ -522,6 +527,14 @@ public static class GameAudio
 			}
 			PlayStaffSound( member.Type, member.Travelling, new Vector3( member.CellX * 10, 0, member.CellY * 10 ) );
 		}
+	}
+
+	/// <summary>The voices a staff state machine drew (the handymen's states 0 and 1, tp.exe <c>0x004D73C0</c>), each at the member's cell.</summary>
+	// [BIN:TPW-EXE:0x004D73C0 handyman voices] states 0 and 1 draw the world generator on every update and at (draw & 0xF) == 0 play bank 0x00803A30 (cat_staff) 161 (idle) or 160 (walking) through 0x004FAA00
+	public static void PlayStaffVoices( IReadOnlyList<StaffVoice> voices )
+	{
+		foreach ( var voice in voices )
+			PlayStaffSound( voice.Type, voice.Walking, new Vector3( voice.CellX * 10, 0, voice.CellY * 10 ) );
 	}
 
 	/// <summary>The cat_staff event of a role's walking or idle turn, or null when none is traced.</summary>
@@ -552,6 +565,13 @@ public static class GameAudio
 	{
 		var voice = events?.PlayAt( Ui, eventId, AudioChannel.Effects, position );
 		Log.Trace( $"Sound: cat_ui {eventId} at a cell {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>A stinkbomb's sound (<see cref="StinkbombEvent"/>) at a park position.</summary>
+	public static void PlayStinkbomb( Vector3 position )
+	{
+		var voice = events?.PlayAt( Kids, StinkbombEvent, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: stinkbomb cat_kids {StinkbombEvent} {(voice == null ? "not available" : "played")}." );
 	}
 
 	/// <summary>The visitor click (<see cref="VisitorClickEvent"/>), played whenever a visitor's details are opened.</summary>

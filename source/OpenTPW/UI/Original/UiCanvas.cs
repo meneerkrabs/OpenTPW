@@ -44,7 +44,7 @@ public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1, 
 	public UiFontTier FontTier => LogicalScale < 0.36f ? UiFontTier.Small : LogicalScale < 0.6f ? UiFontTier.Medium : UiFontTier.Big;
 
 	/// <summary>Maps an authored canvas point to framebuffer pixels.</summary>
-	// [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision
+	// [EXT:ui-anchors] anchors keep the authored distance to the nearest edge on non-4:3 outputs; the original (1999) ran fixed 4:3 modes, so widescreen layout is an OpenTPW design decision
 	public NVector2 Map( NVector2 point, UiAnchor anchor )
 	{
 		var scale = Scale;

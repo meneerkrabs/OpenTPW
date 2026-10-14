@@ -50,6 +50,44 @@ public class IntroSequenceTests
 	}
 
 	[TestMethod]
+	public void EachMovieWaitsForHeldSkipInputToBeReleased()
+	{
+		var first = new Movie();
+		var second = new Movie();
+		var opened = new List<string>();
+		var held = true;
+		using var intro = new IntroSequence( new[] { "bf", "trailer" }, name =>
+		{
+			opened.Add( name );
+			return name == "bf" ? first : second;
+		}, () => held, _ => { } );
+		intro.Update();
+		Assert.AreEqual( 0, opened.Count, "input held at launch delays the first movie" );
+		held = false;
+		intro.Update();
+		CollectionAssert.AreEqual( new[] { "bf" }, opened );
+		held = true;
+		intro.Update();
+		Assert.IsTrue( first.IsFinished, "an input held during a movie stops it" );
+		intro.Update();
+		Assert.AreEqual( 1, first.Disposals );
+		Assert.AreEqual( 1, opened.Count, "the held input carries over without skipping the trailer; it waits instead" );
+		intro.Update();
+		Assert.AreEqual( 1, opened.Count );
+		held = false;
+		intro.Update();
+		CollectionAssert.AreEqual( new[] { "bf", "trailer" }, opened );
+		Assert.AreEqual( 0, second.Disposals, "the trailer plays once the input is released" );
+	}
+
+	[TestMethod]
+	public void SkipInputIncludesEveryMouseButton()
+	{
+		var middle = typeof( Input.MouseInfo ).GetField( nameof( Input.MouseInfo.Middle ) );
+		Assert.IsNotNull( middle, "the middle button is tracked for the start-up skip" );
+	}
+
+	[TestMethod]
 	public void UnreadableOpenIsSkippedAndDisposeCancelsRemainingWork()
 	{
 		var current = new Movie();

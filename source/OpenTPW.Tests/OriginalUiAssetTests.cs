@@ -227,6 +227,28 @@ public class OriginalUiAssetTests
 	}
 
 	[TestMethod]
+	public void LobbyDefinesEveryIslandCameraPositionSlot()
+	{
+		var lobby = LobbyDefinition.Load();
+		for ( var slot = 0; slot < 10; slot++ )
+			Assert.IsTrue( lobby.IslandPositions.ContainsKey( slot ), $"lobby.txt ISLANDCAMERAPOSITION slot {slot}: the position fallback is unreachable" );
+	}
+
+	[TestMethod]
+	public void EveryLoanLenderNameIsAnEntryOfLoanNames()
+	{
+		var names = GameLanguage.Current.LoadStrings( "LOANNAMES.str" ).Entries;
+		Assert.AreEqual( 18, names.Length, "LOANNAMES.str" );
+		foreach ( var theme in new[] { "jungle", "fantasy", "hallow", "space" } )
+			foreach ( var easy in new[] { false, true } )
+				foreach ( var loan in BalanceSettings.Load( theme, easy ).Loans )
+				{
+					Assert.IsTrue( loan.LenderNameIndex >= 0 && loan.LenderNameIndex < names.Length, $"{theme} easy={easy} loan {loan.Index} Lendername {loan.LenderNameIndex}" );
+					Assert.IsFalse( string.IsNullOrWhiteSpace( names[loan.LenderNameIndex] ), $"LOANNAMES.str[{loan.LenderNameIndex}]" );
+				}
+	}
+
+	[TestMethod]
 	public void TotemCatalogAndStartingCashComeFromOriginalSettings()
 	{
 		var item = new TotemBuildCatalog().GetItems( BuildCategory.Rides ).Single();

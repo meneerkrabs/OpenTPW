@@ -282,8 +282,16 @@ HOOKS = [
      '\t\t\t\ttoilet!.Runtime.Close();\n\t\t\t\tbreak;\n'
      '\t\t\tcase "idle-mechanic":\n\t\t\tcase "idle-handyman":\n'
      '\t\t\t\tforeach ( var member in economy.Staff.Members.Where( member => member.Type == (Mutation == "idle-mechanic" ? StaffType.Mechanic : StaffType.Handyman) ) )\n'
-     '\t\t\t\t\tmember.State = StaffState.PickedUp;\n\t\t\t\tbreak;\n'
+     '\t\t\t\t\tmember.State = StaffState.PickedUp;\n'
+     # Litter by cell (ORACLE.md 7.15): the gate's guests rarely fill their litter meters within a run, so the handyman mutations drop
+     # an item on the entrance cell every fourth turn.
+     '\t\t\t\tif ( Mutation == "idle-handyman" )\n\t\t\t\t\tDropSteadyLitter();\n'
+     '\t\t\t\tbreak;\n'
+     '\t\t\tcase "no-handyman":\n\t\t\t\tDropSteadyLitter();\n\t\t\t\tbreak;\n'
      '\t\t}\n\t}\n\n'
+     '\tprivate void DropSteadyLitter()\n\t{\n'
+     '\t\tif ( ParkCalendar.Turn( economy.Tick ) != ParkCalendar.Turn( economy.Tick - 1 ) && ParkCalendar.Turn( economy.Tick ) % 4 == 0 )\n'
+     '\t\t\teconomy.Litter.Drop( entranceCell.X, entranceCell.Y, (LitterType)1 );\n\t}\n\n'
      '\tprivate string AttractionName( int id )'),
     # GATE-V3: reset-ids is retired (DET removed the process-wide counter); the second in-process run diverges instead.
     ('\t\tvar second = M3GateRun.Execute( options, ticks );\n',

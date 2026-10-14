@@ -15,7 +15,7 @@ public sealed class OriginalGateSign : Entity
 {
 	/// <summary>Theme order of THEMENAMES.str: Lost Kingdom, Halloween World, Wonder Land, Space Zone.</summary>
 	public static readonly IReadOnlyList<string> ThemeLevels = new[] { "jungle", "hallow", "fantasy", "space" };
-	// [APPROX:COMPAT-008] depth offset for the sign faces — evidence needed: none once the full gate model draws its runtime textures.
+	// [EXT:gate-sign-depth-lift] the sign faces are lifted along their normal to win the depth test; an OpenTPW rendering choice, not an original rule
 	private const float SurfaceOffset = 0.05f;
 
 	private readonly ModelEntity part;

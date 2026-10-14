@@ -127,9 +127,9 @@ public static class SignSurfaceComposer
 			diagnostics.Add( $"Sign slot {index}: {slot.FontFileName} has no glyph for {string.Join( ", ", missing.Select( code => $"U+{code:X4}" ) )}; drawn as .notdef." );
 		var text = new byte[TextWidth * TextHeight * 4];
 		var em = Math.Max( 1, slot.EmHeightPixels );
-		var width = SignTextLayout.FitLogFontWidth( font, line, em, slot.LogFont.Width, TextWidth );
+		var width = SignTextLayout.FitLogFontWidth( font, line, em, slot.LogFont.Width, TextWidth, widthPercent: slot.HorizontalScalePercent );
 		SignTextLayout.DrawLine( text, TextWidth, TextHeight, font, line, em, (255, 255, 255),
-			horizontalScale: SignTextLayout.LogFontHorizontalScale( font, em, width ), margin: 0, cellTop: slot.OffsetY, kerning: false );
+			horizontalScale: SignTextLayout.LogFontHorizontalScale( font, em, width ), margin: 0, cellTop: slot.OffsetY, kerning: false, widthPercent: slot.HorizontalScalePercent );
 		// [BIN:STP-PPC:0x100A9F9C] the 512-wide text DIB is reduced to the 256-wide mask by two-stage integer averaging.
 		for ( var y = 0; y < Height; y++ )
 		for ( var x = 0; x < Width; x++ )

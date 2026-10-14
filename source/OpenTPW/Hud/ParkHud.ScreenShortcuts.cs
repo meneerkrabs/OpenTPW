@@ -35,7 +35,7 @@ internal enum HudScreenShortcut
 /// </summary>
 public sealed partial class ParkHud
 {
-	// [APPROX:UI-900] a second press of a window key closes that window (toggle); the original's key handler for an open window is not traced — evidence needed: the original key dispatch while a screen window is open
+	// [APPROX:UI-900] a second press of a window key closes that window (toggle) and A/S stay with the camera pan; the original closes with Esc and re-opens on a repeat key (0x488ba0, key group "shortcuts" 0x748378), and A and S are real keys (allitems, allstaff) — OpenTPW choices, no evidence needed
 	/// <summary>Non-modal HUD windows a window key may close when one is the top screen.</summary>
 	internal static readonly HashSet<string> TogglableWindowNames = new()
 	{
@@ -85,7 +85,7 @@ public sealed partial class ParkHud
 	/// The speed after stepping the clock-scale model by <paramref name="steps"/> places (negative steps down);
 	/// the result clamps at paused and fastest.
 	/// </summary>
-	// [APPROX:UI-902] the original's time keys step its clock scale by 1.25 within 0.25..2 (ECON-004/UI-022); OpenTPW's four named speeds take their place — evidence needed: the original key tokens' names and handler
+	// [EXT:time-key-speeds] the original's time keys are numpad − / + (clock scale ×0.8 / ×1.25, clamped 0.25-2.0) and * (= 1.0) (0x40c3b0/0x40c3c0/0x40c3d0); OpenTPW steps its four named speeds instead (an OpenTPW decision)
 	internal static GameSpeed SteppedSpeed( GameSpeed current, int steps )
 	{
 		var index = Array.IndexOf( SpeedSteps, current );
@@ -249,7 +249,7 @@ public sealed partial class ParkHud
 		OpenStaffWindow();
 	}
 
-	// [APPROX:UI-903] blueprint turning uses the level's 90-degree build-rotation steps; the original comma/full-stop handler's step and smoothing are not traced — evidence needed: the original blueprint-turn key handler
+	// [APPROX:UI-903] the original sets the build angle to (angle + 90) mod 360 and (angle + 270) mod 360 for comma and full stop (0x40c120/0x40c150, global 0x81d7a4); OpenTPW turns through Level.RotateBuild's 90-degree steps — evidence needed: the sign mapping of the two keys onto Level.RotateBuild
 	private void RotateBlueprint( int degrees )
 	{
 		// Level.RotateBuild owns the rotation and steps +90 degrees; a left turn is three of its steps.
@@ -260,7 +260,7 @@ public sealed partial class ParkHud
 			level.RotateBuild();
 	}
 
-	// [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S cycling order is not traced — evidence needed: the original staff-locator key handler
+	// [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S opens the locator panel (0x481790 → 0x4b3f60, role radios 0x95e..0x964) and the per-employee panel's buttons 1293/1295 cycle through staff — evidence needed: porting those panels
 	private static readonly StaffType[] LocatorRoles = { StaffType.Handyman, StaffType.Mechanic, StaffType.Entertainer, StaffType.Guard, StaffType.Researcher };
 	private StaffType? lastLocatedRole;
 	private void LocateNextStaffRole()

@@ -159,7 +159,7 @@ public sealed partial class ParkHud
 	private void ShowLoanFailure( string message ) => Stack.Push( UiDialogs.Message( "loanFailure", () => message,
 		(() => strings.Extra( OpenTpwText.Back ), () => Stack.Pop()) ) );
 
-	// [APPROX:UI-062] A missing lender-name entry has a numbered fallback rather than an invented institution name.
+	// [DATA:LOANNAMES.str:0..17] LOANNAMES.str has 18 entries and every LoanInfo Lendername is 0..17, so the numbered fallback is unreachable with the shipped data; kept as a defensive default
 	private string LenderText( LoanRow row ) => strings.Lender( row.LenderNameIndex ) is { Length: > 0 } name ? name : $"#{row.LenderNameIndex + 1}";
 	private string LoanCellText( LoanRow row, int column ) => column switch
 	{

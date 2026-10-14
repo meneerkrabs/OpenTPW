@@ -207,7 +207,8 @@ public sealed class CoasterBuilder
 	}
 
 	// [BIN:STP-PPC:0x100CBFDC bank debit] coaster charges debit the bank (+12) directly; credits go through 0x100CBF50
-	// [APPROX:COAST-031] track money is posted as other costs and other income and joins the station's total spent; the original's debit keeps its own statistics and does nothing when bank +276 is 0 (0x100CBFF8) — evidence needed: the statistics 0x100CBFDC updates and the meaning of bank +276
+	// [BIN:TPW-EXE:0x4d01f0 bank debit] the debit (callers 0x435020, 0x441a00, 0x445a70; credit 0x4d0190 for refunds): bank +0x114 (mWithdrawalsEnabled, serializer 0x4cf920) 0 → nothing; else balance (+0xC) down, turn-entered-red (+0x120) stamped from game +0x1da70c when it crosses below 0 from the last balance (+0x11C) ≥ 0, last balance set, park total costs (+0x1F5A0; "Other costs" = total − loan payments) up, year profit (+0x124) down; the credit adds to balance, money-in (+0x1FC90) and year profit
+	// [APPROX:COAST-031] track money is posted as other costs and other income (ParkEconomy), which matches the debit and credit totals, and joins the station's total spent, which is OpenTPW's own; the withdrawals gate (ECON-051), the last balance and the turn-entered-red stamp (SAVE-008) are not modelled — they belong to the economy and save owners
 	private bool Spend( long amount, bool force = false )
 	{
 		if ( amount <= 0 )

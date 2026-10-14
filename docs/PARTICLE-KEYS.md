@@ -1,8 +1,9 @@
 # Particle model keys
 
 `ParticleKeyResolver` supplies the model-key boundary needed by EVENT1 and EVENT2
-particle constructors. It does not construct, simulate or render particles. The
-geometry reader currently accepts MD2 221.203 only.
+particle constructors. It only resolves keys; the particle pool, its simulation and
+its drawing are described in [PARTICLES.md](PARTICLES.md). The geometry reader
+currently accepts MD2 221.203 only.
 
 For selector `0x100`, the first dummy attribute whose `Value` equals the
 nonnegative key and whose `Type` intersects the selector selects node
@@ -37,8 +38,9 @@ resolver.Resolve(key, ParticleKeyResolver.EventSelector,
 
 The caller must select the intended pose at the event boundary. `PTCL-900`
 records that the native lookup-table refresh gates and callback timing are still
-unqualified. The resolver itself supplies no particle constructor. The preparation
-hook below preserves the independently reviewed EVENT classification.
+unqualified. The resolver itself supplies no particle constructor; the prepared
+request feeds the particle pool (PARTICLES.md). The preparation hook below
+preserves the independently reviewed EVENT classification.
 
 ## Latest owner-local EVENT preparation
 
@@ -64,10 +66,10 @@ does not create new diagnostics. Children share their owning runtime's effects.
 The diagnostic is neither save state nor canonical simulation state.
 
 Every EVENT keeps its existing unimplemented return/count/log behavior, even
-when preparation succeeds. This is a polling preparation foundation (PTCL-901),
-not particle execution, reliable event delivery, runtime coverage completion or
-original parity. Native fixed-point position/velocity, template contents,
-scoped lookup, lifetimes, renderer and refresh timing remain unqualified.
+when preparation succeeds. Each prepared request is also announced once to the
+level's particle pool, which starts the effect (PARTICLES.md, PTCL-908 for the
+callers that are not wired); the latest-attempt diagnostic stays as described
+here. Scoped lookup and refresh timing remain unqualified.
 Synthetic tests exercise actual VM/object effects, animated poses, independent
 owners/children, explicit refusals and teardown, with real sound controls and
 zero particle PCM; they create no GPU resources or original assets.

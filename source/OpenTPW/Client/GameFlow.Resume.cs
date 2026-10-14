@@ -21,6 +21,7 @@ internal sealed partial class GameFlow
 	/// <summary>Preflights and builds an isolated candidate before retiring the live park or lobby.</summary>
 	internal Level ResumePark( ParkResumeSnapshot snapshot )
 	{
+		RequireProgressSaved();
 		if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );
 		var settings = BalanceSettings.Load( snapshot.Theme, snapshot.Economy.Easy );
 		var catalog = ObjectCatalog.Load( snapshot.Theme, snapshot.Economy.Easy );
@@ -49,6 +50,7 @@ internal sealed partial class GameFlow
 				candidateAdvisor.AttachLevel( candidate );
 				candidateAdvisor.RestoreSnapshot( snapshot.Advisor! );
 			}
+			RequireProgressSaved();
 			scene.Detach();
 			var retiredAdvisor = Advisor;
 			TearDown( applyPendingLanguage: false );
@@ -69,6 +71,7 @@ internal sealed partial class GameFlow
 			{
 				Log.Warning( $"Park resumed; audio could not start: {error.Message}" );
 			}
+			AttachProgress( candidate );
 			Log.Trace( $"Resumed {snapshot.Theme} park: {candidate.Objects.Objects.Count} objects, {candidate.Guests!.Guests.Count} guests." );
 			return candidate;
 		}

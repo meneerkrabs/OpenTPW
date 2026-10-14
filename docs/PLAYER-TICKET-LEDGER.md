@@ -1,9 +1,10 @@
 # Application-owned player ticket ledger
 
-The first ledger slice provides a model and strict own JSON file only. It is not
-connected to the frontend, a running park's event stream, native profiles, theme
-entry or mystery purchases. Existing `PlayerProgress` count behavior and lobby
-policies remain unchanged until a separate integration decision.
+The application-owned ledger now connects to guarded New Full Simulation entry
+and eligible live park awards. It remains separate from native profiles and
+player-global mystery purchases. The legacy `PlayerProgress` count helper is
+unchanged. The host entry and lifecycle policy is documented in
+[Progress entry](PLAYER-PROGRESS-INGRESS.md).
 
 `PlayerTicketLedger` records the existing `GoldenTicketKind` identities. Visitors,
 PeopleInPark, Happiness, AllResearchedAndBuilt, ProfitYear and RecentVisitors are
@@ -25,8 +26,8 @@ zero earned tickets and zero extra keys. It does not award the native first-lobb
 key: that requires a separately reviewed application policy and frontend owner.
 
 `PlayerTicketFile` uses format `opentpw-player-progress`, version 1, with a proposed
-own filename `opentpw-player-progress.json`. Callers supply an own save path; no
-production caller or profile slot is installed. JSON destinations only prevent
+own filename `opentpw-player-progress.json`. The GameFlow owner uses the existing own save directory; no named/multiple
+profile slots are installed. JSON destinations only prevent
 native `gms.dat`/TPWS/TPWI access. Missing files return unknown (`null`), distinct
 from an explicitly created empty ledger. Legacy per-park ticket counts never
 supply unknown player-wide or cross-theme history.

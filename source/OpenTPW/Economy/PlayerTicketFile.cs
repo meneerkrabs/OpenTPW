@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenTPW.Online;
@@ -79,7 +80,11 @@ internal static partial class PlayerTicketFile
 	}
 
 	/// <summary>Absence is unknown history, distinct from an explicitly created empty own profile.</summary>
-	public static PlayerTicketLedger? LoadIfPresent( string path )
+	public static PlayerTicketLedger? LoadIfPresent( string path ) => ReadIfPresent( path )?.Ledger;
+
+	internal sealed record ReadState( PlayerTicketLedger Ledger, string Digest );
+
+	internal static ReadState? ReadIfPresent( string path )
 	{
 		var destination = OwnPath( path );
 		try
@@ -88,10 +93,21 @@ internal static partial class PlayerTicketFile
 			if ( stream.Length > MaximumFileSize ) throw new InvalidDataException( "Own player progress exceeds the size limit." );
 			var bytes = new byte[stream.Length];
 			stream.ReadExactly( bytes );
-			return Deserialize( bytes );
+			return new( Deserialize( bytes ), Convert.ToHexString( SHA256.HashData( bytes ) ) );
 		}
 		catch ( FileNotFoundException ) { return null; }
 		catch ( DirectoryNotFoundException ) { return null; }
+	}
+
+	/// <summary>Optimistic single-owner change refusal, not a cross-process atomic compare-and-swap.</summary>
+	internal static string SaveIfUnchanged( string path, PlayerTicketSnapshot snapshot, string? expectedDigest )
+	{
+		var destination = OwnPath( path );
+		var bytes = Serialize( snapshot );
+		if ( ReadIfPresent( destination )?.Digest != expectedDigest )
+			throw new InvalidDataException( "The OpenTPW progress file changed. Reopen the park choice." );
+		AtomicFile.Write( destination, bytes );
+		return Convert.ToHexString( SHA256.HashData( bytes ) );
 	}
 
 	private static string OwnPath( string path )

@@ -30,7 +30,7 @@ public class HandymanTests
 			Park.OpenPark();
 			Park.Litter.Cells = Grid.Cells;
 			World = new StaffWorldSimulation( Grid, () => Park.Staff.Members, _ => null, (0, 5) ) { Toilets = () => Toilets };
-			Park.HandymanWorld = World;
+			Park.StaffWorld = World;
 			Handyman = EconomyTestData.HireBest( Park, StaffType.Handyman );
 			World.Synchronize();
 		}
@@ -82,7 +82,7 @@ public class HandymanTests
 		long arrived = -1, removed = -1;
 		f.Turns( 300, () =>
 		{
-			if ( arrived < 0 && f.Handyman.Job == HandymanJob.Sweeping )
+			if ( arrived < 0 && f.Handyman.Job == StaffJob.Sweeping )
 				arrived = f.Park.Turn;
 			if ( removed < 0 && f.Park.Litter.Count == 0 )
 				removed = f.Park.Turn;
@@ -120,12 +120,12 @@ public class HandymanTests
 		var f = new Fixture();
 		f.Park.Litter.Drop( 2, 5, (LitterType)2 );
 		f.Turns( 3 );
-		Assert.AreEqual( HandymanJob.ToLitter, f.Handyman.Job );
+		Assert.AreEqual( StaffJob.ToLitter, f.Handyman.Job );
 		var json = ParkSaveFile.Serialize( f.Park );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog );
 		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
 		var world = new StaffWorldSimulation( f.Grid, () => restored.Staff.Members, _ => null, (0, 5) );
-		restored.HandymanWorld = world;
+		restored.StaffWorld = world;
 		restored.Litter.Cells = f.Grid.Cells;
 		for ( var turn = 0; turn < 60; turn++ )
 		{
@@ -146,11 +146,11 @@ public class HandymanTests
 		Assert.AreEqual( toilet.Id, f.Handyman.ToiletId );
 		f.Park.Sell( toilet.Id );
 		Assert.AreEqual( 0, f.Handyman.ToiletId );
-		Assert.AreEqual( HandymanJob.Idle, f.Handyman.Job );
+		Assert.AreEqual( StaffJob.Idle, f.Handyman.Job );
 		var json = ParkSaveFile.Serialize( f.Park );
 		ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog );
 		var patrolled = false;
-		f.Turns( 30, () => patrolled |= f.Handyman.Job == HandymanJob.Patrol );
+		f.Turns( 30, () => patrolled |= f.Handyman.Job == StaffJob.Patrol );
 		Assert.IsTrue( patrolled, "the next search finds nothing and patrols" );
 	}
 
@@ -169,7 +169,7 @@ public class HandymanTests
 		var json = ParkSaveFile.Serialize( park );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
 		restored.Litter.Cells = f.Grid.Cells;
-		restored.HandymanWorld = new StaffWorldSimulation( f.Grid, () => restored.Staff.Members, _ => null, (0, 5) );
+		restored.StaffWorld = new StaffWorldSimulation( f.Grid, () => restored.Staff.Members, _ => null, (0, 5) );
 		var member = restored.Staff.OfType( StaffType.Handyman ).Single();
 		member.CellX = 0;
 		member.CellY = 5;
@@ -202,6 +202,47 @@ public class HandymanTests
 		Assert.AreNotEqual( json, broken );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () =>
 			ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( broken ) ), f.Park.Settings, f.Park.Catalog ) );
+	}
+
+	[TestMethod]
+	public void ACalledHandymanCleansAToiletBeyondHisRange()
+	{
+		var f = new Fixture();
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, f.Park.TryBuild( 1402, out var toilet ) );
+		toilet!.Repair = 90;
+		f.Toilets.Add( new ToiletSite( toilet.Id, (15, 6), (15, 5) ) );
+		f.Turns( 20 );
+		Assert.AreEqual( 0, toilet.MechanicId, "clean and far: nobody comes" );
+		f.Park.RequestMaintenance( toilet.Id, true );
+		var answered = false;
+		f.Park.EventRaised += item => answered |= item.Kind == ParkEventKind.ToiletCleaned && item.Amount == 1;
+		var cleaned = false;
+		f.Turns( 600, () => cleaned |= toilet.Repair == 100 && !toilet.MaintenanceRequested );
+		Assert.IsTrue( cleaned, "the call brings a handyman at any distance (0x004D7880) and his clean clears it" );
+		Assert.IsTrue( answered, "the clean reports that it answered the call (the level reopens the toilet)" );
+	}
+
+	[TestMethod]
+	public void AHandymanWalksIntoHisPatrolAreaAndStaysThere()
+	{
+		var f = new Fixture();
+		f.Handyman.SetPatrolArea( (12, 7), (8, 0) );
+		Assert.AreEqual( (8, 0, 12, 7), f.Handyman.PatrolArea, "the corners are ordered" );
+		var inside = 0;
+		var outsideAfterEntry = 0;
+		f.Turns( 400, () =>
+		{
+			var (x, y) = f.Cell;
+			var isInside = x is >= 8 and <= 12 && y is >= 0 and <= 7;
+			if ( isInside )
+				inside++;
+			else if ( inside > 0 && f.Handyman.Job == StaffJob.Patrol )
+				outsideAfterEntry++;
+		} );
+		Assert.IsTrue( inside > 100, $"he walked in ({inside} turns inside)" );
+		Assert.AreEqual( 0, outsideAfterEntry, "and patrolled only inside" );
+		f.Handyman.ClearPatrolArea();
+		Assert.IsFalse( f.Handyman.HasPatrolArea );
 	}
 
 	[TestMethod]

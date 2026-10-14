@@ -84,6 +84,12 @@ public sealed record GuestSnapshot
 	public int BinId { get; init; }
 	/// <summary>The prankery flag (0, 100, 101 or 102). Absent before schema 5: no pranksters.</summary>
 	public int PrankFlag { get; init; }
+	/// <summary>The balloon's remaining life (0..255). Absent before schema 6, which then holds no balloons.</summary>
+	public int BalloonLife { get; init; }
+	/// <summary>Whether the guest holds its balloon. Absent before schema 6.</summary>
+	public bool HasBalloon { get; init; }
+	/// <summary>Whether the guest wears a costume. Absent before schema 6.</summary>
+	public bool InCostume { get; init; }
 	public required float QueueJoinHappiness { get; init; }
 	public required int QueueCellIndex { get; init; }
 	public required int QueueTargetIndex { get; init; }
@@ -196,10 +202,11 @@ public sealed record GuestSimulationSnapshot
 	/// (before the histories and the integer exit counter) is still accepted and converted: the missing histories start
 	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero. Versions 1 and 2
 	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped. Versions 1 to 3 (before
-	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters.</summary>
-	public const int CurrentSchemaVersion = 5;
-	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 5 as written now, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
-	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5 };
+	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters, versions 1 to 5 (before balloons and costumes)
+	/// without either.</summary>
+	public const int CurrentSchemaVersion = 6;
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 6 as written now, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>

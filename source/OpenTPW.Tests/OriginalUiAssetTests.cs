@@ -208,6 +208,22 @@ public class OriginalUiAssetTests
 		}
 	}
 
+	/// <summary>The info arm's call buttons (ParkHud.Maintenance) draw the shipped art.</summary>
+	[TestMethod]
+	public void TheCallButtonArtResolves()
+	{
+		foreach ( var name in new[] { "b_callmech", "b_callhandy" } )
+		{
+			var model = UiModel.Load( name );
+			var textures = model.Frames.SelectMany( frame => frame.Parts ).Select( part => part.TextureName )
+				.Where( texture => texture.Length > 0 ).Distinct().ToArray();
+			Assert.IsTrue( textures.Length > 0, $"{name} draws textured parts" );
+			// the normal (b_callmech), pressed (…d) and disabled (…X) art resolves; the highlight (…g) is absent from ui.wad, so the button keeps its normal frame when focused
+			foreach ( var texture in textures )
+				Assert.AreEqual( !texture.EndsWith( 'g' ), UiImages.Resolve( texture ) != null, $"{name} texture {texture}" );
+		}
+	}
+
 	[TestMethod]
 	public void LobbyDefinitionHasTheFourThemeIslands()
 	{

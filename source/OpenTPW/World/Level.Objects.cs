@@ -6,11 +6,31 @@ public partial class Level
 	/// <summary>Placed original objects (imported or built) with their build rules.</summary>
 	public ParkObjects Objects { get; private set; } = null!;
 	/// <summary>Catalog entry the build tool places, or null.</summary>
-	public ObjectCatalogEntry? BuildEntry { get; set; }
+	private ObjectCatalogEntry? buildEntry;
+	public ObjectCatalogEntry? BuildEntry
+	{
+		get => buildEntry;
+		set
+		{
+			if ( value != null )
+				StaffPlacement?.Cancel();
+			buildEntry = value;
+		}
+	}
 	/// <summary>Rotation in degrees (0/90/180/270) for the next built object.</summary>
 	public int BuildRotation { get; private set; }
 	/// <summary>Clicking removes the object under the cursor.</summary>
-	public bool IsRemovingObjects { get; set; }
+	private bool isRemovingObjects;
+	public bool IsRemovingObjects
+	{
+		get => isRemovingObjects;
+		set
+		{
+			if ( value )
+				StaffPlacement?.Cancel();
+			isRemovingObjects = value;
+		}
+	}
 
 	/// <summary>Creates the park's objects; each value is a point where a frame may end, with the share of the objects placed.</summary>
 	private IEnumerable<float> SetupObjects()
@@ -107,22 +127,27 @@ public partial class Level
 		{
 			if ( item.IsDeleted || !item.Entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) || !economyInstances.TryGetValue( item, out var instance ) )
 				continue;
-			var cell = (item.Placement.X, item.Placement.Y);
-			(int X, int Y)? access = null;
-			foreach ( var point in item.AccessPoints )
-				if ( access == null && grid.IsWalkable( point.OutsideX, point.OutsideY ) )
-					access = (point.OutsideX, point.OutsideY);
-			for ( var direction = 0; access == null && direction < 4; direction++ )
-			{
-				var (dx, dy) = GuestPathGrid.Directions[direction];
-				if ( grid.IsWalkable( cell.X + dx, cell.Y + dy ) )
-					access = (cell.X + dx, cell.Y + dy);
-			}
-			// [APPROX:GUEST-005] a bin's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
-			if ( access is { } found )
-				bins.Add( new LitterBin( instance, cell, found ) );
+			if ( AccessCell( item, grid ) is { } found )
+				bins.Add( new LitterBin( instance, (item.Placement.X, item.Placement.Y), found ) );
 		}
 		return bins;
+	}
+
+	/// <summary>An object's access cell (thing <c>+0x36</c>) for bins and rest areas: its entrance's outside cell on a path, else its first path neighbour.</summary>
+	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
+	private static (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
+	{
+		var cell = (item.Placement.X, item.Placement.Y);
+		foreach ( var point in item.AccessPoints )
+			if ( grid.IsWalkable( point.OutsideX, point.OutsideY ) )
+				return (point.OutsideX, point.OutsideY);
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			if ( grid.IsWalkable( cell.X + dx, cell.Y + dy ) )
+				return (cell.X + dx, cell.Y + dy);
+		}
+		return null;
 	}
 
 	/// <summary>The bin's script variable a guest's litter sets (each theme's Litter Bin script declares only <c>VAR_TRIGGER</c>).</summary>
@@ -224,6 +249,7 @@ public partial class Level
 			LastActionMessage = $"Cannot build a path here: {check}.";
 			return false;
 		}
+		StaffPlacement?.Cancel();
 		CellTool.Enter( Paths, (x, y) );
 		return true;
 	}
@@ -234,6 +260,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell is not { } front )
 			return false;
+		StaffPlacement?.Cancel();
 		ride.RecomputeQueue( Guests.Grid );
 		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
 		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),

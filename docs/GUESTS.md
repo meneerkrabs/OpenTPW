@@ -274,7 +274,7 @@ happiness **50**, thirst and hunger a random 0..49, toilet 0..29, illness and li
 its thing id (OpenTPW: its guest id, WALK-010):
 
 - the exit counter loses 1 (so one count is 4 park turns = 0.992 s, in every state, and it runs negative after 0);
-- the cell's environment words move happiness, illness and hunger (not modelled: 0, GUEST-006);
+- the cell's environment words move happiness, illness and hunger (vomit, stinkbombs, entertainers and guards so far, [Pranks](#pranks); GUEST-006);
 - on a turn that is also a multiple of 16, toilet +1, hunger +2 and thirst +2 (all clamped to 0..100). A multiple of 16 has its low two bits 0, so **only a guest whose id is a multiple of four ever grows**;
   three in four guests keep the needs they started with unless they use something;
 - each of illness, hunger, thirst and toilet at a truncated byte of exactly 100 costs 1 happiness;
@@ -282,7 +282,7 @@ its thing id (OpenTPW: its guest id, WALK-010):
 
 Using an attraction then applies its own effects after the outcome of [Attraction choice](#attraction-choice): thirst and hunger fall by the type's `ThirstEffect` / `HungerEffect`, illness and happiness rise by
 `VomitEffect` / `HappinessEffect` (clamped); a toilet sets the toilet meter to 0 (GUEST-005). Illness has no decay of its own. A guest at hunger 80 at a shop with a hunger effect of 50 goes to 30.
-Open: the thought selection (hunger and thirst above 90, a single need above 99, happiness above 99 or below 10; GUEST-009), the pranksters (GUEST-007), the draws (OpenTPW's own stream, DET-014).
+Open: the thought selection (hunger and thirst above 90, a single need above 99, happiness above 99 or below 10; GUEST-009), the draws (OpenTPW's own stream, DET-014).
 
 ### Lifecycle
 
@@ -327,13 +327,36 @@ from the left.
 Traced and executed (x86 findings X18 and X22, [ORACLE.md](reverse/ORACLE.md) section 7.16; [WANDER-plan.md](reverse/WANDER-plan.md) §7). `PeepInfo.PrankeryLikelihood`
 guests in 100 (5 in the shipped balance) are pranksters, of one of three kinds by their id: stinkbombs, litter or balloons. In state 6 a prankster whose
 happiness byte is below 15 pranks when its flag beats a draw modulo 101: a stinkbomb on its cell (`StinkbombLikelihood` percent of the time, 25),
-litter on its cell, or another guest's balloon burst. A stinkbomb plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. OpenTPW's guests carry no balloons, so balloon
-pranksters never find a victim, and the advisor's prank lines and the guards who chase pranksters are not modelled yet (GUEST-007).
+litter on its cell, or another guest's balloon burst (the first other guest on the cell holding one; without a victim there is no prank). A stinkbomb
+plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. The advisor's prank lines are not modelled yet (GUEST-007).
+
+A prank calls the guards (tp.exe `0x508a30`, WANDER-plan.md §4), but only on a cell with security: a guard spreads `RegionFX[3]` (security 10,
+radius 3) where he stands, so a prankster within three cells of a guard is seen. Then the free guard (idle or patrolling) **nearest the staff HQ**
+is sent, and the HQ always sits at map cell (0, 0), so the guard nearest the map's corner goes, however far he is from the prankster. He walks
+to the prankster (cat_staff 136) and chases it for `GuardConstsPerGrade.WorkDuration` turns (10 to 75 by grade), re-routing when he arrives where
+it no longer is. On its cell he catches it if it is deciding, wandering, taking litter to a bin or walking to a ride (cat_staff 137): he carries it,
+out of sight, to the ticket booth (in OpenTPW the park entrance, as the booth lies off the paths) and sets it down there (cat_kids 128), and it
+heads for the exit. Like any leaving guest it is recalled on its next turn while its exit counter and happiness are above 0 and the park is
+open (the leaving handler `0x500a50`), so the guard's escort sends home only a guest that wanted to go anyway. A carried guest whose guard is dismissed or abandons the escort is removed from the park, as in the original.
 
 Vomit and stinkbombs spread their `RegionFX` row around their cell while they lie: every cell within the row's square radius gets the row's
 happiness, illness and hunger divided by its distance + 1, and a guest's needs phase adds those of its own cell (vomit: −1 happiness, +1 illness,
-−1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). The other sources (entertainers, toilets, guards,
+−1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). Entertainers and guards carry their rows with them: an
+entertainer's `RegionFX[0]` adds 2 happiness on his cell and 1 beside it, a guard's `RegionFX[3]` the security above. The other sources (toilets,
 cameras, fireworks) are not modelled yet (GUEST-006).
+
+### Balloons and costumes
+
+Read in full in tp.exe (ECON-044). The use routine (`0x4fe1e0`) switches on the type's `UsageInfo.AppearanceEffect` (+0x15c) after the special
+ingredient: the balloon shops (1) give the guest a balloon, the costume shops (2) put a costume on, or take it back from a guest who already
+wears one ("Customer returning a costume"). A balloon lives the shop's quality of goods × 255 / 100, within 25 and 255; OpenTPW has no quality
+control, so the build's quality 50 gives 127. The life (`mRemainingBalloonLife`, +0x214) loses 1 on every needs phase (every fourth park turn,
+`0x501650`) while the guest is in the park and neither on a ride nor held by a guard; the balloon goes at 0, about two minutes after the purchase.
+
+A ride puts the balloon away (state 16, `0x501db0`) and gives it back after the visit when it still has life (state 15). A balloon prank or a
+guard's catch bursts the balloon but leaves its life, so it comes back after the guest's next ride. The challenge types 9 and 10 count the
+in-park guests holding a balloon or wearing a costume, as a truncated percentage of the in-park guests (`0x4d1746`). Balloons and costumes are
+not drawn yet.
 
 ### Walking
 

@@ -12,10 +12,11 @@ public enum StaffState
 }
 
 /// <summary>
-/// The handyman's own state (tp.exe word <c>+0x19c</c>, the handler <c>0x004D73C0</c>); <see cref="StaffMember.State"/> is its display name
-/// (<c>0x005064F0</c>: 0 Idle, 1 Patrolling, 2–3 Resting, 4–5 On strike, 7 Picked up, the others Working).
+/// A world-driven member's own state (tp.exe word <c>+0x19c</c>; the handlers <c>0x004D73C0</c> handyman, <c>0x004D4810</c> entertainer,
+/// <c>0x004D6410</c> guard); <see cref="StaffMember.State"/> is its display name (<c>0x005064F0</c>: 0 Idle, 1 Patrolling, 2–3 Resting,
+/// 4–5 On strike, 7 Picked up, the others Working). 0–7 are shared by every role; the others are the role's own.
 /// </summary>
-public enum HandymanJob : byte
+public enum StaffJob : byte
 {
 	Idle = 0,
 	Patrol = 1,
@@ -27,7 +28,21 @@ public enum HandymanJob : byte
 	ToLitter = 8,
 	Sweeping = 9,
 	ToToilet = 10,
-	Cleaning = 11
+	Cleaning = 11,
+	/// <summary>A mechanic walks to a ride that needs him (state 12).</summary>
+	ToRide = 12,
+	/// <summary>A mechanic repairs or upgrades the ride (state 13).</summary>
+	Repairing = 13,
+	/// <summary>An entertainer's performance (state 14).</summary>
+	Performing = 14,
+	/// <summary>A researcher at work (state 15).</summary>
+	Researching = 15,
+	/// <summary>A guard runs after a prankster (state 16).</summary>
+	Chasing = 16,
+	/// <summary>A guard takes a caught prankster to the ticket booth (state 18).</summary>
+	Escorting = 18,
+	/// <summary>A guard walks back from the escort (state 19).</summary>
+	ReturningFromEscort = 19
 }
 
 /// <summary>An employee. <see cref="NameIndex"/> indexes the role's name table (e.g. <c>MECHANIC_NAMES.str</c>).</summary>
@@ -61,17 +76,36 @@ public sealed class StaffMember
 	public double TravelSeconds { get; set; }
 	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
 
-	// A handyman in a world (IHandymanWorld): the original's state machine and walk (docs/reverse/WANDER-plan.md §4; tp.exe offsets in brackets).
-	/// <summary>The handyman's own state [+0x19c].</summary>
-	public HandymanJob Job { get; set; }
+	// A handyman, entertainer or guard in a world (IStaffWorld): the original's state machine and walk (docs/reverse/WANDER-plan.md §4; tp.exe offsets in brackets).
+	/// <summary>The member's own state [+0x19c].</summary>
+	public StaffJob Job { get; set; }
 	/// <summary>The turn an idle spell started [+0x200] (0: search at once).</summary>
 	public long IdleStamp { get; set; }
-	/// <summary>The turn a sweep or a clean started [+0x214].</summary>
+	/// <summary>The turn a sweep, a clean or a performance started [+0x214]; a guard's chase counts down here.</summary>
 	public long JobStamp { get; set; }
 	/// <summary>The toilet a handyman walks to or cleans [+0x21a], 0 when none.</summary>
 	public int ToiletId { get; set; }
 	/// <summary>The patrol rectangle, inclusive cells [+0x20a, +0x20c]; the whole map until the player draws one.</summary>
-	public (int X0, int Y0, int X1, int Y1) PatrolArea { get; set; } = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
+	public (int X0, int Y0, int X1, int Y1) PatrolArea { get; set; } = WholeMap;
+
+	/// <summary>The patrol rectangle of a member without one: the whole map (the constructor's corner cell ids 1 and 0x4000).</summary>
+	public static readonly (int X0, int Y0, int X1, int Y1) WholeMap = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
+
+	/// <summary>The player draws the member's patrol rectangle between two corner cells (tp.exe <c>0x00506E50</c>), clamped to the map.</summary>
+	// [BIN:TPW-EXE:0x00506E50 set patrol area] stores the two corner cell ids at +0x20A and +0x20C; the area test 0x00506ED0 reads the first as the low corner
+	// [BIN:TPW-EXE:0x00524960 patrol tool] mouse mode 0x36: the first click on the map stores a corner cell, the second orders the two (the smaller x and y first) and sets the selected member's area, then the tool ends (0x0052F200)
+	public void SetPatrolArea( (int X, int Y) a, (int X, int Y) b )
+	{
+		static int Clamp( int value ) => Math.Clamp( value, 0, ParkLitter.MapSize - 1 );
+		PatrolArea = (Clamp( Math.Min( a.X, b.X ) ), Clamp( Math.Min( a.Y, b.Y ) ), Clamp( Math.Max( a.X, b.X ) ), Clamp( Math.Max( a.Y, b.Y ) ));
+	}
+
+	/// <summary>The player clears the member's patrol rectangle (tp.exe <c>0x00506E90</c>): the whole map again.</summary>
+	// [BIN:TPW-EXE:0x00506E90 clear patrol area] +0x20A = 1 and +0x20C = 0x4000, cells (0, 0) and (127, 127); the employee panel's button 0x004B5B50 with 0
+	public void ClearPatrolArea() => PatrolArea = WholeMap;
+
+	/// <summary>Whether the member has a patrol rectangle of its own.</summary>
+	public bool HasPatrolArea => PatrolArea != WholeMap;
 	/// <summary>Base speed [+0xc0]: 60, 80, 100, 120 or 140 by energy.</summary>
 	public int BaseSpeed { get; set; } = 60;
 	/// <summary>Speed bonus [+0xc2]: 25 while walking to a job.</summary>
@@ -80,6 +114,19 @@ public sealed class StaffMember
 	public float SmoothedSpeed { get; set; }
 	/// <summary>The steering state [+0xd4] while a world moves the member; null before.</summary>
 	public GuestNavigation? Navigation { get; set; }
+	/// <summary>The guest a guard chases or escorts [+0x212], 0 when none.</summary>
+	public int TargetGuestId { get; set; }
+	/// <summary>The cell where an entertainer's or a guard's <c>RegionFX</c> row lies [+0xcc], null before a world placed it.</summary>
+	public (int X, int Y)? EffectCell { get; set; }
+	/// <summary>The ride a mechanic walks to or works on [+0x218], 0 when none.</summary>
+	public int RideId { get; set; }
+	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
+	public int RestAreaId { get; set; }
+	/// <summary>
+	/// The points a member still walks off the path grid after its current walk (the road outside the park to and from the strike area): each a cell and
+	/// its sub-cell bytes. Empty on the paths.
+	/// </summary>
+	public List<(int X, int Y, int ByteX, int ByteY)> OffGridLeg { get; set; } = new();
 }
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>
@@ -114,6 +161,11 @@ public sealed class ParkStaff
 	public IReadOnlyList<StaffCandidate> Candidates => candidates;
 	public int NextId { get; private set; } = 1;
 	public long NextPoolUpdateTick { get; private set; }
+	/// <summary>
+	/// The candidate whose Place tool is running (the original's "being placed" flag, candidate <c>+0xb</c>, tp.exe 0x507bf0): it stays in the pool,
+	/// is not hired yet and does not expire while the player places it. Not saved: a pending hire is only a flag.
+	/// </summary>
+	public int PendingPlacementId { get; set; }
 
 	// [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing
 	public long UpdateInterval => Math.Max( 1, ParkCalendar.SecondsToTicks( settings.TimeBetweenStaffUpdates ) );
@@ -157,7 +209,7 @@ public sealed class ParkStaff
 		if ( tick < NextPoolUpdateTick )
 			return;
 		NextPoolUpdateTick = tick + UpdateInterval;
-		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick );
+		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId );
 		var roles = settings.Roles;
 		var shortfall = roles.Select( role => OfType( role.Type ).Count() >= role.MaximumInPark ? 0 : role.MaximumInPool - candidates.Count( candidate => candidate.Type == role.Type ) ).ToArray();
 		var cap = Math.Min( settings.MaxNumberOfStaffPerUpdate, PoolSlots - candidates.Count );
@@ -262,6 +314,7 @@ public sealed class ParkStaff
 
 	internal void Restore( IEnumerable<StaffMember> restoredMembers, IEnumerable<StaffCandidate> restoredCandidates, IReadOnlyList<long> budgets, int nextId, long nextPoolUpdate )
 	{
+		PendingPlacementId = 0;
 		members.Clear();
 		members.AddRange( restoredMembers );
 		candidates.Clear();

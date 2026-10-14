@@ -324,6 +324,36 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (InitCostOfGoods × 1.15, raised by thirst, hunger and unhappiness against the type's effects, lowered by illness, plus the expected
   prize for a sideshow, scaled by happiness) and with its money, and leaves the queue when either is too low. Pricing a shop too high
   now costs customers at the counter. The C# rule is pinned on willingness values produced by the original routine.
+- Guests now buy balloons and costumes, as in the original (tp.exe `0x4fe1e0`, `0x501650`, `0x501db0`; ECON-044, GUEST-007;
+  [GUESTS.md](GUESTS.md) "Balloons and costumes"). A balloon shop gives a balloon that lives 127 needs phases (about two minutes) at the
+  build's quality of goods; a ride puts it away and gives it back. A costume shop puts a costume on, and a second visit returns it. Balloon
+  pranksters now find victims: they burst another guest's balloon on their cell. The challenges "kids with balloons" and "kids with
+  costumes" count real guests instead of 0. Balloons and costumes are not drawn yet. Guest schema 6, world hash schema 17; the fixed-run,
+  Jungle and cross-grid hashes moved.
+- The player can call a mechanic and draw patrol areas, as in the original (tp.exe `0x4dfe30`, `0x4b5b50`, `0x524960`, `0x506f30`;
+  ECON-049, ECON-022; [WANDER-plan.md](reverse/WANDER-plan.md) §4). The ride panel shows the original call button (`b_callmech`, or
+  `b_callhandy` on a toilet): a call closes the ride and the nearest free mechanic comes even when nothing is broken (a toilet's call brings a
+  handyman from anywhere); the repair reopens it, and a second click cancels the call (greyed with no mechanics or on strike, UIHELPTEXT
+  574/575). The employee view of the staff window has "Patrol area" and "Whole park" buttons (UIHELPTEXT 86/87): two clicks on the map
+  set the rectangle, and staff then keep to it, walking into it first when they stand outside.
+- Mechanics now walk to their rides as in the original (tp.exe `0x4da490`, `0x4da5b0`, `0x4daa90`; ECON-021, ECON-022;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). In a level a mechanic idles or patrols and, from where he stands, takes the nearest ride
+  that is broken down or being upgraded (not the park's worst one), walks there and starts the repair (`(100 − state of repair) ×
+  WorkDuration / 100` turns) or the upgrade only when he arrives. Rides merely worn are no longer serviced before they break, as in the
+  original. Every staff role in a level now runs its own state machine.
+- Researchers now wander and research as in the original (tp.exe `0x5029f0`; ECON-022): a spell of `WorkDuration` turns where they stand
+  (cat_staff 138 now and then), then they wander on; their points still come every 20th turn. Every staff role a level drives now walks
+  to rest and to strike (`0x506a40`, `0x505fe0`, `0x5061d0`, `0x506300`; [WANDER-plan.md](reverse/WANDER-plan.md) §4): a tired member
+  walks to the nearest Staff Room and rests there until its energy is full (the room's `VAR_STAFFIN` counts it), and while its role
+  strikes and the gates are open it walks out past the ticket booth to the strike area and back in when the strike ends. Without a
+  rest area a tired member loses happiness now and then, as before.
+- Entertainers and guards now walk the park as in the original (tp.exe `0x4d4810`, `0x4d6410`, `0x508a30`; ECON-022, GUEST-006, GUEST-007;
+  [WANDER-plan.md](reverse/WANDER-plan.md) §4). An entertainer patrols and, when guests stand within his `ActivationDistance` (3 to 5
+  cells), performs for `WorkDuration` turns (cat_staff 135 at the end); wherever he stands he cheers the cells around him (`RegionFX[0]`).
+  A guard spreads security (`RegionFX[3]`) around him; a prank within three cells of a guard sends the free guard nearest the staff HQ
+  (map cell (0, 0); x86 finding X24, ORACLE.md 7.18), who chases the prankster (136), catches it (137), carries it to the gate and sets it down there (cat_kids 128); as in the original, a
+  prankster that still wants to stay walks back in.
+  Their idle and walking voices come from their state machines (AUDIO-024 narrowed); the park save keeps their state, target and rows.
 - A guest's litter going into a bin now fires the bin's script trigger (variable 0, `VAR_TRIGGER` in every theme; tp.exe `0x4fff20`,
   `0x55a0b0`), so the bin plays its own sound, and a stinkbomb plays `cat_kids` 207 at the prankster (`0x4ff289`).
 - Handymen now walk and search as in the original (tp.exe `0x4d73c0`, `0x4d7100`, `0x4c8ed0`; ORACLE.md 7.17, X23; ECON-022;
@@ -894,6 +924,26 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Placing and drawing staff (October 14):** hiring no longer employs anyone at the gate: the staff window closes and the Place tool starts with the
+  applicant still in the pool (it does not expire meanwhile); a click on a valid cell (grass, path, queue, queue end, owned, under no object) hires and
+  places the member on the cell centre as an idle one with the whole map as patrol area, right click or Escape hires nobody. The employee view has a
+  Pick up button (refused on strike, in hand, escorting or on an unsuitable cell) that starts the Carry tool; a valid click drops the member on the cell
+  centre, idle, with no steering state, litter or toilet claim, and a mechanic loses its ride so the dispatch runs again; the patrol rectangle is never
+  touched, cancelling drops it back where it was, a new pick-up first drops the previous member, and a save drops a carried member on its old cell.
+  Staff are drawn as camera-facing sprites of `esprites.wad` through `StaffRenderer` (folder by role and theme, bank from the member, clip by job:
+  stand, walk at full or half rate, sweep, repair, research, strike, guard carry), resting members are hidden, and the tool shows the slot 6 dangling
+  sprite over the hovered cell and a red ground marker on invalid cells. The only change in `StaffWorldSimulation` is the `Synchronize` condition that
+  leaves a member in hand without a position alone. New register IDs ECON-052/053, GUEST-013..016 and UI-097..100; tests `StaffPlacementTests`,
+  `StaffSpriteTests`, `StaffSpriteAssetTests`; the native jungle smoke hires, places, draws (GPU readback), picks up and drops a handyman
+  ([STAFF-PLACEMENT.md](STAFF-PLACEMENT.md)).
+- **Saving with a screaming ride (October 14):** a park can be saved while a ride holds a scream. The held scream is saved
+  with its STARTSCREAM operands (band, level, script speed) and starts again on load; a stopped scream no longer counts as
+  live (the stopped chain stayed in the ledger until the next STARTSCREAM, so most parks refused "an attraction is still
+  playing a scream" after the first ride cycle).
+- **Browser options no longer stop the game (October 14):** the browser has no .NET configuration system, so opening
+  Options → Game files read the old `Settings.Default` and stopped the game with "Configuration system failed to
+  initialize". The browser chooses its game folder on the page, so it no longer shows that button, and the old settings are
+  read through `LegacySettings`, which returns nothing in the browser or when a damaged user.config cannot be read.
 - **Water ride tracks, phase 1 (October 14):** one water ride, Splish Splash on the Jungle level, works end to end on the traced original rules
   ([TRACKS.md](TRACKS.md)). The track layer mirrors the original's 40-byte cell record (origin type 16, three type-12 extension cells), the
   Q1 piece tables and adjustments, the 14 controller templates and the `.hmp` height profiles (`HmpFile`) are ported, and the water track tool lays
@@ -902,12 +952,29 @@ research batch was included in this merge.
   objects and buoys are built in the original's fixed-point units. `Wateride.RSE` drives a `BumpController` through `BUMP` 1-14, 16 and 17 (the PC
   dispatch shows BUMP 5 is the validity read and BUMP 17 with 0 starts the water): integer steering, integration, walls, keep-out circles, boat
   collisions, laps and unload at 30 ticks per second, the sine table regenerated from the start-up code. Pieces and boats are drawn from the ride's
-  meshes, and the cells, controller and boats are saved in the park-resume envelope. Kart controllers, jumps, tunnels and the water animation stay
+  meshes, and the cells, controller and boats are saved in the park-resume envelope. Jumps, tunnels and the water animation stay
   open; TRACK-001 to 021 are registered, QUEUE-004 is narrowed to karts and ARRIVAL-003 applies the water ride's track word.
   Review round: every tile records its ride (TRACK-021), so rides side by side never connect and a demolition removes only its own tiles; a circuit
   that overflows the section, object or buoy pool is invalid (TRACK-020); the park-resume capture and restore share one live-controller rule; the
   resume check bounds guests, positions, velocities and the tick clock and the restore checks boat indexes against the walked circuit; the canonical state
   covers every restored boat field; the tick and the renderer no longer copy the boat list.
+- **Go-kart tracks, phase 2 (October 14):** the go-karts of all four themes run on the shared controller, end to end for the Jungle's Dino Karts (`GoKarts.RSE`
+  drives a real race in the tests and the native smoke). From `tp.exe`: the grid (eight flag-2 buoys in a staggered pair of columns, then the finish buoy,
+  oriented by the orientation bits), the n-th kart aiming at the n-th grid slot and parking there, `BUMP 3` starting the race with a per-lap thrust bias from the
+  world generator, laps and the race over (the first finisher sets phase 3, the others leave at their next crossing, the last kart out resets to loading),
+  broken karts coasting, and the effects: crash (`cat_rides` 12), horn (EventMap slot 3 on the module LCG), exhaust (particles 1 and 10, `cat_rides` 24), the engine
+  voice, particle 15 at spawn and unload, the speed-40 animation switch. Karts are drawn with the four-probe pose over the piece's `.hmp` profile (the hover karts
+  of space and fantasy with a bob, a bank and a shadow instance), their riders as head sprites at the kart's head dummies, and the kart fields join the saves
+  and the digest of kart parks only. `BUMP 8` returns nothing. TRACK-015 and 016 are narrowed (bumper cars; water spray), TRACK-023 to 026 added; QUEUE-004 now
+  covers neither water nor kart rides. `--debug-kart-track` places the ride for captures.
+- **Bumper cars release their riders (October 14):** guests who rode the bumper cars of any theme (jungle Bumper Cars, Halloween, space, Bumble Bugs) never came
+  out: the four `bumper.RSE` scripts drive the ride with `BUMP` commands and the ride had no controller, so `BUMP 2` never returned a guest (a headless probe boarded 16
+  and released 0, all 16 stuck in `GuestState.Using`). The shared controller now runs the bumper types (−1, −6, −11, −14) from `tp.exe`: open sets phase 1, `BUMP 4` makes a car
+  that drops at a random free spot of the arena (one keep-in circle and a ring of eight buoys), `BUMP 12` seats a guest in the first empty car, `BUMP 3` starts the session
+  and every car counts down the duration the script set with `BUMP 13`; at 0 each car hands its riders to the leaving list, and with nobody left the ride goes back to loading
+  while the cars stay. Closing, breakdown and `BUMP 16` follow the traced routines. Cars wander between the buoys on the shared integer physics. The real script of all four
+  rides board, run and release 16 guests over several cycles in `BumperCarAssetTests`. A save from before the controller restores the ride freshly and hands its riders to
+  the leaving list. TRACK-015 narrowed; TRACK-029 (no chase yet), 030 (arena centre) and 031 (cars not drawn, no effects) added.
 - **Advisor and compatibility register round (October 14):** from the Windows `tp.exe`: the advisor's audio now starts on the
   advisor clock as the original's does (immediately for sequences 16, 17 and 29, else stopped and restarted 800 ms after the
   request with the LIP clock moving there; the immediate start's LIP clock leads by 200 ms; ADVISOR-008 and ADVISOR-013 retired),

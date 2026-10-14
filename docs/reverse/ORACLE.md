@@ -969,7 +969,8 @@ clamped to 0..100), `0xeaf44` switches on type `+344` (`UsageInfo.SpecialIngredi
 | other | | nothing |
 
 The next block (`0xeb0f8`, the lead's list of callees `0x105360`, `0x6a730`, `0x6a7a8`, `0xb882c`, `0xe234c`) switches on `+348` (`UsageInfo.AppearanceEffect`:
-1 balloon, 2 costume): the balloon and costume use (ECON-044), which draws random numbers and creates objects; it does not touch the boost.
+1 balloon, 2 costume): the balloon and costume use (ECON-044, modelled from tp.exe `0x4fe1e0`, docs/GUESTS.md "Balloons and costumes"), which reseeds
+the world generator and creates the balloon's object; it does not touch the boost.
 The only other writers of `+196` are the constructor (0, `0xe4878`) and the decay of `0xe6b28`. `walk-boost` executes the whole `0xeaaf8` on 521 inputs
 (ingredient 0..5, -1 and 9, amount word 0..255 and above, boost 0..65,535, thirst effect, ride and shop type words): the reading above **agrees** 521/521
 (boost, thirst and toilet). It is sharp: a factor 5 or 7, an unmasked amount, a clamped sum, Sugar read as Ice or Fat as Salt each differ
@@ -1605,6 +1606,7 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-litter-drop` | tp.exe `0x4d93b0`..`0x4d95d0` (thiscall, `ecx` = cell record, argument the type), the world generator step `0x516330` and reseed `0x516370`, `_ftol` | `0x475a10` sprite (descriptor and bank recorded), `0x475480` placement (x, z recorded), `0x4d8440` RegionFX add, `0x521e60` particle; the GameType object marked constructed, word 0 from the input | 526 (26 edges: every type on three cells, an occupied cell, an online park; 500 random) | **X20**: **agree** 526/526 with `ParkLitter.Drop` and `SpriteOffset` (type, collector, sprite offset, the generator's state after the reseed) | (the plan is the routine reading) |
 | `tpw-exe-bin-walk` | tp.exe `0x4fff20`..`0x4fffe4` (thiscall, `ecx` = guest) | the walk step `0x4fa2a0` (0, 1 or 2 chosen), the bin sound `0x55a070` / `0x55a0b0`, the draw, the litter drop `0x4d93b0` (type and cell recorded), `0x501db0` state | 518 (18 edges, 500 random) | **X21**: **agree** 518/518 with the state-9 handler of `GuestSimulation` | (the plan is the routine reading) |
 | `tpw-exe-region-effect` | tp.exe `0x4d8480`..`0x4d8607` (thiscall, `ecx` = cell manager; add flag, effect index, cell id) | none; a synthetic cell manager with the effect table at `+0x1d9104` and the grid at `+0x1b1104` | 520 (random tables up to radius 9, words near the 16-bit limits, cells at the map's corners) | **X22**: **agree** 520/520 with `ParkEnvironment.Apply` (the 19 × 19 window around the source) | (the plan is the routine reading) |
+| `tpw-exe-guard-choice` | tp.exe `0x5099c0`..`0x509ade` (thiscall, `ecx` = the receiving thing; out, prankster cell id) and the state test `0x4d6330` | none but the debug print; synthetic guard things in the thing table `0x7cfb90` behind game word `+0x1da744` | 520 (up to six guards in all states, equal distances, the receiver at (0, 0) and elsewhere) | **X24**: **agree** 520/520 with `StaffWorldSimulation.ChooseGuard`; measuring from the prankster or giving a tie to the later guard disagrees | (the plan is the routine reading) |
 | `tpw-exe-litter-finder` | tp.exe `0x4c8ed0`..`0x4c9033` (thiscall, `ecx` = park; out, collector id, cell id, range) | none but the debug print; synthetic cell records at `[0x8023a0]` and the park's scratch buffer at `+0x1f020` | 520 (ranges 0..5, claims by others and by him, cells at the map's corners) | **X23**: **agree** 520/520 with `StaffWorldSimulation.FindLitter` | (the plan is the routine reading) |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
@@ -2351,3 +2353,17 @@ keeps his state, stamps, speed and walk. A headless economy keeps its own dispat
 
 ECON-022 keeps the walks to the rest and strike areas, the 100-turn toilet claim lapse, the player's maintenance request and patrol
 rectangle controls, the separation among staff, and a toilet's access cell.
+
+### 7.18 Finding X24: the guard nearest the staff HQ answers a prank
+
+Question (GUEST-007, ECON-022): which guard does a prank call? The prankster's bus message reaches the staff HQ thing, whose handler
+`0x508a30` checks the security word of the prankster's cell and asks `0x5099c0` for a guard (docs/reverse/WANDER-plan.md §4).
+
+**X24, the guard choice (`0x5099c0`).** Executed with only the debug print stubbed. On 520 inputs the guard it writes agrees with
+`StaffWorldSimulation.ChooseGuard`: in list order, the guards in state 0 or 1, the smallest squared distance from **the receiver's own cell**,
+the first on a tie. The prankster's cell, passed as the routine's second argument, is never read. The receiver is the staff HQ, which sits at
+cell (0, 0) in the shipped Easymode park and in four played saves, so the free guard nearest the map's corner goes, however far from the
+prankster. Two wrong readings fail: measuring from the prankster (56 differ) and a tie to the later guard (65 differ).
+
+**Fixed in C#.** In a level the guards walk and answer pranks (`StaffWorldSimulation.ReportPrank`, the chase, the catch and the escort of
+WANDER-plan §4); entertainers patrol and perform. The guard list's order is the hire order (ECON-022).

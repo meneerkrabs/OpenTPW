@@ -142,7 +142,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
 	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
-	public IHandymanWorld? HandymanWorld { get; set; }
+	public IStaffWorld? StaffWorld { get; set; }
 	// A mechanic's BusyTicks is the number of park turns (staff updates) until its job completes.
 
 	public long Turn => ParkCalendar.Turn( Tick );
@@ -169,8 +169,8 @@ public sealed class ParkEconomy : IParkEconomy
 				StrikeOrRest( member, HasRestArea );
 			}
 		}
-		if ( HandymanWorld != null )
-			HandymanWorld.UpdateHandymen( this, turn );
+		if ( StaffWorld != null )
+			StaffWorld.UpdateStaff( this, turn );
 		else
 			DispatchHandymen();
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
@@ -202,7 +202,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines but not the staff state machine: walking members drain every turn, working means a job in progress, resting needs no walk, idle members are not told apart and the rest search runs every turn; the handymen's analyser statistics, the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the staff state machine, the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines; without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the handymen's litter share counts the live map (ECON-020), the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -210,6 +210,14 @@ public sealed class ParkEconomy : IParkEconomy
 		var restArea = HasRestArea;
 		foreach ( var member in Staff.Members )
 		{
+			// A member a world drives walks to its rest area or the strike area and rests or strikes in its own state machine (the generic handlers
+			// 0x00505FE0, 0x005061D0, 0x005056E0, 0x00506300); only the role's strike ends here, when a striker sees the park closed and empty.
+			if ( DrivenByWorld( member ) )
+			{
+				if ( member.State == StaffState.OnStrike && !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+					Staff.Strikes.End( member.Type );
+				continue;
+			}
 			switch ( member.State )
 			{
 				case StaffState.PickedUp:
@@ -232,9 +240,6 @@ public sealed class ParkEconomy : IParkEconomy
 						member.State = StaffState.Patrolling;
 					continue;
 			}
-			// A handyman in a world drains and decides in its own state machine (0x004D73C0: the walk drain in state 1, the work drain in 9 and 11, the strike and rest gate in the job search).
-			if ( member.Type == StaffType.Handyman && HandymanWorld != null )
-				continue;
 			if ( member.BusyTicks > 0 )
 			{
 				StaffVitals.Work( member );
@@ -246,8 +251,95 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 	}
 
-	/// <summary>The strike and rest gate of a handyman's job search (tp.exe <c>0x00506A40</c>): true when the member now strikes or rests.</summary>
-	internal bool HandymanStrikeOrRest( StaffMember member ) => StrikeOrRest( member, HasRestArea );
+	/// <summary>The strike and rest gate of a world-driven member's search (tp.exe <c>0x00506A40</c>): true when the member now strikes or rests.</summary>
+	internal bool StaffStrikeOrRest( StaffMember member ) => StrikeOrRest( member, HasRestArea );
+
+	/// <summary>Whether an attached world runs this member's state machine (every role once a level attaches one).</summary>
+	internal bool DrivenByWorld( StaffMember member ) => StaffWorld != null;
+
+	/// <summary>
+	/// Whether a ride needs a mechanic (tp.exe <c>0x004DAA90</c> and the arrival <c>0x004DA740</c>): broken down (state 1, <c>0x004E0370</c>) or being
+	/// upgraded (state 2, <c>0x004E03E0</c>); the maintenance request (<c>+0x64</c>, <c>0x004E03D0</c>) has no control in OpenTPW (ECON-049).
+	/// </summary>
+	internal bool NeedsMechanic( int instanceId ) => objects.TryGetValue( instanceId, out var item ) && (item.Kind == ParkObjectKind.Ride && JobRank( item ) is 0 or 1
+		|| item.MaintenanceRequested && !(Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief));
+
+	/// <summary>
+	/// The player calls a mechanic to an object or cancels the call (tp.exe <c>0x004DFE30</c>, from the ride panel's button <c>0x0048CE50</c>): the call sets
+	/// <c>mRequestedService</c> and closes a ride; the cancel clears it, and the ride reopens when its state allows (<see cref="RideOpening.MayOpen"/>).
+	/// A toilet's call brings a handyman instead. False when there is no such object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DFE30 request maintenance] on: nothing when +0x64 is set; else +0x64 = 1, the ride closes (mCanLoad +0x68 = 0, the guest being loaded +0x6C dropped, script variable 6 = 1) and its panel shows the call; off: +0x64 = 0, and unless the ride is broken down, condemned or upgrading (states 1, 4, 2), its queue is cut off (0x004DE4A0) or a track ride's circuit is broken, it opens (+0x68 = 1, variable 6 = 0, 0x004E0E60(0))
+	public bool RequestMaintenance( int instanceId, bool on )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return false;
+		if ( item.MaintenanceRequested == on )
+			return true;
+		item.MaintenanceRequested = on;
+		Raise( on ? ParkEventKind.MaintenanceRequested : ParkEventKind.MaintenanceCancelled, 0, item.Id, item.InfoId );
+		return true;
+	}
+
+	/// <summary>The rides in object order that need a mechanic and are claimed by nobody or by <paramref name="mechanic"/>, with their cells' ids.</summary>
+	internal IEnumerable<ParkObjectState> RidesNeedingMechanic( int mechanic ) =>
+		objects.Values.OrderBy( item => item.Id ).Where( item => NeedsMechanic( item.Id ) && (item.MechanicId == 0 || item.MechanicId == mechanic) );
+
+	/// <summary>The repair or upgrade time a mechanic sets on arrival (tp.exe <c>0x004DA370</c> state 13, <see cref="RepairTimer"/>).</summary>
+	internal long MechanicWorkTime( StaffMember member, int instanceId )
+	{
+		var item = objects[instanceId];
+		int? upgradeDuration = ObjectState( item ) == RideObjectStates.Upgrading && Catalog.TryGet( item.InfoId, out var info ) && item.PendingLevel < info.Upgrades.Count
+			? info.Upgrades[item.PendingLevel].DurationOfUpgrade : null;
+		return RepairTimer( Settings[StaffType.Mechanic].WorkDuration[member.Grade], item.Repair, upgradeDuration );
+	}
+
+	/// <summary>A world mechanic finishes his job (tp.exe <c>0x004DF8F0</c>): the repair or the upgrade, as <see cref="FinishJob"/>.</summary>
+	internal void FinishMechanicJob( StaffMember member )
+	{
+		member.AssignedInstanceId = member.RideId;
+		member.RideId = 0;
+		var state = member.State;
+		FinishJob( member );
+		member.State = state;
+	}
+
+	/// <summary>The member's role is on strike (the strike flag 0x00509990).</summary>
+	internal bool RoleOnStrike( StaffType type ) => Staff.Strikes.IsActive( type );
+
+	/// <summary>Whether a rest area (an object with <c>UsageInfo.ChillsYouOut</c>) with this instance id stands in the park.</summary>
+	internal bool IsRestArea( int instanceId ) => objects.TryGetValue( instanceId, out var item ) && Catalog.TryGet( item.InfoId, out var info ) && info.ChillsYouOut;
+
+	/// <summary>The <c>RegionFX</c> row a member spreads where it stands: the entertainers' 0, the guards' 3 (security); null for the other roles.</summary>
+	public static int? EffectRow( StaffType type ) => type switch
+	{
+		StaffType.Entertainer => RegionEffect.Entertainer,
+		StaffType.Guard => RegionEffect.Guard,
+		_ => null
+	};
+
+	/// <summary>
+	/// Puts an entertainer's or a guard's <c>RegionFX</c> row on <paramref name="cell"/> (tp.exe pre-updates <c>0x004D4660</c> and <c>0x004D6360</c>: when
+	/// the member's cell changed, the row comes off the old cell (<c>0x004D8460</c>) and onto the new one (<c>0x004D8440</c>)); null takes it off.
+	/// </summary>
+	public void MoveStaffEffect( StaffMember member, (int X, int Y)? cell )
+	{
+		if ( EffectRow( member.Type ) is not { } row || member.EffectCell == cell )
+			return;
+		if ( member.EffectCell is { } old )
+			Litter.Environment.Apply( row, old.X, old.Y, add: false );
+		if ( cell is { } now )
+			Litter.Environment.Apply( row, now.X, now.Y, add: true );
+		member.EffectCell = cell;
+	}
+
+	/// <summary>A load rebuilt the environment grid from the litter alone: the saved entertainers and guards put their rows back.</summary>
+	internal void ApplyStaffEffects()
+	{
+		foreach ( var member in Staff.Members )
+			if ( EffectRow( member.Type ) is { } row && member.EffectCell is { } cell )
+				Litter.Environment.Apply( row, cell.X, cell.Y, add: true );
+	}
 
 	/// <summary>A toilet's gauge byte is below <see cref="DirtyToiletGauge"/> (tp.exe <c>0x004E0390</c>).</summary>
 	internal static bool IsDirtyToilet( ParkObjectState item ) => (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
@@ -263,7 +355,9 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			item.Repair = RideRepair.FullGauge;
 			item.MechanicId = 0;
-			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+			var called = item.MaintenanceRequested;
+			item.MaintenanceRequested = false;
+			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
 		}
 		member.ToiletId = 0;
 	}
@@ -433,9 +527,13 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			// [BIN:TPW-EXE:0x004DFD80 toilet cleaned] the end of the handyman's state 11 sets the gauge back to 100.0 and clears the ride's mRequestedService (+0x64) and assigned staff (+0x5E)
 			item.Repair = RideRepair.FullGauge;
-			Raise( ParkEventKind.ToiletCleaned, 0, item.Id, item.InfoId );
+			var called = item.MaintenanceRequested;
+			item.MaintenanceRequested = false;
+			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
 			return;
 		}
+		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E)
+		item.MaintenanceRequested = false;
 		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
@@ -482,13 +580,13 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( jobs.Count == 0 )
 			return;
 		var role = Settings[StaffType.Mechanic];
-		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
+		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => !DrivenByWorld( member ) && member.IsAvailable && (MechanicJobWorld?.CanStartJobs( member ) ?? true) && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
 		{
 			if ( jobs.Count == 0 )
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
-			// [APPROX:ECON-021] live jobs await reachable host arrival, then consume the dispatch-computed timer after one arrival-observation update; headless jobs start at once — evidence needed: original movement, timer sampling and arrival-to-completion ordering
+			// [APPROX:ECON-021] without a staff world (a headless economy) the mechanic starts at once where the original first walks to the ride, and its jobs keep OpenTPW's dispatch order (broken, upgrading, then rides worn below 25 by OpenTPW's own threshold); in a level the mechanics run the original's state machine (ECON-022) — evidence needed: none for the level (read, tp.exe 0x004DA490); the headless dispatch is OpenTPW's own
 			int? upgradeDuration = ObjectState( job ) == RideObjectStates.Upgrading && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
 				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
 			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
@@ -514,7 +612,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		RideObjectStates.BrokenDown when item.IsBrokenDown => 0,
 		RideObjectStates.Upgrading => 1,
-		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && item.StateOfRepair < WornStateOfRepair => 2,
+		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && (item.StateOfRepair < WornStateOfRepair || item.MaintenanceRequested) => 2,
 		_ => -1,
 	};
 
@@ -545,7 +643,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Either job keeps him busy for <c>HandymanConstsPerGrade[grade].WorkDuration</c> park turns and the update that ends it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D7100 handyman job search] after the strike/rest gate (0x00506A40) and the too-tired gate (energy byte below RestLevel), the litter finder 0x004C8ED0 scans the cells within DetectionRange (x outer, y inner) for litter claimed by nobody or by him and takes the nearest by Manhattan distance; only without litter does 0x004D7880 look for a toilet flagged by mRequestedService, or one whose gauge byte is below 25 within DetectionRange; a sweep or a clean ends when the turn passes the arrival stamp + WorkDuration[grade] (0x004D76A0, 0x004D73C0; the grade table 0x007853EC {WorkDuration, DetectionRange, PoundsPerTrainingPoint})
-	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateHandymen): without a world the handymen have no position, so a free handyman takes the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, timed from the dispatch
+	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): without a world the handymen have no position, so a free handyman takes the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, timed from the dispatch
 	private void DispatchHandymen()
 	{
 		var role = Settings[StaffType.Handyman];
@@ -945,12 +1043,34 @@ public sealed class ParkEconomy : IParkEconomy
 				member.AwaitingJobArrival = false;
 				member.State = StaffState.Patrolling;
 			}
+			if ( member.RideId == instanceId )
+			{
+				// the ride went: the mechanic's walk to it or his work on it ends and he searches again
+				member.RideId = 0;
+				if ( member.Job is StaffJob.ToRide or StaffJob.Repairing )
+				{
+					member.Job = StaffJob.Idle;
+					member.IdleStamp = 0;
+					member.State = StaffState.Idle;
+				}
+			}
+			if ( member.RestAreaId == instanceId )
+			{
+				// the rest area went: a walk to it or a rest in it ends (the original's case is not traced; ECON-022)
+				member.RestAreaId = 0;
+				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting )
+				{
+					member.Job = StaffJob.Idle;
+					member.IdleStamp = 0;
+					member.State = StaffState.Idle;
+				}
+			}
 			if ( member.ToiletId == instanceId )
 			{
 				member.ToiletId = 0;
-				if ( member.Job is HandymanJob.ToToilet or HandymanJob.Cleaning )
+				if ( member.Job is StaffJob.ToToilet or StaffJob.Cleaning )
 				{
-					member.Job = HandymanJob.Idle;
+					member.Job = StaffJob.Idle;
 					member.IdleStamp = 0;
 					member.SpeedBonus = 0;
 					member.State = StaffState.Idle;
@@ -1177,6 +1297,13 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( objects.TryGetValue( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id )
 			toilet.MechanicId = 0;
 		member.ToiletId = 0;
+		// a dismissed mechanic's ride goes back to the others
+		if ( objects.TryGetValue( member.RideId, out var ride ) && ride.MechanicId == member.Id )
+			ride.MechanicId = 0;
+		member.RideId = 0;
+		// the destructor takes the member's RegionFX row off its cell (0x004D4620 for an entertainer, through 0x004D8460)
+		MoveStaffEffect( member, null );
+		member.TargetGuestId = 0;
 		var wage = Staff.MonthlyWage( member );
 		if ( wage > 0 )
 			Post( LedgerCategory.StaffCosts, wage );

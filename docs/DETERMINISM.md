@@ -196,6 +196,13 @@ Other OpenTPW state that is **not in the hash**:
 A change to any of these does not change the hash. Adding one means bumping
 `SchemaVersion` and re-pinning the fixed-run hash.
 
+Rides register round (October 14): a script's speed bias (`RideVM.SpeedBias`, the ride's `InitSpeed`; 50 at creation) is
+part of the script digest only when it differs from 50, and is carried by the script snapshot (default 50, so older
+snapshots restore at the creation value). No pinned hash moved. The scripted-object run of the original Totem
+(`TotemScriptTraceWithItsObjectIsPinned`) was re-pinned deliberately: Totem's `InitSpeed` is above 50, so its animation
+waits (`out / script speed`) and its WAITs (`operand / script speed`, STP-PPC 0xb0658) are now shorter, which moves
+every later timestamp of its 30 s trace by up to about 1.2 s.
+
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the
 same process.

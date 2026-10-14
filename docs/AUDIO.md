@@ -451,7 +451,6 @@ implemented yet.
 | AUDIO-011 | An RSE EVENT id missing from the level catalogue plays from the global category of the same name (`incagod.RSE`'s EVENT 3 id 43 exists only in the global `cat_rides`) | The sound library's own category fallback rule |
 | AUDIO-012 | Every activated button plays the click 0x1F, front end included | The traced 0x1F witness is the park view's control-message handler (`0x10137FD0`); the front end's own handlers |
 | AUDIO-015 | Only the level-driven rain voice is built; the weather thing's own rain voice (thing `+0x54`, `0x10103C4C`) is not | Whether the second voice is audible |
-| AUDIO-016 | A scream's speed is the default 50 (the ride VM word at `+192`); OpenTPW keeps no per-script speed | The ride VM's speed word and the RSE loader's field |
 | AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law | QSound's processing |
 | AUDIO-019 | A positioned one-shot whose event has flag `0x8` loops; flat one-shots do not, although the Mac's loop test (`FillSampleInfo` `0x1000FC1C`) follows both branches; inaudible loops advance silently | Whether flat plays pass through `FillSampleInfo` |
 | AUDIO-020 | A placed effect that is a sentence plays its first sound once | The placed sentence's player on the Mac |

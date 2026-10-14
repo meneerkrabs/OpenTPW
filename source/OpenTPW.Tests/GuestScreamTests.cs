@@ -37,6 +37,7 @@ public class GuestScreamTests
 		Assert.AreEqual( 75, GameAudio.ScreamParameter( 100 ) );
 		Assert.AreEqual( 100, GameAudio.ScreamParameter( 200 ), "clamped" );
 		Assert.AreEqual( 0, GameAudio.ScreamParameter( -200 ), "clamped below" );
+		Assert.AreEqual( 80, GameAudio.ScreamParameter( 100, 60 ), "a ride with InitSpeed 60 screams with its own speed word" );
 	}
 
 	[TestMethod]

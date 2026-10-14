@@ -9,6 +9,15 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
+		if (tgqExportIndex >= 0)
+		{
+			if (tgqExportIndex + 3 >= args.Length || args.Skip(tgqExportIndex + 1).Take(3).Any(value => value.StartsWith("--")) ||
+				!int.TryParse(args[tgqExportIndex + 2], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var frameIndex))
+				throw new ArgumentException("--export-tgq-png requires <local.tgq> <zero-based video-frame index> <new.png> (docs/TGQ-MOVIES.md).");
+			TgqPngExport.Run(args[tgqExportIndex + 1], frameIndex, args[tgqExportIndex + 3]);
+			return;
+		}
 		var fshExportIndex = Array.IndexOf(args, "--export-fsh-png");
 		if (fshExportIndex >= 0)
 		{

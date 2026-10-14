@@ -58,7 +58,7 @@ public static partial class OpcodeHandlers
 		{
 			var speed = perMille.Value;
 			// Zero is undefined (divw by zero on PowerPC); the corpus uses 1800–4000.
-			// [APPROX:RIDES-038] A TRIGANIMSPEED speed operand of 0 or below faults the script. PC 0x552f2e..0x552feb: the operand is stored at +0xe4 as 16 bits and the deadline is an idiv by the full operand, so speed 0 is a divide fault there too; a negative speed gives a decreasing frame whose end test in 0x4735d0 never fires, and sampling at negative frames is untraced — evidence needed: the pose sampler at negative frames
+			// [EXT:trig-anim-speed-guard] A TRIGANIMSPEED speed operand of 0 or below faults the script: PC 0x552f2e..0x552feb stores the operand at +0xe4 as 16 bits and divides by the full operand (0 is a divide fault there too), a negative speed gives a decreasing frame whose end test in 0x4735d0 never fires, and the sampler's unsigned key searches (0x470c90) would read the 12-byte pose table out of bounds; the corpus has 4 uses, all literals from 1800 to 4000, so this is OpenTPW's guard for malformed input (formerly RIDES-038)
 			if ( speed <= 0 )
 				throw new RideScriptException( speed == 0
 					? "TRIGANIMSPEED speed 0 divides by zero (undefined divw)"

@@ -8,6 +8,8 @@ its `.fsh` textures ([FSH.md](FSH.md)), and since October 13, 2026 an experiment
 [playable slice](#theme-park-inc-playable-slice) that loads its worlds, builds in them
 and walks guests through them under an explicit capability policy.
 
+For installation and launch steps, use the [static Theme Park Inc guide](https://opentpw.io/theme-park-inc.html), which distinguishes current release/browser starts from the upcoming desktop edition chooser.
+
 ## Sources
 
 - **Theme Park Inc:** the Dutch/Benelux retail CD (`Game.exe` PE timestamp

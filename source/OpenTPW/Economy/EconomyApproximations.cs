@@ -39,6 +39,8 @@ public static class EconomyApproximations
 		("ECON-049", "the maintenance flag (the ride's mRequestedService, +0x64 on the PC) and the back-of-queue link test (tp.exe 0x4DE4A0: connection bits beyond the link) are not modelled: OpenTPW has no maintenance button and takes the queue as connected", "the writers of mRequestedService and the queue tool's connection writes"),
 		("ECON-050", "the gate census reads the imported guest grid, which preserves paths but not every original outside, approach or footprint cell type; unpreserved cells remain type 0 and can be counted as park ground", "original cell-type provenance in the guest-grid import"),
 		("ECON-051", "the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping)", "the writer of the flag and when the original clears it"),
+		("ECON-052", "the original's staff states 13 and 18 (the guard escort states CanBePickedUp 0x505bd0 refuses) and the state 6 clip have no OpenTPW state: the pick-up refusal and the guard carry clip read StaffMember.Escorting, which no simulation sets yet", "the guard escort states (0x508A30) and what state 6 is"),
+		("ECON-053", "a staff member carried at save time is saved dropped on its old cell and the tool ends (the original saves it in state 7 with the pool's mStaffMemberPickedUp, and nothing re-creates the carry tool after a load, so it probably stays stuck)", "a load of an original save made while carrying"),
 	};
 
 	private static bool logged;

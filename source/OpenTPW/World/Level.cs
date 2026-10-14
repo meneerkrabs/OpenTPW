@@ -542,6 +542,7 @@ public partial class Level : IDisposable
 
 	public void Update()
 	{
+		StaffPlacement?.Reconcile();
 		StaffWorld?.Synchronize();
 		if ( RideView?.Ride.IsDeleted == true )
 			ExitRideView();
@@ -708,11 +709,16 @@ public partial class Level : IDisposable
 	public ulong ComputeStateHash() => Streams.ComputeStateHash();
 
 	/// <summary>Writes the park economy and every random stream to an OpenTPW park save.</summary>
-	public void SavePark( string path ) => Streams.SavePark( path );
+	public void SavePark( string path )
+	{
+		StaffPlacement?.PrepareForSave();
+		Streams.SavePark( path );
+	}
 
 	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
 	public void LoadPark( string path )
 	{
+		StaffPlacement?.Abandon();
 		Streams.LoadPark( path );
 		AttachStaffWorld();
 		// The gate holds the economy it was built over; the load replaced it.

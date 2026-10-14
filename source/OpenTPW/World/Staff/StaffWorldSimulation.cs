@@ -33,7 +33,8 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IHandymanW
 	{
 		var spawn = gate is { } entry && grid.IsWalkable( entry.X, entry.Y ) ? gate : FirstPath();
 		foreach ( var member in members() )
-			if ( member.CellX == null && member.CellY == null && spawn is { } cell )
+			// a member in the player's hand without a position waits for the drop; the gate spawn is for the others (staff placement, docs/STAFF-PLACEMENT.md)
+			if ( member.CellX == null && member.CellY == null && member.State != StaffState.PickedUp && spawn is { } cell )
 			{
 				member.CellX = cell.X + 0.5f;
 				member.CellY = cell.Y + 0.5f;

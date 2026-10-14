@@ -99,7 +99,7 @@ public sealed class GuestSpriteAtlas
 	// [DATA:esprites.wad/Generic/Kidsheads/SPR_xx.ESP+TPC] heads are 8 frames × 7 directions (docs/GUESTS.md); the 5-direction selection of kid sets is reused
 	public static List<GuestSpriteAtlas> LoadKidHeads() => LoadSets( "/esprites/Generic/Kidsheads", ".TPC", "kidsheads" );
 
-	private static List<GuestSpriteAtlas> LoadSets( string directory, string bankExtension, string packFolder )
+	internal static List<GuestSpriteAtlas> LoadSets( string directory, string bankExtension, string packFolder )
 	{
 		var sets = new List<GuestSpriteAtlas>();
 		string[] files;

@@ -46,6 +46,12 @@ public sealed class StaffMember
 	/// <summary>Energy, 0–100, a single (+504): it falls while the member walks or works and rises while resting; at the rest level the member seeks a rest area.</summary>
 	public float Energy { get; set; } = StaffVitals.Maximum;
 	public StaffState State { get; set; } = StaffState.Idle;
+	/// <summary>
+	/// A guard is escorting a guest out (the staff states 13 and 18 that <c>CanBePickedUp</c> 0x505bd0 refuses). Nothing in OpenTPW sets it yet:
+	/// the guards' chase and escort are not ported (GUEST-007), so it only holds the place of those states for the pick-up rule and the guard clips.
+	/// </summary>
+	// [APPROX:ECON-052] the original's staff states 13 and 18 (tp.exe 0x505bd0) and the state 6 clip (script 0x14) have no OpenTPW state: the pick-up refusal and the guard carry clip read this flag, which no simulation sets — evidence needed: the guard escort states (0x508A30) and what state 6 is
+	public bool Escorting { get; set; }
 	/// <summary>Remaining ticks of the current job (repair, cleaning), 0 when free.</summary>
 	public long BusyTicks { get; set; }
 	/// <summary>A new live-world mechanic job is reserved but its work timer has not started. Legacy jobs default false.</summary>
@@ -114,6 +120,11 @@ public sealed class ParkStaff
 	public IReadOnlyList<StaffCandidate> Candidates => candidates;
 	public int NextId { get; private set; } = 1;
 	public long NextPoolUpdateTick { get; private set; }
+	/// <summary>
+	/// The candidate whose Place tool is running (the original's "being placed" flag, candidate <c>+0xb</c>, tp.exe 0x507bf0): it stays in the pool,
+	/// is not hired yet and does not expire while the player places it. Not saved: a pending hire is only a flag.
+	/// </summary>
+	public int PendingPlacementId { get; set; }
 
 	// [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing
 	public long UpdateInterval => Math.Max( 1, ParkCalendar.SecondsToTicks( settings.TimeBetweenStaffUpdates ) );
@@ -157,7 +168,7 @@ public sealed class ParkStaff
 		if ( tick < NextPoolUpdateTick )
 			return;
 		NextPoolUpdateTick = tick + UpdateInterval;
-		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick );
+		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId );
 		var roles = settings.Roles;
 		var shortfall = roles.Select( role => OfType( role.Type ).Count() >= role.MaximumInPark ? 0 : role.MaximumInPool - candidates.Count( candidate => candidate.Type == role.Type ) ).ToArray();
 		var cap = Math.Min( settings.MaxNumberOfStaffPerUpdate, PoolSlots - candidates.Count );
@@ -262,6 +273,7 @@ public sealed class ParkStaff
 
 	internal void Restore( IEnumerable<StaffMember> restoredMembers, IEnumerable<StaffCandidate> restoredCandidates, IReadOnlyList<long> budgets, int nextId, long nextPoolUpdate )
 	{
+		PendingPlacementId = 0;
 		members.Clear();
 		members.AddRange( restoredMembers );
 		candidates.Clear();

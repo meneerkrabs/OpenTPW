@@ -91,7 +91,7 @@ Role order everywhere: handyman/cleaner, mechanic, entertainer, guard, researche
 | `Upgrades[n].DurationOfUpgrade` | 0/2/4 | "time taken for mechanic to carry out the upgrade — in conjunction with mechanic's WorkDuration" | multiplies WorkDuration for the upgrade to level n, no minimum (executed, ORACLE F19) |
 | Advisor `StaffHireMechanics1.PoorerStateThan` | 25 | Worn-ride threshold | data (mechanic dispatch below 25) |
 
-Staff states use `STAFFSTATES.str` order (Idle, Patrolling, Working, Resting, On strike, Picked up).
+Staff states use `STAFFSTATES.str` order (Idle, Patrolling, Working, Resting, On strike, Picked up). In a level a hire starts the Place tool and an employee is picked up and moved with the Carry tool, see [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md).
 Patrol areas are not simulated.
 
 **Vitals and strikes (ECON-014, traced and executed in the oracle, ORACLE.md F22).** Every member has an energy and a happiness (singles, 0..100,
@@ -376,6 +376,8 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-049 | `World/ParkGate.cs:218` | the maintenance flag (the ride's mRequestedService, +0x64 on the PC) and the back-of-queue link test (tp.exe 0x4DE4A0: connection bits beyond the link) are not modelled: OpenTPW has no maintenance button and takes the queue as connected | the writers of mRequestedService and the queue tool's connection writes |
 | ECON-050 | `World/ParkGate.cs` | the gate census reads the reduced imported guest grid; unpreserved outside, approach and footprint cells can remain counted type 0 | original cell-type provenance in the guest-grid import |
 | ECON-051 | `Economy/ParkEconomy.cs:500` | the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) | the writer of the flag and when the original clears it |
+| ECON-052 | `Economy/ParkStaff.cs` | the original's staff states 13 and 18 (the guard escort states `CanBePickedUp` 0x505bd0 refuses) and the state 6 clip have no OpenTPW state: the pick-up refusal and the guard carry clip read `StaffMember.Escorting`, which no simulation sets yet | the guard escort states (0x508A30) and what state 6 is |
+| ECON-053 | `World/Staff/StaffPlacement.cs` | a member carried at save time is saved dropped on its old cell and the tool ends (the original saves it in state 7 and nothing re-creates the carry tool after a load, so it probably stays stuck) | a load of an original save made while carrying |
 
 ## Open questions
 

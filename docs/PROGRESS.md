@@ -885,6 +885,11 @@ research batch was included in this merge.
   a list of head sources, ready for the coaster seats. Every script (root, child, sound) has its own head table, as the
   script init allocates one for each, and the slot draw uses the original `labs(rand >> 1) % length` formula on the ride's
   own stream. Register: HEADS-002 and HEADS-003 retired, HEADS-001/004/005 narrowed.
+- **Audio register round (October 14):** the storm's thunder follows the original countdown (`0x101033CC`/`0x101034D8`):
+  a bolt starts the countdown only when none is running, at `ThunderStartsThisFarAway` minus the storm's bolts so far plus a
+  random term, and the thunder rings when the countdown steps from 1 to 0 (a computed 0 never rings), at the last bolt's top;
+  AUDIO-029 is retired. Speech ducking (AUDIO-001) is retired with its Mac citation (`0x100BB18C`); AUDIO-002, 005, 019,
+  025 and 033 are narrowed to what the PC and Mac traces leave open (AUDIO.md).
 - **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
   (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
   the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points

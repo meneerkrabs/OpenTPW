@@ -236,7 +236,7 @@ public class OriginalUiTests
 			Assert.AreEqual( "jungle", menu.Selected.Level );
 			CollectionAssert.AreEqual( new[] { "space", "jungle" }, selected );
 			Assert.AreEqual( "help344", menu.Main.Find( "nextIsland" )!.Help, "original tooltip UIHELPTEXT 344" );
-	
+
 			menu.Main.Focus( menu.Main.Find( "enterPark" ) );
 			menu.Stack.Update( context, UiInput.Key( UiKeys.Accept ) );
 			Assert.AreEqual( "gameMode", menu.Stack.Top!.Name );
@@ -246,7 +246,7 @@ public class OriginalUiTests
 			var full = menu.Stack.Top!.Find( "fullSimulation" )!;
 			menu.Stack.Update( context, UiInput.Click( full.ScreenRect( context.Canvas ).Center ) );
 			CollectionAssert.AreEqual( new[] { ("jungle", GameMode.FullSimulation) }, started );
-	
+
 			menu.Stack.Clear();
 			menu.Stack.Push( menu.Main );
 			menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );

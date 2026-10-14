@@ -125,7 +125,9 @@ public class Layer1DecoderTests
 		var audio = Mp2Decoder.Decode( frame.Concat( frame.Take( 20 ) ).ToArray() );
 		Assert.AreEqual( 1, audio.FrameCount );
 		Assert.AreEqual( 20, audio.TrailingBytes );
-		var layerTwo = (byte[])frame.Clone(); layerTwo[1] = (byte)((layerTwo[1] & ~6) | 4);
+		// The prior cloned Layer I bytes advertised a longer Layer II frame: an incomplete tail,
+		// not a complete format switch. Use a complete independently encoded Layer II frame.
+		var layerTwo = Mp2DecoderTests.SilentFrame();
 		Assert.ThrowsException<NotSupportedException>( () => Mp2Decoder.Decode( frame.Concat( layerTwo ).ToArray() ) );
 	}
 	[DataTestMethod]

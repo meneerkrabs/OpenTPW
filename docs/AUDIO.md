@@ -1,6 +1,6 @@
 # Sound: catalogues, mixer and park music
 
-October 13, 2026. Status: the original sound catalogues are read, a software mixer plays
+October 14, 2026. Status: the original sound catalogues are read, a software mixer plays
 through SDL, the park plays its original music, the front end plays its original lobby
 music and ambience, control clicks, the map/research drawer, error feedback, ride-script
 sounds (RSE EVENT and REPAIREFFECT), the crowd sentence and the advisor's speech play
@@ -19,23 +19,35 @@ coordinate conversion, and ride removal with both held and refused scream chains
 These checks require `OPENTPW_GAME_PATH`; they use a mixer without an SDL device.
 The earlier native front-end and jungle smoke runs did not reach rain, thunder or
 staff chatter, so those runs do not verify their natural gameplay triggers. The
-weather cadence, staff presentation stream, listener mapping and held-chain timing
-retain the qualifications in the approximation register.
+weather cadence, staff presentation stream and held-chain timing
+retain the qualifications in the approximation register. The second static research round over
+tp.exe (October 14) settled or narrowed most of the open items; see "Register round 2" below.
 
 ## Placed sound EVENT origins
 
-Placed objects now route sound EVENT types 3–9 through the existing positional audio
-API. The origin is the same placement/render transform applied to model-space zero,
-sampled when the instruction executes, undoing imported heightfield centering and
-converting engine axes/scale through `GameAudio.SoundPosition` to the same original
-sound space used by `UpdateListener`. It does not follow an animated dummy key.
-Headless runtimes, an absent origin or a nonfinite result keep the existing flat
-fallback. Types 0, 1, 2 and 10 never sample an audio origin or produce sound through
-this route. AUDIO-908 qualifies the unverified relation to the native emitter anchor
-and its update timing; no native box midpoint for screams is inferred.
+Placed objects route sound EVENT types 3-9 through the positional audio API. The key operand
+(the second) picks the anchor, as the original's `0x556b90(object, &position, 0, key, 0x200)` does
+for every sound type (`0x5575c7` on; tp.exe):
 
-The existing positioned API's flag `0x8` loop policy (AUDIO-019) remains intact;
-formerly flat placed calls now reach that policy. Returned loop voices belong to
+* a **non-negative key** is the model node of that key, looked up with selector `0x200` (the particle
+  resolver's selector is `0x100`; both use `ParticleKeyResolver`), at the node's current animated
+  position (node `+0x30/+0x34/+0x38`), sampled when the instruction executes, undoing imported
+  heightfield centering and converting engine axes and scale through `GameAudio.SoundPosition` to the
+  sound space `UpdateListener` uses;
+* a **negative key** is the object's footprint middle (`0x556d42`; `0x466b70` reads the footprint
+  rectangle, scaled by 10 with a one-cell offset): the middle of the rotated bounds of its shape,
+  `(min + max + 1) * 5` per axis, at the object's base height. A fixed item (authored in park
+  coordinates, no footprint) uses its model origin;
+* an **unknown key** logs `RSSE: Invalid Node ID` (`0x556d2c`), returns 0 and plays **nothing**
+  (`0x5575e5`). OpenTPW used to fall back to flat.
+
+Headless runtimes (no placement) and a nonfinite result keep the flat path. Types 0, 1, 2 and 10 never
+sample an audio origin or produce sound through this route. AUDIO-908 narrows what is left: the
+original passes integers and the footprint middle's height is the model's `+0x44` field; OpenTPW keeps
+floats and the object's base height.
+
+The flag `0x8` loop applies to every one-shot, positioned or flat (the loop test `0x6bc621` follows both
+branches; AUDIO-019 is retired), so formerly flat placed calls loop too. Returned loop voices belong to
 the object runtime, including events from its children, and stop when that runtime
 stops or the object is deleted. Park teardown deletes the park's objects and follows
 the same cleanup. One-shots keep their existing mixer lifetime. This adds no new
@@ -48,16 +60,17 @@ audio continuation/parity claim are introduced by this eligibility restriction.
 
 Synthetic tests use a valid dummy-only model with no render parts, actual placed
 objects, the real VM/effects path and the real mixer with synthetic decoded PCM.
-They check every routed type, coordinates/range, flat refusal controls, per-call
+They check every routed type, coordinates/range, the footprint middle for every quarter turn and a
+multi-cell shape, the node key and the silent unknown key, flat refusal controls, per-call
 sampling and loop ownership. Original assets, GPU behavior and native emitter
 geometry/timing remain unqualified.
 
-## Placed repair-hide pair
+## Placed repair sounds
 
 `REPAIREFFECT 0` submits the traced global `cat_rides` events 111 and 211 using
-one sample of the same trusted sound-space origin as placed EVENT sounds. The
-existing `PlayAt` distance/pan and flag-`0x8` loop policy applies independently to
-each returned voice. Live hide loops join the existing exact-runtime ledger, so
+one sample of the object's origin (the placement/render transform of model-space zero, the
+original's object position `0x556a80`). The existing `PlayAt` distance/pan and flag-`0x8` loop policy
+applies independently to each returned voice. Live hide loops join the existing exact-runtime ledger, so
 Stop, object removal and root-fault containment stop only that owner's loops.
 They trigger the same narrow live-audio capture refusal; one-shots, finished
 loops, missing audio and flat/headless fallback do not add a save restriction.
@@ -65,18 +78,16 @@ No audio handle or save schema is introduced. If the second submission fails,
 only a partially submitted first loop is stopped before the original exception
 propagates; a first one-shot keeps its existing lifetime.
 
-All nonzero show values keep the old flat `cat_kids` family-75 path without
-sampling an origin or adding ownership. AUDIO-008's unknown repair level, two
-float operands and show-family selection remain untouched, as do the visual
-repair effect and unsupported VM result/count. The public
-`GameAudio.PlayRepairEffect(int show)` API retains its flat behavior.
+`REPAIREFFECT 1` (any nonzero value) plays `cat_kids` 75 **at the object** too, as the original does
+(`0x55635f` -> `0x551320(band, 1, 1, x, y, z)` with the object's position): the family comes from the owner
+object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; index `(a + b) / 50`
+capped at 3, so 0 here). OpenTPW has no such word on its ride objects and uses band 1 (AUDIO-008). The
+public `GameAudio.PlayRepairEffect(int show)` API retains its flat behavior.
 
 `RepairHideAudioTests` exercises actual placed root VMs, imported-terrain
 centering, listener/mixer equivalence for both IDs, per-pair sampling, missing or
 nonfinite origins, show controls, owner/fault teardown and narrow capture policy.
-Only existing managed PCM and synthetic model/catalog data are used. AUDIO-908
-still qualifies the emitter anchor and update timing; no native anchor, pan-law,
-visual, original-asset or GPU parity is claimed. Loop positions remain the sampled
+Only existing managed PCM and synthetic model/catalog data are used. Loop positions remain the sampled
 instruction-time positions, rather than following later provider movement.
 
 ## RSE particle events are outside the sound service
@@ -151,28 +162,45 @@ each sound's samples and links follow its sounds. The bank map holds 11-byte rec
 (rewritten at load) and then, per bank, a u32 length and a name such as `Sound\UI`. All
 31 SFX and 31 bank catalogues of the Mac data parse to their exact length.
 
+**Bank folders.** The record's flag byte (`+9`) decides where a bank lives: with bit `0x20` the base is
+the data root's `Global` folder (`0x6bff14`-`0x6bff3d`, string `0x782dd8`), otherwise the category's own
+folder (the map folder's parent). The bank is then opened with one existence test (`0x6b9310` ->
+`0x6c5a00` -> `0x6c58f0`: `HW` then `HD`, reversed under the manager flags; only `HD` ships) and a
+failure returns 0: there is **no second folder** (AUDIO-002 is retired). No shipped bank record has
+`0x20` (flags 1, 2, 4, 0x41, 0x42) and every shipped name resolves in its own folder, which
+`AudioRegisterRound2Tests` checks against the data when `OPENTPW_GAME_PATH` is set.
+
 The event flags select the player (`CAudioPlaceHolderList::CreatePlaceHolder` `0x10011F20`):
 without bit 0x4 a one-shot; with 0x10 a linear sentence; otherwise without 0x2 a one-shot
 (branching) sentence, and with 0x2 a branching sentence (0x400), a shuffled sentence (0x100)
 or a plain sentence. The park music event (flags 0x606) is a branching sentence; the lobby
 music event (0x206) a plain sentence; UI events are one-shots.
 
-Choices use the library's linear congruential generator (`seed × 0x19660D + 0x3C6EF35F`,
-top 16 bits of the 32-bit result): a sound by the running sum of its weights
-(`ChooseRandomSound` `0x1000FF40`), a sample by its cumulative weight, where a sentence
-does not repeat the sample it just played when there are more than two
-(`ChooseRandomSample` `0x1000FCB4`), and a volume in the sound's range
-(`GetRandomVolume` `0x1000F32C`).
+Choices use the sound library's **one shared, advancing** linear congruential generator, in the PC
+build (tp.exe): every draw loads the shared state (`0xfb1f20`), computes `s * 0x19660D + 0x3C6EF35F`,
+**stores it back**, and uses `ror(s, 13)`, then either `>> 16` or `% n`. The draw sites: a sound by the
+running sum of its weights (`0x6bc810`, `>> 16`), a sample by its cumulative weight (`0x6bc680`;
+`0x6bc6ce` stores, `0x6bc6d4` rotates, `>> 16`), the volume (`0x6bc090`), the pitch (`0x6bc170`) and the
+delay (`0x6bc343`) as `min + r % (max - min)` (so the range's maximum is never drawn), and the branch
+and link choices of the sentence classes (`0x6be450`, `0x6c3e00`). A lone sound, a lone sample and an
+empty range draw nothing. A sentence does not repeat the sample it just played when there are more than
+two. The state is seeded once at static initialisation (`0x72e09c` -> `0x6bb930` -> `0x5f5f10`,
+QueryPerformanceCounter) and is never saved.
 
-The identified Mac library leaves its chooser seed unchanged after a draw. Applying
-that fixed draw to ongoing crowd ambience made OpenTPW alternate between just two
-clips even though the shipped crowd sections contain 7–52 samples. Crowd sample
-selection now uses its own advancing, seeded presentation stream (AUDIO-035). The
-crowd event, branching rules, sample weights and timing stay the same; music and
-other sounds keep their existing chooser. The effects option still controls the mix. This presentation
-stream does not consume gameplay random draws, and starts again on park entry rather
-than persisting across saves. Its variation policy is not claimed as original-game
-behaviour.
+OpenTPW draws everything from that one chooser (`SoundEventSystem`; the crowd's separate stream and
+AUDIO-035 are retired). The state is seeded from the clock when the sound service starts, but a park
+**reseeds it from its world seed at entry and saves it with the park** (`WorldRandomState.SoundSeed`;
+it is not part of the canonical hash), so replays, tests and the resume checks are reproducible: that
+is AUDIO-037, an approximation of the original's clock seed.
+
+**Mac versus PC.** `SoundEvents.cs` used to follow the Mac reading (the seed is never stored: the only
+store to `CAudioPlaceHolder::mRandomSeed` is the library init `0x100118C8`, the eight LCG sites only
+load it, and the draw takes the top 16 bits without the rotate; `ChooseRandomSample` `0x1000FCB4`).
+That contradicts the PC instructions above, which store every draw and rotate by 13. The PC reading is
+used. The Mac binary was not re-read in this round (by rule); someone should recheck the Mac claim
+(`[EXT:audio-chooser-mac-reading]` in `SoundEvents.cs`): it may be a misreading of the Mac code, or
+the builds may differ. Applying the frozen Mac draw made the crowd alternate between two clips although
+the shipped crowd sections hold 7-52 samples, which the advancing chooser avoids.
 
 The crowd also sends its nearby-visitor count as parameter 7 (Mac game
 `0x100BC298–0x100BC2A0`). For crowd sections whose volume mask selects that parameter,
@@ -180,8 +208,9 @@ the sentence now applies the original `low + floor((high - low) × parameter / 1
 interpolation (`sound_shared` `0x1000F32C`, `0x1000F3C8–0x1000F3F4`), using the first
 volume-mask slot (`0x1000F2E0`). The shipped crowd bounds are 14–22 percent. Sections
 without that selector retain their range-based volume, and the other parameter
-producers remain outside this crowd fix. Gain is evaluated when a segment starts;
-propagation into an already-playing child remains unverified (AUDIO-036).
+producers remain outside this crowd fix. Gain is evaluated when a segment starts; the original
+re-evaluates the playing sample's volume and pitch when a parameter in slots 1-3 changes (`0x6bbb80` ->
+`0x6bbbe0`), and which slot carries the crowd's parameter 7 is not read (AUDIO-036).
 
 ## On-demand bank boundaries
 
@@ -252,16 +281,17 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Lobby music | `cat_locallobbymusic` 1 (sentence) of the selected level | the front end's selected island | `0x10095A24` (start `0x1009598C`, registration `0x100BC4C0`) |
 | Lobby ambience | `cat_locallobbysfx` 2 (sentence) of the selected level | as above, looping | `0x10095A50` |
 | Lobby island one-shots | `cat_locallobbysfx` 3, 4, 5 on the lobby generator's draws | the front end shows (see "Lobby effects") | `0x10095340`–`0x10095450` |
-| Control click | `cat_ui` 0x1F | every activated button (control message 0x100) | `0x10137FD0` |
-| Map/research drawer | `cat_ui` 0x1C open, 0xC2 close | the map and research windows | `0x1015644C` messages 0x0b/0x10 |
+| Start-up sound | `cat_ui` 0xD2 (flat one-shot, flags 0x200) | once, when the sound service starts | tp.exe `0x54de6a` (start-up init `0x54dcf0`, called from WinMain at `0x45abed`) |
+| Control click | `cat_ui` 0x1F | every activated control, front end included (control message 0x100) | tp.exe `0x485780` (a global hook, `0x658d9f`/`0x658e42` call it for every control message); Mac `0x10137FD0` |
+| Map/research drawer | `cat_ui` 0x1C open, 0x1C then 0xC2 close | the map and research windows | tp.exe `0x4a14f0` (open `0x4a1737`, close `0x4a186f`, slide end `0x4a1947`) |
 | Error feedback | `cat_ui` 0x1D | a rejected purchase or placement | `0x10139A40` (buy window callers `0x10163AFC`/`0x10163BFC`) |
-| Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a refused commit | `0x10070DE0` (commit), `0x10073D1C` (refused, AUDIO-022) |
-| Ride-script sounds | any event of the routed category | an RSE `EVENT type id` instruction: type 3 level `cat_rides` (falling back to the global one, AUDIO-011), 4 level `cat_ambient` (same fallback), 5 global `cat_rides`, 6 `cat_kids`, 7 `cat_staff`, 8 `cat_ambient`, 9 `cat_ui` | `0x100AE930` (dispatcher, guard `bgt` 10 at `0x100AE938`), submitted at the object's position where the object has one |
-| Ride screams | `cat_kids` 71–74 held per ride (STARTSCREAM), STOPSCREAM stops it; `cat_kids` 75–109 one-shot (SINGLESCREAM) | a ride script's scream instructions; band 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74; parameter (level + 50) / 2 | `0x100B19DC` (STARTSCREAM), `0x100B1A74` (STOPSCREAM), `0x100B1A90` (SINGLESCREAM), `0x100ACA38`, `0x100ACB7C`, `0x100ACC24`, `0x100ACE68` (flat, AUDIO-032) |
-| Repair sounds | `cat_kids` 75 (families 75–90) show; `cat_rides` 111 and 211 hide | an RSE `REPAIREFFECT 1/0` instruction | `0x100B1F78` / `0x100B1EC0`, `0x100B1F00` |
-| Rain | `cat_ambient` 0x21 (branching sentence, parameter 8 = the drops' level 0–100) | the weather's current drops: started above 0, stopped at 0 | `0x10103394` (level), `0x100BC3D4`–`0x100BC41C` (global voice) |
+| Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a refused commit, at the clicked cell (x * 10, 0, z * 10) | `0x10070DE0` (commit), tp.exe `0x52496e` (refused `0xAF`, `0x524a80`; AUDIO-022) |
+| Ride-script sounds | any event of the routed category | an RSE `EVENT type key id` instruction: type 3 level `cat_rides` (falling back to the global one, AUDIO-011), 4 level `cat_ambient` (same fallback), 5 global `cat_rides`, 6 `cat_kids`, 7 `cat_staff`, 8 `cat_ambient`, 9 `cat_ui` | `0x100AE930` (dispatcher, guard `bgt` 10 at `0x100AE938`); tp.exe `0x5575c7` (anchored at the key's model node, the footprint middle for a negative key, nothing for an unknown key; see "Placed sound EVENT origins") |
+| Ride screams | `cat_kids` 71–74 held per ride (STARTSCREAM), STOPSCREAM stops it; `cat_kids` 75–109 one-shot (SINGLESCREAM) | a ride script's scream instructions; band 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74; parameter (level + 50) / 2 (parameter 6 on the PC); **positioned at the ride's footprint middle** | `0x100B19DC` (STARTSCREAM), `0x100B1A74` (STOPSCREAM), `0x100B1A90` (SINGLESCREAM), `0x100ACA38`, `0x100ACB7C`, `0x100ACC24`, `0x100ACE68`; tp.exe `0x551130` (STARTSCREAM submit: positioned, 0x47-0x4A at (x, y, z), parameter 6 = clamp((a + b) / 2, 0, 100)), `0x555edb`, `0x555f1b` -> `0x556af0` -> `0x551320` |
+| Repair sounds | `cat_kids` 75 (families 75–90) show; `cat_rides` 111 and 211 hide | an RSE `REPAIREFFECT 1/0` instruction, both at the object | `0x100B1F78` / `0x100B1EC0`, `0x100B1F00`; tp.exe `0x55635f` / `0x551320` |
+| Rain | `cat_ambient` 0x21 (branching sentence, parameter 8 = the drops' level 0–100), and a second flat 0x21 voice of the weather thing's own while it rains | the weather's current drops: started above 0, stopped at 0 (also in snow); the thing's own voice starts in rain mode and stops in snow or clear | `0x10103394` (level), `0x100BC3D4`–`0x100BC41C` (global voice); tp.exe `0x512a7f` (level), `0x5131f0` / `0x51327c` (the thing's voice, handle `+0x54`) |
 | Thunder | `cat_ambient` 0x20 at the last bolt's top (x, 300, z) | a lightning strike's thunder countdown ends | `0x101034C8`–`0x10103518` |
-| Placed ambients | `cat_ambient` (global) or the level's `cat_ambient`, the effect the scape record names | the level's `scape.omp` type 1 records, started with the park; range from the record | `scape.omp` records (`PlacedObjectsFile`), distance law of the mixer (AUDIO-018) |
+| Placed ambients | `cat_ambient` (global) or the level's `cat_ambient`, the effect the scape record names; a sentence-type effect plays as a positioned sentence | the level's `scape.omp` type 1 records, started with the park and kept for its lifetime; range from the record | tp.exe `0x550e00` (type 1 -> placed submit `0x51c130`, coordinates `/1024` toward zero, range `*2/1024`); `PlacedObjectsFile`, distance law of the mixer (AUDIO-018) |
 | Staff voices | `cat_staff` 160–169: walking/idle per role (handyman 160/161, mechanic 162/163, entertainer 164/165, guard 166/167, researcher 168/169) | a staff member each park turn, 1 in 16 draws (AUDIO-024) | `0x100D5EAC`, `0x100D6434`, `0x100D9BAC`, `0x100D9F10`, `0x100D2DDC`, `0x100D2E44`, `0x100D4EF0`, `0x100D4E18`, `0x100F0460`, `0x100F0630` |
 | Crowd | `cat_kids` 0x5B (branching sentence, parameter 0–100) | guests within four cells of the camera; louder/bigger sections as more gather, stopped when nobody is near | count `0x101C2490` (`0x100C313C`, radius 4, cap 100), sentence `0x100BC210`/`0x100BC2E0` |
 | Advisor speech | response table: sample and LIP from the global or level speech bank | traced advisor events | `0x10006B7C` |
@@ -282,12 +312,12 @@ Traced in the binary but not triggered yet:
 * `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
   a path cell under the cursor it plays at that cell, then that one cell is removed (ClearCell's path case), even when a fixed
   cell stays. Inside the path tool the original's Backspace does nothing; OpenTPW keeps its segment undo there (PATH-002).
-* The weather's own visuals are drawn now, as unverified procedural approximations (AUDIO-900..904,
-  "Weather visuals" below); the forecast's warning is shown as an OpenTPW presentation whose wording
-  and cadence are approximations (AUDIO-905..907), because the original's forecast message handler is
-  not traced (AUDIO-031).
-* The placed records of type 3 (a sound that follows the listener in a rectangle) are counted, not
-  played; a sentence-type placed effect plays its first sound once (AUDIO-020).
+* The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..904,
+  "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording
+  and cadence are `[EXT:forecast-banner]`, `[EXT:forecast-wording]`, `[EXT:forecast-cadence]`): the PC has
+  no forecast message (event type 2 has a single subscriber, the weather thing itself, `0x511fa9`/`0x511fb8`).
+* The placed records of type 3 (a sound that follows the listener in a rectangle: the original submits
+  `0x51bfc0` and binds the rectangle with `0x51c5d0`) are counted, not played.
 * The visitor click (`cat_kids` 129, flat) plays whenever a visitor's details open: the status panel's open routine
   (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
   activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
@@ -305,9 +335,10 @@ Traced in the binary but not triggered yet:
   198/0xC6 (`0x100075DC`): which advisor state plays them is not traced.
 * The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap
   interaction.
-* `cat_ui` 0xBD: a control whose flag word (read at `0x1017F618`) has a bit set outside
-  bits 24–26 plays 0xBD instead of 0x1F (`0x10138030`); no OpenTPW control maps those bits
-  (AUDIO-004).
+* `cat_ui` 0xBD: a control whose construction style (`+0x48`, the base window constructor `0x65bcad`'s second
+  argument) has bit `0x10` plays 0xBD instead of 0x1F (`0x4857cb`; the Mac's "bits outside 24-26" is a
+  big-endian rendering of the same test); which original controls are created with it is not traced, so
+  no OpenTPW control plays it (AUDIO-004).
 
 ## Lobby effects
 
@@ -357,7 +388,12 @@ Behaviour worth knowing:
 * Rain and snow share one field of 1024 fixed random points in a box of -4..4 (original units) around
   the camera eye, in camera space through the view rotation only, wrapping per axis. The box scrolls
   along its fall direction (straight down) by 2.5 units a second for rain (the game's value; the engine
-  default is 5) and 0.8 for snow, plus 0.1 x the camera's movement as parallax. At the original scale
+  default is 5) and 0.8 for snow, plus 0.1 x the camera's movement as parallax. The original's parallax
+  is the wrapped absolute camera position times a factor (`CRain +0x3340`, 0.1; 0.3 while the camera-mode
+  byte `0x790ab0 & 0x16` is set, `0x57fff8`-`0x58000b`), per axis `wrap(f x position + 4) - 4` into
+  [-4, 4) (x and z `+f`, y `-f`; `0x580013`-`0x5800b7`); OpenTPW's per-frame delta form is equivalent
+  only up to the sign with which the offset is added to the drops, and the 0.3 case is not
+  reproduced (AUDIO-900). At the original scale
   (0.2 engine units a unit) the field is a small near-field around the eye: streaks are 0.1 units
   long and 0.2 x that wide. The camera's 0.1 near plane clips the nearest 0.5 units of it (AUDIO-904).
 * Rain: grey `3 x max(0, int(12 x (6 - depth)))` (216 at the eye, 0 at depth 6), alpha 0x80 at the
@@ -386,15 +422,15 @@ Behaviour worth knowing:
 ### Forecast warnings
 
 `ParkWeather`'s forecast (a quality rolled `Weather.DaysOfWarning` days ahead and applied when its
-day passes) is presented by `WeatherForecastState` (pure, unit-tested) and `WeatherForecastPresenter`
+timestamp passes; see "Weather schedule" below) is presented by `WeatherForecastState` (pure, unit-tested) and `WeatherForecastPresenter`
 (the entity that draws it). The presenter is created with the weather like the renderer, reads the
 simulation each frame, and draws one banner line at the top centre of the screen in the overlay pass
 (the chat overlay's channel: the original GAME8AA BF4 font, above every screen including pause
-menus — AUDIO-905). One line, one background rectangle, laid out again only when the text changes;
+menus; `[EXT:forecast-banner]`). One line, one background rectangle, laid out again only when the text changes;
 no per-frame GPU growth.
 
-What it shows (all of it OpenTPW approximation, AUDIO-906..907 — the original's forecast handler
-and its text are not traced, and no weather text exists in the shipped `Language` string tables,
+What it shows (all of it an OpenTPW extension, `[EXT:forecast-wording]` and `[EXT:forecast-cadence]`:
+the PC has no forecast message, and no weather text exists in the shipped `Language` string tables,
 which were searched):
 
 * A park entered or loaded with weather on screen says so once: "The weather: rain." for six
@@ -425,6 +461,35 @@ The unit tests (`WeatherVisualTests`, `WeatherForecastTests`) cover the state ma
 counts, the 1024-point field and its scroll, the streak and flake geometry, bolt shape/lifetime/colour, the strike reporting,
 and the forecast's announcements, countdown, changed lines and seams.
 
+### Weather schedule
+
+The PC weather (tp.exe) runs on game-clock timestamps (`0x4f8690`, 10^7 units a second, `0x4f8770`),
+not day indices, and OpenTPW's `ParkWeather` follows it on game seconds sampled at the park turn:
+
+* The constructor (`0x511f70`) stores the season's roll as the quality but never calls the converter
+  (`0x512f00`), so the constructed quality has no effect (no rain or snow, drops 0), and sets
+  `lastChanged` to **0**. The first update therefore rolls a forecast at once (AUDIO-027 is retired).
+* A roll happens when no forecast is pending (flag `+0x2c`) and now >= `lastChanged` + max(0,
+  `DaysBetweenChanges` - `DaysOfWarning`) days (`0x51295c`-`0x5129d0`); the weather's own handler
+  (`0x5127a0`) stores the pending time (now + `DaysOfWarning` days, `+0x20`), the quality (`+0x28`), the
+  flag and `mLastForecasted`.
+* The apply happens when now >= `+0x20` (unless `mOverridden`, `+0x64`): the converter sets the quality and
+  `lastChanged` = now (`0x512f5b`), and **the same tick falls through to the roll test** (so a cycle of
+  `DaysBetweenChanges` <= `DaysOfWarning` rolls again at once).
+* The residual (AUDIO-026): OpenTPW models `lastChanged = 0` as a first roll due at the first step (its
+  clock starts at 0, the original's is far past it), and the PC's tick mapping against the park turn is
+  not reproduced. The snapshot's `LastChanged`/`NextRollDay`/`ApplyDay` fields now hold game seconds
+  (a save from before this change held day indices; its pending forecast resumes at the wrong time).
+* The weather's draws come from the park's own weather stream (`[EXT:weather-stream]`); the PC draws them from the
+  world LCG `0x516330` (`ror13(s * 0x19660D + 0x3C6EF35F)`, the rotated value stored; seeded with
+  `time(NULL)` at world creation, `0x51586b`), shared by about 139 call sites, so reproducing its draw
+  order needs every user of that LCG ([DETERMINISM.md](DETERMINISM.md)).
+
+The thing's own rain voice follows its **mode** (`0x5131f0`): rain starts a flat, unparameterised
+`cat_ambient` 0x21 voice, snow and clear stop it (`GameAudio.SetWeatherRain`), while the level-driven voice
+(`GameAudio.SetRain`, parameter 8) keeps following the drop count ×100/`MaxRaindrops` in every weather, snow
+included, until the drops reach 0 (`0x512a7f`).
+
 ## Advisor response table
 
 The game asks the advisor for a *response* ID; the response table says which speech
@@ -446,45 +511,66 @@ implemented yet.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
-| AUDIO-002 | Banks resolve to `<map folder's parent>/<name>HD.sdt`, then `global/<name>HD.sdt`; the HW/HD suffix rule is traced (tp.exe `0x6C58F0`) | The folder order: `TbMapStreamer::BankDoesNotExist` (`0x10015234`) |
-| AUDIO-003 | Pitch, delay and reverb are not applied; position is applied only by the positioned playback path | `TbSoundSampleInfo` pitch units and the placeholder 3D update |
-| AUDIO-004 | The park view's 0xBD click plays for controls whose flag word (`0x1017F618` reads control+0x44) has a bit set outside 24–26; no key or control property is mapped to it | The meaning of the flag bits in the control's +0x44 word |
-| AUDIO-005 | A sentence's next segment is chosen when the current one starts; the original chooses it when the current one's data runs out (`0x10008CC4` → `0x1001A1F0`) | None (a deliberate prefetch) |
-| AUDIO-006 | Guests within four cells of the camera are counted by cell rectangle | The area shape inside the radius of the guest counter (`0x100C313C`) |
-| AUDIO-007 | The drawer sounds (0x1C open, 0xC2 close) play when the map and research windows open and close | The original drawer's owning screens (`0x1015644C`) beside OpenTPW's window layout |
-| AUDIO-008 | A ride script's `REPAIREFFECT 1` plays `cat_kids` event 75 | The repair-level field (object+20) that picks among the event families 75–90 |
-| AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D | The original build-tool rejection path beside the traced buy-window callers of `0x10139A40` |
-| AUDIO-010 | The lobby sentences restart on every island selection | When the original restarts the lobby sentences (`0x1009598C`) |
-| AUDIO-011 | An RSE EVENT id missing from the level catalogue plays from the global category of the same name (`incagod.RSE`'s EVENT 3 id 43 exists only in the global `cat_rides`) | The sound library's own category fallback rule |
-| AUDIO-012 | Every activated button plays the click 0x1F, front end included | The traced 0x1F witness is the park view's control-message handler (`0x10137FD0`); the front end's own handlers |
-| AUDIO-015 | Only the level-driven rain voice is built; the weather thing's own rain voice (thing `+0x54`, `0x10103C4C`) is not | Whether the second voice is audible |
-| AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law | QSound's processing |
-| AUDIO-019 | A positioned one-shot whose event has flag `0x8` loops; flat one-shots do not, although the Mac's loop test (`FillSampleInfo` `0x1000FC1C`) follows both branches; inaudible loops advance silently | Whether flat plays pass through `FillSampleInfo` |
-| AUDIO-020 | A placed effect that is a sentence plays its first sound once | The placed sentence's player on the Mac |
-| AUDIO-021 | `scape.omp` places and the camera-midpoint listener share the park's sound units after undoing terrain centering; the midpoint follows a fork lead | The Mac's listener position and placement units traced together |
-| AUDIO-022 | A refused path-tool commit plays `cat_ui` 175; the Mac site is gated and its mapping to a refusal is inferred | The tool latch `obj+36` and the refusal path |
+| AUDIO-003 | Pitch (1/8-semitone steps, ratio 2^(sign x (\|p\| + 1) / 96), drawn `min + r % (max - min)`; tp.exe `0x6bc170`/`0x6d2820`), delay (u16 + `r % range`, `0x6bc343`, unit not read) and reverb (`SndReverb.map`) are not applied; position is applied only by the positioned playback path | The pitch link to the mixer's frequency wrapper is inferred (same vtable); the delay unit; `SndReverb.map` |
+| AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2) has bit `0x10` (`0x4857cb`); no OpenTPW control plays it | Which original controls are created with style bit `0x10` (the creation sites or UI resources) |
+| AUDIO-008 | The repair family comes from the owner object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; `0x55635f`/`0x551320`); OpenTPW uses band 1 (75) and plays it at the object as the original does | The band word's meaning and source |
+| AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D; the traced 0x1D callers are buy and hire money and limit checks (tp.exe `0x4879d0`, `0x4ac590`, `0x4af500`), no placement-tool site was found | The object-placement refusal cases of the build tool's 0x35-way tool switch (`0x524acd`) |
+| AUDIO-011 | An RSE EVENT id missing from the level catalogue plays from the global category of the same name (`incagod.RSE`'s EVENT 3 id 43 exists only in the global `cat_rides`); the PC dispatcher has no fallback (`0x5575c7`) | Whether the library's own event lookup resolves a missing id elsewhere |
+| AUDIO-015 | The weather thing's own flat, unparameterised 0x21 voice (`0x51327c`, handle `+0x54`) is built beside the level-driven one while it rains | Whether the library lets two instances of one event sound (a per-event instance or priority limit), or a capture |
+| AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law (inside QMixer) | QMixer.dll (a separate binary) or a capture |
+| AUDIO-022 | A refused path-tool commit plays `cat_ui` 175 at the clicked cell; the original plays it on a click while the hovered line is refused (validator `0x535670` = 1 or cost > money), outside a drag and after a hover (`0x52496e`) | The input model behind `0x785a2c` (press versus release) |
 | AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
-| AUDIO-024 | Without a staff world a staff member's walking/idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `STAF`, not saved; in a level every role draws its voices in its state machine (tp.exe `0x4d73c0`, `0x4d4810`, `0x4d6410`, `0x5029f0`, `0x4da490`, states 0 and 1) from the economy's stream | The handlers' turn boundary, shared world draw order and presentation-stream continuity |
-| AUDIO-025 | December's average is the unnamed word at weather `+0x4B4`, taken as 4; its tolerance and chance are confirmed (`0x101037D4`) | The `.sam` loader's write of `+0x4B4` |
-| AUDIO-026 | The forecast applies DaysOfWarning after the roll, on day indices | The Mac's day comparison units (`now` against `+0x20`) |
-| AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |
-| AUDIO-030 | The weather's draws come from the park's weather stream, not the world LCG | The Mac's seed source |
-| AUDIO-031 | The forecast's warning is an OpenTPW presentation (AUDIO-905..907), not the original's; the drawn drops, snow and bolt are unverified procedural approximations (AUDIO-900..904) | The weather renderer and the forecast's handler |
-| AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops | The original's drop volume, speed and streak shape (FUN_0057d300) |
+| AUDIO-025 | December's average is the storage of the unnamed type-0 `.sam` schema record after `Seasons` (`0x741d80`), taken as 4; its tolerance and chance are confirmed | The generic `.sam` loader's type-0 case (if it stores nothing the average would be 0, not 4) |
+| AUDIO-026 | The schedule runs on game seconds sampled at the park turn (roll at `lastChanged + max(0, DaysBetweenChanges - DaysOfWarning)` days, apply at the roll's time + `DaysOfWarning` days, the apply falling through to the roll test); the first roll is due at the first step | The PC tick mapping (10^7 units a second) against the park turn |
+| AUDIO-037 | The sound chooser is seeded from the clock at start-up (as the original) but a park reseeds it from its world seed at entry and saves it with the park, so replays, tests and resume checks are reproducible; the original's chooser is clock-seeded and unsaved | None (a deliberate determinism choice) |
+| AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops; the parallax is a per-frame delta (equal to the original's wrapped absolute position x 0.1 only up to the sign it is added with; the 0.3 factor under camera modes `0x790ab0 & 0x16` is not reproduced) | The sign with which the offset is added to the drops, and the blend states |
 | AUDIO-901 | Snow reuses the rain's drop count but falls slower with a sinusoidal sway | The original's snow motion |
 | AUDIO-902 | The bolt is a jittered polyline from the strike's top (height 300) to the heightfield, shown for a fixed flash time at the strike | The original's bolt shape, segmenting and flash timing |
 | AUDIO-903 | The weather's visuals advance with the frame delta scaled by the simulation speed; a paused park freezes them mid-flight | The original's pause behaviour for the weather renderer |
 | AUDIO-904 | The visual field, its vertex buffer and the pending bolt queue are capped (600 drops, 4 flashes, 64 pending tops); a level with a higher MaxRaindrops draws fewer drops than it simulates | The original's per-level drop budget beyond the shipped 600 |
-| AUDIO-905 | The forecast shows as one banner line at the top centre, drawn in the overlay pass with the original GAME8AA font above every screen (pause menus included) | Which surface the original warned on (the forecast's message handler) |
-| AUDIO-906 | The forecast's kind classifies the pending quality by the converter's bands; the undecided snow/rain tie reads "snow or rain" and the lightning band composes "thunderstorms"; the wording is OpenTPW's (no weather text exists in the shipped Language tables) | The original's forecast message handler and its text |
-| AUDIO-907 | One message when a forecast appears and one when it applies, plus one transient current-weather line on attach shown for six seconds of simulation time; a park resumed mid-warning announces the pending forecast once | The original's forecast message cadence |
-| AUDIO-032 | A ride's scream plays flat; the original places it at the ride's box middle | The box-middle mapping onto OpenTPW's ride objects |
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
-| AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The Mac held-voice tick, variation and stop routines |
-| AUDIO-035 | Crowd sample selection uses an independent advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `CROW`; its state is not persisted on save/load | The original source of crowd variation and presentation-stream continuity |
-| AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start | The original propagation into already-playing sentence children |
-| AUDIO-013 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
-| AUDIO-014 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
+| AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
+| AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start; the original re-evaluates the playing sample when a parameter in slots 1-3 changes (`0x6bbb80` -> `0x6bbbe0`) | Which slot carries the crowd's parameter 7 |
+
+### Register round 2 (October 14)
+
+The second static round over tp.exe (the PC executable counts as original evidence) retired, narrowed or
+reclassified these items; the register above keeps only what is still open, and the code carries the
+evidence as `[BIN:TPW-EXE:...]` notes.
+
+* **Retired with a change**: 002 (the bank folder follows the record's flag 0x20, no fallback), 007 (the
+  drawer plays 0x1C when a close starts as well as when it opens, then 0xC2), 019 (flat one-shots with
+  flag 0x8 loop), 020 (a placed sentence plays as a positioned sentence), 021 (listener: the eye in the
+  camera modes `0x790ab0 & 0x16`, otherwise the eye/target midpoint; scape coordinates and range truncated
+  toward zero), 027 (the constructed quality is never applied and the first update rolls a forecast),
+  032 (screams play at the ride's footprint middle), 035 (one shared advancing chooser; see
+  "Sound catalogues"). The start-up sound, the second rain voice, the refused-click place, the repair
+  sound's place and the EVENT anchor rules (908) landed in the same round.
+* **Retired, already matching**: 006 (the crowd count is the Chebyshev square of radius 4, `0x4c8d30`;
+  capped at 100, 0 in world state 4), 010 (the lobby sentences restart with each island step,
+  `0x5e1640`/`0x5e1730`, and on the `0x4a6a33` toggle), 012 (the global UI hook `0x485780` clicks for every
+  control; the front end's list lines and rows now click like its buttons).
+* **Narrowed**: 003, 004, 008, 009, 011, 015, 022, 025, 026, 034, 036, 900 and 908 (rows above); the
+  corrected readings are in the sections they belong to. Unchanged: 018, 023, 033, 901-904.
+* **Reclassified as documented OpenTPW decisions** (`[EXT:...]` markers in the code):
+  005 `[EXT:sentence-prefetch]` (a sentence chooses and decodes its next segment ahead; the original's
+  chooser is the shared clock-seeded one, so the draw's timing has no observable rule),
+  013/014 `[EXT:mpeg-deemphasis]`/`[EXT:mpeg-crc]` (every one of the 411,333 shipped MPEG frames has emphasis 0 and
+  no CRC, so the decoder's handling of such streams cannot be observed),
+  024 `[EXT:staff-voice-fallback]` (the original always has staff state machines, so the no-staff-world mode is
+  OpenTPW's own),
+  030 `[EXT:weather-stream]` (the weather draws from its own stream; the rule of the PC's shared world LCG
+  is known, [DETERMINISM.md](DETERMINISM.md)),
+  031/905/906/907 `[EXT:forecast-presentation]`, `[EXT:forecast-banner]`, `[EXT:forecast-wording]`,
+  `[EXT:forecast-cadence]` (the PC has no forecast message), and the drawer-versus-window presentation
+  of 007 `[EXT:drawer-window]` (UI register).
+* **Corrected**: the doc table used to say the screams play flat. STARTSCREAM is positioned on the PC
+  (`0x551130` submits 0x47-0x4A at (x, y, z) with parameter 6 = clamp((a + b) / 2, 0, 100)), SINGLESCREAM
+  too (`0x556af0` -> `0x551320`), both at the footprint middle (`0x466b70`); "Triggered sounds" now says so.
+* **Chooser contradiction**: the Mac reading of the chooser (frozen seed, top 16 bits without the rotate,
+  `SoundEvents.cs` line 151 before this round) disagrees with the PC instructions (advancing, stored,
+  rotated by 13); the PC reading is used and the Mac reading is to be rechecked.
+
 
 The option volumes are percentages (0–100) like the original's `{on, percent}` pairs, with the
 `DefaultVolume.*` defaults of `sound.sam` (effects 75, music 60, speech 75, movie 100; the globals holding them

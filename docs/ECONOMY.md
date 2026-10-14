@@ -103,8 +103,8 @@ At each month end, when the park is open and no guest stands in it, each role wi
 clock is 24 thirty-day months old (the original's stamp epoch is not traced), a role of more than three members whose truncated energies, or happinesses, average
 below 15 has a grievance and its level climbs: 1 is a warning (`TAG_SYSTEM` 38-42), 2, 3 and 4 are strikes (48-52) that last until the next month end (free members go
 on strike: no repairs, no cleaning, no research), and no grievance calls it off (53-57). `ParkEvent` kind `StaffStrikeMessage` carries role, kind and the
-text index, and the HUD message area shows the `TAG_SYSTEM` text. A working mechanic finishes its job first; when it ends, the strike or rest decision runs before the next repair is dispatched, and dispatch skips members on strike, resting or tired with a rest area. Selling the last Staff Room ends a rest at once (what the original does with the vanished rest thing is not traced). The handymen's litter-statistics grievance, the forced-strike debug word and the walk to the room or the strike area are not
-modelled.
+text index, and the HUD message area shows the `TAG_SYSTEM` text. A working mechanic finishes its job first; when it ends, the strike or rest decision runs before the next repair is dispatched, and dispatch skips members on strike, resting or tired with a rest area. Selling the last Staff Room ends a rest at once (what the original does with the vanished rest thing is not traced). The handymen's litter grievance counts the littered cells against the path and queue cells (`ParkLitter.Statistic`, ECON-020); the forced-strike
+debug word and the walk to the room or the strike area are not modelled.
 
 ### Research
 
@@ -331,6 +331,9 @@ with prices, levels, repair and statistics, loans, staff and candidates, trainin
 completion/progress/effort, challenge state, golden tickets and counters. Writes are atomic; loads
 are capped at 16 MiB, reject unknown or missing members, other versions/formats, `.tpws`/`.tpwi`
 paths, a theme/difficulty mismatch and inconsistent values (ids, ranges, ledger month vs clock).
+Litter is saved by cell (`Litter`: cell, type, the claiming handyman and the claim's turn). A save from before litter by cell carries
+a park-wide `LitterScaled` count instead: it has no cells to land on, so it is accepted, logged and dropped (the park loads clean),
+and it is written as 0.
 Original TPWS/TPWI files are never written.
 
 ## Approximation register

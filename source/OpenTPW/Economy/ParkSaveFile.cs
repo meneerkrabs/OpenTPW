@@ -49,7 +49,7 @@ public static class ParkSaveFile
 		public required int MonthsInRed { get; init; }
 		/// <summary>
 		/// Legacy: saves before per-cell litter kept a park-wide count of litter items in hundredths. It has no cells to land on, so it is
-		/// accepted, ignored and written 0; the litter is <see cref="Litter"/>.
+		/// accepted, ignored and written 0 (kept in the record: the determinism hashes cover the save's text); the litter is <see cref="Litter"/>.
 		/// </summary>
 		public long LitterScaled { get; init; }
 		/// <summary>Every littered cell with its type and claim (absent in older saves: a clean park).</summary>

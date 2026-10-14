@@ -108,6 +108,19 @@ public class LitterTests
 	}
 
 	[TestMethod]
+	public void ALegacyParkWideLitterCountLoadsAsACleanParkAndIsWrittenAsZero()
+	{
+		Log = new(); // the dropped count is logged through the static logger
+		var park = EconomyTestData.Park();
+		var json = ParkSaveFile.Serialize( park );
+		var legacy = System.Text.RegularExpressions.Regex.Replace( json, "\"LitterScaled\": 0", "\"LitterScaled\": 450" );
+		Assert.AreNotEqual( json, legacy );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( legacy ) ), park.Settings, park.Catalog );
+		Assert.AreEqual( 0, restored.Litter.Count );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
+	}
+
+	[TestMethod]
 	public void ASweptCellForgetsItsClaim()
 	{
 		var litter = new ParkLitter();

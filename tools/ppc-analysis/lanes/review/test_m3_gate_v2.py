@@ -39,16 +39,19 @@ HOOKS_V2 = [
      '\t\t\tMutateAfterTick( tick );\n\t\t\tMutateV2( tick, ticks );\n'),
     ('\t\t\t\trepairs++;\n',
      '\t\t\t{\n\t\t\t\trepairs++;\n\t\t\t\tif ( Mutation == "idle-mechanic-after-first-repair" )\n\t\t\t\t\tidleMechanic = true;\n\t\t\t}\n'),
-    ('\t\t\tlitterPeak = Math.Max( litterPeak, economy.LitterScaled );\n',
-     '\t\t\tif ( Mutation == "no-wear-no-litter" || (Mutation == "late-litter" && tick < ticks) )\n'
-     '\t\t\t{\n\t\t\t\ttypeof( ParkEconomy ).GetProperty( "LitterScaled" )!.SetValue( economy, 0L );\n\t\t\t\tpreviousLitter = 0;\n\t\t\t}\n'
-     '\t\t\telse if ( Mutation == "late-litter" )\n\t\t\t\teconomy.AddLitter( (int)ParkEconomy.LitterScale );\n'
-     '\t\t\tlitterPeak = Math.Max( litterPeak, economy.LitterScaled );\n'),
-    ('\t\t\tpreviousLitter = economy.LitterScaled;\n',
-     '\t\t\tpreviousLitter = economy.LitterScaled;\n'
+    # Litter by cell (ORACLE.md 7.15): no-wear-no-litter and late-litter switch the drops off from the start; late-litter drops one item on
+    # the last tick; idle-handyman-after-first-clean takes every claim back after the first sweep, so free handymen leave litter waiting.
+    ('\t\tlong litterPeak = economy.Litter.Count, litterCleaned = 0, litterDropped = 0;\n',
+     '\t\tif ( Mutation == "no-wear-no-litter" || Mutation == "late-litter" )\n\t\t\teconomy.Litter.Disabled = true;\n'
+     '\t\tlong litterPeak = economy.Litter.Count, litterCleaned = 0, litterDropped = 0;\n'),
+    ('\t\t\tvar litter = economy.Litter.Count;\n',
+     '\t\t\tif ( Mutation == "late-litter" && tick == ticks )\n'
+     '\t\t\t{\n\t\t\t\teconomy.Litter.Disabled = false;\n\t\t\t\teconomy.Litter.Drop( 0, 0, (LitterType)1 );\n\t\t\t}\n'
      '\t\t\tif ( Mutation == "idle-handyman-after-first-clean" && litterCleaned > 0 )\n'
-     '\t\t\t\tforeach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Handyman ) )\n'
-     '\t\t\t\t\tmember.State = StaffState.PickedUp;\n'),
+     '\t\t\t\tforeach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Handyman && member.LitterCell != null ) )\n'
+     '\t\t\t\t{\n\t\t\t\t\teconomy.Litter.Claim( member.LitterCell!.Value.X, member.LitterCell.Value.Y, 0, 0 );\n'
+     '\t\t\t\t\tmember.LitterCell = null;\n\t\t\t\t\tmember.BusyTicks = 0;\n\t\t\t\t\tmember.State = StaffState.Patrolling;\n\t\t\t\t}\n'
+     '\t\t\tvar litter = economy.Litter.Count;\n'),
     ('\tprivate string AttractionName( int id )',
      '\tprivate bool idleMechanic;\n'
      '\tprivate void MutateV2( long tick, long ticks )\n\t{\n'

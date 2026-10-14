@@ -2607,13 +2607,12 @@ def sale_meters_result(x: dict, r) -> dict:
 
 
 def sale_csharp_request(x: dict) -> dict:
-    return {'fn': 'shop_sale_litter', 'effect': s32(x['effects'][4])}
+    return {'fn': 'shop_sale_litter', 'effect': s32(x['effects'][4]), 'meter': bits(x['meters']['litter'])}
 
 
-def sale_csharp_result(x: dict, delta) -> dict:
-    """C# adds `delta` scaled litter units to the park's store per sale; its store has no per-guest meter, so the guest's meter before
-    the sale (the oracle's input) is carried over: before + delta, in single precision."""
-    return {'meters': {'litter': f32(x['meters']['litter'] + f32(float(delta)))}}
+def sale_csharp_result(x: dict, word) -> dict:
+    """C# adds LitterEffect to the guest's litter meter with MeterMath.Add (GuestSimulation.ApplyVisit), clamped to 0..100."""
+    return {'meters': {'litter': from_bits(int(word))}}
 
 
 def sale_inputs(rng: random.Random, n: int) -> list:
@@ -2656,8 +2655,8 @@ ECON_SALE = Target('shop-sale-litter', 'Shop sale effects on the guest (fragment
                    csharp_variants={'csharp-guest-meters': (lambda x: {'fn': 'shop_sale_meters', 'effects': [s32(e) for e in x['effects']],
                                                                        'meters': [bits(x['meters'][n]) for n in ('thirst', 'hunger', 'vomit', 'happy')]},
                                                             sale_meters_result)},
-                   notes=['C# hook: bridge function "shop_sale_litter" (ParkEconomy.TryBuy on a one-shop economy; the delta of LitterScaled). C# keeps '
-                          'a park-wide store, not a guest meter, so the guest\'s meter before the sale is carried over: after = before + delta.',
+                   notes=['C# hook: bridge function "shop_sale_litter" (MeterMath.Add of the guest\'s litter meter and LitterEffect, as '
+                          'GuestSimulation.ApplyVisit does since ORACLE.md 7.15; before that C# kept a park-wide store without a floor or ceiling).',
                           'Executed: the type record getter 0xdc320 and the fragment 0xeabb8..0xeae44 (thirst, hunger, vomit, happiness and litter '
                           'updates with their 0..100 clamps, and the "litter gone up" log). Stubs: 0x118018 type record (synthetic, registry and '
                           'type id checked), 0xe6d20 (which of drink and food the shop serves: logged), 0x5fbcc debug log (arguments logged).',

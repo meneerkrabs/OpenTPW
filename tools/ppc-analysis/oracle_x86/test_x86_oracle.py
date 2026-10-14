@@ -91,6 +91,11 @@ EXPECTED = {
                                                    'e_happy': 10, 'product': 2, 'extra': 0, 'type_word': 0}),
     # X18 (guest state 6 0x4fec90, GUEST-010): the decision order of WANDER-plan §2, every branch's effects included.
     ('tpw-exe-guest-state6', 'plan'): AGREE,
+    # The prank test reads happiness after a leaving gate without a way out took the big change; with the earlier value 2 differ.
+    ('tpw-exe-guest-state6', 'prank-before-gate-change'): (2, {'turn': 50, 'activity': 0, 'decision': 3645728797, 'happiness': 30.0, 'illness': 0.0,
+                                                             'exit': 0, 'closed': False, 'r': 4, 'r2': 2096108995, 'litter': 0.0, 'bin': 0,
+                                                             'prank': 101, 'stink': 25, 'things': ['self', (1, 20816)], 'way_out': False,
+                                                             'ride': 0, 'wander': False}),
     # X19 (wander destination 0x4f9490, GUEST-010): GuestWander's steps, draws and sub-cell bytes on synthetic cells.
     ('tpw-exe-wander-destination', 'plan'): AGREE,
     # The rule a step reads is the current cell's own link; with links on either side 164 differ (inputs with one-sided links).
@@ -797,7 +802,8 @@ class Oracle(CoastTests, unittest.TestCase):
 
     # ------------------------------------------------------------------ X18 / X19: guest states 6 and 7
     def test_state_six_runs_the_planned_order(self):
-        self.check(('tpw-exe-guest-state6', 'plan'))
+        for side in ('plan', 'prank-before-gate-change'):
+            self.check(('tpw-exe-guest-state6', side))
 
     def test_wander_destination_follows_guest_wander(self):
         for side in ('plan', 'either-side-links'):

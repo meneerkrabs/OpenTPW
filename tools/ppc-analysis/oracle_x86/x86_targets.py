@@ -1203,6 +1203,12 @@ STATE6_CALLS = {
 STATE6_BUS = 0x788D3C          # the message bus, built on first use; pre-set so the run never allocates it
 STATE6_STINKBOMB = 0x7850E0    # PeepInfo.StinkbombLikelihood
 STATE6_SELF_ID = 7             # the guest's thing id (0x50b350 stub)
+STATE6_CHANGES = {0: 5, 1: 15, 2: 25}   # Small/Medium/BigHappinessChange, the bytes at 0x785058 / 0x78505c / 0x785060 (shipped values)
+
+
+def _happiness_change( happiness: float, amount: int ) -> float:
+    value = happiness - amount
+    return 100.0 if value > 100.0 else 0.0 if value < 0.0 else struct.unpack('<f', struct.pack('<f', value))[0]
 STATE6_CELLS = 0x8023A0        # global: the map's cell records (0x44 bytes each, id = y * 128 + x + 1)
 STATE6_STATE = type('State6State', (), {})()
 
@@ -1246,8 +1252,11 @@ def state6_stubs(target: Target) -> dict:
         return 0, 8
 
     def happiness(sb):
+        # 0x4fea70 as read: subtract the selector's settings byte (0x785058 / 5c / 60) from the happiness float, clamped to 0..100
         guest(sb, '0x4fea70')
         target.log.append(('happiness', sb.arg(0)))
+        address = state.guest + STATE6_GUEST['happiness']
+        sb.write(address, 'f', _happiness_change( sb.read(address, 'f'), STATE6_CHANGES[sb.arg(0)] ))
         return 0, 4
 
     def closed(sb):
@@ -1368,7 +1377,7 @@ def _f32_bits(value: float) -> int:
     return struct.unpack('<I', struct.pack('<f', value))[0]
 
 
-def state6_plan(x: dict) -> tuple:
+def state6_plan(x: dict, reread: bool = True) -> tuple:
     """docs/reverse/WANDER-plan.md §2 as GuestDecision runs it, with the original's own effects of each branch: cheering
     (activity 5), vomiting (activity 7, litter 7, event 18, sound 0xcc, illness 0), the litter step (the bin search with radius 3:
     a bin sets +0x1dc and state 9; none drops litter 1 + R2 % 5 and empties the meter), the leaving gate (the big change, a route,
@@ -1377,10 +1386,10 @@ def state6_plan(x: dict) -> tuple:
     turn, r = x['turn'] & MASK32, x['r']
     decision, illness, litter, ride = x['decision'] & MASK32, _f32_bits(x['illness']), _f32_bits(x['litter']), 0
     happiness = _byte(x['happiness'])
-    happiness_bits = _f32_bits(x['happiness'])
+    level = struct.unpack('<f', struct.pack('<f', x['happiness']))[0]
 
     def result(effects):
-        return tuple(effects), decision, illness, litter, ride, happiness_bits
+        return tuple(effects), decision, illness, litter, ride, _f32_bits(level)
     if (turn - x['activity']) & MASK32 > 100 and happiness > 80:
         return result([('activity', 5)])
     ill = _byte(x['illness'])
@@ -1397,10 +1406,11 @@ def state6_plan(x: dict) -> tuple:
         litter = 0
     if happiness == 0 or x['exit'] == 0 or x['closed']:
         effects += [('gate',), ('happiness', 2)]
+        level = _happiness_change( level, STATE6_CHANGES[2] )
         if x['way_out']:
             return result(effects + [('state', 18)])
     # pranks (GuestDecision): happiness byte below 15 and the flag above R % 101
-    if happiness < 15 and x['prank'] > r % 101:
+    if _byte(level if reread else x['happiness']) < 15 and x['prank'] > r % 101:
         pranked = False
         if x['prank'] == 100:
             if r % 100 < x['stink']:
@@ -1417,8 +1427,7 @@ def state6_plan(x: dict) -> tuple:
                     break
         if pranked:
             effects += [('event', 0xF), ('message', 0x7007A8, STATE6_SELF_ID, STATE6_SELF_ID % 3)]
-            value = struct.unpack('<f', struct.pack('<f', x['happiness']))[0] + 1.0
-            happiness_bits = _f32_bits(100.0 if value > 100.0 else 0.0 if value < 0.0 else value)
+            level = _happiness_change( level, -1 )
     if r % 3 == 0:
         if (decision + 30) & MASK32 < turn:
             effects.append(('choice',))
@@ -1427,6 +1436,7 @@ def state6_plan(x: dict) -> tuple:
                 effects += [('event', 2), ('state', 10)]
             else:
                 effects += [('event', 1), ('activity', 4), ('happiness', 0)]
+                level = _happiness_change( level, STATE6_CHANGES[0] )
                 decision = turn
     elif r % 3 == 1:
         effects.append(('wander',))
@@ -1467,12 +1477,15 @@ def state6_inputs(rng: random.Random, n: int) -> list:
     edges += [make(prank=flag, stink=s, r=r, happiness=h, litter=0.0, illness=0.0, activity=0, turn=50, exit=50, closed=False,
                    things=['self', (2, 1), (1, 0), (1, 0x4242)])
               for flag in (100, 101, 102) for s in (0, 25) for r in (24, 25, 100, 202) for h in (14.99, 15.0)]
+    edges += [make(prank=101, stink=25, r=4, happiness=h, exit=0, way_out=False, litter=0.0, illness=0.0, activity=0, turn=50, closed=False)
+              for h in (30.0, 39.5, 40.0, 41.0)]
     return edges + [make() for _ in range(n)]
 
 
 STATE6_TARGET = Target(
     'tpw-exe-guest-state6', 'tpw', 'tp.exe guest state 6 0x4fec90', 'WANDER-plan §2 / GuestDecision (GUEST-010)',
     STATE6_ENTRY, STATE6_RANGES, state6_stubs, state6_binary, state6_plan, state6_inputs,
+    alternatives={'prank-before-gate-change': lambda x: state6_plan(x, reread=False)},
     notes=['Executed: 0x4fec90 with its SEH frame, _ftol and the debug print. Stubs: the draw (scripted), the activity '
            '0x4fc800, litter 0x4d93b0, events 0x50c100, sound 0x4faa00, the happiness change 0x4fea70, the closed word '
            '0x51a280, the gate cells 0x4d86d0 and routes 0x4fa530, the presentation look-ups 0x501020 / 0x4c8eb0 (none), '

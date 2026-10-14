@@ -50,6 +50,18 @@ public class PrankTests
 	}
 
 	[TestMethod]
+	public void ALeavingGateWithoutAWayOutCanMakeThePrank()
+	{
+		// Happiness 30, exit counter 0, no way out: the gate takes the big change (to 5), and the prank test reads the 5.
+		var happiness = 30f;
+		var calls = "";
+		var input = new GuestDecision.Input( 500, 450, 400, happiness, 0, 0, 0, false, 4, 101, 25 );
+		GuestDecision.Decide( input, () => false, () => { happiness -= 25; calls += "L"; return false; },
+			( prank, type ) => { calls += $"P{(int)type}"; return true; }, () => true, () => { calls += "W"; return true; }, () => happiness );
+		Assert.AreEqual( "LP5W", calls );
+	}
+
+	[TestMethod]
 	public void APrankDropsOnTheCellAndCheersThePrankster()
 	{
 		var grid = new GuestPathGrid( 16, 16 );

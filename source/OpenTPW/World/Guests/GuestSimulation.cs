@@ -772,7 +772,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			UpdateMood( guest );
 			choice = ChooseAttraction( guest );
 			return choice != null;
-		}, () => Wander( guest ) );
+		}, () => Wander( guest ), () => guest.Happiness );
 		switch ( outcome )
 		{
 			case GuestDecision.Outcome.Cheer:

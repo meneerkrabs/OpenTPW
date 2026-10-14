@@ -112,7 +112,7 @@ test('only explicit themes dispatch the experimental entry point; TPW retains it
 
 // Execute the actual page module and its registered folder handler. DOM and .NET exports
 // are synthetic; this protects their wiring, not browser APIs, graphics or native data.
-const pageSource = (await readFile(new URL('../source/OpenTPW.Web/wwwroot/main.js', import.meta.url), 'utf8')).replace(/^import .*;\n/gm, '');
+const pageSource = (await readFile(new URL('../source/OpenTPW.Web/wwwroot/main.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
 async function page(theme, active = false) {
 	const calls = [], files = new Map([['Data/old.wad', 9]]), elements = new Map(), witnesses = [];
 	const element = id => {

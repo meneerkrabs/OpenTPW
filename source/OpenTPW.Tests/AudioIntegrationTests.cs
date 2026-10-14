@@ -320,7 +320,7 @@ public class AudioIntegrationTests
 	}
 
 	[TestMethod]
-	public void StaffTurnsVaryTheirGateWithoutAdvancingTheNativeSoundChooser()
+	public void StaffTurnsVaryTheirGateAndTheirVoicesDrawFromTheSharedSoundChooser()
 	{
 		// Find an audible shipped idle sample; many staff catalogue samples deliberately contain silence.
 		var selected = false;
@@ -357,7 +357,7 @@ public class AudioIntegrationTests
 		}
 		Assert.IsTrue( triggered is > 0 and < 128, $"independent advancing 1-in-16 gate: {triggered}/512" );
 		Assert.IsTrue( audible, "a triggered staff voice reaches the decoded mix" );
-		Assert.AreEqual( seedBefore, system.Seed, "the traced sound chooser seed remains unchanged" );
+		Assert.AreNotEqual( seedBefore, system.Seed, "[BIN:TPW-EXE:0x6bc6ce] the triggered voices' sound and sample draws advance the shared chooser (the 1-in-16 gate is the separate staff stream, AUDIO-024)" );
 	}
 
 	[TestMethod]

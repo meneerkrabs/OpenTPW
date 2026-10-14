@@ -259,7 +259,7 @@ public class CrowdAudioTests
 	}
 
 	[TestMethod]
-	public void OriginalCrowdClipsDecodeWithMoreVariationThanTheFrozenChooser()
+	public void OriginalCrowdClipsDecodeWithVariationFromTheSharedChooser()
 	{
 		var data = StringTableTests.OriginalDataDirectory();
 		// Keep the fixture's empty level directory: EnterPark exercises crowd seeding without music or ambients masking its PCM.
@@ -269,18 +269,18 @@ public class CrowdAudioTests
 		var original = system.StartSentence( originalKids, GameAudio.CrowdEvent, AudioChannel.Effects )!;
 		original.Parameter = 12;
 		var oldSequence = ReadSequence( original, 32 );
-		Assert.AreEqual( 2, oldSequence.Select( item => item.Sample ).Distinct().Count(), "the shipped crowd section reproduces the two-clip cycle" );
+		Assert.IsTrue( oldSequence.Select( item => item.Sample ).Distinct().Count() > 2, "the shipped crowd section varies its clips with the advancing chooser (the frozen Mac reading cycled two)" );
 		original.Stop();
 		mixer.Mix( 1 );
 		GameAudio.EnterPark( "missing", seed: 11 );
 		GameAudio.SetCrowd( 12 );
 		var changed = ReadSequence( GameAudio.Crowd!, 32 );
 		var distinct = changed.Select( item => item.Sample ).Distinct().Count();
-		Console.WriteLine( $"Original crowd: frozen chooser {oldSequence.Select( item => item.Sample ).Distinct().Count()} clips; host crowd stream {distinct} clips over 32 decoded segments." );
+		Console.WriteLine( $"Original crowd: direct sentence {oldSequence.Select( item => item.Sample ).Distinct().Count()} clips; park crowd {distinct} clips over 32 decoded segments." );
 		Assert.IsTrue( distinct > 2 );
 		for ( var index = 1; index < changed.Length; index++ )
 			Assert.AreNotEqual( changed[index - 1], changed[index], "adjacent original samples do not repeat" );
-		Assert.AreEqual( 11u, system.Seed );
+		Assert.AreNotEqual( 11u, system.Seed );
 	}
 
 	[TestMethod]
@@ -309,10 +309,16 @@ public class CrowdAudioTests
 			var sound = sounds[index];
 			foreach ( var count in new[] { 0, 1, 12, 100 } )
 			{
-				var expected = index < 6
-					? sound.MinimumVolume + (sound.MaximumVolume - sound.MinimumVolume) * count / 100
-					: system.Volume( sound );
-				Assert.AreEqual( expected, system.Volume( sound, 7, count ), $"original section {index}, parameter {count}" );
+				if ( index < 6 )
+				{
+					Assert.AreEqual( sound.MinimumVolume + (sound.MaximumVolume - sound.MinimumVolume) * count / 100, system.Volume( sound, 7, count ), $"original section {index}, parameter {count}" );
+					continue;
+				}
+				// no matching parameter: the random fallback, which advances the shared chooser, so compare from one state
+				system.Reseed( 11 );
+				var fallback = system.Volume( sound );
+				system.Reseed( 11 );
+				Assert.AreEqual( fallback, system.Volume( sound, 7, count ), $"original section {index}, parameter {count}" );
 			}
 		}
 	}

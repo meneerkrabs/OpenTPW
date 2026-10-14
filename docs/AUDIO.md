@@ -6,9 +6,10 @@ music and ambience, control clicks, the map/research drawer, error feedback, rid
 sounds (RSE EVENT and REPAIREFFECT), the crowd sentence and the advisor's speech play
 through the mixer. The park's weather plays its rain and thunder, the level's placed
 ambients (scape.omp) play with the mixer's distance law, ride screams play, the staff's
-walking and idle voices play, and the path tool's laying and refused clicks play. Still
-silent: the path tool's link-end and undo sounds, the visitor click and the lobby's
-global effects
+walking and idle voices play, the path tool's laying and refused clicks play, a queue joining a path
+plays `cat_ui` 139, Backspace over a path cell plays `cat_ui` 95 as it removes the cell, and opening a
+visitor's details plays the visitor click (`cat_kids` 129). Still silent: the second source of 139 (a
+laid path cell linking to a queue) and the lobby's global effects
 (see "Traced but not triggered"). No original data is in the repository.
 
 The integration regressions force a rainy storm, pass its rain level and due thunder
@@ -271,20 +272,27 @@ Traced in the binary but not triggered yet:
 * Staff chase (`cat_staff` 136, `0x100D49F8`), catch (137, `0x100D516C`), the researching turn (138,
   `0x100F05EC`) and a performance's end (135, `0x100D2D98`): the events are traced, but OpenTPW has no
   chase, catch, performance or per-turn research action to hang them on.
-* The path tool's link-end sound (`cat_ui` 139, `0x100711CC`, queue mode) and its undo: the trigger
-  is inferred; no undo sound was found on the Mac (AUDIO-023). The count-classed removal sounds
-  `cat_ui` 141–144 and 150–153 (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
+* `cat_ui` 139 is the sound of a queue joining a path, not a path-tool link-end. Its first source plays now: the queue tool's
+  commit when the line ends on a path cell, money on (`0x100711CC`, tp.exe `0x527587`; the validator `0x84154` returns code
+  8 for that line, which is also no longer treated as a refusal). Its second source is not played yet: a laid path cell
+  linking to a neighbouring queue cell whose link points back (`0x10082D6C`, tp.exe `0x5348D0`), because OpenTPW's path
+  linking has no queue-link check (PATH-004, AUDIO-023). The count-classed removal sounds `cat_ui` 141–144 and 150–153
+  (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
+* `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
+  a path cell under the cursor it plays at that cell, then that one cell is removed (ClearCell's path case), even when a fixed
+  cell stays. Inside the path tool the original's Backspace does nothing; OpenTPW keeps its segment undo there (PATH-002).
 * The weather's own visuals are drawn now, as unverified procedural approximations (AUDIO-900..904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW presentation whose wording
   and cadence are approximations (AUDIO-905..907), because the original's forecast message handler is
   not traced (AUDIO-031).
 * The placed records of type 3 (a sound that follows the listener in a rectangle) are counted, not
   played; a sentence-type placed effect plays its first sound once (AUDIO-020).
-* The visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and visitor
-  panel sounds (`cat_ui` 95 at `0x101125D8`) remain deferred: world visitor selection
-  now opens the existing roster, with no new visitor-specific audio trigger.
-* Global lobby effects (`cat_globallobbysfx` 1 thunder with the lobby lightning flash `0x1009533C`, 4 at
-  `0x10183DA4`, 2/3 in the online globe `0x100923A8`): the lobby has no lightning or globe to trigger them.
+* The visitor click (`cat_kids` 129, flat) plays whenever a visitor's details open: the status panel's open routine
+  (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
+  activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
+  activation; it has no separate status panel (UI-910) and no map markers or strip yet.
+* Global lobby effects now play (see "Lobby effects" below): the thunder (`cat_globallobbysfx` 1) with the lobby's
+  lightning, the globe's music and ambience (2, 3) and the enter-park sound (4).
 * The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and
   198/0xC6 (`0x100075DC`): which advisor state plays them is not traced.
 * The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap
@@ -293,33 +301,77 @@ Traced in the binary but not triggered yet:
   bits 24–26 plays 0xBD instead of 0x1F (`0x10138030`); no OpenTPW control maps those bits
   (AUDIO-004).
 
+## Lobby effects
+
+The front end's island effects follow the original's islands update (`CLBScreenComponentIslands::vf2`, `0x10094474`),
+stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per rendered frame):
+
+* **The nearest island** to the camera drives everything, not the selected one.
+* **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, the full state returned, `0x100904A8`), seeded once from
+  the clock (`0x1008CDBC`). The original's flying meshes and camera wander draw from it too; OpenTPW has neither yet, so
+  the rhythm of strikes and one-shots differs (UI-941).
+* **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(state & LIGHTNING) == 1` strikes; four draws place the top
+  within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
+  flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is
+  drawn by the park's weather renderer (CRain, "Weather visuals"), at the lobby's own scale; the flash is an opaque white
+  frame under the menus (its blend is not decoded).
+* **Rain**: 10^17 / (mean squared distance from the camera to the rainy islands)^4 drops, none below 20, at most 400
+  (`0x10094F8C`): about 173 at the orbit radius around hallow, drawn by the same renderer.
+* **Island one-shots**: a draw with `(state & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
+  `cat_locallobbysfx` (`0x10095340`), replacing OpenTPW's earlier 5–15 s timer (AUDIO-017 is resolved).
+* **Sky**: one flat colour eased 1/16 of the way toward the island's `SKYCOLOUR` each tick (`0x1008FAA0`, tp.exe
+  `0x5D96C0`). Both builds ease the red channel toward the blue target, and two settings flags gate the eased sky; neither
+  is reproduced before a capture confirms it (UI-018).
+* **The globe** (`0x100923A8`) sets the rain to 0 and the sky target to (243, 203, 191) and starts its music
+  (`cat_globallobbysfx` 2) and ambience (3), stopped when it closes; OpenTPW stops the lobby's own music meanwhile (UI-942).
+* **Entering a park** (`0x10183CC0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2 (UI-942).
+
 ## Weather visuals
 
 The simulation side of the weather (`ParkWeather`) drives the visuals the same way it drives the
-sound: the drawn drop count is the simulated `CurrentDrops` (the ramp toward the quality's target),
-snow shows when the snow band holds, and every lightning strike reports its bolt top
-(`TakeBoltTops`, at the strike itself — the thunder still follows later through `TakeThunder`).
-`WeatherVisualState` holds the presentation (drop field, bolt flashes, jittered polyline) with no
-GPU dependency, so the lifetime and motion math is unit-tested directly; `WeatherRenderer` is the
-entity that draws it (`content/shaders/weather.shader`, one untextured particle shader, depth-tested
-without depth writes). Everything about the look is an approximation (AUDIO-900..904): the original's
-weather renderer (FUN_0057d300 family) is not traced, so no original parity is claimed.
+sound: the drawn drop count is the simulated `CurrentDrops` (capped by `MaxRaindrops`), snow shows
+when the snow band holds, and every lightning strike reports its bolt top (`TakeBoltTops`, at the
+strike itself; the thunder still follows later through `TakeThunder`). The look is the original
+engine's `CRain` renderer, read statically from the Mac `engine_shared` library (`0x1001CF38`
+`GameLoad`, `0x1001C884`, `0x1001FCE4`, `0x1001ECD0` rain, `0x1001F198` snow, `0x10020150`,
+`0x1001EA18`, `0x1001E2B0`, `0x1001DE6C`, `0x1001D578` bolts, `0x101035D4` the strike) and tp.exe
+(`0x57F1F0`-`0x57F380`, `0x57EEC0`). `WeatherVisualState` holds the GPU-free state and geometry
+(unit-tested); `WeatherRenderer` draws it (`content/shaders/weather.shader`, textured, depth-tested
+without depth writes) and reads its inputs through `IWeatherVisualSource` plus an original-to-engine
+mapping and a pause predicate, so the lobby can reuse it later without `ParkWeather` or `Level`.
 
 Behaviour worth knowing:
 
-* The drop volume wraps around what the camera looks at (the park camera's target, else its
-  position), so panning and zooming keep drops on screen; drops fall out of the bottom and back in
-  at the top. The count follows the simulation with the visual cap of 600 drops.
-* The motion runs on simulation time — the frame delta scaled by the HUD's simulation speed — so a
-  paused park freezes the drops and bolts mid-flight and a faster park drops faster.
-* A bolt is drawn from the strike's top (the same sky point the thunder plays at, height 300 in
-  model units) down to the heightfield under it, jittered deterministically per strike, and fades
-  over `WeatherVisualState.BoltFlashSeconds`.
+* Images: `Data/Generic/Weather/raindrop.tga` (32x32, no alpha, white teardrop on black), `snow.tga`
+  (128x128, 2x2 atlas of four flakes) and `lightning.tga` (128x128, vertical strip), read from the game
+  folder like the cursor's TGAs. `generic/sweather` holds smaller copies; which the park selects is
+  unknown, so the full-size set is used. A missing image just skips that weather.
+* Rain and snow share one field of 1024 fixed random points in a box of -4..4 (original units) around
+  the camera eye, in camera space through the view rotation only, wrapping per axis. The box scrolls
+  along its fall direction (straight down) by 2.5 units a second for rain (the game's value; the engine
+  default is 5) and 0.8 for snow, plus 0.1 x the camera's movement as parallax. At the original scale
+  (0.2 engine units a unit) the field is a small near-field around the eye: streaks are 0.1 units
+  long and 0.2 x that wide. The camera's 0.1 near plane clips the nearest 0.5 units of it (AUDIO-904).
+* Rain: grey `3 x max(0, int(12 x (6 - depth)))` (216 at the eye, 0 at depth 6), alpha 0x80 at the
+  streak's trailing end and 0xFF at the leading end, only depth > 0 drawn, additive blend (AUDIO-900).
+* Snow: flakes of half-size 0.1 map to atlas quadrant `index & 3`, full white, x and y spread by
+  `1 + depth/8`, jittering by +-1/128 each frame. The original's other mode (flag `0x115E94` bit 8)
+  swirls flakes along a closed 128-point spline; its meaning is not identified, so it is not drawn (AUDIO-901).
+* Bolts: from the strike's top (x, 300, z) straight down to original y = 0 (not the terrain; the
+  original's ground point is a float draw, so OpenTPW uses the top's x and z), recursive midpoint
+  displacement with roughness 0.6, splitting until a segment's squared length is under 6 + 2u (about
+  2 to 2.8 units), a 9/512 branch chance per split up to depth 4 (length `2.5 x (512..1535) / (96 x depth)`,
+  bent downward), shape fixed per bolt from a seeded generator, ribbon half-width `1.3 / (depth + 1)`,
+  opaque grey pulsing in 500 ms cycles, 192-255 plus rand(0..63), alive `WeatherEffects.LightningTime`
+  (2000 ms) with up to 16 at once. There is no screen flash and no sky darkening in the park. The
+  displacement, branch heading and pulse curve are OpenTPW's (AUDIO-902).
+* Time is the wall-clock frame time capped at 500 ms, frozen while the park is paused; the engine
+  zeroes dt under a flag that is not identified (AUDIO-903). The visual random stream is separate from
+  every simulation stream, so world hashes are unchanged.
 * The renderer is created with the weather itself (`ParkWeather.Created`), inside the staged-candidate
-  scope when a save is resumed, and deleted with the level's other entities. GPU allocations are
-  made once, sized for the caps: one vertex buffer, no per-frame growth (browser-safe). The shader
-  material is prepared when the entity is created (a resumed park: inside its load scope; a fresh
-  park: its first simulation step), so no gameplay frame pays the shader compile mid-rain.
+  scope when a save is resumed, and deleted with the level's other entities. GPU allocations are made
+  once (one vertex buffer, three materials), browser-safe; the shader is precompiled for the browser in
+  `content/shaders/web/weather.json`.
 * The forecast is presented by `WeatherForecastPresenter` — see "Forecast warnings" below; the
   pending-quality state the original's message handler would read is `ParkWeather.Forecast`.
 
@@ -362,7 +414,7 @@ one forecast through the simulation's own warning schedule; the banner draws in 
 captures need `--capture-interface` to include it — e.g.
 `--load-original-level jungle --debug-forecast 8 --capture-interface forecast.png --capture-frames 30`.
 The unit tests (`WeatherVisualTests`, `WeatherForecastTests`) cover the state math without a window:
-counts, the wrapping volume, pause freeze, snow sway, bolt lifetime/jitter, the strike reporting,
+counts, the 1024-point field and its scroll, the streak and flake geometry, bolt shape/lifetime/colour, the strike reporting,
 and the forecast's announcements, countdown, changed lines and seams.
 
 ## Advisor response table

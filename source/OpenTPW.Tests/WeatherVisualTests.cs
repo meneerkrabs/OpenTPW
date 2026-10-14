@@ -1,13 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The weather's visual presentation (docs/AUDIO.md "Weather visuals"): the drop field that follows the
-/// simulated current drops, the wrapping camera-follow volume, snow's slower sway, the bolt flash's lifetime
-/// and jittered polyline, and the strikes the simulation reports for drawing.
+/// The weather's visual presentation (docs/AUDIO.md "Weather visuals"): the original CRain's 1024-point drop
+/// field, its scroll and wrap, the rain streak and snow flake geometry, the bolt shape, lifetime and colour,
+/// and the strikes the simulation reports for drawing.
 /// </summary>
 [TestClass]
 public class WeatherVisualTests
@@ -15,127 +17,320 @@ public class WeatherVisualTests
 	[TestInitialize]
 	public void Setup() => Log ??= new();
 
-	private static WeatherVisualState Field( int drops, bool snow = false, Vector3? centre = null )
+	private sealed class Source : IWeatherVisualSource
 	{
-		var state = new WeatherVisualState( 1 );
-		state.Step( 0.016f, drops, snow, centre ?? Vector3.Zero );
+		public int DropCount { get; set; }
+		public bool Snow { get; set; }
+		public float BoltLifetimeSeconds { get; set; } = 2f;
+		public List<NVector3> Tops { get; } = new();
+		public IReadOnlyList<WeatherStrike> TakeStrikes()
+		{
+			var taken = Tops.Select( WeatherStrike.Below ).ToList();
+			Tops.Clear();
+			return taken;
+		}
+	}
+
+	private static readonly WeatherCamera Eye = WeatherCamera.Looking( NVector3.Zero );
+
+	private static WeatherVisualState Field( int drops, bool snow = false )
+	{
+		var state = new WeatherVisualState();
+		state.Update( 0.016f, new Source { DropCount = drops, Snow = snow }, Eye );
 		return state;
 	}
 
-	[TestMethod]
-	public void TheDropCountFollowsTheSimulationAndStopsAtTheCap()
+	private static int Rain( WeatherVisualState state, WeatherCamera camera, out WeatherVertex[] vertices )
 	{
-		var state = new WeatherVisualState( 1 );
-		state.Step( 0.016f, 300, snow: false, Vector3.Zero );
+		vertices = new WeatherVertex[WeatherVisualState.FieldSize * 6];
+		return state.WriteRain( camera, vertices );
+	}
+
+	[TestMethod]
+	public void TheDrawnCountIsTheSourceCountCappedAtTheField()
+	{
+		var state = new WeatherVisualState();
+		var source = new Source { DropCount = 300 };
+		state.Update( 0.016f, source, Eye );
 		Assert.AreEqual( 300, state.DropCount );
-		state.Step( 0.016f, 0, snow: false, Vector3.Zero );
-		Assert.AreEqual( 0, state.DropCount, "the weather drying up drops the field" );
-		state.Step( 0.016f, WeatherVisualState.MaximumDrops + 500, snow: false, Vector3.Zero );
-		Assert.AreEqual( WeatherVisualState.MaximumDrops, state.DropCount, "a level with more simulated drops than the visual cap draws the cap" );
+		source.DropCount = 0;
+		state.Update( 0.016f, source, Eye );
+		Assert.AreEqual( 0, state.DropCount, "the weather drying up draws nothing" );
+		source.DropCount = WeatherVisualState.FieldSize + 500;
+		state.Update( 0.016f, source, Eye );
+		Assert.AreEqual( WeatherVisualState.FieldSize, state.DropCount, "the field holds 1024 points" );
 	}
 
 	[TestMethod]
-	public void TheFieldIsDeterministicForASeed()
+	public void TheFieldIsFixedAndItsPointsLieInTheBox()
 	{
-		var first = new WeatherVisualState( 42 );
-		var second = new WeatherVisualState( 42 );
-		first.Step( 0.016f, 100, snow: false, Vector3.Zero );
-		second.Step( 0.016f, 100, snow: false, Vector3.Zero );
-		CollectionAssert.AreEqual( first.Drops.ToList(), second.Drops.ToList() );
-		var other = new WeatherVisualState( 43 );
-		other.Step( 0.016f, 100, snow: false, Vector3.Zero );
-		Assert.AreNotEqual( first.Drops[0], other.Drops[0], "another seed draws another field" );
-	}
-
-	[TestMethod]
-	public void DropsWrapInsideTheVolumeAroundTheMovingCentre()
-	{
-		var state = Field( WeatherVisualState.MaximumDrops );
-		var centre = new Vector3( 0, 0, 0 );
-		// Five seconds of falling in frame slices while the view target slides, as a panning camera would move it.
-		for ( var slice = 0; slice < 300; slice++ )
+		var first = Field( WeatherVisualState.FieldSize );
+		var second = Field( WeatherVisualState.FieldSize );
+		for ( var index = 0; index < WeatherVisualState.FieldSize; index++ )
 		{
-			centre = new Vector3( slice * 0.5f, -slice * 0.25f, 0 );
-			state.Step( 1f / 60f, WeatherVisualState.MaximumDrops, snow: false, centre );
-		}
-		foreach ( var drop in state.Drops )
-		{
-			Assert.IsTrue( Math.Abs( drop.Position.X - centre.X ) <= WeatherVisualState.VolumeRadius + 0.001f, $"drop X {drop.Position.X} left the volume" );
-			Assert.IsTrue( Math.Abs( drop.Position.Y - centre.Y ) <= WeatherVisualState.VolumeRadius + 0.001f, $"drop Y {drop.Position.Y} left the volume" );
-			var bottom = centre.Z - WeatherVisualState.VolumeBottomOffset;
-			Assert.IsTrue( drop.Position.Z >= bottom - 0.001f && drop.Position.Z <= bottom + WeatherVisualState.VolumeHeight + 0.001f, $"drop Z {drop.Position.Z} left the volume" );
+			var point = first.DropOffset( index );
+			Assert.AreEqual( point, second.DropOffset( index ), "the same seed gives the same 1024 points" );
+			foreach ( var axis in new[] { point.X, point.Y, point.Z } )
+				Assert.IsTrue( axis >= -WeatherVisualState.BoxHalfExtent && axis < WeatherVisualState.BoxHalfExtent, $"point {index} left the box: {axis}" );
 		}
 	}
 
 	[TestMethod]
-	public void APausedParkFreezesTheVisualsWhereTheyAre()
+	public void TheBoxScrollsDownAtTheRainAndSnowVelocitiesAndWraps()
 	{
+		foreach ( var (snow, velocity) in new[] { (false, WeatherVisualState.RainVelocity), (true, WeatherVisualState.SnowVelocity) } )
+		{
+			var state = Field( 8, snow );
+			var before = state.DropOffset( 3 );
+			state.Update( 0.1f, new Source { DropCount = 8, Snow = snow }, Eye );
+			var after = state.DropOffset( 3 );
+			Assert.AreEqual( before.X, after.X, 1e-4f, "straight down: no sideways drift" );
+			Assert.AreEqual( before.Z, after.Z, 1e-4f );
+			var fell = before.Y - after.Y;
+			if ( fell < 0 )
+				fell += 2 * WeatherVisualState.BoxHalfExtent;
+			Assert.AreEqual( velocity * 0.1f, fell, 1e-3f, "the point fell velocity x dt" );
+		}
+		var wrapping = Field( 8 );
+		for ( var step = 0; step < 100; step++ )
+			wrapping.Update( 0.5f, new Source { DropCount = 8 }, Eye );
+		for ( var index = 0; index < 8; index++ )
+			Assert.IsTrue( Math.Abs( wrapping.DropOffset( index ).Y ) <= WeatherVisualState.BoxHalfExtent, "a long fall stays inside the box" );
+	}
+
+	[TestMethod]
+	public void TheCameraMovementShiftsTheFieldByTheParallaxWeight()
+	{
+		var state = Field( 8 );
+		var before = state.Offset;
+		state.Update( 0f, new Source { DropCount = 8 }, WeatherCamera.Looking( new NVector3( 5, 0, 0 ) ) );
+		var moved = state.Offset.X - before.X;
+		if ( moved > WeatherVisualState.BoxHalfExtent )
+			moved -= 2 * WeatherVisualState.BoxHalfExtent;
+		Assert.AreEqual( -5 * WeatherVisualState.ParallaxScale, moved, 1e-4f, "the field follows 0.1 of the camera's movement (a zero dt leaves the fall alone)" );
+	}
+
+	[TestMethod]
+	public void FrameTimeIsWallClockCappedAtHalfASecondAndZeroWhilePaused()
+	{
+		Assert.AreEqual( 0.016f, WeatherVisualState.FrameSeconds( 0.016f, paused: false ) );
+		Assert.AreEqual( 0.5f, WeatherVisualState.FrameSeconds( 3f, paused: false ), "a stall moves the field by 500 ms at most" );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( 0.016f, paused: true ), "a paused park freezes the field" );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( -1f, paused: false ) );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( float.NaN, paused: false ) );
 		var state = Field( 200 );
-		var before = state.Drops.ToList();
-		state.Step( 0f, 200, snow: false, Vector3.Zero );
-		CollectionAssert.AreEqual( before, state.Drops.ToList(), "a delta of zero moves nothing" );
-		state.Step( -1f, 200, snow: false, Vector3.Zero );
-		CollectionAssert.AreEqual( before, state.Drops.ToList(), "a negative delta moves nothing" );
+		var before = Enumerable.Range( 0, 200 ).Select( state.DropOffset ).ToList();
+		state.Update( 0f, new Source { DropCount = 200 }, Eye );
+		CollectionAssert.AreEqual( before, Enumerable.Range( 0, 200 ).Select( state.DropOffset ).ToList(), "a zero step moves nothing" );
 	}
 
 	[TestMethod]
-	public void SnowFallsSlowerThanRainAndSwaysSideways()
+	public void TheRainGreyRampIsTheOriginalsAndRunsToZeroAtDepthSix()
 	{
-		var rain = Field( 1, snow: false );
-		var snow = Field( 1, snow: true );
-		var rainDrop = rain.Drops[0].Position;
-		var snowDrop = snow.Drops[0].Position;
-		rain.Step( 0.001f, 1, snow: false, Vector3.Zero );
-		var phase = snow.Drops[0].Phase;
-		var elapsed = snow.Elapsed;
-		snow.Step( 0.001f, 1, snow: true, Vector3.Zero );
-		var rainFall = rainDrop.Z - rain.Drops[0].Position.Z;
-		var snowFall = snowDrop.Z - snow.Drops[0].Position.Z;
-		Assert.AreEqual( WeatherVisualState.RainFallSpeed * 0.001f, rainFall, 1e-4f );
-		Assert.AreEqual( WeatherVisualState.SnowFallSpeed * 0.001f, snowFall, 1e-4f );
-		Assert.IsTrue( snowFall < rainFall, "snow drifts down slower than rain streaks" );
-		var omega = 2f * MathF.PI / WeatherVisualState.SnowSwaySeconds;
-		var expectedSway = MathF.Cos( phase + (elapsed + 0.001f) * omega ) * WeatherVisualState.SnowSwaySpeed * 0.001f;
-		Assert.AreEqual( expectedSway, snow.Drops[0].Position.X - snowDrop.X, 1e-4f, "the flake sways sideways at its phase's speed" );
-		Assert.AreEqual( 0f, rain.Drops[0].Position.X - rainDrop.X, 1e-4f, "rain falls straight down" );
+		Assert.AreEqual( 216f / 255f, WeatherVisualState.RainGrey( 0f ), 1e-6f, "216 at the eye" );
+		Assert.AreEqual( 0f, WeatherVisualState.RainGrey( 6f ), 1e-6f );
+		Assert.AreEqual( 0f, WeatherVisualState.RainGrey( 9f ), 1e-6f, "never negative" );
+		Assert.AreEqual( 3 * (int)(12 * (6 - 2.5f)) / 255f, WeatherVisualState.RainGrey( 2.5f ), 1e-6f );
 	}
 
 	[TestMethod]
-	public void BoltFlashesFadeAfterTheirLifetimeAndOldOnesAreDropped()
+	public void AStreakRunsPointToPointPlusATenthWithAlphaRisingToTheLeadingEnd()
 	{
-		var state = new WeatherVisualState( 1 );
-		for ( var flash = 0; flash < WeatherVisualState.MaximumBoltFlashes + 2; flash++ )
-			state.AddBoltFlash( new Vector3( flash, 300, flash ), new Vector3( flash, 0, flash ) );
-		Assert.AreEqual( WeatherVisualState.MaximumBoltFlashes, state.Flashes.Count, "only the newest flashes are kept" );
-		Assert.AreEqual( 2, state.Flashes[0].Strike, "the oldest two strikes were dropped" );
-		Assert.AreEqual( 5, state.Flashes[^1].Strike, "the newest strike is last" );
-		var newest = state.Flashes[^1];
-		state.Step( WeatherVisualState.BoltFlashSeconds, 0, snow: false, Vector3.Zero );
-		Assert.AreEqual( 0, state.Flashes.Count, "the flash lifetime expires" );
-		Assert.AreEqual( new Vector3( 5, 300, 5 ), new Vector3( newest.Top.X, newest.Top.Y, newest.Top.Z ), "the kept flash was the newest strike's" );
-	}
-
-	[TestMethod]
-	public void TheBoltPolylineIsDeterministicAndBounded()
-	{
-		// Engine coordinates: Z up, so the bolt's top is the high Z and the ground the low one.
-		var state = new WeatherVisualState( 1 );
-		state.AddBoltFlash( new Vector3( 30, 40, 60 ), new Vector3( 30, 40, 0 ) );
-		state.AddBoltFlash( new Vector3( 30, 40, 60 ), new Vector3( 30, 40, 0 ) );
-		var first = state.BoltPoints( state.Flashes[0] );
-		var second = state.BoltPoints( state.Flashes[0] );
-		var otherStrike = state.BoltPoints( state.Flashes[1] );
-		CollectionAssert.AreEqual( first.ToList(), second.ToList(), "the same strike always draws the same bolt" );
-		Assert.AreNotEqual( first[3], otherStrike[3], "another strike jitters differently" );
-		Assert.AreEqual( WeatherVisualState.BoltPointCount, first.Length );
-		Assert.AreEqual( new Vector3( 30, 40, 60 ), new Vector3( first[0].X, first[0].Y, first[0].Z ), "the polyline starts at the top" );
-		Assert.AreEqual( new Vector3( 30, 40, 0 ), new Vector3( first[^1].X, first[^1].Y, first[^1].Z ), "the polyline ends at the ground" );
-		for ( var index = 1; index < first.Length - 1; index++ )
+		var state = Field( WeatherVisualState.FieldSize );
+		var count = Rain( state, Eye, out var vertices );
+		Assert.IsTrue( count > 0 && count % 6 == 0 );
+		Assert.IsTrue( count <= WeatherVisualState.FieldSize * 6 );
+		for ( var quad = 0; quad < count; quad += 6 )
 		{
-			Assert.IsTrue( first[index].Z > first[^1].Z && first[index].Z < first[0].Z, "the between points stay between the endpoints" );
-			Assert.IsTrue( Math.Abs( first[index].X - 30 ) <= WeatherVisualState.BoltJitter && Math.Abs( first[index].Y - 40 ) <= WeatherVisualState.BoltJitter,
-				"the jitter stays within its amplitude" );
+			var trailing = (vertices[quad].Position + vertices[quad + 1].Position) / 2;
+			var leading = (vertices[quad + 2].Position + vertices[quad + 4].Position) / 2;
+			Assert.AreEqual( WeatherVisualState.StreakLength, (leading - trailing).Length(), 1e-4f, "the streak is 0.1 long" );
+			Assert.AreEqual( -WeatherVisualState.StreakLength, leading.Y - trailing.Y, 1e-4f, "it points down" );
+			Assert.AreEqual( 128f / 255f, vertices[quad].Alpha, 1e-6f, "trailing alpha 0x80" );
+			Assert.AreEqual( 1f, vertices[quad + 2].Alpha, 1e-6f, "leading alpha 0xFF" );
+			Assert.AreEqual( WeatherVisualState.StreakWidthRatio * WeatherVisualState.StreakLength, (vertices[quad].Position - vertices[quad + 1].Position).Length(), 1e-4f, "0.2 x length wide" );
+			Assert.IsTrue( vertices[quad].Position.Z > 0 && vertices[quad + 2].Position.Z > 0, "only depth > 0 is drawn" );
+			Assert.AreEqual( WeatherVisualState.RainGrey( vertices[quad].Position.Z ), vertices[quad].Grey, 1e-6f );
 		}
+	}
+
+	[TestMethod]
+	public void OnlyDropsInFrontOfTheCameraAreDrawn()
+	{
+		var state = Field( WeatherVisualState.FieldSize );
+		var forward = Rain( state, Eye, out _ );
+		var backward = Rain( state, new WeatherCamera( NVector3.Zero, NVector3.UnitX, NVector3.UnitY, -NVector3.UnitZ ), out _ );
+		Assert.IsTrue( forward > 0 && backward > 0 );
+		Assert.IsTrue( forward < WeatherVisualState.FieldSize * 6 && backward < WeatherVisualState.FieldSize * 6, "about half the box is behind the eye plane" );
+		Assert.IsTrue( Math.Abs( forward - backward ) < 1500, "the two halves roughly split the field" );
+	}
+
+	[TestMethod]
+	public void SnowFlakesSpreadWithDepthMapToAnAtlasQuadrantAndJitterEachFrame()
+	{
+		var state = Field( 8, snow: true );
+		var vertices = new WeatherVertex[WeatherVisualState.FieldSize * 6];
+		var count = state.WriteSnow( Eye, vertices );
+		Assert.IsTrue( count > 0 && count % 6 == 0 );
+		for ( var quad = 0; quad < count; quad += 6 )
+		{
+			Assert.AreEqual( 1f, vertices[quad].Grey, "full white" );
+			Assert.AreEqual( 1f, vertices[quad].Alpha );
+			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, (vertices[quad + 1].Position - vertices[quad].Position).X, 1e-5f, "half-size 0.1" );
+			var uv = vertices[quad].TexCoords;
+			Assert.IsTrue( uv is { X: 0f or 0.5f, Y: 0f or 0.5f }, "an atlas quadrant" );
+			Assert.AreEqual( 0.5f, vertices[quad + 1].TexCoords.X - uv.X, 1e-6f );
+			Assert.IsTrue( vertices[quad].Position.Z > 0 );
+		}
+		var first = vertices[0];
+		state.Update( 0.016f, new Source { DropCount = 8, Snow = true }, Eye );
+		var again = new WeatherVertex[WeatherVisualState.FieldSize * 6];
+		state.WriteSnow( Eye, again );
+		Assert.AreNotEqual( first.Position, again[0].Position, "a flake moves each frame" );
+	}
+
+	[TestMethod]
+	public void SnowFlakesAtGreaterDepthSitFurtherFromTheScreenCentre()
+	{
+		// With the identity camera a flake's camera-space point is its drop offset (plus under 1/128 of jitter),
+		// and its x and y are scaled by 1 + depth / 8 before the quad is placed.
+		var all = Field( WeatherVisualState.FieldSize, snow: true );
+		// The longest prefix of drops that stays clear of the eye plane, so the jitter cannot change what is drawn.
+		var prefix = 0;
+		while ( prefix < WeatherVisualState.FieldSize && Math.Abs( all.DropOffset( prefix ).Z ) > 0.02f )
+			prefix++;
+		Assert.IsTrue( prefix >= 8, $"prefix {prefix}" );
+		var state = Field( prefix, snow: true );
+		var vertices = new WeatherVertex[WeatherVisualState.FieldSize * 6];
+		var count = state.WriteSnow( Eye, vertices );
+		var quad = 0;
+		var compared = 0;
+		for ( var index = 0; index < prefix; index++ )
+		{
+			var offset = state.DropOffset( index );
+			if ( offset.Z <= 0 )
+				continue;
+			var centre = (vertices[quad * 6].Position + vertices[quad * 6 + 4].Position) / 2;
+			var spread = 1f + offset.Z / WeatherVisualState.SnowSpreadDepth;
+			Assert.AreEqual( offset.X * spread, centre.X, 0.03f, $"flake {index} x" );
+			Assert.AreEqual( offset.Y * spread, centre.Y, 0.03f, $"flake {index} y" );
+			quad++;
+			compared++;
+		}
+		Assert.IsTrue( compared > 2 && compared * 6 == count );
+	}
+
+	[TestMethod]
+	public void ABoltReachesFromItsTopToGroundLevelWithItsShapeFixedPerSeed()
+	{
+		var top = new NVector3( 120, 300, 80 );
+		var bottom = new NVector3( 120, 0, 80 );
+		var first = WeatherVisualState.BuildBolt( top, bottom, 7 );
+		var second = WeatherVisualState.BuildBolt( top, bottom, 7 );
+		CollectionAssert.AreEqual( first.ToList(), second.ToList(), "the shape is fixed per seed" );
+		CollectionAssert.AreNotEqual( first.ToList(), WeatherVisualState.BuildBolt( top, bottom, 8 ).ToList() );
+		Assert.AreEqual( top, first[0].A, "the trunk starts at the top" );
+		Assert.IsTrue( first.Count > 64 && first.Count <= WeatherVisualState.MaximumBoltSegments, $"segments of 2 to 3 units over 300 units: {first.Count}" );
+		var trunk = first.Where( segment => segment.Depth == 0 ).ToList();
+		Assert.AreEqual( bottom, trunk[^1].B, "the trunk ends at the ground point" );
+		for ( var index = 0; index + 1 < trunk.Count; index++ )
+			Assert.AreEqual( trunk[index].B, trunk[index + 1].A, "the trunk is one connected path" );
+		var lengths = trunk.Select( segment => (segment.B - segment.A).Length() ).ToList();
+		Assert.IsTrue( lengths.Max() < 3.5f, $"a segment stops splitting under squared length 4..8: {lengths.Max()}" );
+		Assert.IsTrue( first.All( segment => segment.Depth <= WeatherVisualState.MaximumBranchDepth ) );
+	}
+
+	[TestMethod]
+	public void NoBoltPassesTheSegmentCapWhateverTheSeed()
+	{
+		var most = 0;
+		for ( ulong seed = 1; seed <= 3000; seed++ )
+		{
+			var count = WeatherVisualState.BuildBolt( new NVector3( 0, 300, 0 ), new NVector3( 0, 0, 0 ), seed ).Count;
+			Assert.IsTrue( count <= WeatherVisualState.MaximumBoltSegments, $"seed {seed} made {count} segments" );
+			most = Math.Max( most, count );
+		}
+		Assert.IsTrue( most > 100, "ordinary bolts still reach their natural length" );
+		var capped = WeatherVisualState.BuildBolt( new NVector3( 0, 300, 0 ), new NVector3( 0, 0, 0 ), 576 );
+		Assert.IsTrue( capped.Count <= WeatherVisualState.MaximumBoltSegments );
+		Assert.AreEqual( new NVector3( 0, 0, 0 ), capped.Where( segment => segment.Depth == 0 ).Last().B, "a capped bolt still reaches the ground" );
+	}
+
+	[TestMethod]
+	public void TheWeatherImagesResolveInAnyLetterCaseThroughTheGameFileSystem()
+	{
+		var root = System.IO.Path.Combine( System.IO.Path.GetTempPath(), $"opentpw-weather-{Guid.NewGuid():N}" );
+		try
+		{
+			var folder = System.IO.Path.Combine( root, "Generic", "Weather" );
+			System.IO.Directory.CreateDirectory( folder );
+			foreach ( var name in new[] { "Raindrop.tga", "SNOW.TGA", "lightning.tga" } )
+				System.IO.File.WriteAllBytes( System.IO.Path.Combine( folder, name ), new byte[] { 1, 2, 3 } );
+			var files = new BaseFileSystem( root );
+			Assert.AreEqual( 3, WeatherRenderer.ImagePaths.Length );
+			foreach ( var path in WeatherRenderer.ImagePaths )
+			{
+				Assert.IsTrue( files.FileExists( path ), $"{path} is found" );
+				CollectionAssert.AreEqual( new byte[] { 1, 2, 3 }, files.ReadAllBytes( path ), path );
+			}
+		}
+		finally
+		{
+			System.IO.Directory.Delete( root, recursive: true );
+		}
+	}
+
+	[TestMethod]
+	public void BranchesAppearAndDeeperOnesAreNarrower()
+	{
+		var branched = Enumerable.Range( 1, 40 )
+			.SelectMany( seed => WeatherVisualState.BuildBolt( new NVector3( 0, 300, 0 ), new NVector3( 0, 0, 0 ), (ulong)seed ) )
+			.Where( segment => segment.Depth > 0 ).ToList();
+		Assert.IsTrue( branched.Count > 0, "9/512 of the splits branch" );
+		Assert.AreEqual( 1.3f, WeatherVisualState.BoltWidth( 0 ), 1e-6f );
+		Assert.AreEqual( 0.65f, WeatherVisualState.BoltWidth( 1 ), 1e-6f );
+		Assert.AreEqual( 1.3f / 5, WeatherVisualState.BoltWidth( 4 ), 1e-6f );
+	}
+
+	[TestMethod]
+	public void BoltsLiveForTheirLifetimeUpTo16AndAreFrozenWhenTheStepIsZero()
+	{
+		var state = new WeatherVisualState();
+		var source = new Source { BoltLifetimeSeconds = 2f };
+		for ( var strike = 0; strike < WeatherVisualState.MaximumBolts + 3; strike++ )
+			source.Tops.Add( new NVector3( strike, 300, strike ) );
+		state.Update( 0f, source, Eye );
+		Assert.AreEqual( WeatherVisualState.MaximumBolts, state.Bolts.Count, "at most 16 live bolts" );
+		Assert.AreEqual( 3f, state.Bolts[0].Segments[0].A.X, "the oldest three were replaced" );
+		Assert.AreEqual( 0, source.Tops.Count, "the tops were taken" );
+		state.Update( 0f, new Source(), Eye );
+		Assert.AreEqual( WeatherVisualState.MaximumBolts, state.Bolts.Count, "a paused park keeps its bolts" );
+		state.Update( 1.9f, new Source(), Eye );
+		Assert.AreEqual( WeatherVisualState.MaximumBolts, state.Bolts.Count );
+		state.Update( 0.2f, new Source(), Eye );
+		Assert.AreEqual( 0, state.Bolts.Count, "the 2000 ms lifetime expires them" );
+	}
+
+	[TestMethod]
+	public void TheBoltColourPulsesInHalfSecondCyclesBetween192And255()
+	{
+		var bolt = new WeatherVisualState().AddBolt( new NVector3( 0, 300, 0 ), 2f );
+		var seen = new List<float>();
+		for ( var step = 0; step <= 20; step++ )
+		{
+			bolt.Age = step * 0.025f;
+			bolt.Flicker = 0;
+			seen.Add( WeatherVisualState.BoltGrey( bolt ) );
+		}
+		Assert.IsTrue( seen.All( grey => grey >= 192f / 255f - 1e-6f && grey <= 1f ), "the base stays within 192..255" );
+		Assert.IsTrue( seen.Max() - seen.Min() > 0.2f, "it pulses" );
+		bolt.Age = 0.1f;
+		bolt.Flicker = 0;
+		var low = WeatherVisualState.BoltGrey( bolt );
+		bolt.Age = 0.6f;
+		Assert.AreEqual( low, WeatherVisualState.BoltGrey( bolt ), 1e-5f, "the cycle repeats every 500 ms" );
+		bolt.Flicker = 63;
+		Assert.IsTrue( WeatherVisualState.BoltGrey( bolt ) <= 1f, "the flicker is capped at 255" );
 	}
 
 	// ---- the simulation side the renderer drains ----
@@ -148,7 +343,18 @@ public class WeatherVisualTests
 		"WeatherEffects.QualityForRainHigh\t40\n" +
 		"WeatherEffects.QualityForLightningLow\t0\n" +
 		"WeatherEffects.QualityForLightningHigh\t15\n" +
+		"WeatherEffects.LightningTime\t2000\n" +
 		"WeatherEffects.MaxRaindrops\t600\n", "test" ) } );
+
+	[TestMethod]
+	public void TheParkSourceReadsTheSimulatedDropsAndTheBoltLifetime()
+	{
+		var weather = new ParkWeather( Jungle(), 10, 10, 10 );
+		var source = new ParkWeatherVisualSource( weather );
+		Assert.AreEqual( 2f, source.BoltLifetimeSeconds, "LightningTime 2000 ms" );
+		Assert.AreEqual( 600, weather.MaxRaindrops );
+		Assert.AreEqual( 0, source.DropCount );
+	}
 
 	[TestMethod]
 	public void StrikesReportTheirBoltTopsOnceAtHeight300()

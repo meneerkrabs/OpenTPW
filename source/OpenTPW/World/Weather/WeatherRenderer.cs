@@ -7,186 +7,227 @@ using SVector3 = System.Numerics.Vector3;
 namespace OpenTPW;
 
 /// <summary>
-/// Draws the park's weather around the camera: one camera-following drop field for the rain or snow
-/// (<see cref="ParkWeather.CurrentDrops"/> of them, snow when <see cref="ParkWeather.Snow"/> holds) and a
-/// jittered bolt for every strike the simulation reports, taken from <see cref="ParkWeather.TakeBoltTops"/>
-/// at the strike the thunder countdown started from. The entity is created with the weather itself
-/// (<see cref="ParkWeather.Created"/>); its motion runs on simulation time, so a paused park freezes the
-/// drops and bolts mid-flight.
+/// Draws the park's weather the way the original engine's <c>CRain</c> does (docs/AUDIO.md "Weather visuals"): one
+/// eye-centred drop field of rain streaks or snow flakes, textured with the game's own `Data/Generic/Weather` images,
+/// and a ribbon for every live lightning bolt. The inputs sit behind <see cref="IWeatherVisualSource"/> and two small
+/// delegates, so the lobby can reuse the renderer later without ParkWeather or Level. The entity is created with the
+/// weather itself (<see cref="ParkWeather.Created"/>).
 /// </summary>
-// [APPROX:AUDIO-903] the visuals advance with the frame delta scaled by the HUD's simulation speed, so a paused park freezes the drops and the bolt mid-flight; the original's pause behaviour for the weather renderer is not traced
-// [APPROX:AUDIO-904] the drop field and its vertex buffer are sized once for the cap; a browser session allocates no further per-frame GPU memory
+// [BIN:STP-PPC:engine_shared 0x1001CF38 CRain::GameLoad] the images are loaded from Data/Generic/Weather: raindrop.tga, snow.tga, lightning.tga (generic/sweather holds smaller copies; which set the park selects is not traced, so the full-size set is used)
+// [BIN:STP-PPC:engine_shared 0x1001DE6C bolt ribbon] a camera-facing ribbon of half-width 1.3 / (branch depth + 1) textured with lightning.tga; opaque grey; no screen flash and no sky darkening in the park
+// [APPROX:AUDIO-900] the blend is not traced (the engine's render-state flags 0x200D22 rain, 0x200D52 bolt and 0x556 snow are not decoded): rain streaks blend additively (the raindrop image has no alpha, white on black), snow and bolts blend by alpha
+// [APPROX:AUDIO-904] the rain field lives within +-4 original units (0.8 engine units) of the eye, so the camera's 0.1 near plane clips the nearest drops (those within 0.5 original units of the eye plane) instead of the original's near clip, which is not traced; the vertex buffer is sized once for 1024 drops plus 16 bolts of 512 segments, so a browser session allocates no further per-frame GPU memory
 public sealed class WeatherRenderer : Entity
 {
-	/// <summary>Length of a rain streak along its fall, in engine units.</summary>
-	public const float RainStreakLength = 1.6f;
-	/// <summary>Width of a rain streak, in engine units.</summary>
-	public const float RainStreakWidth = 0.07f;
-	/// <summary>Edge length of a snowflake quad, in engine units.</summary>
-	public const float SnowFlakeSize = 0.24f;
-	/// <summary>Width of the bolt's ribbon, in engine units.</summary>
-	public const float BoltRibbonWidth = 0.45f;
-	/// <summary>Alpha of a rain streak's head; the tail fades toward <see cref="RainTailAlpha"/>.</summary>
-	public const float RainHeadAlpha = 0.45f;
-	public const float RainTailAlpha = 0.10f;
-	public const float SnowAlpha = 0.85f;
-	/// <summary>Upper bound of one visual step's delta, so a hitch after a stall cannot teleport the field.</summary>
-	public const float MaximumStepSeconds = 0.25f;
+	/// <summary>The weather images relative to the game's data root, as the game file system reads them: any letter case, on any mount (the desktop's Data folder, the browser's /game/Data).</summary>
+	internal static readonly string[] ImagePaths = { "/generic/weather/raindrop.tga", "/generic/weather/snow.tga", "/generic/weather/lightning.tga" };
 
-	// Both windings per quad, so every quad survives back-face culling whatever the clip-space convention.
-	private const int VerticesPerQuad = 12;
-	/// <summary>Worst-case vertex count: the drop cap plus every bolt flash, quads only, allocated once.</summary>
-	private static readonly int MaximumVertices =
-		(WeatherVisualState.MaximumDrops + WeatherVisualState.MaximumBoltFlashes * (WeatherVisualState.BoltPointCount - 1)) * VerticesPerQuad;
+	private const int VerticesPerQuad = 6;
+	/// <summary>Worst-case vertex count: the drop field (rain or snow, one at a time) plus every bolt, allocated once.</summary>
+	private static readonly int MaximumVertices = (WeatherVisualState.FieldSize + WeatherVisualState.MaximumBolts * WeatherVisualState.MaximumBoltSegments) * VerticesPerQuad;
 
-	private readonly ParkWeather weather;
-	private readonly WeatherVisualState visual = new( VisualSeed );
-	/// <summary>The presentation field's draw stream seed; it shares nothing with the park's simulation streams.</summary>
-	public const ulong VisualSeed = 0x51EA7E5D5EEDUL;
+	private readonly IWeatherVisualSource source;
+	private readonly Func<SVector3, SVector3> originalToEngine;
+	private readonly Func<bool> paused;
+	private readonly float scale;
+	private readonly WeatherVisualState visual = new();
 
-	private Material<ObjectUniformBuffer>? material;
+	private Material<ObjectUniformBuffer>? rainMaterial;
+	private Material<ObjectUniformBuffer>? snowMaterial;
+	private Material<ObjectUniformBuffer>? boltMaterial;
 	private DeviceBuffer? vertexBuffer;
-	private Vertex[] vertices = new Vertex[MaximumVertices];
-	private int vertexCount;
+	private readonly Vertex[] vertices = new Vertex[MaximumVertices];
+	private readonly WeatherVertex[] scratch = new WeatherVertex[WeatherVisualState.FieldSize * VerticesPerQuad];
 	private bool deleted;
 
 	/// <summary>Drops and bolt ribbons drawn in the last frame (smoke instrumentation).</summary>
 	public int DrawnDrops { get; private set; }
 	public int DrawnBolts { get; private set; }
 
-	public WeatherRenderer( ParkWeather weather )
+	/// <param name="source">The drop count, weather kind and bolt tops, in original units.</param>
+	/// <param name="originalToEngine">Maps an original position (Y up) to engine space; the park maps through its heightfield's origin.</param>
+	/// <param name="paused">Whether the visuals freeze (the engine's dt-zeroing flag); the park passes its paused state.</param>
+	/// <param name="engineUnitsPerOriginal">Engine units per original unit: the park's models are drawn at <see cref="OriginalParkPlacement.ModelScale"/>, the lobby at 1.</param>
+	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<bool> paused, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale )
 	{
-		this.weather = weather;
+		this.source = source;
+		this.originalToEngine = originalToEngine;
+		this.paused = paused;
+		scale = engineUnitsPerOriginal;
 		Name = "Weather";
 		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
 		// first simulation step — so no gameplay frame pays the shader compile and pipeline build mid-rain.
-		material = new Material<ObjectUniformBuffer>( "content/shaders/weather.shader", MaterialFlags.DisableDepthWrite );
+		rainMaterial = Prepare( ImagePaths[0], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
+		snowMaterial = Prepare( ImagePaths[1], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
+		boltMaterial = Prepare( ImagePaths[2], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
+	}
+
+	/// <summary>A material textured with one weather image from the game data, or null when the game folder lacks it (nothing of that kind is drawn then).</summary>
+	private static Material<ObjectUniformBuffer>? Prepare( string image, MaterialFlags flags )
+	{
+		Texture texture;
+		try
+		{
+			texture = new Texture( image );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException )
+		{
+			Log.Warning( $"Weather image {image} is not available ({exception.Message}); that weather is not drawn." );
+			return null;
+		}
+		var material = new Material<ObjectUniformBuffer>( "content/shaders/weather.shader", flags );
+		material.Set( "Color", texture );
+		return material;
 	}
 
 	protected override void OnUpdate()
 	{
-		var field = Level.OriginalPark?.Heightfield;
-		foreach ( var top in weather.TakeBoltTops() )
-		{
-			var engineTop = field != null ? OriginalParkPlacement.ToEngine( field, top.GetSystemVector3() ) : top.GetSystemVector3();
-			var ground = GroundUnder( field, top );
-			visual.AddBoltFlash( engineTop, ground );
-		}
-		// Simulation-scaled time: a paused park (scale 0) freezes the drops and bolts where they are.
-		var scale = Level.SimulationTimeScale;
-		var delta = Math.Clamp( Time.Delta, 0f, MaximumStepSeconds ) * (float.IsFinite( scale ) && scale > 0f ? scale : 0f);
-		visual.Step( delta, weather.CurrentDrops, weather.Snow, VolumeCentre() );
+		var step = WeatherVisualState.FrameSeconds( Time.Delta, paused() );
+		visual.Update( step, source, CurrentCamera() );
 	}
 
-	/// <summary>The engine point on the heightfield under a model-space bolt top; without a heightfield, the flat plane.</summary>
-	private static SVector3 GroundUnder( ModelHeightfield? field, Vector3 top )
+	/// <summary>The engine camera as the field reads it: eye and view axes in original units (Y up).</summary>
+	private WeatherCamera CurrentCamera()
 	{
-		if ( field == null )
-			return new SVector3( top.X, top.Y, 0 );
-		var cellX = Math.Clamp( (int)MathF.Floor( top.X / field.CellSizeX ), 0, field.CellCountX - 1 );
-		var cellY = Math.Clamp( (int)MathF.Floor( top.Z / field.CellSizeZ ), 0, field.CellCountZ - 1 );
-		return GuestRenderer.CellToEngine( field, cellX, cellY );
+		var view = Camera.ViewMatrix;
+		static SVector3 ToOriginalAxes( SVector3 engine ) => new( engine.X, engine.Z, engine.Y );
+		var eye = Camera.Position.GetSystemVector3();
+		return new WeatherCamera(
+			ToOriginalAxes( eye ) / scale,
+			ToOriginalAxes( new SVector3( view.M11, view.M21, view.M31 ) ),
+			ToOriginalAxes( new SVector3( view.M12, view.M22, view.M32 ) ),
+			ToOriginalAxes( -new SVector3( view.M13, view.M23, view.M33 ) ) );
 	}
-
-	/// <summary>The drop volume follows what the camera looks at: the park camera's target, else its position.</summary>
-	private static Vector3 VolumeCentre() => Camera.Mode is ParkCameraMode park ? park.Target : Camera.Position;
 
 	protected override void OnRender()
 	{
 		DrawnDrops = 0;
 		DrawnBolts = 0;
-		if ( deleted || material == null || (visual.DropCount == 0 && visual.Flashes.Count == 0) )
+		if ( deleted )
 			return;
-		var view = Camera.ViewMatrix;
-		var right = new SVector3( view.M11, view.M21, view.M31 );
-		var up = new SVector3( view.M12, view.M22, view.M32 );
-		// Streaks and ribbons widen along the camera's flattened right; flakes use the full billboard axes.
-		var flatRight = SVector3.Normalize( new SVector3( right.X, right.Y, 0 ) + new SVector3( 1e-6f, 0, 0 ) );
-		vertexCount = 0;
+		var camera = CurrentCamera();
+		var dropMaterial = visual.Snow ? snowMaterial : rainMaterial;
+		var dropVertexCount = 0;
+		var vertexCount = 0;
 
-		foreach ( var drop in visual.Drops )
+		if ( dropMaterial != null && visual.DropCount > 0 )
 		{
-			var position = drop.Position.GetSystemVector3();
-			if ( weather.Snow )
+			var written = visual.Snow ? visual.WriteSnow( camera, scratch ) : visual.WriteRain( camera, scratch );
+			// Camera space to Veldrid view space: z runs away from the viewer, so depth becomes -z; original units become engine units.
+			for ( var index = 0; index < written; index++ )
 			{
-				var half = SnowFlakeSize / 2f;
-				var corner = position - right * half - up * half;
-				AddQuad(
-					corner + right * SnowFlakeSize, corner, corner + up * SnowFlakeSize, corner + right * SnowFlakeSize + up * SnowFlakeSize,
-					SnowTint, SnowAlpha, SnowAlpha, SnowAlpha, SnowAlpha );
+				var vertex = scratch[index];
+				vertices[vertexCount++] = new Vertex( new SVector3( vertex.Position.X, vertex.Position.Y, -vertex.Position.Z ) * scale,
+					new SVector3( vertex.Grey, vertex.Alpha, 0 ), vertex.TexCoords );
 			}
-			else
-			{
-				var half = RainStreakWidth / 2f;
-				var head = position + new SVector3( 0, 0, RainStreakLength );
-				AddQuad(
-					head - flatRight * half, head + flatRight * half, position - flatRight * half, position + flatRight * half,
-					RainTint, RainHeadAlpha, RainHeadAlpha, RainTailAlpha, RainTailAlpha );
-			}
-			DrawnDrops++;
+			dropVertexCount = written;
+			DrawnDrops = written / VerticesPerQuad;
 		}
 
-		foreach ( var flash in visual.Flashes )
-		{
-			var points = visual.BoltPoints( flash );
-			var fade = 1f - flash.Age / WeatherVisualState.BoltFlashSeconds;
-			var half = BoltRibbonWidth / 2f;
-			for ( var segment = 0; segment + 1 < points.Length; segment++ )
+		var boltStart = vertexCount;
+		if ( boltMaterial != null )
+			foreach ( var bolt in visual.Bolts )
 			{
-				var upper = points[segment].GetSystemVector3();
-				var lower = points[segment + 1].GetSystemVector3();
-				AddQuad(
-					upper - flatRight * half, upper + flatRight * half, lower - flatRight * half, lower + flatRight * half,
-					BoltTint, fade, fade, fade, fade );
+				if ( AddBolt( bolt, ref vertexCount ) )
+					DrawnBolts++;
 			}
-			DrawnBolts++;
-		}
+		var boltVertexCount = vertexCount - boltStart;
+		if ( vertexCount == 0 )
+			return;
 
 		var stride = (uint)Marshal.SizeOf<Vertex>();
 		vertexBuffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( (uint)MaximumVertices * stride, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 		var commandList = global::Global.Render.CommandList;
 		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)vertexCount * stride );
+		commandList.SetVertexBuffer( 0, vertexBuffer );
 
+		// The drops are already in view space, so they draw with an identity view; the bolts live in the world.
+		if ( dropVertexCount > 0 )
+			Draw( commandList, dropMaterial!, SVector3.Zero, System.Numerics.Matrix4x4.Identity, 0, dropVertexCount );
+		if ( boltVertexCount > 0 )
+			Draw( commandList, boltMaterial!, Camera.Position.GetSystemVector3(), Camera.ViewMatrix, boltStart, boltVertexCount );
+	}
+
+	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, SVector3 eye, System.Numerics.Matrix4x4 view, int first, int count )
+	{
 		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 		{
 			g_mModel = System.Numerics.Matrix4x4.Identity,
-			g_mView = Camera.ViewMatrix,
+			g_mView = view,
 			g_mProj = Camera.ProjMatrix,
-			g_vCameraPos = Camera.Position,
+			g_vCameraPos = eye,
 			g_flTime = Time.Now
 		} );
-		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )
 			commandList.SetGraphicsResourceSet( index, resourceSets[index] );
-		commandList.Draw( (uint)vertexCount );
+		commandList.Draw( (uint)count, 1, (uint)first, 0 );
 	}
 
-	private static readonly SVector3 RainTint = new( 0.72f, 0.80f, 0.92f );
-	private static readonly SVector3 SnowTint = new( 0.95f, 0.96f, 1.00f );
-	private static readonly SVector3 BoltTint = new( 0.93f, 0.92f, 1.00f );
-
-	/// <summary>Writes one quad (both windings) with a per-corner alpha; the tint rides the vertex's normal slot.</summary>
-	private void AddQuad( SVector3 a, SVector3 b, SVector3 c, SVector3 d, SVector3 tint, float alphaA, float alphaB, float alphaC, float alphaD )
+	/// <summary>Adds the ribbon quads of one bolt in engine world space; false when nothing fit.</summary>
+	private bool AddBolt( WeatherBolt bolt, ref int vertexCount )
 	{
-		Vertex Corner( SVector3 position, float alpha ) => new( position, tint, new SVector2( alpha, 0 ) );
-		// a b / c d as (top-left, top-right, bottom-left, bottom-right) in the callers' order.
-		vertices[vertexCount++] = Corner( a, alphaA ); vertices[vertexCount++] = Corner( b, alphaB ); vertices[vertexCount++] = Corner( c, alphaC );
-		vertices[vertexCount++] = Corner( b, alphaB ); vertices[vertexCount++] = Corner( d, alphaD ); vertices[vertexCount++] = Corner( c, alphaC );
-		vertices[vertexCount++] = Corner( a, alphaA ); vertices[vertexCount++] = Corner( c, alphaC ); vertices[vertexCount++] = Corner( b, alphaB );
-		vertices[vertexCount++] = Corner( b, alphaB ); vertices[vertexCount++] = Corner( c, alphaC ); vertices[vertexCount++] = Corner( d, alphaD );
+		var eye = Camera.Position.GetSystemVector3();
+		var grey = WeatherVisualState.BoltGrey( bolt );
+		var any = false;
+		foreach ( var segment in bolt.Segments )
+		{
+			if ( vertexCount + VerticesPerQuad > vertices.Length )
+				break;
+			var a = originalToEngine( segment.A );
+			var b = originalToEngine( segment.B );
+			var along = b - a;
+			var side = SVector3.Cross( along, eye - (a + b) * 0.5f );
+			if ( side.LengthSquared() < 1e-12f )
+				continue;
+			side = SVector3.Normalize( side ) * (WeatherVisualState.BoltWidth( segment.Depth ) * scale);
+			Vertex Corner( SVector3 position, float u, float v ) => new( position, new SVector3( grey, 1f, 0 ), new SVector2( u, v ) );
+			var topLeft = Corner( a - side, 0, 0 );
+			var topRight = Corner( a + side, 1, 0 );
+			var bottomLeft = Corner( b - side, 0, 1 );
+			var bottomRight = Corner( b + side, 1, 1 );
+			vertices[vertexCount++] = topLeft; vertices[vertexCount++] = topRight; vertices[vertexCount++] = bottomLeft;
+			vertices[vertexCount++] = topRight; vertices[vertexCount++] = bottomRight; vertices[vertexCount++] = bottomLeft;
+			any = true;
+		}
+		return any;
 	}
 
 	protected override void OnDelete()
 	{
 		deleted = true;
-		material?.ReleaseOwnedResources();
-		material = null;
+		rainMaterial?.ReleaseOwnedResources();
+		snowMaterial?.ReleaseOwnedResources();
+		boltMaterial?.ReleaseOwnedResources();
+		rainMaterial = snowMaterial = boltMaterial = null;
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )
 			global::Global.Render.ScheduleDelete( buffer.Dispose );
+	}
+}
+
+/// <summary>The park's weather as the renderer reads it: the simulated drops, kind and bolt tops, with the bolt lifetime from the settings.</summary>
+internal sealed class ParkWeatherVisualSource( ParkWeather weather ) : IWeatherVisualSource
+{
+	private readonly List<SVector3> tops = new();
+	private readonly List<WeatherStrike> strikes = new();
+
+	// [BIN:STP-PPC:engine_shared 0x1001FCE4 drawn count] the drawn count is min(CurrentDrops, MaxRaindrops) of the field's 1024 points
+	public int DropCount => Math.Min( weather.CurrentDrops, weather.MaxRaindrops );
+	public bool Snow => weather.Snow;
+	public float BoltLifetimeSeconds => weather.LightningTimeMilliseconds / 1000f;
+
+	/// <summary>The strikes since the last call, in reusable storage valid until the next call, so a frame without strikes allocates nothing.</summary>
+	public IReadOnlyList<WeatherStrike> TakeStrikes()
+	{
+		tops.Clear();
+		strikes.Clear();
+		weather.DrainBoltTops( tops );
+		foreach ( var top in tops )
+			strikes.Add( WeatherStrike.Below( top ) );
+		return strikes;
 	}
 }
 
@@ -202,7 +243,14 @@ internal static class WeatherRendererModule
 			// stay entity-free; the staged-candidate scope adopts the entity like any other.
 			if ( global::Global.Render == null || Level.Current?.Park == null )
 				return;
-			_ = new WeatherRenderer( weather );
+			var level = Level.Current;
+			_ = new WeatherRenderer( new ParkWeatherVisualSource( weather ), position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f) );
 		};
 	}
+
+	/// <summary>An original position (Y up) in engine space: through the heightfield's centring when the level has one, else scaled only.</summary>
+	private static SVector3 ToEngine( Level level, SVector3 position ) =>
+		level.OriginalPark?.Heightfield is { } field
+			? OriginalParkPlacement.ToEngine( field, position )
+			: new SVector3( position.X, position.Z, position.Y ) * OriginalParkPlacement.ModelScale;
 }

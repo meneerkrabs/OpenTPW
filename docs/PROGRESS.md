@@ -875,6 +875,36 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Lobby rain and lightning drawn (October 14):** the lobby's rain and bolts now go through the original weather renderer
+  (CRain) as the original's do, at the lobby's own scale: rain around hallow by distance, branched 500 ms bolts within ±50 of
+  the island with their own bottoms, and the one-frame white flash. The renderer's source hands strikes with both points
+  (`WeatherStrike`); the park keeps its ground point below the top.
+- **Original weather visuals (October 14):** the procedural rain, snow and bolt approximations are replaced by the
+  original engine's `CRain` renderer, traced in the Mac `engine_shared` library and tp.exe (`0x57F1F0-0x57F380`). Rain and
+  snow are one fixed 1024-point field in a -4..4 box around the camera eye (original units, wrapping per axis, scrolling
+  down at 2.5 / 0.8 units a second plus camera parallax), drawn count `min(CurrentDrops, MaxRaindrops)`; rain streaks use the
+  original's depth-to-grey ramp and 0x80..0xFF alpha, snow flakes the 2x2 atlas. Bolts are recursive midpoint-displaced
+  ribbons from the strike's top down to original y = 0, up to 16, living `LightningTime` (2000 ms). The images come from the
+  game's `Data/Generic/Weather` (nothing is committed). Time is wall-clock capped at 500 ms and frozen while paused. The
+  renderer reads an `IWeatherVisualSource`, so the lobby can reuse it. Still approximate (AUDIO-900..904): the blend, the
+  parallax sign, the snow swirl flag, the near clip, and the bolt's displacement and pulse curve.
+- **Lobby effects (October 14):** the front end's island effects follow the original's islands update (`0x10094474`):
+  the sky eases toward the nearest island's colour, hallow's lightning strikes on the lobby generator's draws with the
+  thunder (`cat_globallobbysfx` 1), the island one-shots come from the same draws instead of a timer (AUDIO-017 resolved),
+  the globe plays its own music and ambience (2, 3) and entering a park plays 4. The lobby's rain and bolts are stepped
+  and tested but drawn only once the original weather renderer lands (UI-018, UI-940..942; AUDIO.md "Lobby effects").
+- **Front-end smoke follows the saved-park offer (October 14):** since entering an island with a saved park first offers to
+  continue it (79726a00), the native front-end smoke, which saves a Jungle park earlier on, met that dialog instead of the game
+  mode menu and stopped; it now checks the offer and takes "New park".
+- **Visitor click, backtrack and queue-join sounds (October 14):** traced in both executables. Opening a visitor's details
+  (a park click or a roster activation) plays the visitor click `cat_kids` 129 (`0x1010B808` / tp.exe `0x4B79B0`). Backspace
+  over a path cell with no tool on plays `cat_ui` 95 at the cell and removes it, as the original's "backtrack" key does
+  (`0x10112430` / `0x40BDA0`). A queue line ending on a path is the join (validator code 8) instead of a refusal, and plays
+  `cat_ui` 139 at that cell (`0x100711CC` / `0x527587`). `cat_ui` 95 had been mislabelled a visitor-panel sound and 139 a
+  path-tool link-end; AUDIO-023 keeps only 139's second source (path linking to a queue).
+- **README's open list corrected (October 14):** RSE EVENT types 1 and 2 are particle effects, not sounds (the positioned
+  ride sounds of the other types already play); the weather is drawn, as procedural approximations; visitors can be selected,
+  and what remains of the visitor click is its sound and the visitor panel's sounds.
 - **Free visits pass the price test (October 13):** a shop or sideshow set to a price, cost of goods and losing chance
   of 0 in play no longer falls back to its starting price in the price test (tp.exe `0x4fde50`), so guests do not refuse
   a free visit; live terms are now recorded as set (`RideVisitorBridge.HasSideshowTerms`). Follow-up to the review of #82.

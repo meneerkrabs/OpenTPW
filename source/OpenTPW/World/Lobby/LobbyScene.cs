@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// hierarchy (parent-relative, docs/MD2-MODELS.md); MD2 (x, y-up, z) maps to engine (x, z, y-up).
 /// Flying meshes, rain, lightning and the online globe are not rendered.
 /// </summary>
-// [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby
+// [APPROX:UI-018] flying meshes and island/gate animations are not drawn; the sky, rain and lightning come from LobbyEffects and the weather renderer
 public sealed class LobbyScene : OriginalModelScene
 {
 	private const string TerrainDirectory = "/lobby/terrain";

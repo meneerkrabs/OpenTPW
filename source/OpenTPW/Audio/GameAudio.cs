@@ -31,6 +31,13 @@ public static class GameAudio
 	public const uint LobbyMusicEvent = 1;
 	/// <summary>The looping lobby ambience event (<c>0x10095A50</c>: event 2 of the selected level's <c>cat_locallobbysfx</c>).</summary>
 	public const uint LobbyAmbienceEvent = 2;
+	/// <summary>The lobby's thunder (<c>cat_globallobbysfx</c> 1, with the lobby lightning).</summary>
+	public const uint LobbyThunderEvent = 1;
+	/// <summary>The globe's music and ambience sentences (<c>cat_globallobbysfx</c> 2 and 3).</summary>
+	public const uint GlobeMusicEvent = 2;
+	public const uint GlobeAmbienceEvent = 3;
+	/// <summary>The enter-park sound (<c>cat_globallobbysfx</c> 4).</summary>
+	public const uint EnterParkEvent = 4;
 	/// <summary>The repair sound a ride script's <c>REPAIREFFECT 1</c> starts (<c>0x100B1F78</c> → <c>0x100ACC24</c>: <c>cat_kids</c>, families 75–78/79–82/83–86/87–90 by the object's repair level, index 0 for the traced call).</summary>
 	public const uint RepairStartEvent = 75;
 	/// <summary>The first sound pair a ride script's <c>REPAIREFFECT 0</c> plays (<c>0x100B1E60</c>–<c>0x100B1EC0</c>: <c>cat_rides</c> 111 at the object's position).</summary>
@@ -49,14 +56,28 @@ public static class GameAudio
 	/// <summary>The path tool's refused click: <c>cat_ui</c> 175 (Mac <c>0x10073D1C</c>, reached behind the latch and a byte test; the mapping to a refusal is inferred from the fork).</summary>
 	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [APPROX:AUDIO-022] whether it is the refusal of a commit or a preview is not fully read
 	public const uint PathRefusedEvent = 175;
-	/// <summary>The path tool's link-end sound (cat_ui 139, Mac <c>0x100711CC</c> in queue mode): not wired, its trigger is inferred.</summary>
-	// [BIN:STP-PPC:0x100711CC queue link end] cat_ui 139 in queue mode after the passes; [APPROX:AUDIO-023] not wired — the link-end condition is inferred, not traced
-	public const uint PathLinkEvent = 139;
+	/// <summary>
+	/// A queue joined to a path: <c>cat_ui</c> 139 at the cell. The queue tool's commit plays it at the clicked end when the
+	/// line's last cell lies on a path (the validator's code 8 sets the flag it reads), on every commit click including the
+	/// ending one, while the park's money is on.
+	/// </summary>
+	// [BIN:STP-PPC:0x100711CC queue joins a path] queue mode (3), money on (game+36 == 0) and the flag 0x7C500 the validator 0x84154 sets when the queue line's last cell is a path cell: cat_ui 139 at (x·10, 0, y·10) after the ride is told its queue changed; [BIN:TPW-EXE:0x527587] the same
+	// [APPROX:AUDIO-023] the second source, a laid path cell linking to a neighbouring queue cell whose link points back (0x10082D6C, four sites; tp.exe 0x5348D0), is not played: OpenTPW's path linking has no queue-link check yet (PATH-004)
+	public const uint QueueJoinEvent = 139;
+	/// <summary>Backspace in the park view over a path cell, with no build tool on: <c>cat_ui</c> 95 at that cell, then the cell is removed.</summary>
+	// [BIN:STP-PPC:0x10112430 backtrack key] the key command "backtrack" (Backspace, command table data 0x455B0): tool mode 0, mouse-mode state 0 or 1 and a path cell under the cursor play cat_ui 95 at (x·10, 0, y·10) before the single-cell removal (mode 0x32, build pass 0x10070B98, ClearCell's path case); [BIN:TPW-EXE:0x40BDA0] the same, its sound call at 0x40BE71
+	public const uint BacktrackEvent = 95;
+	/// <summary>The visitor click: <c>cat_kids</c> 129, flat, every time the visitor status panel is opened.</summary>
+	// [BIN:STP-PPC:0x1010B808 visitor status panel open] stores the visitor, builds its dialog, plays cat_kids 129 (mode 0, no position) unconditionally and shows the panel; called by a park-view click on a visitor, a roster row activation, the map's visitor markers and the selection strip; [BIN:TPW-EXE:0x4B79B0] the same
+	public const uint VisitorClickEvent = 129;
 	private static SoundEventSystem? events;
 	private static SoundSentence? music;
 	private static SoundSentence? crowd;
 	private static SoundSentence? lobbyMusic;
 	private static SoundSentence? lobbyAmbience;
+	private static SoundSentence? globeMusic;
+	private static SoundSentence? globeAmbience;
+	private static string? lobbyLevelBeforeGlobe;
 	private static SoundSentence? rain;
 	private static long staffTurn = -1;
 	private static DeterministicRandom staffRandom = new( 1 );
@@ -248,9 +269,6 @@ public static class GameAudio
 	}
 
 	private static string? lobbyLevel;
-	private static double lobbyOneShotSeconds;
-	private static readonly uint[] LobbyIslandOneShotEvents = { 3, 4, 5 };
-	private static System.Random? lobbyOneShotRandom;
 
 	public static void LeaveLobby()
 	{
@@ -262,30 +280,63 @@ public static class GameAudio
 		LobbyMusic = null;
 		LobbySfx = null;
 		lobbyLevel = null;
-		lobbyOneShotSeconds = 0;
-		lobbyOneShotRandom = null;
+		// Leaving the front end (or the island's audio switching) also ends the globe's sentences.
+		globeMusic?.Stop();
+		globeAmbience?.Stop();
+		globeMusic = null;
+		globeAmbience = null;
 	}
 
-	/// <summary>
-	/// The lobby's island ambience one-shots: events 3, 4 and 5 of the selected level's <c>cat_locallobbysfx</c>, played
-	/// on a random timer while the front end shows. The original arms a timer per one-shot and restarts it after each
-	/// plays; only the events are traced, not the timer's shape, so the gap here is OpenTPW's own.
-	/// </summary>
-	// [BIN:STP-PPC:0x100953F8-0x10095450 lobby one-shots] cat_locallobbysfx 3, 4 and 5 play off random timers beside the looping ambience (event 2)
-	// [APPROX:AUDIO-017] the one-shot timer's distribution is not traced; a uniform gap of 5-15 s stands — evidence needed: the timers armed at 0x100953F8
-	private static void UpdateLobbyOneShots()
+	/// <summary>An island one-shot of the lobby (event 3, 4 or 5 of the island's <c>cat_locallobbysfx</c>), drawn by <see cref="LobbyEffects"/>.</summary>
+	// [BIN:STP-PPC:0x100953F8-0x10095450 lobby one-shots] cat_locallobbysfx 3, 4 and 5 play beside the looping ambience (event 2), picked by the islands update's draws
+	public static void PlayLobbyOneShot( uint eventId )
 	{
 		if ( events == null || lobbyAmbience == null )
 			return;
-		lobbyOneShotRandom ??= new System.Random();
-		lobbyOneShotSeconds -= Time.Delta;
-		if ( lobbyOneShotSeconds > 0 )
-			return;
-		var eventId = LobbyIslandOneShotEvents[lobbyOneShotRandom.Next( LobbyIslandOneShotEvents.Length )];
 		events.Play( LobbySfx, eventId, AudioChannel.Effects );
-		lobbyOneShotSeconds = 5 + lobbyOneShotRandom.NextDouble() * 10;
 	}
 
+	/// <summary>The lobby thunder: <c>cat_globallobbysfx</c> 1, flat, at the strike (no delay).</summary>
+	public static void PlayLobbyThunder()
+	{
+		var voice = events?.Play( GlobalLobbySfx, LobbyThunderEvent, AudioChannel.Effects );
+		Log.Trace( $"Sound: lobby thunder cat_globallobbysfx {LobbyThunderEvent} {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>The enter-park sound: <c>cat_globallobbysfx</c> 4, flat, as the camera flies into the island.</summary>
+	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat; [APPROX:UI-942] its game-type 2 check is not reproduced
+	public static void PlayEnterPark()
+	{
+		var voice = events?.Play( GlobalLobbySfx, EnterParkEvent, AudioChannel.Effects );
+		Log.Trace( $"Sound: enter park cat_globallobbysfx {EnterParkEvent} {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>Starts the globe's music (<c>cat_globallobbysfx</c> 2) and ambience (3) as looping sentences while the online globe is up.</summary>
+	// [BIN:STP-PPC:0x100923A8 globe audio] the globe component starts cat_globallobbysfx 2 (globe music) and 3 (globe ambience) and keeps both handles; closing stops them by handle (0x1009261C)
+	// [APPROX:UI-942] the lobby's own music and ambience are stopped while the globe plays and restarted after it; what the original does with them is not traced
+	public static void EnterGlobe()
+	{
+		if ( events == null || globeMusic != null )
+			return;
+		var level = lobbyLevel;
+		LeaveLobby();
+		lobbyLevelBeforeGlobe = level;
+		globeMusic = events.StartSentence( GlobalLobbySfx, GlobeMusicEvent, AudioChannel.Music );
+		globeAmbience = events.StartSentence( GlobalLobbySfx, GlobeAmbienceEvent, AudioChannel.Effects );
+	}
+
+	/// <summary>Stops the globe's sounds and brings the lobby's back.</summary>
+	public static void LeaveGlobe()
+	{
+		globeMusic?.Stop();
+		globeAmbience?.Stop();
+		var hadGlobe = globeMusic != null || globeAmbience != null;
+		globeMusic = null;
+		globeAmbience = null;
+		if ( hadGlobe && lobbyLevelBeforeGlobe is { } level )
+			EnterLobby( level );
+		lobbyLevelBeforeGlobe = null;
+	}
 	/// <summary>
 	/// The crowd sentence: starts <c>cat_kids</c> 0x5B when guests are near the camera, follows the count as the
 	/// sentence's parameter and stops when nobody is. The original's park turn counts guests within four cells of the
@@ -490,11 +541,25 @@ public static class GameAudio
 		_ => null,
 	};
 
-	/// <summary>The path tool's sounds: laying (<see cref="PathLayEvent"/>), refused (<see cref="PathRefusedEvent"/>) and the link-end (<see cref="PathLinkEvent"/>).</summary>
+	/// <summary>The path tool's sounds: laying (<see cref="PathLayEvent"/>) and refused (<see cref="PathRefusedEvent"/>).</summary>
 	public static void PlayPathToolSound( uint eventId )
 	{
 		var voice = events?.Play( Ui, eventId, AudioChannel.Effects );
 		Log.Trace( $"Sound: path tool cat_ui {eventId} {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>A <c>cat_ui</c> sound at a park position: the queue joining a path (<see cref="QueueJoinEvent"/>) and the backtrack (<see cref="BacktrackEvent"/>).</summary>
+	public static void PlayUiAt( uint eventId, Vector3 position )
+	{
+		var voice = events?.PlayAt( Ui, eventId, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: cat_ui {eventId} at a cell {(voice == null ? "not available" : "played")}." );
+	}
+
+	/// <summary>The visitor click (<see cref="VisitorClickEvent"/>), played whenever a visitor's details are opened.</summary>
+	public static void PlayVisitorClick()
+	{
+		var voice = events?.Play( Kids, VisitorClickEvent, AudioChannel.Effects );
+		Log.Trace( $"Sound: visitor click cat_kids {VisitorClickEvent} {(voice == null ? "not available" : "played")}." );
 	}
 
 	/// <summary>
@@ -615,7 +680,6 @@ public static class GameAudio
 				music.Resume();
 			}
 		}
-		UpdateLobbyOneShots();
 		events.Pump();
 		mixer.Pump();
 	}

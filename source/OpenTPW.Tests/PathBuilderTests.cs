@@ -582,9 +582,15 @@ public class PathBuilderTests
 		CollectionAssert.AreEqual( new[] { (2, 5), (2, 4), (2, 3) }, ride.QueueCells.ToArray() );
 		Assert.AreEqual( 3 * 75, charged );
 		Assert.AreEqual( (2, 3), tool.Start );
-		// Onto the path: the cell before the path is laid, the path cell refuses and the tool ends.
+		// Onto the path: the cell before the path is laid, the path cell is the join (not laid, not a refusal) and the tool ends.
+		tool.Hover( (3, 3) );
+		Assert.IsNull( Level.QueueJoinCell( tool, grid.Cells, moneyOn: true ), "a line ending on grass joins nothing" );
+		tool.Hover( (2, 0) );
+		Assert.AreEqual( (2, 0), Level.QueueJoinCell( tool, grid.Cells, moneyOn: true ), "cat_ui 139 plays at the path cell the line ends on" );
+		Assert.IsNull( Level.QueueJoinCell( tool, grid.Cells, moneyOn: false ), "not while the park's money is off" );
 		var last = tool.Click( (2, 0) )!;
 		CollectionAssert.AreEqual( new[] { (2, 2), (2, 1) }, last.Built.ToArray() );
+		Assert.IsTrue( last.Completed && last.EndedOnExisting, "ending on the path is the queue joining it (validator code 8), not a refusal" );
 		Assert.IsFalse( tool.IsActive );
 		Assert.AreEqual( (2, 0), ride.JoinCell, "the queue reaches the path" );
 		Assert.AreEqual( 5, ride.QueueSizeInCells );

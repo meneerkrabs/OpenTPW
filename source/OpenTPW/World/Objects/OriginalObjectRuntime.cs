@@ -40,6 +40,7 @@ public sealed partial class OriginalObjectRuntime
 		else
 			AttractionId = world.AllocateAttractionId();
 		Visitors = CreateVisitorBridge( entry, AttractionId );
+		RememberCatalogueDefaults();
 		if ( CoasterDefinition.IsCoaster( entry.Settings ) )
 		{
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
@@ -356,11 +357,15 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	// [DATA:<object>.sam:Info.HasQueue/RunsContinuously, Bumper.WhichTrackType, UsageInfo.Min/MaxCapacity, Min/MaxDuration, Upgrades[0].InitCapacity/InitDuration/InitSpeed/QueueWaitTimeConstant]
 	// [BIN:STP-PPC:0x100E149C capacity bypass] track type 3, or type record +156 (Bumper.WhichTrackType) == 2, skips the ONRIDE < CAPACITY test
-	// [APPROX:QUEUE-011] objects are treated as upgrade level 0 for QueueWaitTimeConstant/InitSpeed (OpenTPW does not apply upgrade levels to the ride record) — evidence needed: none (an OpenTPW gap: upgrades are not modelled on objects)
+	// The compatibility factory seeds level0; bound ordinary TPW rides resolve their exact economy tier (CatalogueTier partial).
 	public static QueueParameters CreateQueueParameters( ObjectCatalogEntry entry )
 	{
+		return QueueParametersFor( entry, entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 ) );
+	}
+
+	private static QueueParameters QueueParametersFor( ObjectCatalogEntry entry, ObjectUpgradeLevel? level )
+	{
 		var settings = entry.Settings;
-		var level = entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 );
 		static int Clamp( int value, int minimum, int maximum ) => maximum >= minimum && maximum > 0 ? Math.Clamp( value, minimum, maximum ) : value;
 		var capacity = Clamp( level?.GetInt( "InitCapacity" ) ?? 0, settings.GetInt( "UsageInfo.MinCapacity" ), settings.GetInt( "UsageInfo.MaxCapacity" ) );
 		var duration = Clamp( level?.GetInt( "InitDuration" ) ?? 0, settings.GetInt( "UsageInfo.MinDuration" ), settings.GetInt( "UsageInfo.MaxDuration" ) );

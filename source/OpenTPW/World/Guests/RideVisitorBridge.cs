@@ -65,7 +65,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int AttractionId { get; }
 	public string Name { get; }
 	public RideVisitorKind Kind { get; }
-	public int Capacity { get; }
+	public int Capacity { get; private set; }
+	// Catalogue fallback only: existing occupied rider/head tables are never resized or cleared.
+	internal void SetCatalogueFallbackCapacity( int capacity ) => Capacity = Math.Max( 1, capacity );
 	/// <summary>The excitement shown to the HUD and used by the attraction score: the coaster's guest value when there is a source, else the .sam level.</summary>
 	public int ExcitementLevel => ExcitementSource?.Invoke() ?? excitementLevel;
 	/// <summary>The type's <c>UsageInfo.ExcitementLevel</c> word (type <c>+316</c>); its low byte decides whether guests are tested at all.</summary>

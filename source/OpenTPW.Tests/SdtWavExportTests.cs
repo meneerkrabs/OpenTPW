@@ -125,7 +125,6 @@ public class SdtWavExportTests
 
 	[DataTestMethod]
 	[DataRow( "layerIII" )]
-	[DataRow( "mpeg1LayerII" )]
 	[DataRow( "mpeg25" )]
 	[DataRow( "free" )]
 	[DataRow( "jointLayerII" )]
@@ -136,7 +135,6 @@ public class SdtWavExportTests
 		header = unsupported switch
 		{
 			"layerIII" => (header & ~(3u << 17)) | 1u << 17,
-			"mpeg1LayerII" => (header & ~(3u << 19)) | 3u << 19,
 			"mpeg25" => header & ~(3u << 19),
 			"free" => header & ~(15u << 12),
 			_ => (header & ~(3u << 6)) | 1u << 6

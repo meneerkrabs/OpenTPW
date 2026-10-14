@@ -495,6 +495,37 @@ also skips the next movie as above). A missing or unreadable movie is skipped.
 `--no-intro` or `OPENTPW_NO_INTRO=1` goes straight to the front end; smoke
 tests never play it; `--mute` silences it.
 
+## Selected CPU frame export
+
+`--export-tgq-png <local.tgq> <0-based video-frame index> <new.png>` exports
+one video frame through `TgqMovieFile.DecodeVideoFrame`, `TqiFrame.WriteRgba32`
+and the existing PNG encoder. It runs before game/profile/window initialization
+and requires no installed game. All container and frame-header checks remain;
+only the selected video payload is decoded, and audio is not decoded. A malformed
+unselected video body can therefore remain unexamined when its header is valid.
+
+The PNG has the encoded width and height, with opaque alpha and the current
+colour conversion. It does not reproduce movie display stretching or establish
+native IDCT/colour parity. Decode and PNG encoding finish before output creation;
+a privately owned CreateNew temporary file is flushed, moved without overwrite,
+and cleaned on failure. Existing output and foreign temporary files are preserved.
+
+Independent CPU controls additionally distinguish video ordinals from three
+interleaved undecodable audio chunks, reject every truncated container prefix and
+invalid unselected chunk sizes/trailing bytes, and verify actual early CLI export
+preserves renderer/asset identity without profile creation. A Darwin-only CLI
+FIFO handshake also creates a foreign destination after the initial precheck and
+before valid input is delivered: the non-overwriting move refuses, foreign bytes
+remain unchanged and the owned temporary is removed. This qualifies that controlled
+host race, not cross-platform crash durability or original movie behavior.
+
+`TgqPngExportTests` checks first/last and distinct frames, square/non-square raster
+readback against current codec pixels, invalid indices and selected payloads,
+strict unselected-header refusal, undecoded audio/unselected bodies, source-byte
+identity, output refusal/late-move cleanup and the real early `Game.Run` route.
+These are synthetic CPU tests; original movies and GPU/native-player parity were
+not exercised for this export slice.
+
 ## Remaining gates
 
 Bit-exact IDCT: the original's kernel is located (see "Original IDCT") but its

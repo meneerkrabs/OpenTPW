@@ -97,6 +97,18 @@ public partial class Level
 			return;
 		Guests.Bins = LitterBins;
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
+		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint); a visit or a Theme Park Inc layout keeps the cells it was given
+		if ( !IsReadOnlyVisit && incLayoutCells == null )
+		{
+			var cells = Guests.Grid.Cells;
+			foreach ( var item in Objects.Objects )
+				cells.WriteFootprint( item.Cells );
+		}
+		if ( !IsReadOnlyVisit )
+		{
+			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells );
+			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
+		}
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;

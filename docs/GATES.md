@@ -35,7 +35,8 @@ still detect the crossed boundary. The fork records that the immediate close doe
 
 **The census** applies the original predicate to the guest grid: it counts guests on cells of type 0, 1, 3, 9 and 10 (Mac predicates `0x85190`–`0x85258`).
 Preserved approach-road and outside types, out-of-bounds positions and departed guests do not count. A rider counts at their stored cell.
-The reduced imported guest grid does not yet preserve every original cell type: unpreserved outside, approach or footprint cells remain type 0 and can be overcounted (ECON-050).
+The grid holds the original's types: the world init types the cells without terrain 7, 2 or 30 (`0x00536490` with
+`0x00450420`), a placed object writes 4, 9 and 10 over its footprint (`0x00528A70`); only an object's removal is not traced (ECON-050).
 
 ## What closing does to guests
 
@@ -52,8 +53,8 @@ The reduced imported guest grid does not yet preserve every original cell type: 
 - `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test, including the maintenance flag (the ride
   panel's call for a mechanic); the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) is not modelled, so the door and the open button
   open a ride whose queue back has lost its path, which the original's guard (`0x004DF290`) refuses.
-- `ECON-050`: the guest-grid import types only empty, path, queue and track cells. The original types every cell at world init from its MAP byte
-  and the base.md2 tile flags (`0x00536490`: off-terrain 2, 30 or 7) and placement writes footprint types; here those cells read 0 and count.
+- `ECON-050`: a removed object empties the cells it typed; the original's removal path to its cells is not traced, and the placement's other cell
+  writes (the link to the path in front of an entrance) are not modelled.
 - The ticket booth closes at once; the original's booth state and the closed-ride queue turn-away are not
   traced here.
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C

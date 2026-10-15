@@ -370,7 +370,7 @@ public partial class Level : IDisposable
 			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
-			: GuestPathGrid.FromOriginal( park.Map, park.Save );
+			: GuestPathGrid.FromOriginal( park.Map, park.Save, park.Heightfield );
 		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream ) { OnlineVisit = Visit != null };
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )

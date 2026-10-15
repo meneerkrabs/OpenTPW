@@ -197,7 +197,7 @@ public sealed class ParkGate
 	}
 
 	/// <summary>
-	/// Guests standing on the imported grid's counted cell types (type provenance is incomplete, ECON-050):
+	/// Guests standing on the grid's counted cell types:
 	/// type 0, 1, 3, 9 or 10 (Mac <c>0xc3684</c>). Preserved approach-road and outside types do not count; a rider
 	/// counts at their stored cell (not because they are riding), and a guest that has left is not a
 	/// thing on the map at all.
@@ -216,8 +216,7 @@ public sealed class ParkGate
 	internal bool Counts( Guest guest ) => CountsCellOf( guest.Cell.X, guest.Cell.Y );
 
 	/// <summary>Whether the cell at a guest's or staff member's position has a census-counted type.</summary>
-	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; OpenTPW only writes 0, 1 and 3 today.
-	// [APPROX:ECON-050] the imported guest grid types only empty (0), path (1), queue (3) and track cells; the original's world init (0x0052F050 → 0x00536490) types every cell from its MAP byte (cell +0x26) and bit 0 of the base.md2 heightfield tile flags (0x00450420): with the bit set or off the terrain 2 (MAP 0x02), 30 (MAP 0x80) or 7, else 1 (MAP 0x08) or 0, and object placement writes footprint types; here such cells read 0, so the gate census counts a guest standing on one and the staff blocker ignores a staff member there — evidence needed: the base.md2 tile-flag bit 0 per cell and the object footprint types in OpenTPW's cell map
+	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; the grid holds the world init's and the placements' types (ParkCellMap.MapStartCell, WriteFootprint)
 	private bool CountsCellOf( float cellX, float cellY )
 	{
 		var cells = guests!.Grid.Cells;

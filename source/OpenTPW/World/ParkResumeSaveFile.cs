@@ -868,7 +868,8 @@ internal static class ParkResumeSaveFile
 			TourSave.Validate( controller, guestIds.Contains, listedGuests );
 			// the riders of a car are guests the ride's script holds: the guest snapshot lists each of them aboard that attraction
 			var aboard = snapshot.Guests.Attractions.FirstOrDefault( bridge => bridge.AttractionId == controller.AttractionId )?.OnRide.ToHashSet() ?? new HashSet<int>();
-			foreach ( var rider in controller.Cars.SelectMany( car => car.Riders ).Concat( controller.Ejected ) )
+			// (only the seats of the riders aboard: the words after them are stale)
+			foreach ( var rider in controller.Cars.SelectMany( car => car.Riders.Take( Math.Abs( car.RiderCount ) ) ).Concat( controller.Ejected ) )
 				Require( aboard.Contains( rider ), $"tour controller {controller.AttractionId} carries guest {rider}, whom the guest snapshot does not hold aboard that attraction" );
 		}
 	}

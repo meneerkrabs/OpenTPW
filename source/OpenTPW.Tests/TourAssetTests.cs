@@ -161,20 +161,59 @@ public class TourAssetTests
 		Assert.IsTrue( tour.Departures >= 1 && tour.Released >= 1, $"{theme}: {tour.Departures} departures, {tour.Released} released" );
 		Assert.IsTrue( peak >= 1 );
 
-		// Closing ends the flights: every car lands, every rider leaves, nobody stays Using.
+		// Closing ends the flights: every car lands and the script unloads it. One exception is the original's (TOUR-010): a car whose departure the script had ordered (TOUR 11
+		// cleared the ready flag) stays docked with its riders aboard, TOUR 10 reads 0 and the script waits until the ride reopens. Deleting the ride still releases everybody.
 		runtime.Close();
 		for ( var tick = 0; tick < 6 * 60 * 60; tick++ )
 		{
 			guests.Tick( Tick );
 			runtime.Simulate( Tick );
 		}
-		Assert.AreEqual( runtime.Visitors.BoardedTotal, runtime.Visitors.ReleasedTotal, $"{theme}: boarded and released" );
-		Assert.AreEqual( tour.Boarded, tour.Released, "the controller handed every boarded rider back" );
-		Assert.AreEqual( 0, tour.Riders );
-		Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_ONRIDE ) );
-		Assert.IsFalse( guests.Guests.Any( guest => guest.State == GuestState.Using ), $"{theme}: nobody is stuck in Using" );
+		if ( tour.Riders == 0 )
+		{
+			Assert.AreEqual( runtime.Visitors.BoardedTotal, runtime.Visitors.ReleasedTotal, $"{theme}: boarded and released" );
+			Assert.AreEqual( tour.Boarded, tour.Released, "the controller handed every boarded rider back" );
+			Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_ONRIDE ) );
+			Assert.IsFalse( guests.Guests.Any( guest => guest.State == GuestState.Using ), $"{theme}: nobody is stuck in Using" );
+		}
+		else
+		{
+			Assert.IsFalse( tour.Ready, "the stranded car is not ready" );
+			Assert.IsTrue( tour.Cars.Any( car => car.State == TourCar.StateDocked && car.RiderCount < 0 ), "the riders wait aboard the docked car" );
+			Assert.AreEqual( tour.Riders, tour.AllRiders().Count(), "the controller names every rider aboard" );
+		}
 		runtime.Stop();
 		Assert.AreEqual( 0, scripts.Tours.Controllers.Count );
+		for ( var tick = 0; tick < 60 * 60; tick++ )
+			guests.Tick( Tick );
+		Assert.AreEqual( runtime.Visitors.BoardedTotal, runtime.Visitors.ReleasedTotal, $"{theme}: deleting the ride released everybody" );
+		Assert.IsFalse( guests.Guests.Any( guest => guest.State == GuestState.Using ), $"{theme}: nobody is stuck in Using after the ride was deleted" );
+	}
+
+	/// <summary>Every catalogue object ships its height map beside its mesh, as the ground lookup of the tour cars (TOUR-005) assumes, and every footprint cell lies inside it at every rotation.</summary>
+	[DataTestMethod]
+	[DataRow( "jungle" )]
+	[DataRow( "hallow" )]
+	[DataRow( "space" )]
+	[DataRow( "fantasy" )]
+	public void EveryCatalogueObjectsFootprintLiesInsideItsShippedHeightMap( string theme )
+	{
+		var maps = new ObjectHeightMaps();
+		var checkedObjects = 0;
+		foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( item => !item.IsFixedItem ) )
+		{
+			var map = maps.MapOf( entry );
+			Assert.IsNotNull( map, $"{theme} {entry.InfoId}: {entry.ModelPath} has a height map" );
+			foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+			{
+				var placement = new ObjectPlacement( 30, 40, rotation, System.Numerics.Vector2.Zero, 0 );
+				var (originX, originZ) = ObjectHeightMaps.InstanceOrigin( placement );
+				foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, placement.X, placement.Y, rotation ) )
+					Assert.IsNotNull( ObjectHeightMaps.CellIndex( map!, rotation, originX, originZ, x, y ), $"{theme} {entry.InfoId} rotation {rotation}: footprint cell ({x}, {y}) lies inside the {map!.Width} x {map.Height} map" );
+			}
+			checkedObjects++;
+		}
+		Assert.IsTrue( checkedObjects > 20, $"{theme}: {checkedObjects} objects checked" );
 	}
 
 	/// <summary>A free 4 × 4 site on the park's land whose access cell is a path guests can walk, nearest the walkways.</summary>

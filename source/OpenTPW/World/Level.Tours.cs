@@ -3,17 +3,20 @@ namespace OpenTPW;
 /// <summary>Tour rides (docs/TOURS.md): the flying-car controllers' ground, their park-resume part and the drawing of their cars.</summary>
 public partial class Level
 {
-	/// <summary>Gives the tour module the park's terrain: the map size in cells and the ground height of a cell corner.</summary>
+	/// <summary>Gives the tour module the park's ground: the map size in cells, the terrain height of a cell corner and the height maps of the objects on the cells.</summary>
 	private void SetupTours()
 	{
 		var tours = Objects.ScriptWorld.Tours;
 		if ( OriginalPark?.Heightfield is not { } field )
 			return;
+		// the cars also clear the height map of the object that stands on a cell (TOUR-005)
+		tours.ObjectHeight = ( x, y ) => Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
 		tours.MapWidth = field.CellCountX;
 		tours.MapHeight = field.CellCountZ;
 		tours.CellHeight = ( x, y ) => field.GetCornerHeight( Math.Clamp( x, 0, field.CellCountX ), Math.Clamp( y, 0, field.CellCountZ ) );
 	}
 
+	private readonly ObjectHeightMaps tourHeightMaps = new();
 	private TourRenderer? tourRenderer;
 	private bool tourRenderFailed;
 
@@ -61,7 +64,7 @@ public partial class Level
 	/// Restores the saved tour controllers into this candidate level, after the objects were placed and their runtimes restored: each saved controller goes back on its
 	/// ride. A live tour ride the save holds no controller for (a save from before the tour controllers, or a ride whose script had not created it yet) gets a fresh one.
 	/// </summary>
-	// [APPROX:TOUR-006] a park-resume save from before the tour controllers restores each live tour ride with a fresh controller (one car at the station, ready), as if its script had just run TOUR 1; nobody was aboard in such a save
+	// [EXT:legacy-tour-save] a park-resume save from before the tour controllers restores each live tour ride with a fresh controller (one car at the station, ready), as if its script had just run TOUR 1; nobody was aboard in such a save. The original's save always carries the FLYR block, so this is OpenTPW's save-compatibility decision
 	internal void RestoreToursSnapshot( TourWorldSaveData? saved )
 	{
 		var rides = Objects.Objects.Where( item => !item.IsDeleted && item.Runtime.UsesTour && !item.Runtime.IsStopped ).ToList();

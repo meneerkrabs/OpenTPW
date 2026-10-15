@@ -28,11 +28,15 @@ public sealed class TourWorld
 	public int MapHeight { get; set; } = 128;
 
 	/// <summary>
-	/// The ground height at a cell corner in model units, or null for a flat world at 0. The original asks the cell lookup 0x00452AE0 (the terrain, or the
-	/// height of a building thing on the cell).
+	/// The terrain's height at a cell corner in model units, or null for a flat world at 0. The original asks the cell lookup 0x00452AE0, which answers with the height of the
+	/// object on the cell when it has one (<see cref="ObjectHeight"/>) and the terrain otherwise.
 	/// </summary>
-	// [APPROX:TOUR-005] the ground the cars avoid is the terrain's cell-corner height; the original's lookup also returns the top of a building standing on the cell (thing type 3), which is not modelled
+	// [BIN:TPW-EXE:0x00452AE0 cell ground] no owner object: the terrain at (10 × cell) through 0x004527F0
 	public Func<int, int, float>? CellHeight { get; set; }
+
+	/// <summary>The ground an object on a cell gives in model units (its height-map byte × 100/255 plus its base height, <see cref="ObjectHeightMaps"/>), or null for a cell no object owns.</summary>
+	// [BIN:TPW-EXE:0x00452AE0 cell ground] the cell's owner object (0x0053BF30) with a height map answers before the terrain does; the tour code truncates the result and multiplies by 300 (0x0055C350)
+	public Func<int, int, float?>? ObjectHeight { get; set; }
 
 	/// <summary>The sine table value for an angle in 4096ths of a turn (any integer; the original masks with 0xFFF): 0.5 + 1024 × sin, truncated.</summary>
 	// [BIN:TPW-EXE:0x0055A5B0 sine table] entry k is the truncated 0.5 − (−1024 × sin(k × 2π / 4096)), i.e. 1024 × sin + 0.5 towards zero
@@ -81,7 +85,7 @@ public sealed class TourWorld
 	{
 		cellX = Math.Clamp( cellX, 0, MapWidth - 1 );
 		cellZ = Math.Clamp( cellZ, 0, MapHeight - 1 );
-		var height = CellHeight?.Invoke( cellX, cellZ ) ?? 0f;
+		var height = ObjectHeight?.Invoke( cellX, cellZ ) ?? CellHeight?.Invoke( cellX, cellZ ) ?? 0f;
 		return (int)height * 300;
 	}
 

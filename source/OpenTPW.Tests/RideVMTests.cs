@@ -459,6 +459,35 @@ public class RideVMTests
 		Assert.AreEqual( 1, vm.Variables[0], "the branch after the wait still sees the pre-wait flags" );
 	}
 
+	/// <summary>
+	/// VM-901 retired: once the scheduler clock is past 2^32 ms the clock word is its low 32 bits, and the wake is still
+	/// the unsigned distance to the deadline (tp.exe 0x55386D compares unsigned), not a hugely negative difference to the unwrapped clock.
+	/// </summary>
+	[TestMethod]
+	public void WaitAbsoluteStillWaitsOnceTheSchedulerClockIsPastThe32BitWrap()
+	{
+		var vm = Load( new Asm().I( Opcode.WAITABS, 500 ).I( Opcode.COPY, V( 0 ), 7 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.ClockOriginMilliseconds = 4294967296d + 1000;
+		Run( vm, 1 );
+		Assert.AreEqual( RideVMState.Waiting, vm.State );
+		Assert.AreEqual( 16 + 500, vm.WakeTimeMilliseconds, 1e-6, "the same wake as before the wrap: the clock word's fraction is dropped, 500 ms remain" );
+		Run( vm, 29 );
+		Assert.AreEqual( 0, vm.Variables[0], "500 ms = 30 ticks have not passed" );
+		Run( vm, 2 );
+		Assert.AreEqual( 7, vm.Variables[0] );
+	}
+
+	/// <summary>A deadline that is ahead in the 32-bit word but whose clock word has just wrapped (low word near 2^32) waits the unsigned difference too.</summary>
+	[TestMethod]
+	public void WaitAbsoluteJustBeforeTheWrapWaitsTheUnsignedDifference()
+	{
+		var vm = Load( new Asm().I( Opcode.WAITABS, 500 ).I( Opcode.COPY, V( 0 ), 7 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.ClockOriginMilliseconds = 3 * 4294967296d - 2000; // clock word 2^32 - 2000 + the tick
+		Run( vm, 1 );
+		// 2^32 - 2000 + 16 + 500 does not wrap: still a 500 ms wait
+		Assert.AreEqual( 16 + 500, vm.WakeTimeMilliseconds, 1e-6 );
+	}
+
 	[TestMethod]
 	public void WaitAbsoluteAcceptsAVariableOperand()
 	{

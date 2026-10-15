@@ -3,6 +3,7 @@ namespace OpenTPW;
 /// <summary>CPU composition of the two native 128x128 sign destinations.</summary>
 public static class SignSurfaceComposer
 {
+	// [APPROX:COMPAT-032] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting) — evidence needed: the original's render state for sign faces and a distant capture
 	// [APPROX:COMPAT-001] native destination dimensions are integrated; original GPU UV orientation and lower DIB rows still require a pixel oracle.
 	public const int Width = 256;
 	public const int Height = 128;
@@ -12,7 +13,7 @@ public static class SignSurfaceComposer
 
 	/// <summary>Composes ARGB sign layers, then returns top-down RGBA for the two model textures.</summary>
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
-	// [APPROX:COMPAT-003] OpenTPW coverage and unshaped paint masks replace native GDI, morphology and Gaussian masks; relief samples and material arithmetic follow the identified native path.
+	// [APPROX:COMPAT-003] OpenTPW coverage and paint masks that are offset but neither grown nor blurred replace native GDI, morphology and Gaussian masks; relief samples and material arithmetic follow the identified native path.
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );
@@ -24,16 +25,9 @@ public static class SignSurfaceComposer
 		foreach ( var diagnostic in sign.Diagnostics )
 			diagnostics.Add( diagnostic );
 
-		// [APPROX:COMPAT-030] the native compositor clears to transparent; an opaque backing stands in for untraced downstream board coverage.
+		// [BIN:STP-PPC:0x100AC21C] the compositor clears the surface to ARGB 0: outside the board, the paint and the effects a sign face is transparent, so the object shows through between the letters
+		// the PC v2.0 gameplay video shows wood and sky between the letters of Belly Bounce, Azteekse Tekens and Wilde Aap (COMPAT-030, retired)
 		var surface = new byte[Width * Height * 4];
-		var backing = BackingColor( sign );
-		for ( var at = 0; at < surface.Length; at += 4 )
-		{
-			surface[at] = 255;
-			surface[at + 1] = backing.R;
-			surface[at + 2] = backing.G;
-			surface[at + 3] = backing.B;
-		}
 		if ( sign.ExtraImage is { } board )
 		{
 			// [APPROX:COMPAT-018] wavelet pixels and GPU row orientation follow the decoded native container but await independent original-platform pixel parity.
@@ -78,6 +72,8 @@ public static class SignSurfaceComposer
 			Effect( surface, masks[slot], sign.SourceImages[slot], sign.Effects[slot], diagnostics );
 		}
 
+		StraightenAlpha( surface );
+
 		var left = new byte[HalfWidth * Height * 4];
 		var right = new byte[left.Length];
 		for ( var y = 0; y < Height; y++ )
@@ -94,19 +90,64 @@ public static class SignSurfaceComposer
 		return (left, right, textPixels);
 	}
 
-	private static (byte R, byte G, byte B) BackingColor( SignFile sign )
+	/// <summary>
+	/// The layers blend into a surface that started at ARGB 0, so a texel of partial alpha holds colour already scaled by that
+	/// alpha. The engine blends with source alpha, which would scale it again (dark fringes, a shadow far too dark, mips that
+	/// average towards black): the colour is divided back by the alpha, and fully transparent texels take the colour of their
+	/// neighbours (a few dilation passes, then the mean colour) so that mip levels and filtering do not pull edges to black.
+	/// </summary>
+	// [EXT:sign-straight-alpha] the native GPU consumer of these texels is untraced; straight alpha with bled edges is the form the engine's alpha blend needs, and it equals the composed texels wherever alpha is 255
+	internal static void StraightenAlpha( byte[] surface )
 	{
-		const byte darkR = 38, darkG = 28, darkB = 18;
-		const byte lightR = 214, lightG = 190, lightB = 140;
-		static double Luma( byte r, byte g, byte b ) => 0.299 * r + 0.587 * g + 0.114 * b;
-		var textLumas = Enumerable.Range( 0, sign.Slots.Count )
-			.Select( index => SignCanvas.SlotColor( sign, index ) )
-			.Where( colour => colour != null )
-			.Select( colour => Luma( colour!.Value.R, colour.Value.G, colour.Value.B ) ).ToArray();
-		if ( textLumas.Length == 0 ) return (darkR, darkG, darkB);
-		var darkContrast = textLumas.Min( luma => Math.Abs( luma - Luma( darkR, darkG, darkB ) ) );
-		var lightContrast = textLumas.Min( luma => Math.Abs( luma - Luma( lightR, lightG, lightB ) ) );
-		return lightContrast > darkContrast ? (lightR, lightG, lightB) : (darkR, darkG, darkB);
+		var count = surface.Length / 4;
+		long sumR = 0, sumG = 0, sumB = 0, covered = 0;
+		for ( var i = 0; i < count; i++ )
+		{
+			var at = i * 4;
+			var alpha = surface[at];
+			if ( alpha == 0 || alpha == 255 ) { if ( alpha == 255 ) { sumR += surface[at + 1]; sumG += surface[at + 2]; sumB += surface[at + 3]; covered++; } continue; }
+			for ( var channel = 1; channel < 4; channel++ )
+				surface[at + channel] = (byte)Math.Min( 255, (surface[at + channel] * 255 + alpha / 2) / alpha );
+			sumR += surface[at + 1]; sumG += surface[at + 2]; sumB += surface[at + 3]; covered++;
+		}
+		if ( covered == 0 ) return;
+		var coloured = new bool[count];
+		for ( var i = 0; i < count; i++ )
+			coloured[i] = surface[i * 4] != 0;
+		for ( var pass = 0; pass < 8; pass++ )
+		{
+			var fill = new List<(int Index, byte R, byte G, byte B)>();
+			for ( var y = 0; y < Height; y++ )
+			for ( var x = 0; x < Width; x++ )
+			{
+				var index = y * Width + x;
+				if ( coloured[index] ) continue;
+				int r = 0, g = 0, b = 0, n = 0;
+				for ( var dy = -1; dy <= 1; dy++ )
+				for ( var dx = -1; dx <= 1; dx++ )
+				{
+					var nx = x + dx;
+					var ny = y + dy;
+					if ( nx < 0 || ny < 0 || nx >= Width || ny >= Height ) continue;
+					var neighbour = ny * Width + nx;
+					if ( !coloured[neighbour] ) continue;
+					r += surface[neighbour * 4 + 1]; g += surface[neighbour * 4 + 2]; b += surface[neighbour * 4 + 3]; n++;
+				}
+				if ( n > 0 ) fill.Add( (index, (byte)(r / n), (byte)(g / n), (byte)(b / n)) );
+			}
+			if ( fill.Count == 0 ) break;
+			foreach ( var (index, r, g, b) in fill )
+			{
+				surface[index * 4 + 1] = r; surface[index * 4 + 2] = g; surface[index * 4 + 3] = b;
+				coloured[index] = true;
+			}
+		}
+		var mean = ((byte)(sumR / covered), (byte)(sumG / covered), (byte)(sumB / covered));
+		for ( var i = 0; i < count; i++ )
+			if ( !coloured[i] )
+			{
+				surface[i * 4 + 1] = mean.Item1; surface[i * 4 + 2] = mean.Item2; surface[i * 4 + 3] = mean.Item3;
+			}
 	}
 
 	private static byte[] RenderMask( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, int index, ICollection<string> diagnostics )
@@ -142,9 +183,12 @@ public static class SignSurfaceComposer
 		return mask;
 	}
 
+	// [BIN:STP-PPC:0xAB634->0xA9178] the paint record's offsets (+12/+16) are applied against the bitmap's width and height; they move the paint mask before it is coloured, which makes the drop shadow of Wilde Aap (offset 6, 6) and the shadow under the gate text (offset -1, 1); the effect layers keep the unshifted mask (PC v2.0 video)
+	// [APPROX:COMPAT-003] the record's mask word (+4) and parameter (+8) shape the paint mask (growth and blur, the outline of Azteekse Tekens); they are not applied
 	private static void Paint( byte[] destination, byte[] mask, SignPaint? paint )
 	{
 		if ( paint == null ) return;
+		mask = Shift( mask, paint.OffsetX, paint.OffsetY );
 		for ( var i = 0; i < mask.Length; i++ )
 		{
 			var alpha = mask[i] * paint.A >> 8;
@@ -154,6 +198,17 @@ public static class SignSurfaceComposer
 			BlendChannel( destination, at + 2, paint.G * paint.A >> 8, alpha );
 			BlendChannel( destination, at + 3, paint.B * paint.A >> 8, alpha );
 		}
+	}
+
+	/// <summary>The mask translated by (dx, dy) pixels (right and down are positive); pixels moved off the surface are lost, the uncovered edge is empty.</summary>
+	internal static byte[] Shift( byte[] mask, int dx, int dy )
+	{
+		if ( dx == 0 && dy == 0 ) return mask;
+		var shifted = new byte[mask.Length];
+		for ( var y = Math.Max( 0, dy ); y < Math.Min( Height, Height + dy ); y++ )
+		for ( var x = Math.Max( 0, dx ); x < Math.Min( Width, Width + dx ); x++ )
+			shifted[y * Width + x] = mask[(y - dy) * Width + x - dx];
+		return shifted;
 	}
 
 	private static void Effect( byte[] destination, byte[] mask, SignBitmap strip, SignEffect effect, ICollection<string> diagnostics )

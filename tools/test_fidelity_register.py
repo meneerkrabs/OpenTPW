@@ -75,6 +75,23 @@ var text = "[APPROX:TEST-002] runtime string";
             register.write_text('("TEST-2", "bad ID"),\n')
             self.assertTrue(any('malformed declaration ID' in e for e in collect(root, config).errors))
 
+    def test_empty_register_marker_needs_a_whole_line_comment(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'source/test.cs').write_text('// nothing annotated\n')
+            register = root / 'source/register.cs'
+            config = {'TEST': 'source/register.cs'}
+            register.write_text('// no entries yet\n')
+            self.assertTrue(any('no declarations found' in e for e in collect(root, config).errors))
+            register.write_text('var text = "register-empty: not a comment line";\n')
+            self.assertTrue(any('no declarations found' in e for e in collect(root, config).errors))
+            register.write_text('\t// register-empty: the last entry was retired\n')
+            self.assertEqual(collect(root, config).errors, [])
+            # the marker does not hide entries: an annotated site without a declaration is still an error
+            (root / 'source/test.cs').write_text('// [APPROX:TEST-001] one\n')
+            self.assertTrue(any('TEST-001: annotation has no declaration' in e for e in collect(root, config).errors))
+
     def test_markdown_extension_evidence_and_consistency(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

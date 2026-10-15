@@ -41,7 +41,7 @@ public sealed class OriginalGateSign : Entity
 	/// <summary>The default park name of a level: its THEMENAMES.str entry, else the level name.</summary>
 	public static string DefaultParkName( string levelName )
 	{
-		// [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture.
+		// [APPROX:COMPAT-007] the theme name is the default park name; the original stores two editable lines (the rename dialog's two fields) that the gate draws and saves, and OpenTPW has no rename — evidence needed: the save field of the two lines.
 		// [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone.
 		var index = ThemeLevels.ToList().FindIndex( level => string.Equals( level, levelName, StringComparison.OrdinalIgnoreCase ) );
 		try
@@ -86,13 +86,14 @@ public sealed class OriginalGateSign : Entity
 			return null;
 		}
 		parkName ??= DefaultParkName( park.LevelName );
-		// [APPROX:COMPAT-004] the gate board is decoded and composed; original-platform gate pixels remain unverified.
-		// [EXT:gate-paint-legibility] the stored black paint is illegible on the decoded dark stone gate; use a light stone tint (an OpenTPW presentation decision) until original-platform pixels are available.
-		var readablePaint = sign.Paints[0] is { } paint ? paint with { R = 230, G = 210, B = 170, A = 255 } : null;
-		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { parkName }, default, readablePaint );
+		// [APPROX:COMPAT-004] the gate is composed from its decoded board with the park name as two lines; gate pixels (board placement, relief strength) are compared with a 720p capture only
+		// The original gate shows the park name on two lines ("Verloren" over "Koninkrijk") and edits them as two fields; the default theme names are all two words, so the split at the middle space is the stored pair
+		// The stored paint is not overridden: in gates.sgn it is a 60 % black shadow offset by (-1, 1) under dark relief stone text, which is what the video shows (the former cream-paint and upward-normal decision gate-paint-legibility, COMPAT-031, is contradicted by the video)
+		var (line1, line2) = SignCanvas.SplitAtMiddleSpace( parkName );
+		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
 		foreach ( var diagnostic in diagnostics )
 			Log.Warning( $"Gate sign: {diagnostic}" );
-		var images = new ObjectSignImages( parkName, "", left, right, textPixels, diagnostics );
+		var images = new ObjectSignImages( line1, line2, left, right, textPixels, diagnostics );
 		var model = new Model( vertices.ToArray(), indices.ToArray(), SignTextRenderer.CreateMaterial( images.LeftTexture, images.RightTexture ) );
 		var slot = sign.Slots[0];
 		Log.Trace( $"Gate sign: \"{parkName}\" in {slot.FontFileName} ('{slot.FaceName}', {slot.EmHeightPixels}px em) on {indices.Count / 3} sign faces of {gate.ArchivePath}/{modelMember}." );
@@ -125,14 +126,15 @@ public sealed class OriginalGateSign : Entity
 					var normal = mesh.Normals.Length > corner ? System.Numerics.Vector3.TransformNormal( mesh.Normals[corner].GetSystemVector3(), world ) : System.Numerics.Vector3.Zero;
 					if ( normal.LengthSquared() > 0 )
 						normal = System.Numerics.Vector3.Normalize( normal );
+					var engineNormal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ;
 					// Lift the text slightly off the board so it wins the depth test against the gate model.
 					var engine = OriginalParkPlacement.ToEngine( park.Heightfield, position + normal * (SurfaceOffset / OriginalParkPlacement.ModelScale) );
 					index = (uint)vertices.Count;
 					vertices.Add( new Vertex
 					{
 						Position = engine,
-						// [EXT:gate-paint-legibility] the sign's lit face uses an upward normal for readable stone text.
-						Normal = System.Numerics.Vector3.UnitZ,
+						// Model axes (X, Y, Z) become engine axes (X, Z, Y) like the positions (OriginalTerrain does the same); a zero normal lights as up
+						Normal = engineNormal,
 						TexCoords = mesh.TexCoords[corner],
 						TexIndex = slotOfMaterial[material],
 						MatFlags = 0

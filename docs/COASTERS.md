@@ -340,10 +340,16 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   node. OpenTPW draws the curve (an open chain: the end knots take the direction toward or away from their neighbour,
   chord 1.0) through the placed nodes and a ghost pylon at the cursor with the tool's height; a closed but unfinished
   circuit ends in the station end node. An invalid link is flat red.
-- **Pylons.** `StdPylon.MD2`/`LoopPylon.MD2` with the loft clip `<name>L` (adds a vertex animation to the pylon mesh and
-  a 0 to 80 or 90 position key to the track tag and stack-height dummies, played in "add" mode, which only the TrackMaster
-  loader asks for) and the rotate clip `<name>R` (turns the pylon about the cell centre; the parameter is the knot yaw
-  over 2π). The pylon stretches until its track tag stands at the node height; outside the loft range it is scaled or sinks.
+- **Pylons.** `StdPylon.MD2`/`LoopPylon.MD2` with five clips played in "add" mode, which only the TrackMaster loader asks for
+  (`0x430ca0`; a position or vertex key is added, a rotation key multiplied into the node, `0x470d10`): the loft clip `<name>L`
+  (a vertex animation of the pylon mesh and a 0 to 80 or 90 position key on the track tag and stack-height dummies) at the node's
+  height parameter clamped to [0, 1], so outside the loft range the pylon stops at the loft's end; the rotate clip `<name>R`
+  (`R1`) at the yaw over 2π; the incline clip `<name>I` at the pitch over 2π and the bank clip `<name>B` at the bank over 2π
+  (wrapped into [−½, ½)), both centred on ½; and a loop pylon's `<name>R2` at its loop rotate parameter. Each value goes through
+  the pylon control's map `f…AnimMultiplier`/`Add` and the caps `f…AnimStartCap`/`EndCap` (defaults 1, 0, 0, 1; the PC sets
+  `fInclineAnimMultiplier` 4.5, 3 or −3 and `fBankAnimMultiplier` −1 or −4.5). The yaw and pitch are the node tangent's
+  (`0x43e590`) unless set by hand, the bank the auto-bank or the hand-set one. Every mesh of the model is drawn, the ground tile
+  too.
 - **Cars.** The `asCarTypes` meshes, front, centre and rear by `sTrainType`. A car's pivot is its root node; its front
   and rear extents come from the model bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd` and give the spacing; it stands
   on the interpolated sample with roll, pitch and yaw of that point and `fYOffset` along its up axis.
@@ -352,12 +358,12 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   four pylons with the cursor on the fifth cell.
 
 Evidence found but not used: `uiInvalidCrossSection` and the node flags 0x800000/0x804000 mark the invalid presentation.
-Used since the register round 2 (a model whose track dummy is missing or does not move with the loft clip, the loop pylon of coaster 3180 with h0 = h1 = 9.47, keeps the settings' heights; the original applies them as they come): the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
+Used since the register round 2 (a model whose track dummy is missing or does not move with the loft clip keeps the settings' heights, which no PC model needs since the clips turn the nodes relatively; the original applies them as they come): the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
 node heights h0 and h1, read when the coaster's definition is built from its catalogue entry
 (`CoasterDefinition.FromCatalogEntry`; a definition built from settings alone keeps fMinHeight and fMaxHeight). The model's attribute
-records name the track dummy (record `0x800000`, a dummy number counted from 1 over the model's dummy nodes) and the stack dummy
-(record `0x100000`); for the Skull coaster's standard pylon that is `TrackHeightDummy` (30 to 120), not the `TrackCentreDummy`
-a name search finds.
+records name the track dummy (the node of the first record with `0x800000`: record i belongs to the node stored as header `+0x46` + i,
+`0x44ab90`) and the stack dummy (record `0x100000`); for the Skull coaster's standard pylon that is its `TrackCentreDummy` (10 to 100,
+the dummy its loft, incline and bank clips move) with the stack dummy `TrackHeightDummy` 20 above it.
 
 ## Tests
 

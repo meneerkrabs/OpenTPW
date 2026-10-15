@@ -28,6 +28,27 @@ public enum CoasterPylonCapabilities : uint
 }
 
 /// <summary>
+/// How a pylon control maps a node value to the fraction of one of its model's clips (pylon <c>+0xd0</c>..<c>+0x11c</c>, four floats per clip:
+/// <c>f…AnimStartCap</c>, <c>f…AnimEndCap</c>, <c>f…AnimMultiplier</c>, <c>f…AnimAdd</c>): value · Multiplier + Add, raised to StartCap, then lowered to EndCap.
+/// </summary>
+// [BIN:TPW-EXE:0x42ff1a clip map defaults] the definition defaults give every one of the five maps of both pylon controls (definition +0x178.. and +0x298.., pylon +0xd0..+0x11c) StartCap 0, EndCap 1, Multiplier 1, Add 0; the loader copies each settings value over its field when nonzero (0x42eeec..0x42f161)
+public readonly record struct CoasterClipMap( float StartCap, float EndCap, float Multiplier, float Add )
+{
+	public static readonly CoasterClipMap Identity = new( 0, 1, 1, 0 );
+
+	/// <summary>The clip fraction of a value (<c>0x430ca0</c>): v·Multiplier + Add (+ <paramref name="centre"/>), below StartCap → StartCap, then above EndCap → EndCap.</summary>
+	public float Fraction( float value, float centre = 0 )
+	{
+		var fraction = value * Multiplier + Add + centre;
+		if ( fraction < StartCap )
+			fraction = StartCap;
+		if ( EndCap < fraction )
+			fraction = EndCap;
+		return fraction;
+	}
+}
+
+/// <summary>
 /// One of the two 288-byte pylon controls of a coaster definition (COAST-plan §3.2): the StdPylon at definition
 /// <c>+168</c> and the LoopPylon at <c>+456</c>. Angles are radians (the settings give degrees), place distances
 /// whole cells; the loader stores both the squared distances and the float distances.
@@ -79,6 +100,16 @@ public sealed class CoasterPylonControl
 	public float LoftEndCap { get; internal set; } = 1;
 	public float LoftMultiplier { get; internal set; } = 1;
 	public float LoftAdd { get; internal set; }
+	/// <summary>The rotate clip's map (+0xe0..+0xec), fed the yaw over 2π.</summary>
+	public CoasterClipMap RotateMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The incline clip's map (+0xf0..+0xfc), fed the pitch over 2π and centred on 0.5.</summary>
+	public CoasterClipMap InclineMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The bank clip's map (+0x100..+0x10c), fed the bank over 2π wrapped into [−½, ½) and centred on 0.5.</summary>
+	public CoasterClipMap BankMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The second rotate (loop tilt) clip's map (+0x110..+0x11c), fed the loop rotate parameter wrapped into [0, 1).</summary>
+	public CoasterClipMap LoopRotateMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The loft clip's map (+0xd0..+0xdc).</summary>
+	public CoasterClipMap LoftMap => new( LoftStartCap, LoftEndCap, LoftMultiplier, LoftAdd );
 	/// <summary>Whether the pylon model has set the mesh heights, the stack offset and the raised minimum (<see cref="CoasterDefinition.ApplyPylonModel"/>).</summary>
 	public bool HasModelHeights { get; internal set; }
 
@@ -418,8 +449,8 @@ public sealed class CoasterDefinition
 	{
 		Pylon( loop ).Capabilities = rig.Capabilities;
 		// The original applies h0 and h1 as they come (0x4309a4 has no guard on h1 <= h0, and a missing dummy reads the constant 0 at 0x6fde74).
-		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip (the Gorilla coaster 3180's loop pylon, h0 = h1 =
-		// 9.47, below its own raised minimum 10) and keeps the settings' heights: with h1 <= h0 every node of that pylon would stand at h0.
+		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip and keeps the settings' heights: with h1 <= h0 every
+		// node of that pylon would stand at h0. No PC pylon model needs it since the clips turn the nodes relatively (0x470d10).
 		if ( rig.TagNode < 0 || rig.TagHigh <= rig.TagLow )
 			return;
 		var pylon = Pylon( loop );
@@ -540,6 +571,13 @@ public sealed class CoasterDefinition
 		pylon.LoftEndCap = Float( "fLoftAnimEndCap", pylon.LoftEndCap );
 		pylon.LoftMultiplier = Float( "fLoftAnimMultiplier", pylon.LoftMultiplier );
 		pylon.LoftAdd = Float( "fLoftAnimAdd", pylon.LoftAdd );
+		// [BIN:TPW-EXE:0x42ef68 clip map keys] pylon +0xe0..+0xec = fRotateAnim{StartCap,EndCap,Multiplier,Add}, +0xf0..+0xfc fInclineAnim…, +0x100..+0x10c fBankAnim…, +0x110..+0x11c fLoopRotateAnim…, each copied when nonzero; the PC coaster.sam files set fInclineAnimMultiplier (4.5, 3 or −3) and fBankAnimMultiplier (−1 or −4.5)
+		CoasterClipMap Map( string clip, CoasterClipMap current ) => new( Float( $"f{clip}AnimStartCap", current.StartCap ), Float( $"f{clip}AnimEndCap", current.EndCap ),
+			Float( $"f{clip}AnimMultiplier", current.Multiplier ), Float( $"f{clip}AnimAdd", current.Add ) );
+		pylon.RotateMap = Map( "Rotate", pylon.RotateMap );
+		pylon.InclineMap = Map( "Incline", pylon.InclineMap );
+		pylon.BankMap = Map( "Bank", pylon.BankMap );
+		pylon.LoopRotateMap = Map( "LoopRotate", pylon.LoopRotateMap );
 		pylon.StraightDotThreshold = Float( "fPylonStraightDotThreshold", pylon.StraightDotThreshold );
 		pylon.CostPerUnit = Rate( "fCostPerUnit" );
 		pylon.CostPer2DLength = Rate( "fCostPer2DLength" );

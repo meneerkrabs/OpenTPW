@@ -1003,6 +1003,48 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>
+	/// Whether a node's pylon is turned half a turn (node flag <c>0x10000000</c>, <c>0x431660</c>): on a suspended coaster, a node without flag 0x40 whose
+	/// pylon is not a loop pylon and whose turn is a curve (neither straight case) gets it when b.x·a.z − b.z·a.x &lt; 0 with a and b the vectors to its
+	/// previous and next node, so the pylon stands on the outside of the turn; every other curve node loses it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x431f06 suspended pylon side] in the curve branch of the tangent routine, definition flag 8 set, node flag 0x40 clear and the Y component of b × a below 0 set node flag 0x10000000 (0x431f29), else it is cleared (0x431f34); the straight and loop-pylon branches leave it as it was
+	// [APPROX:COAST-033] a straight or loop-pylon node keeps the flag from its last curve pass in the original; here it is clear there
+	public static bool PylonTurnedBack( SVector3 previous, SVector3 position, SVector3 next, float? straightDot, bool loopPylon, bool suspended, bool loopNode )
+	{
+		if ( !suspended || loopNode || loopPylon )
+			return false;
+		var a = previous - position;
+		var b = next - position;
+		var ua = SVector3.Normalize( a );
+		var ub = SVector3.Normalize( b );
+		var dot = ua.X * ub.X + ua.Y * ub.Y + ua.Z * ub.Z;
+		if ( dot < (straightDot ?? -0.999f) || dot > 0.999f )
+			return false;
+		return b.X * a.Z - b.Z * a.X < 0;
+	}
+
+	/// <summary>The <see cref="PylonTurnedBack"/> flag of every node of a chain whose neighbours its tangent uses (the flag-masked previous and next node).</summary>
+	internal bool[] PylonsTurnedBack( IReadOnlyList<CoasterNode> chain, IReadOnlyList<CoasterKnot> knots )
+	{
+		var count = chain.Count;
+		var result = new bool[count];
+		for ( var index = 0; index < count; index++ )
+		{
+			var node = chain[index];
+			if ( node.IsPylonless || index == 0 || (node.Flags & (CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.CutStart)) != 0 )
+				continue;
+			int? next = (node.Flags & (CoasterNodeFlags.NoNextLink | CoasterNodeFlags.CutEnd)) != 0 ? null
+				: (node.Flags & CoasterNodeFlags.EndNextIsSecond) != 0 ? (count > 1 ? 1 : null)
+				: index + 1 < count ? index + 1 : null;
+			if ( next is not int after )
+				continue;
+			result[index] = PylonTurnedBack( knots[index - 1].Position, knots[index].Position, knots[after].Position, Definition.Pylon( node.LoopPylon ).StraightDotThreshold,
+				IsLoopPylon( node ), Definition.IsSuspended, (node.Flags & CoasterNodeFlags.Loop) != 0 );
+		}
+		return result;
+	}
+
+	/// <summary>
 	/// The node bank of auto-banking (<c>0x3f548</c>): v(±π − θ)/4/(|prev − P| + |next − P|), +π when θ ≥ 0, 0 when θ = 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x1003F548 auto-bank] bank = v × (±π − θ) / definition +16 (4.0) / (|prev − P| + |next − P|), sign of π from θ, 0 when θ = 0; stored in node +216
@@ -1128,7 +1170,7 @@ public sealed class CoasterTrack
 	/// A pylon node's direction with its hand-set yaw and incline: the pylon animation turns the track tag with them. The yaw replaces the heading of the direction; the incline pitches it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x430590 pylon clips] a pylon's animations by type: 3 loft (pylon flag 0x20), 10 rotate (0x40), 2 incline (0x80), 9 bank (0x100), 10 second (0x200); the pylon pose feeds node +0xE0 (yaw), +0xDC (incline) and +0xD8 (bank) to them and the track tag's pose is the knot's direction
-	// [APPROX:COAST-028] the hand-set yaw replaces the heading of the knot direction and the incline pitches it by half its value (±π maps to ±90°); the pose routine that feeds the values to the rotate and incline clips and the tag positions the clips move are not traced, so the angle each clip applies is a guess — evidence needed: the clip durations and the tag's pose at the extremes of the drag
+	// [APPROX:COAST-028] the hand-set yaw replaces the heading of the knot direction and the incline pitches it by half its value (±π maps to ±90°); in the original the knot direction is the posed tag's forward axis (COAST-015): the yaw turns the rotate clip by yaw/2π and the incline the incline clip by pitch/2π through fInclineAnimMultiplier (0x430ed0, 0x430ca0; CoasterPylonRig poses both), so a PC tag tilts about 36° to 60° at the clip's ends, a tilt the knots do not take here
 	private static SVector3 ApplyManualPose( CoasterNode node, SVector3 direction )
 	{
 		if ( (node.Flags & (CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline)) == 0 )

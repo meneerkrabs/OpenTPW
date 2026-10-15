@@ -139,7 +139,7 @@ public class CoasterAssetTests
 			}
 		}
 		Assert.IsTrue( seen >= 18, $"{seen} pylon models read" );
-		Assert.IsTrue( skipped >= 1, "coaster 3180's loop pylon is stuck at h0 = h1 and is skipped" );
+		Assert.AreEqual( 0, skipped, "every PC pylon's track dummy (the node of its 0x800000 record) moves with the loft clip, Gorilla Thrilla's loop pylon too once the clips turn the nodes relatively (0x470d10)" );
 		CoasterPylonRig Rig( int id, bool loop )
 		{
 			var entry = PcCoasters().Single( candidate => candidate.InfoId == id );
@@ -151,13 +151,17 @@ public class CoasterAssetTests
 		Assert.AreEqual( (15.558132f, 95.55653f), (gorilla.TagLow, gorilla.TagHigh), "the Gorilla Thrilla pylon: the doc's 15.56 and 95.56" );
 		Assert.AreEqual( "TrackDummyCentre", gorilla.Model.Nodes[gorilla.TagNode].Name );
 		var skull = Rig( 3190, false );
-		Assert.AreEqual( "TrackHeightDummy", skull.Model.Nodes[skull.TagNode].Name, "attribute 0x800000 names dummy number 1, not the TrackCentreDummy the name search would take" );
-		Assert.AreEqual( (30f, 120f), (MathF.Round( skull.TagLow, 3 ), skull.TagHigh) );
+		Assert.AreEqual( "TrackCentreDummy", skull.Model.Nodes[skull.TagNode].Name, "record 2 (0x03c00031) belongs to the node stored as header +0x46 + 2 (0x44ab90), the dummy the loft, incline and bank clips move" );
+		Assert.AreEqual( "TrackHeightDummy", skull.Model.Nodes[skull.StackNode].Name, "record 1 (0x100011) is the stack dummy on the bridge" );
+		Assert.AreEqual( (10f, 100f, 20f), (MathF.Round( skull.TagLow, 3 ), MathF.Round( skull.TagHigh, 3 ), MathF.Round( skull.StackOffset, 3 )) );
+		var gorillaLoop = Rig( 3180, true );
+		Assert.AreEqual( "LOOP_DUMMY", gorillaLoop.Model.Nodes[gorillaLoop.TagNode].Name );
+		Assert.AreEqual( (8.81f, 98.81f), (MathF.Round( gorillaLoop.TagLow, 2 ), MathF.Round( gorillaLoop.TagHigh, 2 )), "the loft clip's +90 on the clamp is a rise in the stanchion's turned frame" );
 		var spooky = Rig( 3185, false );
 		Assert.AreEqual( "STACK_DUMMY", spooky.Model.Nodes[spooky.StackNode].Name );
 		Assert.AreEqual( 7.776738f, spooky.StackOffset, 1e-3f, "stack dummy Y − h0" );
 		Assert.AreEqual( 3.7566833f, Rig( 3180, false ).StackOffset, 1e-3f );
-		Assert.AreEqual( 0f, Rig( 1180, false ).StackOffset, "the stack dummy of this model is dummy number 1, the track dummy's neighbour at the same height" );
+		Assert.AreEqual( 20f, Rig( 1180, false ).StackOffset, 1e-3f, "the mine cart's StackHeightDummy (record 4) stands 20 above its track dummy" );
 	}
 
 	/// <summary>

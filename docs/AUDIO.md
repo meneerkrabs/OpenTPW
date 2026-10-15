@@ -398,17 +398,17 @@ The front end's island effects follow the original's islands update (`CLBScreenC
 stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per rendered frame):
 
 * **The nearest island** to the camera drives everything, not the selected one.
-* **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, the full state returned, `0x100904A8`), seeded once from
-  the clock (`0x1008CDBC`). The original's flying meshes and camera wander draw from it too; OpenTPW has neither yet, so
+* **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, `0x100904A8`; tp.exe rotates the step right by 13 bits
+  and stores and returns the rotated value, `0x5E0F4B`), seeded once from the clock (`0x1008CDBC`). The original's flying meshes and camera wander draw from it too; OpenTPW has neither yet, so
   the rhythm of strikes and one-shots differs (UI-941).
-* **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(state & LIGHTNING) == 1` strikes; four draws place the top
+* **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(draw & LIGHTNING) == 1` strikes; four draws place the top
   within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
   flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is
   drawn by the park's weather renderer (CRain, "Weather visuals"), at the lobby's own scale; the flash is an opaque white
   frame under the menus (its blend is not decoded).
 * **Rain**: 10^17 / (mean squared distance from the camera to the rainy islands)^4 drops, none below 20, at most 400
   (`0x10094F8C`): about 173 at the orbit radius around hallow, drawn by the same renderer.
-* **Island one-shots**: a draw with `(state & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
+* **Island one-shots**: a draw with `(draw & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
   `cat_locallobbysfx` (`0x10095340`), replacing OpenTPW's earlier 5–15 s timer (AUDIO-017 is resolved).
 * **Sky**: one flat colour eased 1/16 of the way toward the island's `SKYCOLOUR` each tick (`0x1008FAA0`, tp.exe
   `0x5D96C0`). Both builds ease the red channel toward the blue target, and two settings flags gate the eased sky; neither

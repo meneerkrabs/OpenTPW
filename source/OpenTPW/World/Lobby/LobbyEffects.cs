@@ -58,10 +58,15 @@ public sealed class LobbyEffects
 	/// <summary>True for the frame after a strike: the renderer draws one white full-screen quad and clears it.</summary>
 	public bool Flash { get; set; }
 
-	/// <summary>The generator's next state: it returns the full 32-bit value.</summary>
-	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34; the full state is returned (inlined in the islands update)
-	// [APPROX:UI-941] only the islands' own draws advance the generator; the original's flying meshes and camera wander draw from it too (0x10090174, 0x1009476C), so the strikes come in a different rhythm
-	public uint Draw() => state = unchecked(state * 0x19660Du + 0x3C6EF35Fu);
+	/// <summary>The generator's next draw: the LCG step rotated right by 13 bits, which is also the stored state.</summary>
+	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34 (inlined in the islands update)
+	// [BIN:TPW-EXE:0x5e0f4b lobby generator draw] tp.exe stores the step at lobby +0x34, rotates it right by 13 (ror 0xd) and stores and uses the rotated value; every inlined draw does the same (0x5d98d1 flying-mesh placement, 0x5da0d4 flying-mesh spawn, 0x5e113f island one-shots)
+	// [APPROX:UI-941] only the islands' own draws advance the generator; the original's flying meshes and camera wander draw from it too (0x5d9830, 0x5da020, 0x5d9b50, 0x5e09da; Mac 0x10090174, 0x1009476C), so the strikes come in a different rhythm
+	public uint Draw()
+	{
+		state = System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );
+		return state;
+	}
 
 	/// <summary>A draw as the fraction the bolt offsets use: (state &amp; 0x3FFFFFFF) / 2^30, in [0, 1).</summary>
 	private float Fraction() => (Draw() & 0x3FFFFFFF) / 1073741824f;
@@ -153,6 +158,7 @@ public sealed class LobbyEffects
 		var lightning = nearest.Info.Lightning;
 		// [BIN:STP-PPC:0x10095124 lobby lightning] with LIGHTNING > 0, a draw strikes when (state & LIGHTNING) == 1; four fresh draws place the top at the island ±50 (height 500) and the bottom within ±10 of it (height 0)
 		// [BIN:STP-PPC:0x10095310 lobby strike] AddLightning(bottom, top, 500, 1), LightningFlash() and cat_globallobbysfx 1 played flat at once (no thunder delay)
+		// [BIN:TPW-EXE:0x5e0f55 lobby lightning] tp.exe tests the rotated draw against the island's LIGHTNING (+0x5c) and places the bolt with the next four draws the same way (0x5e0f94-0x5e10a4)
 		if ( lightning > 0 && (Draw() & (uint)lightning) == 1 )
 		{
 			var topX = 100 * Fraction() + nearest.X - 50;
@@ -168,6 +174,7 @@ public sealed class LobbyEffects
 			thunder = true;
 		}
 		// [BIN:STP-PPC:0x10095340 lobby one-shots] a draw with (state & 15) == 1 plays event 3 + (fresh draw mod 3) of the nearest island's cat_locallobbysfx
+		// [BIN:TPW-EXE:0x5e1149 lobby one-shots] (draw & 15) == 1 on the rotated draw, then the next draw mod 3 (0x5e117e) picks event 3, 4 or 5
 		uint? oneShot = null;
 		if ( (Draw() & 15) == 1 )
 			oneShot = 3 + Draw() % 3;

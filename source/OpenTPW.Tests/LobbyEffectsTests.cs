@@ -10,13 +10,17 @@ public class LobbyEffectsTests
 	private static LobbyIslandInfo Island( string level, (byte, byte, byte) sky, bool rainy = false, int lightning = 0 ) =>
 		new( 0, level, level, "island", "gate", level, 0, 0, sky, System.Array.Empty<string>(), rainy, lightning );
 
+	/// <summary>One draw of tp.exe's lobby generator from <paramref name="state"/>: the LCG step rotated right by 13 bits.</summary>
+	internal static uint NextDraw( uint state ) => System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );
+
 	[TestMethod]
-	public void TheGeneratorReturnsTheFullLcgState()
+	public void TheGeneratorReturnsTheLcgStepRotatedRightByThirteenAndKeepsIt()
 	{
 		var effects = new LobbyEffects( 1 );
-		Assert.AreEqual( unchecked(1u * 0x19660Du + 0x3C6EF35Fu), effects.Draw() );
-		var next = unchecked((1u * 0x19660Du + 0x3C6EF35Fu) * 0x19660Du + 0x3C6EF35Fu);
-		Assert.AreEqual( next, effects.Draw() );
+		var first = unchecked(1u * 0x19660Du + 0x3C6EF35Fu);
+		Assert.AreEqual( (first >> 13) | (first << 19), effects.Draw() );
+		var second = unchecked(((first >> 13) | (first << 19)) * 0x19660Du + 0x3C6EF35Fu);
+		Assert.AreEqual( (second >> 13) | (second << 19), effects.Draw(), "the rotated value is the next step's state" );
 	}
 
 	[TestMethod]
@@ -47,8 +51,8 @@ public class LobbyEffectsTests
 	[TestMethod]
 	public void ALightningIslandStrikesWhenTheDrawMatchesAndPlacesTheBoltAroundIt()
 	{
-		// A seed whose first draw has (state & 63) == 1: hallow's LIGHTNING 63 strikes on the first tick.
-		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (unchecked(value * 0x19660Du + 0x3C6EF35Fu) & 63) == 1 );
+		// A seed whose first draw has (draw & 63) == 1: hallow's LIGHTNING 63 strikes on the first tick.
+		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (NextDraw( value ) & 63) == 1 );
 		var effects = new LobbyEffects( seed );
 		var hallow = new LobbyEffects.Island( Island( "hallow", (4, 44, 12), rainy: true, lightning: 63 ), 400, 300 );
 		var (thunders, _) = effects.Step( LobbyEffects.TickSeconds, new[] { hallow }, 400, 370 );
@@ -67,7 +71,7 @@ public class LobbyEffectsTests
 	[TestMethod]
 	public void TheWeatherRendererReadsTheLobbyStrikesInOriginalAxes()
 	{
-		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (unchecked(value * 0x19660Du + 0x3C6EF35Fu) & 63) == 1 );
+		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (NextDraw( value ) & 63) == 1 );
 		var effects = new LobbyEffects( seed );
 		var source = new LobbyWeatherSource( effects );
 		var hallow = new LobbyEffects.Island( Island( "hallow", (4, 44, 12), rainy: true, lightning: 63 ), 400, 300 );

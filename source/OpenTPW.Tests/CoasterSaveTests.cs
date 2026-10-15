@@ -374,6 +374,20 @@ public class CoasterSaveTests
 	}
 
 	[TestMethod]
+	public void AHandTiltedLoopRotationAndAHeightAboveTheModelsTopStillLoad()
+	{
+		var entry = ThreeNodeCoasterEntry();
+		var nodes = entry.Track.Nodes.ToList();
+		// the loop-tilt drag keeps the first pylon of a pair in [-0.35, 0.35]; the height drag may pass t = 1 up to what fMaxHeight leaves
+		nodes[3] = nodes[3] with { LoopRotate = -0.35f, T = 1.05f };
+		nodes[4] = nodes[4] with { LoopRotate = 0.85f };
+		var snapshot = WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { entry with { Track = entry.Track with { Nodes = nodes } } } } );
+		ParkResumeSaveFile.ValidateShape( ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( snapshot ) ) );
+		nodes[3] = nodes[3] with { LoopRotate = -0.5f };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { entry with { Track = entry.Track with { Nodes = nodes } } } } ) ) ).Message, "loop rotate" );
+	}
+
+	[TestMethod]
 	public void TheThreeNodeStationShapeAndItsControllerStatePassTheShapeCheckAndTheCodec()
 	{
 		var snapshot = WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { ThreeNodeCoasterEntry() } } );
@@ -453,7 +467,7 @@ public class CoasterSaveTests
 		// Cells and flags.
 		Rejects( CoasterEntry() with { Track = Track( CoasterEntry() ) with { Nodes = NewNodes( Node( 1 ) with { X = -1 } ) } }, "outside the cell map" );
 		Rejects( CoasterEntry() with { Track = Track( CoasterEntry() ) with { Nodes = NewNodes( Node( 1 ) with { Flags = (uint)CoasterNodeFlags.Winch | 0x8 } ) } }, "does not know" );
-		Rejects( CoasterEntry() with { Track = Track( CoasterEntry() ) with { Nodes = NewNodes( Node( 1 ) with { T = 1.5f } ) } }, "outside 0..1" );
+		Rejects( CoasterEntry() with { Track = Track( CoasterEntry() ) with { Nodes = NewNodes( Node( 1 ) with { T = 9f } ) } }, "outside 0..8" );
 		// Circuit rules.
 		Rejects( CoasterEntry() with { Track = Track( CoasterEntry() ) with { IsClosed = false } }, "completed without closing" );
 		Rejects( CoasterEntry() with { Track = Track( CoasterEntry() ) with { Nodes = new List<CoasterNodeSaveData> { Node( 0 ), Node( 1 ), Node( 3 ) } } }, "closes over 1 pylons" );

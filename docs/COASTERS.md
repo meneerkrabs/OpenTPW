@@ -127,7 +127,13 @@ build (`cb_track`, control `0x1f`) and loop (`cb_loop`, `0x20`) buttons, a middl
 stack up (`cb_swapup`, `0x1e`), rotate (`cb_rotate`, `0x1c`), tilt (`cb_incline`, `0x19`) and stack down (`cb_swapdown`, `0x1d`), and the demolish
 button (`cb_dellast`, `0x21`) at the right. The rectangles, models and tooltip help ids come from the table; the click help is `0x486b00` with `0x125`
 (build), `0x126`/`0x127` (loop), `0x121` (move) and `0x124` (demolish). The panel's window position is measured from the video (`APPROX`), and it appears
-at once instead of sliding out. `CoasterToolPanel` is the headless controller, `ParkHud.CoasterPanel.cs` the pointer side.
+at once instead of sliding out. Its background takes the clicks of the area it covers.
+
+**Way in.** The ride window's track button (`b_track`, control `0x3e2a`, help 10; shown when the object's type record has a track type, `0x4ad53a`) calls `0x4af200`, which sends a coaster
+(type 3) to `0x4988c0`: it enters the tool (`0x4474d0`, state 2 for a finished circuit) and selects the first button (`0x4455c0`). OpenTPW shows that button in the info arm of a selected
+coaster (`ParkHud.EditTrack`, `APPROX:UI-023`: the ride window's own layout is the layout-table round's), so select a coaster, press it, cut, extend, complete.
+A drag does not fit the controller on every pointer move (the original rebuilds the track each frame): the renderer draws the nodes as they are and the track is fitted, rated and the trains
+placed once on the release. Backspace waits for a drag; a drag let go while the game is paused ends there. A save taken while the tool is open lets the ride out of state 2 on load, as leaving the tool would. `CoasterToolPanel` is the headless controller, `ParkHud.CoasterPanel.cs` the pointer side.
 
 - **Enable mask** (`0x445910`): the seven edit buttons always; build unless the first pylon of a loop pair waits for its second; loop when the coaster has a
   loop pylon; a finished circuit (complete, not cut open) turns build and loop off, any other track turns demolish off. The tool opens on build (loop while a
@@ -235,7 +241,9 @@ empty, no station step), 4 open, 8 closed. Completion sets 2; the script's `COAS
 dropped) and sets state 2 for a finished track with its circuit closed, else 1; leaving the tool opens the ride object again when
 the state is 2 (`0x4df390`). The transitions: 1 → 2 sets the trains up, 2 → 1 removes them, 4 → 2 and 8 → 2 unload both seat lists of every
 train (8 → 2 then runs the closing move), 1/2/4 → 8 run the closing move, every other pair changes nothing. OpenTPW lets the guests of the
-admission ring leave with the riders on 4 → 2, so none waits on a ride that does not run (`[EXT:coaster-tool-admission]`). A finished
+admission ring leave with the riders on 4 → 2: the original does the same, since 4 → 2 and 8 → 2 unload and then fall through to the closing move `0x43b390`
+(`0x43587f`, `0x4358c9` → `0x4358cb`). It does nothing on 4 → 1 and 8 → 1, which the tool never reaches (it goes through state 2 first); OpenTPW's headless edits take the trains off there
+(`[EXT:coaster-state-clear]`). A finished
 coaster entered by the tool keeps its trains (empty) and its pylons can be moved and re-heighted there; extending the circuit goes through the panel's
 demolish button, whose cut sets state 1 (see "The tool panel").
 `COAST 4` maps 0/1/2 to the modes 16/64/32; mode 32 is treated exactly like 16 by the mode setter `0x435730` and nothing
@@ -399,7 +407,7 @@ a name search finds.
 IDs. COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
 three-node station round of October 15, which narrowed COAST-004 (the platform links are ordinary links now) and COAST-029 (to the
 stations below the pylon's h0 and the middle knot's height adjust) and took the station clauses out of COAST-014, 015, 024 and 030
-(`[EXT:coaster-tool-admission]` is the one deliberate difference of the states). COAST-013 (the sickness has no guest consumer) was retired by the register round of October 14 and COAST-007
+(`[EXT:coaster-state-clear]` is the one deliberate difference of the states). COAST-013 (the sickness has no guest consumer) was retired by the register round of October 14 and COAST-007
 (the distance waiver exempts the station's own internal nodes), COAST-016 (the completion click), COAST-018 (the swing's
 sine table) were retired by round 2; COAST-025 (own-format save), COAST-027 (generator seed) and COAST-031 (the station's total
 spent) became extensions (`[EXT:coaster-own-save]`, `[EXT:coaster-rng-seed]`, `[EXT:coaster-ledger]`) and COAST-016 the extension

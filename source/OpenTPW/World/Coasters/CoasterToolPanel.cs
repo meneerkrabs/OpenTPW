@@ -52,6 +52,7 @@ public sealed class CoasterToolPanel
 	private readonly Func<int, int, bool> isFreeCell;
 	private DragState? drag;
 	private int? cutStart;
+	private int cutVersion;
 	private (int Version, CoasterToolButton Button, bool Loop)? areaKey;
 	private IReadOnlyList<(int X, int Y)> area = [];
 
@@ -330,6 +331,13 @@ public sealed class CoasterToolPanel
 		if ( drag is not { } state )
 			return;
 		var edit = state.Edit;
+		// the node the drag holds is gone (a pylon was deleted meanwhile): the drag ends where it stands
+		if ( edit.Index >= Track.Nodes.Count || !builder.CanEdit( edit.Index ) )
+		{
+			drag = null;
+			DragCost = null;
+			return;
+		}
 		switch ( state.Kind )
 		{
 			case CoasterToolButton.Height:
@@ -435,9 +443,11 @@ public sealed class CoasterToolPanel
 		// [BIN:TPW-EXE:0x446740 cut range] the first release over a pylon starts the range (0x79c62c, 0x79c6dc), the second over a pylon completes it; a release over nothing does nothing
 		if ( node is not int index || index < 0 || index >= Track.Nodes.Count || Track.Nodes[index].IsPylonless )
 			return CoasterPanelResult.Nothing;
-		if ( cutStart is not int first )
+		// a pending range ends with any edit of the track in between (a deleted pylon would leave its end pointing at another node)
+		if ( cutStart is not int first || cutVersion != Track.Version )
 		{
 			cutStart = index;
+			cutVersion = Track.Version;
 			return CoasterPanelResult.CutStarted;
 		}
 		cutStart = null;
@@ -471,19 +481,32 @@ public sealed class CoasterToolPanel
 					builder.EditMove( edit, edit.Start.X, edit.Start.Y );
 				if ( (Track.Nodes[edit.Index].X, Track.Nodes[edit.Index].Y) != (edit.Start.X, edit.Start.Y) )
 					builder.EndEdit( edit );
+				else
+					builder.FinishEdit();
 				return CoasterPanelResult.Edited;
 			default:
+				builder.FinishEdit();
 				return CoasterPanelResult.Edited;
 		}
 	}
 
-	/// <summary>Abandons a drag where it stands (a button was clicked or the tool ended): the edit stays, nothing is charged.</summary>
+	/// <summary>A button was clicked while a drag ran: the drag ends as a release over no cell would end it (a move goes back, a height edit settles its money).</summary>
 	private void EndDragWithoutCommit()
 	{
-		if ( drag == null )
+		if ( drag is { } state )
+			EndDrag( state, null );
+	}
+
+	/// <summary>
+	/// Keeps the selection on an enabled button: after the circuit closes the build buttons are off and the height button is the one the tool opens on a finished track (the original reselects
+	/// through 0x4455c0 whenever the mask changes).
+	/// </summary>
+	public void Refresh()
+	{
+		if ( Selected == CoasterToolButton.None || IsEnabled( Selected ) )
 			return;
 		drag = null;
-		DragCost = null;
+		Select( IsFinished ? CoasterToolButton.Height : CoasterToolButton.Build );
 	}
 
 	/// <summary>The tool ends: a drag in progress is released where it stands.</summary>

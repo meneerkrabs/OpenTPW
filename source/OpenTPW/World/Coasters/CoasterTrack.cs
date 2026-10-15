@@ -482,6 +482,33 @@ public sealed class CoasterTrack
 		Version++;
 	}
 
+	/// <summary>
+	/// Moves node <paramref name="index"/> to cell (x, y) and keeps the cells' stacks whole: the pieces above it in the cell it leaves come down one, and it takes the next stack index of the cell it
+	/// enters (<paramref name="stackAtTarget"/>), or <paramref name="restore"/> and the pieces from that index up go up one when it returns to the cell it started in.
+	/// </summary>
+	// [BIN:TPW-EXE:0x442d70 leave stack] taking a node out of its cell's descriptor closes the gap in the stack array (0x442f40 → 0x442d70) and the node enters the new cell's descriptor on top (0x433bd0)
+	internal void Relocate( int index, int x, int y, int stackAtTarget, int? restore )
+	{
+		var node = nodes[index];
+		for ( var other = 0; other < nodes.Count; other++ )
+		{
+			if ( other != index && !nodes[other].IsPylonless && nodes[other].X == node.X && nodes[other].Y == node.Y && nodes[other].StackIndex > node.StackIndex )
+				nodes[other] = nodes[other] with { StackIndex = nodes[other].StackIndex - 1 };
+		}
+		var stack = stackAtTarget;
+		if ( restore is int start )
+		{
+			stack = start;
+			for ( var other = 0; other < nodes.Count; other++ )
+			{
+				if ( other != index && !nodes[other].IsPylonless && nodes[other].X == x && nodes[other].Y == y && nodes[other].StackIndex >= start )
+					nodes[other] = nodes[other] with { StackIndex = nodes[other].StackIndex + 1 };
+			}
+		}
+		nodes[index] = node with { X = x, Y = y, StackIndex = stack };
+		Version++;
+	}
+
 	/// <summary>The loft parameter range of the height drag (<c>0x441a00</c>): from the pylon's raised minimum height to the maximum height left over what the cell's stack above the ground already uses.</summary>
 	// [BIN:TPW-EXE:0x441a00 height range] low = max(0, (fMinHeight − h0)/(h1 − h0)) (0x434650 with pylon +0x68, h0 +0xbc and h1 +0xc0); high = t + (fMaxHeight (+0x6c) − the height of the stack's top node (0x433280: the sum over the nodes below of h0 + t(h1 − h0) + stack offset, then its own h0 + t(h1 − h0))) / (h1 − h0) (0x434680)
 	public (float Low, float High) LoftRange( CoasterSite site, int index )
@@ -685,6 +712,9 @@ public sealed class CoasterTrack
 		bool Valid( int index ) => index >= 0 && index <= last && !nodes[index].IsPylonless;
 		if ( !Valid( first ) || !Valid( second ) )
 			return CutResult.Refused;
+		// [BIN:TPW-EXE:0x44678c same station node] the second release on the very node the range started on is no cut when that node is a station node (descriptor flag 2: S0 or S2): 0x44678c..0x4467a0 clear the cut flag and leave the circuit as it is
+		if ( first == second && nodes[first].IsStation )
+			return CutResult.Refused;
 		var reachesEnd = false;
 		if ( first == 0 )
 		{
@@ -698,7 +728,8 @@ public sealed class CoasterTrack
 		}
 		var low = Math.Min( first, second );
 		var high = Math.Max( first, second );
-		bool IsLoopNode( int index ) => index >= 0 && index < nodes.Count && (nodes[index].Flags & CoasterNodeFlags.Loop) != 0;
+		// a pair's pylons carry the pair mark (0xe0 and 0x60): a flume's trough pylons carry the loop flag alone and are not pairs
+		bool IsLoopNode( int index ) => index >= 0 && index < nodes.Count && (nodes[index].Flags & (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopMark)) == (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopMark);
 		bool IsLoopFirst( int index ) => IsLoopNode( index ) && (nodes[index].Flags & CoasterNodeFlags.LoopFirst) != 0;
 		if ( low + 1 == high && IsLoopFirst( low ) && IsLoopNode( high ) )
 		{
@@ -712,7 +743,8 @@ public sealed class CoasterTrack
 			low--;
 			high++;
 		}
-		if ( low < 0 || high > last )
+		// the station's own nodes S0 and S1 stay: a cut starts at S2 (index 2) or later
+		if ( low < StationNodeCount - 1 || high > last )
 			return CutResult.Refused;
 		if ( low + 1 != high )
 		{

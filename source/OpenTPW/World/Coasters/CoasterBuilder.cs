@@ -169,7 +169,7 @@ public sealed class CoasterBuilder
 			return CoasterPlaceResult.OutsideMap;
 		var result = Track.CheckPlacement( Site, Ride.World, Ride, x, y, node.LoopPylon, moving: index );
 		var stack = Ride.World.PylonsAt( x, y ).Count( pylon => !ReferenceEquals( pylon.Node, node ) );
-		Settle( index, () => Track.Replace( index, node with { X = x, Y = y, StackIndex = stack } ) );
+		Settle( index, () => Track.Relocate( index, x, y, stack, null ) );
 		if ( Track.IsComplete )
 			Ride.Rebuild();
 		return result;
@@ -303,11 +303,28 @@ public sealed class CoasterBuilder
 	public void ApplyEdit( NodeEdit edit, Func<CoasterNode, CoasterNode> change )
 	{
 		Track.Replace( edit.Index, change( Track.Nodes[edit.Index] ) );
+		AfterEdit( deferRebuild: true );
+	}
+
+	/// <summary>
+	/// Revalidates after an edit. While a drag runs the controller is not fitted again (that resamples, rates and checks the whole circuit): the renderer draws the nodes as they are, and
+	/// <see cref="FinishEdit"/> fits the track once on the release.
+	/// </summary>
+	// [APPROX:COAST-028] the original rebuilds the track every frame of a drag (0x4346c0); OpenTPW fits the curve, rates the track and replaces the trains once, on the release, and draws the nodes meanwhile
+	private void AfterEdit( bool deferRebuild )
+	{
 		Track.Revalidate( Site, Ride.World, Ride );
-		if ( Track.IsRunnable )
+		if ( Track.IsRunnable && !deferRebuild )
 			Ride.Rebuild();
 		else
 			Ride.RaiseTrackChanged();
+	}
+
+	/// <summary>Ends a drag without money (rotate, tilt, loop tilt): the finished track is fitted again.</summary>
+	public void FinishEdit()
+	{
+		if ( Track.IsRunnable )
+			Ride.Rebuild();
 	}
 
 	/// <summary>Releases the drag: refunds the truncated cost the node had when it was picked and charges the rounded-up cost it has now.</summary>
@@ -317,6 +334,7 @@ public sealed class CoasterBuilder
 		var charge = CoasterTrack.RoundUp( Track.NodeCost( edit.Index, chargeUnit: false ) ) + (edit.Next is int n ? CoasterTrack.RoundUp( Track.NodeCost( n, chargeUnit: false ) ) : 0);
 		Refund( edit.Refund );
 		Spend( charge, force: true );
+		FinishEdit();
 	}
 
 	/// <summary>Sets the loft parameter of the picked node within the drag's range (<c>0x441a00</c>).</summary>
@@ -349,7 +367,10 @@ public sealed class CoasterBuilder
 			return CoasterPlaceResult.OutsideMap;
 		var result = Track.CheckPlacement( Site, Ride.World, Ride, x, y, node.LoopPylon, moving: edit.Index );
 		var stack = Ride.World.PylonsAt( x, y ).Count( pylon => !ReferenceEquals( pylon.Node, node ) );
-		ApplyEdit( edit, current => current with { X = x, Y = y, StackIndex = stack } );
+		// back on the cell it was picked up from, the node takes its old place in the stack again
+		int? restore = (x, y) == (edit.Start.X, edit.Start.Y) ? edit.Start.StackIndex : null;
+		Track.Relocate( edit.Index, x, y, stack, restore );
+		AfterEdit( deferRebuild: true );
 		return result;
 	}
 

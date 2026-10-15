@@ -157,7 +157,14 @@ public partial class Level
 	private void OnCoasterStationRemoved( OriginalObject item )
 	{
 		if ( CoasterToolStation == item )
+		{
+			// the tool's full clean-up for a station that goes (the ride object is deleted, so it is not opened again)
+			CoasterPanel?.Close();
+			CoasterPanel = null;
+			CoasterPreview = null;
+			DemoPreview = null;
 			CoasterToolStation = null;
+		}
 		if ( coasterBuilders.Remove( item, out var builder ) )
 			builder.Delete();
 	}
@@ -292,6 +299,9 @@ public partial class Level
 			if ( !live.Contains( ride ) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s coaster controller is not live; a stopped station holds no coaster state." );
 			ride.RestoreSnapshot( entry );
+			// [APPROX:COAST-012] a save taken while the coaster tool was open holds the ride out of service (state 2, its object closed); the tool is not open after a load, so the ride is let out as leaving the tool would (0x447520 → 0x4df390; the original's save during the tool is not traced)
+			if ( ride.State == CoasterControllerState.Built && !station.IsOpen )
+				station.Open();
 		}
 		if ( Coasters.Count != saved.Rides.Count )
 			throw new InvalidDataException( $"The save holds {saved.Rides.Count} coasters, but this park places {Coasters.Count} live coaster stations." );

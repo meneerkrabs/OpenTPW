@@ -430,6 +430,215 @@ public class CoasterPanelTests
 	}
 
 	[TestMethod]
+	public void ASecondReleaseOnTheSameStationNodeIsNoCutAndNoCutStartsInsideTheStation()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var track = builder.Track;
+		var count = track.Nodes.Count;
+		// 0x44678c: the second release on the node the range started on, when that is a station node, cuts nothing
+		Assert.AreEqual( CoasterTrack.CutResult.Refused, builder.Cut( 0, 0 ), "S0 twice would have removed S1 and S2" );
+		Assert.AreEqual( CoasterTrack.CutResult.Refused, builder.Cut( 2, 2 ), "S2 twice" );
+		Assert.AreEqual( count, track.Nodes.Count );
+		Assert.IsTrue( track.IsRunnable, "the circuit is as it was" );
+		Assert.AreEqual( CoasterControllerState.Built, ride.State );
+		var panel = new CoasterToolPanel( builder );
+		panel.Select( CoasterToolButton.Demolish );
+		Assert.AreEqual( CoasterPanelResult.CutStarted, panel.Release( 0, null ) );
+		Assert.AreEqual( CoasterPanelResult.Nothing, panel.Release( 0, null ), "the panel path refuses it too" );
+		Assert.AreEqual( count, track.Nodes.Count );
+		// a range that would start before S2 is refused whatever the ends
+		Assert.AreEqual( CoasterTrack.CutResult.Refused, builder.Cut( 1, First + 2 ) );
+		Assert.AreEqual( CoasterTrack.CutResult.Cut, builder.Cut( 2, First + 2 ), "from S2 to the third pylon is fine: the pylons between go" );
+		Assert.AreEqual( 2, track.CutAfter );
+	}
+
+	[TestMethod]
+	public void DeletingThePylonADragHoldsEndsTheDragAndAPendingCutIsDropped()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 40;
+		builder.Place( 24, 20 );
+		builder.Place( 28, 24 );
+		var panel = new CoasterToolPanel( builder );
+		panel.Select( CoasterToolButton.Height );
+		Assert.IsTrue( panel.Press( First + 1, new NVector2( 100, 100 ), 28, 24 ) );
+		Assert.IsTrue( builder.RemoveLast() );
+		panel.Drag( new NVector2( 100, 60 ), 0, null );
+		Assert.IsFalse( panel.IsDragging, "the node the drag held is gone: it ends where it stands" );
+		Assert.AreEqual( CoasterPanelResult.Nothing, panel.Release( null, null ) );
+
+		// a pending cut does not survive an edit between its two releases
+		var (finished, ride) = Finished();
+		ride.EnterTool();
+		var cutting = new CoasterToolPanel( finished );
+		cutting.Select( CoasterToolButton.Demolish );
+		Assert.AreEqual( CoasterPanelResult.CutStarted, cutting.Release( First + 2, null ) );
+		finished.Track.Revalidate( finished.Site, null, null );
+		Assert.AreEqual( CoasterPanelResult.CutStarted, cutting.Release( First + 4, null ), "the second release starts a new range instead of cutting from a stale one" );
+	}
+
+	[TestMethod]
+	public void AHeightDragMayPassTheModelsTopWhenTheMaximumHeightIsAboveItAndTheTrackStillSavesAndLoads()
+	{
+		var (builder, ride) = NewCoaster();
+		var pylon = builder.Track.Definition.StandardPylon;
+		pylon.MeshHeightLow = 10;
+		pylon.MeshHeightHigh = 95.56f;
+		pylon.MaxHeight = 100;
+		builder.Height = 40;
+		builder.Place( 24, 20 );
+		var panel = new CoasterToolPanel( builder );
+		panel.Select( CoasterToolButton.Height );
+		var (_, high) = builder.Track.LoftRange( builder.Site, First );
+		Assert.IsTrue( high > 1f, "(fMaxHeight − top)/(h1 − h0) lets t pass 1: 0x434680 has no clamp" );
+		Assert.IsTrue( panel.Press( First, new NVector2( 0, 5000 ), 24, 20 ) );
+		panel.Drag( new NVector2( 0, 0 ), 0, null );
+		Assert.AreEqual( high, builder.Track.Nodes[First].T, 1e-4f );
+		Assert.AreEqual( 100f, CoasterTrack.PylonHeight( pylon, builder.Track.Nodes[First].T ), 0.05f, "the node stands at fMaxHeight" );
+		panel.Release( First, null );
+		var captured = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( ride, attractionId: 7 ) ) );
+		Assert.AreEqual( builder.Track.Nodes[First].T, captured.Track.Nodes[First].T );
+		Assert.IsTrue( captured.Track.Nodes[First].T <= CoasterSave.MaximumLoft );
+	}
+
+	[TestMethod]
+	public void MovingAStackedPylonAwayAndBackKeepsTheStackWhole()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 20;
+		foreach ( var (x, y) in new[] { (24, 20), (28, 24), (24, 28), (20, 24) } )
+			builder.Place( x, y );
+		builder.Height = 60;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		var track = builder.Track;
+		Assert.AreEqual( (0, 1), (track.Nodes[First].StackIndex, track.Nodes[First + 4].StackIndex) );
+		var panel = new CoasterToolPanel( builder );
+		panel.Select( CoasterToolButton.Move );
+		// pick the lower piece up and carry it over another cell: the upper piece comes down
+		Assert.IsTrue( panel.Press( First, new NVector2( 0, 0 ), 24, 20 ) );
+		panel.Drag( new NVector2( 5, 5 ), 0, (25, 21) );
+		Assert.AreEqual( 0, track.Nodes[First + 4].StackIndex, "the piece above takes the lower place" );
+		panel.Drag( new NVector2( 6, 6 ), 0, (24, 20) );
+		Assert.AreEqual( (0, 1), (track.Nodes[First].StackIndex, track.Nodes[First + 4].StackIndex), "back on its cell the piece takes its old place and the other goes up again" );
+		panel.Release( First, (24, 20) );
+		Assert.AreEqual( (0, 1), (track.Nodes[First].StackIndex, track.Nodes[First + 4].StackIndex) );
+	}
+
+	[TestMethod]
+	public void ClosingTheCircuitMovesTheSelectionOffTheButtonThatWentGrey()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			builder.Place( 20 + dx, 20 + dy );
+		var panel = new CoasterToolPanel( builder );
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
+		CoasterTests.CloseAndComplete( builder );
+		panel.Refresh();
+		Assert.AreEqual( CoasterToolButton.Height, panel.Selected, "the build button is off on a finished circuit" );
+	}
+
+	[TestMethod]
+	public void AFlumesTroughPylonsAreNoLoopPairsForTheCut()
+	{
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.bSpecialIsTrough"] = "1";
+		var (builder, _) = NewCoaster( settings );
+		builder.Height = 40;
+		var circuit = CoasterTests.Circuit;
+		for ( var index = 0; index < circuit.Length; index++ )
+		{
+			if ( index == 1 )
+				builder.LoopMode = true;
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + circuit[index].X, 20 + circuit[index].Y ) );
+		}
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		var count = builder.Track.Nodes.Count;
+		Assert.AreEqual( CoasterTrack.CutResult.Cut, builder.Cut( First, First + 3 ) );
+		Assert.AreEqual( count - 2, builder.Track.Nodes.Count, "the two trough pylons between go and nothing else widens the range" );
+	}
+
+	[TestMethod]
+	public void ACutLeavesTheTrainsGoneAndEveryGuestLeavingWhateverStateTheRideWasIn()
+	{
+		var (builder, ride) = Finished();
+		ride.Command( 8, 0 );
+		ride.Command( 5, 0 );
+		ride.Command( 6, 6 );
+		for ( var guest = 301; guest < 305; guest++ )
+			ride.Board( guest );
+		ride.EnterTool();
+		Assert.AreEqual( CoasterControllerState.Built, ride.State );
+		Assert.AreEqual( CoasterTrack.CutResult.Reopened, builder.Cut( First, 0 ) );
+		var off = new List<int>();
+		for ( var guest = ride.Command( 3, 0 ); guest != 0; guest = ride.Command( 3, 0 ) )
+			off.Add( guest );
+		CollectionAssert.AreEquivalent( new[] { 301, 302, 303, 304 }, off.ToArray() );
+	}
+
+	[TestMethod]
+	public void ACutOrAnEditWhileTheGameIsPausedStillEndsAReleasedDrag()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 40;
+		builder.Place( 24, 20 );
+		builder.Place( 28, 24 );
+		var panel = new CoasterToolPanel( builder );
+		panel.Select( CoasterToolButton.Move );
+		Assert.IsTrue( panel.Press( First + 1, NVector2.Zero, 28, 24 ) );
+		panel.Drag( new NVector2( 4, 4 ), 0, (29, 25) );
+		Assert.AreEqual( CoasterPanelResult.Edited, panel.Release( null, null ), "a release over nothing (the pause screen) puts the node back" );
+		Assert.AreEqual( (28, 24), (builder.Track.Nodes[First + 1].X, builder.Track.Nodes[First + 1].Y) );
+		Assert.IsFalse( panel.IsDragging );
+	}
+
+	[TestMethod]
+	public void ACutLeavesAFinishedCircuitsRidersAndTheDragDoesNotRefitUntilTheRelease()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var panel = new CoasterToolPanel( builder );
+		var samples = ride.Samples.Count;
+		var version = builder.Track.Nodes[First + 1].T;
+		Assert.IsTrue( panel.Press( First + 1, new NVector2( 0, 400 ), 0, 0 ) );
+		var firstSample = ride.Samples.Count > 0 ? ride.Samples[0].Position : default;
+		panel.Drag( new NVector2( 0, 300 ), 0, null );
+		panel.Drag( new NVector2( 0, 250 ), 0, null );
+		Assert.AreNotEqual( version, builder.Track.Nodes[First + 1].T, "the node follows the pointer" );
+		Assert.AreEqual( samples, ride.Samples.Count, "the controller is fitted once, on the release" );
+		panel.Release( First + 1, null );
+		Assert.IsTrue( ride.IsOperational );
+	}
+
+	[TestMethod]
+	public void ACutOfAFinishedCircuitEndedByTheStationBeingRemovedLeavesNoStalePanel()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var panel = new CoasterToolPanel( builder );
+		panel.Select( CoasterToolButton.Demolish );
+		panel.Release( First + 2, null );
+		panel.Close();
+		Assert.IsNull( panel.CutStart );
+		Assert.IsFalse( panel.IsDragging );
+	}
+
+	[TestMethod]
+	public void ACutOfAFinishedCircuitRefusesWhileGuestsAreOnBoard()
+	{
+		var (builder, ride) = Finished();
+		ride.Command( 8, 0 );
+		ride.Command( 5, 0 );
+		ride.Command( 6, 6 );
+		ride.Board( 401 );
+		for ( var tick = 0; tick < 240 * 60 && ride.RidersOnBoard == 0; tick++ )
+			ride.Advance( Tick );
+		Assert.IsTrue( ride.RidersOnBoard > 0 );
+		Assert.AreEqual( CoasterTrack.CutResult.Refused, builder.Cut( First, 0 ), "OpenTPW's guard: nobody is cut off the track" );
+	}
+
+	[TestMethod]
 	public void ACutNeedsAFinishedCircuitAndPylonEnds()
 	{
 		var (builder, ride) = NewCoaster();

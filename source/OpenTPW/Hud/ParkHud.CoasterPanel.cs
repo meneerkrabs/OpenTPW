@@ -44,8 +44,40 @@ public sealed partial class ParkHud
 	/// <summary>The cell under the pointer was pressed on a pylon the sub-mode picked up: the release belongs to the tool.</summary>
 	private bool coasterPress;
 
+	/// <summary>Whether the object has a track the track button edits: a coaster (the coaster tool) or a water track ride (its track tool).</summary>
+	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null);
+
+	/// <summary>
+	/// The ride window's track button (<c>b_track</c>, control 0x3e2a, help 10): for a coaster (track type 3 of the object's type record, +0x9c) it opens the coaster tool on the selected ride (<c>0x4af200</c> →
+	/// <c>0x4988c0</c> → <c>0x4474d0</c>); a water track ride opens its track tool.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4ad53a track button] the ride window shows control 0x3e2a when the object's type record has a track type (+0x9c nonzero), and its handler 0x4af200 sends type 1 to tool 0xe, type 2 to 0x13 and type 3, a coaster, to 0x4988c0, which enters the tool (0x4474d0, state 2 for a complete track whose circuit is closed) and selects the panel's first button (0x4455c0)
+	// [APPROX:UI-023] the button sits in the info arm beside the ride's other buttons; the ride window (table 0x755150, b_track at (625, 800, 779, 953)) belongs to the layout-table round
+	private void EditTrack()
+	{
+		if ( selectedObject is not { IsDeleted: false } item || !CanEditTrack( item ) )
+			return;
+		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
+		if ( !entered )
+			return;
+		SetInfoArm( false );
+		PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
+	}
+
 	private void BuildCoasterPanel()
 	{
+		infoElements.Add( hud.Add( new UiButton
+		{
+			Id = "editTrack",
+			Model = "b_track",
+			Help = strings.Help( 10 ),
+			Clicked = EditTrack,
+			Bounds = UiRect.FromCenter( new NVector2( 870, 1425 ), 120, 120 ),
+			Anchor = UiAnchor.BottomLeft,
+			Visible = false
+		} ) );
+		// the panel's backdrop takes the clicks of the area it covers, so a click beside a button does not reach the park
+		var shield = hud.Add( new UiLabel { Id = "coasterPanelShield", Text = () => "", Bounds = CoasterArmRect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		foreach ( var spec in CoasterButtons )
 		{
 			var button = hud.Add( new UiButton
@@ -61,15 +93,18 @@ public sealed partial class ParkHud
 			} );
 			coasterPanelElements.Add( button );
 		}
+		coasterPanelElements.Add( shield );
 	}
 
 	/// <summary>Shows or hides the panel with the tool and sets which buttons are enabled (the enable mask <c>0x445910</c>).</summary>
 	private void UpdateCoasterPanelElements()
 	{
 		// harnesses that build the HUD without its constructor have no panel buttons
-		if ( coasterPanelElements == null || coasterPanelElements.Count != CoasterButtons.Length )
+		if ( coasterPanelElements == null || coasterPanelElements.Count != CoasterButtons.Length + 1 )
 			return;
 		var panel = level.IsCoasterToolActive ? level.CoasterPanel : null;
+		panel?.Refresh();
+		coasterPanelElements[^1].Visible = panel != null;
 		for ( var index = 0; index < CoasterButtons.Length; index++ )
 		{
 			var element = coasterPanelElements[index];
@@ -141,9 +176,17 @@ public sealed partial class ParkHud
 	{
 		CoasterGhost = null;
 		level.CoasterPreview = null;
-		if ( paused || !level.IsCoasterToolActive || level.CoasterTool is not { } builder || level.CoasterPanel is not { } panel )
+		if ( !level.IsCoasterToolActive || level.CoasterTool is not { } builder || level.CoasterPanel is not { } panel )
 			return false;
-		for ( var index = 0; index < input.Backspaces; index++ )
+		if ( paused )
+		{
+			// a drag that is let go while the game is paused ends there (a move goes back, a height settles its money)
+			if ( panel.IsDragging && input.LeftReleased )
+				panel.Release( null, null );
+			return false;
+		}
+		// Backspace waits for the drag: it would delete the pylon the drag holds
+		for ( var index = 0; index < input.Backspaces && !panel.IsDragging; index++ )
 			builder.RemoveLast();
 		if ( input.RightPressed && inPark )
 		{

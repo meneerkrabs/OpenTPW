@@ -109,6 +109,41 @@ internal sealed partial class SandboxSmokeTest
 		Require( level.CoasterTrianglesDrawn > 0, "the coaster track is drawn" );
 		CaptureFrame( "original-coaster.png" );
 		Require( ride.State is CoasterControllerState.Open or CoasterControllerState.Closed, "the station script opened the built coaster (COAST 5)" );
+		// The way back into the tool in normal play: select the built coaster, press the ride window's track button, cut the circuit back at a pylon through the panel, build the pylons
+		// again, close on the station and complete; nobody boarded is lost.
+		hud!.SelectObject( smokeStation );
+		hud.Update( hudContext!, UiInput.Idle( new System.Numerics.Vector2( -1, -1 ) ) );
+		var trackButton = (UiButton)hud.Screen.Find( "editTrack" )!;
+		Require( trackButton.Visible && trackButton.Enabled, "the selected built coaster shows its track button" );
+		var buttonRect = trackButton.ScreenRect( hudContext!.Canvas );
+		SmokeClick( new System.Numerics.Vector2( buttonRect.X + buttonRect.Width / 2, buttonRect.Y + buttonRect.Height / 2 ) );
+		Require( level.IsCoasterToolActive && level.CoasterPanel is { Selected: CoasterToolButton.Height }, "the track button opens the coaster tool on the finished track (height button)" );
+		var routeTrack = level.CoasterTool!.Track;
+		var depart = routeTrack.DepartCell!.Value;
+		var cutIndex = CoasterTrack.StationNodeCount + 2;
+		var removed = SmokeCircuit.Skip( 3 ).Select( offset => (X: depart.X + offset.X, Y: depart.Y + offset.Y) ).ToArray();
+		Require( level.CoasterPanel!.Select( CoasterToolButton.Demolish ), "the demolish button is enabled on the finished circuit" );
+		foreach ( var cell in new[] { (routeTrack.Nodes[cutIndex].X, routeTrack.Nodes[cutIndex].Y), (routeTrack.Nodes[0].X, routeTrack.Nodes[0].Y) } )
+		{
+			Require( TryClickPoint( cell, out var cutPoint ), $"the pylon cell ({cell.Item1}, {cell.Item2}) can be clicked" );
+			hud.Update( hudContext!, UiInput.Idle( cutPoint ) );
+			SmokeClick( cutPoint );
+		}
+		Require( !routeTrack.IsComplete && routeTrack.Nodes.Count == cutIndex + 1 && ride.State == CoasterControllerState.Incomplete && level.CoasterPanel.Selected == CoasterToolButton.Build, "the cut to S0 reopened the circuit at the third pylon" );
+		foreach ( var cell in removed )
+		{
+			Require( TryClickPoint( cell, out var buildPoint ), $"the cell ({cell.X}, {cell.Y}) can be clicked" );
+			hud.Update( hudContext!, UiInput.Idle( buildPoint ) );
+			var count = routeTrack.Nodes.Count;
+			SmokeClick( buildPoint );
+			Require( routeTrack.Nodes.Count == count + 1, "a click places a pylon again" );
+		}
+		Require( TryClickPoint( routeTrack.ReturnCell!.Value, out var closePoint ), "the station end can be clicked" );
+		SmokeClick( closePoint );
+		Require( routeTrack.IsClosed, "a click on the station end closes the extended circuit" );
+		SmokeClick( closePoint );
+		Require( routeTrack.IsRunnable && ride.IsOperational && !level.IsCoasterToolActive, "a second click completes it again" );
+		Require( ride.State is CoasterControllerState.Built or CoasterControllerState.Open or CoasterControllerState.Closed && smokeStation.IsOpen, "the extended coaster is back in service" );
 		// Taking a finished coaster into the tool again closes the ride and puts it out of service without removing its trains; leaving it opens the ride.
 		Require( level.EnterCoasterTool( smokeStation ) && !smokeStation.IsOpen && ride.State == CoasterControllerState.Built && ride.Trains.Count > 0 && ride.RidersOnBoard == 0, "the tool on a finished coaster closes the ride (state 2, trains stay, no riders)" );
 		level.ExitCoasterTool();

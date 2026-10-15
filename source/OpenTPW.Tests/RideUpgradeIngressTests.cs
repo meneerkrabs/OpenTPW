@@ -130,6 +130,32 @@ public class RideUpgradeIngressTests
 		var cash = economy.Balance; hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
 		var button = (UiButton)hud.Screen.Find( "rideUpgrade" )!; if ( gate is not "ambiguous" and not "removedDuplicate" ) Assert.IsFalse( button.Visible && button.Enabled ); button.Activate(); Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel );
 	}
+	[TestMethod]
+	public void TheInfoArmsTrackButtonOpensTheCoasterToolOnASelectedCoasterAndOnlyThere()
+	{
+		var hud = Fixture( BuildCategory.Rides, out var level, out _, out var owner, out var other, out _, extra: "Bumper.WhichTrackType 3\n" ); var context = Context();
+		Assert.IsNotNull( owner.Runtime.Coaster );
+		Set( level, "coasterBuilders", new Dictionary<OriginalObject, CoasterBuilder>() );
+		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		var button = (UiButton)hud.Screen.Find( "editTrack" )!;
+		Assert.IsTrue( button.Visible, "a selected coaster shows the ride window's b_track button (0x3e2a, shown for a ride with a track type, 0x4ad53a)" );
+		Assert.AreEqual( "b_track", button.Model );
+		button.Activate();
+		Assert.IsTrue( level.IsCoasterToolActive && level.CoasterToolStation == owner, "0x4af200 → 0x4988c0 → 0x4474d0 opens the coaster tool on the selected ride" );
+		Assert.IsNotNull( level.CoasterPanel );
+		Assert.AreEqual( CoasterToolButton.Build, level.CoasterPanel!.Selected, "an unfinished track opens on the build button" );
+		Assert.IsFalse( owner.IsOpen, "the tool closes the ride object" );
+		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		Assert.IsFalse( button.Visible, "the arm closes with the tool" );
+		Assert.IsTrue( hud.Screen.Find( "coasterBuild" )!.Visible && hud.Screen.Find( "coasterPanelShield" )!.Visible, "the panel shows" );
+		level.ExitCoasterTool();
+		Assert.IsFalse( hud.Screen.Find( "coasterBuild" )!.Visible is true && level.IsCoasterToolActive );
+		// a ride without a track has no button
+		hud.SelectObject( null );
+		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		Assert.IsFalse( ((UiButton)hud.Screen.Find( "editTrack" )!).Visible );
+	}
+
 	[DataTestMethod, DataRow( "cancel" ), DataRow( "right" ), DataRow( "selection" ), DataRow( "delete" ), DataRow( "remap" ), DataRow( "replace" ), DataRow( "custom" ), DataRow( "stop" ), DataRow( "retired" ), DataRow( "otherTop" ), DataRow( "readonly" ), DataRow( "tool" ), DataRow( "camera" ), DataRow( "retract" ), DataRow( "capture" ), DataRow( "duplicate" ), DataRow( "removedDuplicate" )]
 	public void CancelOrStaleConfirmationNeverCharges( string gate )
 	{

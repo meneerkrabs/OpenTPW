@@ -947,9 +947,11 @@ internal static class ParkResumeSaveFile
 					$"coaster {ride.AttractionId}'s node {node} stands at ({saved.X}, {saved.Y}), outside the cell map" );
 				Require( float.IsFinite( saved.Height ) && float.IsFinite( saved.T ) && float.IsFinite( saved.Bank ),
 					$"coaster {ride.AttractionId}'s node {node} holds a height, parameter or bank that is not finite" );
-				Require( saved.T is >= 0 and <= 1, $"coaster {ride.AttractionId}'s node {node} height parameter {saved.T} is outside 0..1" );
-				Require( saved.LoopRotate is null || (float.IsFinite( saved.LoopRotate.Value ) && saved.LoopRotate.Value is >= 0 and <= 1),
-					$"coaster {ride.AttractionId}'s node {node} loop rotate {saved.LoopRotate} is outside 0..1" );
+				// the height drag's range ends at t + (fMaxHeight − the stack's top)/(h1 − h0), which passes 1 when fMaxHeight is above the pylon model's top (0x441a00, 0x434680)
+				Require( saved.T is >= 0 and <= CoasterSave.MaximumLoft, $"coaster {ride.AttractionId}'s node {node} height parameter {saved.T} is outside 0..{CoasterSave.MaximumLoft}" );
+				// the loop-tilt drag keeps a first pylon of a pair in [−0.35, 0.35] and any other in [0.15, 0.85] (0x441cd0); a save from before it holds 0..1
+				Require( saved.LoopRotate is null || (float.IsFinite( saved.LoopRotate.Value ) && saved.LoopRotate.Value is >= -0.35f and <= 1),
+					$"coaster {ride.AttractionId}'s node {node} loop rotate {saved.LoopRotate} is outside −0.35..1" );
 				Require( saved.Yaw is null || float.IsFinite( saved.Yaw.Value ), $"coaster {ride.AttractionId}'s node {node} yaw {saved.Yaw} is not finite" );
 				Require( saved.Incline is null || (float.IsFinite( saved.Incline.Value ) && Math.Abs( saved.Incline.Value ) <= 3.1417f ),
 					$"coaster {ride.AttractionId}'s node {node} incline {saved.Incline} is outside ±π" );

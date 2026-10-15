@@ -721,7 +721,8 @@ public sealed partial class ParkHud
 		foreach ( var element in infoElements )
 			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false }
 				// The visit button uses the same ride camera as the park's keyboard shortcut.
-				&& (element.Id != "rideView" || level.IsReadOnlyVisit);
+				&& (element.Id != "rideView" || level.IsReadOnlyVisit)
+				&& (element.Id != "editTrack" || (selectedObject != null && CanEditTrack( selectedObject ) && !level.IsCoasterToolActive));
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
 

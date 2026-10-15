@@ -69,6 +69,27 @@ public class HudVideoRoundTests
 	}
 
 	[TestMethod]
+	public void AMissingOrUndecodableCursorKeepsTheSystemPointer()
+	{
+		Assert.IsFalse( ParkHud.ShouldDrawSoftwareCursor( null, true, false ), "no art, no game pointer" );
+		Assert.IsFalse( ParkHud.ShouldDrawSoftwareCursor( "/x/Cnor.tga", false, false ), "outside the window" );
+		Assert.IsFalse( ParkHud.ShouldDrawSoftwareCursor( "/x/Cnor.tga", true, true ), "an ImGui panel wants the mouse" );
+		Assert.IsTrue( ParkHud.ShouldDrawSoftwareCursor( "/x/Cnor.tga", true, false ) );
+	}
+
+	[TestMethod]
+	public void OpeningMessagesOneAfterAnotherShowsEachInTurn()
+	{
+		var hud = Hud();
+		hud.PostGameMessage( "a" );
+		hud.PostGameMessage( "b" );
+		hud.OpenPendingMessage( 0 );
+		hud.OpenPendingMessage( 0 );
+		Assert.AreEqual( "b", hud.OpenedMessage );
+		Assert.AreEqual( 0, hud.PendingMessages.Count );
+	}
+
+	[TestMethod]
 	public void TheSkillGaugeIsTheGradeOverFive()
 	{
 		Assert.IsNull( ParkHud.SkillGauge( null ) );

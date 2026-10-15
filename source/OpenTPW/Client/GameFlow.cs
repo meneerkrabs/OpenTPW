@@ -846,6 +846,8 @@ internal sealed partial class GameFlow : IDisposable
 		if ( TexturePackSwitch.Current is { } textureSwitch )
 			OptionsScreen.DrawTextureSwitchProgress( Context, Strings, textureSwitch );
 		DrawParkBuildProgress();
+		// the game's own pointer goes on top of every UI layer
+		Hud?.DrawCursor( Context );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>

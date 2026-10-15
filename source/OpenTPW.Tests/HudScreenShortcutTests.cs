@@ -64,6 +64,18 @@ public class HudScreenShortcutTests
 	}
 
 	[TestMethod]
+	public void TheLocatorChordsActOverTheWindowWhosePersonTheyLocate()
+	{
+		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextStaff, false, "employee" ), "Ctrl+S locates the open employee window's employee (0x481790)" );
+		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextVisitor, false, "visitors" ), "Ctrl+V locates the visitor a row click chose" );
+		Assert.IsFalse( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextStaff, false, "visitors" ) );
+		Assert.IsFalse( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextVisitor, false, "pause" ), "the pause menu keeps the keys" );
+		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextStaff, true, null ), "with no window open the park gate decides" );
+		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.MapWindow, false, "map" ), "a window key still closes its own window" );
+		Assert.IsFalse( ParkHud.ShortcutAllowed( HudScreenShortcut.TimeFaster, false, "employee" ), "other keys follow the park gate" );
+	}
+
+	[TestMethod]
 	public void TimeKeysStepTheActualParkClockScale()
 	{
 		// The keys reach the park status the HUD is bound to (the same object the speed buttons use).

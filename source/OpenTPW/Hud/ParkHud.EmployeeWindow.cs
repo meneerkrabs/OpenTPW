@@ -164,9 +164,8 @@ public sealed partial class ParkHud
 			return;
 		}
 		var staffId = member.Id;
-		var targetName = StaffName( member );
 		CloseEmployeeWindow();
-		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee] + "\n" + targetName,
+		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee],
 			(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); DismissStaff( staffId ); }),
 			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 	}

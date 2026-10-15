@@ -70,7 +70,7 @@ public sealed class ParkResumeEconomyTests
 		var runtime = ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation );
 		runtime.AttachGuests( Guests() );
 		Assert.IsFalse( economy.IsParkOpen );
-		Assert.IsFalse( economy.TryAdmitVisitor( 1000, out _ ), "a closed park admits nobody" );
+		Assert.IsFalse( economy.TryAdmitVisitor( out _ ), "a closed park admits nobody" );
 	}
 
 	[TestMethod]

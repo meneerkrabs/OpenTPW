@@ -34,10 +34,9 @@ public sealed class FrontEndActions
 
 /// <summary>
 /// The front end over the 3D lobby: the original island lobby panel (islandlobby.MD2 with the
-/// f_lobbutbg button background) holding the island name and the previous/enter/next island buttons
-/// with their original tooltips, a title, and Load / Options / Quit Game buttons. Entering a park asks
-/// for continuation when an own save is available, or for the new park mode. Player profiles are not implemented. Positions of
-/// code-placed elements are approximations (docs/UI.md).
+/// f_lobbutbg button background) with the globe, previous, enter and next buttons at the original table's rectangles and
+/// their original tooltips, the island name beside it, and an Escape menu with Go Online, Load, Options, Resume and Quit Game. Entering a park asks
+/// for continuation when an own save is available, or for the new park mode. Player profiles are not implemented (docs/UI.md).
 /// </summary>
 public sealed partial class FrontEndMenu
 {
@@ -80,53 +79,60 @@ public sealed partial class FrontEndMenu
 	private UiScreen CreateMain()
 	{
 		var screen = new UiScreen( "lobby" ) { Modal = false };
-		// [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles
-		screen.Add( new UiModelImage { Id = "lobbyPanel", Model = "islandlobby", Bounds = new UiRect( 27.7f, 855.1f, 447.8f, 665.8f ), Anchor = UiAnchor.BottomLeft } );
-		screen.Add( new UiModelImage { Id = "lobbyButtons", Model = "f_lobbutbg", Bounds = new UiRect( 66.9f, 1272.7f, 371.2f, 211.2f ), Anchor = UiAnchor.BottomLeft } );
-		// [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby
-		screen.Add( new UiLabel { Id = "islandName", Text = () => SelectedName, Font = fonts => fonts.Label, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 90, 1282, 326, 70 ), Anchor = UiAnchor.BottomLeft } );
-		UiButton IslandButton( string id, string model, float x, int help, Action clicked ) => screen.Add( new UiButton
+		// [BIN:TPW-EXE:0x757f60 lobby panel] the island lobby's table: the islandlobby panel (28,855)-(476,1521) with the f_lobbutbg background behind the buttons (67,1273)-(438,1484), b_worldview (68,946) help 346, b_entpark (68,1114) help 345, b_lobleft (97,1299) help 343 and b_lobright (260,1299) help 344; the companion table 0x757d88 gives the island-name field (477,1282)-(1571,1457)
+		// [DATA:video 78:41 lobby] the panel measures (26,859)-(468,1514), the globe button's centre (142,1026), the gate button's (142,1187), the arrows' (167,1374) and (335,1374), the name in large yellow centred in the field; there is no logo, no title and no menu column
+		var table = OriginalLayoutTables.Lobby;
+		var panel = table.Root;
+		screen.Add( new UiModelImage { Id = "lobbyPanel", Model = panel.Model!, Bounds = panel.Rect, Anchor = UiAnchor.BottomLeft } );
+		screen.Add( new UiModelImage { Id = "lobbyButtons", Model = panel.Model2!, Bounds = panel.Inner!.Value, Anchor = UiAnchor.BottomLeft } );
+		screen.Add( new UiLabel { Id = "islandName", Text = () => SelectedName, Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+			Bounds = OriginalLayoutTables.LobbyCity.Control( 0x49D9 ).Rect, Anchor = UiAnchor.BottomLeft } );
+		UiButton LobbyButton( string id, string model, Action clicked ) => screen.Add( new UiButton
 		{
 			Id = id,
 			Model = model,
-			Help = strings.Help( help ),
+			Help = strings.Help( table.Model( model ).Help ),
 			Clicked = clicked,
 			Adjusted = NextIsland,
-			Bounds = UiRect.FromCenter( new NVector2( x, 1412 ), 112, 112 ),
+			Bounds = table.Model( model ).Rect,
 			Anchor = UiAnchor.BottomLeft
 		} );
-		IslandButton( "previousIsland", "b_lobleft", 135, 343, () => NextIsland( -1 ) );
-		var enter = IslandButton( "enterPark", "b_entpark", 252, 345, ShowThemeStart );
-		IslandButton( "nextIsland", "b_lobright", 369, 344, () => NextIsland( 1 ) );
-
-		// [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby
-		screen.Add( new UiModelImage { Id = "logo", Model = "tpwlogo", ArtOverride = "tpw_logo", Bounds = new UiRect( 819, 40, 410, 154 ), Anchor = UiAnchor.Top } );
-		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ThemeParkWorld], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 624, 196, 800, 90 ), Anchor = UiAnchor.Top } );
-
-		var menu = new (string Id, UIStrings Label, Action Clicked)[]
-		{
-			("goOnline", UIStrings.GoOnline, () => actions.GoOnline?.Invoke( Stack )),
-			("load", UIStrings.Load, ShowLoad),
-			("options", UIStrings.Options, ShowOptions),
-			("quit", UIStrings.QuitGame, ShowQuit),
-		};
-		var shown = actions.GoOnline == null ? menu.Where( entry => entry.Id != "goOnline" ).ToArray() : menu;
-		for ( var index = 0; index < shown.Length; index++ )
-		{
-			var entry = shown[index];
-			screen.Add( new UiButton
-			{
-				Id = entry.Id,
-				Text = () => strings[entry.Label],
-				Clicked = entry.Clicked,
-				Adjusted = NextIsland,
-				Bounds = new UiRect( 1500, 80 + index * 140, 480, 116 ),
-				Anchor = UiAnchor.TopRight
-			} );
-		}
-		screen.Back = ShowQuit;
+		LobbyButton( "previousIsland", "b_lobleft", () => NextIsland( -1 ) );
+		var enter = LobbyButton( "enterPark", "b_entpark", ShowThemeStart );
+		LobbyButton( "nextIsland", "b_lobright", () => NextIsland( 1 ) );
+		// the globe button opens the online world (the original's Go Online lobby)
+		if ( actions.GoOnline != null )
+			LobbyButton( "worldView", "b_worldview", () => actions.GoOnline( Stack ) );
+		screen.Back = ShowMenu;
 		screen.Focus( enter );
 		return screen;
+	}
+
+	/// <summary>
+	/// The lobby's Escape menu: a frameless list of cyan text lines. The original's has Go Online, Options, Select New Player, Resume Game and Quit Game; OpenTPW
+	/// adds Load Park (the original loads parks from the game, not the lobby) and has no player profiles.
+	/// </summary>
+	// [DATA:video 27:59-28:03 lobby pause menu] On-line gaan, Opties, Nieuwe Speler Selecteren, Spel Hervatten, Spel Stoppen
+	// [EXT:lobby-load] the Load Park line (UITEXT 3) is OpenTPW's: it stood in the lobby's right-hand menu column, which the original lobby does not have
+	public void ShowMenu()
+	{
+		if ( Stack.Top?.Name == "lobbyMenu" )
+			return;
+		UiScreen? menu = null;
+		void CloseMenu()
+		{
+			if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) )
+				Stack.Pop();
+		}
+		var items = new List<(string Id, Func<string> Text, Action Clicked, bool Enabled)>();
+		if ( actions.GoOnline != null )
+			items.Add( ("goOnline", () => strings[UIStrings.GoOnline], () => actions.GoOnline( Stack ), true) );
+		items.Add( ("load", () => strings[UIStrings.Load], ShowLoad, true) );
+		items.Add( ("options", () => strings[UIStrings.Options], ShowOptions, actions.CreateOptions != null) );
+		items.Add( ("resume", () => strings[UIStrings.ResumeGame], CloseMenu, true) );
+		items.Add( ("quit", () => strings[UIStrings.QuitGame], ShowQuit, true) );
+		menu = UiDialogs.TextMenu( "lobbyMenu", items, CloseMenu, "resume" );
+		Stack.Push( menu );
 	}
 
 	// [EXT:no-player-profiles] OpenTPW has no player profiles, so Game Mode is asked on every park entry and each entry starts a new park. The original keeps the mode per player (STP-PPC 0x1015D220/0x1013741C): [BIN:TPW-EXE:0x550ca0 GameType] derives it from bits 0x2000000 (2) and 0x1000000 (1) of the flags word 0x7a1a8c, which a front-end toggle (0x4bbf63..0x4bbf9f) sets, and resumes the player's per-theme autosave (path pieces "save" 0x747a2c, "users" 0x747a3c, "autosave" 0x747a58); a design decision

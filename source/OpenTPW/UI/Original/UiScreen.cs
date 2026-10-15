@@ -294,18 +294,31 @@ public sealed class UiScreenStack
 			DrawHelp( context, context.HoverHelp! );
 	}
 
-	/// <summary>Popup help box at the bottom centre: one or two lines on a translucent black backdrop that is as wide as the text.</summary>
-	// [DATA:video 1:50, 15:20 help box] on every frame with a tip the box sits at the bottom centre of the game area (about y 672-708 of 720, so a margin of about 1.7 % of the height under it), one or two lines, its width following the text, over a translucent black backdrop (grass (13,47,11) shows through at 65-70 % black)
-	// [APPROX:UI-010] the exact alpha (170 of 255), the text's side padding and the 60 % wrap width are read off the video frames, not from the original's box code
-	private static void DrawHelp( UiContext context, string text )
+	/// <summary>
+	/// The popup help box: a fixed rectangle at the bottom, 574 to 1474 wide and ending at y 1520 of the virtual canvas, drawn with the
+	/// f_helpbg art; its height is the small font's line height scaled to the canvas, plus 10 units. The text is centred and wrapped inside.
+	/// </summary>
+	// [BIN:TPW-EXE:0x492180 help box] the help control is built with left 0x23e, right 0x5c2, bottom 0x5f0 and top 0x5f0 - h, h = (fontHeight(font 7) * 3 * 1024) / [0xfaa5c0] + 10; its art is f_helpbg and its text font slot 7, colour (255,255,255,255)
+	// [DATA:video 3:00, 3:20 help box] the box measures 569..1475 by 1436..1515 for one line and for two, grass shows through it at about 67 % black (the art's own alpha)
+	// [APPROX:UI-010] the formula's divisor [0xfaa5c0] is taken as the screen height in pixels and font slot 7 as the small UI font; a text that wraps past the box overflows it on both sides
+	internal static UiRect HelpBoxRect( UiContext context )
 	{
 		var canvas = context.Canvas;
-		var maximum = (int)(canvas.Width * 0.6f);
-		var (width, height) = context.Measure( context.Fonts.Small, text, maximum );
-		var pad = 4 * canvas.TextScale;
-		var boxHeight = height + pad * 2;
-		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height - canvas.Height * 0.017f - boxHeight, width + pad * 2, boxHeight );
-		context.Batch.AddRectangle( rect, UiColors.HelpBox );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		var lineHeight = context.Fonts.Small.LineHeight * canvas.TextScale;
+		var height = lineHeight * 3072f / Math.Max( 1, canvas.Height ) + 10;
+		return canvas.Map( new UiRect( 574, 1520 - height, 900, height ), UiAnchor.Bottom );
+	}
+
+	private static void DrawHelp( UiContext context, string text )
+	{
+		var rect = HelpBoxRect( context );
+		if ( !context.DrawModel( "f_helpbg", 0, rect ) )
+			context.Batch.AddRectangle( rect, UiColors.HelpBox );
+		var pad = 4 * context.Canvas.TextScale;
+		var inner = rect.Inflate( -pad );
+		var height = context.Measure( context.Fonts.Small, text, (int)inner.Width ).Height;
+		// a text taller than the box is centred on it, not hung from its top edge
+		var area = height > inner.Height ? new UiRect( inner.X, inner.Y - (height - inner.Height) / 2, inner.Width, height ) : inner;
+		context.DrawText( context.Fonts.Small, text, area, UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
 	}
 }

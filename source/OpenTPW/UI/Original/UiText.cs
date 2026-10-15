@@ -167,6 +167,9 @@ public static class UiColors
 	public static readonly RgbaByte Disabled = new( 140, 140, 160, 255 );
 	public static readonly RgbaByte Title = new( 255, 214, 64, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
+	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
+	public static readonly RgbaByte MenuItem = new( 0, 173, 218, 255 );
+	public static readonly RgbaByte MenuItemFocused = new( 255, 255, 255, 255 );
 	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
 	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );
 	/// <summary>Dark label text inside the light-green option bars (near-black navy).</summary>

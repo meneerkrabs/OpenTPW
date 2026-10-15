@@ -359,6 +359,9 @@ internal sealed partial class GameFlow : IDisposable
 			CreateOptions = CreateOptions,
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 			GoOnline = ShowOnline,
+			// [EXT:pause-menu-restart] Restart Park restarts an Instant Action park of a theme (no progress is spent); a Full Simulation park would pay its theme's entry cost again, which is not traced, so its entry stays disabled
+			RestartPark = AutomaticEligible( level ) && level.Park is { Start.Kind: ParkStartKind.InstantAction } ? () => RequestParkStart( level.LevelName, GameMode.InstantAction ) : null,
+			PublishPark = stack => CreateOnlineScreens( stack ).ShowPublish(),
 			ListSorts = listSorts,
 			OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),

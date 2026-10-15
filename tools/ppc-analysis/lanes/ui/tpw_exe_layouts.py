@@ -375,12 +375,12 @@ def tool_rules(image: Image) -> list[tuple[int, list[tuple[str, int]], int]]:
 # ---------------------------------------------------------------------------------------------------------------
 # rendering
 
-def resolve(node: dict, names: dict[int, str], table: str) -> str | None:
-    if node['hash'] is None:
+def resolve(node: dict, names: dict[int, str], table: str, key: str = 'hash') -> str | None:
+    if node[key] is None:
         return None
-    if node['hash'] not in names:
-        raise ValueError(f'{table}: model hash {node["hash"]:#x} of control {node["id"]:#x} is not a ui.wad root name')
-    return names[node['hash']]
+    if node[key] not in names:
+        raise ValueError(f'{table}: model hash {node[key]:#x} of control {node["id"]:#x} is not a ui.wad root name')
+    return names[node[key]]
 
 
 def cs_string(text: str | None) -> str:
@@ -397,7 +397,7 @@ def render_node(node: dict, names: dict[int, str], table: str, indent: int) -> s
     node_id = node['id']
     id_text = f'0x{node_id:X}u'
     return (f'{pad}new( {node["type"]}, 0x{node["attributes"]:X}u, {id_text}, {left}, {top}, {right}, {bottom}, {node["help"]}, {node["help2"]}, '
-            f'{cs_string(resolve(node, names, table))}, {inner}, {child_text} )')
+            f'{cs_string(resolve(node, names, table))}, {cs_string(resolve(node, names, table, "hash2"))}, {inner}, {child_text} )')
 
 
 def render(tables: dict[str, tuple[int, list[dict]]], pointers: dict[int, str], rules: list[tuple[int, list[tuple[str, int]], int]],

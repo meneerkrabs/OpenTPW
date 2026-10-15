@@ -11,7 +11,7 @@ public enum ToolPointerFlag { Link, End }
 /// </summary>
 public sealed class LayoutNode
 {
-	public LayoutNode( int type, uint attributes, uint id, int left, int top, int right, int bottom, int help, int altHelp, string? model, int[]? inner, LayoutNode[] children )
+	public LayoutNode( int type, uint attributes, uint id, int left, int top, int right, int bottom, int help, int altHelp, string? model, string? model2, int[]? inner, LayoutNode[] children )
 	{
 		Type = type;
 		Attributes = attributes;
@@ -20,6 +20,7 @@ public sealed class LayoutNode
 		Help = help;
 		AltHelp = altHelp;
 		Model = model;
+		Model2 = model2;
 		Inner = inner is { Length: 4 } ? new UiRect( inner[0], inner[1], inner[2] - inner[0], inner[3] - inner[1] ) : null;
 		Children = children;
 	}
@@ -32,6 +33,8 @@ public sealed class LayoutNode
 	public int Help { get; }
 	public int AltHelp { get; }
 	public string? Model { get; }
+	/// <summary>The root name of the second model (command 2; the lobby panel's button background), null when none.</summary>
+	public string? Model2 { get; }
 	/// <summary>The inner rectangle of command 3 (the text area of a panel), when the table gives one.</summary>
 	public UiRect? Inner { get; }
 	public IReadOnlyList<LayoutNode> Children { get; }

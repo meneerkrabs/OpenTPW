@@ -17,6 +17,10 @@ public sealed class HudHost
 	public Func<UiScreenStack, UiScreen>? CreateLoad { get; init; }
 	/// <summary>Opens the online screens (Go Online, UITEXT 1); null hides the entry.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>Restarts the park as it was started (the pause menu's Restart Park, after its confirmation); null disables the entry.</summary>
+	public Action? RestartPark { get; init; }
+	/// <summary>Opens the online Publish Park flow (the pause menu's Publish Park); null disables the entry.</summary>
+	public Action<UiScreenStack>? PublishPark { get; init; }
 	/// <summary>Opens the existing postcard composer; it does not send a card.</summary>
 	public Action<UiScreenStack>? OpenPostcard { get; init; }
 	/// <summary>The list sorts the windows keep for the session; the game flow shares one instance between its parks.</summary>
@@ -44,7 +48,6 @@ public sealed partial class ParkHud
 {
 	// [EXT:status-line] OpenTPW's own feedback lines (a refused action, a hint for the tool that just started) are not the original's messages: they show as up to three lines for eight seconds above the popup help box; the original's messages go to the message tube (ParkHud.MessageTube.cs, UI-025)
 	public const float MessageSeconds = 8f;
-	private static readonly UiRect ArmRect = new( 330.5f, 1068.5f, 675.8f, 426.1f );
 	private readonly Level level;
 	private readonly UiStringTable strings;
 	private readonly HudHost host;
@@ -222,7 +225,8 @@ public sealed partial class ParkHud
 	private void Build()
 	{
 		// The information arm slides out from behind the main panel (drawn first).
-		var infoArm = hud.Add( new UiModelImage { Id = "infoArm", Model = "panel", Frame = () => 1, Bounds = ArmRect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		// [BIN:TPW-EXE:0x755150 object window] the window frame of the object windows is window2 (w_med) at (248,30)-(1800,1007)
+		var infoArm = hud.Add( new UiModelImage { Id = "infoArm", Model = "window2", Bounds = OriginalLayoutTables.RideWindow.Root.Rect, Anchor = UiAnchor.Center, Visible = false } );
 		infoElements.Add( infoArm );
 		// [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
@@ -281,94 +285,9 @@ public sealed partial class ParkHud
 			} );
 		}
 
-		// [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel
-		// Information arm contents.
-		infoElements.Add( hud.Add( new UiLabel
-		{
-			Id = "infoName",
-			Text = () => InfoNow == null ? "" : InfoNow.DisplayName ?? strings.Object( InfoNow.ObjectNameIndex ),
-			Font = fonts => fonts.Heading,
-			Color = UiColors.Title,
-			Bounds = new UiRect( 470, 1090, 420, 70 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		for ( var row = 0; row < 4; row++ )
-		{
-			var index = row;
-			infoElements.Add( hud.Add( new UiLabel
-			{
-				Id = $"statLabel{index}",
-				Text = () => InfoNow != null && index < InfoNow.Stats.Count ? strings[InfoNow.Stats[index].Label] : "",
-				Font = fonts => fonts.Small,
-				Bounds = new UiRect( 470, 1170 + index * 50, 290, 48 ),
-				Anchor = UiAnchor.BottomLeft,
-				Visible = false
-			} ) );
-			infoElements.Add( hud.Add( new UiLabel
-			{
-				Id = $"statValue{index}",
-				Text = () => InfoNow != null && index < InfoNow.Stats.Count ? InfoNow.Stats[index].Value ?? (InfoNow.Stats[index].IsGauge ? "" : strings.Extra( OpenTpwText.NotSimulated )) : "",
-				Font = fonts => fonts.Small,
-				Color = UiColors.Value,
-				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
-				Anchor = UiAnchor.BottomLeft,
-				Visible = false
-			} ) );
-			infoElements.Add( hud.Add( new UiGaugeBar
-			{
-				Id = $"statGauge{index}",
-				Value = () => InfoNow != null && index < InfoNow.Stats.Count && InfoNow.Stats[index].IsGauge ? InfoNow.Stats[index].Gauge : null,
-				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
-				Anchor = UiAnchor.BottomLeft,
-				Visible = false
-			} ) );
-		}
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "openRide",
-			Model = "b_door",
-			Help = strings.Help( 12 ),
-			Clicked = ToggleRideOpen,
-			// b_door state frames: open door normally, closed door in the "down" frames.
-			Selected = () => selectedObject?.IsOpen == false,
-			Bounds = UiRect.FromCenter( new NVector2( 560, 1425 ), 120, 120 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "deleteRide",
-			Model = "b_erase",
-			Help = strings.Help( 15 ),
-			Clicked = DeleteRide,
-			Bounds = UiRect.FromCenter( new NVector2( 700, 1425 ), 120, 120 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "retractInfo",
-			Model = "b_retract",
-			Help = strings.Help( 481 ),
-			Clicked = () => SetInfoArm( false ),
-			Bounds = UiRect.FromCenter( new NVector2( 388.8f, 1426.2f ), 80, 80 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		// [EXT:ONLINE-069] a read-only visit can ride the inspected ride (the original's visitors could ride the
-		// published park's rides; docs/reverse/ONLINE-VISIT.md). The button lives in the object panel.
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "rideView",
-			Text = () => OnlineStrings.Get( IsRiding ? OnlineLabel.LeaveRide : OnlineLabel.Ride ),
-			Font = fonts => fonts.Label,
-			Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); },
-			Bounds = UiRect.FromCenter( new NVector2( 875, 1425 ), 200, 100 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-
+		// [BIN:TPW-EXE:0x755150 object window] the information arm is the original object window: see ParkHud.ObjectWindow.cs
+		// [APPROX:UI-029] b_door down = closed (the original gives help 12 to the down state, 13 to the other), b_erase = delete — evidence needed: which b_door frame the closed state uses
+		BuildObjectWindow();
 		AddShopPriceButton();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
@@ -411,7 +330,18 @@ public sealed partial class ParkHud
 			new ObjectStat( UIStrings.StateOfRepair, null, LiveState( item )?.Repair is { } liveRepair ? Math.Clamp( (float)liveRepair / 100f, 0f, 1f )
 				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
 			new ObjectStat( UIStrings.RemainingLife, null, LiveState( item )?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
-		}, EntryName( item.Entry ) ) : null;
+		}.Concat( TextStats( item ) ).ToArray(), EntryName( item.Entry ) ) : null;
+
+	/// <summary>The text rows of the object window the economy supplies: the customers of last month (UITEXT 17 for rides, 32 otherwise) and the scrap value (UITEXT 23).</summary>
+	// [BIN:TPW-EXE:0x755150 object window rows] the window's seven rows are UITEXT 17 to 23; the age row (18) has no value here, its display format is not traced
+	private IEnumerable<ObjectStat> TextStats( OriginalObject item )
+	{
+		if ( LiveState( item ) is not { } state || Status.EconomySource is not ParkEconomy economy )
+			yield break;
+		yield return new ObjectStat( item.Entry.WhichUIType == (int)BuildCategory.Rides ? UIStrings.UsersLastMonth : UIStrings.CustomersLastMonth,
+			state.CustomersLastMonth.ToString( System.Globalization.CultureInfo.InvariantCulture ) );
+		yield return new ObjectStat( UIStrings.ScrapValue, FormatMoney( economy.ScrapValue( state ) ) );
+	}
 
 	/// <summary>The live economy record behind a placed object, null in a visit or without an economy.</summary>
 	private ParkObjectState? LiveState( OriginalObject item ) =>
@@ -600,13 +530,13 @@ public sealed partial class ParkHud
 	public bool IsRiding => level.RideView != null;
 
 	/// <summary>
-	/// Boards a placed ride of the visited park: the camera becomes the ride's view, keeping the heading the visitor
-	/// had. The original's visitors could ride the published park's rides (docs/reverse/ONLINE-VISIT.md); only a
-	/// read-only visit offers it here, and building/selling stays impossible while riding.
+	/// Boards a placed ride (the ride window's "Ride it!" button): the camera becomes the ride's view, keeping the heading the player
+	/// had. The original's visitors could ride the published park's rides too (docs/reverse/ONLINE-VISIT.md); building/selling stays
+	/// impossible while riding.
 	/// </summary>
 	public void StartRide( OriginalObject? item )
 	{
-		if ( !level.IsReadOnlyVisit || item is not { IsDeleted: false } candidate || !level.EnterRideView( candidate ) )
+		if ( item is not { IsDeleted: false } candidate || !level.EnterRideView( candidate ) )
 			return;
 		PostMessage( OnlineStrings.Get( OnlineLabel.Ride ) + ": " + EntryName( candidate.Entry ) );
 	}
@@ -618,17 +548,21 @@ public sealed partial class ParkHud
 	{
 		if ( Paused )
 			return;
-		var menu = new UiScreen( PauseMenuScreen );
-		var window = UiDialogs.CenteredWindow( 1000, 1180 );
-		UiDialogs.AddWindow( menu, window, "w_med", () => strings[UIStrings.Paused] );
+		// [BIN:TPW-EXE:0x48c830 pause menu] the in-park pause menu has no window and no title: its lines are, in order, Load, Save, Restart Park, Publish Park, Options, Resume Game, Exit To Lobby and Quit Game (UITEXT 3, 4, 10, 5, 6, 7, 12, 8)
+		// [DATA:video 27:42-27:47] large cyan text lines, white while focused, over the dimmed park: Laden, Opslaan, Park Herstarten, Park Publiceren, Opties, Spel Hervatten, Terug naar de Lobby, Spel Stoppen
+		// [EXT:pause-menu-go-online] the Go Online line (UITEXT 1) after Options is OpenTPW's: the original reaches the online world from the lobby's pause menu only
+		UiScreen? menu = null;
 		var entries = new List<(UIStrings Label, Action Clicked)>
 		{
-			(UIStrings.ResumeGame, ClosePauseMenu),
-			(UIStrings.Save, SavePark),
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
+			(UIStrings.Save, SavePark),
+			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.Message( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
+				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); host.RestartPark?.Invoke(); }), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
+			(UIStrings.PublishPark, () => host.PublishPark?.Invoke( Stack )),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
-			(UIStrings.ExitToLobby, () => { if ( !menu.IsRemoved && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
+			(UIStrings.ResumeGame, ClosePauseMenu),
+			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
@@ -638,21 +572,9 @@ public sealed partial class ParkHud
 			entries.RemoveAll( entry => entry.Label is not (UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
 		if ( host.GoOnline == null )
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
-		for ( var index = 0; index < entries.Count; index++ )
-		{
-			var entry = entries[index];
-			menu.Add( new UiButton
-			{
-				Id = entry.Label.ToString(),
-				Text = () => strings[entry.Label],
-				Clicked = entry.Clicked,
-				Enabled = PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null ),
-				Bounds = new UiRect( window.X + 160, window.Y + 190 + index * 140, window.Width - 400, 116 ),
-				Anchor = UiAnchor.Center
-			} );
-		}
-		menu.Back = ClosePauseMenu;
-		menu.Focus( menu.FocusableElements.First() );
+		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
+			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null )) ).ToList();
+		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ClosePauseMenu, UIStrings.ResumeGame.ToString() );
 		Stack.Push( menu );
 	}
 
@@ -666,10 +588,12 @@ public sealed partial class ParkHud
 	/// Whether a pause-menu entry is clickable: a read-only visit never saves, and an entry without its host
 	/// action (Load, Options) is disabled instead of clicking to nothing.
 	/// </summary>
-	internal static bool PauseMenuEntryEnabled( bool readOnlyVisit, UIStrings label, bool canLoad, bool canOptions ) =>
+	internal static bool PauseMenuEntryEnabled( bool readOnlyVisit, UIStrings label, bool canLoad, bool canOptions, bool canRestart = true, bool canPublish = true ) =>
 		!(readOnlyVisit && label == UIStrings.Save) &&
 		!(label == UIStrings.Load && !canLoad) &&
-		!(label == UIStrings.Options && !canOptions);
+		!(label == UIStrings.Options && !canOptions) &&
+		!(label == UIStrings.RestartPark && !canRestart) &&
+		!(label == UIStrings.PublishPark && !canPublish);
 
 	private void SavePark()
 	{
@@ -714,9 +638,8 @@ public sealed partial class ParkHud
 		var ridingAtStart = IsRiding;
 		var walkingAtStart = CamcorderArmed || level.FreeWalk != null;
 		foreach ( var element in infoElements )
-			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false }
-				// The visit button uses the same ride camera as the park's keyboard shortcut.
-				&& (element.Id != "rideView" || level.IsReadOnlyVisit);
+			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false };
+		ApplyObjectLayout();
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
 
@@ -729,7 +652,7 @@ public sealed partial class ParkHud
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
 			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem;
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
-			rideButton.Enabled = level.IsReadOnlyVisit && (IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate )));
+			rideButton.Enabled = IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate ));
 
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
 		UpdateRideUpgradeButton( input );

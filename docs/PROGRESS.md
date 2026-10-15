@@ -19,6 +19,26 @@ re-read):
 - SAVE-930 is OpenTPW's own layout checkpoint (`[EXT:tpi-layout-checkpoint]`); thirteen arrival and save items are narrowed, among them
   the bus, seaplane or ferry by group size (`0x4cf48c`) and the coaster save block (`0x437300`, `0x437b60`).
 
+## Buy Land, as in the original (October 15, 2026)
+
+The original's land purchase is in: the build window's Miscellaneous tab has "Buy Land" (with the `Costs.MapCell` price) and "Clear
+Land" (`0x4ab12f`), and the land a park owns now limits what can be built.
+
+- **The fence and the owned land** come from each theme's `Hoardings.sam` (loaded at `0x407f20`): the fence runs from post A (the gate's
+  second entrance + 3) to post B (the first − 4, `0x5323f0`), and every cell outside it is unowned (`0x40`, set at `0x536490`). An
+  imported original save keeps its own flags and fence (a save whose fence cannot be walked from post A to post B keeps its flags
+  but has no Buy Land); on the Jungle Easymode save the fill rule reproduces all 16,384 cells' flags, and that save owns 674 cells
+  more than a new park (land the player bought).
+- **The Buy Land tool** (mode `0x39`) takes two clicks on the fence-post lattice and checks the rectangle as `0x531a50` does (map
+  bounds and size, gate posts, runs over no-terrain or fixed-walkway cells (types 7 and 0x1e; water does not count), contact with
+  the park, no new land, no enclosed pocket, money with an equal balance allowed); each unowned cell in [x0+2, x1) × [y0+2, y1)
+  costs `Costs.MapCell` (`0x532303`; 100 in the standard balance, 10 in Jungle's easy one), booked as other costs. The fence is
+  walked round the new land (`0x5327e0`), one purchase per activation.
+- **Unowned land** refuses paths, queues, objects, tracks and staff drops (`0x535670`). Saves keep the land as an optional record;
+  older saves fall back to the land computed from the fence.
+- Not yet: the fence models and the unowned-terrain tint, Clear Land (the rectangle bulldozer, PATH-005), and the coaster tool's
+  ownership test. PATH-007 and ECON-026 are narrowed.
+
 ## Interface windows from tp.exe's tables (October 15, 2026)
 
 - **All Attractions** is built from four decoded tables (`0x7508e0`, `0x750ab8`, `0x750ba0`, `0x750ca0`): the original per-category

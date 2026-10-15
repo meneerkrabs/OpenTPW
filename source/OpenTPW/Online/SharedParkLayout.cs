@@ -23,7 +23,8 @@ public static class SharedParkLayout
 				var type = cells.RawTypeAt( x, y );
 				var links = cells.LinksAt( x, y );
 				var queueLink = cells.QueueLinkAt( x, y );
-				var flags = cells.FlagsAt( x, y );
+				// a visit is read-only and buys no land, so a park's land is not published (it would add a record for most cells)
+				var flags = cells.Land != null ? cells.FlagsAt( x, y ) & ~ParkCellFlags.Unowned : cells.FlagsAt( x, y );
 				var placements = cells.PlacementCountAt( x, y );
 				if ( type == 0 && links == 0 && queueLink == 0 && flags == 0 && placements == 0 )
 					continue;

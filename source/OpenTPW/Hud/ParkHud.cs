@@ -79,7 +79,7 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, item => Status.PriceOf( item ) ?? item.Cost, Sorts );
+		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
 		cashTracker = new CashChangeTracker( status.Money );
 		cashSource = status.EconomySource;
 		lastLevelMessage = level.LastActionMessage;
@@ -332,6 +332,8 @@ public sealed partial class ParkHud
 				staffTool.Cancel();
 			else if ( level.PatrolTool is { IsActive: true } patrolTool )
 				patrolTool.Cancel();
+			else if ( level.BuyLandTool is { IsActive: true } landTool )
+				landTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else if ( pendingItem != null || level.BuildEntry != null )
@@ -353,7 +355,7 @@ public sealed partial class ParkHud
 	private ParkObjectState? LiveState( OriginalObject item ) =>
 		Status.EconomySource is ParkEconomy economy && !level.IsReadOnlyVisit && level.GetEconomyInstance( item ) is int instance && economy.TryGetObject( instance, out var state ) ? state : null;
 
-	public string ItemName( BuildItem item ) => item.Entry == null ? strings.Object( item.ObjectNameIndex ) : EntryName( item.Entry );
+	public string ItemName( BuildItem item ) => item.Entry == null ? LandRowName( item ) ?? strings.Object( item.ObjectNameIndex ) : EntryName( item.Entry );
 
 	private string EntryName( ObjectCatalogEntry entry ) => entry.ObjectNameIndex is int index
 		? ObjectNames.Join( Enumerable.Range( index, Math.Max( 1, entry.ObjectNameLength ) ).Select( strings.Object ) )
@@ -377,6 +379,11 @@ public sealed partial class ParkHud
 	/// <summary>Starts placing a catalog item (the click on the ground is handled by <see cref="Level"/>).</summary>
 	public void BeginPlacing( BuildItem item )
 	{
+		if ( IsLandRow( item ) )
+		{
+			BeginLandTool( item );
+			return;
+		}
 		if ( RejectReadOnlyAction() )
 			return;
 		if ( !Status.IsAvailable( item ) )
@@ -397,6 +404,7 @@ public sealed partial class ParkHud
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();
 		level.PatrolTool?.Cancel();
+		level.BuyLandTool?.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -768,9 +776,11 @@ public sealed partial class ParkHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
-		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value ));
+		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value )
+			|| UpdateBuyLandTool( input, inPark && !mouseCaptured.Value ));
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
-			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true } );
+			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true }
+			|| level.BuyLandTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( context, input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
 		if ( inPark && !rideOwnsInput && !paused && input.RightPressed && GameOptions.Current.RmbCancel && level.BuildEntry != null && !toolClick )
@@ -780,7 +790,8 @@ public sealed partial class ParkHud
 		}
 		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
+		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
+			&& level.BuyLandTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
 			toolPress = false;
@@ -866,7 +877,7 @@ public sealed partial class ParkHud
 		// [APPROX:PATH-013] PATH-PAUSE: while the pause menu is shown the park takes no tool clicks, as in the original (tp.exe gate 0x48c8d0 reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch); OpenTPW's speed pause keeps the tool live, and the original's pause key P (0x40bf70 calls 0x409350(1), which also opens a window) is not shown to block or pass park clicks (0x4879d0 does not read the pause flag 0x786b84) — still open: whether the original's P pause window takes park clicks (0x47ed80/0x65dd7b input layer)
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
-			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } )
+			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true } )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
@@ -961,6 +972,13 @@ public sealed partial class ParkHud
 		else if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
 			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the original queues "square dynamic faces" with 0x53c8d0 (face type 1, queued only when [0x763c98] is set, unit-square UVs 0x871ee8; its 10th argument is a per-face flag, not a texture index) — evidence needed: the texture binding of face type 1 and the staff tool's caller among 0x53c8d0's 10 callers
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
+		else if ( level.BuyLandTool is { IsActive: true } landTool )
+		{
+			// [APPROX:BLUEPRINT-003] the Buy Land ghost is the blueprint's cells along the rectangle's four edges (or the hovered post before the first click), blue while the validator allows the rectangle and red when it refuses it; the original draws a ghost fence model along the edges (0x53aac0 with the tool mode | 0x100) coloured by the refusal 0x816d50
+			var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
+			foreach ( var (x, y) in landTool.PreviewEdge() )
+				cells.Add( (x, y, marker) );
+		}
 		else if ( level.PatrolTool is { IsActive: true } patrol )
 		{
 			// Approximation (UI-024, registered at ParkHud.Build): the patrol tool's rectangle is previewed as the blueprint's edge cells between the first corner and the hovered cell; the original's marking is not traced

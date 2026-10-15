@@ -72,6 +72,15 @@ public sealed class TourCar
 	public int Animation { get; internal set; }
 	public bool AnimationLoops { get; internal set; }
 
+	/// <summary>
+	/// Cars created in this slot so far: presentation state only (not saved, not hashed). The renderer snaps a car to its pose on its first draw, as the original does through
+	/// the car's first-draw word (+0xC8, set at creation).
+	/// </summary>
+	public int Generation { get; internal set; }
+	/// <summary>The pose last drawn (the original keeps it in car +0x34..+0x48) and the <see cref="Generation"/> it was drawn for; presentation state, not saved.</summary>
+	internal TourDrawPose Drawn;
+	internal int DrawnGeneration = -1;
+
 	/// <summary>Whether the slot holds a car.</summary>
 	public bool IsLive => State != StateFree;
 }

@@ -292,7 +292,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
 			Require( flow.Globe is { Visible: true } && flow.Globe.PartCount > 0 && flow.Lobby is { Visible: false }, "the online world shows the globe instead of the lobby" );
-			VerifyText( CaptureFrame( "online-world.png" ), OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ), "online world title" );
+			// the original's city labels stay empty until a city is hovered (tp.exe 0x4B9980), so the screen has no title text to read back
+			CaptureFrame( "online-world.png" );
 			// Offline there is no server city list; pins for a few cities exercise the flags and the picking.
 			flow.Globe.SetCities( new[]
 			{

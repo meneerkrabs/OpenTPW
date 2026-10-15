@@ -110,6 +110,9 @@ public sealed partial class ParkHud
 		// The ride view owns the park input: window keys wait until the visitor has left the ride.
 		if ( IsRiding )
 			return;
+		// F1 without a modifier in a help window repeats the last tutorial advice (the default window procedure's key 0x70 row)
+		if ( AdvisorUiHelp.RepeatsTutorialOnHelpKey( Stack.Top?.Name ) && Input.Pressed( InputButton.Help ) && Input.ModifierMaskDown == 0 )
+			host?.HelpKeyPressed?.Invoke();
 		var windowKeysAllowed = WindowShortcutsAllowed( parkShortcutsAllowed, Stack.Top?.Name );
 		foreach ( var shortcut in AllShortcuts )
 		{

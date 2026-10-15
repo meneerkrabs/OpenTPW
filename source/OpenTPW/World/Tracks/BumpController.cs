@@ -1453,7 +1453,7 @@ public sealed class BumpController
 
 	/// <summary>Pushes <paramref name="vehicle"/> and <paramref name="other"/> apart when their circles overlap, exchanging momentum when they close in.</summary>
 	// [BIN:TPW-EXE:0x00546C80 vehicle collisions] closing (relative velocity within a quarter turn of the line between them): the normal part of the relative speed × the other's restitution goes to the other vehicle, the rest back to this one; otherwise they are pushed apart by the overlap, the other by its restitution share
-	// [BIN:TPW-EXE:0x00546DB0 shared pass] the pair loop runs over the whole module pool: the restitution is the other vehicle's controller's (+0x9C → +0x2C) and the crash code this vehicle's controller type, so vehicles of neighbouring rides push each other
+	// [BIN:TPW-EXE:0x00546E52 shared pass] the pair loop runs over the whole module pool: the restitution is the other vehicle's controller's (+0x9C → +0x2C) and the crash code this vehicle's controller type, so vehicles of neighbouring rides push each other
 	internal void Collide( BumpVehicle vehicle, BumpVehicle other )
 	{
 		if ( other == vehicle || !other.IsLive || ((ObjectOf( other )?.Flags ?? 0) & CollisionObject.Crossing) != 0 || (other.Flags & 0x200) != 0 )

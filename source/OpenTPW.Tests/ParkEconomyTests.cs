@@ -901,6 +901,24 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void ChallengeTypes14And19ReadTheCoastersAnd22CountsRideUsesLike20()
+	{
+		// tp.exe 0x4d1660: 14 is TargetVal <= 0x4cc810 for any coaster, 19 is 0x4cc810(TargetObj) > 2; the ride-use event 0x501db0 adds to 17, 20 and 22 alike
+		var park = EconomyTestData.Park();
+		var twenty = park.Settings.Challenges[8];
+		park.CoasterCountedSections = infoId => infoId switch { 0 => 9, 1180 => 3, _ => 0 };
+		long Measure( ChallengeDefinition definition ) => park.Objectives.Measure( definition, park.Counters, park.Staff, park.Objects, park.GuestStatistics, park.CoasterCountedSections );
+		Assert.AreEqual( 9, Measure( twenty with { Type = 14, TargetObject = 1180 } ), "type 14 reads any coaster" );
+		var nineteen = twenty with { Type = 19, TargetValue = 50 };
+		Assert.AreEqual( 3, Measure( nineteen ) );
+		Assert.AreEqual( 3, ParkObjectives.Target( nineteen ), "more than 2, whatever TargetVal" );
+		Assert.IsTrue( ParkObjectives.IsSupportedType( 14 ) && ParkObjectives.IsSupportedType( 22 ) && !ParkObjectives.IsSupportedType( 23 ) && !ParkObjectives.IsSupportedType( 26 ) );
+		Assert.IsTrue( ParkObjectives.IsCountSinceAcceptance( 22 ) );
+		park.Counters.Add( ParkCounters.RideUses( 1180 ), 4 );
+		Assert.AreEqual( Measure( twenty ), Measure( twenty with { Type = 22 } ) );
+	}
+
+	[TestMethod]
 	public void DecliningAFollowupPaysHalfItsPrize()
 	{
 		// tp.exe 0x4d2ec0: a declined challenge that is not independent credits prize / 2 (0x4d0190); an independent one pays nothing

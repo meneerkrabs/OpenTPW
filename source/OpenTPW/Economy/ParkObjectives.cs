@@ -63,9 +63,9 @@ public enum GoldenTicketKind
 /// golden tickets. Data-driven: definitions, level order, prizes, target times/values/objects,
 /// follow-ups, <c>Independent</c>, <c>CheckAtEndOnly</c>, offer delays, declines to forfeit and every
 /// golden ticket threshold. The Easymode save stores the level's challenge list in exactly this order
-/// (docs/ECONOMY.md). <b>Approximations</b>: the meaning of each challenge type is taken from the
-/// <c>Challenges.sam</c> comments; declines count towards a forfeit (ECON-035); follow-ups are offered
-/// immediately after completion; types without a progress source never complete.
+/// (docs/ECONOMY.md). <b>Approximations</b>: types 24, 25 and 27 compare the current value and some shop-sale
+/// details differ (ECON-034); declines count towards a forfeit (ECON-035); a follow-up does not keep the won
+/// part's object (ECON-055); types without a progress source (23, 26) never complete.
 /// </summary>
 public sealed class ParkObjectives
 {
@@ -92,7 +92,7 @@ public sealed class ParkObjectives
 	public ChallengeDefinition? CurrentDefinition => Current == null ? null : settings.Challenges[Current.DefinitionIndex];
 
 	/// <summary>Challenge types whose progress the simulation can measure (see <see cref="Measure"/>).</summary>
-	public static bool IsSupportedType( int type ) => type is >= 1 and <= 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 24 or 25 or 27 or 28 or 29 or 30 or 31 or 32 or 33;
+	public static bool IsSupportedType( int type ) => type is >= 1 and <= 22 or 24 or 25 or 27 or 28 or 29 or 30 or 31 or 32 or 33;
 
 	/// <summary>The progress value of a challenge type, absolute; count-like types are compared with the acceptance baseline.</summary>
 	/// <param name="coasterSections">The most counted sections of the park's coasters of an Info.Id (0: any coaster), 0 without one; null when the host has no coasters.</param>
@@ -115,7 +115,7 @@ public sealed class ParkObjectives
 			return members.Count == 0 ? 0 : (long)members.Average( member => ParkStaff.StaffSkill( member ) );
 		}
 		// [BIN:TPW-EXE:0x4d1660 challenge check] types 1-8, 11-13, 16, 17, 20 and 22 compare an accumulated value (the system's +0x3dc) with TargetVal; types 9 and 10 are 100 × the guests with a balloon or a costume (0x4c9530 / 0x4c95d0) / the census (0x4c9130)
-		// [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: the writers of the challenge value (+0x3dc) per type
+		// [APPROX:ECON-034] the challenge types follow tp.exe's accumulator writers (0x4d27a0 adds to +0x3dc only for the accepted slot of that type and object): a paid shop sale adds 1 by ShopType and SpecialIngredient (0x4e16b0: ShopType 1 type 5; SpecialIngredient 1, 2, 3, 4 of ShopType 2 or 4 types 2, 1, 3, 4; ShopType 3 type 8, 5 type 7, 6 type 6), shops and sideshows add price minus cost of goods to 12 and 13 (0x4e16b0, 0x4e1920), an admission 1 to 11 (0x4c7520), a researched ride 1 to 16 (0x4d2860), a ride use 1 to 17, 20 and 22 (0x501db0), and 14, 18 and 19 read the coasters' counted sections; but OpenTPW counts every ShopType 4 sale as a drink (3) and the ingredient types in ShopType 2 only (the same on the shipped data), counts a sale of price 0, which tp.exe skips (0x4fe1a0), and compares the current value for 24, 25 and 27, where tp.exe adds the toilet cleanliness, the average staff happiness or that of the challenge's staff type (27; OpenTPW always reads the handymen) at every kind-11 message and compares the sum divided by TargetTime (0x4d2860, 0x4d1660) — evidence needed: the sender and rate of the kind-11 message (types 24, 25, 27)
 		return definition.Type switch
 		{
 			1 => Sold( 2, 2 ),   // fries: food shop with salt
@@ -131,13 +131,18 @@ public sealed class ParkObjectives
 			11 => counters[ParkCounters.Admissions],
 			12 => counters[ParkCounters.ShopProfit],
 			13 => counters[ParkCounters.SideshowProfit],
+			// [BIN:TPW-EXE:0x4d1660 challenge types 14 and 19] 14 passes when TargetVal <= 0x4cc810 for any coaster (the most counted sections, as type 18); 19 when
+			// 0x4cc810(TargetObj) is above 2, whatever TargetVal (Target gives 3)
+			14 => coasterSections?.Invoke( 0 ) ?? 0,
 			15 => counters[ParkCounters.Record( ParkRecordKind.KartCrossroads, definition.TargetObject )],
 			16 => counters[ParkCounters.Researched( ResearchCategory.Ride )],
-			17 or 20 => counters[ParkCounters.RideUses( definition.TargetObject )],
+			// [BIN:TPW-EXE:0x5021e5 ride use] the event 16 of 0x501db0 adds 1 to the accumulator under 17, 20 and 22 alike (0x5021e5, 0x50224b, 0x5022b1), with the used
+			// object's Info.Id as the slot's object; 0x4d1660 compares 22 like 17 and 20
+			17 or 20 or 22 => counters[ParkCounters.RideUses( definition.TargetObject )],
 			// [BIN:TPW-EXE:0x4d1873 challenge type 18] passes when TargetVal <= 0x4cc810(TargetObj): the unsigned maximum, over the rides of track type 3 (0x4e2b50) whose id is
 			// TargetObj (any when 0), of the controller's counted sections (+0x108 via 0x43e0e0, zeroed and counted by the rating final 0x43df90), 0 without one; no accumulator, no baseline
 			18 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
-			19 => counters[ParkCounters.Record( ParkRecordKind.CoasterLoops, definition.TargetObject )],
+			19 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
 			21 => Built( definition.TargetObject ) > 0 ? counters[ParkCounters.Record( ParkRecordKind.KartSections, definition.TargetObject )] : 0,
 			24 => counters[ParkCounters.Record( ParkRecordKind.ToiletCleanlinessPercent, 0 )],
 			25 => AverageHappiness( null ),
@@ -154,11 +159,11 @@ public sealed class ParkObjectives
 	}
 
 	/// <summary>Types measured as a change since acceptance rather than an absolute value.</summary>
-	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 20;
+	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 20 or 22;
 
-	/// <summary>Target value; the build types 30-33 measure 1 when built.</summary>
+	/// <summary>Target value; the build types 30-33 measure 1 when built, and type 19 needs more than 2 counted sections whatever TargetVal.</summary>
 	// [BIN:STP-PPC:0x100CE690 challenge check] a 34-entry handler table (0x1022C794) by type; types 30-33 test "built" (1), type 28 compares TargetVal with the level
-	public static long Target( ChallengeDefinition definition ) => definition.Type is >= 30 and <= 33 ? 1 : definition.TargetValue;
+	public static long Target( ChallengeDefinition definition ) => definition.Type switch { >= 30 and <= 33 => 1, 19 => 3, _ => definition.TargetValue };
 
 	/// <summary>Daily challenge processing; returns the events to publish and the prize won (0 when none).</summary>
 	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win

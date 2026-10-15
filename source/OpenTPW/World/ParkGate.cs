@@ -198,7 +198,7 @@ public sealed class ParkGate
 
 	/// <summary>Whether the cell at a guest's or staff member's position has a census-counted type.</summary>
 	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; OpenTPW only writes 0, 1 and 3 today.
-	// [APPROX:ECON-050] the imported guest grid preserves paths but not every original outside/approach/footprint cell type, so its census can overcount empty imported cells — evidence needed: preserve original cell-type provenance when importing the guest grid
+	// [APPROX:ECON-050] the imported guest grid types only empty (0), path (1), queue (3) and track cells; the original's world init (0x0052F050 → 0x00536490) types every cell from its MAP byte (cell +0x26) and bit 0 of the base.md2 heightfield tile flags (0x00450420): with the bit set or off the terrain 2 (MAP 0x02), 30 (MAP 0x80) or 7, else 1 (MAP 0x08) or 0, and object placement writes footprint types; here such cells read 0, so the gate census counts a guest standing on one and the staff blocker ignores a staff member there — evidence needed: the base.md2 tile-flag bit 0 per cell and the object footprint types in OpenTPW's cell map
 	private bool CountsCellOf( float cellX, float cellY )
 	{
 		var cells = guests!.Grid.Cells;
@@ -215,7 +215,7 @@ public sealed class ParkGate
 	/// flag, the back of its queue connected to a path, and a coaster with a complete circuit.
 	/// </summary>
 	// [BIN:STP-PPC:0x100DE654 reopen guard] state 1, 4 and 2 (the script's VAR_BROKEN or the economy's breakdown; a purchased upgrade not yet installed), maintenance flag +96, back of the queue 0xdd744, coaster circuit 0x45eac; executed by the oracle target ride-may-open
-	// [APPROX:ECON-049] the back-of-queue link test is not modelled: OpenTPW takes the queue as connected (the maintenance flag is the ride's mRequestedService, +0x64 on the PC, the Mac +96, set and cleared by the ride panel's call 0x004DFE30 and cleared by a repair 0x004DF8F0 or a toilet's clean 0x004DFD80). In tp.exe the link test 0x004DE4A0 holds when the back cell's connection bits contain more than its own link, for objects without flag +0x32 bit 8 when the path cell in front of the entrance (by the rotation +0x10) connects both ways; OpenTPW keeps no connection bits for queue cells (QUEUE-003) — evidence needed: the writers of mRequestedService and the queue tool's connection writes
+	// [APPROX:ECON-049] the back-of-queue link test (tp.exe 0x004DE4A0) is not modelled: OpenTPW takes the queue as connected, so the park door (0x00519EF0, guard 0x004DF290) and the open button (disabled by 0x004AD4E0 / 0x004973A0 when the guard fails) open a ride whose queue back has lost its path; in the original an object with flag +0x32 bit 8 needs its back cell's connection byte (+0xC) to differ from its queue-link byte (+0xD), any other object its entrance cell and the type-1 cell in front of it linked both ways; the cell clear 0x005367A0 unlinks a removed path's neighbours, and nothing that tests the link closes an open ride (the repair 0x004DF8F0, the upgrade cancel 0x004E0050 and the track-edit exit 0x00447520 open regardless) — evidence needed: the placement-side writer of a back cell's connection bit (OpenTPW keeps no connection bits for queue cells, QUEUE-003)
 	internal bool MayOpen( OriginalObjectRuntime item )
 	{
 		var record = economyOf?.Invoke( item );

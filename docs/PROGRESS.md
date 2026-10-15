@@ -6,6 +6,38 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Economy rules settled against tp.exe, part two (October 15, 2026)
+
+Sixteen more economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **A new park starts closed** (`0x51562d` writes the closed flag): only the gate button, the two keys and the online park creation open it
+  (`0x519ef0`), and only an imported park saved open is open on load (ECON-031 retired). The M3/M4 gate runs open their park explicitly.
+- **Challenges:** a won challenge with a follow-up marks the follow-up won, so the challenge can be offered again (`0x4d2fb0` re-reads the
+  index the offer moved); declining a follow-up that is not Independent pays half its prize (`0x4d2ec0`); the follow-up is the first open
+  slot of its type in table order (`0x4d2b60`, no same-object preference); type 18 is the best coaster's counted sections with no floor
+  (`0x4d1873`, ECON-036 retired); types 14 and 19 read the coasters' counted sections and type 22 counts ride uses (ECON-034, -035, -055
+  narrowed).
+- **Fixed items** are the objects whose WhichUIType is 4, as the buy menu tests (`0x4aaff0`; ECON-041 retired; the same six per theme), and
+  a repairing mechanic cannot be picked up (`0x505bee` refuses state 13; ECON-052 narrowed).
+- ECON-040 (one golden key once, `0x5afc30`), ECON-051 (the withdrawals flag) and ECON-053 (a carried member is put down where he was
+  before a save, `0x46cdc0`) are retired; ECON-038, -044, -048, -049, -050 and -054 are narrowed.
+
+## Guest rules settled against tp.exe (October 15, 2026)
+
+Sixteen guest approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Prices against RipOffOK** (`0x4d3e00`, key 42 of the table at `0x7456e8`): each shop or sideshow type's own RipOffOK now sets how far
+  above the fair price a guest still pays (100 for shops, 250 for sideshows in the shipped data, so up to 2× and 3.5×); a noticeable
+  balance change (GUEST-003 narrowed).
+- **A full queue costs nothing** (`0x4ffbc0`): a guest finding no room records the event and walks on, with no thought and no happiness
+  loss, and a queue that is too long no longer costs happiness either (GUEST-004 narrowed).
+- **Newest attraction first** (`0x4fcb10`, `0x519d80` pushes at the head): the choice walks the objects newest first, which decides ties
+  (GUEST-002 narrowed).
+- **The use routine's other terms** (`0x4fe1e0`): the small-portion penalty, scaled happiness, fat, salt and ice from the ingredients and
+  the toilet speed term (GUEST-005 narrowed).
+- **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
+  determinism hash is now `0xD28386DACAD73241`.
+
 ## Queue exits as in tp.exe (October 15, 2026)
 
 - **A closed ride drains its queue one head per turn** (`0x4e1220` → `0x4e0450`): the others keep waiting, a closed ride that breaks down

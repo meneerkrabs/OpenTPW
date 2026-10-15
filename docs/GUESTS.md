@@ -49,7 +49,7 @@ range validation is a separate input/display failure: at the supported bound it
 can refuse a tick even though the gameplay digest excludes the counter. Hash
 equality alone does not establish that display metadata passes its range checks.
 
-Native visitor timing remains untraced (`GUEST-920`). The original visitors list's "Time In Park" column shows whole hours (ticks → seconds / 36e9); OpenTPW's detail row (`[EXT:overview-detail-rows]`) shows HH:MM:SS instead.
+The original keeps no visitor counter but an arrival stamp (+0x1D4 = the world turn) that only the guest constructor writes (tp.exe `0x4fafdb`, at the bus drop-off), so its time also covers the road crossing and the booth and does not stop on the road home; the seconds per world turn remain untraced (`GUEST-920`). The original visitors list's "Time In Park" column shows whole hours (ticks → seconds / 36e9); OpenTPW's detail row (`[EXT:overview-detail-rows]`) shows HH:MM:SS instead.
 `GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,
 known/unknown codec continuation, both validators, invalid/overflow rejection,
 the live UI model and hash exclusion using synthetic fixtures only. No original
@@ -234,7 +234,7 @@ home (21) → removed.
 | Item | OpenTPW choice |
 | --- | --- |
 | Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
-| Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts as in tp.exe ([Thoughts](#thoughts)) |
+| Needs | traced ([below](#needs-and-starting-values)); the energy meter is tp.exe's unnamed float +0x1B8: 0 at creation, a completed use takes the type's `FatigueEffect` off it (`0x4fd970`, clamped to 0..100; 5 in the shipped data, so it stays 0), and only the save reads it; thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
 | Boredom | none: the major decision (tp.exe `0x4ff419`) has no boredom test and nothing reads `BoredomThreshold`; a decision that finds nothing costs the small step |
@@ -298,6 +298,9 @@ its thing id (OpenTPW: its guest id, WALK-010):
 
 Using an attraction then applies its own effects after the outcome of [Attraction choice](#attraction-choice): thirst and hunger fall by the type's `ThirstEffect` / `HungerEffect`, illness and happiness rise by
 `VomitEffect` / `HappinessEffect` (clamped); a toilet sets the toilet meter to 0 (GUEST-005). Illness has no decay of its own. A guest at hunger 80 at a shop with a hunger effect of 50 goes to 30.
+The rest of tp.exe's use routine `0x4fe1e0` follows, with the object's ingredient amount (50 when built): for a nonzero hunger, then thirst effect a world draw `r`
+and a small happiness loss when `(r & 7) + amount + effect` is below 30; happiness `+ trunc(amount × HappinessEffect / 100)`; the special ingredient (Fat: toilet
+`+ amount`, Salt: thirst `+ amount`, Ice: thirst `+ trunc(amount × ThirstEffect / 100)`, Sugar: the speed boost); the appearance; and a relief visit's toilet speed term of 25.
 Open: the draws (OpenTPW's own stream, DET-014). There is no boredom loss: nothing in tp.exe reads `BoredomThreshold`.
 
 ### Lifecycle

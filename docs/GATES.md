@@ -41,8 +41,9 @@ The reduced imported guest grid does not yet preserve every original cell type: 
 
 - Admissions stop at the walk to the booth, not at the booth (tp.exe `0x4ff730`, `0x4ff7f0`, `0x4ff9d0`): a visitor
   who reaches the booth while the park is closed turns home with no thought; one already at the booth is weighed and
-  pays as usual (the booth and `ParkEconomy.TryAdmitVisitor`, like `0x4d0600`, read no closed or bankrupt state) and
-  is then sent home without a refund while the park stays closed.
+  pays as usual (the booth and `ParkEconomy.TryAdmitVisitor`, like `0x4d0600`, read no park-closed state) and
+  is then sent home without a refund while the park stays closed. A bankrupt park takes no fee: tp.exe's bankruptcy
+  stops the whole thing loop (world state 4, `0x516380`, ECON-030), where OpenTPW's guests keep updating.
 - Guests already inside keep their place and carry on. Their rides are closed; a queue for a closed ride is
   turned away, one head at a time (the fork's `FUN_004e0450`, `docs/exe/ride-operation.md`, "The closed
   ride"; not reproduced by `ParkGate`).

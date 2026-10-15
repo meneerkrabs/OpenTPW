@@ -153,7 +153,7 @@ public interface IParkEconomy : IParkClock
 	IParkGuestStatistics GuestStatistics { get; set; }
 	event Action<ParkEvent>? EventRaised;
 
-	/// <summary>Charges the entrance fee at the gate. False when the park is closed or the visitor cannot pay.</summary>
+	/// <summary>Charges the entrance fee at the booth (no park-closed test: the guests' walk to the booth makes it). False when the park is bankrupt or the visitor cannot pay.</summary>
 	bool TryAdmitVisitor( long visitorCash, out int feePaid );
 	/// <summary>Sells one item of a shop. False when the shop is unknown/closed or the visitor cannot pay.</summary>
 	bool TryBuy( int instanceId, long visitorCash, out int pricePaid );

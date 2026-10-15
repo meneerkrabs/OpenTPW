@@ -1255,7 +1255,7 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff
 		// [BIN:TPW-EXE:0x004AF4E9 upgrade purchase] the buy handler compares the signed balance (bank +0xC) with Upgrades[level].CostOfUpgrade (type record +0x1B8 + 0x40 · level) and requests the upgrade (0x004E0050(1): state 2, a mechanic called) only when the balance is greater; nothing is debited here
 		var cost = info.Upgrades[level].CostOfUpgrade;
-		if ( unchecked( (int)Balance <= (int)cost ) )
+		if ( Balance <= cost )
 			return PurchaseResult.NotEnoughMoney;
 		item.PendingLevel = level;
 		item.UpgradeCostDue = true;
@@ -1480,14 +1480,16 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- guests
 
 	/// <summary>
-	/// The booth books the entrance fee (tp.exe <c>0x004D0600</c>): no open or bankruptcy test, which the guests' walk to the booth makes instead
-	/// (<see cref="GuestSimulation"/>, states 2 and 3). False only when the guest's purse is short (ARRIVAL-007).
+	/// The booth books the entrance fee (tp.exe <c>0x004D0600</c>): no open test, which the guests' walk to the booth makes instead
+	/// (<see cref="GuestSimulation"/>, states 2 and 3). False when the guest's purse is short (ARRIVAL-007) or the park is bankrupt: there the
+	/// original's thing loop has stopped, so no guest reaches the booth at all (ECON-030), where OpenTPW's guests keep updating.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004D0600 admission] the fee (bank +0x118) goes to the balance, money in (+0x1FC90), the year's takings (+0x124) and the gate row (+0x1FEE0), and 0x004C7520 counts the admission; no state is read
+	// [BIN:TPW-EXE:0x004D0600 admission] the fee (bank +0x118) goes to the balance, money in (+0x1FC90), the year's takings (+0x124) and the gate row (+0x1FEE0), and 0x004C7520 counts the admission; it reads no park-closed state
+	// [BIN:TPW-EXE:0x00516380 park turn walk] the per-turn thing loop is skipped while the world state +0x1DA738 is 4, which the bank's bankruptcy message sets (0x005168F0, ECON-030): no booth guest pays after bankruptcy
 	public bool TryAdmitVisitor( long visitorCash, out int feePaid )
 	{
 		feePaid = 0;
-		if ( visitorCash < EntranceFee )
+		if ( IsBankrupt || visitorCash < EntranceFee )
 			return false;
 		feePaid = EntranceFee;
 		Post( LedgerCategory.GateTakings, feePaid );

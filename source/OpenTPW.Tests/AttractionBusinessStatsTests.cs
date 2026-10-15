@@ -28,23 +28,38 @@ public class AttractionBusinessStatsTests
 		return new( hud, (Level)args[1]!, (ParkEconomy)args[2]!, (OriginalObject)args[3]!, (OriginalObject)args[4]!, (GuestEconomyBridge)args[5]!, context, category );
 	}
 	private static ParkObjectState State( World w, OriginalObject owner ) { Assert.IsTrue( w.Economy.TryGetObject( w.Level.GetEconomyInstance( owner )!.Value, out var state ) ); return state; }
-	private static void Frame( World w ) => w.Hud.Update( w.Context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false );
+	// one frame past the list's 2 s value refresh (tp.exe timer 0x80083)
+	private static void Frame( World w )
+	{
+		var delta = w.Context.Delta; w.Context.Delta = ParkHud.AttractionValueRefreshSeconds;
+		try { w.Hud.Update( w.Context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false ); }
+		finally { w.Context.Delta = delta; }
+	}
 	private static void Show( World w )
 	{
 		w.Hud.OpenAttractionsWindow(); w.Hud.Stack.Top!.Focus( w.Hud.Stack.Top.Find( $"category{w.Category}" )! );
 		w.Hud.Update( w.Context, UiInput.Key( UiKeys.Accept ), false, false, false );
 	}
-	private static string Value( World w, int row ) => ((UiLabel)w.Hud.Stack.Top!.Find( $"statValue{row}" )!).Text();
+	/// <summary>The selected row's business cells in order: customers, profit last month, total profit; the not-simulated note where a cell has no value.</summary>
+	private static string Value( World w, int index )
+	{
+		var row = w.Hud.AttractionItems.FirstOrDefault( item => item.AttractionId == w.Hud.SelectedAttractionId );
+		if ( row.AttractionId == 0 ) return w.Context.Strings.Extra( OpenTpwText.NotSimulated );
+		var category = row.Category;
+		var columns = ParkAttractionRoster.Columns( category ).Select( ( column, at ) => (column.Kind, at) ).ToArray();
+		var kind = new[] { AttractionColumnKind.Customers, AttractionColumnKind.ProfitLastMonth, AttractionColumnKind.TotalProfit }[index];
+		var at = columns.Single( column => column.Kind == kind || kind == AttractionColumnKind.Customers && column.Kind == AttractionColumnKind.Users ).at;
+		return w.Hud.AttractionCellsOf( row )[at].Text ?? w.Context.Strings.Extra( OpenTpwText.NotSimulated );
+	}
 	private static string Money( World w, long value ) => w.Context.Strings[value < 0 ? UIStrings.NegativeDollar : UIStrings.Dollar] + Math.Abs( value ).ToString( "#,0", System.Globalization.CultureInfo.InvariantCulture );
 	private static void Check( World w, long customers, long monthProfit, long totalProfit )
 	{
-		var profitRow = w.Category == BuildCategory.Shops ? 1 : 2;
 		Assert.AreEqual( customers.ToString( System.Globalization.CultureInfo.InvariantCulture ), Value( w, 0 ) );
-		Assert.AreEqual( Money( w, monthProfit ), Value( w, profitRow ) ); Assert.AreEqual( Money( w, totalProfit ), Value( w, profitRow + 1 ) );
-		Assert.AreEqual( w.Context.Strings.Extra( OpenTpwText.NotSimulated ), Value( w, profitRow + 2 ) );
-		Assert.AreEqual( "0", Value( w, profitRow + 3 ) ); Assert.AreEqual( "0", Value( w, profitRow + 4 ) );
+		Assert.AreEqual( Money( w, monthProfit ), Value( w, 1 ) ); Assert.AreEqual( Money( w, totalProfit ), Value( w, 2 ) );
+		var row = w.Hud.AttractionItems.First( item => item.AttractionId == w.Hud.SelectedAttractionId );
+		Assert.IsNull( w.Hud.AttractionCellsOf( row ).Last().Gauge, "customer satisfaction is not simulated" );
 		var label = w.Category == BuildCategory.Shops ? UIStrings.CustomersLastMonthShop : UIStrings.CustomersLastMonthGame;
-		Assert.AreEqual( w.Context.Strings[label], ((UiLabel)w.Hud.Stack.Top!.Find( "statLabel0" )!).Text() );
+		Assert.AreEqual( label, ParkAttractionRoster.Columns( w.Category )[1].Header );
 	}
 	private static void Pay( World w, int count )
 	{
@@ -137,12 +152,11 @@ public class AttractionBusinessStatsTests
 		typeof( Level ).GetMethod( "LinkEconomy", Private )!.Invoke( w.Level, new object[] { side, state.Id } );
 		state.CustomersLastMonth = 5; state.TakingsLastMonth = 60; state.CostsLastMonth = 9; state.TotalProfit = 51;
 		Show( w ); Check( w, 2, 20, 20 );
-		var cache = (System.Collections.IDictionary)typeof( ParkHud ).GetField( "attractionBusinessStats", Private )!.GetValue( w.Hud )!;
-		Assert.AreEqual( 2, cache.Count ); Assert.IsFalse( cache.Contains( side.Runtime.AttractionId ) );
+		Assert.IsFalse( w.Hud.AttractionItems.Any( row => row.AttractionId == side.Runtime.AttractionId ), "the shops tab lists no sideshow" );
 		w.Hud.Stack.Top!.Find( "categorySideshows" )!.Activate(); Check( w with { Category = BuildCategory.Sideshows, Owner = side }, 5, 51, 51 );
-		Assert.AreEqual( 1, cache.Count ); Assert.IsTrue( cache.Contains( side.Runtime.AttractionId ) ); Assert.IsFalse( cache.Contains( w.Owner.Runtime.AttractionId ) );
-		w.Hud.Stack.Top.Find( "categoryFeatures" )!.Activate(); Assert.AreEqual( 0, cache.Count ); Assert.AreEqual( w.Context.Strings.Extra( OpenTpwText.NotSimulated ), Value( w, 0 ) );
-		w.Hud.Stack.Top.Find( "categoryShops" )!.Activate(); Check( w, 2, 20, 20 ); Assert.AreEqual( 2, cache.Count );
+		Assert.IsFalse( w.Hud.AttractionItems.Any( row => row.AttractionId == w.Owner.Runtime.AttractionId ), "the sideshows tab lists no shop" );
+		w.Hud.Stack.Top.Find( "categoryFeatures" )!.Activate(); Assert.AreEqual( w.Context.Strings.Extra( OpenTpwText.NotSimulated ), Value( w, 0 ) );
+		w.Hud.Stack.Top.Find( "categoryShops" )!.Activate(); Check( w, 2, 20, 20 );
 	}
 	[TestMethod]
 	public void SameInfoRemappingAndRecordReplacementRefreshOnlyAtTheNextFrame()
@@ -164,6 +178,34 @@ public class AttractionBusinessStatsTests
 		for ( var i = 0; i < 3; i++ ) Assert.AreEqual( w.Context.Strings.Extra( OpenTpwText.NotSimulated ), Value( w, i ) );
 		Set( w.Hud, "<Status>k__BackingField", new EconomyParkStatus( () => w.Economy ) ); Frame( w ); Check( w, 2, 20, 20 );
 	}
+	[TestMethod]
+	public void AnObjectWindowOpensItsCategoryWithItsObjectAndOtherWindowsReopenTheLastCategory()
+	{
+		// tp.exe 0x4b0d06: the shop window opens category 1 with its object selected; the other windows pass -1, the category shown last (0x7ca154)
+		var w = Create( BuildCategory.Shops );
+		w.Hud.OpenAttractionsWindow( BuildCategory.Shops, w.Other );
+		Assert.AreEqual( (BuildCategory.Shops, w.Other.Runtime.AttractionId), (w.Hud.AttractionCategory, w.Hud.SelectedAttractionId) );
+		w.Hud.CloseAttractionsWindow(); w.Hud.OpenAttractionsWindow();
+		Assert.AreEqual( BuildCategory.Shops, w.Hud.AttractionCategory );
+		w.Hud.Stack.Top!.Find( "categoryFeatures" )!.Activate(); w.Hud.CloseAttractionsWindow(); w.Hud.OpenAttractionsWindow();
+		Assert.AreEqual( BuildCategory.Features, w.Hud.AttractionCategory );
+		Assert.AreEqual( "window4", ((UiModelImage)w.Hud.Stack.Top!.Find( "window" )!).Model );
+		Assert.AreEqual( "b_okay", ((UiButton)w.Hud.Stack.Top.Find( "exit" )!).Model );
+	}
+
+	[TestMethod]
+	public void TheValuesRefreshEveryTwoSeconds()
+	{
+		// tp.exe 0x4955e0: timer 0x80083 refreshes the rows every 2000 ms
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); Show( w ); Check( w, 2, 20, 20 );
+		State( w, w.Owner ).CustomersLastMonth = 9;
+		w.Context.Delta = ParkHud.AttractionValueRefreshSeconds / 4;
+		for ( var frame = 0; frame < 3; frame++ ) w.Hud.Update( w.Context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false );
+		Assert.AreEqual( "2", Value( w, 0 ), "1.5 s after the last refresh the row keeps its value" );
+		w.Hud.Update( w.Context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false );
+		Assert.AreEqual( "9", Value( w, 0 ), "at 2 s the row takes the new value" );
+	}
+
 	[TestMethod]
 	public void SharedMoneyFormatterKeepsExistingIntegralOutputsAcrossCulturesAndDoublePrecisionBoundary()
 	{

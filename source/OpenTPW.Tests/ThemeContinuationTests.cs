@@ -83,7 +83,7 @@ public class ThemeContinuationTests
 		Enter( menu, context );
 		Click( menu, context, "choice2" ); Assert.AreEqual( "lobby", menu.Stack.Top!.Name );
 		Enter( menu, context ); Click( menu, context, "choice1" ); Assert.AreEqual( "gameMode", menu.Stack.Top!.Name );
-		Click( menu, context, "instantAction" ); Assert.AreEqual( 1, started ); Assert.AreEqual( 0, continued );
+		Click( menu, context, "instantAction" ); Assert.AreEqual( 0, started ); Click( menu, context, "ok" ); Assert.AreEqual( 1, started ); Assert.AreEqual( 0, continued );
 		CollectionAssert.AreEqual( original, File.ReadAllBytes( path ) );
 	}
 

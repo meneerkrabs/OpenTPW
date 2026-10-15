@@ -3,7 +3,7 @@ namespace OpenTPW;
 /// <summary>
 /// Connects <see cref="GuestSimulation"/> to <see cref="ParkEconomy"/>: admission goes through
 /// <see cref="ParkEconomy.TryAdmitVisitor"/> (the economy's entrance fee, <c>BankAccountInfo.InitialAdmissionFee</c>
-/// until changed, and its open/closed state), shop and sideshow visits through <see cref="ParkEconomy.TryBuy"/>
+/// until changed; the guests' walk to the booth reads the open/closed state through <see cref="ParkClosed"/>), shop and sideshow visits through <see cref="ParkEconomy.TryBuy"/>
 /// and <see cref="ParkEconomy.PlaySideshow"/>, ride visits through <see cref="ParkEconomy.RecordRideUse"/>.
 /// Attractions are matched to economy objects with <see cref="Link"/>; unlinked attractions are free.
 /// It also supplies <see cref="IParkGuestStatistics"/> from the guests for rating, tickets and challenges, and

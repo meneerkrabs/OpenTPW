@@ -3,6 +3,7 @@ namespace OpenTPW;
 /// <summary>CPU composition of the two native 128x128 sign destinations.</summary>
 public static class SignSurfaceComposer
 {
+	// [APPROX:COMPAT-032] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting) — evidence needed: the original's render state for sign faces and a distant capture
 	// [APPROX:COMPAT-001] native destination dimensions are integrated; original GPU UV orientation and lower DIB rows still require a pixel oracle.
 	public const int Width = 256;
 	public const int Height = 128;
@@ -71,6 +72,8 @@ public static class SignSurfaceComposer
 			Effect( surface, masks[slot], sign.SourceImages[slot], sign.Effects[slot], diagnostics );
 		}
 
+		StraightenAlpha( surface );
+
 		var left = new byte[HalfWidth * Height * 4];
 		var right = new byte[left.Length];
 		for ( var y = 0; y < Height; y++ )
@@ -85,6 +88,66 @@ public static class SignSurfaceComposer
 			half[destination + 3] = surface[source];
 		}
 		return (left, right, textPixels);
+	}
+
+	/// <summary>
+	/// The layers blend into a surface that started at ARGB 0, so a texel of partial alpha holds colour already scaled by that
+	/// alpha. The engine blends with source alpha, which would scale it again (dark fringes, a shadow far too dark, mips that
+	/// average towards black): the colour is divided back by the alpha, and fully transparent texels take the colour of their
+	/// neighbours (a few dilation passes, then the mean colour) so that mip levels and filtering do not pull edges to black.
+	/// </summary>
+	// [EXT:sign-straight-alpha] the native GPU consumer of these texels is untraced; straight alpha with bled edges is the form the engine's alpha blend needs, and it equals the composed texels wherever alpha is 255
+	internal static void StraightenAlpha( byte[] surface )
+	{
+		var count = surface.Length / 4;
+		long sumR = 0, sumG = 0, sumB = 0, covered = 0;
+		for ( var i = 0; i < count; i++ )
+		{
+			var at = i * 4;
+			var alpha = surface[at];
+			if ( alpha == 0 || alpha == 255 ) { if ( alpha == 255 ) { sumR += surface[at + 1]; sumG += surface[at + 2]; sumB += surface[at + 3]; covered++; } continue; }
+			for ( var channel = 1; channel < 4; channel++ )
+				surface[at + channel] = (byte)Math.Min( 255, (surface[at + channel] * 255 + alpha / 2) / alpha );
+			sumR += surface[at + 1]; sumG += surface[at + 2]; sumB += surface[at + 3]; covered++;
+		}
+		if ( covered == 0 ) return;
+		var coloured = new bool[count];
+		for ( var i = 0; i < count; i++ )
+			coloured[i] = surface[i * 4] != 0;
+		for ( var pass = 0; pass < 8; pass++ )
+		{
+			var fill = new List<(int Index, byte R, byte G, byte B)>();
+			for ( var y = 0; y < Height; y++ )
+			for ( var x = 0; x < Width; x++ )
+			{
+				var index = y * Width + x;
+				if ( coloured[index] ) continue;
+				int r = 0, g = 0, b = 0, n = 0;
+				for ( var dy = -1; dy <= 1; dy++ )
+				for ( var dx = -1; dx <= 1; dx++ )
+				{
+					var nx = x + dx;
+					var ny = y + dy;
+					if ( nx < 0 || ny < 0 || nx >= Width || ny >= Height ) continue;
+					var neighbour = ny * Width + nx;
+					if ( !coloured[neighbour] ) continue;
+					r += surface[neighbour * 4 + 1]; g += surface[neighbour * 4 + 2]; b += surface[neighbour * 4 + 3]; n++;
+				}
+				if ( n > 0 ) fill.Add( (index, (byte)(r / n), (byte)(g / n), (byte)(b / n)) );
+			}
+			if ( fill.Count == 0 ) break;
+			foreach ( var (index, r, g, b) in fill )
+			{
+				surface[index * 4 + 1] = r; surface[index * 4 + 2] = g; surface[index * 4 + 3] = b;
+				coloured[index] = true;
+			}
+		}
+		var mean = ((byte)(sumR / covered), (byte)(sumG / covered), (byte)(sumB / covered));
+		for ( var i = 0; i < count; i++ )
+			if ( !coloured[i] )
+			{
+				surface[i * 4 + 1] = mean.Item1; surface[i * 4 + 2] = mean.Item2; surface[i * 4 + 3] = mean.Item3;
+			}
 	}
 
 	private static byte[] RenderMask( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, int index, ICollection<string> diagnostics )

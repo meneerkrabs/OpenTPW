@@ -41,7 +41,7 @@ public sealed class OriginalGateSign : Entity
 	/// <summary>The default park name of a level: its THEMENAMES.str entry, else the level name.</summary>
 	public static string DefaultParkName( string levelName )
 	{
-		// [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture.
+		// [APPROX:COMPAT-007] the theme name is the default park name; the original stores two editable lines (the rename dialog's two fields) that the gate draws and saves, and OpenTPW has no rename — evidence needed: the save field of the two lines.
 		// [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone.
 		var index = ThemeLevels.ToList().FindIndex( level => string.Equals( level, levelName, StringComparison.OrdinalIgnoreCase ) );
 		try
@@ -126,13 +126,15 @@ public sealed class OriginalGateSign : Entity
 					var normal = mesh.Normals.Length > corner ? System.Numerics.Vector3.TransformNormal( mesh.Normals[corner].GetSystemVector3(), world ) : System.Numerics.Vector3.Zero;
 					if ( normal.LengthSquared() > 0 )
 						normal = System.Numerics.Vector3.Normalize( normal );
+					var engineNormal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ;
 					// Lift the text slightly off the board so it wins the depth test against the gate model.
 					var engine = OriginalParkPlacement.ToEngine( park.Heightfield, position + normal * (SurfaceOffset / OriginalParkPlacement.ModelScale) );
 					index = (uint)vertices.Count;
 					vertices.Add( new Vertex
 					{
 						Position = engine,
-						Normal = normal,
+						// Model axes (X, Y, Z) become engine axes (X, Z, Y) like the positions (OriginalTerrain does the same); a zero normal lights as up
+						Normal = engineNormal,
 						TexCoords = mesh.TexCoords[corner],
 						TexIndex = slotOfMaterial[material],
 						MatFlags = 0

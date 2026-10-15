@@ -73,8 +73,15 @@ Formats and evidence:
   The gate shows the park name on two lines with the stored paint, a 60 % black shadow offset
   by (-1, 1) under dark relief stone text, as in the video; the earlier cream paint
   (`gate-paint-legibility`, formerly COMPAT-031) was contradicted by it and is gone, and so are
-  the upward-facing sign normals it came with: with them the relief text rendered white, with the
-  model's own normals the gate is dark stone with grey-blue relief letters, as in the video.
+  the upward-facing sign normals it came with: with them the relief text rendered white. With the
+  overlay's normals converted to engine axes like its positions (model X, Y, Z become X, Z, Y) the
+  gate's front face is dark stone with grey-blue relief letters and a black shadow, as in the video;
+  the back of the gate shows no text in a capture from behind.
+  The composed halves are straight alpha: the layers blend into a surface that started at ARGB 0, so
+  partial-alpha texels held colour already scaled by their alpha, which the engine's alpha blend
+  would scale again (dark fringes, a shadow far too dark); the colour is divided back and
+  transparent texels take their neighbours' colour so mip levels do not average towards black
+  (`[EXT:sign-straight-alpha]`; the native consumer of the texels is untraced).
 - Sign models have texture slots `sign1` (left half) and `sign2` (right half); the shared
   `sign1.wct`/`sign2.wct` are 128x128 placeholders reading "SIGN1"/"SIGN2", i.e. the game
   renders these textures at runtime. The binary imports `CreateFontIndirectA`,
@@ -233,6 +240,7 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
 | COMPAT-016 | Sign text | Ride sign text = the localized type name of the catalogue entry (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space; confirmed by a PC v2.0 video, also for a prebuilt ride whose instance name differs | the original's empty-name result for an id outside table `0x7488D8` |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
+| COMPAT-032 | Sign text | Transparent sign faces use the engine's object material (alpha test below 0.1, alpha blend, no depth sorting); thin letters can erode at low mips and blended edges depend on draw order | the original's render state for sign faces; a distant capture |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
 | COMPAT-014 | Theme Park Inc textures | FSH palette 0x24 has no alpha and decodes opaque; no colour key (see [FSH.md](FSH.md)) | Theme Park Inc texture upload code or captures |
 | COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque | Theme Park Inc palette conversion code or a capture |

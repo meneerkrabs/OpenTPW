@@ -82,6 +82,15 @@ public class RepairHideAudioTests
 		Assert.AreEqual( 4, calls ); owner.Stop(); Assert.IsNotNull( owner.CaptureSnapshot() ); value = new Vector3( 2, 3, 4 ); Repair( owner ); Assert.AreEqual( 4, calls ); Assert.IsNull( mixer.Voices.Last().Position );
 	}
 	[TestMethod]
+	public void HidePairIsSubmittedAtWholeUnitsTruncatedTowardZero()
+	{
+		// [BIN:TPW-EXE:0x5562f6] the hide sounds' coordinates go through __ftol (truncation) before 0x51bfc0
+		var owner = new OriginalObjectRuntime( entry ); Bind( owner, () => new Vector3( -10.75f, 2.5f, 39.99f ) );
+		Repair( owner );
+		foreach ( var voice in mixer.Voices ) Assert.AreEqual( new Vector3( -10, 2, 39 ), voice.Position );
+		owner.Stop();
+	}
+	[TestMethod]
 	public void ChangingProviderIsSampledPerHidePairAndOldVoicesKeepTheirSnapshot()
 	{
 		var owner = new OriginalObjectRuntime( entry ); var origin = new Vector3( 10, 0, 20 ); var calls = 0; Bind( owner, () => { calls++; return origin; } );

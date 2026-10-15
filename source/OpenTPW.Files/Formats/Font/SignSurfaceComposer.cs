@@ -3,7 +3,7 @@ namespace OpenTPW;
 /// <summary>CPU composition of the two native 128x128 sign destinations.</summary>
 public static class SignSurfaceComposer
 {
-	// [APPROX:COMPAT-032] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting) — evidence needed: the original's render state for sign faces and a distant capture
+	// [APPROX:COMPAT-032] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting); tp.exe derives a textured face's state from its texture's alpha type (0x590C40: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque, all with depth writes) — evidence needed: the alpha type of the generated sign texture and a distant capture
 	// [APPROX:COMPAT-001] native destination dimensions are integrated; original GPU UV orientation and lower DIB rows still require a pixel oracle.
 	public const int Width = 256;
 	public const int Height = 128;

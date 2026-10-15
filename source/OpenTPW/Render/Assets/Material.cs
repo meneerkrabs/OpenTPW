@@ -111,7 +111,7 @@ public partial class Material : Asset
 	{
 		// World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md.
 		var quality = CompatibilityRuntime.RenderQuality;
-		// [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states — evidence needed: binary render-state setup or captures.
+		// [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states: tp.exe sets stage 0 from the state word (0x567620: 0x20000 MAGFILTER point, 0x40000 MIPFILTER none, else the device's mip mode; 0x400000 wrap with linear MINFILTER, else clamp with point MINFILTER) and its option apply 0x44D8F0 sets 0x20000 for [0x785898] = 0 and 0x40000 for 1 — evidence needed: that [0x785898] is TEXTUREFILTERING and how the engine flags reach each state word.
 		var world = type is SamplerType.Anisotropic or SamplerType.AnisotropicWrap or SamplerType.AnisotropicRepeat;
 		var samplerFilter = type switch
 		{

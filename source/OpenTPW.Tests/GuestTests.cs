@@ -551,6 +551,56 @@ public class GuestTests
 		Assert.AreEqual( 100f, guest.Energy, "and clamps at 100" );
 	}
 
+	/// <summary>
+	/// The rest of tp.exe's use routine 0x004FE1E0 after the litter (GUEST-005): the small-portion tests (0x004FE436, 0x004FE488), the scaled
+	/// happiness (0x004FE4CF), the special ingredients Fat, Salt and Ice (0x004FE527) and the relief block's toilet speed term (0x004FE7F5).
+	/// Shops of excitement 0 keep the ride outcome out of the way.
+	/// </summary>
+	[TestMethod]
+	public void AUseAppliesThePortionHappinessIngredientAndReliefSteps()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var host = (IRideVisitorHost)simulation;
+		var guest = simulation.SpawnInPark( 19, 5 );
+		void Set( float happiness, float thirst, float hunger, float toilet ) =>
+			(guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea) = (happiness, thirst, hunger, toilet, 0);
+
+		var burgers = CreateShop( 2, (0, 5), excitement: 0, satisfies: GuestNeeds.Hunger );
+		burgers.Bridge.HungerEffect = 40;
+		burgers.Bridge.HappinessEffect = 10;
+		burgers.Bridge.SpecialIngredient = 1;
+		Set( 50, 30, 80, 20 );
+		host.OnVisitorReleased( burgers.Bridge, guest.Id );
+		Assert.AreEqual( (65f, 30f, 40f, 70f), (guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet),
+			"happiness 50 + 10 + trunc(50 × 10 / 100); 50 + 40 is no small portion; Fat adds the amount 50 to the toilet meter" );
+
+		var fries = CreateShop( 3, (0, 6), excitement: 0, satisfies: GuestNeeds.Hunger );
+		fries.Bridge.SpecialIngredient = 2;
+		Set( 50, 30, 80, 20 );
+		host.OnVisitorReleased( fries.Bridge, guest.Id );
+		Assert.AreEqual( (50f, 80f), (guest.Happiness, guest.Thirst), "Salt adds the amount to thirst; no effect, so no draw and no penalty" );
+
+		var drinks = CreateShop( 4, (0, 7), excitement: 0, satisfies: GuestNeeds.Thirst );
+		drinks.Bridge.ThirstEffect = 60;
+		drinks.Bridge.SpecialIngredient = 3;
+		Set( 50, 90, 80, 20 );
+		host.OnVisitorReleased( drinks.Bridge, guest.Id );
+		Assert.AreEqual( (50f, 60f), (guest.Happiness, guest.Thirst), "thirst 90 − 60, then Ice adds trunc(50 × 60 / 100)" );
+
+		var crumbs = CreateShop( 5, (0, 8), excitement: 0, satisfies: GuestNeeds.Hunger );
+		crumbs.Bridge.HungerEffect = 2;
+		crumbs.Bridge.IngredientAmount = 1;
+		Set( 50, 30, 80, 20 );
+		host.OnVisitorReleased( crumbs.Bridge, guest.Id );
+		Assert.AreEqual( 45f, guest.Happiness, "(r & 7) + 1 + 2 is always below 30: the small step 5" );
+
+		var toilet = CreateShop( 6, (0, 9), excitement: 0, satisfies: GuestNeeds.Toilet );
+		Set( 50, 30, 80, 95 );
+		guest.ToiletBonus = 0;
+		host.OnVisitorReleased( toilet.Bridge, guest.Id );
+		Assert.AreEqual( (0f, GuestSpeed.ToiletBonus), (guest.Toilet, guest.ToiletBonus), "a relief visit empties the meter and sets the speed term to 25" );
+	}
+
 	[TestMethod]
 	public void ASugarBoostIsAddedOnceAndDecaysWithinAFewTurns()
 	{

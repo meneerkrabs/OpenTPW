@@ -1897,7 +1897,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
-	// [APPROX:GUEST-005] the meters, litter, appearance and relief block follow tp.exe's use routine 0x004FE1E0, but its small-portion penalties (a world draw each while the hunger or thirst effect is nonzero, 0x004FE436 / 0x004FE488), its scaled happiness (amount × HappinessEffect / 100, 0x004FE4CF), the ingredients Fat, Salt and Ice (0x004FE527; only Sugar's boost is modelled), the relief block's toilet speed term of 25 (0x004FE7F5) and the thirst or hunger sound (0x004FAA00, 0x83 / 0x84) are not modelled; the guest's event records (0x0050C100) feed only the debug dump 0x004FAA60 — evidence needed: none (read)
+	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws come from OpenTPW's guest stream (DET-014) — evidence needed: none (read)
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
@@ -1914,8 +1914,30 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		(guest.Happiness, guest.Thirst, guest.Hunger, _, guest.Nausea) = effects;
 		// [BIN:TPW-EXE:0x004FE1E0 litter meter] after the happiness effect the type's LitterEffect (+0x154) is added to the litter meter +0x1B4, clamped to 0..100 ("Litter gone up by %d, is now %d")
 		guest.Litter = MeterMath.Add( guest.Litter, ride.LitterEffect );
-		// then 0xeaaf8 switches on the type's special ingredient (0xeaf44; its sole caller 0xe9ff8 runs when a guest leaves the object): Sugar raises the speed boost
-		guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
+		var amount = ride.IngredientAmount & 0xFF;
+		// [BIN:TPW-EXE:0x004FE436 small portion] for a nonzero HungerEffect, then a nonzero ThirstEffect (0x004FE488): one world draw r each, and (r & 7) + amount + effect below 30 (unsigned) costs the small happiness step (byte 0x00785058) through the clamped adder 0x004FB4F0
+		if ( ride.HungerEffect != 0 )
+			SmallPortion( guest, amount, ride.HungerEffect );
+		if ( ride.ThirstEffect != 0 )
+			SmallPortion( guest, amount, ride.ThirstEffect );
+		// [BIN:TPW-EXE:0x004FE4CF scaled happiness] then happiness += trunc(amount × HappinessEffect / 100), clamped to 0..100
+		guest.Happiness = MeterMath.Add( guest.Happiness, amount * ride.HappinessEffect / 100 );
+		// [BIN:TPW-EXE:0x004FE527 special ingredient] the switch on type +0x158 (jump table 0x004FE8E8): Fat adds the amount to the toilet meter, Salt to thirst, Ice adds trunc(amount × ThirstEffect / 100) to thirst (each clamped to 0..100), Sugar raises the speed boost +0xC4 by trunc(6 × amount / 100)
+		switch ( ride.SpecialIngredient )
+		{
+			case FatIngredient:
+				guest.Toilet = MeterMath.Add( guest.Toilet, amount );
+				break;
+			case SaltIngredient:
+				guest.Thirst = MeterMath.Add( guest.Thirst, amount );
+				break;
+			case IceIngredient:
+				guest.Thirst = MeterMath.Add( guest.Thirst, amount * ride.ThirstEffect / 100 );
+				break;
+			default:
+				guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
+				break;
+		}
 		ApplyAppearance( guest, ride.AppearanceEffect );
 		if ( ride.ProvidesRelief )
 		{
@@ -1924,7 +1946,21 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Toilet = 0;
 			if ( ((long)guest.Nausea & 0xFF) > 90 )
 				guest.Nausea = 0;
+			// [BIN:TPW-EXE:0x004FE7F5 relief speed term] the block ends by setting the toilet speed term +0xC2 to 25 (word 0x0075C7F2), until the guest's next needs phase rewrites it
+			guest.ToiletBonus = GuestSpeed.ToiletBonus;
 		}
+	}
+
+	/// <summary>The special ingredients of <c>UsageInfo.SpecialIngredient</c> (type <c>+0x158</c>) other than Sugar.</summary>
+	private const int FatIngredient = 1, SaltIngredient = 2, IceIngredient = 3;
+	/// <summary>The small-portion test's limit (tp.exe <c>0x004FE44E</c>, <c>cmp eax, 0x1e</c>).</summary>
+	private const uint SmallPortionLimit = 30;
+
+	/// <summary>One small-portion test of the use routine: a world draw, and a small happiness loss when the portion was small.</summary>
+	private void SmallPortion( Guest guest, int amount, int effect )
+	{
+		if ( unchecked( (uint)((int)(random.NextWord() & 7) + amount + effect) ) < SmallPortionLimit )
+			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
 	}
 
 	/// <summary>

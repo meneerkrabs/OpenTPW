@@ -71,4 +71,11 @@ public class UiRegisterReadTests
 		Assert.AreEqual( 1f, ParkHud.TrainingGaugeFill( new[] { 5 } ), 1e-6f );
 		Assert.AreEqual( (33 * 1024 / 100) / 1024f, ParkHud.TrainingGaugeFill( new[] { 1, 2, 2 } ), 1e-6f, "5 × 100 / 15 = 33" );
 	}
+
+	[TestMethod]
+	public void TheBuyWindowsWorkingLifeGaugeKeepsItsBuildValue()
+	{
+		// tp.exe 0x4abae0 sets gauge 0x1f0 to 100 of 1024 when the window is built; 0x4abb00 never updates it
+		Assert.AreEqual( 100f / 1024f, ParkHud.RideWorkingLifeGauge, 1e-7f );
+	}
 }

@@ -147,6 +147,9 @@ public sealed partial class ParkHud
 
 	public int NumberOwned( BuildItem item ) => level.Objects.Objects.Count( owned => !owned.IsDeleted && owned.Entry.InfoId == item.InfoId );
 
+	/// <summary>The buy window's working-life gauge: the value 100 of 1024 it gets when the window is built (tp.exe 0x4abae0) and keeps.</summary>
+	public const float RideWorkingLifeGauge = 100 / 1024f;
+
 	/// <summary>Stat rows of <paramref name="item"/> for its category: the UITEXT labels 125-129 (rides), 130 (shops), 131-132 (sideshows), 133 (features).</summary>
 	public IReadOnlyList<BuyStat> BuyStats( BuildItem? item )
 	{
@@ -159,7 +162,10 @@ public sealed partial class ParkHud
 		{
 			case BuildCategory.Rides:
 				var capacity = item.Entry?.InitialCapacity ?? 0;
-				// [APPROX:UI-046] gauge rows: excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10'), working life has no catalogue value and stays empty; safe capacity is Upgrades[0].InitCapacity — evidence needed: capture of the original buy window
+				// [BIN:TPW-EXE:0x4abb00 buy stats] on a selection the rides' row-1 gauge (0x1ee) is the type record's +0x13c and the row-3 gauge (0x1ef) its +0x1b0, both × 1024 / 100, and the
+				// capacity cell (0x1f2) its +0x19c as "%d"; the working-life gauge (0x1f0) is only set when the window is built, to 100 of the gauge's 1024 (0x4abae0), and keeps that for every ride
+				// [DATA:video 1:50 buy window] Levensduur shows a short red stub (about a tenth) and Betrouwbaarheid an even shorter one
+				// [APPROX:UI-046] excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10') and safe capacity Upgrades[0].InitCapacity: which catalogue values the record fields +0x13c, +0x1b0 and +0x19c hold is not traced — evidence needed: the type record's loader
 				float? reliability = item.Entry?.Upgrades.FirstOrDefault( level => level.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0, 1 ) : null;
 				return new[]
 				{
@@ -167,7 +173,7 @@ public sealed partial class ParkHud
 					new BuyStat( RideExcitement, null, Percent( item.DefaultExcitement ) ),
 					new BuyStat( RideCapacity, capacity > 0 ? capacity.ToString( CultureInfo.InvariantCulture ) : null, null ),
 					new BuyStat( RideReliability, null, reliability ),
-					new BuyStat( RideLife, null, null ),
+					new BuyStat( RideLife, null, RideWorkingLifeGauge ),
 				};
 			case BuildCategory.Shops:
 				return new[] { new BuyStat( ShopOwned, owned, null ) };

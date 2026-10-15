@@ -62,11 +62,55 @@ public sealed class AudioVoice
 	public void Stop() => IsFinished = true;
 
 	/// <summary>
-	/// The playback ratio of a pitch step: 1 for step 0, otherwise 2^(sign * (|step| + 1) / 96) as a 32-bit float, so step 1 is already +25 cents.
+	/// The playback ratio of a pitch step: 1 for step 0, otherwise the float of the original's table, which holds 2^((|step| + 1) / 96) (or its inverse) so step 1 is already +25 cents.
 	/// </summary>
 	// [BIN:TPW-EXE:0x6d2820 mixer set-frequency wrapper] a non-zero step multiplies the sample rate by the float at 0x782f40 + 4 * step (positive) or 0x783540 + 4 * |step| (negative) and rounds to an integer for QSWaveMixSetFrequency
-	// [BIN:TPW-EXE:0x782f40 pitch ratio tables] the entries are 2^((k + 1) / 96) and 2^(-(k + 1) / 96) from index k = 0 (float32 precision, read to k = 109), so the table is indexed one step off: step 1 reads 2^(2/96) and a step of 0 is the only unshifted one
-	public static float PitchRatio( int step ) => step == 0 ? 1f : (float)Math.Pow( 2.0, Math.Sign( step ) * (Math.Abs( step ) + 1) / 96.0 );
+	// [BIN:TPW-EXE:0x782f40 pitch ratio tables] the floats are stored bit for bit below (110 entries each, read from the executable; the first positive ones are 0x3f80ed70 0x3f81dc9c 0x3f82cd85 ...): entry k is within one float ULP of 2^((k + 1) / 96) and its inverse but not always equal to it, and the index is one step off: step 1 reads entry 1, 2^(2/96), and 2^(1/96) (entry 0) is never used
+	public static float PitchRatio( int step )
+	{
+		if ( step == 0 )
+			return 1f;
+		var table = step > 0 ? PositivePitchTable : NegativePitchTable;
+		var index = Math.Abs( step );
+		// beyond the stored entries (no shipped sound reaches them) the analytic value stands in
+		return index < table.Length ? BitConverter.UInt32BitsToSingle( table[index] ) : (float)Math.Pow( 2.0, Math.Sign( step ) * (index + 1) / 96.0 );
+	}
+
+	private static readonly uint[] PositivePitchTable =
+	{
+		0x3F80ED70, 0x3F81DC9C, 0x3F82CD85, 0x3F83C02B, 0x3F84B496, 0x3F85AAC5, 0x3F86A2BA, 0x3F879C7C,
+		0x3F88980B, 0x3F899570, 0x3F8A94AB, 0x3F8B95C4, 0x3F8C98B3, 0x3F8D9D88, 0x3F8EA43C, 0x3F8FACD6,
+		0x3F90B75F, 0x3F91C3D7, 0x3F92D23D, 0x3F93E29B, 0x3F94F4F1, 0x3F960946, 0x3F971F9B, 0x3F9837EF,
+		0x3F995254, 0x3F9A6EC1, 0x3F9B8D37, 0x3F9CADCD, 0x3F9DD074, 0x3F9EF534, 0x3FA01C15, 0x3FA14517,
+		0x3FA27043, 0x3FA39D99, 0x3FA4CD21, 0x3FA5FEDA, 0x3FA732C6, 0x3FA868F5, 0x3FA9A15E, 0x3FAADC0A,
+		0x3FAC1901, 0x3FAD5843, 0x3FAE99D0, 0x3FAFDDBA, 0x3FB123F6, 0x3FB26C8F, 0x3FB3B78D, 0x3FB504F7,
+		0x3FB654C5, 0x3FB7A701, 0x3FB8FBB1, 0x3FBA52D6, 0x3FBBAC79, 0x3FBD08A2, 0x3FBE6751, 0x3FBFC886,
+		0x3FC12C49, 0x3FC292A3, 0x3FC3FB9C, 0x3FC5672C, 0x3FC6D55A, 0x3FC84639, 0x3FC9B9BF, 0x3FCB2FF5,
+		0x3FCCA8E3, 0x3FCE2489, 0x3FCFA2F9, 0x3FD12420, 0x3FD2A81A, 0x3FD42EE4, 0x3FD5B888, 0x3FD744FE,
+		0x3FD8D456, 0x3FDA6690, 0x3FDBFBB5, 0x3FDD93CD, 0x3FDF2ED8, 0x3FE0CCDE, 0x3FE26DE7, 0x3FE411ED,
+		0x3FE5B906, 0x3FE7632C, 0x3FE9106F, 0x3FEAC0C6, 0x3FEC7443, 0x3FEE2AE5, 0x3FEFE4BD, 0x3FF1A1C2,
+		0x3FF361FE, 0x3FF52581, 0x3FF6EC42, 0x3FF8B652, 0x3FFA83B2, 0x3FFC5469, 0x3FFE2880, 0x40000000,
+		0x4000ED74, 0x4001DCA0, 0x4002CD85, 0x4003C02B, 0x4004B496, 0x4005AAC5, 0x4006A2BA, 0x40079C7C,
+		0x4008980F, 0x40099574, 0x400A94AF, 0x400B95C0, 0x400C98B3, 0x400D9D84,
+	};
+
+	private static readonly uint[] NegativePitchTable =
+	{
+		0x3F7E2889, 0x3F7C5469, 0x3F7A83B2, 0x3F78B652, 0x3F76EC39, 0x3F752578, 0x3F7361FE, 0x3F71A1BA,
+		0x3F6FE4BD, 0x3F6E2AE5, 0x3F6C7443, 0x3F6AC0C6, 0x3F69106F, 0x3F67632C, 0x3F65B90F, 0x3F6411F5,
+		0x3F626DDF, 0x3F60CCDE, 0x3F5F2EE0, 0x3F5D93D5, 0x3F5BFBBD, 0x3F5A6699, 0x3F58D456, 0x3F5744F6,
+		0x3F55B888, 0x3F542EEC, 0x3F52A822, 0x3F512429, 0x3F4FA2F0, 0x3F4E2489, 0x3F4CA8E3, 0x3F4B2FFD,
+		0x3F49B9B6, 0x3F484630, 0x3F46D55A, 0x3F456723, 0x3F43FB9C, 0x3F4292A3, 0x3F412C49, 0x3F3FC88E,
+		0x3F3E6751, 0x3F3D08A2, 0x3F3BAC82, 0x3F3A52DF, 0x3F38FBA9, 0x3F37A701, 0x3F3654C5, 0x3F3504F7,
+		0x3F33B795, 0x3F326C8F, 0x3F3123F6, 0x3F2FDDBA, 0x3F2E99D9, 0x3F2D5843, 0x3F2C18F8, 0x3F2ADC0A,
+		0x3F29A155, 0x3F2868EC, 0x3F2732BE, 0x3F25FEDA, 0x3F24CD21, 0x3F239DA1, 0x3F22703B, 0x3F214520,
+		0x3F201C0D, 0x3F1EF534, 0x3F1DD074, 0x3F1CADCD, 0x3F1B8D3F, 0x3F1A6EB9, 0x3F19524C, 0x3F1837F8,
+		0x3F171F9B, 0x3F160946, 0x3F14F4E8, 0x3F13E293, 0x3F12D235, 0x3F11C3CE, 0x3F10B75F, 0x3F0FACD6,
+		0x3F0EA433, 0x3F0D9D88, 0x3F0C98B3, 0x3F0B95C4, 0x3F0A94AB, 0x3F099579, 0x3F08980B, 0x3F079C84,
+		0x3F06A2C2, 0x3F05AAC5, 0x3F04B48D, 0x3F03C02B, 0x3F02CD8E, 0x3F01DCA5, 0x3F00ED70, 0x3F000000,
+		0x3EFE2889, 0x3EFC547A, 0x3EFA83B2, 0x3EF8B652, 0x3EF6EC39, 0x3EF52589, 0x3EF361FE, 0x3EF1A1BA,
+		0x3EEFE4BD, 0x3EEE2AE5, 0x3EEC7454, 0x3EEAC0C6, 0x3EE9105E, 0x3EE7633D,
+	};
 
 	/// <summary>Sets the pitch step before the voice is first mixed: the frequency is the sample rate times <see cref="PitchRatio"/>, rounded to even as the original's x87 store does.</summary>
 	public void SetPitch( int pitchStep )

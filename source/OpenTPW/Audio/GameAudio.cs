@@ -1,15 +1,6 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The game's sound service: one mixer, the original sound categories and the park music. Mirrors the
-/// Mac game's sound manager (<c>0x100BC6F0</c> registers the global <c>cat_ambient</c>, <c>cat_rides</c>,
-/// <c>cat_ui</c>, <c>cat_kids</c>, <c>cat_staff</c> and <c>cat_speech</c> at sound-manager offsets 0/8/12/4/16/20,
-/// <c>0x100BC438</c> the global <c>cat_globallobbysfx</c> at offset 40, <c>0x100BC4C0</c> a level's
-/// <c>cat_locallobbymusic</c>/<c>cat_locallobbysfx</c> pair, and <c>0x100BC864</c> a level's <c>cat_ambient</c>,
-/// <c>cat_rides</c>, <c>cat_speech</c> and <c>cat_music</c> at offsets 24/28/32/36). Volumes come from the
-/// options; speech ducks the other channels by <c>SoundInfo.DUCKINGLEVEL</c> from <c>sound.sam</c>.
-/// </summary>
-/// <summary>
 /// What the ride scripts did with STARTSCREAM and STOPSCREAM while a park ran: how many started a chain, how many were refused because the ride still held one
 /// (the original's "Started screaming without stopping first.", which leaves the held chain screaming unreferenced), and the band operand of each start.
 /// </summary>
@@ -61,6 +52,15 @@ internal sealed class ScreamStatistics
 	}
 }
 
+/// <summary>
+/// The game's sound service: one mixer, the original sound categories and the park music. Mirrors the
+/// Mac game's sound manager (<c>0x100BC6F0</c> registers the global <c>cat_ambient</c>, <c>cat_rides</c>,
+/// <c>cat_ui</c>, <c>cat_kids</c>, <c>cat_staff</c> and <c>cat_speech</c> at sound-manager offsets 0/8/12/4/16/20,
+/// <c>0x100BC438</c> the global <c>cat_globallobbysfx</c> at offset 40, <c>0x100BC4C0</c> a level's
+/// <c>cat_locallobbymusic</c>/<c>cat_locallobbysfx</c> pair, and <c>0x100BC864</c> a level's <c>cat_ambient</c>,
+/// <c>cat_rides</c>, <c>cat_speech</c> and <c>cat_music</c> at offsets 24/28/32/36). Volumes come from the
+/// options; speech ducks the other channels by <c>SoundInfo.DUCKINGLEVEL</c> from <c>sound.sam</c>.
+/// </summary>
 public static class GameAudio
 {
 	/// <summary>The park music event the original starts when a park opens (<c>0x100BC144</c>: event 2 of the level's music category).</summary>

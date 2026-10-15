@@ -75,6 +75,11 @@ public sealed partial class OriginalObjectRuntime
 		repairParticle = handle is 0 or -1 ? 0 : handle;
 	}
 
+	/// <summary>The repair effect's handle for the runtime snapshot, or 0 when it has ended (the pool is restored with the same generations, so a live handle stays valid).</summary>
+	private int CaptureRepairParticle() => repairParticle != 0 && (ParticleAlive?.Invoke( repairParticle ) ?? true) ? repairParticle : 0;
+
+	private void RestoreRepairParticle( int handle ) => repairParticle = handle;
+
 	/// <summary>The live repair effect's handle (0 when none), for tests.</summary>
 	internal int RepairParticleHandle => repairParticle;
 }

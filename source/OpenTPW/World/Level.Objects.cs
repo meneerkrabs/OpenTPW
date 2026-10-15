@@ -49,6 +49,8 @@ public partial class Level
 		}
 		// Objects keep off built path and queue cells; imported path cells are refused by the terrain rule as before.
 		Objects = new ParkObjects( catalog!, grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
+		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
+		Objects.ObjectRemoving += item => item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
 		Objects.ObjectRemoved += item =>
 		{
 			if ( ReferenceEquals( RideView?.Ride, item ) )
@@ -575,8 +577,6 @@ public partial class Level
 		if ( item == null )
 			return false;
 		LastActionMessage = $"Removed {item.Entry.DisplayName}.";
-		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes (the removal passes flag bit 2 unless a park loads or clears)
-		item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
 		Objects.Remove( item );
 		return true;
 	}

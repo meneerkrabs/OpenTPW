@@ -59,6 +59,10 @@ public class AudioPitchTests
 	{
 		// [BIN:TPW-EXE:0x782f40] the floats read from tp.exe: 1.007246 1.014545 1.021897 ... (index 0 is 2^(1/96)); 0x783540: 0.992806 0.985663 ...
 		Assert.AreEqual( 1f, AudioVoice.PitchRatio( 0 ) );
+		// the stored floats of tp.exe 0x782f40 bit for bit (entry k is read for step k; entry 0 is never used)
+		var stored = new uint[] { 0x3f81dc9c, 0x3f82cd85, 0x3f83c02b, 0x3f84b496, 0x3f85aac5, 0x3f86a2ba, 0x3f879c7c };
+		for ( var step = 1; step <= stored.Length; step++ )
+			Assert.AreEqual( stored[step - 1], BitConverter.SingleToUInt32Bits( AudioVoice.PitchRatio( step ) ), $"step {step}" );
 		Assert.AreEqual( 1.014545f, AudioVoice.PitchRatio( 1 ), 1e-6f );
 		Assert.AreEqual( 1.021897f, AudioVoice.PitchRatio( 2 ), 1e-6f );
 		Assert.AreEqual( 1.044274f, AudioVoice.PitchRatio( 5 ), 1e-6f );

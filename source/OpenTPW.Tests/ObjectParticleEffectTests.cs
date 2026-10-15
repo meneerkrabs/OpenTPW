@@ -198,4 +198,66 @@ public class ObjectParticleEffectTests
 			ObjectCatalog.BonusDataRoot = bonus;
 		}
 	}
+
+	[TestMethod]
+	public void ARepairHandleAndTheScreamViewSurviveASaveAndLoad()
+	{
+		var entryWithKeys = Entry( RideKeys, "*" );
+		var previousAlive = OriginalObjectRuntime.ParticleAlive;
+		OriginalObjectRuntime.ParticleAlive = _ => true;
+		try
+		{
+			var runtime = new OriginalObjectRuntime( entryWithKeys, new RideScriptWorld(), seed: 1 );
+			runtime.SetParticleFootprint( () => new ParticleFootprint( N.Vector3.Zero, 1, 1 ) );
+			runtime.SetRepairParticle( true );
+			var handle = runtime.RepairParticleHandle;
+			Assert.AreNotEqual( 0, handle );
+			runtime.Effects.ScriptHoldsScream = true;
+			var snapshot = runtime.CaptureSnapshot();
+			Assert.AreEqual( handle, snapshot.RepairParticle );
+			Assert.AreEqual( true, snapshot.ScriptHoldsScream );
+
+			var candidate = OriginalObjectRuntime.CreateForRestore( entryWithKeys, new RideScriptWorld(), seed: 1, open: true, attractionId: runtime.AttractionId );
+			candidate.RestoreSnapshot( snapshot );
+			Assert.AreEqual( handle, candidate.RepairParticleHandle, "the restored emitter can still be ended" );
+			Assert.IsTrue( candidate.Effects.ScriptHoldsScream );
+			killed.Clear();
+			candidate.SetRepairParticle( false );
+			CollectionAssert.AreEqual( new[] { handle }, killed, "REPAIREFFECT 0 ends the restored effect" );
+
+			// an older save has neither field: no repair effect, and the scream view follows the held chain
+			var older = OriginalObjectRuntime.CreateForRestore( entryWithKeys, new RideScriptWorld(), seed: 1, open: true, attractionId: runtime.AttractionId );
+			older.RestoreSnapshot( snapshot with { RepairParticle = 0, ScriptHoldsScream = null } );
+			Assert.AreEqual( 0, older.RepairParticleHandle );
+			Assert.IsFalse( older.Effects.ScriptHoldsScream );
+
+			// an effect that ended before the capture is not saved
+			OriginalObjectRuntime.ParticleAlive = _ => false;
+			Assert.AreEqual( 0, runtime.CaptureSnapshot().RepairParticle );
+		}
+		finally
+		{
+			OriginalObjectRuntime.ParticleAlive = previousAlive;
+		}
+	}
+
+	[TestMethod]
+	public void EveryRemovalButAClearAnnouncesTheObjectBeforeItGoes()
+	{
+		var objects = new ParkObjects( null!, new SandboxParkGrid() );
+		var entry = Entry( RideKeys, "*" );
+		var seen = new List<(OriginalObject Item, bool Deleted)>();
+		objects.ObjectRemoving += item => seen.Add( (item, item.IsDeleted) );
+		var first = objects.TryPlace( entry, 3, 3, 0, out _ )!;
+		var second = objects.TryPlace( entry, 8, 8, 0, out _ )!;
+		Assert.IsTrue( objects.Remove( first ) );
+		Assert.AreEqual( 1, seen.Count );
+		Assert.AreSame( first, seen[0].Item );
+		Assert.IsFalse( seen[0].Deleted, "the script and footprint are still there" );
+		Assert.IsFalse( objects.Remove( first ), "an object that is gone announces nothing" );
+		Assert.AreEqual( 1, seen.Count );
+		objects.Clear();
+		Assert.IsTrue( second.IsDeleted );
+		Assert.AreEqual( 1, seen.Count, "a clear (a park that loads) starts no demolish effect" );
+	}
 }

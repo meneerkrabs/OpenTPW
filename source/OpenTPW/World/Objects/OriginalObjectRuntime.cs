@@ -15,6 +15,7 @@ public sealed partial class OriginalObjectRuntime
 	private bool wasRunning;
 	private bool stopped;
 	private readonly OriginalObjectEffects effects;
+	internal OriginalObjectEffects Effects => effects;
 	private readonly RideScriptWorld scriptWorld;
 
 	/// <param name="world">The park's script world; it also allocates the attraction id. Null: a world of its own.</param>
@@ -302,7 +303,9 @@ public sealed partial class OriginalObjectRuntime
 			HeldScreamSpeed = effects.HeldScreamSpeed,
 			OwnedScreamCount = effects.OwnedScreamCount,
 			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null,
-			ParticleObjects = CaptureParticleObjects()
+			ParticleObjects = CaptureParticleObjects(),
+			RepairParticle = CaptureRepairParticle(),
+			ScriptHoldsScream = effects.ScriptHoldsScream
 		};
 	}
 
@@ -351,6 +354,8 @@ public sealed partial class OriginalObjectRuntime
 		}
 		wasRunning = snapshot.WasRunning;
 		RestoreParticleObjects( snapshot.Stopped ? null : snapshot.ParticleObjects );
+		RestoreRepairParticle( snapshot.Stopped ? 0 : snapshot.RepairParticle );
+		effects.ScriptHoldsScream = snapshot.ScriptHoldsScream ?? snapshot.HeldScream;
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();
@@ -557,6 +562,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 
 	/// <summary>Whether the script holds a STARTSCREAM chain (park resume starts it again from its operands).</summary>
 	internal bool HoldsScream => screamChain != null;
+	/// <summary>The script's own view of its scream handle (set by a STARTSCREAM with a band, cleared by STOPSCREAM or a refusal), kept for the scream diagnostics.</summary>
+	internal bool ScriptHoldsScream { get => scriptHoldsScream; set => scriptHoldsScream = value; }
 	/// <summary>The held scream's STARTSCREAM band, level and script speed word (0 without a held scream).</summary>
 	internal int HeldScreamBand { get; private set; }
 	internal int HeldScreamLevel { get; private set; }

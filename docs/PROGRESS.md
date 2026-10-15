@@ -6,6 +6,18 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Interface windows from tp.exe's tables (October 15, 2026)
+
+- **All Attractions** is built from four decoded tables (`0x7508e0`, `0x750ab8`, `0x750ba0`, `0x750ca0`): the original per-category
+  columns, a value refresh every 2 seconds, sorting on any column, reopening on the last category and the park info, all staff and all
+  visitors buttons; OpenTPW's detail rows and status column are gone, as the original list has neither (UI-905 narrowed).
+- **The staff and visitor locator panels** (tables `0x756950`, `0x756ad8`) open with Ctrl+S and Ctrl+V (`0x481790` → `0x4b3f60`,
+  `0x4b4280`): a role's button finds and cycles that role's people and the camera follows (UI-904 retired, UI-091 narrowed).
+- **The research lab's fluids** play tp.exe's animation (`0x4a95b0`, `0x4a9fc0`) at the rate of the category's effort share and staffing
+  (`0x503870`, `0x503980`); the **HUD key counter** shows the player's earned tickets / 3 plus extra keys (`0x5af680`), hidden in Instant
+  Action; the **loans summary** shows the last closed month's money in and out minus outstanding instalments (`0x49fb30`); the
+  **game-mode toggles** latch and only the tick starts the park (`0x4a6d00`). UI-066, -051, -063 and -013 are narrowed.
+
 ## Economy rules settled against tp.exe, part two (October 15, 2026)
 
 Sixteen more economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

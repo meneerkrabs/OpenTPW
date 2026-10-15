@@ -88,9 +88,11 @@ public sealed partial class OriginalObjectRuntime
 				Script.SpeedBias = speed;
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
 			// [BIN:TPW-EXE:0x441970 guest predicate twin] the controller exists, +0x140 == 0, +0x3C bit 0 set and bit 1 clear, and it is not the coaster being edited (0x790fec); callers: 0x4dd920 counts test (Mac 0xdc834, X15), 0x4df290 reopen guard (0xde654), 0x4ffff0 queue state 11 (0xed244: a coaster (track type 3, 0x4e2b50) failing it gets 0x50be80(13), unlink 0x4ddd20, dismissal 0x5012f0, state 6); the open routine 0x4df390 logs "Opening non-openable ride" up to 5 times and opens anyway
-			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them) or crosses itself (the +0x140 == 0 test, CoasterRide.AcceptsGuests); the not-being-edited exclusion is not modelled itself (the coaster tool closes the ride and puts the controller in state 2 while it edits, Level.EnterCoasterTool) and the state 11 thought-13 exit (GUESTS.md) belongs to the guest and queue owner
-			// A water ride takes guests only while its circuit is valid (the original's counts-test reads the track word the walk writes, TRACK-005).
-			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.AcceptsGuests ?? true) && (Bump?.IsTrackValid ?? true) );
+			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them) or crosses itself (the +0x140 == 0 test, CoasterRide.AcceptsGuests); the not-being-edited exclusion is not modelled itself (the coaster tool closes the ride and puts the controller in state 2 while it edits, Level.EnterCoasterTool, so an edited coaster whose track still runs drains one head per turn with no thought 13, where tp.exe's queued guests leave with thought 13); while it refuses guests its admission calls nobody forward (RideVisitorBridge.HostStep), where tp.exe's admission 0x004E1220 does not test 0x00441970; the queue state 11 thought-13 exit (0x00500612) is modelled in GuestSimulation
+			// A kart or water ride is chosen only while its circuit is valid (the original's counts-test 0x004DD920 reads the track word the walk writes for track types 1 and 2, TRACK-005);
+			// the queue's own test at 0x00500612 sends queued guests away only for a coaster or a kart ride (track type 1), not a water ride
+			Visitors.Attach( Script, () => !stopped && IsOpen, () => (Coaster?.AcceptsGuests ?? true) && (Bump?.IsTrackValid ?? true),
+				() => !(Coaster?.AcceptsGuests ?? true) || Bump is { IsWater: false, IsTrackValid: false } );
 			// [APPROX:TOUR-007] a tour ride's riders take one second to walk off after WALKOFF; the original takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0, 0x005571A0) and OpenTPW's WALKON keeps no walk nodes (the walk owner supplies them); a walker that completes at once makes the unload loops of the Star and Tweety Tours scripts end after one rider
 			if ( UsesTour )
 				Visitors.WalkOffMilliseconds = 1000;
@@ -427,6 +429,10 @@ public sealed partial class OriginalObjectRuntime
 			LitterEffect = settings.GetInt( "UsageInfo.LitterEffect" ),
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods] type +320, the price test's base (tp.exe 0x004FDE50; the key table order InitCostOfGoods, ThirstEffect, HungerEffect, VomitEffect, HappinessEffect)
 			InitCostOfGoods = settings.Has( "UsageInfo.InitCostOfGoods" ) ? settings.GetInt( "UsageInfo.InitCostOfGoods" ) : 0,
+			// [DATA:<object>.sam:UsageInfo.RipOffOK] type +0x16C (key 42 of the UsageInfo table at tp.exe 0x007456E8), copied into the per-type record's word +0xC that the price test reads (0x004D3E00); 100 in the shipped Shops.sam, 250 in SideShow.sam
+			RipOffOk = settings.Has( "UsageInfo.RipOffOK" ) ? settings.GetInt( "UsageInfo.RipOffOK" ) : 0,
+			// [DATA:<object>.sam:UsageInfo.FatigueEffect] type +0xE8 (key 9 of the UsageInfo table at tp.exe 0x007456E8), "reduce fatigue value by this amount"; 5 in the shipped Rides.sam, Shops.sam and SideShow.sam
+			FatigueEffect = settings.Has( "UsageInfo.FatigueEffect" ) ? settings.GetInt( "UsageInfo.FatigueEffect" ) : 0,
 			GoldenTicketCost = settings.GetInt( "UsageInfo.GoldenTicketCost" ),
 			UpgradeCost = entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 )?.GetInt( "CostOfUpgrade" ) ?? 0,
 			IsIndoors = settings.GetInt( "UsageInfo.ISIndoors" ) != 0,

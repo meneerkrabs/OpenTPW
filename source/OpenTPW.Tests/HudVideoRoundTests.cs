@@ -60,6 +60,32 @@ public class HudVideoRoundTests
 	}
 
 	[TestMethod]
+	public void AChallengeOffersAcceptAndDeclineThatAnswerTheWaitingOffer()
+	{
+		var hud = Hud();
+		var park = EconomyTestData.Park();
+		park.AdvanceDays( 541 );
+		Assert.IsNotNull( park.Objectives.Current, "the first offer waits for its answer" );
+		var actions = hud.ChallengeActions( () => park );
+		CollectionAssert.AreEqual( new[] { GameMessageKind.Accept, GameMessageKind.Decline }, actions.Select( action => action.Kind ).ToArray() );
+		hud.PostGameMessage( "offer", actions );
+		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
+		hud.OpenedActions[0].Clicked();
+		Assert.IsTrue( park.Objectives.Current!.Accepted, "Accept calls the accept (0x4d2df0)" );
+		Assert.IsNull( hud.OpenedMessage, "the answered message closes" );
+		// [BIN:TPW-EXE:0x4d2df0 / 0x4d2ec0] both do nothing unless an offer waits: a second press is ignored
+		Assert.IsFalse( hud.AnswerChallenge( park, accept: false ) );
+		Assert.IsTrue( park.Objectives.Current!.Accepted );
+
+		var declined = EconomyTestData.Park();
+		declined.AdvanceDays( 541 );
+		var index = declined.Objectives.Current!.DefinitionIndex;
+		hud.ChallengeActions( () => declined )[1].Clicked();
+		Assert.IsNull( declined.Objectives.Current, "Decline calls the decline (0x4d2ec0)" );
+		Assert.AreEqual( 1, declined.Objectives.Declines[index] );
+	}
+
+	[TestMethod]
 	public void AMessageStaysInTheTubeUntilItIsHandled()
 	{
 		var hud = Hud();

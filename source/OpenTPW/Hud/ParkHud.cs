@@ -90,6 +90,7 @@ public sealed partial class ParkHud
 		Stack.Push( hud );
 		Build();
 		HookStaffStrikeMessages();
+		HookChallengeMessages();
 	}
 
 	public UiScreenStack Stack { get; } = new();

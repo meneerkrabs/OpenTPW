@@ -929,10 +929,10 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// Park value (UITEXT 163): the object part of the original's <c>0xc1d4c</c> (ORACLE.md F29): per object, unless it is condemned, the costs of its upgrade levels up to the
-	/// current one times its state of repair / 100. The original adds the map's cell points to it (2 per owned empty cell, 3 per path, 5 per queue, ...).
+	/// current one times its state of repair / 100. The original adds the map's cell points to it (2 per owned empty cell, 3 per path, 5 per queue, 50 per owned hoarding, ...).
 	/// </summary>
 	// [BIN:STP-PPC:0x100C1D4C park value] the thing loop adds sum(Upgrades[0..level].CostOfUpgrade) × byte(state of repair) / 100 for every object that is not in state 4; the 128 × 128 cell loop adds 1, 3, 5, 1, 1, 2 and 50 points by cell type (the predicates 0x10085174..0x10085418) for cells without the unowned flag 0x40; both executed by the oracle target park-value
-	// [APPROX:ECON-026] the map's cell points are not added: the original (0x004C7DB0) adds, for each cell without flag 0x40, 2 for type 0, 3 for type 1, 1 for types 2 and 10, 5 for type 3, 6 for type 9 and 50 when the cell's 40-byte record (for a record of type 12 or 17, the record its link names) has type 11, 13, 16, 18 or 25; at map start (0x00536490, 0x00450420) flag 0x40 is set on every cell but the InitialPath cells the terrain's ownership bits mark owned; OpenTPW's cell map has no such flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, which matches, without the scrap values, as in the original — evidence needed: the terrain's ownership bit (Terrain base.md2 vertex flags +0x2C, bit 0, read by 0x00450420) and the writer that later clears 0x40 (Buy Land)
+	// [APPROX:ECON-026] the map's cell points are not added: the original (0x004C7DB0) adds, for each cell without flag 0x40, 2 for type 0, 3 for type 1, 1 for types 2 and 10, 5 for type 3, 6 for type 9 and 50 when the cell's structure record (for a record of type 12 or 17, the record its link names) has type 11, 13, 16, 18 or 25 (a hoarding is 25); the ownership exists now (the park's land, ParkCellMap.Land), but OpenTPW's cell types are incomplete (objects, ride cells and terrain are not typed, ECON-050) and it has no structure records, so the park value is the object part only, which matches, without the scrap values, as in the original — evidence needed: the original cell types (ECON-050) and structure records
 	public long ParkValue => objects.Values.Sum( ObjectValue );
 
 	/// <summary>One object's share of the park value (<see cref="ParkValueRules.ObjectValue"/>); condemned objects count for nothing.</summary>
@@ -1275,6 +1275,22 @@ public sealed class ParkEconomy : IParkEconomy
 		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"{count} {kind} cells" );
 		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// Charges a Buy Land purchase: <paramref name="cost"/> is the validator's total (<see cref="ParkLand.Price"/>, whose money
+	/// test already ran), debited without another test as other costs; <paramref name="cells"/> only names the purchase.
+	/// </summary>
+	// [BIN:TPW-EXE:0x525d5a land debit] after the purchase (0x5327e0) the click handler debits the validator's total 0x81af4c (0x52fbc0) through the bank debit 0x4d01f0, which adds it to the money-out word +0x1f5a0 of the object 0x519510 returns and tests no balance; the ledger books it as other costs, as the other cell purchases
+	public void ChargeLand( long cost, int cells )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegative( cells );
+		// A negative total (a modified Costs.MapCell) is booked as other income, as TrySpendCell books a negative cell cost (the ECON-048 approximation: the original's debit of a negative amount raises the balance; its month category is not traced).
+		if ( cost >= 0 )
+			Post( LedgerCategory.OtherCosts, cost );
+		else
+			Post( LedgerCategory.OtherIncome, -cost );
+		Raise( ParkEventKind.CellsBought, cost, 0, (int)CellPurchase.Land, $"{cells} {CellPurchase.Land} cells" );
 	}
 
 	/// <summary>

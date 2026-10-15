@@ -100,6 +100,8 @@ public sealed class ParkObjects
 	public IReadOnlyList<OriginalObject> Objects => objects;
 	/// <summary>Extra blocked cells owned by the host (the sandbox Totem prototype).</summary>
 	public Func<int, int, bool>? IsReserved { get; set; }
+	/// <summary>Cells the park does not own (the level's cell map, flag 0x40); null owns every cell.</summary>
+	public Func<int, int, bool>? IsUnowned { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -108,9 +110,18 @@ public sealed class ParkObjects
 	public bool IsOccupied( int x, int y ) => occupied.ContainsKey( (x, y) ) || IsReserved?.Invoke( x, y ) == true;
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
-	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
-		Check( Grid, IsOccupied, entry, anchorX, anchorY, rotation );
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap + owned land; no slope or path rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
+	// [BIN:TPW-EXE:0x5357c7 placement validator] every cell type the validator 0x535670 places (paths, queues and objects alike) is refused on a cell with flag 0x40
+	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	{
+		var result = Check( Grid, IsOccupied, entry, anchorX, anchorY, rotation );
+		if ( result != OriginalPlacementResult.Allowed || IsUnowned is not { } unowned )
+			return result;
+		foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
+			if ( unowned( x, y ) )
+				return OriginalPlacementResult.NotOwned;
+		return result;
+	}
 
 	/// <summary>The same build rule for any grid and occupancy (the headless M3 gate has no <see cref="OriginalObject"/>s).</summary>
 	internal static OriginalPlacementResult Check( IParkGrid grid, Func<int, int, bool> isOccupied, ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )

@@ -1,0 +1,382 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// The park's land (tp.exe's hoardings and Buy Land, <see cref="ParkLand"/>): the Hoardings.sam clicks, the fence and its
+/// owned cells, the Buy Land validator's refusals, price and merge, the tool's clicks, the save round trip and the
+/// fallback for saves without land. Synthetic: a 64 × 64 map with the gate posts A (21, 11) and B (13, 11) and a
+/// rectangular park from x 9 to 25 and y 11 to 21 south of them, as the shipped fences keep the park south of the gate.
+/// </summary>
+[TestClass]
+public class ParkLandTests
+{
+	private static readonly (int X, int Y) PostA = (21, 11), PostB = (13, 11);
+
+	/// <summary>The rectangle park: east from post A, south, west, north and east into post B.</summary>
+	private static readonly (int X, int Y)[] RectangleClicks = { (0, 0), (4, 0), (4, 10), (-12, 10), (-12, 0), (-8, 0) };
+
+	private static ParkLandSetup Setup( params (int X, int Y)[] clicks ) => new( PostA, PostB, clicks );
+
+	private static ParkCellMap NewPark( params (int X, int Y)[] clicks )
+	{
+		var cells = new ParkCellMap( 64, 64 );
+		var land = ParkLand.FromClicks( Setup( clicks.Length == 0 ? RectangleClicks : clicks ) );
+		land.ApplyToNewPark( cells );
+		cells.SetLand( land );
+		return cells;
+	}
+
+	private static bool Owned( ParkCellMap cells, int x, int y ) => !cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
+
+	private static ulong Hash( ParkCellMap cells )
+	{
+		var hash = new StateHasher();
+		cells.AddCanonicalState( hash );
+		return hash.Value;
+	}
+
+	private static ParkEconomy Economy( int cash, int mapCell ) => new(
+		new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( EconomyTestData.StandardText( cash ).Replace( "Costs.MapCell 100", $"Costs.MapCell {mapCell}" ), "Standard.sam" ) } ),
+			null, null, "jungle", false ),
+		EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+
+	private static LandPurchaseCheck Check( ParkCellMap cells, (int X, int Y) first, (int X, int Y) second, long cost = 100, long? balance = null,
+		Func<int, int, bool>? barrier = null ) =>
+		cells.Land!.CheckPurchase( cells, first, second, barrier ?? (( _, _ ) => false), cost, balance );
+
+	// --- Hoardings.sam ---
+
+	[TestMethod]
+	public void HoardingClicksAreReadUpToTheTerminator()
+	{
+		var text = "#comment\r\nHoardingClicks[0].X\t0\r\nHoardingClicks[0].Y\t0\r\n\r\nHoardingClicks[1].X\t2\r\nHoardingClicks[1].Y\t-4\r\n"
+			+ "HoardingClicks[2].X\t512\r\nHoardingClicks[2].Y\t512\r\nHoardingClicks[3].X\t6\r\nHoardingClicks[3].Y\t6\r\n";
+		CollectionAssert.AreEqual( new[] { (0, 0), (2, -4) }, ParkLand.ParseHoardingClicks( text ).ToArray() );
+		// a missing pair ends the list as the terminator does
+		CollectionAssert.AreEqual( new[] { (0, 0) }, ParkLand.ParseHoardingClicks( "HoardingClicks[0].X 0\nHoardingClicks[0].Y 0\nHoardingClicks[2].X 4\nHoardingClicks[2].Y 4\n" ).ToArray() );
+		// the table holds 64 pairs
+		var long_ = string.Concat( Enumerable.Range( 0, 80 ).Select( index => $"HoardingClicks[{index}].X {index}\nHoardingClicks[{index}].Y 0\n" ) );
+		Assert.AreEqual( ParkLand.MaximumClicks, ParkLand.ParseHoardingClicks( long_ ).Count );
+		Assert.IsNull( ParkLandSetup.FromLevel( (47, 17), null, text ) );
+		Assert.AreEqual( new ParkLandSetup( (51, 17), (43, 17), new[] { (0, 0), (2, -4) } ).PostA, ParkLandSetup.FromLevel( (47, 17), (48, 17), text )!.PostA );
+		Assert.AreEqual( (43, 17), ParkLandSetup.FromLevel( (47, 17), (48, 17), text )!.PostB );
+	}
+
+	[TestMethod]
+	public void TheFenceRunsFromPostAToPostBAlongTheClicks()
+	{
+		var land = ParkLand.FromClicks( Setup( RectangleClicks ) );
+		Assert.AreEqual( PostA, land.Ring[0] );
+		Assert.AreEqual( PostB, land.Ring[^1] );
+		Assert.AreEqual( 2 + 5 + 8 + 5 + 2 + 1, land.Ring.Count, "every second cell along the clicks" );
+		Assert.IsTrue( land.IsPost( 25, 15 ) && land.IsPost( 9, 21 ) && !land.IsPost( 17, 11 ), "the gate between the posts has no fence" );
+		Assert.AreEqual( 8 * 5, land.Squares.Count );
+		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (2, 0), (4, 0) ) ), "the first click is on post A" );
+		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (0, 0), (4, 4), (-8, 0) ) ), "clicks run straight" );
+		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (0, 0), (4, 0), (4, 10) ) ), "the last click is on post B" );
+		// a fence with the park north of the gate walks with the park on its left
+		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (0, 0), (4, 0), (4, -10), (-12, -10), (-12, 0), (-8, 0) ) ) );
+	}
+
+	// --- a new park's ownership ---
+
+	[TestMethod]
+	public void ANewParkOwnsTheFencedLandAndTheStripAtTheGate()
+	{
+		var cells = new ParkCellMap( 64, 64 );
+		cells.SetFlags( 40, 40, ParkCellFlags.NoModify );
+		ParkLand.FromClicks( Setup( RectangleClicks ) ).ApplyToNewPark( cells );
+		for ( var y = 0; y < 64; y++ )
+		{
+			for ( var x = 0; x < 64; x++ )
+			{
+				var inside = x is >= 10 and <= 25 && y is >= 12 and <= 21;
+				var strip = x is >= 15 and <= 20 && y is 11 or 12;
+				Assert.AreEqual( inside || strip || (x, y) == (40, 40), Owned( cells, x, y ), $"({x}, {y})" );
+			}
+		}
+		Assert.AreEqual( ParkCellFlags.NoModify, cells.FlagsAt( 40, 40 ), "a fixed cell never becomes unowned" );
+	}
+
+	[TestMethod]
+	public void ACornerTurningAwayFromTheLandOwnsItsFourCells()
+	{
+		// the rectangle with its south-east quarter cut out: (25, 17) turns away from the land
+		var cells = NewPark( (0, 0), (4, 0), (4, 6), (-4, 6), (-4, 10), (-12, 10), (-12, 0), (-8, 0) );
+		Assert.IsTrue( Owned( cells, 17, 17 ) && Owned( cells, 18, 17 ) && Owned( cells, 17, 18 ) && Owned( cells, 18, 18 ), "the four cells round (17, 17)" );
+		Assert.IsFalse( Owned( cells, 19, 19 ), "the cut-out quarter" );
+		Assert.IsFalse( Owned( cells, 18, 19 ), "below the corner's cells" );
+		Assert.IsTrue( Owned( cells, 17, 19 ), "west of the cut" );
+	}
+
+	// --- the Buy Land validator ---
+
+	[TestMethod]
+	public void ARectangleNextToTheParkIsAllowedAndPriced()
+	{
+		var cells = NewPark();
+		var check = Check( cells, (25, 11), (33, 21) );
+		Assert.AreEqual( LandPurchaseRefusal.None, check.Refusal );
+		// x from 27 to 32, y from 13 to 20: 6 × 8 cells, all unowned
+		Assert.AreEqual( 48, check.Cells );
+		Assert.AreEqual( 4800, check.Cost );
+		Assert.AreEqual( 480, Check( cells, (25, 11), (33, 21), cost: 10 ).Cost, "Costs.MapCell 10 (the jungle's easy level)" );
+		Assert.AreEqual( check, Check( cells, (33, 21), (25, 11) ), "the corners' order does not matter" );
+	}
+
+	[TestMethod]
+	public void ThePriceCountsOnlyUnownedCellsInsideTheNewFence()
+	{
+		var cells = NewPark();
+		// overlapping the park: x from 21 to 32 and y from 15 to 22, owned where x <= 25 and y <= 21
+		var check = Check( cells, (19, 13), (33, 23) );
+		Assert.AreEqual( LandPurchaseRefusal.None, check.Refusal );
+		var expected = 0;
+		for ( var y = 15; y < 23; y++ )
+			for ( var x = 21; x < 33; x++ )
+				expected += Owned( cells, x, y ) ? 0 : 1;
+		Assert.AreEqual( expected, check.Cells );
+		Assert.AreEqual( 12 * 8 - 5 * 7, check.Cells );
+	}
+
+	[TestMethod]
+	public void SmallOutsideAndGateRectanglesAreRefused()
+	{
+		var cells = NewPark();
+		Assert.AreEqual( LandPurchaseRefusal.TooSmall, Check( cells, (25, 11), (27, 21) ).Refusal, "two cells wide" );
+		Assert.AreEqual( LandPurchaseRefusal.TooSmall, Check( cells, (25, 11), (33, 13) ).Refusal, "two cells high" );
+		Assert.AreEqual( LandPurchaseRefusal.OutsideMap, Check( cells, (57, 11), (65, 21) ).Refusal );
+		Assert.AreEqual( LandPurchaseRefusal.GatePost, Check( cells, (21, 11), (29, 5) ).Refusal, "a corner on post A" );
+		Assert.AreEqual( LandPurchaseRefusal.GatePost, Check( cells, (5, 5), (13, 11) ).Refusal, "a corner on post B" );
+		Assert.AreEqual( LandPurchaseRefusal.GatePost, Check( cells, (11, 5), (23, 11) ).Refusal, "an edge through both gate posts" );
+		Assert.AreEqual( LandPurchaseRefusal.GatePost, Check( cells, (19, 3), (29, 11) ).Refusal, "an edge through post A" );
+		Assert.AreEqual( LandPurchaseRefusal.Gate, Check( cells, (15, 7), (19, 15) ).Refusal, "land in front of the gate" );
+	}
+
+	[TestMethod]
+	public void ARectangleThatTouchesTheParkAtOneCornerIsRefused()
+	{
+		var cells = NewPark();
+		Assert.AreEqual( LandPurchaseRefusal.TouchesAtOnePoint, Check( cells, (25, 21), (33, 29) ).Refusal );
+		Assert.AreEqual( LandPurchaseRefusal.TouchesAtOnePoint, Check( cells, (33, 29), (25, 21) ).Refusal );
+	}
+
+	[TestMethod]
+	public void ARectangleWithoutNewLandIsRefused()
+	{
+		var cells = NewPark();
+		Assert.AreEqual( LandPurchaseRefusal.NoNewLand, Check( cells, (11, 13), (19, 19) ).Refusal, "inside the park" );
+		Assert.AreEqual( LandPurchaseRefusal.NoNewLand, Check( cells, (37, 31), (45, 39) ).Refusal, "away from the park" );
+	}
+
+	[TestMethod]
+	public void ARectangleThatEnclosesUnownedLandIsRefused()
+	{
+		// the park x 9..25, y 11..21 with a notch x 13..21, y 15..21 open to the south
+		var u = NewPark( (0, 0), (4, 0), (4, 10), (0, 10), (0, 4), (-8, 4), (-8, 10), (-12, 10), (-12, 0), (-8, 0) );
+		Assert.IsFalse( Owned( u, 17, 19 ), "the notch is not owned" );
+		Assert.IsTrue( Owned( u, 17, 13 ) && Owned( u, 11, 19 ) && Owned( u, 23, 19 ) );
+		// closing the notch's mouth leaves x 13..21, y 15..19 enclosed and unowned
+		Assert.AreEqual( LandPurchaseRefusal.Pocket, Check( u, (11, 19), (23, 25) ).Refusal );
+		// filling the whole notch leaves no pocket
+		Assert.AreEqual( LandPurchaseRefusal.None, Check( u, (13, 15), (21, 25) ).Refusal );
+	}
+
+	[TestMethod]
+	public void TwoBarrierPostsInARowOnAnEdgeAreRefused()
+	{
+		var cells = NewPark();
+		var water = new HashSet<(int, int)> { (33, 15), (33, 17) };
+		Assert.AreEqual( LandPurchaseRefusal.Barrier, Check( cells, (25, 11), (33, 21), barrier: ( x, y ) => water.Contains( (x, y) ) ).Refusal );
+		var apart = new HashSet<(int, int)> { (33, 13), (33, 17) };
+		Assert.AreEqual( LandPurchaseRefusal.None, Check( cells, (25, 11), (33, 21), barrier: ( x, y ) => apart.Contains( (x, y) ) ).Refusal, "posts apart" );
+	}
+
+	[TestMethod]
+	public void TheBalanceMustCoverThePriceAndMayEqualIt()
+	{
+		var cells = NewPark();
+		Assert.AreEqual( LandPurchaseRefusal.None, Check( cells, (25, 11), (33, 21), balance: 4800 ).Refusal, "equal is allowed" );
+		var refused = Check( cells, (25, 11), (33, 21), balance: 4799 );
+		Assert.AreEqual( LandPurchaseRefusal.Money, refused.Refusal );
+		Assert.AreEqual( 4800, refused.Cost, "the refused price is still reported (the cash pointer)" );
+		Assert.AreEqual( LandPurchaseRefusal.None, Check( cells, (25, 11), (33, 21), cost: 10, balance: 480 ).Refusal );
+		Assert.AreEqual( LandPurchaseRefusal.Money, Check( cells, (25, 11), (33, 21), cost: 10, balance: 479 ).Refusal );
+	}
+
+	// --- the merge ---
+
+	[TestMethod]
+	public void APurchaseMergesTheFenceAndOwnsTheNewLand()
+	{
+		var cells = NewPark();
+		var merged = cells.Land!.Merge( (25, 11), (33, 21) )!;
+		Assert.IsNotNull( merged );
+		Assert.AreEqual( PostA, merged.Ring[0] );
+		Assert.AreEqual( PostB, merged.Ring[^1] );
+		Assert.IsFalse( merged.IsPost( 25, 15 ), "the shared fence is gone" );
+		Assert.IsTrue( merged.IsPost( 33, 15 ) && merged.IsPost( 29, 21 ) && merged.IsPost( 29, 11 ) );
+		Assert.AreEqual( 8 * 5 + 4 * 5, merged.Squares.Count );
+		merged.ClaimEnclosedCells( cells );
+		Assert.IsTrue( Owned( cells, 26, 12 ) && Owned( cells, 33, 21 ), "the cells next to the new fence's west and north sides and under its east and south sides" );
+		Assert.IsFalse( Owned( cells, 34, 15 ) || Owned( cells, 30, 22 ) );
+		// an L-shaped merge turns away from the land at (25, 21)
+		var l = NewPark().Land!.Merge( (25, 15), (33, 25) )!;
+		Assert.IsNotNull( l );
+		var lCells = NewPark();
+		l.ClaimEnclosedCells( lCells );
+		Assert.IsTrue( Owned( lCells, 25, 22 ) && Owned( lCells, 26, 22 ), "the corner (25, 21) owns its four cells" );
+	}
+
+	// --- the tool ---
+
+	[TestMethod]
+	public void TheToolBuysOneRectanglePerActivation()
+	{
+		var cells = NewPark();
+		var economy = Economy( 50000, 100 );
+		var tool = new BuyLandTool( () => cells, () => economy, ( _, _ ) => false );
+		Assert.IsTrue( tool.Begin() );
+		Assert.AreEqual( BuyLandClick.CornerStored, tool.Click( 26, 12 ) );
+		Assert.AreEqual( (25, 11), tool.Corner, "the click snaps down to the post lattice" );
+		tool.Hover( 34, 22 );
+		Assert.AreEqual( (33, 21), tool.HoverPost );
+		Assert.AreEqual( LandPurchaseRefusal.None, tool.HoverCheck?.Refusal );
+		var balance = economy.Balance;
+		Assert.AreEqual( BuyLandClick.Bought, tool.Click( 34, 22 ) );
+		Assert.IsFalse( tool.IsActive, "one purchase per activation" );
+		Assert.AreEqual( balance - 4800, economy.Balance );
+		Assert.IsTrue( Owned( cells, 30, 15 ) );
+		Assert.IsTrue( cells.Land!.IsPost( 33, 15 ) );
+		Assert.AreEqual( BuyLandClick.Ignored, tool.Click( 40, 40 ) );
+
+		// a refused second click ends the tool too, and charges nothing
+		Assert.IsTrue( tool.Begin() );
+		tool.Click( 11, 13 );
+		var before = economy.Balance;
+		Assert.AreEqual( BuyLandClick.Refused, tool.Click( 19, 19 ) );
+		Assert.IsFalse( tool.IsActive );
+		Assert.AreEqual( before, economy.Balance );
+		Assert.AreEqual( LandPurchaseRefusal.NoNewLand, tool.LastResult?.Refusal );
+	}
+
+	[TestMethod]
+	public void TheToolShowsTheCashPointerWhenTheLandIsTooDear()
+	{
+		var cells = NewPark();
+		var economy = Economy( 1000, 100 );
+		var tool = new BuyLandTool( () => cells, () => economy, ( _, _ ) => false );
+		tool.Begin();
+		tool.Click( 25, 11 );
+		tool.Hover( 33, 21 );
+		Assert.IsTrue( tool.HoverRefused && tool.HoverTooDear );
+		Assert.AreEqual( BuyLandClick.Refused, tool.Click( 33, 21 ) );
+		Assert.AreEqual( 1000, economy.Balance );
+	}
+
+	[TestMethod]
+	public void SnappingClampsToTheMapAndRoundsDownToThePostLattice()
+	{
+		Assert.AreEqual( (21, 11), BuyLandTool.Snap( 22, 12, PostA, 64, 64 ) );
+		Assert.AreEqual( (19, 9), BuyLandTool.Snap( 20, 10, PostA, 64, 64 ), "an odd negative offset rounds down" );
+		Assert.AreEqual( (19, 9), BuyLandTool.Snap( 19, 9, PostA, 64, 64 ) );
+		Assert.AreEqual( (1, 1), BuyLandTool.Snap( -5, 0, PostA, 64, 64 ), "clamped to 1" );
+		Assert.AreEqual( (61, 61), BuyLandTool.Snap( 100, 100, PostA, 64, 64 ), "clamped to width − 2 and height − 3, then down" );
+		Assert.AreEqual( (61, 59), BuyLandTool.Snap( 100, 100, PostA, 64, 63 ) );
+	}
+
+	// --- the economy ---
+
+	[TestMethod]
+	public void LandIsChargedAsOtherCosts()
+	{
+		var economy = Economy( 50000, 100 );
+		var other = economy.Ledger.CurrentMonth( 0, 0 ).Totals.GetValueOrDefault( LedgerCategory.OtherCosts );
+		economy.ChargeLand( 4800, 48 );
+		Assert.AreEqual( 50000 - 4800, economy.Balance );
+		Assert.AreEqual( other + 4800, economy.Ledger.CurrentMonth( 0, 0 ).Totals.GetValueOrDefault( LedgerCategory.OtherCosts ) );
+	}
+
+	// --- objects ---
+
+	[TestMethod]
+	public void ObjectsAreNotPlacedOnUnownedLand()
+	{
+		var objects = new ParkObjects( null!, new SandboxParkGrid() ) { IsUnowned = ( x, _ ) => x > 10 };
+		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Feature, "/levels/jungle/features/x", new ObjectSettings( new[]
+		{
+			new ObjectSettingsFile( "Info.Id\t1400\nInfo.Name\t\"x\"\n", "x.sam" )
+		} ), ObjectShape.Single, "/x.MD2", null, null, Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(),
+			Array.Empty<string>(), new BaseFileSystem( Path.GetTempPath() ), null );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, objects.Check( entry, 5, 5, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.NotOwned, objects.Check( entry, 11, 5, 0 ) );
+		objects.IsUnowned = null;
+		Assert.AreEqual( OriginalPlacementResult.Allowed, objects.Check( entry, 11, 5, 0 ), "without land every cell is owned" );
+	}
+
+	// --- saves ---
+
+	[TestMethod]
+	public void TheLandSurvivesASaveRoundTrip()
+	{
+		var cells = NewPark();
+		var tool = new BuyLandTool( () => cells, () => null, ( _, _ ) => false );
+		Assert.IsTrue( tool.Begin() );
+		tool.Click( 25, 11 );
+		Assert.AreEqual( BuyLandClick.Bought, tool.Click( 33, 21 ) );
+		cells.SetType( 15, 15, ParkCellType.Path );
+		var snapshot = ParkLayoutSnapshot.CaptureSnapshot( cells, new ParkObjects( null!, new SandboxParkGrid() ) );
+		Assert.IsNotNull( snapshot.Cells.Land );
+		Assert.IsTrue( snapshot.Cells.Cells.Count < 10, "unowned cells are not recorded one by one" );
+		var revived = JsonSerializer.Deserialize<ParkLayoutSnapshot.Data>( JsonSerializer.Serialize( snapshot ) )!;
+		var restored = ParkLayoutSnapshot.RestoreCellMap( revived );
+		Assert.AreEqual( cells.Version, restored.Version );
+		for ( var y = 0; y < 64; y++ )
+			for ( var x = 0; x < 64; x++ )
+				Assert.AreEqual( (cells.RawTypeAt( x, y ), cells.FlagsAt( x, y )), (restored.RawTypeAt( x, y ), restored.FlagsAt( x, y )), $"({x}, {y})" );
+		CollectionAssert.AreEqual( cells.Land!.Ring.ToArray(), restored.Land!.Ring.ToArray() );
+		Assert.AreEqual( Hash( cells ), Hash( restored ) );
+	}
+
+	[TestMethod]
+	public void ASaveWithoutLandGetsTheLevelsLand()
+	{
+		var old = new ParkCellMap( 64, 64 );
+		old.SetType( 15, 15, ParkCellType.Path );
+		old.Touch();
+		var snapshot = ParkLayoutSnapshot.CaptureSnapshot( old, new ParkObjects( null!, new SandboxParkGrid() ) );
+		Assert.IsNull( snapshot.Cells.Land, "a map without land writes no land record" );
+		var setup = Setup( RectangleClicks );
+		var restored = ParkLayoutSnapshot.RestoreCellMap( snapshot, cells => cells.SetUpLand( setup, null ) );
+		Assert.IsNotNull( restored.Land );
+		Assert.AreEqual( old.Version, restored.Version, "the saved version is kept" );
+		Assert.IsTrue( Owned( restored, 15, 15 ) && !Owned( restored, 40, 40 ) );
+		Assert.AreEqual( ParkCellType.Path, restored.TypeAt( 15, 15 ) );
+		Assert.IsFalse( ParkLayoutSnapshot.RestoreCellMap( snapshot ).Land != null, "no fallback, no land" );
+	}
+
+	[TestMethod]
+	public void ACorruptLandRecordIsRejected()
+	{
+		var cells = NewPark();
+		var snapshot = ParkLayoutSnapshot.CaptureSnapshot( cells, new ParkObjects( null!, new SandboxParkGrid() ) );
+		ParkLayoutSnapshot.Data With( ParkLayoutSnapshot.LandData land ) => snapshot with { Cells = snapshot.Cells with { Land = land } };
+		var land = snapshot.Cells.Land!;
+		foreach ( var (data, message) in new (ParkLayoutSnapshot.Data, string)[]
+		{
+			(With( land with { Unowned = "not base64!" } ), "Base64"),
+			(With( land with { Unowned = Convert.ToBase64String( new byte[3] ) } ), "bytes"),
+			(With( land with { Ring = land.Ring.Take( 1 ).ToList() } ), "posts"),
+			(With( land with { Ring = land.Ring.Append( new[] { 99, 99 } ).ToList() } ), "outside the map"),
+			(With( land with { Ring = land.Ring.Select( post => new[] { post[0], post[1] } ).Reverse().ToList() } ), "post A"),
+			(With( land with { Ring = land.Ring.Where( ( _, index ) => index != 3 ).ToList() } ), "neighbours"),
+		} )
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( data ) ).Message, message );
+	}
+}

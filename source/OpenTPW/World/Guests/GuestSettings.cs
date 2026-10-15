@@ -65,6 +65,9 @@ public sealed class GuestSettings
 	// sam: FixedItemInfo (cells); null when the balance file has none
 	public (int X, int Y)[]? ArrivalLaneA { get; set; }
 	public (int X, int Y)[]? ArrivalLaneB { get; set; }
+	/// <summary>The park entrance's two cells (FixedItemInfo.EntranceA/B), null when the balance file lacks one; the park fence starts beside them.</summary>
+	public (int X, int Y)? EntranceA { get; set; }
+	public (int X, int Y)? EntranceB { get; set; }
 
 	// approximation: no original source (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md; the needs, starting values and
 	// the exit counter are traced: NeedsUpdate, GuestStart, docs/reverse/ORACLE.md F25)
@@ -167,6 +170,8 @@ public sealed class GuestSettings
 		}
 		settings.ArrivalLaneA = Lane( "A" );
 		settings.ArrivalLaneB = Lane( "B" );
+		settings.EntranceA = Cell( "EntranceA" );
+		settings.EntranceB = Cell( "EntranceB" );
 		return settings;
 	}
 }

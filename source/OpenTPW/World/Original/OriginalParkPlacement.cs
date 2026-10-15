@@ -11,7 +11,9 @@ public enum OriginalPlacementResult
 	EntranceArea,
 	FixedWalkway,
 	Path,
-	Occupied
+	Occupied,
+	/// <summary>The park does not own the cell (map flag 0x40; Buy Land adds land).</summary>
+	NotOwned
 }
 
 /// <summary>

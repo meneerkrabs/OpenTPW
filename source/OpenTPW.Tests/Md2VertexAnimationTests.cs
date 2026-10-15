@@ -648,4 +648,38 @@ public class Md2VertexAnimationTests
 		var allocated = Allocated( () => Rejects( data ) );
 		Assert.IsTrue( allocated < 1 << 20, $"{allocated} bytes allocated" );
 	}
+	/// <summary>The synthetic record with flags 0x600 and a path-parameter block of <paramref name="values"/> (count may be overstated).</summary>
+	private static byte[] CreatePathAnimation( float[] values, uint? count = null )
+	{
+		var data = CreateAnimation();
+		var block = Grow( ref data, ModelPathParameters.HeaderBytes + values.Length * 4 );
+		W32( data, block, 0 );
+		W32( data, block + 4, count ?? (uint)values.Length );
+		W32( data, block + 8, 0 );
+		W32( data, block + 12, block + ModelPathParameters.HeaderBytes );
+		WF( data, block + ModelPathParameters.HeaderBytes, values );
+		W32( data, Records + 4, BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( Records + 4 ) ) | 0x600 );
+		W32( data, Records + 36, block );
+		return data;
+	}
+
+	[TestMethod]
+	public void PathParameterBlocksDecodeButStayUnsupported()
+	{
+		var track = Read( CreatePathAnimation( new[] { 13.5f, 14f, 113.5f } ) ).Tracks[0];
+		CollectionAssert.AreEqual( new[] { 13.5f, 14f, 113.5f }, track.PathParameters!.Values.ToArray() );
+		Assert.AreEqual( (0u, 0u), (track.PathParameters.StartTick, track.PathParameters.Reserved) );
+		Assert.AreEqual( 0x600u, track.UnsupportedFlags & 0x600u, "the path itself is not decoded" );
+
+		// Flag 0x200 without its block, and a non-finite value, are rejected.
+		var missing = CreatePathAnimation( new[] { 1f } );
+		W32( missing, Records + 36, 0 );
+		Rejects( missing );
+		Rejects( CreatePathAnimation( new[] { float.NaN } ) );
+
+		// A count far past the member is rejected before its table is allocated.
+		var huge = CreatePathAnimation( new[] { 1f }, 0x0FFF_FFFF );
+		var allocated = Allocated( () => Rejects( huge ) );
+		Assert.IsTrue( allocated < 1 << 20, $"{allocated} bytes allocated" );
+	}
 }

@@ -802,7 +802,9 @@ public sealed class ParkEconomy : IParkEconomy
 		var training = Staff.Train();
 		if ( training > 0 )
 		{
-			Post( LedgerCategory.StaffCosts, training );
+			// [BIN:TPW-EXE:0x00505A10 staff training] the training is a debit (0x004D01F0, money out) added to its own analyser word +0x1FA40, which no finance row shows;
+			// the staff costs row (+0x1F7F0, graph bit 0x80 at 0x0049A7B0) takes only the wages (0x00504C70, 0x00505790)
+			Post( LedgerCategory.OtherCosts, training );
 			Raise( ParkEventKind.TrainingPaid, training );
 		}
 		ConsiderStrikes();

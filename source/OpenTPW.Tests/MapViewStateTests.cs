@@ -64,7 +64,7 @@ public class MapViewStateTests
 		var hud = (OpenTPW.Hud.ParkHud)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OpenTPW.Hud.ParkHud ) );
 		typeof( OpenTPW.Hud.ParkHud ).GetField( "mapCategories", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!
 			.SetValue( hud, new System.Collections.Generic.HashSet<BuildCategory> { BuildCategory.Rides, BuildCategory.Shops, BuildCategory.Sideshows, BuildCategory.Features } );
-		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Rides ) && hud.MapShowsCategory( (int)BuildCategory.Features ), "all four layers start on" );
+		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Rides ) && hud.MapShowsCategory( (int)BuildCategory.Features ), "with all four layers on, each shows" );
 		hud.ToggleMapCategory( BuildCategory.Rides );
 		Assert.IsFalse( hud.MapShowsCategory( (int)BuildCategory.Rides ), "turning a layer off hides only its category" );
 		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Shops ) && hud.MapShowsCategory( (int)BuildCategory.Sideshows ) && hud.MapShowsCategory( (int)BuildCategory.Features ) );

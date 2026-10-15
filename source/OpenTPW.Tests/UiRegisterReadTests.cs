@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 
@@ -23,5 +24,24 @@ public class UiRegisterReadTests
 		// tp.exe 0x664495 hides the scroller when the list has no more items than rows
 		Assert.IsFalse( ParkHud.BuyScrollShown( 0 ) );
 		Assert.IsTrue( ParkHud.BuyScrollShown( 1 ) );
+	}
+
+	[TestMethod]
+	public void MapOverlayCellsUseTheOriginalGridOnTheThemeImage()
+	{
+		// tp.exe 0x5f2380: 15 + column × trunc(480 / width), 42 + row × trunc(425 / height)
+		var first = ParkMapGeometry.OverlayCellRect( 96, 85, true, 0, 0 );
+		var last = ParkMapGeometry.OverlayCellRect( 96, 85, true, 95, 84 );
+		Assert.AreEqual( (15f, 42f, 5f, 5f), (first.X, first.Y, first.Width, first.Height) );
+		Assert.AreEqual( (495f, 467f), (last.Right, last.Bottom) );
+		Assert.AreEqual( 4f, ParkMapGeometry.OverlayCellRect( 96, 100, true, 0, 0 ).Height, "the cell size is truncated" );
+		Assert.AreEqual( ParkMapGeometry.CellImageRect( 32, 32, false, 3, 4 ), ParkMapGeometry.OverlayCellRect( 32, 32, false, 3, 4 ), "the sandbox keeps its own grid" );
+	}
+
+	[TestMethod]
+	public void TheMapStartsWithOnlyTheRidesLayer()
+	{
+		// the layer word starts as 1, the bit of control 2439 (b_sride)
+		CollectionAssert.AreEquivalent( new[] { BuildCategory.Rides }, ParkHud.InitialMapCategories.ToArray() );
 	}
 }

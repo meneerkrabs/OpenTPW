@@ -267,10 +267,17 @@ public class GuestTests
 		shop.Step(); // calls 1, script takes it
 		shop.Step();
 		shop.Open = false;
+		// tp.exe 0x4e1220 → 0x4e0450: a closed ride sends one queue head away per ride update; the others wait.
+		foreach ( var (gone, left) in new[] { (2, 2), (3, 1), (4, 0) } )
+		{
+			shop.Step();
+			CollectionAssert.Contains( host.Events, $"away {gone}" );
+			Assert.AreEqual( left, shop.Bridge.QueueLength );
+		}
+		// The join (0x4ffbc0) reads no open word: a closed ride still takes a joiner and sends it away from the head.
+		Assert.IsTrue( shop.Bridge.TryJoinQueue( 5 ), "the join reads no open word" );
 		shop.Step();
-		CollectionAssert.Contains( host.Events, "away 2" );
-		Assert.AreEqual( 0, shop.Bridge.QueueLength );
-		Assert.IsFalse( shop.Bridge.TryJoinQueue( 4 ), "closed rides take nobody" );
+		CollectionAssert.Contains( host.Events, "away 5" );
 		shop.Bridge.ReleaseAll();
 		CollectionAssert.Contains( host.Events, "release 1" );
 	}

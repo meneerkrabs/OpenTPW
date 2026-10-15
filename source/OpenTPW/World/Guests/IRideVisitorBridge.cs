@@ -75,7 +75,7 @@ public interface IRideVisitorHost
 	/// <summary>The guest left the queue without riding (ride closed or removed).</summary>
 	void OnVisitorTurnedAway( IRideVisitorBridge ride, int guestId );
 	/// <summary>
-	/// The broken ride dismissed its head guest (<c>0xee804</c> from the ride update, ride states 1 and 4): the guest loses
+	/// The broken or closed ride dismissed its head guest (<c>0xee804</c>, tp.exe <c>0x4e0450</c> → <c>0x5012f0</c> from the ride update: ride states 1, 2 and 4, or state 0 with the open word 0): the guest loses
 	/// happiness and wanders off. Hosts that do not model that treat it as <see cref="OnVisitorTurnedAway"/>.
 	/// </summary>
 	void OnVisitorDismissed( IRideVisitorBridge ride, int guestId ) => OnVisitorTurnedAway( ride, guestId );
@@ -100,6 +100,13 @@ public interface IRideVisitorBridge
 	string Name { get; }
 	RideVisitorKind Kind { get; }
 	bool IsOpen { get; }
+	/// <summary>
+	/// A guest walking to the attraction may join its queue: the original's join (state 10, <c>0x004FFBC0</c>) reads neither the open word nor the
+	/// ride state, so a closed or broken ride still takes joiners and sends them away from the queue head. Hosts without the distinction report <see cref="IsOpen"/>.
+	/// </summary>
+	bool AcceptsJoins => IsOpen;
+	/// <summary>The coaster or track refuses guests (<c>0x00441970</c>, the track word): a queued guest leaves with thought 13 (state 11, <c>0x004FFFF0</c>).</summary>
+	bool TrackRefusesGuests => false;
 	int Capacity { get; }
 	/// <summary>.sam <c>UsageInfo.ExcitementLevel</c> (0–100).</summary>
 	int ExcitementLevel { get; }
@@ -164,7 +171,7 @@ public interface IRideVisitorBridge
 	uint QueueLimit { get; }
 	bool HasQueue { get; }
 	bool ProvidesRelief { get; }
-	/// <summary>The ride script reports a breakdown (<c>VAR_BROKEN</c>, the original's ride state 1 or 4): its queue is dismissed head first and nobody joins.</summary>
+	/// <summary>The ride script reports a breakdown (<c>VAR_BROKEN</c>, the original's ride state 1 or 4): its queue is dismissed head first (a joiner too, once it is the head).</summary>
 	bool IsBroken { get; }
 	/// <summary>The ride is in state 1 (broken down) until it is opened again; choices and the queue's move-up read this, not <c>VAR_BROKEN</c>.</summary>
 	bool IsBrokenDown { get; }

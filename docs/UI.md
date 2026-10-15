@@ -97,7 +97,12 @@ view's eye orbits that target at SPINRADIUS and VERTICALOFFSET above; its angle
 advances by SPINSPEED radians per tenth of a second (the lobby step is the
 frame's milliseconds, at most 500, × 0.01; 0x5d5c50, 0x5e0727), the eye and the
 target move 0.1 and 0.2 of the way to their goals per step (0x5e1210), and the
-vertical field of view is ISLANDFOV (0x5e13ed; the globe's is 60, 0x5dd034).
+field of view is ISLANDFOV (0x5e13ed; the globe's is 60, 0x5dd034), applied by the camera's
+method at 0x5d8cb0 to the projection 0x578be0 and the view gamut 0x56b790; it is vertical,
+inferred from 0x582eb0/0x56b790 (the gamut divides only the x extent by height/width). The glide
+is a share per frame, as in tp.exe, so how fast it converges depends a few percent on the frame
+rate (after one second the eye has 0.368 of the way left at a high frame rate, 0.360 at 25 fps);
+the spin is linear in time.
 
 ## Implementation
 

@@ -4,7 +4,9 @@
 /// Front-end lobby camera, the original's island view (tp.exe 0x5e0490, state 0, and 0x5e1210): the eye orbits
 /// the selected island at the lobby's SPINRADIUS and VERTICALOFFSET (lobby.txt) while the angle advances by
 /// SPINSPEED per tenth of a second, the eye and the target each move a fixed share of the way to their
-/// goals every frame (the glide to a newly selected island), and the field of view is ISLANDFOV.
+/// goals every frame (the glide to a newly selected island; a per-frame share as in tp.exe, so its convergence depends
+/// slightly on the frame rate), and the field of view is ISLANDFOV, applied by the camera method 0x5d8cb0 (vertical,
+/// inferred from 0x582eb0/0x56b790).
 /// </summary>
 public class LobbyCameraMode : CameraMode
 {

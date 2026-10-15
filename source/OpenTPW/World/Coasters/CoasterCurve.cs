@@ -269,7 +269,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = NextKnot( pair );
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
-			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the second rail B(t) of the slice frame: at pylon-less knots the PC offset is (0, 1, 0), roll 0, as here (0x4313f0), and (−sin a, 0, −cos a) only on loop-flagged ones (0x43137c..0x4313e6); between knots the second rail needs the pylon tag frames (COAST-015) — evidence needed: the pylon mesh tags
+			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the original's slice roll (0x43e6b0): the second rail's roll about the slice tangent plus the lerp of the two nodes' tag rolls (+0xe4); a non-loop knot's second rail is the knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — blocked on the pylon tag knots (COAST-015)
 			var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
 			samples.Add( new CoasterSample
 			{

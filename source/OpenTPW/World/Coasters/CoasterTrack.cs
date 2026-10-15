@@ -927,7 +927,7 @@ public sealed class CoasterTrack
 	/// </summary>
 	// [BIN:STP-PPC:0x10033398 node position] descriptor +28 = 10x, +36 = 10y, +32 = terrain height; the node is at the cell centre (+5.0, 0x100333EC); Y = ground + h(t), or Y below + pylon +196 + h(t) when stacked
 	// [BIN:TPW-EXE:0x434060 pylon-less knot] a pylon-less node's knot is its descriptor's exact position (node +0x4c..+0x54); the station end node's descriptor holds the world position of S0's pylon track dummy (0x435570), so the end node stands on the knot of S0
-	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank; the pylon mesh track tags behind 0x1019B298 and the incline and bank clips are not read — evidence needed: the tag table builder and the tag data in the StdPylon/LoopPylon meshes
+	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank; the original's pylon knots are its model's tag dummies — the records with 0x400000 in the order of their values (0x4344c0; one tag on the PC's Gorilla, Skull and Ape pylons, the In, Centre and Out tags 3 to 5 units apart on the others; a model with two 0x1000000 records, pylon flag 8, gets two tag tables, 0x430590), each knot at its tag's posed position with its tag's forward row as direction (0x430ed0, 0x4321c0), its second rail at +(0, 1, 0) or, on a loop node, 2 × the tag's up row, and its node's roll (+0xe4) the tag's up row with the yaw and pitch taken out — not built: the knot pass and sampler over several knots per node (the station's S0 tags against the end node on S0's track dummy), which of a loop pylon's two tables a node uses (node +0x90), the tag turn of node flag 0x10000000 (0x4315f0 by −π) and the knot pass's clamp of the height parameter to [0, 1] (0x430ca0 writes it back)
 	public SVector3 NodePosition( CoasterSite site, CoasterNode node )
 	{
 		if ( node.IsStationEnd )
@@ -1109,20 +1109,23 @@ public sealed class CoasterTrack
 		for ( var index = 0; index < count; index++ )
 		{
 			var node = chain[index];
-			// [BIN:TPW-EXE:0x4310c8 auto-bank] a node banks unless it carries node flag 0x4 (or 0x100 forces bank 0) and only when it has a next node in the list (the test of the raw link, not the flag-masked neighbour); the PC build path never sets 0x4 and the station end node's 0x144 are creation parameters (0x434060)
-			// [APPROX:COAST-015] S0 has no previous node and is not banked (its angle needs both neighbours); S2, whose next link the tangent ignores but the bank pass does not, banks from S1 and the first pylon like any node; the speed estimate runs through the banked nodes only
+			// [BIN:TPW-EXE:0x4310c8 auto-bank] a node banks unless it carries node flag 0x4 and only when it has a next node in the list (the test of the raw link +0x64, not the flag-masked neighbour); the PC build path never sets 0x4 and the station end node's 0x144 are creation parameters (0x434060)
+			// [BIN:TPW-EXE:0x43c160 node bank] bank = (±π − turn)·v / definition +0x10 / (|next − P| + |prev − P|) over the raw links, 0 when the turn (+0x94) is 0 or node flag 0x100 is set; the tangent routine leaves the turn 0 on a node without a flag-masked previous or next neighbour (0x431660: S0, S2, the cut ends), so those bank 0
+			// [BIN:TPW-EXE:0x431101 bank speed estimate] after every node that passed the test the running speed estimate takes the step to the raw next node (0x43bfb0, floor definition +0x48 = fMinSpeed), whatever its bank: S0, S2 and the 0x100 nodes too
 			// [BIN:TPW-EXE:0x442010 manual bank] a node the tilt button banked by hand carries flag 4: the auto-bank pass skips it and its +0xD8 keeps the hand-set value
 			if ( (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) == CoasterNodeFlags.NoAutoBank && !node.IsPylonless )
 			{
 				banks[index] = node.Bank;
 				continue;
 			}
-			if ( !Definition.AutoBanks || (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) != 0 || index == 0 || index == count - 1 )
+			if ( !Definition.AutoBanks || (node.Flags & CoasterNodeFlags.NoAutoBank) != 0 || index == count - 1 )
 				continue;
-			var previous = positions[index - 1];
 			var next = positions[index + 1];
-			var turn = TurnAngleXZ( previous, positions[index], next );
-			banks[index] = AutoBank( speed, turn, (previous - positions[index]).Length(), (next - positions[index]).Length() );
+			if ( (node.Flags & CoasterNodeFlags.ZeroBank) == 0 && Previous( index ) is int back && Next( index ) is int forward )
+			{
+				var turn = TurnAngleXZ( positions[back], positions[index], positions[forward] );
+				banks[index] = AutoBank( speed, turn, (positions[index - 1] - positions[index]).Length(), (next - positions[index]).Length() );
+			}
 			speed = SpeedEstimate( Definition, speed, Definition.MinSpeed, positions[index].Y, next.Y );
 		}
 		if ( writeBanks )

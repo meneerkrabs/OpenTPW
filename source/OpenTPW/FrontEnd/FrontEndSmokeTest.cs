@@ -589,15 +589,33 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var capture = CaptureFrame( "staff-employed.png" );
 			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected employee name" );
 			VerifyText( capture, ((UiLabel)hud.Stack.Top.Find( "statValue3" )!).Text(), "selected employee happiness" );
+			// a click on the employee's row opens the per-employee window (tp.exe 0x4b6080) in place of the staff window
+			flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + ParkHud.StaffRowHeight / 2 ), UiAnchor.Center ) );
+		} );
+		Wait( "employee window opens", 3 );
+		Do( "dismiss from the employee window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.EmployeeWindowOpen && !hud.StaffWindowOpen && hud.Stack.Top?.Name == "employee" && hud.Employee?.Id == smokeStaffId,
+				"the employee's row opens the per-employee window" );
+			var capture = CaptureFrame( "staff-employee-window.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "title" )!).Text(), "employee name title" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top.Find( "employedFor" )!).Text(), "employed for" );
 			Click( hud.Stack.Top!, "dismissStaff" );
 		} );
 		Wait( "dismissal confirmation opens", 3 );
 		Do( "confirm smoke employee dismissal", () =>
 		{
-			Require( flow.Hud!.Stack.Top?.Name == "confirmDismissStaff", "dismissal asks for confirmation" );
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDismissStaff" && !flow.Hud.EmployeeWindowOpen, "dismissal closes the employee window and asks for confirmation" );
 			Click( flow.Hud.Stack.Top!, "choice0" );
 		} );
 		Wait( "smoke employee dismissed", 3 );
+		Do( "staff window again", () =>
+		{
+			Require( flow.Level!.Park!.Economy.Staff.Members.All( member => member.Id != smokeStaffId ), "the dismiss button removes the employee" );
+			flow.Hud!.OpenStaffWindow();
+		} );
+		Wait( "staff window reopens", 3 );
 		// The All Visitors window (UI-907..910): visitors seeded through the guest simulation's own
 		// spawn, the window opened through the staff window's shipped b_svisit button, then driven with
 		// the wheel, the sort header, a row click and Enter.

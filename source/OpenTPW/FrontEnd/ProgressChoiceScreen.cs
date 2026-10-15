@@ -7,6 +7,8 @@ internal sealed class ProgressChoiceScreen( string name ) : UiScreen( name )
 {
 	private bool dispatching;
 	private bool activated;
+	/// <summary>What Enter does wherever the focus is (null: Enter activates the focused element).</summary>
+	public Action? Accept { get; set; }
 	public bool TryActivate( UiScreenStack stack )
 	{
 		if ( IsRemoved || !ReferenceEquals( stack.Top, this ) || dispatching && activated ) return false;
@@ -17,6 +19,7 @@ internal sealed class ProgressChoiceScreen( string name ) : UiScreen( name )
 	{
 		if ( IsRemoved ) return true;
 		if ( input.Has( UiKeys.Back ) || RightCancels( input ) ) { Back?.Invoke(); return true; }
+		if ( Accept != null && input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) ) { Accept(); return true; }
 		dispatching = true; activated = false;
 		try { return base.Update( context, input ); }
 		finally { dispatching = false; }

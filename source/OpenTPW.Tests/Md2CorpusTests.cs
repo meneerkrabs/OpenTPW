@@ -109,8 +109,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 12451, easedKeys );
 		Assert.AreEqual( 2832, scaleKeys );
 		Assert.AreEqual( 0, sharedTables );
-		// Includes the texture-coordinate and 12-byte tables (RIDES-041: a 12-byte block's float table holds duration + 1 poses, all read).
-		Assert.AreEqual( 8541812, tableBytes );
+		// Includes the texture-coordinate, 12-byte and path-parameter tables (RIDES-041: a 12-byte block's float table holds duration + 1 poses, all read; the 71 path blocks add 78,144 bytes).
+		Assert.AreEqual( 8619956, tableBytes );
 	}
 
 	/// <summary>
@@ -425,6 +425,66 @@ public class Md2CorpusTests
 		Console.WriteLine( $"UV blocks {uvBlocks}, paired {uvPaired}, corner tracks {cornerTracks}; tick 0 within one float step of the stored UV: {tickZeroWithinStep}/{tickZeroCorners}; 12-byte blocks {twelveByte} ({twelvePaired} paired); metadata records {metadataRecords}; node-list entries {listedNodes} ({listedOutside} outside the model)" );
 	}
 
+	/// <summary>
+	/// Path-parameter blocks (record +36, flag 0x200; [BIN:TPW-EXE:0x00471ECF path parameter]): one value per tick
+	/// from tick 0, the header word +8 unused, and every flag-0x200 record has one. 0x400 never occurs without 0x200.
+	/// </summary>
+	[TestMethod]
+	public void OriginalPathParameterBlocksHoldOneValuePerTick()
+	{
+		var dataPath = OriginalDataPath();
+		int blocks = 0, orientation = 0;
+		var violations = new List<string>();
+		IReadOnlyList<float>? kart = null;
+		foreach ( var wad in Directory.EnumerateFiles( dataPath, "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			using var archive = new WadArchive( wad );
+			foreach ( var (name, file) in Md2Members( archive.Root, "" ) )
+			{
+				ModelFile model;
+				try
+				{
+					model = new ModelFile( new MemoryStream( file.GetData() ) );
+				}
+				catch ( NotSupportedException )
+				{
+					continue;
+				}
+				finally
+				{
+					file.Free();
+				}
+				if ( model.Kind != ModelFileKind.Animation )
+					continue;
+				foreach ( var track in model.Clip!.Tracks )
+				{
+					var label = $"{Path.GetFileName( wad )}/{name} record {track.NodeIndex}";
+					if ( (track.Flags & 0x400) != 0 && (track.Flags & 0x200) == 0 )
+						violations.Add( $"{label}: 0x400 without 0x200" );
+					orientation += (track.Flags & 0x400) != 0 ? 1 : 0;
+					if ( ((track.Flags & 0x200) != 0) != (track.PathParameters != null) )
+						violations.Add( $"{label}: flag 0x200 and the path block disagree" );
+					if ( track.PathParameters is not { } path )
+						continue;
+					blocks++;
+					if ( name.Equals( "gokartsm.md2", StringComparison.OrdinalIgnoreCase ) && track.NodeIndex == 5 )
+						kart = path.Values;
+					if ( path.StartTick != 0 || path.Reserved != 0 || path.Values.Count != track.Duration + 1 )
+						violations.Add( $"{label}: start {path.StartTick}, reserved {path.Reserved}, {path.Values.Count} values for duration {track.Duration}" );
+					if ( track.Words[9] + ModelPathParameters.HeaderBytes != BitConverter.ToUInt32( file.GetData(), (int)track.Words[9] + 12 ) )
+						violations.Add( $"{label}: the value table does not follow the header" );
+				}
+			}
+		}
+		Assert.AreEqual( 0, violations.Count, string.Join( Environment.NewLine, violations.Take( 20 ) ) );
+		Assert.AreEqual( (71, 62), (blocks, orientation) );
+		// The go-kart clip goes once round its track: its values climb from 13.68 to 113.68, one path (100 %) further.
+		Assert.IsNotNull( kart );
+		Assert.AreEqual( 201, kart.Count );
+		Assert.AreEqual( 13.682f, kart[0], 0.001f );
+		Assert.AreEqual( 100f, kart[^1] - kart[0], 0.01f );
+	}
+
 	private static float OneStep( float value ) => MathF.BitIncrement( MathF.Abs( value ) ) - MathF.Abs( value );
 
 	[TestMethod]
@@ -563,7 +623,7 @@ public class Md2CorpusTests
 		return file!.GetData();
 	}
 
-	private static string OriginalDataPath()
+	internal static string OriginalDataPath()
 	{
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )

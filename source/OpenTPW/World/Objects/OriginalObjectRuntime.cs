@@ -725,7 +725,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			// [BIN:TPW-EXE:0x5562bd REPAIREFFECT] the type's repair particle effect is switched before the sounds (0x556DE0)
 			ride.SetRepairParticle( show != 0 );
 			{
-				var voices = GameAudio.PlayRepairEffect( show, ride.ReadEventOrigin() );
+				var voices = GameAudio.PlayRepairEffect( show, OriginalObjectRuntime.WholeUnits( ride.ReadEventOrigin() ) );
 				ownedEventLoops.RemoveAll( loop => loop.IsFinished );
 				if ( voices.First is { Loops: true } ) ownedEventLoops.Add( voices.First );
 				if ( voices.Second is { Loops: true } ) ownedEventLoops.Add( voices.Second );

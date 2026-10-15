@@ -148,8 +148,7 @@ public class OriginalObject : Entity
 	/// The middle of the object's footprint in engine coordinates at the object's base height: the original's anchor for its screams and for an EVENT sound with a negative key.
 	/// A fixed item (authored in park coordinates) has no footprint and uses its model origin.
 	/// </summary>
-	// [BIN:TPW-EXE:0x466b70 footprint middle] the middle of the footprint rectangle in cell*10 units (cell corners, so a one-cell object's middle is half a cell in); the height is the model's +0x44 field in the original, the object's base height here
-	// [APPROX:AUDIO-908] the footprint middle's height is the object's base height; the original reads the model's +0x44 field, not traced
+	// [BIN:TPW-EXE:0x466b70 footprint middle] the middle of the footprint rectangle in cell*10 units (cell corners, so a one-cell object's middle is half a cell in); the height is the root node's +0x44 (its matrix's translation y, the object's height that 0x556a80 also reads), the object's base height here
 	internal System.Numerics.Vector3 FootprintMiddle()
 	{
 		if ( Entry.IsFixedItem )

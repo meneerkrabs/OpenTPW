@@ -406,7 +406,7 @@ public static class GameAudio
 	}
 
 	/// <summary>The enter-park sound: <c>cat_globallobbysfx</c> 4, flat, as the camera flies into the island.</summary>
-	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat, except when the game type that follows is 2 (Instant Action; FrontEndMenu.EnterParkSoundPlays; Mac-traced, the PC enter action was not checked)
+	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action sets the fly-in camera state and plays cat_globallobbysfx 4 (keyexplode, volume 100) flat, except when the game type that follows is 2 (Instant Action; FrontEndMenu.EnterParkSoundPlays; the PC enter routine 0x4b8fd0 skips it the same way while the game-mode global 0xfb3b7c is 2)
 	public static void PlayEnterPark()
 	{
 		var voice = events?.Play( GlobalLobbySfx, EnterParkEvent, AudioChannel.Effects );

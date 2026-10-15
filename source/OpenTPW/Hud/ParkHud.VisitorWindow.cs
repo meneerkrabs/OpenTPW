@@ -107,7 +107,8 @@ public sealed partial class ParkHud
 	public bool LocateSelectedVisitor() => LocateVisitor( SelectedVisitor );
 
 	/// <summary>A left click on a row: selects the visitor and plays the click; the window and its detail rows (the visitor's info panel) stay.</summary>
-	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which opens the visitor's info panel and keeps the list (button 0 = left is medium confidence, [APPROX:UI-910])
+	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which opens the visitor's info panel and keeps the list
+	// [BIN:TPW-EXE:0x634963 mouse button codes] button 0 is the primary (left) button: DirectInput's DIMOFS_BUTTON0..3 (dwOfs 0xc..0xf) become the codes 0xf0..0xf3 (0x63497c), 0x634420 swaps 0xf0 and 0xf1 back when Windows swaps the buttons (SwapMouseButton probe at 0x6342c3, byte +0x60), and 0x486ca1 turns 0xf0 into button 0 (WM_LBUTTONDOWN is button 0 in the window procedure 0x46b600 too)
 	private void OpenSelectedVisitorInfo()
 	{
 		GameAudio.PlayVisitorClick();

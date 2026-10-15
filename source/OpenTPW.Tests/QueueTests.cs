@@ -1097,7 +1097,7 @@ public class QueueTests
 		Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, "repaired: the head is called again" );
 		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2 ) );
 
-		// Choosing: walking guests skip a broken attraction (APPROX:QUEUE-017). The first major decision waits until turn 31 (state 6: T > +0x1FC + 30).
+		// Choosing: walking guests skip a broken attraction (the counts-test, tp.exe 0x4dd920). The first major decision waits until turn 31 (state 6: T > +0x1FC + 30).
 		foreach ( var broken in new[] { false, true } )
 		{
 			var rig = new Rig( excitement: 25 );
@@ -1108,6 +1108,25 @@ public class QueueTests
 			var chose = 0;
 			rig.RunTurns( 60, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
 			Assert.AreEqual( broken, chose == 0, $"broken {broken}: {chose} guest-ticks heading for the ride" );
+		}
+	}
+
+	[TestMethod]
+	public void FullRidesAreNotChosen()
+	{
+		// tp.exe 0x4dd920: the choice's counts-test needs the queue list count below 4 × cells, so a full queue is never chosen
+		// (the join's own room test 0x4dda20 stays for a queue that fills while the guest walks).
+		foreach ( var full in new[] { false, true } )
+		{
+			var rig = new Rig( excitement: 25 );
+			rig.HoldAdmission();
+			Assert.AreEqual( 20, rig.Ride.QueueRoom, "five cells" );
+			for ( var id = 9001; id < 9001 + (full ? 20 : 0); id++ )
+				Assert.AreEqual( QueueJoinResult.Joined, rig.Ride.JoinQueue( id ) );
+			var guests = Enumerable.Range( 0, 10 ).Select( _ => rig.Simulation.SpawnInPark( 2, 0 ) ).ToList();
+			var chose = 0;
+			rig.RunTurns( 60, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
+			Assert.AreEqual( full, chose == 0, $"full {full}: {chose} guest-ticks heading for the ride" );
 		}
 	}
 

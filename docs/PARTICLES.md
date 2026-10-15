@@ -150,12 +150,15 @@ the native pool, rule by rule. It needs no GPU, so tests build one directly, and
 `content/shaders/particle.shader`) is modelled on the weather renderer: one dynamic vertex buffer sized for the
 pool and camera-facing quads rotated by the spin. The half-height is `size / 1024` original units for every particle
 (`[BIN:TPW-EXE:0x57C620]`: `(size << 1) * (1/1024) * 0.5`); only the width gets a factor, the frame record's float
-+8 for a sprite and the projection aspect `DAT_008BCBCC` for an untextured quad in the original, which OpenTPW
-replaces with the frame's pixel aspect and 1 (`APPROX:PTCL-904`). Three batches, one per blend: source-alpha-over-one for flags
++8 for a sprite and `DAT_008BCBCC`, the display's height / width (`0x582EB0`), for an untextured quad in the original,
+which OpenTPW replaces with the frame's pixel aspect and 1 (`APPROX:PTCL-904`). Three batches, one per blend: source-alpha-over-one for flags
 `0x2004`, one-plus-one for flags `0x4` (`MaterialFlags.OneOneBlend`), else the sprite's own alpha blend; the flags apply
 to untextured particles too, as in the original. The original submits one primitive per particle, slots 0..119 and
 newest particle first, each with its own state word; OpenTPW groups by blend instead, depth-tested without depth
-writes and without face culling, and whether the engine's queue depth-sorts is untraced (`APPROX:PTCL-905`). Emitters
+writes and without face culling. The original's state words (decoder `0x567620`) keep depth writes on unless flags
+`0x4000` add `0x800`, draw an untextured particle opaque (`0x1256`) when its alpha byte is 0 or >= 0xF0 and by alpha
+with an alpha test otherwise (`0x556`), and depth-sort the two triangles of a particle's own batch when the state lacks
+`0x1000`/`0x2000` (`0x565590`); the order across batches is not read (`APPROX:PTCL-905`). Emitters
 outside the view are culled by their bounds. Vertex colour is packed into the normal slot (red, green, blue plus 256 x
 alpha as whole floats) so the existing vertex format and the web shader path need no integer attribute. The
 precompiled web shader is `content/shaders/web/particle.json` (`WebShaderTests`).
@@ -246,9 +249,9 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
 - `PTCL-900`: EVENT positions use the animator's current matrices; the original uses the pose of the object's last draw
   (`0x473C70` -> `0x44AB30`, gated by header bit 0x1 and table bit 0x1), about a render frame behind and stale while
   culled.
-- `PTCL-904`: the quad's width factor (frame record float +8, projection aspect) is untraced.
-- `PTCL-905`: one primitive per particle in the original against OpenTPW's three blend batches; engine depth sorting
-  (`0x565F90`) untraced.
+- `PTCL-904`: the quad's width factor: the frame record's float +8 is unread; `DAT_008BCBCC` is height / width.
+- `PTCL-905`: one batch per particle in the original against OpenTPW's three blend batches; the per-particle state
+  words are decoded (depth writes, opaque untextured particles), the order across batches is not read.
 - `PTCL-906`: the pose conversion inverts OpenTPW's placement; the density option's saved value is not read.
 - `PTCL-908`: wired are EVENT 1/2, ADDOBJ 1/2 and the per-type object effects (below). Not wired: ADDOBJ following the
   key node afterwards (`0x5516B0` updates it each run with the node position truncated to whole units), ADDOBJ_EXT

@@ -444,7 +444,7 @@ public partial class Level : IDisposable
 		Gate = ParkGate.ForLevel( Park!.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime, EconomyStateOf );
 		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
 		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
-		// the initial OpenPark of AttachGuests raises its event before this wiring, so it commands nothing.
+		// the initial OpenPark of AttachGuests (an imported park saved open) raises its event before this wiring, so it commands nothing.
 		Gate.InitializeFromParkState();
 	}
 

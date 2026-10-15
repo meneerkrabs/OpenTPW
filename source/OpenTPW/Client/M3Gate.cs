@@ -300,6 +300,8 @@ internal sealed class M3GateRun
 		var openingBalance = economy.Balance;
 		BuildEntrance();
 		runtime.AttachGuests( guests );
+		// a new park starts closed (tp.exe 0x51562d); the gate run opens it as the player's door button would (0x519ef0)
+		runtime.Economy.OpenPark();
 		ConnectFixedItemsToEconomy();
 		BuildPaths();
 		PlaceObject( "attraction", entry => entry.Category == ObjectCategory.Ride && entry.HasQueue );

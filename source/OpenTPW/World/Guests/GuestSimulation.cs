@@ -1244,7 +1244,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.HasWaypoint && !Move( guest ) )
 			return;
 		var attraction = FindAttraction( guest.AttractionId );
-		if ( attraction == null || !attraction.IsOpen )
+		// [BIN:TPW-EXE:0x004FFBC0 walk to the queue] state 10 reads neither the ride's state nor its open word: a guest keeps walking to a ride closed or broken meanwhile, joins, and the ride sends it away from the queue head (RideVisitorBridge.HostStep)
+		if ( attraction == null || !attraction.AcceptsJoins )
 		{
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
@@ -1337,10 +1338,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
 			if ( position < 0 || position >= room )
 			{
-				// the dismissal 0x005012F0 lowers happiness by the medium step (0x004FEA70 with 1)
-				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
-				LeaveQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
+				DismissFromQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
 			if ( guest.State == GuestState.Boarding )
@@ -1350,7 +1349,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs): state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0; OpenTPW's queue walk cannot route a guest standing off the queue back, so such a guest leaves (Confused) and the guests that stay are given their walk again. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 records event 6 with the ride id in the guest's own event history (0x0050C100 with ECX = guest + 0x30) and plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D), which OpenTPW does not (its medium happiness drop is applied) — evidence needed: whether the generic route reaches a queue place from a cell off the queue, the thing-id numbering, and what the event history feeds
 			if ( index < 0 && !onJoinCell )
 			{
-				LeaveQueue( guest, attraction, GuestThought.Confused );
+				DismissFromQueue( guest, attraction, GuestThought.Confused );
 				continue;
 			}
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
@@ -1390,7 +1389,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var position = attraction.GetQueuePosition( guest.Id );
 		if ( position < 0 )
 		{
-			LeaveQueue( guest, attraction, GuestThought.Confused );
+			// the move-up's failure in 0x004FFFF0 ("Couldn't get to my intended queue position") leaves through the dismissal too
+			DismissFromQueue( guest, attraction, GuestThought.Confused );
 			return;
 		}
 		guest.QueuePosition = position;
@@ -1565,9 +1565,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>A called guest refuses the price: two medium happiness drops (the refusal and the dismissal), then it leaves the queue.</summary>
 	private void RefusePrice( Guest guest, IRideVisitorBridge attraction )
 	{
-		guest.Happiness = Math.Max( 0, guest.Happiness - 2 * Settings.MediumHappinessChange );
-		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6
-		LeaveQueue( guest, attraction, GuestThought.Dissatisfied );
+		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6, then the refusal's own 0x004FEA70(1) before the dismissal's
+		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
+		DismissFromQueue( guest, attraction, GuestThought.Dissatisfied );
 	}
 
 	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
@@ -1642,19 +1642,21 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.State = GuestState.Boarding;
 			return;
 		}
-		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken ride
+		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken or closed ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
 		// [APPROX:QUEUE-008] the predicate follows the original; relief objects wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning), and the swaps of the RegionFX rows 1 and 6 at the toilet's cell are the original's (0x004D8460 / 0x004D8440 are the remove and add wrappers of the region writer 0x004D8480, ParkEconomy.SwapToiletEffect). Not modelled: the branch of 0x004E2440 for game type 1 (the word 0x00FB3B7C), where a use wears nothing and a toilet whose gauge byte is below 25 is cleaned at once (rows 6 → 1, script variable 8 = 0, gauge 100, +0x5E and +0x64 cleared); OpenTPW wears toilets in every game — evidence needed: what game type 1 is in OpenTPW's terms
+		// [BIN:TPW-EXE:0x005004AA queue exit] every state-11 exit unlinks the guest (0x004DDD20), dismisses it (0x005012F0: "dismissed from queue", the medium happiness drop 0x004FEA70(1), the queue words cleared) and sets state 6; the thought, if any, is set before the jump (DismissFromQueue)
 		if ( attraction.ReliefWornOut )
 		{
-			LeaveQueue( guest, attraction, GuestThought.FeelingSick );
+			DismissFromQueue( guest, attraction, GuestThought.FeelingSick );
 			return;
 		}
 		// 4. Position lookup.
 		var position = attraction.GetQueuePosition( guest.Id );
 		if ( position < 0 )
 		{
-			LeaveQueue( guest, attraction, GuestThought.Confused );
+			// [BIN:TPW-EXE:0x00500270 guest missing from its queue] "Problem with a queue - shouldn't be fatal": a log line and the dismissal, no thought
+			DismissFromQueue( guest, attraction, GuestThought.None );
 			return;
 		}
 		// 5. Moving up: wait out the delay while the gap is at most 2, else walk to the new position.
@@ -1675,7 +1677,13 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// 6. Beyond the limit.
 		if ( !moved && guest.QueuePosition > attraction.QueueLimit )
 		{
-			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+			DismissFromQueue( guest, attraction, GuestThought.QueueTooLong );
+			return;
+		}
+		// [BIN:TPW-EXE:0x00500612 coaster or track refuses] at its position, after the limit test, a guest queueing for a coaster (0x004E2B50) that fails 0x00441970, or for a ride of track type 1 whose track word +0x2C is 0, thinks 13 and leaves (0x005004AA)
+		if ( !moved && attraction.TrackRefusesGuests )
+		{
+			DismissFromQueue( guest, attraction, GuestThought.Angry );
 			return;
 		}
 		// 7. Needs window, and the boredom test that cannot fire (QUEUE-plan §5.3): +508 ≥ +520 always holds here.
@@ -1691,12 +1699,18 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( happiness < (int)LeaveHappiness )
 			{
-				LeaveQueue( guest, attraction, GuestThought.Unhappy );
+				DismissFromQueue( guest, attraction, GuestThought.Unhappy );
 				return;
 			}
-			if ( (int)guest.Toilet > (int)ToiletLeaveLevel && !attraction.ProvidesRelief )
+			// [BIN:TPW-EXE:0x005003AA toilet in the queue] a toilet byte above 80 thinks 4 first and then leaves unless the ride gives relief (ride +0x32 bit 0): a guest queueing for a toilet thinks it and stays
+			if ( (int)guest.Toilet > (int)ToiletLeaveLevel )
 			{
-				LeaveQueue( guest, attraction, GuestThought.NeedToilet );
+				if ( attraction.ProvidesRelief )
+				{
+					Think( guest, GuestThought.NeedToilet );
+					return;
+				}
+				DismissFromQueue( guest, attraction, GuestThought.NeedToilet );
 				return;
 			}
 			// [BIN:TPW-EXE:0x004FFFF0 needs branch returns] beyond the window every path of the needs branch returns (0x00500311..0x005003A2), so the facing change below runs only within 30 turns of the last interlude
@@ -1704,7 +1718,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
 		{
-			LeaveQueue( guest, attraction, GuestThought.Bored );
+			DismissFromQueue( guest, attraction, GuestThought.Bored );
 			return;
 		}
 		// 8. A 1-in-10 facing change of −400..+399 of 2048 of a turn.
@@ -1721,6 +1735,20 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		guest.InterludeTurn = ParkTurn;
 		guest.InQueueInterlude = true;
+	}
+
+	/// <summary>
+	/// The queue exits of state 11, the queue edit and the price refusal (tp.exe <c>0x005004AA</c>, <c>0x00501496</c>, <c>0x00500756</c>): the thought, then the
+	/// dismissal <c>0x005012F0</c>, which lowers happiness by the medium step (<c>0x004FEA70</c> with 1, <c>PeepInfo.MediumHappinessChange</c>, clamped at 0)
+	/// before the guest leaves the queue.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005012F0 dismissal] "Person %d: dismissed from queue on ride %d", event 6 (0x0050C100), the sound for one thing id in eight, 0x004FEA70(1), the queue words +0x22A/+0x228/+0x1F8/+0x1DC/+0x1F1 cleared, state 6; the event and the sound are not modelled (QUEUE-005)
+	private void DismissFromQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
+	{
+		if ( thought != GuestThought.None )
+			Think( guest, thought );
+		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
+		LeaveQueue( guest, attraction, GuestThought.None );
 	}
 
 	/// <summary>The guest leaves the queue without riding and steps back onto the path at the join cell.</summary>

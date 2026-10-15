@@ -14,8 +14,7 @@ public sealed record ResearchItem( int InfoId, int Level, ResearchCategory Categ
 /// effort share × <c>Research.StartingWorkLoad</c> / 100 points to every category's current item; a
 /// category's highest open group rises while the percentage of researched items in its open groups
 /// reaches the next <c>ResearchTech</c> threshold; each category researches the first open item in table order.
-/// <b>Approximations</b>: the table is in info-id order; ride upgrade levels and add-on objects form the
-/// "upgrade" category; Instant Action research runs at one grade-2 researcher's ability without staff;
+/// <b>Approximations</b>: the table is in info-id order; Instant Action research runs at one grade-2 researcher's ability without staff;
 /// progress is kept in thousandths of a point. Researcher <c>WorkDuration</c> is not used.
 /// </summary>
 public sealed class ParkResearch
@@ -46,11 +45,13 @@ public sealed class ParkResearch
 		{
 			if ( !info.IsBuyable || info.Upgrades.Count == 0 )
 				continue;
-			// [APPROX:ECON-018] ride upgrade levels and add-on objects form the "upgrade" research category — evidence needed: research lab capture
-			var category = info.Kind == ParkObjectKind.Upgrade ? ResearchCategory.Upgrade : info.ResearchCategory;
-			var group = info.Kind == ParkObjectKind.Upgrade ? 0 : info.ResearchGroup;
-			items.Add( new ResearchItem( info.InfoId, 0, category, group, info.Upgrades[0].CostOfResearch, info.Kind == ParkObjectKind.Upgrade ? info.AddOnTargetId : 0 ) );
-			if ( info.Kind != ParkObjectKind.Ride )
+			// [BIN:TPW-EXE:0x005031A0 research table fill] an object's base project takes its own Research.Category (+0x17C) and Research.Group (+0x178), add-ons included
+			// (every shipped add-on declares category 4 and group 0); a category-4 project is selectable once the object its AddOn.UpgradesId names (+0x284) is researched (0x005034F0)
+			var category = info.ResearchCategory;
+			items.Add( new ResearchItem( info.InfoId, 0, category, info.ResearchGroup, info.Upgrades[0].CostOfResearch, category == ResearchCategory.Upgrade ? info.AddOnTargetId : 0 ) );
+			// [BIN:TPW-EXE:0x00504580 upgrade level project] an object whose own category is not 4 gets its next level's project in category 4, group 0, once the level below is
+			// researched (levels 1 and 2; a level without research cost is researched at once); on the shipped data only rides have such levels
+			if ( category == ResearchCategory.Upgrade )
 				continue;
 			for ( var level = 1; level < info.Upgrades.Count; level++ )
 				items.Add( new ResearchItem( info.InfoId, level, ResearchCategory.Upgrade, 0, info.Upgrades[level].CostOfResearch, info.InfoId ) );

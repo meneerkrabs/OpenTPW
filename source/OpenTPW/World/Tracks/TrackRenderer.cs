@@ -188,6 +188,8 @@ public sealed class TrackRenderer : IDisposable
 			else
 			{
 				var pose = TrackSurface.Pose( x, y, vehicle.Heading, radius, probe );
+				// the boat keeps its height (+0xA0) for the next probe that finds no surface, as the karts do
+				vehicle.Height = pose.Height;
 				transform = Matrix4x4.CreateRotationX( pose.Pitch ) * Matrix4x4.CreateRotationY( -pose.Roll )
 					* Matrix4x4.CreateRotationZ( -vehicle.Heading * 2 * MathF.PI / BumpMath.Turn )
 					* Matrix4x4.CreateTranslation( x, y, pose.Height )

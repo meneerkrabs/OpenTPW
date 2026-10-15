@@ -433,3 +433,5 @@ Since the root-fault containment (`[EXT:vm-fault-containment]`, docs/RSE-VM.md) 
 clock, and its object releases its riders, trains, controller and sounds. Runs without a fault hash as before (the pinned
 digests are unchanged); a run in which a script faults now hashes differently from before that change, because the faulted
 script's `TimeMilliseconds` stays put and the released riders change the guest digest.
+
+Coaster tool panel (October 15): the coaster track hash gained the cut (`CutAfter`, only while the circuit is cut open) and, for a node with a hand-set yaw or incline, those two values, so every hash of a coaster without hand edits and without a cut is unchanged. The hand edits, the cut, the stack swaps and the panel's money settlements are simulation-side state of the owner's own tool; the panel's pointer scale and picking are host input.

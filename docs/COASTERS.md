@@ -57,9 +57,8 @@ against 10, Escape Velocity 12.04 against 30) stands on pylons raised to h0, so 
 pose of that pylon was not traced for it (COAST-029). A station placed without its model (a headless test) takes the
 same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-station-frame]`).
 
-- **Pylons.** A click places a pylon at the tool's height. The mouse wheel
-  changes the height in steps of 10, and Tab switches to loop pylons on coasters
-  that have them. The height is clamped to `[max(fMinHeight, h0), fMaxHeight]`,
+- **Pylons.** A click places a pylon at the tool's height (the last pylon's height; the
+  panel's loop button switches to loop pylons on coasters that have them). The height is clamped to `[max(fMinHeight, h0), fMaxHeight]`,
   never refused. `h0` and `h1` are the heights of the pylon model's track dummy at the two
   loft poses (the dummy the model's attribute record `0x800000` names), so the node height is
   `h0 + t(h1 − h0)` (`0x430590`, `0x433280`). A pylon stacked on another stands the pylon's stack
@@ -120,6 +119,41 @@ builder.Complete();                                       // end node, curve, ra
 
 `Level` exposes the same through `GetCoasterBuilder`, `EnterCoasterTool`,
 `CoasterClick`, `CompleteCoaster` and `DeleteCoasterTrack`.
+
+## The tool panel
+
+The coaster tool shows the original's slide-out panel (COAST-028, tp.exe `0x4982a0`, `0x446fa0`, `0x445910`, table `0x751530`): a left box with the
+build (`cb_track`, control `0x1f`) and loop (`cb_loop`, `0x20`) buttons, a middle box with move (`cb_move`, `0x1b`), height (`cb_loft`, `0x1a`),
+stack up (`cb_swapup`, `0x1e`), rotate (`cb_rotate`, `0x1c`), tilt (`cb_incline`, `0x19`) and stack down (`cb_swapdown`, `0x1d`), and the demolish
+button (`cb_dellast`, `0x21`) at the right. The rectangles, models and tooltip help ids come from the table; the click help is `0x486b00` with `0x125`
+(build), `0x126`/`0x127` (loop), `0x121` (move) and `0x124` (demolish). The panel's window position is measured from the video (`APPROX`), and it appears
+at once instead of sliding out. `CoasterToolPanel` is the headless controller, `ParkHud.CoasterPanel.cs` the pointer side.
+
+- **Enable mask** (`0x445910`): the seven edit buttons always; build unless the first pylon of a loop pair waits for its second; loop when the coaster has a
+  loop pylon; a finished circuit (complete, not cut open) turns build and loop off, any other track turns demolish off. The tool opens on build (loop while a
+  pair is pending) for an unfinished track and on height for a finished one (`0x4455c0`).
+- **Build and loop**: a click places a pylon (loop mode places a pair, `0x442cd0`); the cursor cell is a blue or red blueprint face, the cost shows beside
+  it, and the **placement area** is the box of the maximum place distance + 1 cells around the last node (`0x434f10`) whose cells pass the validator and
+  hold nothing (`0x5243a6`), drawn yellow and black (`BlueprintMarker.Area`, `APPROX`: the cell types and the texture). Hovering the chain start marks it
+  as the closing target; a click closes the circuit.
+- **Height** (`0x441a00`): a press on a pylon picks it up; the loft parameter follows the pointer at 0.005 per pixel upward within `[max(0, (fMinHeight − h0)/(h1 − h0)),
+  t + (fMaxHeight − the stack top's height)/(h1 − h0)]`; a clamped value moves the drag's origin so the pointer has to come back; the release credits
+  `trunc(old cost)` and debits `ceil(new cost)` (`0x4d0190`, `0x4d01f0`).
+- **Rotate** (`0x441e80`): the yaw (node `+0xE0`, flag `1`) follows the pointer at 0.02 per pixel to the left within the automatic yaw ± `fMaxRotnAngleDeviance`.
+- **Tilt** (`0x442010`): the bank (`+0xD8`, flag `4` = no auto-bank, range ±π) and the incline (`+0xDC`, flag `2`) follow the pointer at 0.02 per pixel, the drag turned by the camera's
+  heading against the pylon's; a loop pylon (`0x441cd0`) moves its loop rotation at 0.01 per pixel in `[0.15, 0.85]`, the first of a pair in `[−0.35, 0.35]`. Which of these a
+  pylon allows follows its model's clips (`0x430590`: L loft, R rotate, I incline, B bank, R2 loop tilt).
+- **Move** (`0x446d50`, `0x443340`, `0x445a70`): a press picks a player's pylon up, the node follows the hovered cell (marked invalid when the validator refuses it) and the release drops it,
+  settling the money of the node and, on a finished track, the next one; a release over no cell puts it back.
+- **Stack up and down** (`0x4423f0`, `0x4425c0`): a release over a pylon swaps it with its neighbour in the cell's stack (stack index and loft parameter), no money moves.
+- **Demolish** (`0x446740`, enabled on a finished circuit only): the first release over a pylon starts the range, the second ends it. The nodes between are removed without a refund,
+  the controller goes to state 1 (the trains and riders leave) and the build button comes back. S0 counts as the last node, so a cut from a pylon to S0 removes everything after that pylon
+  and leaves an unfinished track to **extend** again (build, close on S0, complete); a cut in the middle opens a **gap**: new pylons are inserted into it, the node after the cut is the chain
+  start, and a click on it closes the circuit and completes it at once (state 2, `0x442c70`; OpenTPW first requires the closing link and every node to pass, `[EXT:coaster-completion-click]`).
+  A loop pair is never split and the same node twice cuts that node out. The cut ends carry `0x10000`/`0x20000` and the knots break there.
+- **Keyboard**: Backspace deletes the last pylon (`0x444f30`; the original reaches it only through its undo list, `[EXT:coaster-tool-controls]`); the mouse wheel and Tab are gone (the original has
+  no wheel height, the loop button replaces Tab, and a new pylon takes the last pylon's height).
+- **Cursor ribbon** (COAST-035, `0x435d50`): the link to the cursor node is a translucent blue (valid) or red (refused) ribbon with no pylon, as the video shows it.
 
 ## Running
 
@@ -202,8 +236,8 @@ dropped) and sets state 2 for a finished track with its circuit closed, else 1; 
 the state is 2 (`0x4df390`). The transitions: 1 → 2 sets the trains up, 2 → 1 removes them, 4 → 2 and 8 → 2 unload both seat lists of every
 train (8 → 2 then runs the closing move), 1/2/4 → 8 run the closing move, every other pair changes nothing. OpenTPW lets the guests of the
 admission ring leave with the riders on 4 → 2, so none waits on a ride that does not run (`[EXT:coaster-tool-admission]`). A finished
-coaster entered by the tool keeps its trains (empty) and its pylons can be moved and re-heighted there; extending the circuit needs
-the reopen the tool's panel will bring (COAST-028).
+coaster entered by the tool keeps its trains (empty) and its pylons can be moved and re-heighted there; extending the circuit goes through the panel's
+demolish button, whose cut sets state 1 (see "The tool panel").
 `COAST 4` maps 0/1/2 to the modes 16/64/32; mode 32 is treated exactly like 16 by the mode setter `0x435730` and nothing
 tests it. In mode 64 the station step (`0x43b8b0`) is skipped, so a train on the platform does not unload until
 the power is back (an arriving train unloads open or closed; boarding is state 4 only). `COAST 6` takes
@@ -353,8 +387,11 @@ a name search finds.
   `CoasterPresentationAssetTests` (`OPENTPW_GAME_PATH`): every coaster wad's cross sections, track textures, pylon
   models (the tag reaches the node height) and car models.
 - The native smoke test of an original level builds a coaster through HUD clicks
-  (pylons, wheel height, close, complete), sees a train leave and the track
-  drawn, and removes it.
+  (pylons, close, complete), sees a train leave and the track drawn, and cuts it out
+  through the panel's demolish button.
+- `CoasterPanelTests` (no game data): the enable mask and the loop pair, the height, rotate, tilt, loop-tilt and move drags (rates, ranges, clamps, money),
+  the stack swaps, the cut to the end that reopens a finished circuit so it is extended, completed and every boarded guest is released, the cut in the middle and
+  its gap, the loop pair rule, the save round trip, the placement area and the cursor.
 
 ## Approximation register
 
@@ -375,8 +412,12 @@ the knot-control norms and the swing, where the original uses x87 steps with ext
 term) were resolved by the COAST-V review and are traced now. The generated
 table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).
 
+The coaster tool panel round of October 15 narrowed COAST-028 (the panel, every sub-mode handler, the drag rates and ranges and the placement area's box are traced and built; the pointer's pixel scale,
+picking by cell, the area's occupancy test, the guessed clip angles of the hand-set yaw and incline and the panel's window position stay approximations) and COAST-035 (the cursor node and its flags
+are built as a translucent ribbon; the original's renderer for the flags is not found) and the cut-end flags of COAST-030.
+
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
-COAST-034 (cars) and COAST-035 (the build cursor). Rider heads are not seated in the cars yet (the head renderer
+COAST-034 (cars) and COAST-035 (the build cursor's ribbon). Rider heads are not seated in the cars yet (the head renderer
 takes providers of head sources; a coaster provider reading the cars' seat sockets, `CoasterCarRig.Seats`, is the
 next step). The ride camera
 is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose

@@ -124,9 +124,12 @@ class Source(unittest.TestCase):
     def test_breakdown_guards_are_registered(self):
         sources = read(GUESTS / 'GuestSimulation.cs') + read(GUESTS / 'RideVisitorBridge.cs')
         register = read(GUESTS / 'QueueApproximations.cs')
-        for approx in ('QUEUE-017', 'QUEUE-018', 'QUEUE-019'):
+        for approx in ('QUEUE-018', 'QUEUE-019'):
             self.assertIn(f'[APPROX:{approx}]', sources)
             self.assertIn(f'("{approx}",', register)
+        # QUEUE-017 is retired: the choice applies the counts-test's queue room (tp.exe 0x4dd920).
+        self.assertIn('[BIN:TPW-EXE:0x004DD920 counts-test room]', sources)
+        self.assertNotIn('("QUEUE-017",', register)
         host_step = sources[sources.index('lastAdmissionTurn = turn;'):]
         self.assertLess(host_step.index('if ( IsBroken )'), host_step.index('CheckAdmission( turn );'))
 

@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// Pins the park turn length against the Mac binary evidence (docs/M3-GATE.md, GATE-001
+/// Pins the park turn length against the Mac binary evidence (docs/M3-GATE.md, m3-gate-minute
 /// paragraph: one park turn is 248 ms of scaled time and advances the park clock 3,750 s)
 /// and checks that whole numbers of turns survive the tick conversions unchanged.
 /// </summary>

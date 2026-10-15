@@ -28,6 +28,8 @@ public sealed partial class ParkHud
 	};
 
 	private UiScreen? staffScreen;
+	/// <summary>The hire window's money samples, taken when the window opens (null without an economy).</summary>
+	private (long MoneyIn, long StaffCosts, long MoneyOut)? hireBalanceSample;
 	private UiButton? dismissStaffButton;
 	private UiButton? pickUpStaffButton;
 	private UiButton? setPatrolButton;
@@ -85,6 +87,7 @@ public sealed partial class ParkHud
 			return;
 		staffFilter = StaffType.Handyman;
 		ShowEmployedStaff( false );
+		hireBalanceSample = FinanceEconomy is { } economy ? HireBalanceSample( economy.Ledger.History ) : null;
 		staffScreen ??= CreateStaffScreen();
 		Stack.Push( staffScreen );
 		staffScreen.Focus( staffScreen.Find( "staffList" ) );
@@ -336,21 +339,31 @@ public sealed partial class ParkHud
 	};
 
 	/// <summary>
-	/// The hire window's mini balance (control 9349) for <paramref name="candidate"/>: the current month's money in, the staff costs with the candidate's monthly wage added, the other costs
-	/// (money out minus staff costs) and what is left once the wage is paid.
+	/// The hire window's mini balance (control 9349) for <paramref name="candidate"/>: the last closed month's money in, its staff costs with the candidate's monthly wage
+	/// added, its other costs (money out minus staff costs) and what is left once the wage is paid. The month is the one the window found when it opened.
 	/// </summary>
-	// [BIN:TPW-EXE:0x49b927 hire window mini balance] on a selection the staff-costs row (0x248c) shows [0x7ca2fc] + the candidate's wage (0x5077f0) and the balance row (0x2487) [0x7ca2f0] - wage - [0x7ca2fc] - [0x7ca300]; the globals are the newest samples of the finance graph's money-in (+0x1fc90), staff-costs (+0x1f7f0) and money-out (+0x1f5a0) series (0x49c53d..0x49c705), other costs [0x7ca300] being money out minus staff costs (0x49c705)
+	// [BIN:TPW-EXE:0x49b927 hire window mini balance] on a selection the staff-costs row (0x248c) shows [0x7ca2fc] + the candidate's wage (0x5077f0) and the balance row (0x2487) [0x7ca2f0] - wage - [0x7ca2fc] - [0x7ca300]; other costs [0x7ca300] are money out minus staff costs (0x49c705)
+	// [BIN:TPW-EXE:0x49c53d hire window samples] the builder 0x49bdd0 copies the newest entry of the money-in (+0x1fc94, index +0x1fed4), staff-costs (+0x1f7f4, index +0x1fa34) and money-out (+0x1f5a4, index +0x1f7e4) sample rings into those globals, 0 while a ring is still empty (index -1, not wrapped); a ring entry is written only by the month close 0x4c7720, which pushes each month's accumulator (+0x1fc90, +0x1f7f0, +0x1f5a0) through 0x4ce290 and zeroes it, so the window reads the last closed month as it was when the window opened
 	// [DATA:video 12:00 hire window] Inkomsten, - Werknemerskosten, - Overige kosten and Saldo; Saldo follows the selected candidate and the two cost rows are red
 	public (long Income, long StaffCosts, long OtherCosts, long Balance)? CandidateBalance( StaffCandidate? candidate )
 	{
-		if ( candidate == null || FinanceMonths() is not { Count: > 0 } months )
+		if ( candidate == null || hireBalanceSample is not { } sample )
 			return null;
-		var month = months[^1];
-		var wage = CandidateWageAmount( candidate );
-		var moneyOut = month.MoneyOut;
-		var staff = month[LedgerCategory.StaffCosts];
-		return (month.MoneyIn, staff + wage, moneyOut - staff, month.MoneyIn - wage - moneyOut);
+		return HireBalance( sample, CandidateWageAmount( candidate ) );
 	}
+
+	/// <summary>The hire window's three samples (money in, staff costs, money out) of the last closed month in <paramref name="closedMonths"/>; zeros before the first month closes.</summary>
+	public static (long MoneyIn, long StaffCosts, long MoneyOut) HireBalanceSample( IReadOnlyList<LedgerMonth> closedMonths )
+	{
+		if ( closedMonths.Count == 0 )
+			return (0, 0, 0);
+		var month = closedMonths[^1];
+		return (month.MoneyIn, month[LedgerCategory.StaffCosts], month.MoneyOut);
+	}
+
+	/// <summary>The four mini-balance rows from the window's samples and a candidate's monthly wage.</summary>
+	public static (long Income, long StaffCosts, long OtherCosts, long Balance) HireBalance( (long MoneyIn, long StaffCosts, long MoneyOut) sample, long wage ) =>
+		(sample.MoneyIn, sample.StaffCosts + wage, sample.MoneyOut - sample.StaffCosts, sample.MoneyIn - wage - sample.MoneyOut);
 
 	private string BalanceRowText( int row )
 	{

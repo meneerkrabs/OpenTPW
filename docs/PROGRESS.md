@@ -6,6 +6,19 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Queue rules settled against tp.exe (October 15, 2026)
+
+The queue and gate approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Full rides are skipped** (`0x4dd920`): a guest choosing an attraction passes over a ride whose queue already holds 4 × its cells, as the
+  original's choice does; the join keeps its own room check for a queue that fills while the guest walks there (QUEUE-017 retired).
+- **Queued guests turn as the original does** (`0x4ffff0`): only within 30 turns of their last interlude, one in ten turns, by −400..+399 of
+  2048 instead of a fixed ±400 (QUEUE-009 retired).
+- QUEUE-016 is retired (the turn order `0x516394` → `0x50b360` matches), the M3 gate minute is an OpenTPW extension
+  (`[EXT:m3-gate-minute]`: the original's clock runs on scaled real time, 31 ms substeps and a park turn every eighth), and 16 queue items
+  are narrowed to what is still unknown. Two register claims were wrong and are corrected: a queue event goes into the guest's own history,
+  and a 0/0 queue score takes the 0.75 floor on PC (`0x4e07d2`), not 0. The determinism hash is now `0x4AEFBABAD786E2FD`.
+
 ## Original saves bring their research, challenges, staff HQ and hiring pool (October 15, 2026)
 
 Importing an original save (the Jungle Easymode start) now restores four more parts, all read in tp.exe:

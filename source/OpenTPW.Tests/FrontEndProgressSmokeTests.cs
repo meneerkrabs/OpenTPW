@@ -43,7 +43,7 @@ public class FrontEndProgressSmokeTests
 	[TestMethod]
 	public void ActualSmokePlanAcceptsMissingHistoryBeforeWaitingForPark()
 	{
-		Frame(); Assert.IsInstanceOfType( menu.Stack.Top, typeof( ProgressChoiceScreen ) ); Assert.AreEqual( "newProgress", menu.Stack.Top!.Name );
+		Frame(); Frame(); Assert.IsInstanceOfType( menu.Stack.Top, typeof( ProgressChoiceScreen ) ); Assert.AreEqual( "newProgress", menu.Stack.Top!.Name );
 		Assert.AreEqual( 1, verified ); Assert.AreEqual( 0, Get<int>( fixture, "built" ) ); Assert.IsFalse( File.Exists( Profile ) );
 		for ( var frame = 0; frame < 5; frame++ ) Frame();
 		Assert.AreEqual( 1, Get<int>( fixture, "built" ) ); Assert.AreEqual( 1, PlayerTicketFile.LoadIfPresent( Profile )!.ExtraKeys );
@@ -53,7 +53,7 @@ public class FrontEndProgressSmokeTests
 	[TestMethod]
 	public void CancelledConsentCannotBeBypassedBySmokeWait()
 	{
-		Frame(); menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );
+		Frame(); Frame(); menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		Assert.ThrowsException<InvalidOperationException>( () => { for ( var frame = 0; frame < 5; frame++ ) Frame(); } );
 		Assert.IsFalse( File.Exists( Profile ) ); Assert.AreEqual( 0, Get<int>( fixture, "built" ) );
 	}
@@ -61,7 +61,7 @@ public class FrontEndProgressSmokeTests
 	public void KnownZeroKeyHistoryIsNeverResetToMakeSmokePass()
 	{
 		PlayerTicketFile.Save( Profile, new PlayerTicketLedger().Capture() ); var before = File.ReadAllBytes( Profile );
-		Frame(); Assert.ThrowsException<InvalidOperationException>( () => { for ( var frame = 0; frame < 5; frame++ ) Frame(); } );
+		Frame(); Frame(); Assert.ThrowsException<InvalidOperationException>( () => { for ( var frame = 0; frame < 5; frame++ ) Frame(); } );
 		CollectionAssert.AreEqual( before, File.ReadAllBytes( Profile ) ); Assert.AreEqual( 0, Get<int>( fixture, "built" ) );
 	}
 	private void Building( bool value )

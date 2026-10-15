@@ -103,6 +103,32 @@ Twenty-two interface approximations were read again in tp.exe:
   text renderer without a shadow (`0x48f830`), the four readers of RMBCancelOn (`0x4881a0`), the greedy text wrap (`0x6aec80`), the
   slider class, the options labels and the buy-list row pitch (font slot 7's line height, `0x4ad240`).
 
+## MD2 paths: vehicles and karts follow their routes (October 15, 2026)
+
+The path parameters decoded earlier today index a part of the geometry models that was still opaque: the
+16-byte "extra records" (header 0x40/0xAC) are paths, 18 of them in 15 distinct models (Bézier, one linear).
+
+- **Paths** (`ModelPath`, `ModelFile.Paths`): kind (closed, Bézier, linear, otherwise Catmull-Rom), point count and
+  points. A node follows one when its parent is a type-0x208 dummy (`Kart_path01`, `Flightpath`, `FERRYSPLINE`…);
+  the dummy's stored index selects the path in its high 16 bits.
+- **Playback** from tp.exe's sampler 0x471860: the per-tick value (0x474EA0: per-tick blend, seam across 100 → 0)
+  becomes `fmod(v + 1000, 100)` percent of the path's segments, evaluated by 0x474840/0x474BF0/0x474CC0; flag 0x400
+  turns the node along the path (0x474A20/0x474C70, rows built by 0x470780). `ObjectAnimator` and
+  `ModelAnimationPlayer` play it, so the Haunted House karts, the go-karts, the bus, ferry, seaplane and slide car
+  and the Halloween advisor's bats follow their routes instead of standing at their stored pose (every such record
+  evaluates on its path; moving playback is checked for the Haunted House karts).
+- **Checks:** every flag-0x200 node hangs under a path dummy; where a clip starts on the stored pose (Haunted House
+  B/E/M/S, Busm1, slidec) tick 0 lands within 0.02 of the stored translation and faces within a few degrees of the
+  stored orientation; a placed Haunted House moves its four karts along their paths. The open Bézier routes store a
+  closing control pair the sampler never reads, so the bus and ferry jump back to their route's start when the
+  value wraps past 100, as the original does.
+- Not played: flag 0x400 together with position keys (no record has it). OpenTPW guards: path tables decode at
+  most four times the member, empty or non-finite paths are rejected, and a direction parallel to up (a division
+  by zero in the original) faces +X. No native render was run.
+- Verification (macOS arm64, original data): the full test suite passes (4,496 passed, 109 skipped); an independent
+  Codex review's findings (path-table allocation budget, non-finite and empty paths, scale after facing across
+  channels, a vertical direction, claims beyond the tests) are fixed.
+
 ## Format table reconciled; SAM reader, LIP checks and MD2 path parameters (October 15, 2026)
 
 The README's format table mixed decoding with game integration: the sound banks' ⚠️ listed untriggered

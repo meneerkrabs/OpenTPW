@@ -1859,7 +1859,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		PushHistory( guest.UsedHistory, ride.AttractionId );
 		// [BIN:TPW-EXE:0x004FD9EE use fatigue] a completed use, won or lost, lowers the meter +0x1B8 by the type's UsageInfo.FatigueEffect (type +0xE8) through the clamped adder 0x004FB4F0, before the use routine; only the save reads the meter (0x004FC026)
 		guest.Energy = MeterMath.Add( guest.Energy, -(float)ride.FatigueEffect );
-		ApplyVisit( guest, ride );
+		// [BIN:TPW-EXE:0x004FDA0D lost sideshow] a lost play (win byte +0x1F1 of 0) skips the use routine: "Person lost this sideshow" (0x004FDB8D) costs the medium happiness step (byte 0x0078505C) and thinks 6
+		if ( ride.Kind == RideVisitorKind.Sideshow && guest.SideshowWon == false )
+		{
+			guest.SideshowWon = null;
+			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
+			Think( guest, GuestThought.Dissatisfied );
+		}
+		else
+			ApplyVisit( guest, ride );
 		// [BIN:TPW-EXE:0x00501FD3 state 15 entry] after the use routine (0x005015F4, 0x004FD970) the state-15 entry gives a guest with balloon life its balloon back, except at a balloon shop, whose use routine has just made one
 		if ( guest.BalloonLife > 0 && ride.AppearanceEffect != GuestAppearance.Balloon )
 			guest.HasBalloon = true;
@@ -1895,7 +1903,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
-	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws come from OpenTPW's guest stream (DET-014) — evidence needed: none (read)
+	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except a won sideshow's tail (0x004FE802..0x004FE8D9, type kind +0x4AC 2: +0x1D0 += 1, happiness += trunc(medium step × log2(object +0x188 / object +0x194)), "Sideshow won - happiness up", then one discarded world draw), the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws come from OpenTPW's guest stream (DET-014) — evidence needed: none (read)
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
@@ -1933,7 +1941,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.Thirst = MeterMath.Add( guest.Thirst, amount * ride.ThirstEffect / 100 );
 				break;
 			default:
-				guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
+				guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, amount );
 				break;
 		}
 		ApplyAppearance( guest, ride.AppearanceEffect );

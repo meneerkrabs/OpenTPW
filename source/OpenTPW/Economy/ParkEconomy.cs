@@ -1495,18 +1495,23 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Shop || !item.IsOpen || IsBankrupt || visitorCash < item.Price )
 			return false;
 		pricePaid = item.Price;
-		Post( LedgerCategory.ShopTakings, item.Price );
+		// [BIN:TPW-EXE:0x004FE1A0 price taken] the use routine's price step takes the price (+0x194) only when it is not 0: the takings 0x004E16B0 (bank money in, the
+		// shop row, the per-type sale count and the challenge accumulators), the till sound and the guest's money; a free sale skips all of it, while the cost of
+		// goods (0x004FE1E0 → 0x004E1920) and the customer count (0x004E1690) are still booked
+		if ( item.Price != 0 )
+		{
+			Post( LedgerCategory.ShopTakings, item.Price );
+			item.TakingsThisMonth += item.Price;
+			if ( Catalog.TryGet( item.InfoId, out var info ) )
+				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
+		}
 		Post( LedgerCategory.OtherCosts, item.CostOfGoods );
 		item.CustomersThisMonth++;
-		item.TakingsThisMonth += item.Price;
 		item.CostsThisMonth += item.CostOfGoods;
 		item.TotalProfit += item.Price - item.CostOfGoods;
-		if ( Catalog.TryGet( item.InfoId, out var info ) )
-		{
-			Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
-		}
 		Counters.Add( ParkCounters.ShopProfit, item.Price - item.CostOfGoods );
-		Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
+		if ( item.Price != 0 )
+			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
 		return true;
 	}
 
@@ -1527,16 +1532,21 @@ public sealed class ParkEconomy : IParkEconomy
 		pricePaid = item.Price;
 		won = SideshowWins( item.ChanceOfLosingPercent, Random.Next( 100 ) );
 		var prize = won ? item.CostOfGoods : 0;
-		Post( LedgerCategory.SideshowTakings, item.Price );
+		// [BIN:TPW-EXE:0x004FE1A0 price taken] a free play skips the takings (0x004E16B0) as a free sale does; the prize is still paid
+		if ( item.Price != 0 )
+		{
+			Post( LedgerCategory.SideshowTakings, item.Price );
+			item.TakingsThisMonth += item.Price;
+		}
 		Post( LedgerCategory.OtherCosts, prize );
 		item.CustomersThisMonth++;
-		item.TakingsThisMonth += item.Price;
 		item.CostsThisMonth += prize;
 		item.TotalProfit += item.Price - prize;
 		if ( won )
 			item.WinnersThisMonth++;
 		Counters.Add( ParkCounters.SideshowProfit, item.Price - prize );
-		Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
+		if ( item.Price != 0 )
+			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
 		return true;
 	}
 

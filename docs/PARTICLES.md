@@ -245,9 +245,11 @@ Retired (the port is from the instructions, with the tests below): `APPROX:PTCL-
 density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-903` (effectors and the spiral) and
 `APPROX:PTCL-907` (saves, above). Still registered in the fidelity register:
 
-- `PTCL-900`: EVENT positions use the animator's current matrices; the original uses the pose of the object's last draw
-  (`0x473C70` -> `0x44AB30`, gated by header bit 0x1 and table bit 0x1), about a render frame behind and stale while
-  culled.
+- `PTCL-900`: EVENT positions use the animator's current matrices; the original reads the key table (`0x556B90`), which
+  `0x44AB30` refreshes (gated by header bit 0x1 and table bit 0x1) when the instance is created (`0x463851`, the pose after
+  animations 0 and 13 start), when it is drawn (the render node's per-frame callback `0x463030` -> `0x44E380` -> `0x473C70`
+  -> `0x473E1B`) and from `0x42A6D6` and `0x438A53`, so it is about a render frame behind and stale while culled. What the two
+  header and table bits mean and what the other two refreshes serve are not read.
 - `PTCL-904`: the quad's width factor (frame record float +8, projection aspect) is untraced.
 - `PTCL-905`: one primitive per particle in the original against OpenTPW's three blend batches; engine depth sorting
   (`0x565F90`) untraced.

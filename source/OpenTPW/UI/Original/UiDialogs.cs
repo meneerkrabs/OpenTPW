@@ -6,7 +6,7 @@ namespace OpenTPW.UI.Original;
 public static class UiDialogs
 {
 	/// <summary>Authored rectangle of a centred window of the given canvas size.</summary>
-	// [APPROX:UI-013] the sizes of the game-mode and load screens and of OpenTPW's own windows — evidence needed: the original's game-mode table (0x753f50) and load dialog
+	// [APPROX:UI-013] the sizes of the load screen and of OpenTPW's own windows — evidence needed: the original's load dialog
 	public static UiRect CenteredWindow( float width, float height ) =>
 		UiRect.FromCenter( new NVector2( UiCanvas.VirtualWidth / 2, UiCanvas.VirtualHeight / 2 ), width, height );
 
@@ -108,7 +108,7 @@ public static class UiDialogs
 	/// </summary>
 	/// <param name="back">Escape and the right click.</param>
 	// [DATA:video 27:42-27:47, 27:59-28:03] the pause menus have no window frame and no title; their lines are spaced at about 11 % of the screen height
-	// [APPROX:UI-013] the lines' exact rectangles (a 169-unit pitch, a 1000-unit width) are read off the video, not from a table
+	// [APPROX:UI-013] the lines' rectangles (a 169-unit pitch, an 1100-unit width) are read off the video; the original sizes each line from its measured text (0x48c150 → 0x492f60: pixel width + 1, height + 5, centred, 5 units apart from y 10) and its vertical placement is untraced
 	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null )
 	{
 		var screen = new UiScreen( name );

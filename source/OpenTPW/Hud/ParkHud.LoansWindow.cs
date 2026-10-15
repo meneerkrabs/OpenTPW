@@ -98,6 +98,7 @@ public sealed partial class ParkHud
 		SetInfoArm( false );
 		level.CellTool.Cancel();
 		loansScreen ??= CreateLoansScreen();
+		loanSummary = LoansEconomy is { } economy ? LoanSummaryOf( economy ) : default;
 		SelectLoanTab( false );
 		Stack.Push( loansScreen );
 		loansScreen.Focus( loansScreen.Find( "loanList" ) );
@@ -172,16 +173,28 @@ public sealed partial class ParkHud
 		_ => ""
 	};
 
-	// [APPROX:UI-063] The original ledger uses lifetime park counters; the available ParkLedger history is bounded to 12 years, so older months can drop from these rows.
-	private long LoanSummary( int row )
+	// The summary rows as they were when the window opened (the original fills them only when it builds the window).
+	private (long CashIn, long OtherCosts, long LoanPayments, long Balance) loanSummary;
+
+	private long LoanSummary( int row ) => row switch
 	{
-		if ( LoansEconomy is not { } economy )
-			return 0;
-		var months = economy.Ledger.History.Append( economy.Ledger.CurrentMonth( 0, 0 ) );
-		var cashIn = months.Sum( month => month.MoneyIn );
-		var costs = months.Sum( month => month.MoneyOut );
-		var loanPayments = months.Sum( month => month[LedgerCategory.LoanPayments] );
-		return row switch { 0 => cashIn, 1 => costs - loanPayments, 2 => loanPayments, _ => cashIn - costs };
+		0 => loanSummary.CashIn, 1 => loanSummary.OtherCosts, 2 => loanSummary.LoanPayments, _ => loanSummary.Balance
+	};
+
+	/// <summary>The loans window's summary: the last closed month's money in and out and the instalments of the loans now outstanding.</summary>
+	// [BIN:TPW-EXE:0x0049fe00 loans summary] the window build 0x49fb30 reads the newest sample of the money-in history (+0x1FC94 ring, pushed with the +0x1FC90 total at the
+	// month message 12 by 0x4c7720, 0 before the first) and of the money-out history (+0x1F5A4 ring, +0x1F5A0 total), sums the monthly repayment (+0x10) of every bought (+0x14)
+	// loan slot of the eight (0x4d06b0), and shows Cash In = money in, Other Costs = money out − those repayments, Loan Payments = the repayments and Balance = money in − money out
+	// (32-bit); taking or repaying a loan refills only the list (0x49f460 / 0x49f4a0 → 0x49fa00), so the rows keep their values until the window is built again
+	internal static (long CashIn, long OtherCosts, long LoanPayments, long Balance) LoanSummaryOf( ParkEconomy economy )
+	{
+		var last = economy.Ledger.History.Count > 0 ? economy.Ledger.History[^1] : null;
+		var moneyIn = unchecked((int)(last?.MoneyIn ?? 0));
+		var moneyOut = unchecked((int)(last?.MoneyOut ?? 0));
+		var repayments = 0;
+		foreach ( var loan in economy.Loans )
+			repayments = unchecked(repayments + (int)loan.MonthlyRepayment);
+		return (moneyIn, unchecked(moneyOut - repayments), repayments, unchecked(moneyIn - moneyOut));
 	}
 
 	private UiScreen CreateLoansScreen()

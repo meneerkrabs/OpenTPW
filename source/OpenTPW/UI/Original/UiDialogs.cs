@@ -6,7 +6,7 @@ namespace OpenTPW.UI.Original;
 public static class UiDialogs
 {
 	/// <summary>Authored rectangle of a centred window of the given canvas size.</summary>
-	// [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs
+	// [APPROX:UI-013] the sizes of the game-mode and load screens and of OpenTPW's own windows — evidence needed: the original's game-mode table (0x753f50) and load dialog
 	public static UiRect CenteredWindow( float width, float height ) =>
 		UiRect.FromCenter( new NVector2( UiCanvas.VirtualWidth / 2, UiCanvas.VirtualHeight / 2 ), width, height );
 
@@ -33,7 +33,7 @@ public static class UiDialogs
 	/// </summary>
 	// [BIN:TPW-EXE:0x7583e8 confirm dialog] window id 0x48 (500,233,1516,830) with b_okay (1376,524,1460,608) and b_exit (1387,613,1470,696), a caption box (606,304,1333,384) and two text fields; the second table 0x7585a8 is the same stream; the name dialog 0x753f50 has the same window and buttons
 	// [DATA:video 28:00, 28:04, 28:40] the dialogs measure (527..1491, 247..854) in a 954x720 game area, with the tick and X at the right and no text buttons
-	// [APPROX:UI-013] the message text's own rectangle (below the caption, left of the buttons) is read off the video, not from the table, whose two text fields belong to the name dialog; the load dialog is not in the capture
+	// [DATA:video 28:00] the message text sits below the caption and left of the buttons; the table's two text fields belong to the name dialog, so that rectangle is read off the video
 	public static UiScreen Message( string name, Func<string> text, params (Func<string> Label, Action Clicked)[] choices )
 	{
 		var screen = new UiScreen( name );

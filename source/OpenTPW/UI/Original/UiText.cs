@@ -159,7 +159,7 @@ public sealed class UiFonts
 }
 
 /// <summary>Colours used by the original-style screens (OpenTPW choices, see docs/UI.md).</summary>
-// [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens
+// [APPROX:UI-006] the UI text/backdrop colours are read off 720p video frames (+-15 per channel); the original's palette is not traced — evidence needed: lossless captures
 public static class UiColors
 {
 	public static readonly RgbaByte Text = new( 255, 255, 255, 255 );

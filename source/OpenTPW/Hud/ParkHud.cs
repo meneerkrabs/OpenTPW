@@ -174,9 +174,9 @@ public sealed partial class ParkHud
 	/// The cost of the build action under way, shown in yellow under the balance (control 48): the held blueprint's price, the path or queue line's cost so far, or the coaster track
 	/// segment under the cursor; null outside the build tools, where the text is hidden.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the tool modes 3, 4 and 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; it is no sum of balance changes
+	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] which OpenTPW tool state corresponds to which original tool mode (3, 4, 8) is taken from the video's cases (blueprint, path or queue line, coaster segment); the staff and patrol tools show nothing
+	// [APPROX:UI-047] the mode-object types that show the text are 3 (the tool-mode object that wraps every build tool: blueprint, path and queue line, coaster segment), 4 and 8 (gated by 0x447990), which are not identified; the staff and patrol tools show nothing
 	public long? BuildActionCost
 	{
 		get
@@ -232,8 +232,15 @@ public sealed partial class ParkHud
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
-		// [APPROX:UI-025] the panel's binoculars (go to) button is not drawn: the messages carry no location, and the button's art is not identified among ui.wad's models
-		hud.Add( new UiButton { Id = "messageDelete", Model = "b_erase", Clicked = CloseMessagePanel, Bounds = UiRect.FromCenter( new NVector2( 562, 1385 ), 100, 100 ), Anchor = UiAnchor.BottomLeft, Visible = false } );
+		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
+		// [APPROX:UI-025] no OpenTPW message carries an action yet (the strike messages are plain text), so the action buttons stay hidden; which original message types use which mb_ model is not traced
+		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
+		{
+			var index = slot;
+			hud.Add( new UiButton { Id = MessageActionIds[slot], Model = GameMessageKind.Locate.Model(), Clicked = () => { if ( index < openedActions.Length ) openedActions[index].Clicked(); },
+				Bounds = OriginalLayoutTables.MessagePanel.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		}
 		hud.Add( new UiButton { Id = "messageClose", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseMessagePanel, Bounds = UiRect.FromCenter( new NVector2( 384, 1420 ), 75, 75 ), Anchor = UiAnchor.BottomLeft, Visible = false } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
@@ -264,8 +271,10 @@ public sealed partial class ParkHud
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
-		// [EXT:camera-view-cycle] the camera button cycles host Standard/Close/Overview views; [APPROX:UI-042] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and starts sound 0x131 — evidence needed: the camcorder mode and the panel's sound
-		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, CycleCameraView );
+		// [BIN:TPW-EXE:0x498bb0 camera button] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 (table 0x751720) with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and starts sound 0x131; the button's help is 474
+		// [APPROX:UI-042] the panel's sound 0x131 is not played; ParkHud.CameraPanel.cs
+		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), 474, ToggleCameraPanel );
+		BuildCameraPanel();
 
 		// [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0)
 		// Speed control (OpenTPW buttons): each sets the clock scale of the whole simulation.
@@ -299,6 +308,8 @@ public sealed partial class ParkHud
 		{
 			if ( IsRiding )
 				StopRide();
+			else if ( CameraPanelOpen )
+				CloseCameraPanel();
 			else if ( CancelCamcorder() ) { }
 			else if ( level.IsCoasterToolActive )
 				level.ExitCoasterTool();
@@ -658,6 +669,7 @@ public sealed partial class ParkHud
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
 		TrackCashChange( context.Delta );
+		UpdateCameraPanel();
 		UpdateMessageTube( context.Delta );
 		SampleHappiness( context.Delta );
 		var paused = Paused;
@@ -685,7 +697,7 @@ public sealed partial class ParkHud
 			!shortcutsAllowed || overUi || consumed || mouseCaptured.Value || input.Text.Length > 0 || ridingAtStart ) || walkingAtStart;
 
 		// Ride It (E) rides the selected ride; a right click (RMB cancel on) or E again leaves the ride view.
-		// [APPROX:UI-093] the key stands in for the ride window's "Ride it!" button (gui_CameraFlags 4), whose art is not in the repository
+		// [EXT:ride-view-key] the key rides the selected ride as the ride window's "Ride it!" button does (gui_CameraFlags 4)
 		if ( shortcutsAllowed )
 		{
 			if ( IsRiding && (Input.Pressed( InputButton.RideView ) || (input.RightPressed && GameOptions.Current.RmbCancel

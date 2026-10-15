@@ -300,18 +300,16 @@ public sealed class UiScreenStack
 	/// </summary>
 	// [BIN:TPW-EXE:0x492180 help box] the help control is built with left 0x23e, right 0x5c2, bottom 0x5f0 and top 0x5f0 - h, h = (fontHeight(font 7) * 3 * 1024) / [0xfaa5c0] + 10; its art is f_helpbg and its text font slot 7, colour (255,255,255,255)
 	// [DATA:video 3:00, 3:20 help box] the box measures 569..1475 by 1436..1515 for one line and for two, grass shows through it at about 67 % black (the art's own alpha)
-	// [APPROX:UI-010] the formula's divisor [0xfaa5c0] is taken as the screen height in pixels and font slot 7 as the small UI font; a text that wraps past the box overflows it on both sides
-	internal static UiRect HelpBoxRect( UiContext context )
+	// [BIN:TPW-EXE:0x492180 help height] the divisor [0xfaa5c0] is taken as the screen height in pixels and font slot 7 as the small UI font (medium confidence); a text that wraps past the box overflows it on both sides
+	internal static UiRect HelpBoxRect( UiCanvas canvas, float lineHeightPixels )
 	{
-		var canvas = context.Canvas;
-		var lineHeight = context.Fonts.Small.LineHeight * canvas.TextScale;
-		var height = lineHeight * 3072f / Math.Max( 1, canvas.Height ) + 10;
+		var height = lineHeightPixels * 3072f / Math.Max( 1, canvas.Height ) + 10;
 		return canvas.Map( new UiRect( 574, 1520 - height, 900, height ), UiAnchor.Bottom );
 	}
 
 	private static void DrawHelp( UiContext context, string text )
 	{
-		var rect = HelpBoxRect( context );
+		var rect = HelpBoxRect( context.Canvas, context.Fonts.Small.LineHeight * context.Canvas.TextScale );
 		if ( !context.DrawModel( "f_helpbg", 0, rect ) )
 			context.Batch.AddRectangle( rect, UiColors.HelpBox );
 		var pad = 4 * context.Canvas.TextScale;

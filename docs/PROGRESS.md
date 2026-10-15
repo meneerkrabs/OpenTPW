@@ -1032,6 +1032,26 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Original UI layout tables (October 15):** the Windows executable holds the layout command streams of its windows (the
+  grammar of the Mac tables, checked against the window builder 0x65FD58 and its dispatcher 0x66076E), and
+  `tools/ppc-analysis/lanes/ui/tpw_exe_layouts.py` generates the derived rectangles, help ids and ui.wad model names of ten of
+  them (ride, shop and sideshow windows, message panel, camera panel, camcorder, confirm and name dialogs, the two lobby
+  tables) plus the 22 pointer ids and the tool-to-pointer rules (0x4899C0, 0x52F950) into
+  `UI/Original/OriginalLayoutTables.cs`; the script fails on any unexpected command, address, count or model hash, and `--check`
+  compares the file. What uses them: the object windows (w_med frame, yellow name, preview, white stat rows, the round buttons
+  `b_door`, `b_erase`, `b_callmech`, `b_upgrade`, Ride it!, the arrows, the list and the tick; sliders, `b_queue`, `b_move`,
+  `b_track` and `b_applyall` are not drawn), the help box (fixed `f_helpbg` rectangle 574..1474 ending at y 1520, UI-010 retired), the
+  confirm dialog (the (500,233)-(1516,830) window with the stacked tick and X buttons, the first choice the tick), a frameless
+  cyan pause menu in the original order (Restart Park only for Instant Action parks, Publish Park opens the online publish
+  flow, Go Online stays as `[EXT]`), the lobby at the table rectangles without logo or menu column (UI-014 retired; its Escape
+  menu holds Go Online, Load as `[EXT]`, Options, Resume and Quit; the globe button opens the online world), the full pointer
+  table with the tool rules (queue, track and camcorder pointers; link, end, cash and the crosshair stay unchosen), the message
+  panel's `messagel/m/r` rectangles with `mb_erase` and two action buttons whose art follows the action's kind (no message uses
+  one yet), the camera slide-out panel (camcorder, postcard and the `[EXT]` view cycle), buy-list rows of 41.4 units and no white
+  lightning flash in the lobby. UI-093 retired (the E key is `[EXT:ride-view-key]`); UI-006, 013, 018, 024, 025, 029, 042,
+  044, 047 and 100 narrowed. Not done: the right-click back-out gated on RMBCancelOn (UI-012), the ride view and camcorder overlay
+  (another worker), the employee, training-budget and player-screen tables, the game-mode screen on the name dialog's table.
+
 - **HUD video round review fixes (October 15):** the software pointer is drawn last (after the advisor and progress overlays) and the system pointer is hidden only when the cursor art from `Data/ui/cursors` (found case-insensitively on disk) is loaded and decodes, the pointer is inside the window and ImGui does not want the mouse; an empty message tube no longer swallows park clicks, opening a message closes the info arm, the status line hides under the info arm and message panel, hover selects an applicant only when the pointer moves, and per-frame allocations are gone.
 - **HUD video round (October 14):** a gameplay video of the Dutch PC build settled the HUD and window register items. The hire window now has the Vaardigheid gauge and the mini balance (money in, staff costs plus the wage, other costs, balance) that follow the hovered candidate; the click-to-hire trigger stays (the original's 0x400 list message and its advisor line, UI-083 retired) and the 3D candidate figure is registered (UI-082). The yellow text under the cash is the cost of the build action under way and is hidden outside the build tools (UI-047). Pending messages stack in a red message tube left of the HUD, left click opens one in a green slide-out panel and right click deletes it (UI-025); OpenTPW's own feedback lines moved to a status line. The popup help box sits at the bottom centre on translucent black (UI-010). The golden ticket and key counters show only above zero as "n ×", keys are tracked (UI-051). Excitement, reliability, repair and life are red-to-green gauges (UI-028/046), the buy list's third column is a tick box (UI-050), and the park draws the original glove, arrow and no-entry pointers (UI-100). UI-011 is retired, UI-042 narrowed and the shortcut letters of the help texts recorded under UI-012.
 - **Particle allocation test (October 14):** `ParticleSystemPortTests.TickAllocatesNothing` measures windows of 100 ticks until one is clean, so tiered-compilation allocations in a busy full run no longer fail it; a real per-tick allocation still never gives a clean window.

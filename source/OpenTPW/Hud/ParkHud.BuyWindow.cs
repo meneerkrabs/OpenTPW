@@ -17,8 +17,10 @@ public sealed partial class ParkHud
 {
 	/// <summary>Rows of the list that fit the content region (1037,427)-(1727,871) at <see cref="BuyRowHeight"/>.</summary>
 	public const int BuyVisibleRows = BuyListModel.VisibleRows;
-	// [APPROX:UI-044] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list
-	public const float BuyRowHeight = 444f / BuyVisibleRows;
+	// [BIN:TPW-EXE:0x754cf8 buy window table] the list (type 7, 0x1f8) gives the content region (1037,427)-(1727,871); its row height is not in the table: the list class takes it from its font (0x663718 stores the text height measured by 0x65d865 at +0x170; the row under a point is (y - top) / +0x170, 0x66552e), so the pitch follows the font
+	// [DATA:video 17:20 buy list] ten rows with no scrolling: a text pitch of 175 px / 9 = 19.4 px at 720p, 41.4 +- 1 virtual units; the first band starts at about 423 and the tenth ends at about 837, leaving about 34 units of the region empty
+	// [APPROX:UI-044] the pitch is the measured 41.4 units, not the original's font-derived value, and does not follow the font or the screen; the wheel steps one row
+	public const float BuyRowHeight = 41.4f;
 	// [BIN:TPW-EXE:0x665a44 buy list sort] list 504 has attribute 0x91 including 0x10 (header sort): the same column toggles its direction, a new column starts ascending, and the sort word [0x755140] starts at 1 (column 0, ascending; 0x4ad057 → 0x6659af) and is written back on a change (0x4ac9dd), so the order survives reopening the window for the session (ListSortMemory); the table only gives column header buttons 16/17 without a model
 
 	// [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143)

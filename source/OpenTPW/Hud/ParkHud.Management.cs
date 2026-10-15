@@ -9,8 +9,9 @@ public sealed partial class ParkHud
 	public bool EntryPriceWindowOpen => entryPriceScreen != null && Stack.Screens.Contains( entryPriceScreen );
 	public bool StaffCostsWindowOpen => staffCostsScreen != null && Stack.Screens.Contains( staffCostsScreen );
 
-	// [APPROX:UI-061] detail layouts and unit adjustment controls reuse original widgets; original detail-screen handlers remain unqualified
-	// their arrangement and one-pound adjustment increments are OpenTPW presentation choices.
+	// [APPROX:UI-061] the entry-price window is a host layout over the economy values: the original's table 0x751798 (window 0x4f3aa (328,130)-(1720,901), the
+	// spinner 0x4f3ae (773,446)-(1197,619) of range 0..10000 and step 1 holding the entry price (0x498f3b-0x498f9e), the door button 0x4f3b1, three buttons at (1568, 303/411/518)
+	// and the tick, handler 0x498c60) is not ported; its one-pound step is the original's — evidence needed: porting table 0x751798 and its handler
 	public void OpenEntryPriceWindow()
 	{
 		if ( EntryPriceWindowOpen || FinanceEconomy == null ) return;
@@ -69,7 +70,10 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x756400 training-budget table] window id 0x2d9, title box 0x2da (805,74)-(1277,153), tick (1711,820), b_entry 0x2db, b_finance 0x2dc and b_loans 0x2dd (help 176, 175, 174) in the right column, the mini balance frame 0x2de (267,183)-(765,411) with four label/value rows, and five f_train rows (0x2e7, 0x2ec, 0x2ea, 0x2eb, 0x2ed: help 164-168) of 150 units with the role icon (h_handy, h_mech, h_enter, h_guard, h_resrcher), b_minus, b_plus, the value in the row's text box and a gauge (type 9, help 169-173)
 	// [DATA:video 22:07-22:08] a mini balance on the left (Inkomsten, Werknemerskosten, Overige kosten, Saldo) and five role rows with a role icon, a "$ n" value with the minus and plus buttons and a skill gauge
-	// [APPROX:UI-061] the rows' skill gauges are not drawn (what they show is not traced), a click changes the budget by one unit as before, and the entry-price window's table is not located
+	// [BIN:TPW-EXE:0x4b2797 training-budget window] each row is a spinner (type 12) of range 0..10000 (0x66a5c4) and step 25 (0x66a68d) holding the role's budget; its b_minus and b_plus
+	// move the value one step, clamped to the range (0x66a7e0 → 0x66a71c), and the handler 0x4b24b0 stores the new value (message 0x800, jump table 0x4b2728) as the role's budget
+	// [BIN:TPW-EXE:0x4c9c00 staff grade share] the row's gauge (child 0x2e8, type 9) is set once when the window opens to share × 1024 / 100, share being the role's employees' summed
+	// grade (+0x1e4) × 100 / (count × 5) in integers, 0 without employees (0x4b28e4..0x4b2906)
 	private UiScreen CreateTrainingBudgetScreen()
 	{
 		var table = OriginalLayoutTables.TrainingBudget;
@@ -104,11 +108,14 @@ public sealed partial class ParkHud
 			screen.Add( new UiModelImage { Id = $"icon{role}", Model = icon.Model!, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
 			screen.Add( new UiLabel { Id = $"budget{role}Value", Text = () => FormatMoney( FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0 ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true, Bounds = row.Inner!.Value, Anchor = UiAnchor.Center } );
+			var gauge = row.Children.First( node => node.Type == 9 );
+			screen.Add( new UiGaugeBar { Id = $"skill{role}", Value = () => TrainingGrades( role ) is { } grades ? TrainingGaugeFill( grades ) : null,
+				Help = strings.Help( gauge.Help ), Bounds = gauge.Rect, Anchor = UiAnchor.Center } );
 			foreach ( var (node, delta) in new[] { (minus, -1), (plus, 1) } )
 			{
 				var step = delta;
 				var button = screen.Add( new UiButton { Id = $"budget{role}" + (step < 0 ? "Decrease" : "Increase"), Model = node.Model, Help = strings.Help( row.Help ),
-					Clicked = () => { var current = FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0; if ( step < 0 ? current > 0 : current < long.MaxValue ) TrySetStaffTrainingBudget( FinanceEconomy, level.IsReadOnlyVisit, role, current + step ); },
+					Clicked = () => { var current = FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0; var next = StepTrainingBudget( current, step ); if ( next != current ) TrySetStaffTrainingBudget( FinanceEconomy, level.IsReadOnlyVisit, role, next ); },
 					Bounds = node.Rect, Anchor = UiAnchor.Center } );
 				adjustmentButtons.Add( (button, () => step < 0 ? (FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0) > 0 : true) );
 			}
@@ -133,6 +140,24 @@ public sealed partial class ParkHud
 		screen.Back = Close;
 		return screen;
 	}
+
+	/// <summary>The training-budget spinners' range and step (tp.exe 0x4b2797: range 0..10000, step 25).</summary>
+	public const long TrainingBudgetMaximum = 10000, TrainingBudgetStep = 25;
+
+	/// <summary>A budget after one press of b_minus (<paramref name="direction"/> -1) or b_plus (+1): one step, clamped to 0..10000.</summary>
+	public static long StepTrainingBudget( long current, int direction ) =>
+		Math.Clamp( current + Math.Sign( direction ) * TrainingBudgetStep, 0, TrainingBudgetMaximum );
+
+	/// <summary>The fill of a training row's gauge for the grades (0..4) of the role's employees: the integer share of the best grade, then of 1024.</summary>
+	public static float TrainingGaugeFill( IReadOnlyCollection<int> grades )
+	{
+		if ( grades.Count == 0 )
+			return 0;
+		var share = grades.Sum() * 100 / (grades.Count * 5);
+		return share * 1024 / 100 / 1024f;
+	}
+
+	private IReadOnlyCollection<int>? TrainingGrades( StaffType role ) => FinanceEconomy?.Staff.OfType( role ).Select( member => member.Grade ).ToArray();
 
 	private string TrainingBalanceText( int row )
 	{

@@ -51,4 +51,24 @@ public class UiRegisterReadTests
 		// tp.exe 0x49b9dd posts 0x135 after the hire; the Place tool's end 0x46c890 withdraws it
 		Assert.AreEqual( 309, AdvisorUiHelp.MessageFor( ParkHud.StaffPlacementHelp ) );
 	}
+
+	[TestMethod]
+	public void TrainingBudgetsMoveInStepsOf25WithinTheSpinnersRange()
+	{
+		// tp.exe 0x4b2797: range 0..10000, step 25; 0x66a71c clamps
+		Assert.AreEqual( 25, ParkHud.StepTrainingBudget( 0, 1 ) );
+		Assert.AreEqual( 0, ParkHud.StepTrainingBudget( 10, -1 ) );
+		Assert.AreEqual( 10000, ParkHud.StepTrainingBudget( 9990, 1 ) );
+		Assert.AreEqual( 10000, ParkHud.StepTrainingBudget( 12000, -1 ), "a larger saved budget is clamped by the next press" );
+	}
+
+	[TestMethod]
+	public void TrainingGaugesShowTheMeanGradeInIntegerSteps()
+	{
+		// tp.exe 0x4c9c00: sum × 100 / (count × 5); the row sets share × 1024 / 100
+		Assert.AreEqual( 0f, ParkHud.TrainingGaugeFill( System.Array.Empty<int>() ) );
+		Assert.AreEqual( 409 / 1024f, ParkHud.TrainingGaugeFill( new[] { 2 } ), 1e-6f );
+		Assert.AreEqual( 1f, ParkHud.TrainingGaugeFill( new[] { 5 } ), 1e-6f );
+		Assert.AreEqual( (33 * 1024 / 100) / 1024f, ParkHud.TrainingGaugeFill( new[] { 1, 2, 2 } ), 1e-6f, "5 × 100 / 15 = 33" );
+	}
 }

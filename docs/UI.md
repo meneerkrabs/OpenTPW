@@ -345,7 +345,10 @@ glyph in all 14 UI fonts of each language.
   months. The graph's line style, colours, scale and initial selection are OpenTPW choices
   (UI-060). The Loans button opens the separate bank window when loans are available; the entry
   and staff-cost detail buttons open their management screens (`ParkHud.Management.cs`), disabled
-  while no park economy runs (UI-061).
+  while no park economy runs. The training-budget window's minus and plus buttons move a budget by the
+  original spinner's step of 25 within 0..10000, and each row's gauge shows the role's employees' mean
+  grade as a share of the best grade (tp.exe `0x4b2797`, `0x4c9c00`); the entry-price window is a host
+  layout (UI-061).
 - The Loans window (`ParkHud.LoansWindow.cs`) uses the Mac `w_big`/`f_loans` table, six columns,
   Available/Outstanding tabs, a scroll control and the four summary cells. Offers and outstanding
   accounts come directly from `ParkEconomy`. Borrowing and repayment use its existing methods,
@@ -671,7 +674,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-050 | `UI/Original/UiGauge.cs` | the buy list's third column draws a tick box per row, ticked when the park owns at least one of the item; the box and the tick are drawn with rectangles and strokes in the video's colours, not the original's art (i_boxtick.MD2 holds only the empty box) | the original tick art and the unnamed control 491 |
 | UI-051 | `Hud/ParkHud.cs` | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease (the video shows a red down arrow after spending); the golden counters show only above zero as "n ×"; the key count is the park's earned tickets / 3 because the player-wide key ledger is not reachable from the HUD | a capture of the dollar sign at a negative balance and the player-wide key counter |
 | UI-060 | `Hud/ParkHud.FinanceWindow.cs` | finance graph line colours, scaling and default selected series use the tracked monthly ledger values | original financial graph capture and its sample/render handler |
-| UI-061 | `Hud/ParkHud.FinanceWindow.cs` | the entry-price window is a host layout over actual economy values (its table is not located); the training-budget window follows table 0x756400 (mini balance, five role rows, tick and the entry price, finance and loans buttons) without the rows' skill gauges, and a click changes a budget by one unit | the entry-price window's table (the G key, entryprice 0x40c570) and what the training rows' gauges show |
+| UI-061 | `Hud/ParkHud.Management.cs` | the entry-price window is a host layout over the actual economy values; the original's table is 0x751798 (window 0x4f3aa (328,130)-(1720,901), the spinner 0x4f3ae (773,446)-(1197,619) of range 0..10000 and step 1 holding the entry price, the door button 0x4f3b1, three buttons at (1568, 303/411/518) and the tick; builder 0x498d80, handler 0x498c60), which is not ported; the training-budget window follows table 0x756400 with the original's spinner step 25 and range 0..10000 and its gauges | porting the entry-price table 0x751798 and its handler 0x498c60 |
 | UI-063 | `Hud/ParkHud.LoansWindow.cs` | loan list has seven equal rows and inferred scrollbar travel; its summary uses the bounded monthly ledger rather than the original lifetime counters | the loans list control and handler (candidates: type-7 lists such as attribute 0x81, id 2342112), scroll handler and original lifetime finance counters |
 | UI-064 | `Hud/ParkHud.ResearchWindow.cs` | research workload is adjustable with linear 0..100 mouse/keyboard travel; native slider quantization remains unqualified | which control of the research window handler 0x4a96b0 is the workload knob (it sets controls 0xd2d12 and 0xd2d10 on message 0x1e) and its 0x800 branch |
 | UI-066 | `Hud/ParkHud.ResearchWindow.cs` | research progress is a simple fill inside the fluid model cell; the original draws no fill but animates the fluid model (0x4a95b0: (p+20)/100 in 16.16, state 3, frame limit 0x30, winding down to 0x20) | porting the fluid model animation (no further evidence needed) |

@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **328 unresolved unique APPROX IDs**, 411 APPROX occurrences, 282 EXT occurrences, 230 DATA occurrences and 1251 BIN occurrences.
+Current inventory: **328 unresolved unique APPROX IDs**, 411 APPROX occurrences, 283 EXT occurrences, 230 DATA occurrences and 1251 BIN occurrences.
 
 Of these, 304 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 24 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -984,7 +984,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:311` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:312` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | autorun-focus-rect | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [EXT:autorun-focus-rect] platform emulation: the dotted focus rectangle imitates GDI's DrawFocusRect (pixels with even x + y inverted); Windows draws the original's, OpenTPW draws its own |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | browser-reserved-chords | `source/OpenTPW/Global/Input.Localized.cs:58` | [EXT:browser-reserved-chords] the browser owns Ctrl+W, Ctrl+T and Ctrl+N (close tab, new tab, new window; the Dutch staff locator is Ctrl+W), so in the browser build a chord keeps its default letter. |
@@ -995,18 +995,18 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | coaster-own-save | `source/OpenTPW/World/Coasters/CoasterWorld.cs:28` | [EXT:coaster-own-save] the own-format park save holds the tracks, trains, riders and the coaster generator state (CoasterSave, since the park-resume coaster slice); the original's own coaster chunks between EMAK and SAOC are read structurally only (SaveCoasterBlock: header, auxiliary links, sections, links; train payload raw; nonempty TPW runtime import refused) and never written; importing them is a non-goal until someone needs it (the evidence for it would be the train payload layout in the save writer next to the loader 0x437b60) |
 | coaster-rng-seed | `source/OpenTPW/World/Coasters/CoasterWorld.cs:36` | [EXT:coaster-rng-seed] the coaster generator starts from the world seed (folded script stream seed) instead of the original's one C-library rand() at world init (0x457a90 → 0x67b5c0, stored at 0x7b0958); the boarding step itself is the original's s = s·0x343fd + 0x269ec3 with (s &gt;&gt; 16) % n (0x43b67f..0x43b69d): a determinism design decision (DET-I2 owns ClibRng) |
 | coaster-tool-controls | `source/OpenTPW/Hud/ParkHud.cs:931` | [EXT:coaster-tool-controls] the coaster tool's controls (click to place, wheel for the next pylon's height in steps of 10, Tab for loop pylons, Backspace to delete the last pylon without refund, a click on a station end cell to close and again or Enter to complete, right click or Escape to leave) and its flat ghost marker are OpenTPW's user interface; the original places a loop pylon pair in loop mode (0x442cd0, CoasterBuilder.LoopMode). [APPROX:COAST-028] the original drag, height/rotate/bank sliders (0x10045FC4, 0x10046508, 0x10046718) and the sub-modes 0x79c624 (2, 4 = pick-up/move, 8) and flags 0x79c658 (0x40 loop, 0x100 move, 0x80/0x20 range cut) are not mapped to controls — evidence needed: the input handling of the coaster build mode around 0x100483AC and 0x1004A1FC |
-| debug-coaster | `source/OpenTPW/Client/Game.cs:351` | [EXT:debug-coaster] smoke-only (Debug builds): once the original level is up, builds a small coaster ("built" or "open", optionally with a coaster |
+| debug-coaster | `source/OpenTPW/Client/Game.cs:352` | [EXT:debug-coaster] smoke-only (Debug builds): once the original level is up, builds a small coaster ("built" or "open", optionally with a coaster |
 | debug-coaster | `source/OpenTPW/World/Level.Coasters.cs:52` | [EXT:debug-coaster] developer/screenshot helper, not original behaviour: it builds the track for the player without the tool and without charging money |
-| debug-forecast | `source/OpenTPW/Client/Game.cs:443` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
+| debug-forecast | `source/OpenTPW/Client/Game.cs:444` | [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own |
 | debug-forecast | `source/OpenTPW/World/ParkWeather.cs:135` | Smoke-only (&lt;c&gt;[EXT:debug-forecast]&lt;/c&gt;): posts a forecast of &lt;paramref name="quality"/&gt; the warning |
-| debug-guest-looks | `source/OpenTPW/Client/Game.cs:410` | [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes |
-| debug-hud | `source/OpenTPW/Client/Game.cs:462` | [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface): |
+| debug-guest-looks | `source/OpenTPW/Client/Game.cs:411` | [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes |
+| debug-hud | `source/OpenTPW/Client/Game.cs:463` | [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface): |
 | debug-hud | `source/OpenTPW/Hud/ParkHud.DebugCapture.cs:6` | [EXT:debug-hud] developer/screenshot helper, not original behaviour |
 | debug-hud | `source/OpenTPW/World/RideCameraMode.cs:60` | [EXT:debug-hud] developer/screenshot helper, not original behaviour |
-| debug-particle | `source/OpenTPW/Client/Game.cs:388` | [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position |
-| debug-water-track | `source/OpenTPW/Client/Game.cs:335` | [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the |
+| debug-particle | `source/OpenTPW/Client/Game.cs:389` | [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position |
+| debug-water-track | `source/OpenTPW/Client/Game.cs:336` | [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the |
 | debug-water-track | `source/OpenTPW/World/Level.Tracks.cs:206` | [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the track tool for the player |
-| debug-weather | `source/OpenTPW/Client/Game.cs:369` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
+| debug-weather | `source/OpenTPW/Client/Game.cs:370` | [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:63` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/Hud/ParkHud.AttractionsWindow.cs:50` | [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:614` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
@@ -1119,6 +1119,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | sentence-prefetch | `source/OpenTPW/Audio/SoundEvents.cs:717` | [EXT:sentence-prefetch] a sentence's next segment is chosen and decoded ahead when the current one starts, so the draw and the parameter are taken one segment early; the original chooses when the current segment's data runs out (sound_shared GetDataChunk 0x10008CC4 -&gt; 0x1001A1F0), but its chooser is the shared clock-seeded one (see Advance), so the draw's timing has no observable rule to match |
 | shop-price-editor | `source/OpenTPW/Hud/ParkHud.ObjectWindow.cs:100` | [EXT:shop-price-editor] the price editor takes the place of the table's price slider (shop 0xc086, sideshow 0xa090) |
 | shop-price-editor | `source/OpenTPW/Hud/ParkHud.ShopPrice.cs:13` | [EXT:shop-price-editor] the host price editor occupies the editable information arm's free ride-view slot; decimal input follows the existing nonnegative int API; there is no original rule to match |
+| silent-automated-runs | `source/OpenTPW/Client/Game.cs:571` | [EXT:silent-automated-runs] smokes, captures and park-resume runs open no audio device unless --smoke-audio is given, so automated runs |
 | speed-buttons | `source/OpenTPW/Hud/HudStubs.cs:87` | [EXT:speed-buttons] the four speed buttons (pause, ×1, ×2, ×4) are an OpenTPW addition scaling the simulation clock by 0, 1, 2 and 4; the original's time keys are numpad −/+ (×0.8, ×1.25, clamped 0.25-2.0) and * (= 1.0) (0x40c3b0/0x40c3c0/0x40c3d0), and "Speed :" is a ride-panel statistic, not a game-speed control |
 | speed-buttons | `source/OpenTPW/Hud/ParkHud.cs:280` | [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0) |
 | staff-employee-view | `source/OpenTPW/Hud/ParkHud.Staff.cs:112` | [EXT:staff-employee-view] The original hire window only lists applicants; its employee list is the separate All Staff window |
@@ -1129,7 +1130,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:134` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | text-encode-helper | `source/OpenTPW.Files/Formats/String/BFUMReader.cs:106` | they are dropped; they are listed in &lt;paramref name="unmappable"/&gt;. [EXT:text-encode-helper] tp.exe never names |
-| texture-pack | `source/OpenTPW/Client/Game.cs:291` | [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options. |
+| texture-pack | `source/OpenTPW/Client/Game.cs:292` | [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options. |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:451` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:847` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:270` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default); |
@@ -1172,11 +1173,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | tpi-tool-flow | `source/OpenTPW/Client/ThemeParkIncHud.cs:423` | [EXT:tpi-tool-flow] the tools follow the traced Theme Park World flow (the TPW tool flow reused for the slice); no original Theme Park Inc build tool is claimed |
 | tpi-twp-guest-rules | `source/OpenTPW/Client/GameFlow.ThemeParkInc.cs:30` | [EXT:tpi-twp-guest-rules] the guests and scripts that run here are the ported Theme Park World rules over Theme Park Inc data (an OpenTPW scope decision); no Theme Park Inc guest behaviour is claimed |
 | tpi-viewer | `source/OpenTPW.Web/Program.cs:104` | [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:116` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:154` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:306` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:690` | [EXT:tpi-viewer] a saved experimental Theme Park Inc world starts directly; a stale folder or world opens the wizard. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:872` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:117` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:155` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:307` | [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:700` | [EXT:tpi-viewer] a saved experimental Theme Park Inc world starts directly; a stale folder or world opens the wizard. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:882` | [EXT:tpi-viewer] experimental slice for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:61` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:306` | [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world, |
 | tpi-viewer | `source/OpenTPW/Client/Setup/DesktopSetupSelection.cs:31` | [EXT:tpi-viewer] an experimental Theme Park Inc choice starts that world through the viewer slice |

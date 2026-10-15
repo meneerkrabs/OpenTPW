@@ -245,6 +245,10 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --sm
 Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
 press or click skips.
 
+Automated runs are silent: `--smoke-test`, any `--capture-*` option and `--park-resume-smoke` open no audio
+device (the game runs on its wall clock exactly as without a sound card), so smokes and captures make no sound on a
+developer machine. Add `--smoke-audio` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run.
+
 A normal start (the front end, no `--smoke-test`) first plays the original's
 start-up movies: `bf`, then a trailer chosen by the day of the month, at the
 Movie volume of Game Options (its mute toggle silences them). Esc, Space or a mouse button skips. Use

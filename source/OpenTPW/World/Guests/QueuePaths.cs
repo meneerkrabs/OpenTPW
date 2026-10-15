@@ -26,11 +26,11 @@ public enum QueueBuildResult
 public static class QueuePaths
 {
 	/// <summary>Most cells one queue may have: 4 × 25 = 100 positions.</summary>
-	// [APPROX:QUEUE-013] maximum queue length 25 cells (100 positions); no length limit was found in the traced build code besides the 1000-step walk guard, and a HasQueue ride's limit is its QueueWaitTimeConstant formula (Belly Bounce 21), so the cap only shortens queues of rides whose limit exceeds 100 — evidence needed: the queue tool in 0x10070B98..0x1008C7C0
+	// [APPROX:QUEUE-013] maximum queue length 25 cells (100 positions); tp.exe's queue-cell setter 0x005346D0, the cell validator 0x00535670 and the line layer 0x00536100 compare no cell count, and the back-of-queue walk 0x004DE130 stops only after 1,000 cells ("GetBackOfQueue() crashed!"); a HasQueue ride's limit is its QueueWaitTimeConstant formula (Belly Bounce 21), so the cap only shortens queues of rides whose limit exceeds 100 — evidence needed: the rest of the tool's cell handler (0x00524960, 0x00532FC0)
 	public const int MaximumCells = 25;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
-	// [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell — evidence needed: the queue tool's placement rules (UI-031, 0x10070B98..0x1008C7C0)
+	// [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell. tp.exe's tool lays straight segments along the dominant axis (0x00536100), each from the previous end, the first from the cell the player clicks (SetMode 0x0052F200 sets the start to −1 at 0x0052F340); the validator 0x00535670 lets a queue cell replace a path cell that is not NoModify (0x005346D0 clears the path first), and the last cell may end on a path cell (code 8, the connection) — evidence needed: the writer of the queue link +0x0D and the segment commit in 0x00524960 (UI-031)
 	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null ) =>
 		CheckExtend( grid, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
 
@@ -91,7 +91,7 @@ public static class QueuePaths
 	}
 
 	/// <summary>Removes queue cell (x, y) of <paramref name="ride"/> and every cell behind it; returns the number removed.</summary>
-	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the original's cell clear (tp.exe 0x005367A0, the Mac 0x859b4, queue branch) refunds and clears only that cell and unlinks its neighbours, leaving the cells behind on the map as queue cells no ride reaches, and whether the player's remove tool goes on to clear them is not traced — evidence needed: the remove tool's route into 0x005367A0 (callers 0x00452CA0 / 0x00452D30)
+	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the original's cell clear (tp.exe 0x005367A0, queue branch) refunds and clears only that cell, and the bulldozer's rectangle pass 0x0052BDD0 clears only path cells (type 1 test 0x00536310 at 0x0052C116 before 0x005367A0) and hands ride cells (types 4, 9, 10) to the demolition 0x00527EE0 — evidence needed: the route that clears a queue cell (0x00527EE0's own clears, and the edit-list clear 0x00452CA0 from 0x0043EAF0 / 0x00442EA0)
 	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y )
 	{
 		ride.RecomputeQueue( grid );

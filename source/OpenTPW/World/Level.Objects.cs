@@ -276,7 +276,7 @@ public partial class Level
 	/// (<see cref="EnterQueueTool"/>). False when the cell is not a queue cell of a HasQueue ride.
 	/// </summary>
 	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
-	// [APPROX:QUEUE-021] the left click on a queue cell is the help's documented action; the click handler that calls SetMode(3) for an existing queue is not traced — evidence needed: the caller of SetMode 0x1007B320 on a queue cell
+	// [APPROX:QUEUE-021] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool); tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580) — evidence needed: where mode 3 goes on laying after 0x00530120's list
 	public bool EditQueueAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
@@ -459,7 +459,7 @@ public partial class Level
 		return removed;
 	}
 
-	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows and no object footprint — evidence needed: the queue tool's placement validity in 0x10070B98..0x1008C7C0
+	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain) and no object footprint; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (map setup 0x00536490 sets it on cells outside the park, test 0x00450420, and on inside cells other than the initial path) and object cells by their type, allows empty cells, lets a queue replace a path cell unless NoModify (+0x0E bit 0x20), and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: what clears bit 0x40 (buying land) and the ride-cell count test (0x00818C10)
 	private bool IsQueueBlocked( int x, int y ) =>
 		Objects.Grid.CheckTerrain( x, y ) != OriginalPlacementResult.Allowed || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
 

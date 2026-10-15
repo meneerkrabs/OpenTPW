@@ -206,9 +206,11 @@ cell is not traced).
    ride has no such exit; what it does to its queue is in section 6 (broken rides).
 4. Position lookup fails → "Problem with a queue", leave.
 5. **Moving up**: if the list position differs from `+497`:
-   - When `+500 ≠ 0` and `0 ≤ +497 − pos ≤ 2`, decrement `+500` and stay.
+   - When `+500 ≠ 0` and `0 ≤ +497 − pos ≤ 2`, decrement `+500`.
    - Otherwise, unless `0xdfe0c(ride)` (ride state `+408 == 1`), call `0xee604`.
-     That gives the new `+497`, state 12, and then state 11 again. Re-entry
+     That gives the new `+497`, state 12, and then state 11 again.
+   - On PC every one of these continues into the needs window (tp.exe `0x5002f2`, from `0x5002eb`, `0x50052a` and `0x500539`);
+     only an unchanged place reaches the limit test (`0x50059d`). Re-entry
      resets `+500` and `+508`. If it fails: "Couldn't get to my intended queue
      position", leave.
 

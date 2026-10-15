@@ -1058,6 +1058,31 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Layout-table review follow-ups (October 15):** the TPI layout-load confirmation lists the tick first (a source scan of every
+  `UiDialogs` caller guards the order); Escape and the right click (RMBCancelOn) close the object window; the window layout is
+  cached; the shop and sideshow windows use their own row kinds, the ride one shows the age; the theme-start dialog, the game-mode
+  screen and the training-budget window follow their tables; the object windows gain the queue, track and apply-all buttons;
+  the lobby shows a menu hint. Restart Park leaves an older automatic checkpoint alone.
+- **Original UI layout tables (October 15):** the Windows executable holds the layout command streams of its windows (the
+  grammar of the Mac tables, checked against the window builder 0x65FD58 and its dispatcher 0x66076E), and
+  `tools/ppc-analysis/lanes/ui/tpw_exe_layouts.py` generates the derived rectangles, help ids and ui.wad model names of ten of
+  them (ride, shop and sideshow windows, message panel, camera panel, camcorder, confirm and name dialogs, the two lobby
+  tables) plus the 22 pointer ids and the tool-to-pointer rules (0x4899C0, 0x52F950) into
+  `UI/Original/OriginalLayoutTables.cs`; the script fails on any unexpected command, address, count or model hash, and `--check`
+  compares the file. What uses them: the object windows (w_med frame, yellow name, preview, white stat rows, the round buttons
+  `b_door`, `b_erase`, `b_callmech`, `b_upgrade`, Ride it!, the arrows, the list and the tick; sliders, `b_queue`, `b_move`,
+  `b_track` and `b_applyall` are not drawn), the help box (fixed `f_helpbg` rectangle 574..1474 ending at y 1520, UI-010 retired), the
+  confirm dialog (the (500,233)-(1516,830) window with the stacked tick and X buttons, the first choice the tick), a frameless
+  cyan pause menu in the original order (Restart Park only for Instant Action parks, Publish Park opens the online publish
+  flow, Go Online stays as `[EXT]`), the lobby at the table rectangles without logo or menu column (UI-014 retired; its Escape
+  menu holds Go Online, Load as `[EXT]`, Options, Resume and Quit; the globe button opens the online world), the full pointer
+  table with the tool rules (queue, track and camcorder pointers; link, end, cash and the crosshair stay unchosen), the message
+  panel's `messagel/m/r` rectangles with `mb_erase` and two action buttons whose art follows the action's kind (no message uses
+  one yet), the camera slide-out panel (camcorder, postcard and the `[EXT]` view cycle), buy-list rows of 41.4 units and no white
+  lightning flash in the lobby. UI-093 retired (the E key is `[EXT:ride-view-key]`); UI-006, 013, 018, 024, 025, 029, 042,
+  044, 047 and 100 narrowed. Not done: the right-click back-out gated on RMBCancelOn (UI-012), the ride view and camcorder overlay
+  (another worker), the employee, training-budget and player-screen tables, the game-mode screen on the name dialog's table.
+
 - **Ride view (October 15):** the ride view is the original camcorder now (UI-093/094/095). The eye is the model's seat (the first dummy with bit 0x1000 and value 1, tp.exe 0x44b220), so every attraction with such a dummy can be ridden, not only coasters (a coaster uses its front car model's seat); the orientation is the seat's with the traced one-frame blend (weight (1000 - dt_ms) * 0.0005, about 0.48 at 30 fps) and the pointer turns the view (dead zone 0.2, 3.5 rad per unit horizontally, 1.2 / 1.0 vertically; the camera can roll with the car). The screen shows the `viewfinder` model and the eject button at the table rectangles with the HUD hidden, a yellow crosshair and 0.33 s of generated TV static on entry and exit ([EXT]). Exits: Escape, C, eject, and a right click after 2 s with RMB cancel on; leaving re-centres the park camera on the object under its target. The info arm has the b_rideit button. Not traced: the field of view, the car choice, the yaw rule on exit.
 - **Tour register round (October 15):** the TOUR items were traced in tp.exe (docs/TOURS.md, "Register changes"). The tour tick is 62 ms, not 31: the world step counter's low bit gates the call
   (`0x0054F5D7`), and the draw divides by 62 ms, so flights last twice as long and cars move half as fast per second (TOUR-001 retired; the wall-clock catch-up is `[EXT:tour-fixed-step]`; saves from the

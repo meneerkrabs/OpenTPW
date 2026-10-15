@@ -16,7 +16,7 @@ internal sealed class ProgressChoiceScreen( string name ) : UiScreen( name )
 	public override bool Update( UiContext context, UiInput input )
 	{
 		if ( IsRemoved ) return true;
-		if ( input.Has( UiKeys.Back ) || input.RightPressed ) { Back?.Invoke(); return true; }
+		if ( input.Has( UiKeys.Back ) || RightCancels( input ) ) { Back?.Invoke(); return true; }
 		dispatching = true; activated = false;
 		try { return base.Update( context, input ); }
 		finally { dispatching = false; }

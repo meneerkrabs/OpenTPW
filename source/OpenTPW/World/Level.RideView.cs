@@ -18,7 +18,7 @@ public partial class Level
 	/// <c>gui_CameraFlags</c> 4; maexah/OpenTPW hud.md, "Four ways out of camcorder mode"). False when the ride
 	/// cannot be ridden (no completed coaster track and not the prototype ride) or the view is already open.
 	/// </summary>
-	// [APPROX:UI-093] the entry is the selected ride's key (E), not the original's "Ride it!" button, whose art and position are not in the repository; the heading is the park camera's forward
+	// [EXT:ride-view-key] the E key also enters the ride view of the selected ride; the original has only the ride window's Ride it! button (table 0x755150, b_ride it!, help 16), which ParkHud.ObjectWindow.cs draws; the heading is the park camera's forward
 	public bool EnterRideView( OriginalObject ride )
 	{
 		if ( RideView != null || ride.IsDeleted || !RideCameraMode.CanRide( ride )

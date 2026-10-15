@@ -359,6 +359,9 @@ internal sealed partial class GameFlow : IDisposable
 			CreateOptions = CreateOptions,
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 			GoOnline = ShowOnline,
+			// [EXT:pause-menu-restart] Restart Park restarts an Instant Action park of a theme (no progress is spent); a Full Simulation park would pay its theme's entry cost again, which is not traced, so its entry stays disabled
+			RestartPark = AutomaticEligible( level ) && level.Park is { Start.Kind: ParkStartKind.InstantAction } ? () => RequestParkStart( level.LevelName, GameMode.InstantAction ) : null,
+			PublishPark = stack => CreateOnlineScreens( stack ).ShowPublish(),
 			ListSorts = listSorts,
 			OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
@@ -828,12 +831,10 @@ internal sealed partial class GameFlow : IDisposable
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
 		// [BIN:STP-PPC:engine_shared 0x1D4B4 lightning flash] LightningFlash() sets a flag; the rain render then draws one full-screen white quad for exactly one frame and clears it (lobby only)
-		// [APPROX:UI-018] the flash's blend flags (0x9A1) are not decoded: drawn as opaque white under the menus
+		// [DATA:video 78:47-78:48] the capture shows the bolt with no full-screen flash: the top third's mean luminance stays at 143-149 over 4729.4-4730.8
+		// [APPROX:UI-018] the flash's blend flags (0x9A1) are not decoded and the capture shows no flash, so none is drawn (the opaque white quad is gone); the flag is still consumed each frame
 		if ( Level == null && lobbyEffects.Flash )
-		{
-			Context.Batch.AddRectangle( new UiRect( 0, 0, Context.Canvas.Width, Context.Canvas.Height ), new RgbaByte( 255, 255, 255, 255 ) );
 			lobbyEffects.Flash = false;
-		}
 		if ( Hud != null )
 		{
 			Hud.Draw( Context );

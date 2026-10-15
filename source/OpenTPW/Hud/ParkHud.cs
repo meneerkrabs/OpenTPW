@@ -17,6 +17,10 @@ public sealed class HudHost
 	public Func<UiScreenStack, UiScreen>? CreateLoad { get; init; }
 	/// <summary>Opens the online screens (Go Online, UITEXT 1); null hides the entry.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>Restarts the park as it was started (the pause menu's Restart Park, after its confirmation); null disables the entry.</summary>
+	public Action? RestartPark { get; init; }
+	/// <summary>Opens the online Publish Park flow (the pause menu's Publish Park); null disables the entry.</summary>
+	public Action<UiScreenStack>? PublishPark { get; init; }
 	/// <summary>Opens the existing postcard composer; it does not send a card.</summary>
 	public Action<UiScreenStack>? OpenPostcard { get; init; }
 	/// <summary>The list sorts the windows keep for the session; the game flow shares one instance between its parks.</summary>
@@ -44,7 +48,6 @@ public sealed partial class ParkHud
 {
 	// [EXT:status-line] OpenTPW's own feedback lines (a refused action, a hint for the tool that just started) are not the original's messages: they show as up to three lines for eight seconds above the popup help box; the original's messages go to the message tube (ParkHud.MessageTube.cs, UI-025)
 	public const float MessageSeconds = 8f;
-	private static readonly UiRect ArmRect = new( 330.5f, 1068.5f, 675.8f, 426.1f );
 	private readonly Level level;
 	private readonly UiStringTable strings;
 	private readonly HudHost host;
@@ -171,9 +174,9 @@ public sealed partial class ParkHud
 	/// The cost of the build action under way, shown in yellow under the balance (control 48): the held blueprint's price, the path or queue line's cost so far, or the coaster track
 	/// segment under the cursor; null outside the build tools, where the text is hidden.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the tool modes 3, 4 and 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; it is no sum of balance changes
+	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] which OpenTPW tool state corresponds to which original tool mode (3, 4, 8) is taken from the video's cases (blueprint, path or queue line, coaster segment); the staff and patrol tools show nothing
+	// [APPROX:UI-047] the mode-object types that show the text are 3 (the tool-mode object that wraps every build tool: blueprint, path and queue line, coaster segment), 4 and 8 (gated by 0x447990), which are not identified; the staff and patrol tools show nothing
 	public long? BuildActionCost
 	{
 		get
@@ -222,15 +225,24 @@ public sealed partial class ParkHud
 	private void Build()
 	{
 		// The information arm slides out from behind the main panel (drawn first).
-		var infoArm = hud.Add( new UiModelImage { Id = "infoArm", Model = "panel", Frame = () => 1, Bounds = ArmRect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		// [BIN:TPW-EXE:0x755150 object window] the window frame of the object windows is window2 (w_med) at (248,30)-(1800,1007)
+		var infoArm = hud.Add( new UiModelImage { Id = "infoArm", Model = "window2", Bounds = OriginalLayoutTables.RideWindow.Root.Rect, Anchor = UiAnchor.Center, Visible = false } );
 		infoElements.Add( infoArm );
 		// [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
-		// [APPROX:UI-025] the panel's binoculars (go to) button is not drawn: the messages carry no location, and the button's art is not identified among ui.wad's models
-		hud.Add( new UiButton { Id = "messageDelete", Model = "b_erase", Clicked = CloseMessagePanel, Bounds = UiRect.FromCenter( new NVector2( 562, 1385 ), 100, 100 ), Anchor = UiAnchor.BottomLeft, Visible = false } );
-		hud.Add( new UiButton { Id = "messageClose", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseMessagePanel, Bounds = UiRect.FromCenter( new NVector2( 384, 1420 ), 75, 75 ), Anchor = UiAnchor.BottomLeft, Visible = false } );
+		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
+		// [APPROX:UI-025] no OpenTPW message carries an action yet (the strike messages are plain text), so the action buttons stay hidden; which original message types use which mb_ model is not traced
+		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
+		{
+			var index = slot;
+			hud.Add( new UiButton { Id = MessageActionIds[slot], Model = GameMessageKind.Locate.Model(), Clicked = () => { if ( index < openedActions.Length ) openedActions[index].Clicked(); },
+				Bounds = OriginalLayoutTables.MessagePanel.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		}
+		// [BIN:TPW-EXE:0x7529dc HUD arm table] the red X under the HUD that closes the panel is the arm table's b_retract (id 0x24) at (349,1386)-(429,1466), help 481
+		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
 		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge
@@ -260,8 +272,10 @@ public sealed partial class ParkHud
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
-		// [EXT:camera-view-cycle] the camera button cycles host Standard/Close/Overview views; [APPROX:UI-042] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and starts sound 0x131 — evidence needed: the camcorder mode and the panel's sound
-		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, CycleCameraView );
+		// [BIN:TPW-EXE:0x498bb0 camera button] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 (table 0x751720) with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and starts sound 0x131; the button's help is 474
+		// [APPROX:UI-042] the panel's sound 0x131 is not played; ParkHud.CameraPanel.cs
+		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), 474, ToggleCameraPanel );
+		BuildCameraPanel();
 
 		// [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0)
 		// Speed control (OpenTPW buttons): each sets the clock scale of the whole simulation.
@@ -281,95 +295,9 @@ public sealed partial class ParkHud
 			} );
 		}
 
-		// [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel
-		// Information arm contents.
-		infoElements.Add( hud.Add( new UiLabel
-		{
-			Id = "infoName",
-			Text = () => InfoNow == null ? "" : InfoNow.DisplayName ?? strings.Object( InfoNow.ObjectNameIndex ),
-			Font = fonts => fonts.Heading,
-			Color = UiColors.Title,
-			Bounds = new UiRect( 470, 1090, 420, 70 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		for ( var row = 0; row < 4; row++ )
-		{
-			var index = row;
-			infoElements.Add( hud.Add( new UiLabel
-			{
-				Id = $"statLabel{index}",
-				Text = () => InfoNow != null && index < InfoNow.Stats.Count ? strings[InfoNow.Stats[index].Label] : "",
-				Font = fonts => fonts.Small,
-				Bounds = new UiRect( 470, 1170 + index * 50, 290, 48 ),
-				Anchor = UiAnchor.BottomLeft,
-				Visible = false
-			} ) );
-			infoElements.Add( hud.Add( new UiLabel
-			{
-				Id = $"statValue{index}",
-				Text = () => InfoNow != null && index < InfoNow.Stats.Count ? InfoNow.Stats[index].Value ?? (InfoNow.Stats[index].IsGauge ? "" : strings.Extra( OpenTpwText.NotSimulated )) : "",
-				Font = fonts => fonts.Small,
-				Color = UiColors.Value,
-				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
-				Anchor = UiAnchor.BottomLeft,
-				Visible = false
-			} ) );
-			infoElements.Add( hud.Add( new UiGaugeBar
-			{
-				Id = $"statGauge{index}",
-				Value = () => InfoNow != null && index < InfoNow.Stats.Count && InfoNow.Stats[index].IsGauge ? InfoNow.Stats[index].Gauge : null,
-				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
-				Anchor = UiAnchor.BottomLeft,
-				Visible = false
-			} ) );
-		}
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "openRide",
-			Model = "b_door",
-			Help = strings.Help( 12 ),
-			Clicked = ToggleRideOpen,
-			// b_door state frames: open door normally, closed door in the "down" frames.
-			Selected = () => selectedObject?.IsOpen == false,
-			Bounds = UiRect.FromCenter( new NVector2( 560, 1425 ), 120, 120 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "deleteRide",
-			Model = "b_erase",
-			Help = strings.Help( 15 ),
-			Clicked = DeleteRide,
-			Bounds = UiRect.FromCenter( new NVector2( 700, 1425 ), 120, 120 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "retractInfo",
-			Model = "b_retract",
-			Help = strings.Help( 481 ),
-			Clicked = () => SetInfoArm( false ),
-			Bounds = UiRect.FromCenter( new NVector2( 388.8f, 1426.2f ), 80, 80 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-		// The ride window's "Ride it!" button: the model button b_rideit (control 0x3e37) with help 16 "Left-click to ride the attraction"; every ride whose model has a camera seat can be ridden, the owner's and a visit's.
-		// [BIN:TPW-EXE:0x7556fc ride window table] control 0x3e37, type 2 (model button), model b_rideit.MD2 (root "b_ride it!", hash 0xaaee5929), rectangle (956,800)-(1109,953), help 16, in the object window w_ (248,30)-(1800,1007) of the table 0x755150
-		// [APPROX:UI-024] the button sits in the info arm's button row (centre 875,1425) instead of the original object window's row at (956,800)-(1109,953), which this arm does not have; the object windows' tables are ported separately
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "rideView",
-			Model = "b_rideit",
-			Help = strings.Help( 16 ),
-			Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); },
-			Bounds = UiRect.FromCenter( new NVector2( 875, 1425 ), 120, 120 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
-
+		// [BIN:TPW-EXE:0x755150 object window] the information arm is the original object window: see ParkHud.ObjectWindow.cs
+		// [APPROX:UI-029] b_door down = closed (the original gives help 12 to the down state, 13 to the other), b_erase = delete — evidence needed: which b_door frame the closed state uses
+		BuildObjectWindow();
 		AddShopPriceButton();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
@@ -381,6 +309,11 @@ public sealed partial class ParkHud
 		{
 			if ( IsRiding )
 				StopRide();
+			else if ( CameraPanelOpen )
+				CloseCameraPanel();
+			// the object window is a window like the others: Escape closes it, and only without one open does Escape open the pause menu
+			else if ( InfoArmOpen )
+				SetInfoArm( false );
 			else if ( CancelCamcorder() ) { }
 			else if ( level.IsCoasterToolActive )
 				level.ExitCoasterTool();
@@ -403,16 +336,7 @@ public sealed partial class ParkHud
 	private ObjectInfo? InfoNow => infoNow ?? SelectedInfo;
 
 	public ObjectInfo? SelectedInfo => InfoArmOpen && selectedObject is { IsDeleted: false } item
-		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, new[]
-		{
-			// [DATA:video 15:20, 51:40 ride window] excitement, reliability, repair progress and remaining life are red-to-green gauges (UiGauge), not percentages; an unknown value draws the empty track
-			// [APPROX:UI-028] the fills: excitement is the authored UsageInfo.ExcitementLevel / 100, reliability is 1 - WearRate / 10 of the object's base level (as the buy window does), repair and remaining life are the live economy record's repair and life gauge (a version 2 visit uses the owner's published repair); the original's fill formulas cannot be read from 720p video - evidence needed: the ride window's gauge refresh handler
-			new ObjectStat( UIStrings.Excitement, null, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? Math.Clamp( item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) / 100f, 0f, 1f ) : null, true ),
-			new ObjectStat( UIStrings.Reliability, null, item.Entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0f, 1f ) : null, true ),
-			new ObjectStat( UIStrings.StateOfRepair, null, LiveState( item )?.Repair is { } liveRepair ? Math.Clamp( (float)liveRepair / 100f, 0f, 1f )
-				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
-			new ObjectStat( UIStrings.RemainingLife, null, LiveState( item )?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
-		}, EntryName( item.Entry ) ) : null;
+		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, ObjectStats( item ), EntryName( item.Entry ) ) : null;
 
 	/// <summary>The live economy record behind a placed object, null in a visit or without an economy.</summary>
 	private ParkObjectState? LiveState( OriginalObject item ) =>
@@ -619,17 +543,21 @@ public sealed partial class ParkHud
 	{
 		if ( Paused )
 			return;
-		var menu = new UiScreen( PauseMenuScreen );
-		var window = UiDialogs.CenteredWindow( 1000, 1180 );
-		UiDialogs.AddWindow( menu, window, "w_med", () => strings[UIStrings.Paused] );
+		// [BIN:TPW-EXE:0x48c830 pause menu] the in-park pause menu has no window and no title: its lines are, in order, Load, Save, Restart Park, Publish Park, Options, Resume Game, Exit To Lobby and Quit Game (UITEXT 3, 4, 10, 5, 6, 7, 12, 8)
+		// [DATA:video 27:42-27:47] large cyan text lines, white while focused, over the dimmed park: Laden, Opslaan, Park Herstarten, Park Publiceren, Opties, Spel Hervatten, Terug naar de Lobby, Spel Stoppen
+		// [EXT:pause-menu-go-online] the Go Online line (UITEXT 1) after Options is OpenTPW's: the original reaches the online world from the lobby's pause menu only
+		UiScreen? menu = null;
 		var entries = new List<(UIStrings Label, Action Clicked)>
 		{
-			(UIStrings.ResumeGame, ClosePauseMenu),
-			(UIStrings.Save, SavePark),
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
+			(UIStrings.Save, SavePark),
+			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.Message( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
+				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); host.RestartPark?.Invoke(); }), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
+			(UIStrings.PublishPark, () => host.PublishPark?.Invoke( Stack )),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
-			(UIStrings.ExitToLobby, () => { if ( !menu.IsRemoved && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
+			(UIStrings.ResumeGame, ClosePauseMenu),
+			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
@@ -639,21 +567,9 @@ public sealed partial class ParkHud
 			entries.RemoveAll( entry => entry.Label is not (UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
 		if ( host.GoOnline == null )
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
-		for ( var index = 0; index < entries.Count; index++ )
-		{
-			var entry = entries[index];
-			menu.Add( new UiButton
-			{
-				Id = entry.Label.ToString(),
-				Text = () => strings[entry.Label],
-				Clicked = entry.Clicked,
-				Enabled = PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null ),
-				Bounds = new UiRect( window.X + 160, window.Y + 190 + index * 140, window.Width - 400, 116 ),
-				Anchor = UiAnchor.Center
-			} );
-		}
-		menu.Back = ClosePauseMenu;
-		menu.Focus( menu.FocusableElements.First() );
+		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
+			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null )) ).ToList();
+		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ClosePauseMenu, UIStrings.ResumeGame.ToString() );
 		Stack.Push( menu );
 	}
 
@@ -667,10 +583,12 @@ public sealed partial class ParkHud
 	/// Whether a pause-menu entry is clickable: a read-only visit never saves, and an entry without its host
 	/// action (Load, Options) is disabled instead of clicking to nothing.
 	/// </summary>
-	internal static bool PauseMenuEntryEnabled( bool readOnlyVisit, UIStrings label, bool canLoad, bool canOptions ) =>
+	internal static bool PauseMenuEntryEnabled( bool readOnlyVisit, UIStrings label, bool canLoad, bool canOptions, bool canRestart = true, bool canPublish = true ) =>
 		!(readOnlyVisit && label == UIStrings.Save) &&
 		!(label == UIStrings.Load && !canLoad) &&
-		!(label == UIStrings.Options && !canOptions);
+		!(label == UIStrings.Options && !canOptions) &&
+		!(label == UIStrings.RestartPark && !canRestart) &&
+		!(label == UIStrings.PublishPark && !canPublish);
 
 	private void SavePark()
 	{
@@ -712,8 +630,8 @@ public sealed partial class ParkHud
 		SyncRideScreen( context.Delta );
 		var walkingAtStart = CamcorderArmed || level.FreeWalk != null;
 		foreach ( var element in infoElements )
-			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false }
-				&& (element.Id != "rideView" || (selectedObject is { IsDeleted: false } rideCandidate && RideCameraMode.CanRide( rideCandidate ) && !TryPriceTarget( rideCandidate, out _, out _ ))); // the price button shares the slot
+			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false };
+		ApplyObjectLayout();
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
 
@@ -732,11 +650,18 @@ public sealed partial class ParkHud
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
 		TrackCashChange( context.Delta );
+		UpdateCameraPanel();
 		UpdateMessageTube( context.Delta );
 		SampleHappiness( context.Delta );
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		var consumed = Stack.Update( context, input );
+		// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens read the option (+0x39) before a right click leaves them; the object window leaves on it too
+		if ( InfoArmOpen && Stack.Screens.Count == 1 && !IsRiding && input.RightPressed && GameOptions.Current.RmbCancel && !Input.TextEntryActive )
+		{
+			SetInfoArm( false );
+			consumed = true;
+		}
 		ReportScreens();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
@@ -761,7 +686,7 @@ public sealed partial class ParkHud
 			!shortcutsAllowed || overUi || consumed || mouseCaptured.Value || input.Text.Length > 0 || ridingAtStart ) || walkingAtStart;
 
 		// Ride It (E) rides the selected ride; Escape, the C key, the eject button and a right click (RMB cancel on, after two seconds) leave the ride view, and E again does too.
-		// [APPROX:UI-093] E stands in beside the ride window's b_rideit button
+		// [EXT:ride-view-key] E rides the selected ride as the object window's b_ride it! button does
 		if ( shortcutsAllowed && !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
 			level.EnterRideView( rideObject );
 		// only a ride view that was already open at the start of the frame can be left by a key: the E that boarded it must not also leave it

@@ -159,7 +159,7 @@ public sealed class UiFonts
 }
 
 /// <summary>Colours used by the original-style screens (OpenTPW choices, see docs/UI.md).</summary>
-// [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens
+// [APPROX:UI-006] the UI text/backdrop colours are read off 720p video frames (+-15 per channel); the original's palette is not traced — evidence needed: lossless captures
 public static class UiColors
 {
 	public static readonly RgbaByte Text = new( 255, 255, 255, 255 );
@@ -167,6 +167,9 @@ public static class UiColors
 	public static readonly RgbaByte Disabled = new( 140, 140, 160, 255 );
 	public static readonly RgbaByte Title = new( 255, 214, 64, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
+	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
+	public static readonly RgbaByte MenuItem = new( 0, 173, 218, 255 );
+	public static readonly RgbaByte MenuItemFocused = new( 255, 255, 255, 255 );
 	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
 	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );
 	/// <summary>Dark label text inside the light-green option bars (near-black navy).</summary>

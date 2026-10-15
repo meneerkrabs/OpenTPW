@@ -27,17 +27,19 @@ public sealed partial class FrontEndMenu
 		void Activate( Action action ) { if ( Current() && choice!.TryActivate( Stack ) ) action(); }
 		string Mode( ParkGameMode mode ) => strings[mode == ParkGameMode.InstantAction ? UIStrings.InstantAction : UIStrings.FullSimulation];
 		var entries = new List<(Func<string>, Action)>();
-		if ( saved != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueSavedPark ) + " (" + Mode( saved.Mode ) + ")", () => Activate( () => { PlayEnterPark( saved.Mode == ParkGameMode.InstantAction ); actions.ContinuePark!( saved ); } )) );
-		if ( automatic != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueAutomaticPark ) + " (" + Mode( automatic.Mode ) + ")", () => Activate( () => { PlayEnterPark( automatic.Mode == ParkGameMode.InstantAction ); actions.ContinueAutomatic!( automatic ); } )) );
+		if ( saved != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueSavedPark ) + ": " + (saved.Park.DisplayName ?? SelectedName) + " (" + Mode( saved.Mode ) + ")", () => Activate( () => { PlayEnterPark( saved.Mode == ParkGameMode.InstantAction ); actions.ContinuePark!( saved ); } )) );
+		if ( automatic != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueAutomaticPark ) + ": " + automatic.DisplayName + " (" + Mode( automatic.Mode ) + ")", () => Activate( () => { PlayEnterPark( automatic.Mode == ParkGameMode.InstantAction ); actions.ContinueAutomatic!( automatic ); } )) );
 		entries.Add( (() => strings.Extra( OpenTpwText.NewPark ), () => Activate( () => { Stack.Pop(); ShowGameMode(); } )) );
 		entries.Add( (() => strings.Extra( OpenTpwText.Back ), () => { if ( Current() ) Stack.Pop(); }) );
-		var summary = SelectedName;
-		if ( saved != null ) summary += "\n" + strings.Extra( OpenTpwText.ContinueSavedPark ) + ": " + (saved.Park.DisplayName ?? SelectedName) + " (" + Mode( saved.Mode ) + ")";
-		if ( automatic != null ) summary += "\n" + strings.Extra( OpenTpwText.ContinueAutomaticPark ) + ": " + automatic.DisplayName + " (" + Mode( automatic.Mode ) + ")";
+		// [BIN:TPW-EXE:0x753f50 name dialog] the theme name is the caption in the table's title box (655,285)-(1315,365); the choices stack as full-width text buttons on the rows of the table's two toggles (764,405)-(1206,476) and (764,498)-(1206,569), 93 units apart, widened to the window since this dialog has no tick or X
+		// [EXT:theme-continue] the parks' own names are part of the buttons' labels
+		var summary = SelectedName + "\n";
 		choice = ProgressChoiceScreen.Message( "themeStart", () => summary, entries.ToArray() );
-		var window = choice.Find( "window" )!.Bounds;
-		var message = choice.Find( "message" )!; message.Bounds = new UiRect( window.X + 90, window.Y + 60, window.Width - 180, 200 );
-		for ( var index = 0; index < entries.Count; index++ ) choice.Find( $"choice{index}" )!.Bounds = new UiRect( window.X + 70 + (index % 2) * 480, window.Y + 280 + (index / 2) * 150, 460, 110 );
+		var rows = OriginalLayoutTables.NameDialog.Model( "b_ltoggle" ).Rect;
+		var pitch = OriginalLayoutTables.NameDialog.All.Where( node => node.Model == "b_ltoggle" ).Select( node => node.Rect.Y ).OrderBy( y => y ).Take( 2 ).ToArray();
+		var step = pitch.Length == 2 ? pitch[1] - pitch[0] : 93f;
+		choice.Find( "caption" )!.Bounds = OriginalLayoutTables.NameDialog.Control( 0x709 ).Rect;
+		for ( var index = 0; index < entries.Count; index++ ) choice.Find( $"choice{index}" )!.Bounds = new UiRect( 560, rows.Y + step * index, 896, rows.Height );
 		Stack.Push( choice );
 	}
 }

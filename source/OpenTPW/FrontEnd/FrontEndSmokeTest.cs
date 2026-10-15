@@ -262,9 +262,19 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Lobby != null && flow.Lobby.IslandCount == 4 && flow.Lobby.PartCount > 4, "lobby scene has four islands and terrain" );
 			Require( flow.Menu != null && flow.Menu.Islands.Count == 4, "front-end menu lists four theme islands" );
 			var capture = CaptureFrame( "frontend.png" );
-			VerifyText( capture, flow.Strings[UIStrings.ThemeParkWorld], "front-end title" );
+			// [BIN:TPW-EXE:0x757f60 lobby panel] the lobby has no title and no menu column: the panel, its four buttons and the island name; Escape opens the menu
+			Require( flow.Menu!.Main.Find( "logo" ) == null && flow.Menu.Main.Find( "title" ) == null && flow.Menu.Main.Find( "quit" ) == null, "the lobby has no logo, title or menu column" );
 			VerifyText( capture, flow.Menu!.SelectedName, "island name" );
-			VerifyText( capture, flow.Strings[UIStrings.QuitGame], "Quit Game button" );
+			flow.Menu.ShowMenu();
+		} );
+		Wait( "lobby menu renders", 3 );
+		Do( "lobby menu", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "lobbyMenu", "Escape opens the lobby menu" );
+			var capture = CaptureFrame( "lobby-menu.png" );
+			VerifyText( capture, flow.Strings[UIStrings.QuitGame], "Quit Game line" );
+			VerifyText( capture, flow.Strings[UIStrings.Options], "Options line" );
+			flow.Menu.Stack.Pop();
 		} );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );
@@ -276,7 +286,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Wait( "keyboard previous island", 3 );
 		Do( "jungle selected", () => Require( flow.Menu!.Selected.Level == "jungle", "left key returns to the jungle island" ) );
 		// Original-style online screens (docs/ONLINE.md): Go Online, then each screen, captured offline.
-		Do( "go online", () => Click( flow.Menu!.Main, "goOnline" ) );
+		Do( "go online", () => Click( flow.Menu!.Main, "worldView" ) );
 		Wait( "online world opens", 3 );
 		Do( "online world renders", () =>
 		{
@@ -382,7 +392,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		} );
 		PlanTexturePackSwitch();
 		PlanLanguageSwitch();
-		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
+		Do( "open lobby menu", () => flow.Menu!.ShowMenu() );
+		Wait( "lobby menu opens", 2 );
+		Do( "open options", () => Click( flow.Menu!.Stack.Top!, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>
 		{
@@ -1154,7 +1166,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Level!.SimulationTimeScale == 0 && flow.Level.Park?.Economy.Tick == pausedTick && flow.Hud.Status.Speed == pausedSpeed,
 				"the pause menu stops the park simulation and keeps the speed setting" );
 			var capture = CaptureFrame( "pause.png" );
-			VerifyText( capture, flow.Strings[UIStrings.Paused], "PAUSED title" );
+			// [BIN:TPW-EXE:0x48c830 pause menu] a frameless list of text lines: no window and no title
+			Require( flow.Hud.Stack.Top!.Find( "window" ) == null && flow.Hud.Stack.Top.Find( "title" ) == null, "the pause menu has no window frame and no title" );
+			VerifyText( capture, flow.Strings[UIStrings.ResumeGame], "Resume Game" );
+			VerifyText( capture, flow.Strings[UIStrings.PublishPark], "Publish Park" );
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );
 			Click( flow.Hud.Stack.Top!, nameof( UIStrings.Save ) );
 		} );
@@ -1525,10 +1540,16 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		var firstStrings = flow.Strings;
 		foreach ( var (from, to) in new[] { (first, other), (other, first) } )
 		{
+			Do( $"language {to}: open lobby menu", () =>
+			{
+				if ( flow.Menu!.Stack.Top?.Name == "lobby" )
+					flow.Menu.ShowMenu();
+			} );
+			Wait( $"language {to}: lobby menu opens", 2 );
 			Do( $"language {to}: open options", () =>
 			{
-				if ( flow.Menu!.Stack.Top?.Name != "options" )
-					Click( flow.Menu.Main, "options" );
+				if ( flow.Menu!.Stack.Top?.Name == "lobbyMenu" )
+					Click( flow.Menu.Stack.Top, "options" );
 			} );
 			Wait( $"language {to}: options open", 3 );
 			Do( $"language {to}: OpenTPW page", () => Click( flow.Menu!.Stack.Top!, "openTpw" ) );

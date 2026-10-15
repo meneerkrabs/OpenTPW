@@ -679,7 +679,11 @@ public partial class Level
 		}
 		Objects.ObjectRemoved += item =>
 		{
-			if ( SellRemovedObject( Park, item.Visitors.AttractionId, economyInstances.Remove( item, out var instance ) ? instance : null ) is { } credit )
+			var linked = economyInstances.Remove( item, out var instance );
+			// a guest walking to a removed bin gets the removal message (tp.exe 0x004FB360); bins are known by their economy instance
+			if ( linked && item.Entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) )
+				Guests?.BinRemoved( instance );
+			if ( SellRemovedObject( Park, item.Visitors.AttractionId, linked ? instance : null ) is { } credit )
 				LastActionMessage = $"Removed {item.Entry.DisplayName}; scrap value ${credit} credited.";
 		};
 	}

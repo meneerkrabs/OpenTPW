@@ -174,22 +174,69 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>Park turns the guest has waited in its current queue so far, or −1 when it is not queued.</summary>
 	public long QueueWaitTurns( Guest guest ) => guest.QueueJoinTurn < 0 ? -1 : ParkTurn - guest.QueueJoinTurn;
 
+	/// <summary>
+	/// An attraction is removed (the removal message 10, tp.exe <c>0x004DD0A0</c> → the guest handler <c>0x004FB360</c>): every guest whose target it is
+	/// loses the small happiness step and its target and decides again (state 6); a queued guest (states 11–14) is first dismissed (<c>0x005012F0</c>:
+	/// the medium step, the queue words cleared), and the guest's used history forgets the attraction.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FB360 object removed] for message 10 naming the target +0x1DC: a guest in state 16 (on the ride) gets its model back (0x004D4140 / 0x004217F0), +0x28 = 0, event 0xD and the cat_kids 0x80 sound; any other guest in states 11–14 (0x00502430, state 8's held state too) the dismissal 0x005012F0; then every one the small step (0x004FE980(0), clamped by 0x004FB4F0), +0x1DC = 0 and state 6 (0x00501DB0); the major destination +0x1DE is cleared when it names the object, and each used-history slot +0x1E0 that does is zeroed with the temporary-history slot +0x1E8 of the same index
+	// [APPROX:GUEST-004] OpenTPW keeps no major destination (+0x1DE, a target set aside for a minor one, 0x00500900) and clears the target when a visit ends, where tp.exe keeps +0x1DC until the next choice 0x004FCB10, so a guest that has just left the removed attraction is not hit; the dismissal's event 6 and sound and the state-16 event 0xD and sound are not modelled (QUEUE-005); a guest on the ride or in the queue is placed at once on the exit or join cell (QUEUE-010)
 	public void Unregister( IRideVisitorBridge attraction )
 	{
 		if ( !attractions.Remove( attraction ) )
 			return;
 		foreach ( var guest in guests )
 		{
-			if ( guest.AttractionId == attraction.AttractionId && (guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue) )
+			if ( guest.AttractionId != attraction.AttractionId || attraction.AttractionId == 0 )
+				continue;
+			var cell = guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY);
+			if ( guest.State != GuestState.Using && guest.IsInQueue )
+				guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
+			attraction.LeaveQueue( guest.Id );
+			ClearQueueState( guest );
+			guest.SideshowWon = null;
+			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
+			for ( var slot = 0; slot < Guest.HistorySlots; slot++ )
 			{
-				attraction.LeaveQueue( guest.Id );
-				ClearQueueState( guest );
-				ReturnToPath( guest, guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY) );
+				if ( guest.UsedHistory[slot] != attraction.AttractionId )
+					continue;
+				guest.UsedHistory[slot] = 0;
+				guest.TemporaryHistory[slot] = 0;
+			}
+			if ( guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue )
+				ReturnToPath( guest, cell );
+			else
+			{
+				guest.AttractionId = 0;
+				guest.State = GuestState.DoingNothing;
 			}
 		}
 		if ( attraction.Host == this )
 			attraction.Host = null;
 		seenQueueEdits.Remove( attraction.AttractionId );
+	}
+
+	/// <summary>
+	/// A litter bin is removed (the removal message 10, tp.exe <c>0x004DD0A0</c> → <c>0x004FB360</c>): a guest walking to it loses the small happiness step and
+	/// its target and decides again where it stands (state 6), keeping its litter.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FB360 bin removed] the bin is the walking guest's target +0x1DC (state 9, 0x004FFF20): the small step (0x004FE980(0)), +0x1DC = 0 and state 6; the litter meter +0x1B4 is not touched
+	public void BinRemoved( int binId )
+	{
+		if ( binId == 0 )
+			return;
+		foreach ( var guest in guests )
+		{
+			if ( guest.State != GuestState.ThrowingAwayLitter || guest.BinId != binId )
+				continue;
+			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
+			var navigation = guest.Navigation;
+			navigation.SetDestination( navigation.X, navigation.Y, [] );
+			guest.HasWaypoint = false;
+			guest.IsMoving = false;
+			guest.BinId = 0;
+			guest.State = GuestState.DoingNothing;
+		}
 	}
 
 	private Guest Create()
@@ -1031,7 +1078,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// stuck drops the litter on the guest's cell instead (<c>1 + rand % 5</c>). Either way the meter empties and the guest decides again.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FFF20 state 9] the walk step 0x004FA2A0: 1 keeps walking; 0 with a bin triggers the bin's script (Level.TriggerBin); 2, or a bin id of 0, drops 1 + rand % 5 on the current cell (0x004D93B0); then the meter +0x1B4 = 0 and state 6
-	// [APPROX:GUEST-005] a bin removed during the walk counts as no bin (the litter falls on the cell), where tp.exe's removal message reaches the guest whose target it is (0x004FB360: SmallHappinessChange lost via 0x004FE980(0), target cleared, state 6, litter meter kept); the walk ends stuck only when a grid edit takes a cell or link of its route (EndBrokenWalks) — evidence needed: none (read)
+	// [APPROX:GUEST-005] the walk ends stuck only when a grid edit takes a cell or link of its route (EndBrokenWalks) — evidence needed: none (read)
 	private void UpdateThrowingAwayLitter( Guest guest )
 	{
 		if ( !turnStarted )
@@ -1284,7 +1331,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 					_ => GuestThought.QueueTooLong
 				} );
 			// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
-			// [APPROX:GUEST-004] the full-room refusal keeps the target +0x1DC in tp.exe (the jump past 0x004FFEDA), which OpenTPW clears; the state-6 handler cannot tell (its only read, 0x004FF437, follows the choice 0x004FCB10, which clears the word first at 0x004FCB21), but the object-removal message handler 0x004FB360 still matches a stale target and costs the guest SmallHappinessChange (0x004FE980(0)) with a reset to state 6, a message OpenTPW does not model — evidence needed: none (read)
+			// [APPROX:GUEST-004] the full-room refusal keeps the target +0x1DC in tp.exe (the jump past 0x004FFEDA), which OpenTPW clears; the state-6 handler cannot tell (its only read, 0x004FF437, follows the choice 0x004FCB10, which clears the word first at 0x004FCB21), but the object-removal message handler 0x004FB360 still matches a stale target and costs the guest SmallHappinessChange (0x004FE980(0)) with a reset to state 6, which OpenTPW's removal (GuestSimulation.Unregister) cannot do for a cleared target — evidence needed: none (read)
 			if ( result is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
 				PushHistory( guest.TemporaryHistory, attraction.AttractionId );
 			// [BIN:TPW-EXE:0x004FFCF6 excitement refusal] the refusal clears the target and the decision stamp +0x1FC, so the next major decision is not held back 30 turns

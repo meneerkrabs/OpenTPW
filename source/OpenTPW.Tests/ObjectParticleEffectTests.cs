@@ -258,6 +258,21 @@ public class ObjectParticleEffectTests
 		Assert.AreEqual( 1, seen.Count );
 		objects.Clear();
 		Assert.IsTrue( second.IsDeleted );
-		Assert.AreEqual( 1, seen.Count, "a clear (a park that loads) starts no demolish effect" );
+		Assert.AreEqual( 1, seen.Count, "a clear starts no demolish effect" );
+	}
+
+	[TestMethod]
+	public void AHandlerThatRemovesTheSameObjectAgainIsIgnored()
+	{
+		var objects = new ParkObjects( null!, new SandboxParkGrid() );
+		var item = objects.TryPlace( Entry( RideKeys, "*" ), 3, 3, 0, out _ )!;
+		var inner = new List<bool>();
+		var removed = 0;
+		objects.ObjectRemoving += target => inner.Add( objects.Remove( target ) );
+		objects.ObjectRemoved += _ => removed++;
+		Assert.IsTrue( objects.Remove( item ) );
+		CollectionAssert.AreEqual( new[] { false }, inner, "the nested removal is refused" );
+		Assert.AreEqual( 1, removed );
+		Assert.IsTrue( item.IsDeleted );
 	}
 }

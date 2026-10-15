@@ -57,12 +57,22 @@ public class AudioPitchTests
 	[TestMethod]
 	public void TheRatioTableIsOneStepOffAndSymmetric()
 	{
-		// [BIN:TPW-EXE:0x782f40] the floats read from tp.exe: 1.007246 1.014545 1.021897 ... (index 0 is 2^(1/96)); 0x783540: 0.992806 0.985663 ...
+		// [BIN:TPW-EXE:0x782f40] the floats in tp.exe: 1.007246 1.014545 1.021897 ... (index 0 is 2^(1/96)); 0x783540: 0.992806 0.985663 ...
 		Assert.AreEqual( 1f, AudioVoice.PitchRatio( 0 ) );
-		// the stored floats of tp.exe 0x782f40 bit for bit (entry k is read for step k; entry 0 is never used)
-		var stored = new uint[] { 0x3f81dc9c, 0x3f82cd85, 0x3f83c02b, 0x3f84b496, 0x3f85aac5, 0x3f86a2ba, 0x3f879c7c };
-		for ( var step = 1; step <= stored.Length; step++ )
-			Assert.AreEqual( stored[step - 1], BitConverter.SingleToUInt32Bits( AudioVoice.PitchRatio( step ) ), $"step {step}" );
+		// some of the stored floats of tp.exe 0x782f40 and 0x783540 bit for bit (entry k is read for step k; entry 0 is never used);
+		// they are the six-decimal values, a few ULP from the exact powers, so the table computed from that rule must reproduce them
+		var positive = new uint[] { 0x3f81dc9c, 0x3f82cd85, 0x3f83c02b, 0x3f84b496, 0x3f85aac5, 0x3f86a2ba, 0x3f879c7c };
+		var negative = new uint[] { 0x3f7c5469, 0x3f7a83b2, 0x3f78b652, 0x3f76ec39, 0x3f752578, 0x3f7361fe, 0x3f71a1ba };
+		for ( var step = 1; step <= positive.Length; step++ )
+		{
+			Assert.AreEqual( positive[step - 1], BitConverter.SingleToUInt32Bits( AudioVoice.PitchRatio( step ) ), $"step {step}" );
+			Assert.AreEqual( negative[step - 1], BitConverter.SingleToUInt32Bits( AudioVoice.PitchRatio( -step ) ), $"step -{step}" );
+		}
+		Assert.AreEqual( 0x40000000u, BitConverter.SingleToUInt32Bits( AudioVoice.PitchRatio( 95 ) ), "step 95 is an octave" );
+		Assert.AreEqual( 0x3f000000u, BitConverter.SingleToUInt32Bits( AudioVoice.PitchRatio( -95 ) ) );
+		Assert.AreEqual( 0x3eee2ae5u, BitConverter.SingleToUInt32Bits( AudioVoice.PitchRatio( -105 ) ), "a stored entry where the six decimals differ most from the power" );
+		Assert.AreEqual( AudioVoice.PitchRatio( 109 ), AudioVoice.PitchRatio( int.MaxValue ), "a step beyond the table holds its last entry" );
+		Assert.AreEqual( AudioVoice.PitchRatio( -109 ), AudioVoice.PitchRatio( int.MinValue ) );
 		Assert.AreEqual( 1.014545f, AudioVoice.PitchRatio( 1 ), 1e-6f );
 		Assert.AreEqual( 1.021897f, AudioVoice.PitchRatio( 2 ), 1e-6f );
 		Assert.AreEqual( 1.044274f, AudioVoice.PitchRatio( 5 ), 1e-6f );
@@ -99,7 +109,7 @@ public class AudioPitchTests
 	}
 
 	[TestMethod]
-	public void ASignedRangeIsPutInOrderAndAFixedPitchDrawsNothing()
+	public void ASignedRangeIsPutInOrderAndAnEmptyRangeDrawsNothing()
 	{
 		var swapped = Sound( 4, -4 );
 		var seen = Enumerable.Range( 0, 2000 ).Select( _ => system.Pitch( swapped ) ).ToHashSet();
@@ -121,6 +131,46 @@ public class AudioPitchTests
 		var expected = mirror.Pitch( Sound( 0, 6 ) );
 		Assert.AreEqual( expected, voice.PitchStep );
 		Assert.AreEqual( mirror.Seed, system.Seed, "one chooser step: the sound, the sample and the volume draw nothing here, the pitch draws once" );
+	}
+
+	[TestMethod]
+	public void AOneShotOutOfRangeIsStoppedUnlessItIsHeardAtAnyDistanceOrLoops()
+	{
+		// [BIN:TPW-EXE:0x6bca10] out of range without the any-distance flag 0x200: the sample is stopped (0x6bca70, message 3)
+		var far = new Vector3( 1000, 1000, 0 );
+		var (plain, _) = Category( 0, Sound( 0, 0 ) );
+		var stopped = system.PlayAt( plain, 5, AudioChannel.Effects, far, 10 )!;
+		var (anyDistance, _) = Category( SoundEventSystem.AnyDistanceFlag, Sound( 0, 0 ) );
+		var heard = system.PlayAt( anyDistance, 5, AudioChannel.Effects, far, 10 )!;
+		var (looping, _) = Category( 0x8, Sound( 0, 0 ) );
+		var loop = system.PlayAt( looping, 5, AudioChannel.Effects, far, 10 )!;
+		var (near, _) = Category( 0, Sound( 0, 0 ) );
+		var close = system.PlayAt( near, 5, AudioChannel.Effects, Vector3.Zero, 10 )!;
+		system.Pump();
+		Assert.IsTrue( stopped.IsFinished, "out of range: stopped" );
+		Assert.IsFalse( heard.IsFinished, "flag 0x200: heard at any distance" );
+		Assert.IsTrue( loop.Loops );
+		Assert.IsFalse( loop.IsFinished, "a looping voice keeps advancing (AUDIO-038)" );
+		Assert.IsFalse( close.IsFinished, "in range: plays on" );
+	}
+
+	[TestMethod]
+	public void TheVolumeIsDrawnBeforeThePitch()
+	{
+		var sound = new SoundEntry( 40, 100, 0, 6, 0, 0, 1, 100, new[] { new SoundSample( 1, 65535, 0, 1, 0 ) }, Array.Empty<SoundLink>(), Array.Empty<byte>() );
+		var (category, _) = Category( 0, sound );
+		var orderShows = false;
+		for ( var playback = 0; playback < 20; playback++ )
+		{
+			var seed = system.Seed;
+			var voice = system.Play( category, 5, AudioChannel.Effects )!;
+			var mirror = new SoundEventSystem( new AudioMixer( null ), seed );
+			mirror.Volume( sound );
+			Assert.AreEqual( mirror.Pitch( sound ), voice.PitchStep, "the pitch is the second draw (0x6bc410: volume, then pitch)" );
+			Assert.AreEqual( mirror.Seed, system.Seed );
+			orderShows |= new SoundEventSystem( new AudioMixer( null ), seed ).Pitch( sound ) != voice.PitchStep;
+		}
+		Assert.IsTrue( orderShows, "drawn first, the pitch would differ for some playback" );
 	}
 
 	[TestMethod]

@@ -210,7 +210,7 @@ public sealed class SoundEventSystem
 	/// starts no new child; the children it already started play out.
 	/// </summary>
 	// [BIN:TPW-EXE:0x6b62b0 sound manager tick] only the voices in the pool of 12 are ticked; the pool is rebuilt every tick (0x6b6ba0), a voice is admitted (0x6b6bc0) only while audible (0x6bca10: the listener within the voice's range, the map sound's float +34, over the ground) and ranked by the dword priority:distance of 0x6bb9f0; a held chain's next child, its first included, is made in its tick (0x6bdae0 → 0x6bdb50 → 0x6bdbb0)
-	// [EXT:voice-pool-order] the pool ranks the held chains with the running sentences, placed sounds and one-shots started through this system; the admission's order among equal ranks (0x6b6bc0) is not modelled, and a voice with the any-distance flag is admitted whatever its distance (0x6bca44)
+	// [APPROX:AUDIO-038] the pool ranks the held chains with the running sentences, placed sounds and one-shots started through this system; the admission's order among equal ranks (0x6b6bc0) is not modelled, and a voice with the any-distance flag is admitted whatever its distance (0x6bca44)
 	private void SelectPooledChains()
 	{
 		pooledChains.Clear();
@@ -329,6 +329,7 @@ public sealed class SoundEventSystem
 	// [BIN:TPW-EXE:0x6bc170 pitch draw] swaps the signed bytes +0xE/+0xF of the sound record when max < min, range = max - min, and without a parameter-bound pitch slot (the vf+0x40 query for parameter kind 2) draws ror13(chooser) % range + min; 0x6bc410 calls it right after the volume draw (0x6bc090) and hands it to 0x6c5170, unless the placeholder flag 0x10000 fixes the pitch
 	// [BIN:TPW-EXE:0x6bc410 sample start] the order of draws for one playback is sound, sample, volume, pitch, then the delay (0x6bc343)
 	// [DATA:global/sound,levels/*/Sound cat_*SFX.map] 1,343 shipped sounds have no pitch range; the chain, scream and crowd sounds draw 0..6 (steps 0-5 are played), the others signed ranges from -24..36 to -2..0
+	// [APPROX:AUDIO-003] the placeholder flag 0x10000 (pitch fixed at the short +0x4A) and a parameter-bound pitch slot are not modelled: every playback draws from the range
 	internal int Pitch( SoundEntry sound )
 	{
 		var low = Math.Min( sound.MinimumPitch, sound.MaximumPitch );
@@ -774,15 +775,19 @@ public sealed class SoundSentence
 		voice = null;
 		if ( IsStopped )
 			return;
-		waiting = !TryPlayNext();
+		// a segment that ends (or is stopped) out of range starts nothing: Pump starts the next one when the listener is back
+		waiting = OutOfRange || !TryPlayNext();
 	}
+
+	private bool OutOfRange => (soundEvent.Flags & SoundEventSystem.AnyDistanceFlag) == 0 && !SoundEventSystem.Audible( Position, Range );
 
 	internal void Pump()
 	{
 		if ( IsStopped )
 			return;
-		// [BIN:TPW-EXE:0x6b62b0 sound manager tick] a voice out of range is not admitted to the pool (0x6bca10) and so not ticked, and its sample is stopped (0x6bca70, message 3): the sentence stands still until the listener is back, then starts the next segment
-		if ( (soundEvent.Flags & SoundEventSystem.AnyDistanceFlag) == 0 && !SoundEventSystem.Audible( Position, Range ) )
+		// [BIN:TPW-EXE:0x6b62b0 sound manager tick] a voice out of range is not admitted to the pool (0x6bca10) and so not ticked, and its sample is stopped (0x6bca70, message 3)
+		// [APPROX:AUDIO-038] the sentence stands still until the listener is back, then starts the next segment; nothing read shows how the original resumes a stopped sentence
+		if ( OutOfRange )
 		{
 			if ( voice is { IsFinished: false } playing )
 			{

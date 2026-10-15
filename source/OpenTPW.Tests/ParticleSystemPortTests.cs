@@ -197,6 +197,10 @@ public class ParticleSystemPortTests
 		var handle = system.Create( 1, Origin );
 		system.SetVolumeExtent( handle, 16 * 7, 0, 16 * 7 );
 		var state = system.Capture()!;
+		Assert.IsNotNull( state.Emitters.Single().VolumeExtent, "a set extent is saved" );
+		var same = New( pool );
+		same.Restore( state );
+		CollectionAssert.AreEqual( state.Emitters.Single().VolumeExtent!.ToArray(), same.Capture()!.Emitters.Single().VolumeExtent!.ToArray(), "and restored" );
 		var older = state with { Emitters = state.Emitters.Select( emitter => emitter with { VolumeExtent = null } ).ToArray() };
 		var restored = New( pool );
 		restored.Restore( older );

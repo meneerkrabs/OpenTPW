@@ -220,7 +220,7 @@ and features 79-82 / 75-78; shops, sideshows and features have no repair or upgr
 | Effect | tp.exe | Trigger | Handle |
 | --- | --- | --- | --- |
 | Create | `0x5587F0` (`0x558e7c`) | a new object's script attaches (`Level.PlaceObject`); not while a park loads (`DAT_00785a2c`) | dropped |
-| Destroy | `0x559060` (`0x5590f7`) | the removal `0x4dd0a0` passes flag bit 2 unless a park loads or clears (`Level.RemoveObjectAt`, before the object goes) | dropped |
+| Destroy | `0x559060` (`0x5590f7`) | the removal `0x4dd0a0` passes flag `0x2` unless a park loads or clears (`Level.RemoveObjectAt`, before the object goes) | dropped |
 | Repair | `0x556DE0`, from the REPAIREFFECT handler `0x5562bd` before its sounds | value 1 starts it, value 0 ends it (life -2); the script's end ends it too (`0x55854b`) | kept at the script's `+0xCC` |
 | Upgrade | `0x55A100`, from `0x4df8f0` | the upgrade is installed (`ParkEventKind.UpgradeCompleted`) | dropped |
 
@@ -229,7 +229,7 @@ cell added to the far corner), at the object's base height, converted like every
 `>> 4`). Create, Destroy and Upgrade then size the emitter's spawn volume with `0x520030` to the footprint:
 `(width * 512, (y1 - y0) * 256, depth * 512) >> 4` for the box, width and depth in original units (10 per cell), so the stars
 spread over the footprint; `ParticleSystem.SetVolumeExtent` replaces the extent after the creation burst, which ran with the
-template's. Repair keeps its template's volume. A fixed item has no footprint box and starts nothing; headless hosts have no
+template's. Repair keeps its template's volume. A fixed item has no footprint box and starts nothing in OpenTPW (the original's `0x559060` creates the effect anyway, at coordinates the box call leaves unset; `PTCL-908`), and the removal's mode in which the global at `+0x1da738` is 2 (no effect) is not modelled; headless hosts have no
 pool. The box height (record `+0x1C`/`+0x28`) is not traced and counts as zero (`PTCL-908`).
 
 Captured in the native jungle level (`--load-original-level jungle --debug-object-effect build|demolish --capture-camera 1,-38,7,-135

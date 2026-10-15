@@ -37,8 +37,9 @@ public sealed partial class OriginalObjectRuntime
 	/// The repair effect has its own switch (<see cref="SetRepairParticle"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x558e7c create] the script attach 0x5587F0 (from 0x4dcf90, with the flag DAT_00785a2c clear: not while a park loads) reads the type record's +0x60, and when it and the box (0x466B70) exist creates the effect with 0x521E60 at ((x0 + x1) * 0.5, the object's base height, (z0 + z1) * 0.5) * 1024, then sizes its volume with 0x520030 to (width * 512, (y1 - y0) * 256, depth * 512) >> 4
-	// [BIN:TPW-EXE:0x5590f7 destroy] the kill 0x559060 (from the object's removal 0x4dd0a0, flags 7 while no park loads or clears, 0 in mode 2, 4 otherwise) reads +0x64 and runs the same creation only when the flag's bit 2 is set (0x559102), before the script is torn down
+	// [BIN:TPW-EXE:0x5590f7 destroy] the kill 0x559060 (from the object's removal 0x4dd0a0, flags 7 while no park loads or clears, 0 in mode 2, 4 otherwise) reads +0x64 and runs the same creation only when the flag 0x2 is set (0x559102), before the script is torn down
 	// [BIN:TPW-EXE:0x55A100 upgrade] reads +0x6C and runs the same creation and sizing (then a further dispatch 0x51BFC0 that is not traced); called from 0x4df8f0 when a repair job on a ride in upgrade mode (+0x19C == 2) finishes and its level is raised
+	// [APPROX:PTCL-908] the removal's mode 2 (global +0x1da738, no effect) is not modelled, and an object without a footprint box starts nothing here although 0x559060 creates the effect anyway
 	// [APPROX:PTCL-908] the box's height (the original's +0x1C/+0x28 of the footprint record, not traced) is taken as zero, so the volume has no vertical spread of its own
 	internal int StartObjectEffect( ObjectParticleEffect effect )
 	{

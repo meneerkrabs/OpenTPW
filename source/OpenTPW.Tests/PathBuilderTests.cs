@@ -675,7 +675,8 @@ public class PathBuilderTests
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-UNDO", "PATH-ENDFLAG", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-LEDGER", "PATH-CANCEL", "PATH-ENDREFUSE", "PATH-PAUSE", "PATH-VARIANT", "QUEUE-TEXTURES" }, names );
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 15 ).Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		// PATH-UNDO (002), PATH-LEDGER (010) and PATH-CANCEL (011) are retired: traced in tp.exe and matched.
+		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-ENDFLAG", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-ENDREFUSE", "PATH-PAUSE", "PATH-VARIANT", "QUEUE-TEXTURES" }, names );
+		CollectionAssert.AreEqual( new[] { 1, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

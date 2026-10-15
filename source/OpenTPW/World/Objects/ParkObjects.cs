@@ -111,7 +111,7 @@ public sealed class ParkObjects
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
 	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap + owned land; no slope or path rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
-	// [BIN:TPW-EXE:0x5357c7 placement validator] every cell type the validator 0x535670 places (paths, queues and objects alike) is refused on a cell with flag 0x40
+	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		var result = Check( Grid, IsOccupied, entry, anchorX, anchorY, rotation );

@@ -136,8 +136,8 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | PATH-001 | PATH-ENTER | a click on an object-less cell or a path starts the tool (tp.exe 0x4879d0, SetMode(1) 0x52f200); the original enters even when the start check 0x535670(1, 0) refuses the cell (then without a start), OpenTPW does not enter |
 | PATH-004 | PATH-CONNECT | path-to-path links match tp.exe 0x5348d0; its type-9/10 links, diagonal bits, OR write and type-3 conversion are not ported |
 | PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
-| PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types and ownership |
-| PATH-007 | PATH-LAND | every in-bounds cell is owned; the original's owned land is the fence interior laid by 0x5323f0 from the level outline 0x784e3c |
+| PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types |
+| PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused |
 | PATH-008 | PATH-CODE8 | path over a queue cell is refused; the original turns a queue end (validator code 8, 0x535d00) into a path cell |
 | PATH-009 | PATH-FREE | free only without a park economy; the free byte (tp.exe 0x8186d4) is set only while modes 4 and 59 place an object |
 | PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause is untraced for clicks |

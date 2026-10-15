@@ -52,6 +52,15 @@ public static class ParkLayoutSnapshot
 		/// <summary><see cref="ParkCellMap.Version"/>: bumped by every write; restored exactly so cached walk state keeps the saved epoch.</summary>
 		public required int Version { get; init; }
 		public required List<CellData> Cells { get; init; }
+		/// <summary>
+		/// <see cref="ParkCellMap.BlockStamp"/> of every 16 × 16-cell block, row by row (the walk's changed-ground reroute, WALK-007); null
+		/// when no block is stamped, and in saves made before the stamps existed, which restore every block unstamped.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? BlockStamps { get; init; }
+		/// <summary><see cref="ParkCellMap.StampCounter"/>; absent (0) in saves made before the stamps existed.</summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+		public int StampCounter { get; init; }
 	}
 
 	/// <summary>One non-empty cell: the raw bytes and counters of <see cref="ParkCellMap"/> at (X, Y).</summary>
@@ -148,7 +157,7 @@ public static class ParkLayoutSnapshot
 		}
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, BlockStamps = cells.CaptureBlockStamps(), StampCounter = cells.CaptureBlockStamps() == null ? 0 : cells.StampCounter },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
@@ -247,6 +256,14 @@ public static class ParkLayoutSnapshot
 			Require( cell.QueueLink == 0 || cell.Type == (byte)ParkCellType.Queue, $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );
 		}
+		if ( cells.BlockStamps is { } stamps )
+		{
+			var blocks = (long)((cells.Width + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock) * ((cells.Height + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock);
+			Require( stamps.Length == blocks, $"the cell map has {stamps.Length} block stamps for {blocks} blocks" );
+			Require( Array.TrueForAll( stamps, stamp => stamp >= 0 && stamp <= cells.StampCounter ), "a block stamp is negative or above the stamp counter" );
+		}
+		else
+			Require( cells.StampCounter == 0, "the cell map has a stamp counter but no block stamps" );
 	}
 
 	/// <summary>A fresh cell map with every snapshot cell written and the saved version restored (an empty map otherwise).</summary>
@@ -265,6 +282,8 @@ public static class ParkLayoutSnapshot
 			cells.SetPlacementCount( cell.X, cell.Y, cell.Placements );
 		}
 		cells.RestoreVersion( snapshot.Cells.Version );
+		// The writes above stamped the blocks with restore-time versions; the saved stamps (none before WALK-007) replace them.
+		cells.RestoreBlockStamps( snapshot.Cells.StampCounter, snapshot.Cells.BlockStamps );
 		return cells;
 	}
 

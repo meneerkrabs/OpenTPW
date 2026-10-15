@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -157,5 +158,32 @@ public class WalkSearchTests
 		foreach ( var (from, to, mask, accepted) in expected )
 			Assert.AreEqual( accepted, WalkEdges.Commit( map, from, to, mask ), $"{from} -> {to} mask {mask}" );
 		Assert.IsFalse( WalkEdges.Commit( map, (10, 10), null, 0 ), "a step off the map is refused" );
+	}
+
+	[TestMethod]
+	public void TheBlockStampsSurviveTheLayoutSnapshotAndOldLayoutsLoadUnstamped()
+	{
+		var cells = new ParkCellMap( 40, 40 );
+		cells.SetType( 3, 3, ParkCellType.Path );
+		cells.SetType( 35, 20, ParkCellType.Path );
+		cells.SetType( 35, 20, ParkCellType.Path );
+		Assert.AreEqual( 2, cells.StampCounter, "an unchanged type stamps nothing" );
+		ParkLayoutSnapshot.CellData Record( int x, int y ) => new() { X = x, Y = y, Type = 1, Flags = 0, Placements = 0, Links = 0, QueueLink = 0 };
+		var layout = new ParkLayoutSnapshot.Data
+		{
+			Cells = new ParkLayoutSnapshot.CellMapData
+			{
+				Width = 40, Height = 40, Version = cells.Version, Cells = [Record( 3, 3 ), Record( 35, 20 )],
+				BlockStamps = cells.CaptureBlockStamps(), StampCounter = cells.StampCounter
+			},
+			Objects = [], NextSeed = 0, NextAttractionId = 0, ObjectScriptKey = 0
+		};
+		var restored = ParkLayoutSnapshot.RestoreCellMap( layout );
+		Assert.AreEqual( (2, 1, 2, 0), (restored.StampCounter, restored.BlockStamp( 0, 0 ), restored.BlockStamp( 2, 1 ), restored.BlockStamp( 1, 1 )) );
+		var old = layout with { Cells = layout.Cells with { BlockStamps = null, StampCounter = 0 } };
+		var oldMap = ParkLayoutSnapshot.RestoreCellMap( old );
+		Assert.AreEqual( (0, 0, 0), (oldMap.StampCounter, oldMap.BlockStamp( 0, 0 ), oldMap.BlockStamp( 2, 1 )), "a save from before the stamps restores every block unstamped" );
+		Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( layout with { Cells = layout.Cells with { BlockStamps = [1, 2] } } ) );
+		Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( layout with { Cells = layout.Cells with { StampCounter = 1 } } ), "a stamp above the counter" );
 	}
 }

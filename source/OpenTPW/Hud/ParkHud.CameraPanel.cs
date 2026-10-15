@@ -13,6 +13,7 @@ public sealed partial class ParkHud
 	// [EXT:camera-view-cycle] the former camera button's Standard/Close/Overview view cycle is a third round button, b_camera, to the right of the panel's two; the original has none
 	// [APPROX:UI-042] the panel appears without sliding out, and a left click on the camcorder button only arms it (the walk starts on the next click, as with the C key); the postcard window (8:42) is the host composer
 	private static readonly LayoutTable CameraPanelTable = OriginalLayoutTables.CameraPanel;
+	private static readonly string[] CameraPanelIds = { "cameraPanel", "cameraCamcorder", "cameraPostcard", "cameraViews" };
 	private static readonly UiRect CameraPanelViewsRect = new( 790, 1316, 153, 153 );
 
 	/// <summary>True while the camera button's panel is out.</summary>
@@ -50,7 +51,7 @@ public sealed partial class ParkHud
 	{
 		if ( CameraPanelOpen && (IsRiding || level.FreeWalk != null) )
 			CameraPanelOpen = false;
-		foreach ( var id in new[] { "cameraPanel", "cameraCamcorder", "cameraPostcard", "cameraViews" } )
+		foreach ( var id in CameraPanelIds )
 			if ( hud.Find( id ) is { } element )
 				element.Visible = CameraPanelOpen;
 	}

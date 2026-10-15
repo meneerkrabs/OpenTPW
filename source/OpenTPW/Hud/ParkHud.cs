@@ -310,6 +310,9 @@ public sealed partial class ParkHud
 				StopRide();
 			else if ( CameraPanelOpen )
 				CloseCameraPanel();
+			// the object window is a window like the others: Escape closes it, and only without one open does Escape open the pause menu
+			else if ( InfoArmOpen )
+				SetInfoArm( false );
 			else if ( CancelCamcorder() ) { }
 			else if ( level.IsCoasterToolActive )
 				level.ExitCoasterTool();
@@ -332,27 +335,7 @@ public sealed partial class ParkHud
 	private ObjectInfo? InfoNow => infoNow ?? SelectedInfo;
 
 	public ObjectInfo? SelectedInfo => InfoArmOpen && selectedObject is { IsDeleted: false } item
-		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, new[]
-		{
-			// [DATA:video 15:20, 51:40 ride window] excitement, reliability, repair progress and remaining life are red-to-green gauges (UiGauge), not percentages; an unknown value draws the empty track
-			// [APPROX:UI-028] the fills: excitement is the authored UsageInfo.ExcitementLevel / 100, reliability is 1 - WearRate / 10 of the object's base level (as the buy window does), repair and remaining life are the live economy record's repair and life gauge (a version 2 visit uses the owner's published repair); the original's fill formulas cannot be read from 720p video - evidence needed: the ride window's gauge refresh handler
-			new ObjectStat( UIStrings.Excitement, null, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? Math.Clamp( item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) / 100f, 0f, 1f ) : null, true ),
-			new ObjectStat( UIStrings.Reliability, null, item.Entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0f, 1f ) : null, true ),
-			new ObjectStat( UIStrings.StateOfRepair, null, LiveState( item )?.Repair is { } liveRepair ? Math.Clamp( (float)liveRepair / 100f, 0f, 1f )
-				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
-			new ObjectStat( UIStrings.RemainingLife, null, LiveState( item )?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
-		}.Concat( TextStats( item ) ).ToArray(), EntryName( item.Entry ) ) : null;
-
-	/// <summary>The text rows of the object window the economy supplies: the customers of last month (UITEXT 17 for rides, 32 otherwise) and the scrap value (UITEXT 23).</summary>
-	// [BIN:TPW-EXE:0x755150 object window rows] the window's seven rows are UITEXT 17 to 23; the age row (18) has no value here, its display format is not traced
-	private IEnumerable<ObjectStat> TextStats( OriginalObject item )
-	{
-		if ( LiveState( item ) is not { } state || Status.EconomySource is not ParkEconomy economy )
-			yield break;
-		yield return new ObjectStat( item.Entry.WhichUIType == (int)BuildCategory.Rides ? UIStrings.UsersLastMonth : UIStrings.CustomersLastMonth,
-			state.CustomersLastMonth.ToString( System.Globalization.CultureInfo.InvariantCulture ) );
-		yield return new ObjectStat( UIStrings.ScrapValue, FormatMoney( economy.ScrapValue( state ) ) );
-	}
+		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, ObjectStats( item ), EntryName( item.Entry ) ) : null;
 
 	/// <summary>The live economy record behind a placed object, null in a visit or without an economy.</summary>
 	private ParkObjectState? LiveState( OriginalObject item ) =>
@@ -675,6 +658,12 @@ public sealed partial class ParkHud
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		var consumed = Stack.Update( context, input );
+		// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens read the option (+0x39) before a right click leaves them; the object window leaves on it too
+		if ( InfoArmOpen && Stack.Screens.Count == 1 && !IsRiding && input.RightPressed && GameOptions.Current.RmbCancel && !Input.TextEntryActive )
+		{
+			SetInfoArm( false );
+			consumed = true;
+		}
 		ReportScreens();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{

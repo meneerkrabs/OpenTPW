@@ -583,6 +583,23 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void AGuestWaitingItsMoveUpDelayStillRunsTheNeedsWindow()
+	{
+		// tp.exe 0x005002EB: the delay decrement falls through to the needs window (0x005002F2), so an unhappy guest leaves meanwhile
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
+		var waiting = guests[5];
+		Assert.IsTrue( waiting.QueueMoveDelay > 1 );
+		rig.Ride.LeaveQueue( guests[0].Id );
+		waiting.Happiness = 0;
+		rig.RunTurns( 2 );
+		Assert.IsFalse( waiting.IsInQueue, "the unhappy guest left while waiting its delay" );
+	}
+
+	[TestMethod]
 	public void GuestsMoveUpAfterTruncOneTwoTimesPositionTurnsWhenTheGapIsSmall()
 	{
 		var rig = new Rig();
@@ -596,15 +613,14 @@ public class QueueTests
 		rig.Ride.LeaveQueue( guests[0].Id );
 		var removedTurn = rig.Simulation.ParkTurn;
 		var moved = new Dictionary<int, long>();
-		var removedLeft = false;
-		rig.RunTurns( 12, () =>
+		rig.RunTurns( 1 );
+		Assert.IsFalse( guests[0].IsInQueue, "the removed guest left the queue" );
+		rig.RunTurns( 11, () =>
 		{
 			// it may choose the ride again and rejoin at the back within these turns
-			removedLeft |= !guests[0].IsInQueue;
 			foreach ( var guest in guests.Skip( 1 ).Where( guest => guest.State == GuestState.MovingUpQueue ) )
 				moved.TryAdd( guest.Id, rig.Simulation.ParkTurn - removedTurn );
 		} );
-		Assert.IsTrue( removedLeft, "the removed guest left the queue" );
 		CollectionAssert.AreEqual( new long[] { 2, 3, 4, 5, 7 }, guests.Skip( 1 ).Select( guest => moved[guest.Id] ).ToArray(),
 			"first seen at the next turn, then 1, 2, 3, 4 and 6 turns of delay" );
 		rig.RunTurns( 20 );

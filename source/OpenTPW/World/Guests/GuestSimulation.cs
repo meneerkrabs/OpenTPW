@@ -1661,24 +1661,19 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// While the ride is in state 1 (broken) 0xed4b0 (0xdfe0c) skips the walk and goes straight to the needs window (0xed58c), so the
 		// guests keep their physical places as the head is dismissed.
 		// [BIN:STP-PPC:0x100ED4B0 broken ride holds the queue] only state 1 holds; state 4 (condemned, life gauge 0) is not told apart from it here (QUEUE-019)
-		var held = false;
-		if ( position != guest.QueuePosition )
+		// [BIN:TPW-EXE:0x005002C2 move-up] a changed place decrements the delay (0x005002EB), holds for a broken ride (0x004E0370) or starts the
+		// walk (0x00501160, state 12); each continues into the needs window at 0x005002F2, and only an unchanged place reaches the limit test (0x0050059D)
+		var moved = position != guest.QueuePosition;
+		if ( moved )
 		{
 			var gap = guest.QueuePosition - position;
 			if ( guest.QueueMoveDelay != 0 && gap is >= 0 and <= MoveUpWaitGap )
-			{
 				guest.QueueMoveDelay--;
-				return;
-			}
-			if ( !attraction.IsBrokenDown )
-			{
+			else if ( !attraction.IsBrokenDown )
 				MoveToQueuePosition( guest, attraction );
-				return;
-			}
-			held = true;
 		}
 		// 6. Beyond the limit.
-		if ( !held && guest.QueuePosition > attraction.QueueLimit )
+		if ( !moved && guest.QueuePosition > attraction.QueueLimit )
 		{
 			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
 			return;

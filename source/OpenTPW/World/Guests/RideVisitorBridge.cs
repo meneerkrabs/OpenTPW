@@ -804,7 +804,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return;
 		}
 
-		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
+		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test; the whole walk is skipped while world mode +0x1DA738 is 4, the turn still counting, 0x00516395, DET-plan §2.1) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
 		var turn = Host?.ParkTurn ?? -1;
 		if ( turn >= 0 && turn == lastAdmissionTurn )
 			return;

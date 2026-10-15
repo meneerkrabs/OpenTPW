@@ -291,11 +291,11 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 - `[EXT:kart-roll-convention]`: the absolute sign of a kart's roll (above).
 
 Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start heading), 016 (boat spray, engine voice, unload), 017 (crossing flag), 024 (bank clamp), 029 (chase, already ported).
-Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 025, 026, 030, 031 (texts in the register).
+Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
 
 ## Open points
 
-- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre and look (TRACK-030, 031), the water animation and arm masks, the
+- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre (TRACK-030), the water animation and arm masks, the
   advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
@@ -366,7 +366,8 @@ rides), value = speed / 3 as a byte (`0x51BC40` → `0x6BBB80`). The placeholder
 (+0x16, +0x1A) in slots 1 and 2 (`0x6BBF00`); a set that matches slot 1–3 re-evaluates the playing segment's volume and pitch (`0x6BBBE0`), and a sound whose mask (+0x18 / +0x1C) has bit 2
 takes its pitch as min + value × (max − min) / 100 without a draw (`0x6BC170`, bit 1 the volume likewise, `0x6BC090`). The kart and bumper engines bind selector 16/17 to pitch (range −24..36),
 so the pitch follows the speed; the water engines have no binding and play unchanged. `SoundSentence.SetParameter` and `MoveTo` implement the table and the move for voices started by
-`GameAudio.StartRseSentence`.
+`GameAudio.StartRseSentence`. The original stores `0x51C270`'s return value back into the vehicle's voice handle (+0x20, `0x548137`;
+what `0x51C270` returns besides the handle is not read); OpenTPW keeps the voice it started.
 
 `TrackRenderer` is one per family. A kart is drawn along its drawn heading (+0x54, which follows the velocity by (angle difference × speed / 1000) per tick) with the
 four-probe height, pitch and roll over the sampled pieces ("Vehicle height").

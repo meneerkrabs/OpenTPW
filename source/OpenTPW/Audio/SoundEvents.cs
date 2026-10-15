@@ -329,7 +329,7 @@ public sealed class SoundEventSystem
 	// [BIN:TPW-EXE:0x6bc170 pitch draw] swaps the signed bytes +0xE/+0xF of the sound record when max < min, range = max - min, and without a parameter-bound pitch slot (the vf+0x40 query for parameter kind 2) draws ror13(chooser) % range + min; 0x6bc410 calls it right after the volume draw (0x6bc090) and hands it to 0x6c5170, unless the placeholder flag 0x10000 fixes the pitch
 	// [BIN:TPW-EXE:0x6bc410 sample start] the order of draws for one playback is sound, sample, volume, pitch, then the delay (0x6bc343)
 	// [DATA:global/sound,levels/*/Sound cat_*SFX.map] 1,343 shipped sounds have no pitch range; the chain, scream and crowd sounds draw 0..6 (steps 0-5 are played), the others signed ranges from -24..36 to -2..0
-	// [APPROX:AUDIO-003] the placeholder flag 0x10000 (pitch fixed at the short +0x4A) and a parameter-bound pitch slot are not modelled: every playback draws from the range
+	// [APPROX:AUDIO-003] the placeholder flag 0x10000 (pitch fixed at the short +0x4A) is not modelled; a parameter-bound pitch slot is applied only for sentences started with a parameter channel (the ride vehicles' engines, Pitch(sound, table)), other playbacks always draw from the range
 	internal int Pitch( SoundEntry sound )
 	{
 		var low = Math.Min( sound.MinimumPitch, sound.MaximumPitch );

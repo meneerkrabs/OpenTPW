@@ -132,6 +132,7 @@ internal sealed partial class GameFlow : IDisposable
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
+		LobbyCameraMode.IslandFieldOfView = lobbyDefinition.FieldOfView;
 		FrontEndMenu? createdMenu = null;
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
@@ -322,7 +323,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
-		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
+		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 		using ( LoadProfile.Measure( "park-hud" ) )
 			Hud = CreateParkHud( level, status );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
@@ -758,7 +759,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
-			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => false, engineUnitsPerOriginal: 1f );
+			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f );
 		lobbyIslands.Clear();
 		foreach ( var (island, slot) in Lobby.Slots )
 		{

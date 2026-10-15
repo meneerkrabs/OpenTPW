@@ -171,6 +171,9 @@ internal sealed partial class GameFlow
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"OpenTPW tracking unavailable: {error.Message}" ); progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); }
 	}
 
+	/// <summary>The keys of the attached player ledger (the HUD's key counter), null while none is attached.</summary>
+	private int? PlayerKeys() => progressOwner?.Ledger.Keys;
+
 	private void DetachProgress() { progressOwner?.Dispose(); progressOwner = null; progressNotice = null; shownProgressNotice = null; displayedProgressDetail = null; }
 	private void PumpProgress()
 	{

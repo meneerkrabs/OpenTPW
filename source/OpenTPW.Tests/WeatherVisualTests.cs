@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NVector3 = System.Numerics.Vector3;
@@ -111,13 +112,55 @@ public class WeatherVisualTests
 	}
 
 	[TestMethod]
-	public void FrameTimeIsWallClockCappedAtHalfASecondAndZeroWhilePaused()
+	public void TheParallaxIsTheAbsoluteCameraPositionSoAReturnRestoresTheField()
 	{
-		Assert.AreEqual( 0.016f, WeatherVisualState.FrameSeconds( 0.016f, paused: false ) );
-		Assert.AreEqual( 0.5f, WeatherVisualState.FrameSeconds( 3f, paused: false ), "a stall moves the field by 500 ms at most" );
-		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( 0.016f, paused: true ), "a paused park freezes the field" );
-		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( -1f, paused: false ) );
-		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( float.NaN, paused: false ) );
+		// [BIN:TPW-EXE:0x57efd0] the drops move by -0.1 x the camera's position (wrapped), not by an accumulated delta
+		var state = Field( 8 );
+		var before = Enumerable.Range( 0, 8 ).Select( state.DropOffset ).ToList();
+		state.Update( 0f, new Source { DropCount = 8 }, WeatherCamera.Looking( new NVector3( 37.3f, -12f, 5.5f ) ) );
+		state.Update( 0f, new Source { DropCount = 8 }, WeatherCamera.Looking( new NVector3( -3f, 140f, 2f ) ) );
+		state.Update( 0f, new Source { DropCount = 8 }, Eye );
+		var after = Enumerable.Range( 0, 8 ).Select( state.DropOffset ).ToList();
+		for ( var index = 0; index < 8; index++ )
+			Assert.IsTrue( NVector3.Distance( before[index], after[index] ) < 1e-3f, $"drop {index}: {before[index]} vs {after[index]}" );
+		var moved = Field( 8 );
+		moved.Update( 0f, new Source { DropCount = 8 }, WeatherCamera.Looking( new NVector3( 0, 0, 30 ) ) );
+		var shift = moved.Offset.Z - state.Offset.Z;
+		Assert.AreEqual( -3f + 8f, shift < 0 ? shift + 8f : shift, 1e-4f, "z moved by -0.1 x 30, wrapped into the 8-unit box" );
+	}
+
+	[TestMethod]
+	public void TheRenderStatesFollowTheOriginalStateWords()
+	{
+		// [BIN:TPW-EXE:0x567620] 0x200D52 (rain, bolts): source alpha over one, no depth writes; 0x556 (snow): alpha blend with depth writes
+		Assert.AreEqual( MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend, WeatherRenderer.RainFlags );
+		Assert.AreEqual( WeatherRenderer.RainFlags, WeatherRenderer.BoltFlags );
+		Assert.AreEqual( MaterialFlags.DoubleSided, WeatherRenderer.SnowFlags );
+		var shader = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "weather.shader" ) );
+		StringAssert.Contains( shader, "if ( alpha < 16.0 / 255.0 )", "the alpha test at 0x10 of 255 (ALPHAFUNC greater-or-equal)" );
+	}
+
+	private static string RepositoryRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !Directory.Exists( Path.Combine( directory.FullName, "content", "shaders" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new DirectoryNotFoundException( "content/shaders" );
+	}
+
+	[TestMethod]
+	public void FrameTimeFollowsTheSimulationScaleCappedAtHalfASecondAndZeroWhilePaused()
+	{
+		// [BIN:TPW-EXE:0x57ff60] dt = min(scaled ms, 500) on the rate-scaled clock 0x402d70
+		Assert.AreEqual( 0.016f, WeatherVisualState.FrameSeconds( 0.016f, 1f ) );
+		Assert.AreEqual( 0.032f, WeatherVisualState.FrameSeconds( 0.016f, 2f ), 1e-7f, "a faster game advances the field faster" );
+		Assert.AreEqual( 0.004f, WeatherVisualState.FrameSeconds( 0.016f, 0.25f ), 1e-7f );
+		Assert.AreEqual( 0.5f, WeatherVisualState.FrameSeconds( 3f, 1f ), "a stall moves the field by 500 ms at most" );
+		Assert.AreEqual( 0.5f, WeatherVisualState.FrameSeconds( 0.3f, 2f ), "the cap applies to the scaled step" );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( 0.016f, 0f ), "a paused park freezes the field" );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( -1f, 1f ) );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( float.NaN, 1f ) );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( 0.016f, float.NaN ) );
 		var state = Field( 200 );
 		var before = Enumerable.Range( 0, 200 ).Select( state.DropOffset ).ToList();
 		state.Update( 0f, new Source { DropCount = 200 }, Eye );
@@ -171,22 +214,52 @@ public class WeatherVisualTests
 		var state = Field( 8, snow: true );
 		var vertices = new WeatherVertex[WeatherVisualState.FieldSize * 6];
 		var count = state.WriteSnow( Eye, vertices );
-		Assert.IsTrue( count > 0 && count % 6 == 0 );
-		for ( var quad = 0; quad < count; quad += 6 )
+		Assert.IsTrue( count > 0 && count % 3 == 0 );
+		// [BIN:TPW-EXE:0x57f490] one triangle a flake: the apex at the top middle of the quadrant, the base at its lower corners
+		for ( var flake = 0; flake < count; flake += 3 )
 		{
-			Assert.AreEqual( 1f, vertices[quad].Grey, "full white" );
-			Assert.AreEqual( 1f, vertices[quad].Alpha );
-			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, (vertices[quad + 1].Position - vertices[quad].Position).X, 1e-5f, "half-size 0.1" );
-			var uv = vertices[quad].TexCoords;
-			Assert.IsTrue( uv is { X: 0f or 0.5f, Y: 0f or 0.5f }, "an atlas quadrant" );
-			Assert.AreEqual( 0.5f, vertices[quad + 1].TexCoords.X - uv.X, 1e-6f );
-			Assert.IsTrue( vertices[quad].Position.Z > 0 );
+			var (apex, right, left) = (vertices[flake], vertices[flake + 1], vertices[flake + 2]);
+			Assert.AreEqual( 1f, apex.Grey, "full white" );
+			Assert.AreEqual( 1f, apex.Alpha );
+			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, (right.Position - left.Position).X, 1e-5f, "base 2h wide" );
+			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, apex.Position.Y - left.Position.Y, 1e-5f, "2h tall" );
+			Assert.AreEqual( (right.Position.X + left.Position.X) / 2, apex.Position.X, 1e-5f, "the apex above the base's middle" );
+			var corner = left.TexCoords;
+			Assert.IsTrue( corner is { X: 0f or 0.5f, Y: 0.5f or 1f }, "the lower left corner of an atlas quadrant" );
+			Assert.AreEqual( new System.Numerics.Vector2( corner.X + 0.5f, corner.Y ), right.TexCoords );
+			Assert.AreEqual( new System.Numerics.Vector2( corner.X + 0.25f, corner.Y - 0.5f ), apex.TexCoords );
+			Assert.IsTrue( apex.Position.Z > 0 );
 		}
 		var first = vertices[0];
 		state.Update( 0.016f, new Source { DropCount = 8, Snow = true }, Eye );
 		var again = new WeatherVertex[WeatherVisualState.FieldSize * 6];
 		state.WriteSnow( Eye, again );
 		Assert.AreNotEqual( first.Position, again[0].Position, "a flake moves each frame" );
+	}
+
+	[TestMethod]
+	public void SnowJitterIsDrawnInWholeStepsOf1Over2048EveryFrameEvenWhenPaused()
+	{
+		// [BIN:TPW-EXE:0x57f490] each draw adds ((rand & 31) - 16) / 2048 to every axis of every flake
+		var state = Field( 64, snow: true );
+		var seen = new HashSet<float>();
+		var changed = false;
+		for ( var frame = 0; frame < 20; frame++ )
+		{
+			var before = state.JitterOf( 0 );
+			state.Update( 0f, new Source { DropCount = 64, Snow = true }, Eye );
+			changed |= state.JitterOf( 0 ) != before;
+			for ( var index = 0; index < 64; index++ )
+				foreach ( var axis in new[] { state.JitterOf( index ).X, state.JitterOf( index ).Y, state.JitterOf( index ).Z } )
+				{
+					var steps = axis * 2048f;
+					Assert.AreEqual( MathF.Round( steps ), steps, 1e-4f, "a whole number of 1/2048 steps" );
+					Assert.IsTrue( steps >= -16 && steps <= 15, $"{steps} within -16..15" );
+					seen.Add( steps );
+				}
+		}
+		Assert.IsTrue( changed, "a paused frame still draws a new jitter" );
+		Assert.IsTrue( seen.Contains( -16f ) && seen.Contains( 15f ) && seen.Count == 32, $"all 32 steps occur ({seen.Count})" );
 	}
 
 	[TestMethod]
@@ -210,14 +283,14 @@ public class WeatherVisualTests
 			var offset = state.DropOffset( index );
 			if ( offset.Z <= 0 )
 				continue;
-			var centre = (vertices[quad * 6].Position + vertices[quad * 6 + 4].Position) / 2;
+			var centre = new NVector3( vertices[quad * 3].Position.X, (vertices[quad * 3].Position.Y + vertices[quad * 3 + 1].Position.Y) / 2, vertices[quad * 3].Position.Z );
 			var spread = 1f + offset.Z / WeatherVisualState.SnowSpreadDepth;
 			Assert.AreEqual( offset.X * spread, centre.X, 0.03f, $"flake {index} x" );
 			Assert.AreEqual( offset.Y * spread, centre.Y, 0.03f, $"flake {index} y" );
 			quad++;
 			compared++;
 		}
-		Assert.IsTrue( compared > 2 && compared * 6 == count );
+		Assert.IsTrue( compared > 2 && compared * 3 == count );
 	}
 
 	[TestMethod]

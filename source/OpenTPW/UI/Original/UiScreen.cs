@@ -285,7 +285,7 @@ public sealed class UiScreenStack
 		}
 		for ( var index = first; index < screens.Count; index++ )
 		{
-			// [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs
+			// [DATA:video 10:00, 28:00] the pause overlay and the new-player dialog darken the scene behind them, as every modal screen does here
 			if ( screens[index].Modal && index > first )
 				context.Batch.AddRectangle( new UiRect( 0, 0, context.Canvas.Width, context.Canvas.Height ), UiColors.Backdrop );
 			screens[index].Draw( context );
@@ -294,16 +294,18 @@ public sealed class UiScreenStack
 			DrawHelp( context, context.HoverHelp! );
 	}
 
-	/// <summary>Popup help box along the top edge (placement is an OpenTPW approximation; helpbg art).</summary>
-	// [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help
+	/// <summary>Popup help box at the bottom centre: one or two lines on a translucent black backdrop that is as wide as the text.</summary>
+	// [DATA:video 1:50, 15:20 help box] on every frame with a tip the box sits at the bottom centre of the game area (about y 672-708 of 720, so a margin of about 1.7 % of the height under it), one or two lines, its width following the text, over a translucent black backdrop (grass (13,47,11) shows through at 65-70 % black)
+	// [APPROX:UI-010] the exact alpha (170 of 255), the text's side padding and the 60 % wrap width are read off the video frames, not from the original's box code
 	private static void DrawHelp( UiContext context, string text )
 	{
 		var canvas = context.Canvas;
 		var maximum = (int)(canvas.Width * 0.6f);
 		var (width, height) = context.Measure( context.Fonts.Small, text, maximum );
 		var pad = 4 * canvas.TextScale;
-		var rect = new UiRect( (canvas.Width - width) / 2f - pad, pad, width + pad * 2, height + pad * 2 );
-		context.Batch.AddRectangle( rect, UiColors.HelpBackground );
+		var boxHeight = height + pad * 2;
+		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height - canvas.Height * 0.017f - boxHeight, width + pad * 2, boxHeight );
+		context.Batch.AddRectangle( rect, UiColors.HelpBox );
 		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
 	}
 }

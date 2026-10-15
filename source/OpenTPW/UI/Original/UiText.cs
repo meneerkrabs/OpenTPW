@@ -167,10 +167,14 @@ public static class UiColors
 	public static readonly RgbaByte Disabled = new( 140, 140, 160, 255 );
 	public static readonly RgbaByte Title = new( 255, 214, 64, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
+	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
+	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );
 	/// <summary>Dark label text inside the light-green option bars (near-black navy).</summary>
 	// [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette
 	public static readonly RgbaByte OptionText = new( 16, 16, 48, 255 );
 	public static readonly RgbaByte Shadow = new( 0, 0, 40, 200 );
 	public static readonly RgbaByte Backdrop = new( 0, 0, 30, 120 );
 	public static readonly RgbaByte HelpBackground = new( 20, 30, 90, 230 );
+	/// <summary>The popup help box's backdrop: translucent black (video: about 65-70 % black over grass).</summary>
+	public static readonly RgbaByte HelpBox = new( 0, 0, 0, 170 );
 }

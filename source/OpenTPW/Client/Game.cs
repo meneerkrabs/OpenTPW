@@ -459,6 +459,34 @@ internal static class Game
 				Log.Trace( $"--debug-forecast: quality {forecastQuality} posted as a forecast {weather.DaysOfWarning} days out (apply day {weather.ForecastApplyDay})." );
 			}
 		}
+		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
+		// staff and buy open those windows, msg:<text> posts a message, help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
+		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
+		if ( debugHud != null )
+		{
+			var hudFrames = 0;
+			Render.PostUpdate += RunDebugHud;
+			void RunDebugHud()
+			{
+				if ( flow.Hud is not { } hud || flow.Level is not { OriginalPark: not null } || ++hudFrames < 40 )
+					return;
+				Render.PostUpdate -= RunDebugHud;
+				foreach ( var action in debugHud.Split( '|' ) )
+				{
+					var (name, argument) = action.Split( ':', 2) is [var head, var tail] ? (head, tail) : (action, "");
+					switch ( name )
+					{
+						case "staff": hud.OpenStaffWindow(); break;
+						case "buy": hud.OpenBuyWindow(); break;
+						case "msg": hud.PostGameMessage( argument ); break;
+						case "openmsg": hud.OpenPendingMessage( 0 ); break;
+						case "help": hud.DebugHelp( argument ); break;
+						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
+						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
+					}
+				}
+			}
+		}
 #endif
 		if ( startsFrontEnd )
 		{

@@ -46,6 +46,7 @@ public enum OpenTpwText
 	OnlyOnePrototypeRide,
 	NotEnoughMoney,
 	NotAvailable,
+	MessageTubeHelp,
 	EnhancedTextures,
 	EnhancedInterface,
 	EnhancedInterfaceHelp,
@@ -307,6 +308,8 @@ public static class SupplementaryStrings
 		[OpenTpwText.VisitorThought] = new[] { "Thought:", "Tanke:", "Gedachte:", "Pensée :", "Gedanke:", "Tanke:" },
 		[OpenTpwText.SelectInPark] = new[] { "Select in park", "Vælg i parken", "Kies in het park", "Sélectionner dans le parc", "Im Park auswählen", "Välj i parken" },
 		[OpenTpwText.OpenTpwPage] = new[] { "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW" },
+		// [DATA:video 15:20] the Dutch line is the original's own help text of a tube message; the other five languages are translated from it
+		[OpenTpwText.MessageTubeHelp] = new[] { "Message - left-click to open, right-click to delete", "Besked - venstreklik for at åbne, højreklik for at slette", "Bericht - klik links om te openen, klik rechts om te verwijderen", "Message - clic gauche pour ouvrir, clic droit pour supprimer", "Nachricht - Linksklick zum Öffnen, Rechtsklick zum Löschen", "Meddelande - vänsterklicka för att öppna, högerklicka för att ta bort" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {
 			"Only one ride can be placed in this build",

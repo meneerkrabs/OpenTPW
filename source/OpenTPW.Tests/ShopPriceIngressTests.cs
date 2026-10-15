@@ -94,10 +94,10 @@ public class ShopPriceIngressTests
 	}
 
 	[TestMethod]
-	public void DrawingDoesNotAddActionsAndKeepsMessagesOutOfTheInformationArm()
+	public void DrawingDoesNotAddActionsAndTheStatusLineIgnoresTheInformationArm()
 	{
 		var hud=Fixture(BuildCategory.Shops,out _,out _,out _,out _,out _);var context=Context();hud.Update(context,UiInput.Idle(new N.Vector2(1500,1000)),false,false,false);
-		hud.Draw(context);Assert.IsNull(hud.Screen.DrawOverlay,"The information arm replaces the overlapping message area.");
+		hud.Draw(context);Assert.IsNotNull(hud.Screen.DrawOverlay,"The status line sits above the help box and does not depend on the information arm.");
 		hud.SetInfoArm(false);for(var i=0;i<3;i++)hud.Draw(context);
 		Assert.AreEqual(1,hud.Screen.Elements.Count(e=>e.Id=="shopPrice"),"Drawing cannot create more price actions.");Assert.IsNotNull(hud.Screen.DrawOverlay);
 	}

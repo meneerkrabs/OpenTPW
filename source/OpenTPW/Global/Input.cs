@@ -27,6 +27,9 @@ public static partial class Input
 		set => _cursorType = value;
 	}
 
+	/// <summary>Set each frame by a UI that draws the game's own pointer; the next input update then hides the system pointer.</summary>
+	public static bool SoftwareCursorRequested { get; set; }
+
 	public static bool IsSystemCursorVisible
 	{
 		get => Sdl2Native.SDL_ShowCursor( -1 ) == 1;
@@ -129,7 +132,8 @@ public static partial class Input
 
 	public static void UpdateFrom( InputSnapshot inputSnapshot )
 	{
-		IsSystemCursorVisible = true;
+		IsSystemCursorVisible = !SoftwareCursorRequested;
+		SoftwareCursorRequested = false;
 
 		var mousePos = new Vector2( inputSnapshot.MousePosition.X, inputSnapshot.MousePosition.Y );
 		var mouseInfo = new MouseInfo

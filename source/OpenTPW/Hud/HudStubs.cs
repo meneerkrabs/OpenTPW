@@ -88,6 +88,8 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	public float TimeScale => GameSpeedScale.Of( Speed );
 
 	public int GoldenTickets => Math.Max( 0, Economy?.GoldenTicketsAvailable ?? 0 );
+	// [DATA:video 41:22] one golden key for every three golden tickets won; spent tickets keep their key
+	public int GoldenKeys => Math.Max( 0, (Economy?.Objectives.GoldenTickets.Count ?? 0) / PlayerProgress.TicketsPerKey );
 	public object? EconomySource => Economy;
 
 	public void Update( float realSeconds ) { }

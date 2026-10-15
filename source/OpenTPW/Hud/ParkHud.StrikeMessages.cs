@@ -2,8 +2,8 @@ namespace OpenTPW.Hud;
 
 public sealed partial class ParkHud
 {
-	/// <summary>Shows the park's staff strike messages (warning, strike, called off) in the HUD message area.</summary>
-	// [DATA:Language/*/TAG_SYSTEM.str:38-62 (staff strike messages)] the original's text of each message; the message area itself is the existing OpenTPW one (UI-025)
+	/// <summary>Posts the park's staff strike messages (warning, strike, called off) to the message tube.</summary>
+	// [DATA:Language/*/TAG_SYSTEM.str:38-62 (staff strike messages)] the original's text of each message, delivered through the message tube (UI-025)
 	private void HookStaffStrikeMessages()
 	{
 		if ( level.Park != null )
@@ -25,7 +25,7 @@ public sealed partial class ParkHud
 			return;
 		}
 		if ( StrikeMessageText( item, table ) is { } text )
-			PostMessage( text );
+			PostGameMessage( text );
 	}
 
 	/// <summary>The <c>TAG_SYSTEM.str</c> text of a strike message event (role in <see cref="ParkEvent.InfoId"/>, kind in <see cref="ParkEvent.Amount"/>), or null.</summary>

@@ -32,7 +32,7 @@ public sealed partial class ParkHud
 
 	// [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11)
 	private static readonly UiRect BuyContent = Rect( 1037, 427, 1727, 871 );
-	// [APPROX:UI-050] the third column (1673,1724) has no known content and stays empty; the unnamed control 491 is not drawn — evidence needed: capture of the original buy window
+	// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) holds a tick box per row (UiTickBox); the unnamed control 491 is not drawn
 	private static readonly (float Left, float Right)[] BuyColumns = { (1039, 1447), (1460, 1664), (1673, 1724) };
 	// [DATA:Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496] label/value rows of the stats frame (493)
 	private static readonly (UiRect Label, UiRect Value)[] BuyStatRows =
@@ -289,11 +289,8 @@ public sealed partial class ParkHud
 			var gaugeRow = owner.buy.SelectedItem?.Category == BuildCategory.Rides ? row is 1 or 3 or 4 : row == 1;
 			if ( !gaugeRow )
 				return;
-			// [APPROX:UI-046] the type-9 value cells are drawn as a plain bar gauge; the original gauge art is not identified
-			var track = rect.Inflate( -rect.Height * 0.2f );
-			context.Batch.AddRectangle( track, new RgbaByte( 16, 24, 60, 200 ) );
-			if ( stat.Gauge is { } fraction )
-				context.Batch.AddRectangle( track with { Width = track.Width * fraction }, UiColors.Value );
+			// [DATA:video 1:50 buy window] the type-9 value cells are red-to-green gradient gauges (UiGauge; the gradient is the UI-046 approximation)
+			UiGauge.Draw( context.Batch, rect.Inflate( -rect.Height * 0.2f ), stat.Gauge );
 		}
 	}
 
@@ -406,6 +403,8 @@ public sealed partial class ParkHud
 				}
 				context.DrawFittedText( context.Fonts.Label, owner.ItemName( item ), Cell( 0 ), color, UiAlign.Left );
 				context.DrawFittedText( context.Fonts.Label, owner.PriceText( item ), Cell( 1 ), color, UiAlign.Right );
+				// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) is a tick box per row: a green tick when the park owns at least one of the item, an empty box otherwise
+				UiTickBox.Draw( context.Batch, Cell( 2 ), owner.NumberOwned( item ) > 0 );
 			}
 		}
 	}

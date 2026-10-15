@@ -53,8 +53,8 @@ pylon (the tangent routine `0x431660` drops the previous neighbour on `0x80000` 
 S0 → S1 and S1 → S2 are ordinary links of the collision pass.
 
 A station whose dummies lie below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09
-against 10, Escape Velocity 12.04 against 30) stands on pylons raised to h0, so S0 and S2 sit above the middle knot; the original's
-pose of that pylon was not traced for it (COAST-029). A station placed without its model (a headless test) takes the
+against 10) stands on pylons raised to h0, so S0 and S2 sit above the middle knot: the original's knot pass clamps the height
+parameter to [0, 1] and writes it back (`0x430ca0`) and stands the node at ground + h0 + t(h1 − h0) (`0x430ed0`). A station placed without its model (a headless test) takes the
 same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-station-frame]`).
 
 - **Pylons.** A click places a pylon at the tool's height (the last pylon's height; the

@@ -26,6 +26,10 @@ Economy rules read again in tp.exe and built:
 - **Litter and path block caches** (`0x4C8BA0`, `0x4C8AE0`) are read with the strike's and the thought's ages (ECON-020 narrowed).
 - **Breakdowns go through the ride scripts** (ECON-023 narrowed): `0x4E0B90` writes VAR_BREAKSTAT = 1, the ride's state 1 breaks it down and
   calls a mechanic, and the repair waits until the script clears VAR_BROKEN (`0x4DA830`).
+- **The bank's message 2 every month** (ADVISOR-020 retired): `0x4D0370` posts it at each month end more than five months in the red,
+  and the advisor answers each with advice 106; the bank's handler still loses the park once.
+- **Saves**: the analyser caches (net worth, litter and path blocks) and the last observed script state are saved as optional fields
+  outside the run hash, and an unanswered challenge offer whose message is gone is posted again (UI-025).
 
 The pinned run hash moves to `0x0F080CC6C6923088` (docs/DETERMINISM.md).
 

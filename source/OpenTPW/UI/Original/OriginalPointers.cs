@@ -6,7 +6,7 @@ namespace OpenTPW.UI.Original;
 /// </summary>
 // [BIN:TPW-EXE:0x489ca0 pointer init] the cursor init loads the .ani set and the .tga set (0x4899c0), hides the system pointer (ShowCursor 0) and starts with pointer 1 (busy)
 // [BIN:TPW-EXE:0x52f950 tool pointer] the tool mode (0x81ae2c) picks the pointer; then noplace (8) when 0x527950 is true and cash (20) when 0x816d5c is set override it
-// [APPROX:UI-100] OpenTPW never sets the flags 0x816d60 (link), 0x816d4c (end) and 0x816d5c (cash): cash is set when the active tool's cost (0x52fbc0) exceeds the bank balance in the purchase gate 0x5234d0 (0x523662) and at 0x5323c1, 0x53593f, 0x539fb6; end when the path validator 0x535670 returns code 0xb (0x535ae5, 0x535b3d) and at 0x53a1c6; link by 0x535670 at 0x535c72 and for code 8, a queue end (0x535d00); the crosshair's art (CCro.tga) is not in the game data, so OpenTPW keeps the system pointer there
+// [APPROX:UI-100] OpenTPW never sets the flags 0x816d60 (link) and 0x816d4c (end), and sets 0x816d5c (cash) for Buy Land's money refusal only: cash is set when the active tool's cost (0x52fbc0) exceeds the bank balance in the purchase gate 0x5234d0 (0x523662) and at 0x5323c1 (Buy Land), 0x53593f (the placement validator) and 0x539fb6; end when the path validator 0x535670 returns code 0xb (0x535ae5, 0x535b3d) and at 0x53a1c6; link by 0x535670 at 0x535c72 and for code 8, a queue end (0x535d00); the crosshair's art (CCro.tga) is not in the game data, so OpenTPW keeps the system pointer there
 public static class OriginalPointers
 {
 	public const int Count = 22;

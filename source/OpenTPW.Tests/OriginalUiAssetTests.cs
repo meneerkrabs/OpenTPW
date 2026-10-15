@@ -235,6 +235,8 @@ public class OriginalUiAssetTests
 		Assert.AreEqual( (400f, 600f), lobby.PositionOf( lobby.Islands[3] ) );
 		Assert.AreEqual( 70f, lobby.SpinRadius );
 		Assert.AreEqual( 20f, lobby.VerticalOffset );
+		Assert.AreEqual( 0.02f, lobby.SpinSpeed );
+		Assert.AreEqual( 100f, lobby.FieldOfView );
 		foreach ( var island in lobby.Islands )
 		{
 			foreach ( var model in new[] { island.IslandModel, island.GateModel } )

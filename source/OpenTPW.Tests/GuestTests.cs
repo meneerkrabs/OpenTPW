@@ -500,6 +500,33 @@ public class GuestTests
 	}
 
 	/// <summary>
+	/// The choice loop (tp.exe 0x004FCB10) walks the object list newest first (0x00519D80 pushes each new object at the head) and takes an equal
+	/// score only on an odd world turn, so of two attractions that tie the newest wins on an even turn and the oldest on an odd one (GUEST-002).
+	/// </summary>
+	[TestMethod]
+	public void ATieGoesToTheNewestAttractionOnAnEvenTurnAndTheOldestOnAnOddOne()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var older = CreateShop( 1, (5, 5) );
+		var newer = CreateShop( 2, (15, 5) );
+		simulation.Register( newer.Bridge );
+		simulation.Register( older.Bridge );
+		var guest = simulation.SpawnInPark( 10, 5 );
+		var score = simulation.ScoreAttraction( guest, older.Bridge );
+		Assert.AreEqual( score, simulation.ScoreAttraction( guest, newer.Bridge ), "the two tie" );
+		Assert.IsTrue( score >= AttractionScore.CandidateFloor, $"score {score}" );
+		var seen = new HashSet<long>();
+		while ( seen.Count < 2 )
+		{
+			var parity = simulation.ParkTurn & 1;
+			seen.Add( parity );
+			Assert.AreEqual( parity == 0 ? 2 : 1, simulation.PeekChoice( guest )?.AttractionId, $"turn {simulation.ParkTurn}" );
+			simulation.Tick( Tick );
+			(guest.CellX, guest.CellY) = (10, 5);
+		}
+	}
+
+	/// <summary>
 	/// The original's meter +0x1B8 (OpenTPW's <c>Energy</c>): 0 for a new guest (tp.exe 0x004FAEC0), and a completed use takes the type's
 	/// <c>UsageInfo.FatigueEffect</c> off it through the clamped adder (0x004FD970, 0x004FB4F0); walking, waiting and riding leave it alone.
 	/// </summary>

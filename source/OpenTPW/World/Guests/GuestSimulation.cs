@@ -1183,7 +1183,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0), but the queue count is OpenTPW's whole queue list where 0x4DDF50 stops after the first listed guest outside the queue states (0x502430: 11..14, or 8 with the saved state +0x224 in 11..14) and counts it; a back cell with no join cell is scored 0 here, and ChooseAttraction routes to the join cell where 0x4FCB10 routes to the back cell itself (0x4FA530); the candidates run oldest first where 0x4FCB10 walks the thing list newest first (0x519D80 pushes each new object at the head) — evidence needed: whether a listed guest can leave states 11..14, and whether a route to an unconnected back cell fails
+	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0), but the queue count is OpenTPW's whole queue list where 0x4DDF50 stops after the first listed guest outside the queue states (0x502430: 11..14, or 8 with the saved state +0x224 in 11..14) and counts it; a back cell with no join cell is scored 0 here, and ChooseAttraction routes to the join cell where 0x4FCB10 routes to the back cell itself (0x4FA530) — evidence needed: whether a listed guest can leave states 11..14, and whether a route to an unconnected back cell fails
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( attraction.JoinCell == null )
@@ -1212,7 +1212,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		IEnumerable<AttractionChoice.Candidate> Candidates()
 		{
-			foreach ( var attraction in attractions )
+			foreach ( var attraction in NewestFirst() )
 			{
 				var canJoin = attraction.JoinCell != null;
 				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
@@ -1222,6 +1222,17 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var id = AttractionChoice.Pick( Candidates(), ParkTurn );
 		return id == 0 ? null : FindAttraction( id );
 	}
+
+	/// <summary>The attractions in the order the original's choice loop meets them: newest first.</summary>
+	// [BIN:TPW-EXE:0x004FCB10 thing list order] the choice walks the object list from its head (game +0x1DA746) through each thing's next word +0xC; 0x00519D80, called only by the object constructor 0x004DB090, pushes each new object at the head, and the save 0x00516C80 and the load 0x005179C0 keep the head word, so the newest object comes first; attraction ids are allocated in placement order
+	private IEnumerable<IRideVisitorBridge> NewestFirst()
+	{
+		for ( var index = attractions.Count - 1; index >= 0; index-- )
+			yield return attractions[index];
+	}
+
+	/// <summary>The major decision's choice for <paramref name="guest"/> on the current park turn, without changing the guest (tests).</summary>
+	internal IRideVisitorBridge? PeekChoice( Guest guest ) => ChooseAttraction( guest );
 
 	private IRideVisitorBridge? FindAttraction( int id )
 	{

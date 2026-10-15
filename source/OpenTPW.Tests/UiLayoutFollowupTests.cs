@@ -34,6 +34,31 @@ public class UiLayoutFollowupTests
 	}
 
 	[TestMethod]
+	public void EveryObjectWindowRowLabelIsTheOriginalLabelRoutinesUiText()
+	{
+		// tp.exe 0x4ad890 (ride), 0x4afc10 (shop) and 0x4b1040 (sideshow) set the row labels top to bottom to UITEXT 0x11-0x17, 0x20-0x26 and 0x29-0x30
+		CollectionAssert.AreEqual( Enumerable.Range( 17, 7 ).ToArray(), ParkHud.RowLabels( (int)BuildCategory.Rides ).Select( label => (int)label ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 32, 7 ).ToArray(), ParkHud.RowLabels( (int)BuildCategory.Shops ).Select( label => (int)label ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 41, 8 ).ToArray(), ParkHud.RowLabels( (int)BuildCategory.Sideshows ).Select( label => (int)label ).ToArray() );
+		foreach ( var category in new[] { (int)BuildCategory.Rides, (int)BuildCategory.Shops, (int)BuildCategory.Sideshows } )
+			Assert.AreEqual( ParkHud.RowKinds( category ).Count, ParkHud.RowLabels( category ).Count );
+		// the shop window's quality and price labels (0xc07e, 0xc083) are UITEXT 0x27 and 0x28 (0x4b07f3, 0x4b0903)
+		Assert.AreEqual( 38, (int)UIStrings.LocalHappiness );
+		Assert.AreEqual( 39, (int)UIStrings.QualityOfGoods );
+		Assert.AreEqual( 40, (int)UIStrings.SalePrice );
+	}
+
+	[TestMethod]
+	public void TheSideshowWinnersGaugeIsTheWinnersPercentageOfTheCustomers()
+	{
+		Assert.AreEqual( 0f, ParkHud.WinnersGauge( 5, 0 ), "no customers: 0 (0x4e1f20 returns before dividing)" );
+		Assert.AreEqual( 0.33f, ParkHud.WinnersGauge( 1, 3 ), 1e-6f, "trunc(100 / 3) = 33" );
+		Assert.AreEqual( 1f, ParkHud.WinnersGauge( 4, 4 ) );
+		Assert.AreEqual( ParkHud.ObjectRowKind.Winners, ParkHud.RowKinds( (int)BuildCategory.Sideshows )[1] );
+		Assert.IsTrue( ParkHud.IsGaugeRow( ParkHud.ObjectRowKind.Winners ) );
+	}
+
+	[TestMethod]
 	public void TheRightClickLeavesAScreenOnlyWithTheOption()
 	{
 		var previous = GameOptions.Current.RmbCancel;

@@ -113,6 +113,10 @@ internal sealed class CoasterAssets : IDisposable
 				var loft = FindModel( name + "L" )?.Clip;
 				var rotate = (FindModel( name + "R" ) ?? FindModel( name + "R1" ))?.Clip;
 				rig = new CoasterPylonRig( geometry, loft, rotate, Definition.Pylon( loop ) );
+				// [BIN:TPW-EXE:0x430590 pylon capabilities] the model's animations by type: loft L, rotate R or R1, incline I, bank B and the second rotate clip R2
+				rig.Capabilities = (loft != null ? CoasterPylonCapabilities.Loft : 0) | (rotate != null ? CoasterPylonCapabilities.Rotate : 0)
+					| (FindModel( name + "I" )?.Clip != null ? CoasterPylonCapabilities.Incline : 0) | (FindModel( name + "B" )?.Clip != null ? CoasterPylonCapabilities.Bank : 0)
+					| (FindModel( name + "R2" )?.Clip != null ? CoasterPylonCapabilities.LoopTilt : 0);
 			}
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )

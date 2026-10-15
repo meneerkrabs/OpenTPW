@@ -104,8 +104,8 @@ public sealed class CoasterBuilder
 	// [BIN:STP-PPC:0x10037888 place charge] placing a pylon debits trunc(cost(node, unit charged)) at once (0x101C3FBC truncates); the balance is read (0x100CBF48 at 0x100378A0) and ignored, the debit 0x100CBFDC (0x100378C0) is unconditional; all coaster charges are skipped while money is off
 	public CoasterPlaceResult Place( int x, int y )
 	{
-		if ( Track.IsChainStart( x, y ) && !Track.IsClosed && !Track.IsComplete )
-			return Close() ? CoasterPlaceResult.Ok : CoasterPlaceResult.NotEditable;
+		if ( Track.IsChainStart( x, y ) && !Track.IsClosed && (!Track.IsComplete || Track.IsCut) )
+			return CloseCircuit();
 		var result = Check( x, y );
 		if ( result is CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon )
 			return result;
@@ -117,6 +117,27 @@ public sealed class CoasterBuilder
 			LoopMode = false;
 		Track.Revalidate( Site, Ride.World, Ride );
 		return result;
+	}
+
+	/// <summary>
+	/// A click on the chain start: closes the circuit; a circuit the demolish button cut open joins its new nodes to the rest and is complete again (state 2, the trains come back) when the
+	/// closing link and every node pass the validator.
+	/// </summary>
+	// [BIN:TPW-EXE:0x442c70 close circuit] the click on the open chain start joins the chain and sets controller state 2 (0x435730) without a validator test
+	// [EXT:coaster-completion-click] OpenTPW joins a cut circuit only when the closing link passes the validator and no node is marked invalid, as it completes a fresh circuit only then (see Complete): the original's close click tests nothing
+	public CoasterPlaceResult CloseCircuit()
+	{
+		if ( !Track.IsCut )
+			return Close() ? CoasterPlaceResult.Ok : CoasterPlaceResult.NotEditable;
+		var closure = Track.CheckClosure();
+		if ( closure != CoasterPlaceResult.Ok )
+			return closure;
+		if ( Track.HasInvalidNodes )
+			return CoasterPlaceResult.InvalidNodes;
+		Track.Close();
+		Track.Revalidate( Site, Ride.World, Ride );
+		Ride.Rebuild();
+		return CoasterPlaceResult.Ok;
 	}
 
 	/// <summary>Closes the circuit (no node is added).</summary>
@@ -194,7 +215,7 @@ public sealed class CoasterBuilder
 	public long BuildCost => Track.BuildCost;
 
 	/// <summary>Whether completion would succeed now: the circuit is closed and no node is marked invalid.</summary>
-	public CoasterPlaceResult CheckComplete() => Track.IsComplete ? CoasterPlaceResult.NotEditable
+	public CoasterPlaceResult CheckComplete() => Track.IsComplete && !Track.IsCut ? CoasterPlaceResult.NotEditable
 		: !Track.IsClosed ? CoasterPlaceResult.NotClosed
 		: Track.HasInvalidNodes ? CoasterPlaceResult.InvalidNodes : CoasterPlaceResult.Ok;
 
@@ -223,6 +244,113 @@ public sealed class CoasterBuilder
 		Track.Reopen();
 		Track.Revalidate( Site, Ride.World, Ride );
 		return true;
+	}
+
+	/// <summary>
+	/// Cuts the nodes between two pylon nodes out of a finished circuit (the demolish button, <c>0x446740</c>): the controller goes to state 1 (the trains are removed, their riders leave), the ends of the cut
+	/// are marked and building continues in the gap; a cut that reaches the end of the chain leaves an incomplete track again. Nothing is refunded.
+	/// </summary>
+	// [BIN:TPW-EXE:0x446740 cut range] the cut removes the nodes between the two clicked ends without a refund (0x444cb0 calls no money routine), sets controller state 1 through 0x435730 and flag 2 (a cut that reaches the last node clears flags 1 and 2), and reselects the build button
+	// [APPROX:COAST-030] the cut is refused while riders are on board (OpenTPW's edit guard, see Move); the original has no such test — the tool's state 2 has already let them off
+	public CoasterTrack.CutResult Cut( int first, int second )
+	{
+		if ( !Track.IsRunnable || Ride.RidersOnBoard != 0 )
+			return CoasterTrack.CutResult.Refused;
+		var result = Track.Cut( first, second );
+		if ( result == CoasterTrack.CutResult.Refused )
+			return result;
+		Ride.EnterState( CoasterControllerState.Incomplete );
+		Track.Revalidate( Site, Ride.World, Ride );
+		Ride.RaiseTrackChanged();
+		return result;
+	}
+
+	/// <summary>Swaps pylon <paramref name="index"/> with the one above or below it in its cell's stack (<c>0x4423f0</c>, <c>0x4425c0</c>); no money moves.</summary>
+	public bool SwapStack( int index, bool up )
+	{
+		if ( Track.IsComplete && Ride.RidersOnBoard != 0 )
+			return false;
+		if ( !Track.SwapStack( index, up ) )
+			return false;
+		Track.Revalidate( Site, Ride.World, Ride );
+		if ( Track.IsRunnable )
+			Ride.Rebuild();
+		else
+			Ride.RaiseTrackChanged();
+		return true;
+	}
+
+	// ---- Hand edits of the coaster tool panel (COAST-028) --------------------------------------------
+
+	/// <summary>A node being edited by a drag: what it was and what it cost, so the release can settle the money.</summary>
+	/// <param name="Refund">The truncated cost of the node (and, on a complete track, of the node after it) before the edit.</param>
+	public sealed record NodeEdit( int Index, CoasterNode Start, long Refund, int? Next );
+
+	/// <summary>Whether pylon <paramref name="index"/> may be edited by hand: a pylon the player placed, and no riders on board of a finished track.</summary>
+	public bool CanEdit( int index ) => index >= CoasterTrack.StationNodeCount && index < Track.Nodes.Count && Track.Nodes[index].IsPlayerPylon && !(Track.IsComplete && !Track.IsCut && Ride.RidersOnBoard != 0);
+
+	/// <summary>Picks a pylon up for an edit (the press of a drag): its cost is noted so the release settles it.</summary>
+	public NodeEdit? BeginEdit( int index, bool includeNext = false )
+	{
+		if ( !CanEdit( index ) )
+			return null;
+		var next = includeNext && Track.IsComplete && !Track.IsCut && index + 1 < Track.Nodes.Count ? index + 1 : (int?)null;
+		var refund = CoasterTrack.Truncate( Track.NodeCost( index, chargeUnit: false ) ) + (next is int n ? CoasterTrack.Truncate( Track.NodeCost( n, chargeUnit: false ) ) : 0);
+		return new NodeEdit( index, Track.Nodes[index], refund, next );
+	}
+
+	/// <summary>Changes the picked node while the drag runs (no money moves yet): the track is revalidated and a finished track fitted again.</summary>
+	public void ApplyEdit( NodeEdit edit, Func<CoasterNode, CoasterNode> change )
+	{
+		Track.Replace( edit.Index, change( Track.Nodes[edit.Index] ) );
+		Track.Revalidate( Site, Ride.World, Ride );
+		if ( Track.IsRunnable )
+			Ride.Rebuild();
+		else
+			Ride.RaiseTrackChanged();
+	}
+
+	/// <summary>Releases the drag: refunds the truncated cost the node had when it was picked and charges the rounded-up cost it has now.</summary>
+	// [BIN:TPW-EXE:0x441a00 drag release] the release of the height drag credits ftol(the cost noted at the press) (0x4d0190) and debits the rounded-up new cost (0x4d01f0); the move release (0x445a70) does the same for the node and, on a complete track, the node after it
+	public void EndEdit( NodeEdit edit )
+	{
+		var charge = CoasterTrack.RoundUp( Track.NodeCost( edit.Index, chargeUnit: false ) ) + (edit.Next is int n ? CoasterTrack.RoundUp( Track.NodeCost( n, chargeUnit: false ) ) : 0);
+		Refund( edit.Refund );
+		Spend( charge, force: true );
+	}
+
+	/// <summary>Sets the loft parameter of the picked node within the drag's range (<c>0x441a00</c>).</summary>
+	public void EditLoft( NodeEdit edit, float t )
+	{
+		var pylon = Track.Definition.Pylon( edit.Start.LoopPylon );
+		var height = CoasterTrack.PylonHeight( pylon, t );
+		ApplyEdit( edit, node => node with { T = t, Height = height } );
+	}
+
+	/// <summary>Sets the yaw of the picked node (<c>0x441e80</c>): the node takes the manual yaw flag.</summary>
+	public void EditYaw( NodeEdit edit, float yaw ) => ApplyEdit( edit, node => { var copy = node with { Yaw = yaw }; copy.Flags |= CoasterNodeFlags.ManualYaw; return copy; } );
+
+	/// <summary>Sets the bank of the picked node (<c>0x442010</c>): the node takes the no-auto-bank flag.</summary>
+	public void EditBank( NodeEdit edit, float bank ) => ApplyEdit( edit, node => { var copy = node with { Bank = bank }; copy.Flags |= CoasterNodeFlags.NoAutoBank; return copy; } );
+
+	/// <summary>Sets the incline of the picked node (<c>0x442010</c>): the node takes the manual incline flag.</summary>
+	public void EditIncline( NodeEdit edit, float incline ) => ApplyEdit( edit, node => { var copy = node with { Incline = incline }; copy.Flags |= CoasterNodeFlags.ManualIncline; return copy; } );
+
+	/// <summary>Sets the loop rotation of the picked loop pylon (<c>0x441cd0</c>).</summary>
+	public void EditLoopRotate( NodeEdit edit, float rotate ) => ApplyEdit( edit, node => node with { LoopRotate = rotate } );
+
+	/// <summary>Moves the picked node to a cell while the drag runs (<c>0x442f40</c>, no money yet); returns the validator's verdict for it.</summary>
+	public CoasterPlaceResult EditMove( NodeEdit edit, int x, int y )
+	{
+		var node = Track.Nodes[edit.Index];
+		if ( (node.X, node.Y) == (x, y) )
+			return CoasterPlaceResult.Ok;
+		if ( x < 0 || y < 0 || x >= Site.Width || y >= Site.Height )
+			return CoasterPlaceResult.OutsideMap;
+		var result = Track.CheckPlacement( Site, Ride.World, Ride, x, y, node.LoopPylon, moving: edit.Index );
+		var stack = Ride.World.PylonsAt( x, y ).Count( pylon => !ReferenceEquals( pylon.Node, node ) );
+		ApplyEdit( edit, current => current with { X = x, Y = y, StackIndex = stack } );
+		return result;
 	}
 
 	/// <summary>Removes the track and every pylon (the station stays) without a refund; riders on board are let off through <c>COAST 3</c>.</summary>

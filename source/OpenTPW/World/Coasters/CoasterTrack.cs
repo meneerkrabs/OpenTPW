@@ -44,7 +44,13 @@ public enum CoasterPlaceResult
 public enum CoasterNodeFlags : uint
 {
 	None = 0,
-	/// <summary>Auto-banking skips the node (<c>0x3360c</c> banks only when 0x4 is clear); the PC's build path never sets it (the node constructor only restores it from a save, 0x437ecc).</summary>
+	/// <summary>The node's yaw (node <c>+0xE0</c>) was set by hand with the rotate button: the pylon and the knot direction turn to it instead of following the track (node flag 1, set by <c>0x441e80</c>).</summary>
+	// [BIN:TPW-EXE:0x441e80 rotate drag] the rotate drag sets node flag 1 and writes the yaw to +0xE0 within the automatic yaw (+0xD4) ± the pylon's fMaxRotnAngleDeviance (+0x94)
+	ManualYaw = 0x1,
+	/// <summary>The node's incline (node <c>+0xDC</c>) was set by hand with the tilt button (node flag 2, set by <c>0x442010</c>).</summary>
+	ManualIncline = 0x2,
+	/// <summary>Auto-banking skips the node (<c>0x3360c</c> banks only when 0x4 is clear): the tilt button set the bank (node <c>+0xD8</c>) by hand (node flag 4, set by <c>0x442010</c>).</summary>
+	// [BIN:TPW-EXE:0x442010 tilt drag] the tilt drag writes the bank to +0xD8 (range ±π, pylon flag 0x100) and sets node flag 4, the incline to +0xDC (pylon flag 0x80) and sets node flag 2
 	NoAutoBank = 0x4,
 	/// <summary>Set on both pylons of a loop pair (<c>0x434153..0x434162</c>: the first gets 0xe0, the second 0x60).</summary>
 	LoopMark = 0x20,
@@ -67,7 +73,14 @@ public enum CoasterNodeFlags : uint
 	/// <summary>The node has no next neighbour: its tangent ignores the node after it (creation parameter 0x80; S2, which leaves straight along the platform).</summary>
 	NoNextLink = 0x40000,
 	/// <summary>The node's next neighbour for its tangent and its closing pair is the second node of the chain (creation parameter 0x100; the station end node).</summary>
-	EndNextIsSecond = 0x100000
+	EndNextIsSecond = 0x100000,
+	/// <summary>The node before the cut of a reopened circuit: its tangent ignores the next node (<c>0x446740</c> marks it 0x50000 = 0x10000 | no next link).</summary>
+	CutEnd = 0x10000,
+	/// <summary>The node after the cut of a reopened circuit: its tangent ignores the previous node (<c>0x446740</c> marks it 0xa0000 = 0x20000 | no previous link).</summary>
+	CutStart = 0x20000,
+	/// <summary>The build cursor's spare node, linked after the last node while the cursor hovers a cell (node flag 0x8000; the original adds 0x4000 when the cell fails the validator).</summary>
+	// [BIN:TPW-EXE:0x435d50 cursor node] the spare node (controller +0x6c) gets 0x8000 as the cursor and 0x4000 when the validator 0x434740 refuses the hovered cell, otherwise 0x4000 is cleared
+	Cursor = 0x8000
 }
 
 /// <summary>
@@ -84,6 +97,10 @@ public sealed record CoasterNode( int X, int Y, float Height, float T, bool Loop
 	/// <summary>The loop-rotate parameter (node <c>+0xf8</c>): 0 for the first pylon of a loop pair, 0.5 for the second (<c>0x4341ec</c>); a pylon outside a pair takes the old default 0.5.</summary>
 	public float LoopRotate { get; set; } = DefaultLoopRotateValue;
 	internal const float DefaultLoopRotateValue = 0.5f;
+	/// <summary>The yaw the rotate button set (node <c>+0xE0</c>, radians), in force while <see cref="CoasterNodeFlags.ManualYaw"/> is set.</summary>
+	public float Yaw { get; set; }
+	/// <summary>The incline the tilt button set (node <c>+0xDC</c>, radians in [−π, π]), in force while <see cref="CoasterNodeFlags.ManualIncline"/> is set.</summary>
+	public float Incline { get; set; }
 	/// <summary>A pylon-less node (descriptor flag bit 0): the middle station node and the station end node.</summary>
 	public bool IsPylonless => IsStationEnd || ExactPosition != null;
 	/// <summary>A node the player placed: not one of the station's nodes (descriptor flag 2) and not the station end node. Only these move, change height and are deleted.</summary>
@@ -167,8 +184,20 @@ public sealed class CoasterTrack
 	public bool IsClosed { get; private set; }
 	/// <summary>Controller <c>+60</c> bit 0: completed (station end nodes appended).</summary>
 	public bool IsComplete { get; private set; }
-	/// <summary>A coaster runs only when complete and closed (<c>0x45da4</c>).</summary>
-	public bool IsRunnable => IsComplete && IsClosed;
+	/// <summary>
+	/// The index of the node before the cut of a circuit the demolish button opened in the middle (controller <c>+60</c> bit 1, the open-circuit node <c>+0x60</c>); the node after it,
+	/// <c>+0x64</c>, is the chain start the circuit closes on. Null while the circuit is whole or was reopened at its end (the chain then starts at S0).
+	/// </summary>
+	// [BIN:TPW-EXE:0x446740 cut range] the cut marks the node before the range 0x50000 and the one after it 0xa0000, removes the nodes between (0x444cb0 keeps the open-circuit pair +0x60 / +0x64 on the node before and after the last removed one) and sets controller flag 2; a cut that reaches the last node clears flags 1 and 2 instead (the track is incomplete again, 0x435530)
+	public int? CutAfter { get; private set; }
+	/// <summary>Whether the circuit is cut open in the middle (the build tool inserts new pylons into the gap).</summary>
+	public bool IsCut => CutAfter != null;
+	/// <summary>A coaster runs only when complete and closed (<c>0x45da4</c>) and not cut open.</summary>
+	public bool IsRunnable => IsComplete && IsClosed && CutAfter == null;
+	/// <summary>The index of the node new pylons follow: the last node, or the one before the cut.</summary>
+	public int LastIndex => CutAfter ?? nodes.Count - 1;
+	/// <summary>The list position a new pylon takes: after <see cref="LastIndex"/>.</summary>
+	public int InsertIndex => CutAfter is int cut ? cut + 1 : nodes.Count;
 	public bool HasInvalidNodes => nodes.Any( node => (node.Flags & CoasterNodeFlags.Invalid) != 0 );
 	/// <summary>Incremented by every edit.</summary>
 	public int Version { get; private set; }
@@ -289,7 +318,7 @@ public sealed class CoasterTrack
 	// [BIN:STP-PPC:0x10094474 slope and deviance] slope (fMaxHeightDiffPerGSquareDist, pylon +112), loop rotation deviance (+152) and loop height difference (+172) are loaded but never read by the coaster code; fMaxRotnAngleDeviance (+148) only bounds the rotate slider 0x10046508
 	public CoasterPlaceResult CheckPlacement( CoasterSite site, CoasterWorld? world, CoasterRide? owner, int x, int y, bool loopMode, int? moving = null )
 	{
-		if ( DepartCell == null || nodes.Count < StationNodeCount || ((IsComplete || IsClosed) && moving == null) )
+		if ( DepartCell == null || nodes.Count < StationNodeCount || (((IsComplete && !IsCut) || IsClosed) && moving == null) )
 			return CoasterPlaceResult.NotEditable;
 		if ( moving is int index && (index < StationNodeCount || index >= nodes.Count || !nodes[index].IsPlayerPylon) )
 			return CoasterPlaceResult.NotEditable;
@@ -300,7 +329,7 @@ public sealed class CoasterTrack
 			return CoasterPlaceResult.OutsideMap;
 		if ( moving == null && site.IsBlocked( x, y ) )
 			return CoasterPlaceResult.Blocked;
-		var position = moving ?? nodes.Count;
+		var position = moving ?? InsertIndex;
 		var previous = nodes[position - 1];
 		var pylon = ControlAfter( previous, loopMode );
 		var link = CheckLink( pylon, (x, y), (previous.X, previous.Y), Before( position - 1 ), entrance: previous.IsStation );
@@ -373,13 +402,16 @@ public sealed class CoasterTrack
 			if ( !node.IsPlayerPylon )
 				continue;
 			var previous = nodes[index - 1];
+			// The pair across the cut is no link: the node after the cut is the chain start the circuit closes on, and the closing check validates it.
+			var acrossCut = CutAfter is int cut && index == cut + 1;
 			var failed = site.IsBlocked( node.X, node.Y )
-				|| CheckLink( ControlAfter( previous, node.LoopPylon ), (node.X, node.Y), (previous.X, previous.Y), Before( index - 1 ), previous.IsStation ) != CoasterPlaceResult.Ok
+				|| (!acrossCut && CheckLink( ControlAfter( previous, node.LoopPylon ), (node.X, node.Y), (previous.X, previous.Y), Before( index - 1 ), previous.IsStation ) != CoasterPlaceResult.Ok)
 				|| CheckStack( world, owner, node.X, node.Y, node.LoopPylon, index ) != CoasterPlaceResult.Ok;
 			if ( failed )
 			{
 				node.Flags |= CoasterNodeFlags.Invalid;
-				previous.Flags |= CoasterNodeFlags.Invalid;
+				if ( !acrossCut )
+					previous.Flags |= CoasterNodeFlags.Invalid;
 			}
 		}
 		if ( IsClosed && CheckClosure() != CoasterPlaceResult.Ok && LastPylonIndex is int last )
@@ -391,7 +423,7 @@ public sealed class CoasterTrack
 	{
 		get
 		{
-			for ( var index = nodes.Count - 1; index >= StationNodeCount; index-- )
+			for ( var index = LastIndex; index >= StationNodeCount; index-- )
 			{
 				if ( nodes[index].IsPlayerPylon )
 					return index;
@@ -432,7 +464,14 @@ public sealed class CoasterTrack
 		if ( loop && pylon.IsLoop )
 			flags |= CoasterNodeFlags.LoopMark | (second ? CoasterNodeFlags.None : CoasterNodeFlags.LoopFirst);
 		var node = new CoasterNode( x, y, height, t, loop, stack, false ) { Flags = flags, LoopRotate = loop && pylon.IsLoop && !second ? 0f : DefaultLoopRotate };
-		nodes.Add( node );
+		// [BIN:TPW-EXE:0x436190 link cursor node] a new node is linked after the last node (the build reference, +0x60 while the circuit is cut open) and before the chain start the cut left (+0x64)
+		var at = InsertIndex;
+		nodes.Insert( at, node );
+		if ( CutAfter != null )
+		{
+			CutAfter = at;
+			SyncCutMarkers();
+		}
 		Version++;
 		return node;
 	}
@@ -443,9 +482,58 @@ public sealed class CoasterTrack
 		Version++;
 	}
 
+	/// <summary>The loft parameter range of the height drag (<c>0x441a00</c>): from the pylon's raised minimum height to the maximum height left over what the cell's stack above the ground already uses.</summary>
+	// [BIN:TPW-EXE:0x441a00 height range] low = max(0, (fMinHeight − h0)/(h1 − h0)) (0x434650 with pylon +0x68, h0 +0xbc and h1 +0xc0); high = t + (fMaxHeight (+0x6c) − the height of the stack's top node (0x433280: the sum over the nodes below of h0 + t(h1 − h0) + stack offset, then its own h0 + t(h1 − h0))) / (h1 − h0) (0x434680)
+	public (float Low, float High) LoftRange( CoasterSite site, int index )
+	{
+		var node = nodes[index];
+		var pylon = Definition.Pylon( node.LoopPylon );
+		var span = pylon.MeshHeightHigh - pylon.MeshHeightLow;
+		if ( span == 0 )
+			return (node.T, node.T);
+		var low = MathF.Max( 0f, (pylon.MinHeight - pylon.MeshHeightLow) / span );
+		var top = nodes.Where( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y ).MaxBy( other => other.StackIndex ) ?? node;
+		var topHeight = NodePosition( site, top ).Y - Definition.TrackHeightAdjust - site.GroundHeight( node.X, node.Y );
+		return (low, node.T + (pylon.MaxHeight - topHeight) / span);
+	}
+
+	/// <summary>
+	/// Swaps a node with the one above or below it in its cell's stack (<c>0x4423f0</c>, <c>0x4425c0</c> → <c>0x4424e0</c>): the two nodes exchange their stack index and loft parameter, so the
+	/// piece of track that was higher is now lower. Returns false when the node is a station node, has no neighbour that way, or is pylon-less.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4424e0 swap stack nodes] the stack indices, the descriptor's node array entries, the model's stack base height (+0x44) and the loft parameters (+0xE8) of the two nodes are exchanged; the chain order is untouched; the track is rebuilt (0x4346c0) and the stack's pylon models posed again (0x432d50, 0x432df0)
+	public bool SwapStack( int index, bool up )
+	{
+		if ( index < StationNodeCount || index >= nodes.Count || !nodes[index].IsPlayerPylon )
+			return false;
+		var node = nodes[index];
+		var wanted = node.StackIndex + (up ? 1 : -1);
+		var otherIndex = nodes.FindIndex( other => other.IsPlayerPylon && other.X == node.X && other.Y == node.Y && other.StackIndex == wanted );
+		if ( otherIndex < 0 )
+			return false;
+		var other = nodes[otherIndex];
+		var nodeHeight = PylonHeight( Definition.Pylon( node.LoopPylon ), other.T );
+		var otherHeight = PylonHeight( Definition.Pylon( other.LoopPylon ), node.T );
+		nodes[index] = node with { StackIndex = other.StackIndex, T = other.T, Height = nodeHeight };
+		nodes[otherIndex] = other with { StackIndex = node.StackIndex, T = node.T, Height = otherHeight };
+		Version++;
+		return true;
+	}
+
 	/// <summary>Deletes the last pylon of an incomplete track; a closed circuit opens again (the cut ends are marked open).</summary>
 	internal bool RemoveLast()
 	{
+		if ( CutAfter is int cut )
+		{
+			// [BIN:TPW-EXE:0x444f30 delete last] a cut circuit deletes the node before the cut (+0x60) and moves the open-circuit reference back; the station nodes (descriptor flag 2) stay
+			if ( cut < StationNodeCount || !nodes[cut].IsPlayerPylon )
+				return false;
+			nodes.RemoveAt( cut );
+			CutAfter = cut - 1;
+			SyncCutMarkers();
+			Version++;
+			return true;
+		}
 		if ( IsComplete || nodes.Count <= StationNodeCount )
 			return false;
 		IsClosed = false;
@@ -460,6 +548,8 @@ public sealed class CoasterTrack
 		if ( nodes.Count > StationNodeCount )
 			nodes.RemoveRange( StationNodeCount, nodes.Count - StationNodeCount );
 		IsComplete = IsClosed = false;
+		CutAfter = null;
+		SyncCutMarkers();
 		Version++;
 	}
 
@@ -467,10 +557,21 @@ public sealed class CoasterTrack
 	// [APPROX:COAST-030] OpenTPW's closure check: the closing link to the station's first node S0 and the arrival turn (entrance window at S0, toward S1) are validated and Revalidate marks the last pylon invalid when they fail; the original validates the open start of a reopened circuit through the validator's re-validation (0x434d6b, 0x434e5a) and a fresh circuit is closed by completion
 	public CoasterPlaceResult CheckClosure()
 	{
-		if ( nodes.Count < StationNodeCount || LastPylonIndex is not int lastIndex )
+		if ( nodes.Count < StationNodeCount )
 			return CoasterPlaceResult.NotEditable;
-		var head = (nodes[0].X, nodes[0].Y);
-		var second = (nodes[1].X, nodes[1].Y);
+		int lastIndex;
+		if ( CutAfter is int cut )
+			lastIndex = cut;
+		else if ( LastPylonIndex is int lastPylon )
+			lastIndex = lastPylon;
+		else
+			return CoasterPlaceResult.NotEditable;
+		// the chain start the circuit closes on: S0, or the node after the cut
+		var startIndex = CutAfter is int ? CutAfter.Value + 1 : 0;
+		if ( startIndex + 1 >= nodes.Count )
+			return CoasterPlaceResult.NotEditable;
+		var head = (nodes[startIndex].X, nodes[startIndex].Y);
+		var second = (nodes[startIndex + 1].X, nodes[startIndex + 1].Y);
 		var last = nodes[lastIndex];
 		var pylon = ControlAfter( last, loopMode: false );
 		var link = CheckLink( pylon, head, (last.X, last.Y), (nodes[lastIndex - 1].X, nodes[lastIndex - 1].Y), entrance: false );
@@ -479,19 +580,31 @@ public sealed class CoasterTrack
 		var dx = head.X - last.X;
 		var dy = head.Y - last.Y;
 		var angle = MathF.Abs( TurnAngle( second, head, (last.X, last.Y) ) );
-		var (low, high) = AngleWindow( pylon, MathF.Sqrt( dx * dx + dy * dy ), entrance: true );
+		// the arrival turn into the platform uses the entrance window; into any other node the ordinary one
+		var (low, high) = AngleWindow( pylon, MathF.Sqrt( dx * dx + dy * dy ), entrance: startIndex == 0 );
 		return angle < low ? CoasterPlaceResult.TurnTooSharp : angle > high ? CoasterPlaceResult.TurnTooWide : CoasterPlaceResult.Ok;
 	}
 
 	/// <summary>Whether a click on (x, y) is on the chain's open start: the cell of the head S0 (COAST-030), or a cell of the station itself where the track begins and ends.</summary>
 	// [BIN:TPW-EXE:0x435d50 closing target] the cell that holds the head node (S0) of a fresh track is the closing target (the closing flag, and the open-circuit close test of 0x435020)
 	// [EXT:coaster-station-end-click] a click on the station's '<' or '>' cell closes the circuit too, as it did when the station's ends were the track's ends; the original's own completion click takes any ride cell (types 4, 9, 10), see CoasterBuilder.Complete
-	public bool IsChainStart( int x, int y ) => (x, y) == DepartCell || (x, y) == ReturnCell || (nodes.Count > 0 && (x, y) == (nodes[0].X, nodes[0].Y));
+	public bool IsChainStart( int x, int y ) => CutAfter is int cut
+		? cut + 1 < nodes.Count && (x, y) == (nodes[cut + 1].X, nodes[cut + 1].Y)
+		: (x, y) == DepartCell || (x, y) == ReturnCell || (nodes.Count > 0 && (x, y) == (nodes[0].X, nodes[0].Y));
 
 	/// <summary>Closes the circuit (<c>0x470c4</c>): no node is added, the chain's ends are linked and "circuit open" clears.</summary>
 	// [BIN:STP-PPC:0x100470C4 close circuit] placing on the cell of the chain's open start node closes the circuit instead of adding a node: the end nodes become adjacent and controller +60 bit 1 clears
 	internal bool Close()
 	{
+		if ( CutAfter != null )
+		{
+			// [BIN:TPW-EXE:0x442c70 close circuit] closing a reopened circuit on its chain start joins the new nodes to the nodes after the cut and the track is complete again (state 2)
+			CutAfter = null;
+			SyncCutMarkers();
+			IsClosed = true;
+			Version++;
+			return true;
+		}
 		if ( IsClosed || IsComplete || PylonCount < 2 )
 			return false;
 		IsClosed = true;
@@ -531,7 +644,103 @@ public sealed class CoasterTrack
 	{
 		nodes.RemoveAll( node => node.IsStationEnd );
 		IsComplete = IsClosed = false;
+		CutAfter = null;
+		SyncCutMarkers();
 		Version++;
+	}
+
+	/// <summary>The cut markers follow the cut: only the node before it carries <see cref="CoasterNodeFlags.CutEnd"/> and only the node after it <see cref="CoasterNodeFlags.CutStart"/>.</summary>
+	private void SyncCutMarkers()
+	{
+		foreach ( var node in nodes )
+			node.Flags &= ~(CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart);
+		if ( CutAfter is int cut && cut >= 0 && cut + 1 < nodes.Count )
+		{
+			nodes[cut].Flags |= CoasterNodeFlags.CutEnd;
+			nodes[cut + 1].Flags |= CoasterNodeFlags.CutStart;
+		}
+	}
+
+	/// <summary>The outcome of cutting a range out of a finished circuit.</summary>
+	public enum CutResult
+	{
+		/// <summary>The range cannot be cut (the circuit is not finished, or an end is not a pylon node).</summary>
+		Refused,
+		/// <summary>The cut reached the end of the chain: the track is an incomplete one again and building continues after the node before the cut.</summary>
+		Reopened,
+		/// <summary>The nodes between the ends are gone and the circuit is cut open in the middle.</summary>
+		Cut
+	}
+
+	/// <summary>
+	/// Cuts the nodes between two clicked nodes out of a finished circuit (the demolish button, <c>0x446740</c>): the ends are ordered (the first node S0 stands for the last node, the station end),
+	/// a loop pair is never split, the nodes between them are removed and the circuit is cut open. A cut that reaches the end of the chain leaves an incomplete track again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x446740 cut range] ordinal 0 (S0) of either end is replaced by the last node (0x446787..0x4467b9); the ends are ordered; a range that is one loop pair (the first with 0x40|0x80 next to the second with 0x40) widens to the nodes around it; equal ends widen to the nodes around the node; a node after the lower end that is the second of a pair moves the lower end back; a node before the upper end that is the first of a pair moves the upper end on; nodes between are deleted from the upper end down (0x444cb0); the node before the cut gets 0x50000, the one after 0xa0000; a range that reaches the last node clears controller flags 1 and 2 (0x435530)
+	public CutResult Cut( int first, int second )
+	{
+		if ( !IsComplete || !IsClosed || IsCut || nodes.Count <= StationNodeCount + 1 )
+			return CutResult.Refused;
+		var last = nodes.Count - 1;
+		bool Valid( int index ) => index >= 0 && index <= last && !nodes[index].IsPylonless;
+		if ( !Valid( first ) || !Valid( second ) )
+			return CutResult.Refused;
+		var reachesEnd = false;
+		if ( first == 0 )
+		{
+			first = last;
+			reachesEnd = true;
+		}
+		else if ( second == 0 )
+		{
+			second = last;
+			reachesEnd = true;
+		}
+		var low = Math.Min( first, second );
+		var high = Math.Max( first, second );
+		bool IsLoopNode( int index ) => index >= 0 && index < nodes.Count && (nodes[index].Flags & CoasterNodeFlags.Loop) != 0;
+		bool IsLoopFirst( int index ) => IsLoopNode( index ) && (nodes[index].Flags & CoasterNodeFlags.LoopFirst) != 0;
+		if ( low + 1 == high && IsLoopFirst( low ) && IsLoopNode( high ) )
+		{
+			if ( low > 0 )
+				low--;
+			if ( high < last )
+				high++;
+		}
+		if ( low == high )
+		{
+			low--;
+			high++;
+		}
+		if ( low < 0 || high > last )
+			return CutResult.Refused;
+		if ( low + 1 != high )
+		{
+			if ( IsLoopNode( low + 1 ) && !IsLoopFirst( low + 1 ) && low > 0 )
+				low--;
+			if ( IsLoopFirst( high - 1 ) && high < last )
+				high++;
+		}
+		if ( high == last )
+			reachesEnd = true;
+		// the ends must carry a pylon: a pylon-less node (S1, the station end) cannot border a cut
+		if ( low < 0 || nodes[low].IsPylonless || nodes[high].IsPylonless && high != last )
+			return CutResult.Refused;
+		if ( reachesEnd )
+		{
+			nodes.RemoveRange( low + 1, nodes.Count - low - 1 );
+			IsComplete = IsClosed = false;
+			CutAfter = null;
+			SyncCutMarkers();
+			Version++;
+			return CutResult.Reopened;
+		}
+		nodes.RemoveRange( low + 1, high - low - 1 );
+		IsClosed = false;
+		CutAfter = low;
+		SyncCutMarkers();
+		Version++;
+		return CutResult.Cut;
 	}
 
 	/// <summary>
@@ -550,6 +759,7 @@ public sealed class CoasterTrack
 			return MigrateTwoNodeStation( saved );
 		DepartCell = saved.DepartCell;
 		ReturnCell = saved.ReturnCell;
+		CutAfter = null;
 		nodes.Clear();
 		foreach ( var savedNode in saved.Nodes )
 		{
@@ -559,12 +769,15 @@ public sealed class CoasterTrack
 				// A save from before the PC creation parameters carried 0x144 on the station end node as node flags (loop, no auto-bank, zero bank); the node is restored as a freshly completed one.
 				Flags = savedNode.IsStationEnd ? (CoasterNodeFlags)savedNode.Flags & (CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid) | StationEndFlags : (CoasterNodeFlags)savedNode.Flags,
 				Bank = savedNode.Bank,
-				LoopRotate = savedNode.LoopRotate ?? DefaultLoopRotate
+				LoopRotate = savedNode.LoopRotate ?? DefaultLoopRotate,
+				Yaw = savedNode.Yaw ?? 0,
+				Incline = savedNode.Incline ?? 0
 			};
 			nodes.Add( node );
 		}
 		IsClosed = saved.IsClosed;
 		IsComplete = saved.IsComplete;
+		CutAfter = saved.CutAfter;
 		Version = saved.Version;
 		return false;
 	}
@@ -576,6 +789,7 @@ public sealed class CoasterTrack
 		if ( nodes.Count < StationNodeCount || DepartCell == null )
 			throw new InvalidDataException( "A coaster track saved with the older station needs its station placed before it is restored." );
 		nodes.RemoveRange( StationNodeCount, nodes.Count - StationNodeCount );
+		CutAfter = null;
 		foreach ( var savedNode in saved.Nodes.Where( node => !node.IsStation && !node.IsStationEnd ) )
 		{
 			nodes.Add( new CoasterNode( savedNode.X, savedNode.Y, savedNode.Height, savedNode.T, savedNode.LoopPylon, savedNode.StackIndex, false )
@@ -667,7 +881,7 @@ public sealed class CoasterTrack
 		var (_, t) = ClampHeight( Definition.Pylon( loop ), requestedHeight );
 		var stack = nodes.Count( node => !node.IsPylonless && node.X == x && node.Y == y );
 		var candidate = new CoasterNode( x, y, 0, t, loop, stack, false );
-		return LinkCost( candidate, nodes[^1], StackBelow( candidate ) );
+		return LinkCost( candidate, nodes[LastIndex], StackBelow( candidate ) );
 	}
 
 	/// <summary>The build-cost display: the rounded-up cost of every pylon.</summary>
@@ -787,6 +1001,18 @@ public sealed class CoasterTrack
 	public IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site ) => BuildKnots( site, nodes, writeBanks: true );
 
 	/// <summary>
+	/// The yaw a node's pylon would take with no manual rotation (node <c>+0xD4</c>): the heading of its knot direction. The rotate drag keeps the manual yaw within
+	/// fMaxRotnAngleDeviance of it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x441e80 rotate range] the drag range is the node's automatic yaw (+0xD4) ± the pylon control's +0x94 (fMaxRotnAngleDeviance)
+	public float AutomaticYaw( CoasterSite site, int index )
+	{
+		var knots = BuildKnots( site, nodes, writeBanks: false, applyManual: false );
+		var direction = knots[index].Direction;
+		return MathF.Atan2( direction.X, direction.Z );
+	}
+
+	/// <summary>
 	/// The knots of <paramref name="chain"/>: the nodes of the finished track (ending in the station end node) or of a track under
 	/// construction (ending in the build cursor's node). The neighbours of a knot follow the node flags: S0 and the station end node have no
 	/// previous node, S2 no next one, and the station end node's next is S1. <paramref name="writeBanks"/> stores the auto-banks on the
@@ -795,12 +1021,13 @@ public sealed class CoasterTrack
 	// [BIN:STP-PPC:0x10031450 node tangents] an end node without a previous node takes T+ = b/SD along the next node, one without a next node T+ = −a/SD away from the previous node; the chord to the missing neighbour is 1.0 (0x10032990)
 	// [BIN:TPW-EXE:0x431677 node neighbours] the tangent routine drops the previous neighbour on node flag 0x80000 and the next on 0x40000, and on 0x100000 takes the head node's next node (S1): S0 leaves along S1 − S0, S2 along S2 − S1 whatever the first pylon, and the station end node along S1 − S0 as well
 	// [BIN:TPW-EXE:0x43eb70 track rebuild] the mesh rebuild walks the node list of an open chain exactly like a finished one: it pairs every node with its next node until there is none, so a track under construction is drawn as the curve through the placed nodes
-	internal IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site, IReadOnlyList<CoasterNode> chain, bool writeBanks )
+	internal IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site, IReadOnlyList<CoasterNode> chain, bool writeBanks, bool applyManual = true )
 	{
 		var count = chain.Count;
 		var positions = chain.Select( node => NodePosition( site, node ) ).ToArray();
-		int? Previous( int index ) => index > 0 && (chain[index].Flags & CoasterNodeFlags.NoPreviousLink) == 0 ? index - 1 : null;
-		int? Next( int index ) => (chain[index].Flags & CoasterNodeFlags.NoNextLink) != 0 ? null
+		// the cut of a reopened circuit breaks the chain: the node before it has no next neighbour, the one after it no previous one (0x446740 marks them 0x50000 and 0xa0000)
+		int? Previous( int index ) => index > 0 && (chain[index].Flags & (CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.CutStart)) == 0 ? index - 1 : null;
+		int? Next( int index ) => (chain[index].Flags & (CoasterNodeFlags.NoNextLink | CoasterNodeFlags.CutEnd)) != 0 ? null
 			: (chain[index].Flags & CoasterNodeFlags.EndNextIsSecond) != 0 ? (count > 1 ? 1 : null)
 			: index + 1 < count ? index + 1 : null;
 		var banks = new float[count];
@@ -810,6 +1037,12 @@ public sealed class CoasterTrack
 			var node = chain[index];
 			// [BIN:TPW-EXE:0x4310c8 auto-bank] a node banks unless it carries node flag 0x4 (or 0x100 forces bank 0) and only when it has a next node in the list (the test of the raw link, not the flag-masked neighbour); the PC build path never sets 0x4 and the station end node's 0x144 are creation parameters (0x434060)
 			// [APPROX:COAST-015] S0 has no previous node and is not banked (its angle needs both neighbours); S2, whose next link the tangent ignores but the bank pass does not, banks from S1 and the first pylon like any node; the speed estimate runs through the banked nodes only
+			// [BIN:TPW-EXE:0x442010 manual bank] a node the tilt button banked by hand carries flag 4: the auto-bank pass skips it and its +0xD8 keeps the hand-set value
+			if ( (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) == CoasterNodeFlags.NoAutoBank && !node.IsPylonless )
+			{
+				banks[index] = node.Bank;
+				continue;
+			}
 			if ( !Definition.AutoBanks || (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) != 0 || index == 0 || index == count - 1 )
 				continue;
 			var previous = positions[index - 1];
@@ -843,6 +1076,8 @@ public sealed class CoasterTrack
 			}
 			var direction = node.IsPylonless && (node.Flags & CoasterNodeFlags.Loop) != 0 ? new SVector3( 0, -1, 0 )
 				: tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ;
+			if ( applyManual && !node.IsPylonless )
+				direction = ApplyManualPose( node, direction );
 			var factor = 0f;
 			if ( node.LoopPylon )
 			{
@@ -858,6 +1093,24 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>
+	/// A pylon node's direction with its hand-set yaw and incline: the pylon animation turns the track tag with them. The yaw replaces the heading of the direction; the incline pitches it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x430590 pylon clips] a pylon's animations by type: 3 loft (pylon flag 0x20), 10 rotate (0x40), 2 incline (0x80), 9 bank (0x100), 10 second (0x200); the pylon pose feeds node +0xE0 (yaw), +0xDC (incline) and +0xD8 (bank) to them and the track tag's pose is the knot's direction
+	// [APPROX:COAST-028] the hand-set yaw replaces the heading of the knot direction and the incline pitches it by half its value (±π maps to ±90°); the pose routine that feeds the values to the rotate and incline clips and the tag positions the clips move are not traced, so the angle each clip applies is a guess — evidence needed: the clip durations and the tag's pose at the extremes of the drag
+	private static SVector3 ApplyManualPose( CoasterNode node, SVector3 direction )
+	{
+		if ( (node.Flags & (CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline)) == 0 )
+			return direction;
+		var heading = MathF.Sqrt( direction.X * direction.X + direction.Z * direction.Z );
+		var yaw = (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : MathF.Atan2( direction.X, direction.Z );
+		var pitch = MathF.Atan2( direction.Y, heading );
+		if ( (node.Flags & CoasterNodeFlags.ManualIncline) != 0 )
+			pitch = Math.Clamp( pitch + node.Incline * 0.5f, -1.5f, 1.5f );
+		var level = MathF.Cos( pitch );
+		return new SVector3( MathF.Sin( yaw ) * level, MathF.Sin( pitch ), MathF.Cos( yaw ) * level );
+	}
+
+	/// <summary>
 	/// The chain the editor draws while the track is being built: the placed nodes, plus either a ghost pylon at the build cursor (open
 	/// chain) or the station end node the closed circuit will end in (closed, not yet completed). Null while fewer than two nodes exist.
 	/// </summary>
@@ -865,7 +1118,7 @@ public sealed class CoasterTrack
 	// [APPROX:COAST-035] the ghost node takes the tool's current height and loop mode and is drawn like a placed one (no tint for an invalid cell); the original's ghost/invalid presentation (node flags 0x200000, 0x800000, 0x804000 and the invalid cross section uiInvalidCrossSection) is not decoded — evidence needed: the consumers of node flags 0x800000/0x804000 and a capture of an invalid pylon
 	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop )
 	{
-		if ( IsComplete || nodes.Count < StationNodeCount || DepartCell == null )
+		if ( (IsComplete && !IsCut) || nodes.Count < StationNodeCount || DepartCell == null )
 			return null;
 		var chain = new List<CoasterNode>( nodes );
 		if ( IsClosed )
@@ -878,8 +1131,19 @@ public sealed class CoasterTrack
 			var pylon = Definition.Pylon( loop );
 			var (clamped, t) = ClampHeight( pylon, height );
 			var stack = nodes.Count( node => !node.IsPylonless && node.X == cell.X && node.Y == cell.Y );
-			if ( nodes[^1].X != cell.X || nodes[^1].Y != cell.Y )
-				chain.Add( new CoasterNode( cell.X, cell.Y, clamped, t, loop, stack, false ) { Flags = loop ? CoasterNodeFlags.Loop : CoasterNodeFlags.None } );
+			var last = nodes[LastIndex];
+			if ( last.X != cell.X || last.Y != cell.Y )
+			{
+				var ghost = new CoasterNode( cell.X, cell.Y, clamped, t, loop, stack, false ) { Flags = (loop ? CoasterNodeFlags.Loop : CoasterNodeFlags.None) | CoasterNodeFlags.Cursor };
+				chain.Insert( InsertIndex, ghost );
+				if ( IsCut )
+				{
+					// the cursor node takes over the cut: the node before it ends one part of the chain and the node after it starts the next
+					chain[InsertIndex - 1] = chain[InsertIndex - 1] with { };
+					chain[InsertIndex - 1].Flags &= ~CoasterNodeFlags.CutEnd;
+					ghost.Flags |= CoasterNodeFlags.CutEnd;
+				}
+			}
 		}
 		return chain.Count < 2 ? null : (chain, false);
 	}
@@ -894,6 +1158,8 @@ public sealed class CoasterTrack
 		hash.Add( ReturnCell is { } backCell ? backCell.Y : -1 );
 		hash.Add( IsClosed );
 		hash.Add( IsComplete );
+		if ( CutAfter is int cutAfter )
+			hash.Add( cutAfter );
 		hash.Add( nodes.Count );
 		foreach ( var node in nodes )
 		{
@@ -907,6 +1173,11 @@ public sealed class CoasterTrack
 			hash.Add( (long)node.Flags );
 			hash.Add( node.Bank );
 			hash.Add( node.LoopRotate );
+			if ( (node.Flags & (CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline)) != 0 )
+			{
+				hash.Add( node.Yaw );
+				hash.Add( node.Incline );
+			}
 			hash.Add( node.ExactPosition is { } exact ? exact.X : float.NaN );
 			hash.Add( node.ExactPosition is { } exactY ? exactY.Y : float.NaN );
 			hash.Add( node.ExactPosition is { } exactZ ? exactZ.Z : float.NaN );

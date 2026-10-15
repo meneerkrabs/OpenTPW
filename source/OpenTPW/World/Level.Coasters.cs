@@ -13,6 +13,8 @@ public partial class Level
 	/// <summary>The builder the coaster tool drives, or null.</summary>
 	public CoasterBuilder? CoasterTool => CoasterToolStation is { } station ? GetCoasterBuilder( station ) : null;
 	public bool IsCoasterToolActive => CoasterToolStation != null;
+	/// <summary>The coaster tool's panel (the nine buttons and their sub-modes), or null when the tool is off.</summary>
+	public CoasterToolPanel? CoasterPanel { get; private set; }
 	/// <summary>Triangles the coaster renderer drew in the last frame.</summary>
 	public int CoasterTrianglesDrawn => coasterRenderer?.DrawnTriangles ?? 0;
 
@@ -98,6 +100,25 @@ public partial class Level
 		return null;
 	}
 
+	/// <summary>Whether a cell holds nothing but ground: no object, path or queue (the cells the placement area marks).</summary>
+	private bool IsCoasterCellFree( int x, int y ) => Objects.FindAt( x, y ) == null && Guests != null && Guests.Grid.Cells.RawTypeAt( x, y ) == 0;
+
+	/// <summary>
+	/// Screen position of a coaster-space point (original units: X, height, Z of the track), for picking the pylon piece under the pointer. False when the point is behind the camera.
+	/// </summary>
+	public bool TryProjectCoasterPoint( System.Numerics.Vector3 world, System.Numerics.Vector2 viewportSize, out System.Numerics.Vector2 screen )
+	{
+		var origin = Objects.Grid.Origin;
+		var scale = ObjectPlacement.ModelScale;
+		var point = new System.Numerics.Vector4( origin.X + world.X * scale, origin.Y + world.Z * scale, world.Y * scale, 1 );
+		var clip = System.Numerics.Vector4.Transform( point, Camera.ViewMatrix * Camera.ProjMatrix );
+		screen = default;
+		if ( clip.W <= 0 )
+			return false;
+		screen = new System.Numerics.Vector2( (clip.X / clip.W + 1) / 2 * viewportSize.X, (1 - clip.Y / clip.W) / 2 * viewportSize.Y );
+		return float.IsFinite( screen.X ) && float.IsFinite( screen.Y );
+	}
+
 	/// <summary>The catalogue entry (archive) of a coaster's station object, or null when the station left.</summary>
 	private ObjectCatalogEntry? CoasterEntry( CoasterRide ride ) => CoasterStation( ride )?.Entry;
 
@@ -162,6 +183,7 @@ public partial class Level
 		station.Close();
 		builder.Ride.EnterTool();
 		CoasterToolStation = station;
+		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree );
 		return true;
 	}
 
@@ -170,6 +192,8 @@ public partial class Level
 	public void ExitCoasterTool()
 	{
 		var station = CoasterToolStation;
+		CoasterPanel?.Close();
+		CoasterPanel = null;
 		CoasterToolStation = null;
 		CoasterPreview = null;
 		if ( station is { IsDeleted: false } && station.Runtime.Coaster is { State: CoasterControllerState.Built } )

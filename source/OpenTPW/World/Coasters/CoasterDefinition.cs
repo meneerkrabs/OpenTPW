@@ -13,6 +13,21 @@ public enum CoasterPylonFlags : uint
 }
 
 /// <summary>
+/// What a pylon can be edited by hand with (pylon control <c>+0</c> bits 0x20..0x200), from the animations its model has (<c>0x430590</c>): the loft clip (type 3) lets the height drag
+/// move it, the rotate clip (type 10) the rotate drag, the incline clip (type 2) and the bank clip (type 9) the two axes of the tilt drag and a second rotate clip (type 10, index 1) the loop tilt.
+/// </summary>
+[Flags]
+public enum CoasterPylonCapabilities : uint
+{
+	None = 0,
+	Loft = 0x20,
+	Rotate = 0x40,
+	Incline = 0x80,
+	Bank = 0x100,
+	LoopTilt = 0x200
+}
+
+/// <summary>
 /// One of the two 288-byte pylon controls of a coaster definition (COAST-plan §3.2): the StdPylon at definition
 /// <c>+168</c> and the LoopPylon at <c>+456</c>. Angles are radians (the settings give degrees), place distances
 /// whole cells; the loader stores both the squared distances and the float distances.
@@ -20,6 +35,9 @@ public enum CoasterPylonFlags : uint
 public sealed class CoasterPylonControl
 {
 	public CoasterPylonFlags Flags { get; internal set; }
+	/// <summary>The hand edits the pylon's model allows. Without the model (no game data) a standard pylon takes all four drags and a loop pylon the loop tilt.</summary>
+	// [BIN:TPW-EXE:0x430590 pylon capabilities] pylon flags 0x20 (loft clip), 0x40 (rotate), 0x80 (incline), 0x100 (bank) and 0x200 (second rotate clip) are set when the model has the animation of that type (0x472d10); the drag handlers test them (0x441a00, 0x441e80, 0x442010, 0x441cd0)
+	public CoasterPylonCapabilities Capabilities { get; internal set; } = CoasterPylonCapabilities.Loft | CoasterPylonCapabilities.Rotate | CoasterPylonCapabilities.Incline | CoasterPylonCapabilities.Bank;
 	/// <summary><c>pcMeshFilename</c> (StdPylon, LoopPylon), or empty.</summary>
 	public string MeshName { get; internal set; } = "";
 	public int MinPlaceDistance { get; internal set; }
@@ -191,6 +209,7 @@ public sealed class CoasterDefinition
 		var pylon = new CoasterPylonControl
 		{
 			Flags = CoasterPylonFlags.Standard | CoasterPylonFlags.Loop,
+			Capabilities = CoasterPylonCapabilities.Loft | CoasterPylonCapabilities.Rotate | CoasterPylonCapabilities.LoopTilt,
 			MinPlaceDistance = 3,
 			MaxPlaceDistance = 9,
 			EntranceMinAngleAtMinDistance = 120 * DegreesToRadians,
@@ -264,6 +283,7 @@ public sealed class CoasterDefinition
 	// [BIN:TPW-EXE:0x4309a4 pylon heights] pylon +0xbc = h0, +0xc0 = h1, +0x68 (fMinHeight) = max(fMinHeight, h0) (0x4309a4..0x4309bb), +0xc4 = stack dummy Y − h0 or 0
 	internal void ApplyPylonModel( bool loop, CoasterPylonRig rig )
 	{
+		Pylon( loop ).Capabilities = rig.Capabilities;
 		// The original applies h0 and h1 as they come (0x4309a4 has no guard on h1 <= h0, and a missing dummy reads the constant 0 at 0x6fde74).
 		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip (the Gorilla coaster 3180's loop pylon, h0 = h1 =
 		// 9.47, below its own raised minimum 10) and keeps the settings' heights: with h1 <= h0 every node of that pylon would stand at h0.

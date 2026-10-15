@@ -10,8 +10,10 @@ namespace OpenTPW;
 /// <param name="Bank">The auto-bank the knots pass stores on the node (node <c>+216</c>).</param>
 /// <param name="LoopRotate">The loop-rotate parameter (node <c>+0xf8</c>); null in a save from before the loop pair (the old 0.5).</param>
 /// <param name="ExactX">The exact world position of a pylon-less station node (the middle node S1), null for every other node.</param>
+/// <param name="Yaw">The yaw the rotate button set (node <c>+0xE0</c>); null in a save from before the coaster tool panel (no manual yaw).</param>
+/// <param name="Incline">The incline the tilt button set (node <c>+0xDC</c>); null in a save from before the coaster tool panel.</param>
 internal sealed record CoasterNodeSaveData( int X, int Y, float Height, float T, bool LoopPylon, int StackIndex, bool IsStation, bool IsStationEnd, uint Flags, float Bank, float? LoopRotate = null,
-	float? ExactX = null, float? ExactY = null, float? ExactZ = null );
+	float? ExactX = null, float? ExactY = null, float? ExactZ = null, float? Yaw = null, float? Incline = null );
 
 /// <summary>
 /// One saved train: its front's position and speed, the riders of each car on the lap and, with the original's station rule,
@@ -34,7 +36,8 @@ internal sealed record CoasterTrainSaveData( float Position, float Speed, int St
 /// shaped track (a coaster station whose placement never set its ends, or whose track was deleted) saves an empty node
 /// list and null end cells.
 /// </summary>
-internal sealed record CoasterTrackSaveData( (int X, int Y)? DepartCell, (int X, int Y)? ReturnCell, bool IsClosed, bool IsComplete, int Version, List<CoasterNodeSaveData> Nodes );
+/// <param name="CutAfter">The index of the node before the cut of a circuit the demolish button opened in the middle; null for a whole or end-reopened circuit and in a save from before the coaster tool panel.</param>
+internal sealed record CoasterTrackSaveData( (int X, int Y)? DepartCell, (int X, int Y)? ReturnCell, bool IsClosed, bool IsComplete, int Version, List<CoasterNodeSaveData> Nodes, int? CutAfter = null );
 
 /// <summary>
 /// One saved coaster controller joined to its station by attraction id: its track, the controller scalars the station
@@ -72,7 +75,8 @@ internal static class CoasterSave
 	public const int MaximumCarsPerTrain = 32;
 	/// <summary>The node flag bits a save may carry; anything else is a format this code does not know, and load refuses it.</summary>
 	public const uint KnownNodeFlags = (uint)(CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.LoopMark | CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst | CoasterNodeFlags.ZeroBank | CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid
-		| CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead | CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.NoNextLink | CoasterNodeFlags.EndNextIsSecond);
+		| CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead | CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.NoNextLink | CoasterNodeFlags.EndNextIsSecond
+		| CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline | CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart);
 
 	/// <summary>
 	/// Captures the park's coasters: one entry per live coaster station in placement (attraction-id) order, or null when
@@ -112,11 +116,12 @@ internal static class CoasterSave
 		ArgumentNullException.ThrowIfNull( ride );
 		var track = ride.Track;
 		var nodes = track.Nodes.Select( node => new CoasterNodeSaveData( node.X, node.Y, node.Height, node.T, node.LoopPylon, node.StackIndex, node.IsStation, node.IsStationEnd, (uint)node.Flags, node.Bank, node.LoopRotate,
-			node.ExactPosition?.X, node.ExactPosition?.Y, node.ExactPosition?.Z ) ).ToList();
+			node.ExactPosition?.X, node.ExactPosition?.Y, node.ExactPosition?.Z,
+			(node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : null, (node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : null ) ).ToList();
 		var trains = ride.Trains.Select( train => new CoasterTrainSaveData( train.Position, train.Speed, CoasterRide.LegacyRunningState, 0, train.Cars.Select( car => car.ToList() ).ToList(),
 			(int)train.Flags, train.FirstBoardingCar, train.LastBoardingCar, train.BoardingCars.Select( car => car.ToList() ).ToList() ) ).ToList();
 		return new CoasterRideSaveData( attractionId,
-			new CoasterTrackSaveData( track.DepartCell, track.ReturnCell, track.IsClosed, track.IsComplete, track.Version, nodes ),
+			new CoasterTrackSaveData( track.DepartCell, track.ReturnCell, track.IsClosed, track.IsComplete, track.Version, nodes, track.CutAfter ),
 			ride.Initialised, ride.Closed, ride.BreakdownState, ride.SpeedSetting, ride.SeatsPerTrain, ride.SpeedCap, ride.PaidCost, ride.TimeSeconds,
 			null,
 			trains, ride.LeavingRiders.ToList(), ride.AdmissionGuests.ToList(), (int)ride.State );

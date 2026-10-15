@@ -29,6 +29,9 @@ public sealed class CoasterPylonRig
 	/// <param name="loft">The loft clip (<c>&lt;pylon&gt;L.MD2</c>), or null.</param>
 	/// <param name="rotate">The rotate clip (<c>&lt;pylon&gt;R.MD2</c> or <c>R1</c>), or null.</param>
 	/// <param name="control">The pylon control whose loft caps, multiplier and add (<c>fLoftAnim*</c>) map the node's height parameter to the clip; null takes the defaults.</param>
+	/// <summary>The hand edits the pylon's animations allow; set by the asset loader from the models of the same family (<c>I</c>, <c>B</c>, <c>R2</c>).</summary>
+	public CoasterPylonCapabilities Capabilities { get; internal set; }
+
 	public CoasterPylonRig( ModelFile model, ModelAnimation? loft, ModelAnimation? rotate, CoasterPylonControl? control = null )
 	{
 		ArgumentNullException.ThrowIfNull( model );

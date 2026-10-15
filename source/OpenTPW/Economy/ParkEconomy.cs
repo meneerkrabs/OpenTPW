@@ -686,7 +686,7 @@ public sealed class ParkEconomy : IParkEconomy
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
-			// [EXT:headless-economy] without a staff world (the gate harnesses and tests; a level always attaches one, Level.SetupStaff) a mechanic starts his job at once and the jobs keep OpenTPW's order (broken, upgrading, then rides worn below 25); the original always walks its mechanics to the nearest ride that is broken down (state 1), upgrading (state 2) or called (+0x64) (0x004DAA90) and never sends one to a worn ride on its own; in a level the mechanics run its state machine (ECON-022)
+			// [EXT:headless-economy] without a staff world (the gate harnesses and tests; a level with guests always attaches one, Level.SetupStaff) a mechanic starts his job at once and the jobs keep OpenTPW's order (broken, upgrading, then rides worn below 25); the original always walks its mechanics to the nearest ride that is broken down (state 1), upgrading (state 2) or called (+0x64) (0x004DAA90) and never sends one to a worn ride on its own; in a level the mechanics run its state machine (ECON-022)
 			int? upgradeDuration = ObjectState( job ) == RideObjectStates.Upgrading && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
 				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
 			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.

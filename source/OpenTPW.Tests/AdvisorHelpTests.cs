@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -322,6 +323,20 @@ public class AdvisorHelpTests
 		Assert.IsNull( restored.Queue.LastTutorial, "a save from before the record was kept restores none" );
 		Assert.ThrowsException<InvalidDataException>( () => restored.ValidateSnapshot( snapshot with { Queue = snapshot.Queue with { LastTutorial = new AdvisorPendingAdviceSnapshot( 106, 1000, -1, false ) } } ),
 			"only a tutorial-group message can be the last tutorial" );
+	}
+
+	[TestMethod]
+	public void AQueueSavedBeforeTheLastTutorialWasKeptLoadsWithNone()
+	{
+		var controller = Controller();
+		controller.Advise( 199, 100, 0, true );
+		var json = JsonNode.Parse( ParkResumeJson.Serialize( controller.CaptureSnapshot().Queue ) )!.AsObject();
+		Assert.IsTrue( json.Remove( "LastTutorial" ), "the current format writes the record" );
+		var queue = ParkResumeJson.Deserialize<AdvisorQueueSnapshot>( Encoding.UTF8.GetBytes( json.ToJsonString() ) );
+		Assert.IsNull( queue.LastTutorial, "a save written before the record was kept has none" );
+		var restored = Controller();
+		restored.RestoreSnapshot( controller.CaptureSnapshot() with { Queue = queue } );
+		Assert.IsNull( restored.Queue.LastTutorial );
 	}
 
 	[TestMethod]

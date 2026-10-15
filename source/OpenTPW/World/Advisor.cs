@@ -37,7 +37,7 @@ internal sealed class Advisor : IDisposable
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
 		("ADVISOR-005", "light colour 0.6, shared test.shader ambient/fog"),
-		("ADVISOR-006", "the clips' node tracks, blink toggles and accessory selectors are drawn, but not their vertex tracks (antennae and hands) nor the texture-coordinate tracks of the level advisors; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, not the clip-toggled mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), whose reader is open (RIDES-042)"),
+		("ADVISOR-006", "the clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and the level advisors' texture-coordinate tracks are drawn; the blink toggles set the mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), whose reader in the draw is open (the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, RIDES-042), so hiding the toggled meshes is OpenTPW's reading"),
 		("ADVISOR-007", "drawn double-sided; no back-face test in 0x57A750, 0x57AA10 or 0x574110 through 0x574660; the backend submit 0x581CD0 -> [0x8BCBB8] vtable +8 is unread"),
 		("ADVISOR-009", "--advisor-say plays global clips by number and starts them at its first rendered frame; the controller says the five bound game-event messages and the help messages of the HUD windows with a traced message (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price); the other window and tool-start help messages and the 135 computed score producers (descriptor table 0x76E300) are not bound"),
 		("ADVISOR-010", "lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer)"),
@@ -534,12 +534,12 @@ internal sealed class Advisor : IDisposable
 		// [BIN:TPW-EXE:0x00599880 advisor update] the talking flag is set at LIP load (0x59930B), cleared on the delayed-start path (0x59943E) and set again when the speech starts (0x599987); then each mark flips it once the clock is strictly past it
 		var lipPosition = LipPosition;
 		var shownMouth = mouth.Update( player is { IsStarted: true } && IsTalking( timeline, lipPosition ),(long)lipPosition.TotalMilliseconds );
-		var (worlds, hidden) = CurrentPose();
+		var (worlds, hidden, clip, tick) = CurrentPose();
 		foreach ( var part in rig.Parts )
 		{
 			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && part.Name != shownMouth )
 				continue;
-			rig.Write( part, worlds[part.NodeIndex] );
+			rig.Write( part, worlds[part.NodeIndex], clip, tick );
 			part.Material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 			{
 				g_mModel = model,
@@ -560,10 +560,12 @@ internal sealed class Advisor : IDisposable
 	/// The pose of the rig now: the node matrices of the clip the sequence plays at this moment after the request (the bind pose without
 	/// a sequence), and the hidden mesh nodes (accessories, blink meshes, props; see <see cref="AdvisorAccessories.HiddenMeshNodes"/>).
 	/// </summary>
-	private (Matrix4x4[] Worlds, HashSet<int> Hidden) CurrentPose()
+	private (Matrix4x4[] Worlds, HashSet<int> Hidden, int ClipNumber, float SampledTick) CurrentPose()
 	{
 		ModelAnimation? clip = null;
 		var tick = 0f;
+		var clipNumber = 0;
+		var sampledTick = 0f;
 		var bits = 0;
 		var worlds = rig.Rest;
 		if ( Sequence != null && clipDurations != null && clock != null && speechStart is { } start
@@ -573,13 +575,15 @@ internal sealed class Advisor : IDisposable
 			tick = position.Tick;
 			bits = Sequence.AccessoryBits is { } list && position.Index < list.Count ? list[position.Index] : 0;
 			worlds = rig.Pose( position.Clip, tick );
+			clipNumber = position.Clip;
+			sampledTick = rig.SampledTick;
 		}
 		if ( !costumeHidden.TryGetValue( bits, out var accessories ) )
 			costumeHidden[bits] = accessories = AdvisorAccessories.CostumeHiddenNodes( rig.Nodes, costume, theme, bits );
 		hiddenScratch.Clear();
 		hiddenScratch.UnionWith( accessories );
 		AdvisorAccessories.ApplyToggles( rig.Nodes, hiddenScratch, clip, tick );
-		return (worlds, hiddenScratch);
+		return (worlds, hiddenScratch, clipNumber, sampledTick);
 	}
 
 	/// <summary>The model a response draws: the level's advisor for a response that names model 1 (when the level has one), else the global advisor.</summary>

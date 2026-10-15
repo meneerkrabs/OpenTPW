@@ -194,6 +194,33 @@ public class AdvisorTests
 		CollectionAssert.AreEqual( new[] { "Mouth - Aah", "Mouth - Eee", "Mouth - Normal", "Mouth - Ooh", "Mouth - Sss" }, mouths );
 	}
 
+	[TestMethod]
+	public void TheClipsVertexAndTextureCoordinateTracksFitTheAdvisorMeshes()
+	{
+		using var assets = new OriginalAssets();
+		var global = new ModelFile( $"{Advisor.ArchivePath}/Advisor.MD2" );
+		Assert.AreEqual( 0u, global.HeaderFlags & ModelFile.RelativeAnimationFlag, "set mode: the vertex keys replace the positions" );
+		var clip = new ModelFile( $"{Advisor.ArchivePath}/Advisorm3.MD2" ).Clip!;
+		var tracks = AdvisorRig.FindMeshTracks( global, clip );
+		var animated = Enumerable.Range( 0, tracks.Length ).Where( node => tracks[node]?.Vertices != null ).Select( node => global.Nodes[node].Name ).ToArray();
+		CollectionAssert.AreEquivalent( new[] { "Right Antennae", "Left Antennae", "Right hand", "Left Hand" }, animated );
+		var hand = global.Meshes.Single( mesh => mesh.Name == "Right hand" );
+		var positions = new System.Numerics.Vector3[hand.Positions.Length];
+		var moved = 0;
+		for ( var tick = 0; tick < clip.Duration; tick += Math.Max( 1, clip.Duration / 8 ) )
+		{
+			tracks[hand.NodeIndex]!.Vertices!.ApplyPose( tick, positions );
+			moved += positions.Where( ( position, index ) => System.Numerics.Vector3.Distance( position, hand.Positions[index].GetSystemVector3() ) > 0.01f ).Any() ? 1 : 0;
+		}
+		Assert.IsTrue( moved > 0, "the hand's vertex track moves it away from the stored mesh" );
+
+		var fantasy = new ModelFile( "/levels/fantasy/advisor/Advisor_FAN.MD2" );
+		var eyes = AdvisorRig.FindMeshTracks( fantasy, new ModelFile( "/levels/fantasy/advisor/Advisor_FANm16.MD2" ).Clip! );
+		CollectionAssert.AreEquivalent( new[] { "Right Eye", "Left Eye" },
+			Enumerable.Range( 0, eyes.Length ).Where( node => eyes[node]?.TexCoords != null ).Select( node => fantasy.Nodes[node].Name ).ToArray(),
+			"the level advisors' texture-coordinate tracks" );
+	}
+
 	/// <summary>The clip lengths of the original's advisor clips come from trailer word 2 (0x474070): the global advisor's and a level advisor's.</summary>
 	[TestMethod]
 	public void OriginalAdvisorClipLengthsComeFromTheClipTrailers()

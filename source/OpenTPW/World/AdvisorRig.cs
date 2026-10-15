@@ -22,8 +22,19 @@ internal sealed class AdvisorRig : IDisposable
 		public required Vertex[] Vertices { get; init; }
 		public required System.Numerics.Vector3[] Positions { get; init; }
 		public required System.Numerics.Vector3[] Normals { get; init; }
+		/// <summary>The mesh as stored (its positions and corners index the clips' vertex and texture-coordinate tracks).</summary>
+		public required ModelFile.Mesh Mesh { get; init; }
+		/// <summary>The stored texture coordinates of the drawn vertices, which a part shows when no clip animates them.</summary>
+		public required System.Numerics.Vector2[] TexCoords { get; init; }
 		public Matrix4x4? Uploaded { get; set; }
+		/// <summary>The clip and tick whose vertex and texture-coordinate tracks the uploaded vertices hold; (0, 0) for the stored mesh.</summary>
+		public (int Clip, float Tick) UploadedSource { get; set; }
+		internal System.Numerics.Vector3[]? SampledPositions { get; set; }
+		internal System.Numerics.Vector2[]? SampledTexCoords { get; set; }
 	}
+
+	/// <summary>The vertex (set mode) and texture-coordinate tracks a clip plays on one mesh node.</summary>
+	internal sealed record MeshTracks( ModelVertexAnimation? Vertices, ModelUvAnimation? TexCoords );
 
 	private static readonly Regex ModelName = new( @"^Advisor(?<suffix>_[A-Za-z]+)?\.MD2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant );
 
@@ -31,6 +42,7 @@ internal sealed class AdvisorRig : IDisposable
 	private HashSet<string>? members;
 	private readonly Dictionary<int, ModelAnimation?> clips = new();
 	private readonly Dictionary<int, ModelAnimationPlayer?> players = new();
+	private readonly Dictionary<int, MeshTracks?[]?> meshTracks = new();
 	private readonly Matrix4x4[] worlds;
 	private bool disposed;
 
@@ -159,6 +171,8 @@ internal sealed class AdvisorRig : IDisposable
 					Vertices = vertices,
 					Positions = positions,
 					Normals = normals,
+					Mesh = mesh,
+					TexCoords = vertices.Select( vertex => new System.Numerics.Vector2( vertex.TexCoords.X, vertex.TexCoords.Y ) ).ToArray(),
 				};
 				rig.parts.Add( part );
 				rig.Write( part, rig.Rest[mesh.NodeIndex] );
@@ -173,20 +187,78 @@ internal sealed class AdvisorRig : IDisposable
 		return rig;
 	}
 
-	/// <summary>Writes a part's vertices for the node matrix <paramref name="world"/>, unless they already hold it.</summary>
-	public void Write( Part part, Matrix4x4 world )
+	/// <summary>
+	/// Writes a part's vertices for the node matrix <paramref name="world"/>, with the vertex and texture-coordinate tracks clip
+	/// <paramref name="clip"/> plays on its node at <paramref name="tick"/> (the stored mesh without a clip or a track), unless they
+	/// already hold it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00429DF0 advisor model draw] the advisor's model slots (table 0x790398, stride 0xB0, the table "Kill advisor" 0x429D60 stops) are drawn each frame by the shared instance draw 0x473C70(instance, 1, 0), which runs the channel sampler 0x4735D0 -> 0x471860 for each animation channel of the instance (count word +0xE, stride 0x38, 0x473D1A..0x473D36): the vertex pass (set mode, the advisor models' header flag 4 is clear) and the texture-coordinate pass 0x4745C0, as for objects (ObjectAnimator)
+	// The advisor models' normals are the stored ones: set mode does not recompute them (ObjectAnimator.GetVertexLimitation)
+	public void Write( Part part, Matrix4x4 world, int clip = 0, float tick = 0 )
 	{
-		if ( part.Uploaded == world )
+		var tracks = clip > 0 ? Tracks( clip, part.NodeIndex ) : null;
+		var source = tracks == null ? (0, 0f) : (clip, tick);
+		if ( part.Uploaded == world && part.UploadedSource == source )
 			return;
+		System.Numerics.Vector3[]? positions = null;
+		if ( tracks?.Vertices is { } vertexTrack )
+		{
+			positions = part.SampledPositions ??= new System.Numerics.Vector3[part.Mesh.Positions.Length];
+			vertexTrack.ApplyPose( tick, positions );
+		}
+		System.Numerics.Vector2[]? texCoords = null;
+		if ( tracks?.TexCoords is { } uvTrack )
+		{
+			texCoords = part.SampledTexCoords ??= new System.Numerics.Vector2[part.Mesh.TexCoords.Length];
+			uvTrack.Apply( tick, texCoords );
+		}
 		var vertices = part.Vertices;
+		var corners = part.Mesh.CornerPositionIndices;
 		for ( var index = 0; index < vertices.Length; index++ )
 		{
-			vertices[index].Position = System.Numerics.Vector3.Transform( part.Positions[index], world );
+			var position = positions != null && index < corners.Length ? positions[corners[index]] : part.Positions[index];
+			vertices[index].Position = System.Numerics.Vector3.Transform( position, world );
 			var normal = System.Numerics.Vector3.TransformNormal( part.Normals[index], world );
 			vertices[index].Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : normal;
+			var coordinates = texCoords != null && index < texCoords.Length ? texCoords[index] : part.TexCoords[index];
+			vertices[index].TexCoords = new Vector2( coordinates.X, coordinates.Y );
 		}
 		part.Model.UpdateVertices( vertices );
 		part.Uploaded = world;
+		part.UploadedSource = source;
+	}
+
+	/// <summary>The vertex and texture-coordinate tracks clip <paramref name="number"/> plays on mesh node <paramref name="node"/>; null when it plays none (or does not fit the mesh).</summary>
+	internal MeshTracks? Tracks( int number, int node )
+	{
+		if ( !meshTracks.TryGetValue( number, out var byNode ) )
+		{
+			byNode = Clip( number ) is { } clip ? FindMeshTracks( File, clip, number, Archive ) : null;
+			meshTracks[number] = byNode;
+		}
+		return byNode != null && (uint)node < byNode.Length ? byNode[node] : null;
+	}
+
+	/// <summary>
+	/// The vertex and texture-coordinate tracks of <paramref name="clip"/> by mesh node of <paramref name="file"/>, with the fit the object
+	/// animator requires (a vertex block for the mesh's positions, a texture-coordinate block for its corners); a track that does not fit is
+	/// logged and not played.
+	/// </summary>
+	internal static MeshTracks?[] FindMeshTracks( ModelFile file, ModelAnimation clip, int number = 0, string? archive = null )
+	{
+		var byNode = new MeshTracks?[file.Nodes.Count];
+		foreach ( var track in clip.Tracks )
+		{
+			if ( (uint)track.NodeIndex >= byNode.Length || file.Meshes.FirstOrDefault( mesh => mesh.NodeIndex == track.NodeIndex ) is not { } mesh )
+				continue;
+			var vertices = track.VertexAnimation is { } animation && animation.GetPoseLimitation( mesh.Positions.Length, clip.Duration ) == null ? animation : null;
+			var texCoords = track.UvAnimation is { } uv && uv.CornerCount == mesh.TexCoords.Length ? uv : null;
+			if ( track.VertexAnimation != null && vertices == null || track.UvAnimation != null && texCoords == null )
+				Log.Warning( $"Advisor clip {number} of {archive}: a vertex or texture-coordinate track of node {track.NodeIndex} does not fit its mesh and is not played." );
+			if ( vertices != null || texCoords != null )
+				byNode[track.NodeIndex] = new MeshTracks( vertices, texCoords );
+		}
+		return byNode;
 	}
 
 	/// <summary>Loads the clips 1-20 and their players now, so that playing one never reads a file in the render path.</summary>
@@ -219,7 +291,8 @@ internal sealed class AdvisorRig : IDisposable
 
 	/// <summary>
 	/// The node matrices of clip <paramref name="number"/> at <paramref name="tick"/> (the clip's tracks replace the stored translation,
-	/// rotation and scale of their nodes; vertex tracks are not played, ADVISOR-006); the bind pose when the clip is missing.
+	/// rotation and scale of their nodes; their vertex and texture-coordinate tracks are written per part, <see cref="Write"/>); the bind
+	/// pose when the clip is missing. <see cref="SampledTick"/> is the tick the clip was sampled at (clamped to its length).
 	/// </summary>
 	public Matrix4x4[] Pose( int number, float tick )
 	{
@@ -240,12 +313,19 @@ internal sealed class AdvisorRig : IDisposable
 			players[number] = player;
 		}
 		if ( player == null )
+		{
+			SampledTick = 0;
 			return Rest;
-		// [APPROX:ADVISOR-006] The clips' node tracks (translation, rotation, scale) and blink toggles are played; their vertex tracks (antennae and hands), the texture-coordinate tracks of the level advisors and the 12-byte block are not, and a clip the archive lacks leaves the bind pose — evidence needed: a skinned draw of the vertex tracks and a reader of the toggled mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, RIDES-042)
+		}
+		// [APPROX:ADVISOR-006] The clips' node tracks, blink toggles, vertex tracks (antennae, hands, eyes) and texture-coordinate tracks (the level advisors' eyes) are played; the blink toggles set the mesh-node bit, whose reader in the draw is open (mesh record +0, toggled at 0x472E75/0x472401; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, RIDES-042), so hiding the toggled meshes is OpenTPW's reading, and a clip the archive lacks leaves the bind pose — evidence needed: the reader of the toggled mesh-node bit
 		player.SetTick( tick );
+		SampledTick = player.Tick;
 		player.ComputeWorldTransforms( worlds );
 		return worlds;
 	}
+
+	/// <summary>The tick the last <see cref="Pose"/> sampled its clip at (0 for the bind pose).</summary>
+	public float SampledTick { get; private set; }
 
 	public void Dispose()
 	{

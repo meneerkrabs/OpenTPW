@@ -336,7 +336,7 @@ advisors add texture-coordinate tracks and one clip with path parameters
 (docs/reverse/ANIM-plan.md §10). The original starts animation id n as
 `Advisor<level>m<n>.MD2` on channel 0 at speed 1.0 on clock B
 (`Advisor.AnimationClipName`). The clip choice of a generated sequence (`0x598B20`) and the fixed rows (`0x598BF0`, table `0x76DC18`) are traced and
-built by `AdvisorSequences` (see "Sequences and timing" below) and played (see "Clip timeline"); their vertex tracks are not (ADVISOR-006). The clips' node lists set node bit
+built by `AdvisorSequences` (see "Sequences and timing" below) and played (see "Clip timeline"), vertex and texture-coordinate tracks included. The clips' node lists set node bit
 0x10 on the hats, spatula and bow tie, the hidden set of the base model. That bit is the clip-toggled word of the mesh-node record
 (+0, set at `0x472E75`, cleared at `0x472401`); the mesh draw's own bit 0x10 (`0x57A797`) is a different word, a render-node deferral
 marker (the draw defers a node of a model with flag 0x200000 to the list at `0x8BB220` and the drain `0x579C80` sets and clears it), so it
@@ -383,8 +383,12 @@ OpenTPW's capture of the jungle welcome shows the pith helmet.
 A sequence's clips play one after the other from the request, each for its own length (trailer word 2 × 1000 / 30 ms; the budget table
 zeroes clip 14's entry, not its playing: `AdvisorClipDurations.PlayOf`). The node tracks move the model: clip 14 lifts the body and head
 from below the screen edge (z −73 to −21) over its 30 ticks, clip 15 sinks them (−21 to −74) over 20; the blink toggles
-(`NodeFlagToggles`: a positive entry shows the node, zero or negative hides it) swap `Right/Left Eye` and `ShutEye R/L`; the vertex tracks
-(antennae, hands) and the level advisors' texture tracks are not played (ADVISOR-006). The sampler hides the model when the last clip ends
+(`NodeFlagToggles`: a positive entry shows the node, zero or negative hides it) swap `Right/Left Eye` and `ShutEye R/L` (hiding the toggled
+meshes is OpenTPW's reading of the mesh-node bit, whose reader is open, ADVISOR-006). The vertex tracks (antennae, hands, eyes) and the level
+advisors' texture-coordinate tracks (the eyes of clip 16) play as an object's do: the advisor's model slots are drawn by the shared instance
+draw `0x473C70(instance, 1, 0)` from `0x429DF0`, which runs the channel sampler `0x4735D0` -> `0x471860` for each animation channel (vertex pass in set mode, the
+models' header flag 4 being clear, and texture-coordinate pass `0x4745C0`); `AdvisorRig.Write` samples them per part. No advisor clip has a
+12-byte vertex block. The sampler hides the model when the last clip ends
 (`0x4735D0`), `Advisor.DrawnSpanMilliseconds` = the sum of the played lengths. A new response restarts at clip 14, so an interrupted
 advisor disappears in the frame the next one starts and rises again. Video check (`[EXT-EVIDENCE:video tpw-nl 32:07]`, `41:58`, `58:38`,
 `61:34`): the model appears at the request, speech starts 0.6–1.0 s later (the 800 ms delayed start), the last word ends and the advisor is
@@ -634,7 +638,7 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ID | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | ADVISOR-005 | `source/OpenTPW/World/Advisor.cs` | Light colour 0.6, `test.shader` ambient 0.4 + fog (the light direction is traced) | Original advisor light colour/material captures |
-| ADVISOR-006 | `source/OpenTPW/World/AdvisorRig.cs` | The clips' node tracks, blink toggles and accessory selectors are drawn; their vertex tracks (antennae, hands), the level advisors' texture-coordinate tracks and the 12-byte block are not; the draw-path bit 0x10 at `0x57A797` is a render-node deferral marker, not the clip-toggled mesh-node bit (mesh record +0, `0x472E75`/`0x472401`) | A skinned draw of the vertex tracks and a reader of the toggled mesh-node bit (RIDES-042) |
+| ADVISOR-006 | `source/OpenTPW/World/AdvisorRig.cs` | The clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and texture-coordinate tracks (the level advisors' eyes) are drawn; the blink toggles set the mesh-node bit (mesh record +0, `0x472E75`/`0x472401`), whose reader in the draw is open (the draw-path bit 0x10 at `0x57A797` is a render-node deferral marker), so hiding the toggled meshes is OpenTPW's reading; a clip the archive lacks leaves the bind pose | A reader of the toggled mesh-node bit (RIDES-042) |
 | ADVISOR-007 | `source/OpenTPW/World/Advisor.cs` | The advisor material is drawn double-sided; the original sets only D3DCULL_NONE (`0x566957`) and its mesh path has no back-face test (`0x57A750`, `0x57AA10`, `0x574110`–`0x574660`) | The backend submit `0x581CD0` → `[0x8BCBB8]` vtable +8, or a capture |
 | ADVISOR-009 | `source/OpenTPW/World/Advisor.cs` | `--advisor-say` plays global clips by number and starts them at its first rendered frame; responses follow the traced global/level selector; the controller says messages 0, 106, 128, 129, 323 and the help messages of eight HUD windows (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price) | The other 73 help messages (windows OpenTPW lacks, tool starts, `SetMode` 3 → 203) and the 135 computed score producers (table `0x76E300`) |
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:34` | Lip-sync clock = PCM consumed from the SDL queue (leads speaker by ≤ one 1,024-frame buffer, ≈46 ms) | Original A/V sync source; latency measurement |

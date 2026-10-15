@@ -75,6 +75,16 @@ public class PlacedEventAudioOriginTests
 		runtime.Stop(); Event(runtime, 3); Assert.IsNull(mixer.Voices.Last().Position); Assert.AreEqual(4, calls);
 	}
 	[TestMethod]
+	public void EventAnchorsAreSubmittedAtWholeUnitsTruncatedTowardZero()
+	{
+		// [BIN:TPW-EXE:0x5573d0] every sound type truncates the anchor's coordinates with __ftol before 0x51bfc0
+		var runtime = new OriginalObjectRuntime(entry);
+		runtime.SetEventAnchors(() => new Vector3(-10.9f, 15.5f, 0.75f), _ => Vector3.Zero);
+		Event(runtime, 3, 44);
+		Assert.AreEqual(new Vector3(-10, 15, 0), mixer.Voices.Last().Position);
+		runtime.Stop();
+	}
+	[TestMethod]
 	public void ProviderSamplesPerInstructionAndUsesExistingPositionedLoopPolicy()
 	{
 		var runtime = new OriginalObjectRuntime(entry);

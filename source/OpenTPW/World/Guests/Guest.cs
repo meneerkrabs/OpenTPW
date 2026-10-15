@@ -88,7 +88,13 @@ public sealed class Guest
 	public float Hunger { get; internal set; }
 	public float Thirst { get; internal set; }
 	public float Toilet { get; internal set; }
-	public float Energy { get; internal set; } = 100;
+	/// <summary>
+	/// The original's unnamed meter at guest <c>+0x1B8</c> (0..100): 0 at creation (tp.exe <c>0x004FAEC0</c>), lowered by the type's
+	/// <c>UsageInfo.FatigueEffect</c> when a use completes (<c>0x004FD970</c>) and read by nothing but the save, so with the shipped
+	/// FatigueEffect of 5 it stays 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FAF1F guest meter start] the constructor stores 0 (ebx) at +0x1B8 (also at 0x004FB0EF; the load factory at 0x00518611)
+	public float Energy { get; internal set; }
 	public float Nausea { get; internal set; }
 	public float Happiness { get; internal set; }
 	/// <summary>The litter meter (guest <c>+0x1b4</c>, 0..100): each use adds the type's <c>LitterEffect</c>; at a byte of 90 the guest bins or drops its litter.</summary>

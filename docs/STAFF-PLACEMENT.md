@@ -19,7 +19,8 @@ The staff window's employee view has a Pick up button (the original's control 0x
 (0x509af0 → 0x505ea0): cell centre, `Navigation = null`, Idle, idle stamp 0, no jobs; the patrol rectangle is untouched. Cancelling drops it back on the cell
 it came from; only one carry runs at a time (a new pick-up drops the previous member back); there is no guest pick-up.
 
-Valid cell: inside the map, not unowned, type grass, path, queue or queue end, under no placed object or the prototype ride (GUEST-013). An invalid click
+Valid cell: inside the map, not unowned, type grass, path, queue or queue end, under no placed object or the prototype ride (GUEST-013: tp.exe `0x46cc40` also
+refuses a cell whose track record is a walkable track kind, and refuses object footprints by cell type rather than by occupancy). An invalid click
 does nothing and the tool stays. The cursor is `Input.CursorTypes.Carry` (the original's cursor 9; UI-100), an invalid hovered cell shows the blueprint's red
 ground marker (UI-099).
 
@@ -32,7 +33,7 @@ original save) is put back to Idle by `StaffPlacement.Reconcile`.
 
 Staff are sprites (`esprites.wad`), not MD2 models: Generic\Handymen `SPR_HA`; Generic\Mechanics `SPR_FA`, `SPR_OM`; Generic\Guards `SPR_GU`;
 Generic\Researchers `SPR_RE`; entertainers per theme (Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP). The bank is
-`(NameIndex + Id)` modulo the folder's banks (GUEST-014). Clips follow the script table 0x75a418: stand slot 0, walk slot 1 (half rate for patrol and
+`(NameIndex + Id)` modulo the folder's banks, where tp.exe draws a variant per candidate (`0x541f70`; GUEST-014). Clips follow the script table 0x75a418: stand slot 0, walk slot 1 (half rate for patrol and
 handyman walks), run slot 2, work slot 4 (sweep at half rate, repair an 8-frame loop, research 4 frames then hold), strike slot 5, the dangling cursor
 sprite slot 6 frames 0-3, the guard's catch and carry slots 7 and 8. Resting members have no sprite. Entertainer performances are the bank's multi-frame
 slots (GUEST-015); frame rates, the moving test and the position smoothing are GUEST-016. `StaffRenderer` draws one quad per member in one draw call with the

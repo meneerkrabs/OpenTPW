@@ -69,10 +69,8 @@ public sealed class GuestSettings
 	public (int X, int Y)? EntranceA { get; set; }
 	public (int X, int Y)? EntranceB { get; set; }
 
-	// approximation: no original source (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md; the needs, starting values and
+	// approximation: no original source for the cap (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md; the needs, starting values and
 	// the exit counter are traced: NeedsUpdate, GuestStart, docs/reverse/ORACLE.md F25)
-	public float EnergyDrainPerSecond { get; set; } = 0.15f;
-	public float EnergyRecoveryPerSecond { get; set; } = 1.0f;
 	public int MaximumGuests { get; set; } = 1000;
 
 	/// <summary>The seven decision weights in the order of the original's settings words.</summary>

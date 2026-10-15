@@ -154,7 +154,7 @@ internal sealed class AdvisorRig : IDisposable
 				// [BIN:TPW-EXE:0x00566957 device init] the only Direct3D CULLMODE write is D3DCULL_NONE; no other constant-state SetRenderState sets it and the register-driven setter 0x567A10 only toggles ALPHABLENDENABLE, so the original draws both faces
 				var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader", MaterialFlags.DoubleSided );
 				material.Set( "Color", textureSlots );
-				// [APPROX:ADVISOR-007] Drawn double-sided as the original's Direct3D device does (no hardware culling); the mesh path has no back-face test (0x57A750 defer/skip/matrix select, 0x57AA10 per-vertex setup, 0x574110 through 0x574660 light vectors and colours), but the final submit 0x581CD0 -> [0x8BCBB8] vtable +8 is unread — evidence needed: that backend or a capture
+				// [BIN:TPW-EXE:0x581CD0 mesh submit] the submit queues the primitive (at most 0x1000, queue 0x8BCBB8) after transforming its vertices through [0x87B1D8] vtable +8, the per-CPU 4x4 transform chosen at 0x5781D0 (x87 0x579250, 3DNow 0x5F4730, 0x5F4F81) with no face test, and the batcher 0x581DB0 orders by state and texture only; the mesh path before it (0x57A750, 0x57AA10, 0x574110 through 0x574660) has no back-face test either, so the original draws both faces
 				var positions = new System.Numerics.Vector3[mesh.Vertices.Length];
 				var normals = new System.Numerics.Vector3[mesh.Vertices.Length];
 				for ( var index = 0; index < positions.Length; index++ )

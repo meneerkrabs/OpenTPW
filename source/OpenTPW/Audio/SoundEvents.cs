@@ -210,7 +210,7 @@ public sealed class SoundEventSystem
 	/// starts no new child; the children it already started play out.
 	/// </summary>
 	// [BIN:TPW-EXE:0x6b62b0 sound manager tick] only the voices in the pool of 12 are ticked; the pool is rebuilt every tick (0x6b6ba0), a voice is admitted (0x6b6bc0) only while audible (0x6bca10: the listener within the voice's range, the map sound's float +34, over the ground) and ranked by the dword priority:distance of 0x6bb9f0; a held chain's next child, its first included, is made in its tick (0x6bdae0 → 0x6bdb50 → 0x6bdbb0)
-	// [APPROX:AUDIO-038] the pool ranks the held chains with the running sentences, placed sounds and one-shots started through this system; the admission's order among equal ranks (0x6b6bc0) is not modelled, and a voice with the any-distance flag is admitted whatever its distance (0x6bca44)
+	// [APPROX:AUDIO-038] the pool ranks the held chains with the running sentences, placed sounds and one-shots started through this system; a voice with the any-distance flag is admitted whatever its distance (0x6bca44); among equal ranks the original keeps the voice met first in its voice list (0x6b6bc0 compares strictly) and the list's insertion order is not read, while the sort here leaves equal ranks in no defined order
 	private void SelectPooledChains()
 	{
 		pooledChains.Clear();

@@ -500,7 +500,7 @@ public static class GameAudio
 	/// </summary>
 	// [BIN:STP-PPC:0x100BC388 rain level] above 0 the global rain voice (cat_ambient 0x21, submitted flat) is started once and given parameter 8 = the level; 0 stops it with 0x100BBA58
 	// [BIN:STP-PPC:0x10103394 level source] the level is the weather thing's current drop count × 100 / MaxRaindrops (the Mac's rain tick; the fork's +0x34 target reading is refuted)
-	// [APPROX:AUDIO-015] the thing's own flat voice (SetWeatherRain) is built beside the level-driven one while it rains; whether the library lets two instances of one event sound (a per-event instance or priority limit) is not traced
+	// [BIN:TPW-EXE:0x6b87d0 event submit] the library has no per-event instance limit: a submit replaces only the live voice of the handle it carries (0x6b6830; refused while that voice's priority +0x22 >= the new event's +0xc, else the old voice is flagged 0x100, 0x6b88c0-0x6b88df), the thing submits its voice with handle 0 (0x51327c) while +0x54 is free, and the pool admits voices by rank alone (0x6b62b0, 0x6b6bc0), so both rain voices sound, as here
 	public static void SetRain( int level )
 	{
 		if ( events == null )
@@ -775,26 +775,16 @@ public static class GameAudio
 	};
 
 	/// <summary>
-	/// The event an RSE <c>EVENT</c> instruction plays: the id is looked up in the routed category, and when that is a
-	/// level category without the event, in the global category of the same name. Original scripts rely on the fallback
-	/// (<c>incagod.RSE</c> plays <c>EVENT 3 id 43</c>, which only the global <c>cat_rides</c> has).
+	/// The event an RSE <c>EVENT</c> instruction plays: the id is looked up in the routed category only, so an id the
+	/// level category lacks plays nothing (<c>incagod.RSE</c>'s <c>EVENT 3 id 43</c>, which only the global
+	/// <c>cat_rides</c> has, is silent in the original too).
 	/// </summary>
-	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for a null category)
-	// [APPROX:AUDIO-011] OpenTPW falls back from a level category without the event to the global category of the same name (incagod.RSE's EVENT 3 id 43 exists only in the global cat_rides); whether the library's own lookup resolves a missing id elsewhere is not traced
+	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for event id 0 or with sound off, 0x802bc8/0x802bd4; an empty category slot returns in 0x6b9b30)
+	// [BIN:TPW-EXE:0x6b87d0 event lookup] the submit takes the category by its handle (0x6b9b30, a deque index; an empty slot returns) and searches only that category's 20-byte event records for the id (0x6c5870, linear, null when absent), returning without a voice (0x6b8919); the level category is loaded from the level's own data under its own path key (0x51ec50 -> 0x51b530 -> 0x6bf330, path joined at 0x6b8690), so nothing falls back to the global category
 	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId )
 	{
 		var category = RseEventCategory( type );
 		var soundEvent = category?.Catalog.Find( eventId );
-		if ( soundEvent == null && type == 3 )
-		{
-			category = Rides;
-			soundEvent = category?.Catalog.Find( eventId );
-		}
-		if ( soundEvent == null && type == 4 )
-		{
-			category = Ambient;
-			soundEvent = category?.Catalog.Find( eventId );
-		}
 		return soundEvent == null || category == null ? null : (category, soundEvent);
 	}
 

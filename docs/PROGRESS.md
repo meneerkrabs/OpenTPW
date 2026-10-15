@@ -18,6 +18,20 @@ Nineteen approximations were read again in tp.exe:
 - ONLINE-011, -015, -016 and -018, ECON-005 (bank `+0x10` is the batch balance, only cleared; OpenTPW's finer ledger split carries
   `[EXT:ECON-LEDGER-SPLIT]`) and PATH-009 (bank `+0x114` is the withdrawals flag) are retired; 11 items are narrowed.
 
+## Coaster trains and pylons from tp.exe (October 15, 2026)
+
+- **Trains** are laid out around their middle car, (n − 1) >> 1, from the last car forward, placed after each rating pass with the release
+  time as their spacing (`0x43c450`, `0x43c1f0`), and run at the mean speed of the samples under their cars; the hops queue by remaining
+  budget, the middle car giving the hop and the front car braking (`0x43ced8`; COAST-022 retired). The ride view and camera follow the
+  front car.
+- **Seats** are only in the centre-type cars (`0x43ba90`); COAST 6 bounds the capacity by the fleet's and the train's head counts, a head
+  being a dummy record with flag `0x80` (`0x43b330`, `0x44b2b0`; COAST-023 retired). The Caterpillar has 16 heads, not 12.
+- **Pylons** play all five clips (loft, rotate, incline, bank, loop tilt; `0x430ca0`, `0x430ed0`) through their clip maps, with each dummy
+  record on its own node (`0x44ab90`); the station ends take the auto bank (`0x4310c8`). Cars stand on the curve at their knot-pair
+  parameter (`0x43c0a0` → `0x43e6b0`) and riders sit on the PC head sockets (COAST-015, -017, -033 and -034 narrowed).
+- Saves gain two optional fields (a train's reference car, the ride's lead-car coordinate, which also joins the state hash); older saves
+  convert from the front car. The coaster hash content changes with all of this (docs/DETERMINISM.md); no pinned hash depended on it.
+
 ## Nine divergences from tp.exe fixed (October 15, 2026)
 
 Divergences found while reading other areas, each checked in tp.exe and fixed in its own commit:

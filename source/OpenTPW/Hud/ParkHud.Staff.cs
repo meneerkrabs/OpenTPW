@@ -327,7 +327,6 @@ public sealed partial class ParkHud
 		3 => $"{member.Happiness}%",
 		_ => ""
 	};
-	// [APPROX:UI-081] applicant summary fields use the economy's expected monthly wage and grade-derived skill as text; the original shows a skill gauge (9346 = skill byte × 1024/5) and a mini balance (9349, cash format UITEXT 0x1ca/0x1cb at 0x49b6df/0x49b720/0x49bfb3/0x49bfe7) and no grade or wage text — evidence needed: porting them (no further evidence needed)
 	private string CandidateStat( StaffCandidate candidate, int row ) => row switch
 	{
 		0 => CandidateName( candidate ),
@@ -335,6 +334,36 @@ public sealed partial class ParkHud
 		2 => $"{20 * candidate.Grade}%",
 		_ => ""
 	};
+
+	/// <summary>
+	/// The hire window's mini balance (control 9349) for <paramref name="candidate"/>: the current month's money in, the staff costs with the candidate's monthly wage added, the other costs
+	/// (money out minus staff costs) and what is left once the wage is paid.
+	/// </summary>
+	// [BIN:TPW-EXE:0x49b927 hire window mini balance] on a selection the staff-costs row (0x248c) shows [0x7ca2fc] + the candidate's wage (0x5077f0) and the balance row (0x2487) [0x7ca2f0] - wage - [0x7ca2fc] - [0x7ca300]; the globals are the newest samples of the finance graph's money-in (+0x1fc90), staff-costs (+0x1f7f0) and money-out (+0x1f5a0) series (0x49c53d..0x49c705), other costs [0x7ca300] being money out minus staff costs (0x49c705)
+	// [DATA:video 12:00 hire window] Inkomsten, - Werknemerskosten, - Overige kosten and Saldo; Saldo follows the selected candidate and the two cost rows are red
+	public (long Income, long StaffCosts, long OtherCosts, long Balance)? CandidateBalance( StaffCandidate? candidate )
+	{
+		if ( candidate == null || FinanceMonths() is not { Count: > 0 } months )
+			return null;
+		var month = months[^1];
+		var wage = CandidateWageAmount( candidate );
+		var moneyOut = month.MoneyOut;
+		var staff = month[LedgerCategory.StaffCosts];
+		return (month.MoneyIn, staff + wage, moneyOut - staff, month.MoneyIn - wage - moneyOut);
+	}
+
+	private string BalanceRowText( int row )
+	{
+		if ( CandidateBalance( SelectedCandidate ) is not { } balance )
+			return "";
+		return FormatMoney( row switch { 0 => balance.Income, 1 => balance.StaffCosts, 2 => balance.OtherCosts, _ => balance.Balance } );
+	}
+
+	/// <summary>The hire window's skill gauge (control 9346) as a share of the full bar: the candidate's skill byte over 5.</summary>
+	// [BIN:TPW-EXE:0x49b8c3 skill gauge] the gauge is set to the skill byte (candidate +8) × 1024 / 5 (0x49b8e2..0x49b8f5), so the byte 5 fills the bar
+	// [APPROX:UI-081] the byte is taken as the grade + 1 (the cheapest candidate's bar is about a fifth full in the video, 12:00); the field's writer is not traced
+	public static float? SkillGauge( StaffCandidate? candidate ) => candidate == null ? null : Math.Clamp( (candidate.Grade + 1) / 5f, 0f, 1f );
+
 	private string SelectedName => showingEmployedStaff
 		? SelectedStaff is { } member ? StaffName( member ) : ""
 		: SelectedCandidate is { } candidate ? CandidateName( candidate ) : "";
@@ -373,24 +402,28 @@ public sealed partial class ParkHud
 		Model( "listFrame", "hirestaff", Rect( 1017, 179, 1813, 930 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => showingEmployedStaff ? strings[UIStrings.AllStaff] : HireTitle, Font = fonts => fonts.Title,
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "staffName", Text = () => SelectedName,
-			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
+		// [DATA:video 12:00 hire window] the applicant view shows no name or grade: the strip under the portrait is the Vaardigheid (skill) gauge (control 9346); the employee view (EXT) keeps name and grade there
+		screen.Add( new UiLabel { Id = "staffName", Text = () => showingEmployedStaff ? SelectedName : strings[UIStrings.SkillStaff],
+			Font = fonts => fonts.Label, Color = UiColors.Text, Align = showingEmployedStaff ? UiAlign.Center : UiAlign.Left, Fit = true,
 			Bounds = Rect( 283, 536, 679, 575 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "staffGrade", Text = () => SelectedGrade,
+		screen.Add( new UiLabel { Id = "staffGrade", Text = () => showingEmployedStaff ? SelectedGrade : "",
 			Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right, Fit = true,
 			Bounds = Rect( 722, 536, 957, 575 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-082] the selected role and grade are text in f_staffpic; the original draws a 3D candidate preview in control 9348's rectangle (0x49ba00) — evidence needed: porting that renderer (no further evidence needed)
+		screen.Add( new UiGaugeBar { Id = "skillGauge", Value = () => showingEmployedStaff ? null : SkillGauge( SelectedCandidate ),
+			Bounds = Rect( 722, 538, 957, 573 ), Anchor = UiAnchor.Center } );
+		// [APPROX:UI-082] the portrait box shows the selected role and grade as text; the original spawns a live animated figure of the candidate's role in control 9348's rectangle (0x49ba00 -> 0x475a10 with descriptor 0x74f758, then 0x4755d0 plays animation 8 at speed 8.0; the figure is the role's sprite-bank character) - evidence needed: drawing that figure in the window (no further evidence needed)
 		screen.Add( new UiLabel { Id = "portraitText", Text = () => SelectedGrade.Length > 0 ? $"{SelectedRole}  {SelectedGrade}" : "",
-			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
-			Bounds = Rect( 513, 202, 723, 415 ), Anchor = UiAnchor.Center } );
+			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true, Bounds = Rect( 513, 202, 723, 415 ), Anchor = UiAnchor.Center } );
 		for ( var row = 0; row < StaffStatRows.Length; row++ )
 		{
 			var index = row;
 			var entry = StaffStatRows[row];
-			screen.Add( new UiLabel { Id = $"statLabel{row}", Text = () => !showingEmployedStaff && index == 3 ? "" : strings[!showingEmployedStaff && index == 0 ? UIStrings.CandidateName : entry.Label], Font = fonts => fonts.Label,
-				Color = UiColors.Text, Fit = true, Bounds = entry.LabelRect, Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = $"statValue{row}", Text = () => SelectedStat( index ),
-				Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right, Fit = true,
+			// the applicant view's four rows are the mini balance (control 9349): UITEXT 356 money in, 357 staff costs, 358 other costs, 360 balance; the two cost rows are red
+			var balanceLabels = new[] { UIStrings.CashIn, UIStrings.StaffCosts, UIStrings.OtherCosts, UIStrings.Balance };
+			screen.Add( new UiLabel { Id = $"statLabel{row}", Text = () => strings[showingEmployedStaff ? entry.Label : balanceLabels[index]], Font = fonts => fonts.Label,
+				ColorSource = () => !showingEmployedStaff && index is 1 or 2 ? UiColors.Negative : UiColors.Text, Fit = true, Bounds = entry.LabelRect, Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Id = $"statValue{row}", Text = () => showingEmployedStaff ? SelectedStat( index ) : BalanceRowText( index ),
+				Font = fonts => fonts.Label, ColorSource = () => showingEmployedStaff ? UiColors.Value : index is 1 or 2 ? UiColors.Negative : UiColors.Text, Align = UiAlign.Right, Fit = true,
 				Bounds = entry.ValueRect, Anchor = UiAnchor.Center } );
 		}
 		// [DATA:Mac staff table 0x4a1e0:9360-9364] Five buttons with help 154-158 select applicants by role.
@@ -507,9 +540,15 @@ public sealed partial class ParkHud
 		public void Scroll( int rows ) => owner.ScrollStaff( rows );
 		public bool HoverSelects => true;
 		public int HoveredRow { get; private set; } = -1;
-		public void Hover( int index ) => HoveredRow = index;
-		// [BIN:TPW-EXE:0x6655a2 list click, 0x49b843 hire window] the applicant list (9358, attribute 0x291) selects the hovered row (OpenTPW only highlights it, because the dismiss, pick-up and patrol buttons act on the selection), and a click of button 0 (or a double click) posts 0x400, which the window routes to 0x49b988: the row's item, hire 0x507bf0, advisor message 0x135, close. Here the hire starts the Place tool, so the click starts placement.
-		// [APPROX:UI-083] button 0 is taken as the left button (medium confidence: the DirectInput order behind the 0xf0..0xf2 codes of 0x486ca1 is not traced); the right button (0x402) does nothing in this window and backs out as everywhere
+		// [BIN:TPW-EXE:0x6656a0 list hover] the applicant list selects the row under the pointer (the details, the skill gauge and the mini balance follow it, video 12:00); the employee view (EXT) only highlights, because its dismiss, pick-up and patrol buttons act on the selection
+		public void Hover( int index )
+		{
+			HoveredRow = index;
+			if ( index >= 0 && !owner.showingEmployedStaff && index < owner.StaffCandidates.Count )
+				owner.selectedStaffId = owner.StaffCandidates[index].Id;
+		}
+		// [BIN:TPW-EXE:0x6655a2 list click, 0x49b843 hire window] the applicant list (9358, attribute 0x291) posts 0x400 on a click of button 0 (0x6655a2 on a list with attribute 0x80, and 0x6656fa on the release); the window routes it to 0x49b988: the row's item, hire 0x507bf0, advisor message 0x135, close. There is no hire button in the window, and the original's advisor says so when it opens ("click on the name of the person you want to hire", video 11:54): a left click on a name hires and the click starts the Place tool here
+		// [BIN:TPW-EXE:0x66563d list click] the other button posts 0x402, which the hire window does not handle: a right click does nothing and backs out as everywhere
 		public bool RowClicked( int index, bool left )
 		{
 			if ( !left )

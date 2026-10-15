@@ -38,7 +38,7 @@ public sealed class HudHost
 /// </summary>
 public sealed partial class ParkHud
 {
-	// [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system
+	// [EXT:status-line] OpenTPW's own feedback lines (a refused action, a hint for the tool that just started) are not the original's messages: they show as up to three lines for eight seconds above the popup help box; the original's messages go to the message tube (ParkHud.MessageTube.cs, UI-025)
 	public const float MessageSeconds = 8f;
 	private static readonly UiRect ArmRect = new( 330.5f, 1068.5f, 675.8f, 426.1f );
 	private readonly Level level;
@@ -160,11 +160,36 @@ public sealed partial class ParkHud
 	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
 	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
-	/// <summary>The balance change shown beside the balance (Mac HUD table control 48): the sum of the changes of the last <see cref="CashChangeTracker.Seconds"/>; 0 when none is shown.</summary>
+	/// <summary>The balance change of the last <see cref="CashChangeTracker.Seconds"/>; it drives the trend arrow beside the balance (control 49), not the yellow cost text.</summary>
 	public long CashChange => cashTracker.Change;
-	public string CashChangeText => CashChange == 0 ? "" : FormatMoney( CashChange );
-	public string GoldenTicketsText => Status.HasEconomy ? Status.GoldenTickets.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "";
-	public string GoldenKeysText => Status.HasEconomy ? Status.GoldenKeys.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "";
+
+	/// <summary>
+	/// The cost of the build action under way, shown in yellow under the balance (control 48): the held blueprint's price, the path or queue line's cost so far, or the coaster track
+	/// segment under the cursor; null outside the build tools, where the text is hidden.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the tool modes 3, 4 and 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; it is no sum of balance changes
+	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
+	// [APPROX:UI-047] which OpenTPW tool state corresponds to which original tool mode (3, 4, 8) is taken from the video's cases (blueprint, path or queue line, coaster segment); the staff and patrol tools show nothing
+	public long? BuildActionCost
+	{
+		get
+		{
+			if ( !Status.HasEconomy )
+				return null;
+			if ( level.IsCoasterToolActive )
+				return CoasterGhost?.Cost ?? 0;
+			if ( level.CellTool.IsActive )
+				return level.CellTool.Ghost?.Charged ?? 0;
+			if ( pendingItem != null && level.BuildEntry != null )
+				return Status.PriceOf( pendingItem ) ?? pendingItem.Cost;
+			return null;
+		}
+	}
+	public string CashChangeText => BuildActionCost is { } cost ? FormatMoney( cost ) : "";
+	// [DATA:video 40:40-41:30, 73:21] the counters read "1 ×" (the count, a space, the multiplication sign) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
+	public string GoldenTicketsText => Status.HasEconomy && Status.GoldenTickets > 0 ? CounterText( Status.GoldenTickets ) : "";
+	public string GoldenKeysText => Status.HasEconomy && Status.GoldenKeys > 0 ? CounterText( Status.GoldenKeys ) : "";
+	private static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count} \u00d7" );
 	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
 	public void PostMessage( string text )
@@ -197,6 +222,11 @@ public sealed partial class ParkHud
 		infoElements.Add( infoArm );
 		// [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
+		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
+		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
+		// [APPROX:UI-025] the panel's binoculars (go to) button is not drawn: the messages carry no location, and the button's art is not identified among ui.wad's models
+		hud.Add( new UiButton { Id = "messageDelete", Model = "b_erase", Clicked = CloseMessagePanel, Bounds = UiRect.FromCenter( new NVector2( 562, 1385 ), 100, 100 ), Anchor = UiAnchor.BottomLeft, Visible = false } );
+		hud.Add( new UiButton { Id = "messageClose", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseMessagePanel, Bounds = UiRect.FromCenter( new NVector2( 384, 1420 ), 75, 75 ), Anchor = UiAnchor.BottomLeft, Visible = false } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
 		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge
@@ -210,7 +240,8 @@ public sealed partial class ParkHud
 		moneyLabel = hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
-		// [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display
+		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending; the golden key and ticket counters show only above zero ("1 ×")
+		// [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is read off the art and the video's red down arrow; the keys count is the park's earned tickets / 3 (the player-wide key ledger is not reachable from the HUD) — evidence needed: a capture of the dollar sign with a negative balance
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashChange < 0 ? 1 : 0, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
@@ -273,9 +304,17 @@ public sealed partial class ParkHud
 			infoElements.Add( hud.Add( new UiLabel
 			{
 				Id = $"statValue{index}",
-				Text = () => SelectedInfo != null && index < SelectedInfo.Stats.Count ? SelectedInfo.Stats[index].Value ?? strings.Extra( OpenTpwText.NotSimulated ) : "",
+				Text = () => SelectedInfo != null && index < SelectedInfo.Stats.Count ? SelectedInfo.Stats[index].Value ?? (SelectedInfo.Stats[index].IsGauge ? "" : strings.Extra( OpenTpwText.NotSimulated )) : "",
 				Font = fonts => fonts.Small,
 				Color = UiColors.Value,
+				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
+				Anchor = UiAnchor.BottomLeft,
+				Visible = false
+			} ) );
+			infoElements.Add( hud.Add( new UiGaugeBar
+			{
+				Id = $"statGauge{index}",
+				Value = () => SelectedInfo != null && index < SelectedInfo.Stats.Count && SelectedInfo.Stats[index].IsGauge ? SelectedInfo.Stats[index].Gauge : null,
 				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
 				Anchor = UiAnchor.BottomLeft,
 				Visible = false
@@ -329,7 +368,8 @@ public sealed partial class ParkHud
 		AddShopPriceButton();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
-		hud.DrawOverlay = DrawMessages;
+		hud.DrawOverlay = DrawFeedback;
+		hud.DrawBackground = DrawMessagePanel;
 		hud.Updating = FitCashText;
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
@@ -356,13 +396,18 @@ public sealed partial class ParkHud
 	public ObjectInfo? SelectedInfo => InfoArmOpen && selectedObject is { IsDeleted: false } item
 		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, new[]
 		{
-			// [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable.
-			new ObjectStat( UIStrings.Excitement, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? $"{item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" )}%" : null ),
-			new ObjectStat( UIStrings.Reliability, null ),
-			// A version 2 visit shows the object's published state of repair (the owner's value, never simulated).
-			new ObjectStat( UIStrings.StateOfRepair, level.PublishedObjectState( item )?.Repair is { } repair ? $"{(int)Math.Round( repair )}%" : null ),
-			new ObjectStat( UIStrings.RemainingLife, null ),
+			// [DATA:video 15:20, 51:40 ride window] excitement, reliability, repair progress and remaining life are red-to-green gauges (UiGauge), not percentages; an unknown value draws the empty track
+			// [APPROX:UI-028] the fills: excitement is the authored UsageInfo.ExcitementLevel / 100, reliability is 1 - WearRate / 10 of the object's base level (as the buy window does), repair and remaining life are the live economy record's repair and life gauge (a version 2 visit uses the owner's published repair); the original's fill formulas cannot be read from 720p video - evidence needed: the ride window's gauge refresh handler
+			new ObjectStat( UIStrings.Excitement, null, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? Math.Clamp( item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) / 100f, 0f, 1f ) : null, true ),
+			new ObjectStat( UIStrings.Reliability, null, item.Entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0f, 1f ) : null, true ),
+			new ObjectStat( UIStrings.StateOfRepair, null, LiveState( item )?.Repair is { } liveRepair ? Math.Clamp( (float)liveRepair / 100f, 0f, 1f )
+				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
+			new ObjectStat( UIStrings.RemainingLife, null, LiveState( item )?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
 		}, EntryName( item.Entry ) ) : null;
+
+	/// <summary>The live economy record behind a placed object, null in a visit or without an economy.</summary>
+	private ParkObjectState? LiveState( OriginalObject item ) =>
+		Status.EconomySource is ParkEconomy economy && !level.IsReadOnlyVisit && level.GetEconomyInstance( item ) is int instance && economy.TryGetObject( instance, out var state ) ? state : null;
 
 	public string ItemName( BuildItem item ) => item.Entry == null ? strings.Object( item.ObjectNameIndex ) : EntryName( item.Entry );
 
@@ -678,6 +723,7 @@ public sealed partial class ParkHud
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
 		TrackCashChange( context.Delta );
+		UpdateMessageTube( context.Delta );
 		SampleHappiness( context.Delta );
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
@@ -798,6 +844,7 @@ public sealed partial class ParkHud
 			if ( messages[index].Age > MessageSeconds )
 				messages.RemoveAt( index );
 		}
+		UpdateCursor( input, overUi || consumed || mouseCaptured == true );
 		Status.Update( context.Delta );
 		return overUi || consumed || toolClick;
 	}
@@ -1051,9 +1098,12 @@ public sealed partial class ParkHud
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, rotation );
 			var allowed = level.CheckObject( entry, cursorX, cursorY, rotation ) == OriginalPlacementResult.Allowed
 				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok);
+			placementRefused = !allowed;
 			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ) )
 				cells.Add( (x, y, allowed ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
+		if ( level.BuildEntry == null || !inPark )
+			placementRefused = false;
 		blueprint.Show( cells );
 	}
 
@@ -1075,6 +1125,11 @@ public sealed partial class ParkHud
 	{
 		foreach ( var element in economyElements )
 			element.Visible = Status.HasEconomy;
+		// the golden ticket and key rows appear only above zero (UI-051)
+		foreach ( var id in new[] { "goldenTicket", "goldenTickets" } )
+			if ( hud.Find( id ) is { } ticketElement ) ticketElement.Visible = Status.HasEconomy && Status.GoldenTickets > 0;
+		foreach ( var id in new[] { "goldenKey", "goldenKeys" } )
+			if ( hud.Find( id ) is { } keyElement ) keyElement.Visible = Status.HasEconomy && Status.GoldenKeys > 0;
 		// A loaded save replaces the economy: start counting changes from its balance.
 		if ( !ReferenceEquals( Status.EconomySource, cashSource ) )
 		{
@@ -1083,7 +1138,7 @@ public sealed partial class ParkHud
 		}
 		cashTracker.Update( Status.Money, delta );
 		if ( hud.Find( "cashChange" ) is { } text )
-			text.Visible = Status.HasEconomy && CashChange != 0;
+			text.Visible = BuildActionCost != null;
 		if ( hud.Find( "cashTrend" ) is { } arrow )
 			arrow.Visible = Status.HasEconomy && CashChange != 0;
 	}
@@ -1094,28 +1149,30 @@ public sealed partial class ParkHud
 		SetInfoArm( item != null );
 	}
 
-	private void DrawMessages( UiContext context )
+	/// <summary>The status line: the recent feedback lines in a translucent box above the popup help box.</summary>
+	private void DrawFeedback( UiContext context )
 	{
 		if ( messages.Count == 0 )
 			return;
 		var canvas = context.Canvas;
-		context.DrawModel( "f_tagl", 0, canvas.Map( new UiRect( 457.6f, 1100.7f, 165, 341.5f ), UiAnchor.BottomLeft ) );
-		context.DrawModel( "f_tagm", 0, canvas.Map( new UiRect( 622.6f, 1100.7f, 212.1f, 341.5f ), UiAnchor.BottomLeft ) );
-		context.DrawModel( "f_tagr", 0, canvas.Map( new UiRect( 834.7f, 1100.7f, 237.8f, 341.5f ), UiAnchor.BottomLeft ) );
-		var area = canvas.Map( new UiRect( 495, 1135, 540, 280 ), UiAnchor.BottomLeft );
-		context.DrawText( context.Fonts.Small, string.Join( "\n", messages.Select( message => message.Text ) ), area, UiColors.Text, UiAlign.Left, wrap: true );
+		var text = string.Join( "\n", messages.Select( message => message.Text ) );
+		var (width, height) = context.Measure( context.Fonts.Small, text, (int)(canvas.Width * 0.6f) );
+		var pad = 4 * canvas.TextScale;
+		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.91f - height - pad * 2, width + pad * 2, height + pad * 2 );
+		context.Batch.AddRectangle( rect, UiColors.HelpBox );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
 	}
 
 	public void Draw( UiContext context )
 	{
-		// The message area is replaced by the info arm where both would overlap.
-		if ( InfoArmOpen )
-			hud.DrawOverlay = null;
-		else
-			hud.DrawOverlay = DrawMessages;
 		DrawCellToolGhost( context );
 		DrawCoasterGhost( context );
+		if ( debugHelp != null )
+			context.HoverHelp = debugHelp;
 		Stack.Draw( context, HelpBarVisible );
+		if ( debugModels is { Length: > 0 } )
+			DrawDebugModels( context );
+		DrawCursor( context );
 	}
 
 	/// <summary>The preview shows the object's own sign text, like the object in the park (<see cref="ObjectSigns"/>).</summary>

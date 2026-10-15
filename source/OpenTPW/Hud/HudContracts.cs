@@ -19,7 +19,7 @@ public interface IHudParkStatus
 	void Update( float realSeconds );
 	/// <summary>Golden tickets the park has earned and not spent (the HUD counter, Mac main HUD table control 55); 0 without an economy.</summary>
 	int GoldenTickets => 0;
-	/// <summary>Golden keys (control 54). OpenTPW does not track keys yet, so this stays 0.</summary>
+	/// <summary>Golden keys (control 54): one per three golden tickets earned (the original advisor says so, video 41:22); 0 without an economy.</summary>
 	int GoldenKeys => 0;
 	/// <summary>The economy the balance comes from; it changes when a save replaces it, so a balance jump is not shown as income or spending.</summary>
 	object? EconomySource => null;
@@ -50,8 +50,8 @@ public interface IBuildCatalog
 	IReadOnlyList<BuildItem> GetItems( BuildCategory category );
 }
 
-/// <summary>One statistic of a selected object (label from UITEXT; null value = not simulated).</summary>
-public readonly record struct ObjectStat( UIStrings Label, string? Value );
+/// <summary>One statistic of a selected object (label from UITEXT; null value = not simulated). A gauge row (<paramref name="IsGauge"/>) is a red-to-green bar of <paramref name="Gauge"/> (0..1; null draws the empty track) instead of text.</summary>
+public readonly record struct ObjectStat( UIStrings Label, string? Value, float? Gauge = null, bool IsGauge = false );
 
 /// <summary>Info panel contents for a selected park object.</summary>
 public sealed record ObjectInfo( int ObjectNameIndex, bool IsOpen, bool CanOpen, IReadOnlyList<ObjectStat> Stats, string? DisplayName = null );

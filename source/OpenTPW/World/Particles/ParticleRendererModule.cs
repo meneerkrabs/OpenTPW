@@ -44,7 +44,11 @@ internal static class ParticleRendererModule
 			var direction = request.AtWorldOrigin ? (0, 0, (int)ParticleKeyResolver.NativeDirectionMultiplier) : ToNativeDirection( request.EngineUnitDirection!.Value );
 			return renderer.Particles.CreateDirected( request.EffectId, position, direction, request.Control );
 		}
-		return renderer.Particles.Create( request.EffectId, position, request.Control );
+		var handle = renderer.Particles.Create( request.EffectId, position, request.Control );
+		// [BIN:TPW-EXE:0x520030 volume extent] the object effects size the emitter's spawn volume right after creating it (the burst of the creation itself ran with the template's)
+		if ( request.VolumeExtent is { } extent && handle is not (0 or -1) )
+			renderer.Particles.SetVolumeExtent( handle, extent.X, extent.Y, extent.Z );
+		return handle;
 	}
 
 	/// <summary>An emitter the caller keeps: the handle belongs to its own <see cref="ParticleSystem"/> (slot and generation only mean something there), so a handle left over from another level can never touch a newer system.</summary>

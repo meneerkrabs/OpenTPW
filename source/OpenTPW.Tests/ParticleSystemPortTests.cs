@@ -190,6 +190,27 @@ public class ParticleSystemPortTests
 	}
 
 	[TestMethod]
+	public void AnOlderSaveWithoutAVolumeExtentKeepsTheTemplatesAndABadOneIsRefused()
+	{
+		var pool = Pool( (1, Template( Life( 1000 ), Burst( 10 ), Cap( 3000 ), ParticleLife( 1000 ), (0x44, 4, 100), (0x4C, 4, 100), (0xC2, 1, 1) )) );
+		var system = New( pool );
+		var handle = system.Create( 1, Origin );
+		system.SetVolumeExtent( handle, 16 * 7, 0, 16 * 7 );
+		var state = system.Capture()!;
+		Assert.IsNotNull( state.Emitters.Single().VolumeExtent, "a set extent is saved" );
+		var same = New( pool );
+		same.Restore( state );
+		CollectionAssert.AreEqual( state.Emitters.Single().VolumeExtent!.ToArray(), same.Capture()!.Emitters.Single().VolumeExtent!.ToArray(), "and restored" );
+		var older = state with { Emitters = state.Emitters.Select( emitter => emitter with { VolumeExtent = null } ).ToArray() };
+		var restored = New( pool );
+		restored.Restore( older );
+		Assert.IsNull( restored.Capture()!.Emitters.Single().VolumeExtent, "no field: the template's extent" );
+		Assert.IsNotNull( ParticleSystem.ValidateState( state with { Emitters = state.Emitters.Select( emitter => emitter with { VolumeExtent = new[] { 1, 2 } } ).ToArray() } ), "a wrong length" );
+		Assert.IsNotNull( ParticleSystem.ValidateState( state with { Emitters = state.Emitters.Select( emitter => emitter with { VolumeExtent = new[] { 1, 2, int.MaxValue } } ).ToArray() } ), "out of range" );
+		Assert.IsNull( ParticleSystem.ValidateState( state ) );
+	}
+
+	[TestMethod]
 	public void RingUsesTheExtentsAsTheRadiusAndTheVolumeRotatesAboutY()
 	{
 		var ring = New( Pool( (1, Template( Life( 1 ), Burst( 300 ), Cap( 1000 ), ParticleLife( 1000 ), (0x44, 4, 121), (0x4C, 4, 121), (0xA8, 2, 1) )) ) );

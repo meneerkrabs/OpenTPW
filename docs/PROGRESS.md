@@ -1058,6 +1058,23 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Pitch variation and build effects (October 15):** every sample playback now draws its pitch step from the sound's signed range
+  on the sound chooser stream (`min + r % (max - min)`, after the volume draw) and plays at ratio 1 for step 0, otherwise
+  2^(sign x (|step| + 1) / 96), as tp.exe `0x6bc170` and the mixer wrapper `0x6d2820` do; the tables (`0x782f40`/`0x783540`,
+  one step off) hold those powers written with six decimals, and OpenTPW computes them by that rule, and the six steps of the scream, chain and crowd
+  sounds (0..6, the maximum never drawn, 2^(1/96) never played) match the 141 playbacks measured in the original's video, so
+  the repeated screams and laughter are detuned like the original's (AUDIO-003 retired for pitch, narrowed to the delay of
+  non-chain sounds, reverb, the fixed-pitch flag `0x10000` and a parameter-bound pitch). A voice out of range without the any-distance flag (event flag
+  `0x200`) has its sample stopped by mixer message 3 (`0x6bca70` -> handler `0x6b8d60` -> `0x6bb7c0`), for one-shots and
+  sentence segments, and a chain starts no new child (AUDIO-038 narrowed: a chain's playing children play out, loops keep
+  advancing, nothing read restarts a stopped loop or shows how a sentence resumes). The
+  build, demolish, repair and upgrade effects every category `.sam` names (rides 79 / 75 / 51 / 89) start at the object's
+  footprint middle and are sized to it (`0x558e7c`, `0x5590f7`, `0x556DE0`, `0x55A100`, `0x520030`); REPAIREFFECT 1 and 0 switch
+  the repair effect (PTCL-908 narrowed). Captured in the native jungle level: a build shows green and yellow stars over the
+  footprint, a demolition a green and white burst. The leaked-chain count of a 120-minute jungle gate run is 0 of 791
+  STARTSCREAM (169 in the all-rides gate), so the scream rate is not a leak. GraphicsSettings no longer says the particle pool
+  uses density 1000 (it is 500). New: `AudioPitchTests`, `ObjectParticleEffectTests`, `ScreamDiagnosticsTests`, a volume-extent
+  case in `ParticleSystemPortTests`; `--debug-object-effect` and `--debug-sim-minutes` for captures and diagnostics.
 - **Coaster three-node station (October 15):** the coaster's station is the original's three nodes (COAST-029, tp.exe `0x436ac0`, read again at the
   instruction level): S0, a StdPylon in the cell beyond the `<` cell (node flags `0x400`, winch, no previous link), S1, pylon-less on the exact
   middle dummy (`0x200 | 0x400`, winch) and S2, a StdPylon in the cell beyond the `>` cell (`0x200`, no next link). The three dummies are read from the

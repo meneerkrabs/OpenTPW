@@ -26,6 +26,8 @@ public sealed record ParticleEmitterState
 	public IReadOnlyList<int> Rates { get; init; } = Array.Empty<int>();
 	public int Burst { get; init; }
 	public int Cap { get; init; }
+	/// <summary>The spawn volume extent when <c>SetVolumeExtent</c> changed it (X, Y, Z); null keeps the template's.</summary>
+	public IReadOnlyList<int>? VolumeExtent { get; init; }
 }
 
 /// <summary>One live effector slot's saved state.</summary>
@@ -86,7 +88,8 @@ public sealed partial class ParticleSystem
 				BaseX = emitter.BaseX, BaseY = emitter.BaseY, BaseZ = emitter.BaseZ,
 				SpiralAngle = emitter.SpiralAngle, RateCounter = emitter.RateCounter, Control = emitter.Control, Child = emitter.Child,
 				FollowedByParent = emitter.FollowedByParent, DeathEffect = emitter.DeathEffect, Rates = emitter.Rates.ToArray(),
-				Burst = emitter.Burst, Cap = emitter.Cap
+				Burst = emitter.Burst, Cap = emitter.Cap,
+				VolumeExtent = (emitter.ExtentX, emitter.ExtentY, emitter.ExtentZ) == emitter.Template.VolumeExtent ? null : new[] { emitter.ExtentX, emitter.ExtentY, emitter.ExtentZ }
 			} );
 		}
 		var freeEmitters = new List<int>();
@@ -159,7 +162,8 @@ public sealed partial class ParticleSystem
 		foreach ( var emitter in state.Emitters )
 			if ( Math.Abs( (long)emitter.Life ) > Bound || Math.Abs( (long)emitter.InitialLife ) > Bound || emitter.Rates.Any( rate => rate is < -128 or > 127 )
 				|| emitter.Control is < short.MinValue or > short.MaxValue || emitter.Cap is < short.MinValue or > short.MaxValue || Math.Abs( (long)emitter.Burst ) > Bound
-				|| emitter.RateCounter is < short.MinValue or > short.MaxValue || emitter.SpiralAngle is < 0 or > 0xFFF )
+				|| emitter.RateCounter is < short.MinValue or > short.MaxValue || emitter.SpiralAngle is < 0 or > 0xFFF
+				|| (emitter.VolumeExtent is { } extent && (extent.Count != 3 || extent.Any( value => Math.Abs( (long)value ) > Bound ))) )
 				return $"the particle state's emitter {emitter.Slot} has a life, rate, control, cap or counter outside the native ranges";
 		foreach ( var effector in state.Effectors )
 			if ( Math.Abs( (long)effector.Life ) > Bound || Math.Abs( (long)effector.Radius ) > Bound )
@@ -220,6 +224,7 @@ public sealed partial class ParticleSystem
 				emitter.Rates[index] = saved.Rates[index];
 			emitter.Burst = saved.Burst;
 			emitter.Cap = saved.Cap;
+			(emitter.ExtentX, emitter.ExtentY, emitter.ExtentZ) = saved.VolumeExtent is { Count: 3 } extent ? (extent[0], extent[1], extent[2]) : template.VolumeExtent;
 			var acceleration = template.RandomAcceleration;
 			emitter.RandomAcceleration = (acceleration.X | acceleration.Y | acceleration.Z) != 0;
 			emitter.Live = 0;

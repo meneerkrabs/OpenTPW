@@ -74,6 +74,8 @@ public sealed partial class ParticleSystem
 		public int Burst, Cap;
 		public readonly int[] Rates = new int[4];
 		public int MinX, MinY, MinZ, MaxX, MaxY, MaxZ;
+		/// <summary>The volume extent the spawns use (the template's, or the caller's after <see cref="SetVolumeExtent"/>).</summary>
+		public int ExtentX, ExtentY, ExtentZ;
 	}
 
 	private sealed class Effector
@@ -277,6 +279,21 @@ public sealed partial class ParticleSystem
 		return true;
 	}
 
+	/// <summary>
+	/// Replaces the spawn volume of a live emitter (the box or disc extent the template carries), from the half-sizes the caller computed; the burst a create ran
+	/// before this call used the template's. False for a dead handle.
+	/// </summary>
+	// [BIN:TPW-EXE:0x520030 set volume extent] the handle is checked (non-zero, slot below 0x78, generation), then the slot's +0x44/+0x48/+0x4C = the three arguments >> 4; 0x558e7c passes the footprint's width * 512, height * 256 and depth * 512
+	public bool SetVolumeExtent( int handle, int x, int y, int z )
+	{
+		if ( Resolve( handle ) is not { } emitter )
+			return false;
+		emitter.ExtentX = x >> 4;
+		emitter.ExtentY = y >> 4;
+		emitter.ExtentZ = z >> 4;
+		return true;
+	}
+
 	public bool IsAlive( int handle ) => Resolve( handle ) != null;
 
 	/// <summary>The template id of every live emitter, in slot order (diagnostics and tests).</summary>
@@ -380,6 +397,8 @@ public sealed partial class ParticleSystem
 		emitter.SpiralAngle = template.SpiralPhase;
 		emitter.RateCounter = template.RateCounter;
 		emitter.Control = template.Control;
+		// the slot is a full copy of the template, volume extent included (+0x44): SetVolumeExtent may overwrite it after the burst
+		(emitter.ExtentX, emitter.ExtentY, emitter.ExtentZ) = template.VolumeExtent;
 		emitter.DeathEffect = template.DeathEffect;
 		emitter.Child = -1;
 		emitter.FollowedByParent = false;
@@ -631,7 +650,7 @@ public sealed partial class ParticleSystem
 		particle.Colour = template.ColourMode != 0 ? template.Colour( Step() & 0x7FFF & 0xF ) : template.Colour( 15 );
 
 		int px, py, pz;
-		var extent = template.VolumeExtent;
+		var extent = (X: emitter.ExtentX, Y: emitter.ExtentY, Z: emitter.ExtentZ);
 		if ( (extent.X | extent.Y | extent.Z) == 0 )
 		{
 			px = emitter.X;

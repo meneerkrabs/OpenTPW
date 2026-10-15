@@ -209,6 +209,34 @@ restore exactly), so a resumed effect can still be ended by its `KILLOBJ`. `Vali
 rate bytes, control, cap and counters; a saved pool the template file cannot rebuild is dropped with a warning instead of
 failing the resume.
 
+## Object effects: build, demolish, repair and upgrade
+
+Every category `.sam` (`Info.CreateParticleEffect`, `DestroyParticleEffect`, `RepairParticleEffect`,
+`UpgradeParticleEffect`; schema `0x745020`/`0x74505c`/`0x745098`/`0x7450d4`, type record `+0x60`/`+0x64`/`+0x68`/`+0x6C`)
+names four effects of the template file. Jungle rides use 79 / 75 / 51 / 89, shops 81 / 77, sideshows and upgrades 80 / 76
+and features 79-82 / 75-78; shops, sideshows and features have no repair or upgrade key, and 0 starts nothing.
+`ObjectCatalogEntry` reads the four keys and `OriginalObjectRuntime.ParticleEffectId` returns them.
+
+| Effect | tp.exe | Trigger | Handle |
+| --- | --- | --- | --- |
+| Create | `0x5587F0` (`0x558e7c`) | a new object's script attaches (`Level.PlaceObject`); not while a park loads (`DAT_00785a2c`) | dropped |
+| Destroy | `0x559060` (`0x5590f7`) | the removal `0x4dd0a0` passes flag `0x2` unless a park loads or clears (`Level.RemoveObjectAt`, before the object goes) | dropped |
+| Repair | `0x556DE0`, from the REPAIREFFECT handler `0x5562bd` before its sounds | value 1 starts it, value 0 ends it (life -2); the script's end ends it too (`0x55854b`) | kept at the script's `+0xCC` |
+| Upgrade | `0x55A100`, from `0x4df8f0` | the upgrade is installed (`ParkEventKind.UpgradeCompleted`) | dropped |
+
+All four start at the footprint box middle (`0x466B70`: the packed cell rectangle at object `+0xC0`/`+0xC4`, corners x 10, one
+cell added to the far corner), at the object's base height, converted like every other request (x 1024 into the pool's
+`>> 4`). Create, Destroy and Upgrade then size the emitter's spawn volume with `0x520030` to the footprint:
+`(width * 512, (y1 - y0) * 256, depth * 512) >> 4` for the box, width and depth in original units (10 per cell), so the stars
+spread over the footprint; `ParticleSystem.SetVolumeExtent` replaces the extent after the creation burst, which ran with the
+template's. Repair keeps its template's volume. A fixed item has no footprint box and starts nothing in OpenTPW (the original's `0x559060` creates the effect anyway, at coordinates the box call leaves unset; `PTCL-908`), and the removal's mode in which the global at `+0x1da738` is 2 (no effect) is not modelled; headless hosts have no
+pool. The box height (record `+0x1C`/`+0x28`) is not traced and counts as zero (`PTCL-908`).
+
+Captured in the native jungle level (`--load-original-level jungle --debug-object-effect build|demolish --capture-camera 1,-38,7,-135
+--capture-world out.png --capture-frames 110 --capture-sequence 6,6`): building Belly Bounce shows green and yellow
+four-point stars over the footprint for about a second (effect 79), demolishing it a green and white burst (effect 75),
+matching the build and demolish effects of the original's video (2:07, 74:38).
+
 ## Registered
 
 Retired (the port is from the instructions, with the tests below): `APPROX:PTCL-902` (template arithmetic: create,
@@ -222,12 +250,14 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
 - `PTCL-905`: one primitive per particle in the original against OpenTPW's three blend batches; engine depth sorting
   (`0x565F90`) untraced.
 - `PTCL-906`: the pose conversion inverts OpenTPW's placement; the density option's saved value is not read.
-- `PTCL-908`: ADDOBJ does not follow the key node afterwards (`0x5516B0` updates it each run with the node position
-  truncated to whole units), ADDOBJ_EXT has no VM handler, the negative-key box centre (`0x556B90`/`0x466B70`) and the
-  scoped effects (record `+0x4E0`) are not wired, and the other engine callers of `0x521E60`/`0x521930` are not
-  (`0x486B90`, `0x48DE1A`, `0x4B8EE0`, `0x4D93B0`, `0x4FA470`, `0x544C80`, `0x546280`, `0x547F50`, `0x549C60`, `0x54AC70`,
-  `0x54AE50`, `0x550E00`, `0x556DE0`, `0x5571A0`, `0x557D80`, `0x5587F0`, `0x559060`, `0x55A100`, `0x55DA70`,
-  `0x599880`, `0x5ED5A0`).
+- `PTCL-908`: wired are EVENT 1/2, ADDOBJ 1/2 and the per-type object effects (below). Not wired: ADDOBJ following the
+  key node afterwards (`0x5516B0` updates it each run with the node position truncated to whole units), ADDOBJ_EXT
+  (no VM handler), the negative-key box centre (`0x556B90`/`0x466B70`), the scoped effects (record `+0x4E0`), the further
+  dispatches after the build and upgrade effects (`0x51C640`, `0x51BFC0`), and the other engine callers of
+  `0x521E60`/`0x521930` (UI pools `0x5ED5A0`, key `0x599880`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`,
+  `0x557334`/`0x557f0e`, stink 50 `0x4D93B0`, smoke 2 `0x544C80`, splash 96 `0x547F50`, fly smoke and fire 39/40
+  `0x55DBA3`/`0x55DC22`, thing effects `0x4FA470`, `0x486B90`, `0x48DE1A`, `0x4B8EE0`, `0x550E00`, `0x5571A0`,
+  `0x557D80`, `0x55DA70`).
 
 Differences that are not registered because the data cannot reach them: the ring emitter (+0xE, tp.exe `0x5224F0`),
 the hold word (+2) and the ground bounce (+0x76) are ported or skipped without a shipped template using them; a low-detail

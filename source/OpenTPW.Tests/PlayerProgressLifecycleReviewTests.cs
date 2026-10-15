@@ -74,7 +74,7 @@ public class PlayerProgressLifecycleReviewTests
 	}
 	private void Choose()
 	{
-		menu.SelectLevel( "jungle" ); menu.ShowGameMode(); Click( "fullSimulation" );
+		menu.SelectLevel( "jungle" ); menu.ShowGameMode(); Click( "fullSimulation" ); Click( "ok" );
 		if ( menu.Stack.Top!.Name == "newProgress" ) Click( "choice0" );
 	}
 	private void Click( string id ) => menu.Stack.Update( context, UiInput.Click( menu.Stack.Top!.Find( id )!.ScreenRect( context.Canvas ).Center ) );

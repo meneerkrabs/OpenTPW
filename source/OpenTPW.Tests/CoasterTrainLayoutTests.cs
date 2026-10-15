@@ -7,7 +7,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The train layout of the original (tp.exe <c>0x42fad0</c>, <c>0x430130</c>, <c>0x43bc20</c>, <c>0x43ba90</c>, <c>0x43c1f0</c>, <c>0x43c450</c>): car offsets
-/// from the car types' extents around the middle car and the placement by the release time.
+/// from the car types' extents around the middle car, the seats on the centre-type cars, COAST 6's bounds and the placement by the release time.
 /// </summary>
 [TestClass]
 public class CoasterTrainLayoutTests
@@ -64,13 +64,14 @@ public class CoasterTrainLayoutTests
 	}
 
 	[TestMethod]
-	public void WithoutCarModelsEveryCarIsSevenUnitsLong()
+	public void WithoutCarModelsEveryCarIsSevenUnitsLongWithFourSeats()
 	{
 		var definition = CoasterDefinition.FromValues( CoasterTests.PcSettings() );
 		Assert.IsFalse( definition.HasCarModels );
 		Assert.AreEqual( 1, definition.ReferenceCar, "(4 − 1) >> 1: the second car (0x43baef)" );
 		Assert.AreEqual( (7f, 7f, 7f), definition.CarPairDistances );
 		CollectionAssert.AreEqual( new[] { 7f, 0f, -7f, -14f }, definition.CarOffsets.ToArray(), "car 0 is ahead of the reference car, cars 2 and 3 behind it (0x43bc20)" );
+		Assert.AreEqual( (16, 96, 4), (definition.HeadsPerTrain, definition.FleetHeads, definition.SeatCarCount), "4 cars × 4 sockets, × 6 trains; every car seats" );
 	}
 
 	[TestMethod]
@@ -94,6 +95,23 @@ public class CoasterTrainLayoutTests
 		var two = Caterpillar( 2 );
 		Assert.AreEqual( 0, two.ReferenceCar );
 		Assert.AreEqual( -two.CarPairDistances.Rear, two.CarOffsets[1], 1e-5f );
+	}
+
+	[TestMethod]
+	public void OnlyTheCentreTypeCarsSeatAndCoastSixIsBoundedByTheHeadSockets()
+	{
+		var definition = Caterpillar();
+		Assert.AreEqual( (12, 12 * 6, 4), (definition.HeadsPerTrain, definition.FleetHeads, definition.SeatCarCount), "head and tail have no sockets; the seats go over the four bodies" );
+		var ride = Built( definition );
+		Assert.AreEqual( 12, ride.SeatsPerTrain, "the controller starts with one train's head sockets (0x436a61 → 0x43ba90 with 0)" );
+		Assert.AreEqual( (12, 2 * 72), (ride.AdmissionRingSize, ride.LeavingRingSize), "ring sizes +0x2f8 and 2 × +0x318 (0x4369c1)" );
+		CollectionAssert.AreEqual( new[] { 0, 3, 3, 3, 3, 0 }, ride.Trains[0].Seats );
+		ride.Command( 6, 10 );
+		CollectionAssert.AreEqual( new[] { 0, 2, 2, 3, 3, 0 }, ride.Trains[0].Seats, "10 over 4 seat cars: 10/4, 8/3, 6/2, 3/1 (0x43bb7b)" );
+		ride.Command( 6, 50 );
+		Assert.AreEqual( 12, ride.SeatsPerTrain, "at most one train's head sockets" );
+		ride.Command( 6, 0 );
+		Assert.AreEqual( 12, ride.SeatsPerTrain, "0 stands for them" );
 	}
 
 	[TestMethod]

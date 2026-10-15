@@ -185,6 +185,30 @@ public sealed class CoasterDefinition
 
 	private CoasterCarMetrics FallbackOrEmpty( CoasterCarType type ) => HasCarModels ? new CoasterCarMetrics( type.FrontAdd, type.RearAdd, 0 ) : FallbackCarMetrics( type );
 
+	/// <summary>Whether car <paramref name="car"/> carries seats: its type is the train's centre type (<c>0x43bb7b</c>).</summary>
+	public bool IsSeatCar( int car ) => CarTypeIndex( car ) == CarTypes.CentreIndex;
+
+	/// <summary>The cars the seats are split over (<c>0x43ba90</c>): every car, less one when the front type is not the centre type and one when the rear type is not.</summary>
+	// [BIN:TPW-EXE:0x43bb37 seat cars] param_4 = cars − (train definition +0xc ≠ +0x10) − (+0x14 ≠ +0x10): the front and rear type records compared with the centre one
+	public int SeatCarCount => CarCount - (CarTypes.FrontIndex != CarTypes.CentreIndex ? 1 : 0) - (CarTypes.RearIndex != CarTypes.CentreIndex ? 1 : 0);
+
+	/// <summary>The head sockets of one train (definition <c>+0x2f8</c>, the train definition's <c>+8</c>): the sockets of each car's type summed over the cars.</summary>
+	// [BIN:TPW-EXE:0x42fc38 train heads] definition +0x2f8 = Σ over the uiMaxCars cars of the head count (+0x30) of the front type for car 0, the rear type for the last car and the centre type for the others
+	public int HeadsPerTrain
+	{
+		get
+		{
+			var heads = 0;
+			for ( var car = 0; car < MaxCars; car++ )
+				heads += CarMetrics( car ).Heads;
+			return heads;
+		}
+	}
+
+	/// <summary>The head sockets of the whole fleet (definition <c>+0x318</c>): the sockets of one train × <c>uiMaxTrains</c>.</summary>
+	// [BIN:TPW-EXE:0x42fd66 fleet heads] definition +0x318 = +0x2f8 × +0x2e8 (uiMaxTrains)
+	public int FleetHeads => HeadsPerTrain * MaxTrains;
+
 	/// <summary>
 	/// The three distances between neighbouring cars (definition <c>+0x30c</c>, <c>+0x310</c>, <c>+0x314</c>): front type's rear plus the centre type's
 	/// front, the centre type's rear plus its front, and the rear type's front plus the centre type's rear.

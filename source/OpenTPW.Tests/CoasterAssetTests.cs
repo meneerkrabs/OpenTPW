@@ -43,11 +43,11 @@ public class CoasterAssetTests
 		ObjectCatalog.Themes.SelectMany( theme => ObjectCatalog.Load( theme ).Entries ).Where( entry => !entry.IsBonus && CoasterDefinition.IsCoaster( entry.Settings ) );
 
 	/// <summary>
-	/// The car metrics come from the car models (<c>0x430130</c>): the header bounds around the root node plus the distance adds; the caterpillar's (4185)
-	/// cars are laid out around its third car.
+	/// The car metrics come from the car models (<c>0x430130</c>): the header bounds around the root node plus the distance adds and the head sockets;
+	/// the caterpillar (4185) seats only its four bodies, 4 heads each, and the trains of every coaster seat one train's head sockets.
 	/// </summary>
 	[TestMethod]
-	public void CarMetricsComeFromTheCarModels()
+	public void CarMetricsComeFromTheCarModelsAndOnlyCentreTypeCarsSeat()
 	{
 		foreach ( var entry in PcCoasters() )
 		{
@@ -60,9 +60,14 @@ public class CoasterAssetTests
 			var rootZ = rig.Model.Nodes[rig.Model.RootNodeIndex].Transform.M43;
 			Assert.AreEqual( type.FrontAdd + rig.Model.BoundsMax.Z - rootZ, metrics.FrontExtent, 1e-4f, $"{entry.InfoId}: front extent" );
 			Assert.AreEqual( type.RearAdd + rootZ - rig.Model.BoundsMin.Z, metrics.RearExtent, 1e-4f, $"{entry.InfoId}: rear extent" );
+			Assert.AreEqual( rig.Model.DummyAttributes.Count( attribute => (attribute.Type & 0x80) != 0 ), metrics.Heads, $"{entry.InfoId}: head sockets" );
+			Assert.IsTrue( definition.HeadsPerTrain > 0, $"{entry.InfoId} seats someone" );
 		}
 		var caterpillar = CoasterDefinition.FromCatalogEntry( PcCoasters().Single( entry => entry.InfoId == 4185 ) );
-		Assert.AreEqual( (6, 2), (caterpillar.CarCount, caterpillar.ReferenceCar), "head, four bodies, tail; the third car is the reference" );
+		Assert.AreEqual( (0, 4, 0), (caterpillar.CarTypeMetrics( 0 ).Heads, caterpillar.CarTypeMetrics( 1 ).Heads, caterpillar.CarTypeMetrics( 2 ).Heads), "caterbd has four records with flag 0x80, the head and the tail none" );
+		Assert.AreEqual( (6, 16, 4, 2), (caterpillar.CarCount, caterpillar.HeadsPerTrain, caterpillar.SeatCarCount, caterpillar.ReferenceCar), "head, four bodies of four, tail; the third car is the reference" );
+		var ride = new CoasterRide( caterpillar, new CoasterWorld( 1 ) );
+		Assert.AreEqual( 16, ride.SeatsPerTrain );
 		Assert.AreEqual( 0f, caterpillar.CarOffsets[2] );
 		Assert.IsTrue( caterpillar.CarOffsets.Zip( caterpillar.CarOffsets.Skip( 1 ), ( ahead, behind ) => ahead > behind ).All( x => x ), "the offsets fall from the head to the tail" );
 	}

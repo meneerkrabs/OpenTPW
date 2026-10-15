@@ -968,7 +968,7 @@ public class CoasterTests
 		Assert.IsTrue( moved, "power back: trains run again" );
 	}
 
-	/// <summary>COAST 5 is gated (0x43b2f0): a repeated open or close changes nothing; COAST 6 floors at 0 (0x43b330).</summary>
+	/// <summary>COAST 5 is gated (0x43b2f0): a repeated open or close changes nothing; COAST 6 floors at 0 and caps at one train's head sockets (0x43b330), and 0 means those sockets (0x43ba90).</summary>
 	[TestMethod]
 	public void CloseGateAndCapacityFloor()
 	{
@@ -986,12 +986,15 @@ public class CoasterTests
 		Assert.IsFalse( ride.Closed, "open while open: no change" );
 		ride.Command( 5, 7 );
 		Assert.IsTrue( ride.Closed, "any nonzero closes" );
-		ride.Command( 6, -5 );
-		Assert.AreEqual( 0, ride.SeatsPerTrain, "the lower bound is the literal 0" );
-		ride.Command( 6, 0 );
-		Assert.AreEqual( 0, ride.SeatsPerTrain );
 		ride.Command( 6, 3 );
 		Assert.AreEqual( 3, ride.SeatsPerTrain );
+		ride.Command( 6, -5 );
+		Assert.AreEqual( 16, ride.SeatsPerTrain, "the lower bound is the literal 0, and a capacity of 0 is one train's head sockets (0x43bb1b)" );
+		ride.Command( 6, 3 );
+		ride.Command( 6, 0 );
+		Assert.AreEqual( 16, ride.SeatsPerTrain );
+		ride.Command( 6, 100 );
+		Assert.AreEqual( 16, ride.SeatsPerTrain, "the upper bound is one train's head sockets (the first train definition's +8)" );
 	}
 
 	/// <summary>COAST 8 applies the script speed bias 50 (0x5516b0 → 0x43b2b0 → 0x43c3d0): setting 50, cap = lerp(80, 130, 0.5).</summary>

@@ -183,7 +183,12 @@ public class CoasterDispatchTests
 			ride.Board( guest );
 		Assert.AreEqual( 0, ride.Command( 2, 0 ), "six guests wait: no room left" );
 		ride.Board( 407 );
-		Assert.AreEqual( 1, ride.LeavingCount, "a guest handed over without room goes back through COAST 3" );
+		Assert.AreEqual( (7, 0), (ride.AdmissionCount, ride.LeavingCount), "COAST 1 tests the ring's size, not the room (0x43b0e0)" );
+		Assert.AreEqual( 16, ride.AdmissionRingSize, "the ring holds one train's head sockets (definition +0x2f8; four generic cars of four)" );
+		for ( var guest = 408; guest <= 416; guest++ )
+			ride.Board( guest );
+		ride.Board( 417 );
+		Assert.AreEqual( (16, 1), (ride.AdmissionCount, ride.LeavingCount), "a guest handed over to a full ring goes back through COAST 3" );
 		var most = 0;
 		for ( var tick = 0; tick < 240 * 60 && ride.AdmissionCount > 0; tick++ )
 		{
@@ -196,7 +201,7 @@ public class CoasterDispatchTests
 			}
 		}
 		Assert.IsTrue( most > 0, "a train seated guests from the ring" );
-		Assert.AreEqual( 0, ride.AdmissionCount, "the trains that passed the station seated all six guests" );
+		Assert.AreEqual( 0, ride.AdmissionCount, "the trains that passed the station seated all sixteen guests" );
 	}
 
 	[TestMethod]

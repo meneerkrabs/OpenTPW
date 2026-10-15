@@ -93,8 +93,6 @@ public sealed class CoasterTrain
 /// </summary>
 public sealed class CoasterRide
 {
-	/// <summary>Seats per car when the script has not set a capacity yet (COAST-023).</summary>
-	public const int DefaultSeatsPerCar = 4;
 	/// <summary>Samples per motion hop.</summary>
 	public const float Hop = 0.5f;
 	/// <summary>Below this speed every hop decays the speed by <see cref="Decay"/>.</summary>
@@ -119,7 +117,11 @@ public sealed class CoasterRide
 		World = world ?? throw new ArgumentNullException( nameof( world ) );
 		Name = name;
 		Track = new CoasterTrack( definition );
-		SeatsPerTrain = Math.Max( 1, definition.MaxCars ) * DefaultSeatsPerCar;
+		// [BIN:TPW-EXE:0x436a61 controller seats] the constructor runs 0x43ba90(ctl, 0, uiMaxCars, 1): a capacity of 0 takes the train definition's head sockets (+8 = definition +0x2f8), stored at ctl+0xf0 and ctl+0xb8
+		SeatsPerTrain = definition.HeadsPerTrain;
+		// [BIN:TPW-EXE:0x4369c1 ring sizes] the admission ring (ctl+0xb0) holds definition +0x2f8 guests, the leaving ring (ctl+0xd0) 2 × definition +0x318 (0x43b080)
+		AdmissionRingSize = definition.HeadsPerTrain;
+		LeavingRingSize = 2 * definition.FleetHeads;
 		SpeedCap = SpeedCapFor( definition, SpeedSetting );
 		world.Add( this );
 		CoasterApproximations.LogOnce();
@@ -179,6 +181,10 @@ public sealed class CoasterRide
 	public int AdmissionCount => admission.Count;
 	/// <summary>Riders taken off a train, a removed track or a closed ride, waiting for <c>COAST 3</c>.</summary>
 	public int LeavingCount => leaving.Count;
+	/// <summary>The admission ring's size (ctl <c>+0xb0</c>): one train's head sockets (definition <c>+0x2f8</c>).</summary>
+	public int AdmissionRingSize { get; }
+	/// <summary>The leaving ring's size (ctl <c>+0xd0</c>): twice the fleet's head sockets (2 × definition <c>+0x318</c>).</summary>
+	public int LeavingRingSize { get; }
 	/// <summary>
 	/// The coordinate train 0's last car had when the trains were last taken off (its car <c>+0x40</c>, which the original keeps in the idle train
 	/// slot); the next placement starts from it. 0 before any train ran.
@@ -471,19 +477,27 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>
-	/// The seats of each car (<c>0x43ba90</c>): the capacity split over the cars by integer division of what is left by the cars
-	/// still to fill, so the front cars get the smaller share.
+	/// The seats of each car (<c>0x43ba90</c>): the capacity split over the seat cars (<see cref="CoasterDefinition.IsSeatCar"/>, the cars of the centre
+	/// type) by integer division of what is left by the seat cars still to fill, so the front ones get the smaller share; the other cars get none.
 	/// </summary>
 	// [BIN:TPW-EXE:0x43bb7b seat split] car +0x44 = remaining / (seat cars − filled) for the cars whose type is the train's seat type, 0 for the others
-	// [APPROX:COAST-023] every car carries seats; the original seats only the cars of the train definition's seat type (+0x10) and caps the capacity by the fleet sockets (definition +0x318)
+	// [BIN:TPW-EXE:0x43bb1b seat type] the seat type is the train definition's +0x10, the centre car type (compared with car +4 at 0x43bb6c); the capacity is the argument, or the train definition's +8 (the head sockets of one train) when it is 0 (0x43bb1b..0x43bb29)
 	private void RebuildSeats( CoasterTrain train )
 	{
-		var remaining = Math.Max( 0, SeatsPerTrain );
+		var remaining = (uint)Math.Max( 0, SeatsPerTrain );
+		var seatCars = Definition.SeatCarCount;
+		var filled = 0;
 		for ( var car = 0; car < train.Seats.Length; car++ )
 		{
-			var share = remaining / (train.Seats.Length - car);
-			train.Seats[car] = share;
+			if ( !Definition.IsSeatCar( car ) || seatCars - filled <= 0 )
+			{
+				train.Seats[car] = 0;
+				continue;
+			}
+			var share = remaining / (uint)(seatCars - filled);
+			train.Seats[car] = (int)share;
 			remaining -= share;
+			filled++;
 		}
 	}
 
@@ -578,11 +592,8 @@ public sealed class CoasterRide
 				return 0;
 			case 6:
 				// [BIN:STP-PPC:0x1003DF24 coaster capacity] COAST 6 takes MAX with the global value, then MIN with the definition and train bounds
-				// [BIN:TPW-EXE:0x43b330 coaster capacity] min(max(request, 0), definition +0x318 (the fleet's seat socket total), the first train definition's +8); the lower bound is the literal 0 where the Mac reading takes a global (documented difference); a changed value is rebuilt through 0x43ba90 (seat allocation, not modelled)
-				// [APPROX:COAST-023] a train seats COAST 6's capacity (at least 0; uiMaxCars × 4 before the script sets it) split over its cars by the original's recurrence, all cars carrying seats; the two upper bounds (definition +0x318 fleet sockets and the first train definition's +8) are not applied because OpenTPW reads neither the seat sockets nor that train field, the admission ring has no size limit (definition +0x2f8) and the leaving ring none (2 × definition +0x318) — evidence needed: the seat socket count per car (definition +0x318, train definition +8, car type +0x10) and the ring sizes
-				SeatsPerTrain = Math.Max( 0, parameter );
-				foreach ( var train in trains )
-					RebuildSeats( train );
+				// [BIN:TPW-EXE:0x43b330 coaster capacity] min(max(request, 0), definition +0x318 (the fleet's head sockets), the first train definition's +8 (one train's head sockets, definition +0x2f8)); the lower bound is the literal 0 where the Mac reading takes a global (documented difference); a value that differs from ctl+0xf0 is rebuilt through 0x43ba90, where 0 stands for the train's head sockets
+				SetCapacity( parameter );
 				return 0;
 			default:
 				return 0;
@@ -610,6 +621,27 @@ public sealed class CoasterRide
 		TrackChanged?.Invoke( this );
 	}
 
+	/// <summary>
+	/// COAST 6's capacity (<c>0x43b330</c>): the request bounded below by 0 and above by the fleet's and one train's head sockets; a changed value
+	/// re-splits the seats of every train (<c>0x43ba90</c>), and 0 stands for one train's head sockets there.
+	/// </summary>
+	private void SetCapacity( int request )
+	{
+		var capacity = Math.Min( Math.Min( Math.Max( request, 0 ), Definition.FleetHeads ), Definition.HeadsPerTrain );
+		if ( capacity == SeatsPerTrain )
+			return;
+		SeatsPerTrain = capacity == 0 ? Definition.HeadsPerTrain : capacity;
+		foreach ( var train in trains )
+			RebuildSeats( train );
+	}
+
+	/// <summary>The capacity <see cref="SetCapacity"/> would store for a request.</summary>
+	private int BoundedCapacity( int request )
+	{
+		var capacity = Math.Min( Math.Min( Math.Max( request, 0 ), Definition.FleetHeads ), Definition.HeadsPerTrain );
+		return capacity == 0 ? Definition.HeadsPerTrain : capacity;
+	}
+
 	/// <summary>The room COAST 2 reports: the capacity COAST 6 stored minus the guests waiting for a seat on the admission ring.</summary>
 	// [BIN:TPW-EXE:0x43b1f0 coaster room] COAST 2 returns max(0, ctl+0xb8 − ctl+0xc0 − ctl+0xbc): the capacity COAST 6 stored (0x43bbd1: ctl+0xf0 → +0xb8), minus the ring's second counter (+0xc0, only ever 0), minus the guests on the admission ring (+0xbc); no state, mode or train enters it, so the room is the capacity of one train whether or not a train is in the station
 	public int Room => Math.Max( 0, SeatsPerTrain - admission.Count );
@@ -619,12 +651,13 @@ public sealed class CoasterRide
 	/// while its cars roll through the window. A guest handed over with no room goes back through <c>COAST 3</c>.
 	/// </summary>
 	// [BIN:STP-PPC:0x1003E2F8 boarding] the pending ring's read cursor (+196) is popped and the visitor is placed in a randomly chosen car (s·214013 + 2531011)
-	// [BIN:TPW-EXE:0x43b0e0 coaster boarding] COAST 1 pushes the guest on the ring at ctl+0xb0 when its count is below the capacity (definition +0x2f8, a queue size OpenTPW does not read; the room above bounds it); nobody is seated here
+	// [BIN:TPW-EXE:0x43b0e0 coaster boarding] COAST 1 pushes the guest on the ring at ctl+0xb0 when the ring's two counters (+0xc0, +0xbc) are below its size (+0xb0 = definition +0x2f8); nobody is seated here, and the room COAST 2 reports is not tested
+	// [EXT:coaster-full-ring] the original drops a guest handed over to a full ring (it stays on the ride with nobody to let it off); OpenTPW hands it back through COAST 3 so no guest is stranded
 	internal void Board( int guest )
 	{
 		if ( guest <= 0 )
 			return;
-		if ( Room == 0 )
+		if ( admission.Count >= AdmissionRingSize )
 		{
 			leaving.Enqueue( guest );
 			return;
@@ -635,7 +668,8 @@ public sealed class CoasterRide
 	internal int TakeLeavingRider() => leaving.Count > 0 ? leaving.Dequeue() : 0;
 
 	/// <summary>The admission ring into the leaving ring (<c>0x43b390</c>), when the ride closes and when the track is taken away.</summary>
-	// [BIN:TPW-EXE:0x43b390 coaster close] moves min(leaving ring room, admission count) guests from the admission ring (+0xb0) to the leaving ring (+0xd0), oldest first; the leaving ring's size (2 × definition +0x318) is not modelled, so every waiting guest moves
+	// [BIN:TPW-EXE:0x43b390 coaster close] moves min(leaving ring room, admission count) guests from the admission ring (+0xb0) to the leaving ring (+0xd0, 2 × definition +0x318 guests), oldest first
+	// [EXT:coaster-full-ring] the guests that do not fit stay on the admission ring in the original; OpenTPW moves them all (the ring only fills past one train's guests when a whole fleet unloads at once, which the original's own paths never do)
 	private void MoveAdmissionToLeaving()
 	{
 		while ( admission.Count > 0 )
@@ -667,10 +701,11 @@ public sealed class CoasterRide
 		}
 	}
 
+	// [BIN:TPW-EXE:0x43585a unload order] 4 → 2 and 8 → 2 unload each train's boarding list (0x43b480 with 0: car +0x2c) before its lap list (with 1: car +0x28)
 	private void UnloadAll( CoasterTrain train )
 	{
-		Unload( train, boardingList: false );
 		Unload( train, boardingList: true );
+		Unload( train, boardingList: false );
 		train.Flags &= ~CoasterTrainFlags.InStation;
 		train.FirstBoardingCar = train.LastBoardingCar = 0;
 	}
@@ -1120,7 +1155,8 @@ public sealed class CoasterRide
 			: saved.Closed ? CoasterControllerState.Closed : CoasterControllerState.Open;
 		BreakdownState = saved.BreakdownState;
 		SpeedSetting = saved.SpeedSetting;
-		SeatsPerTrain = saved.SeatsPerTrain;
+		// A save from before the head sockets bounded the capacity can hold more than one train's sockets, or 0 (which now stands for them): it takes COAST 6's bounds.
+		SeatsPerTrain = BoundedCapacity( saved.SeatsPerTrain );
 		SpeedCap = saved.SpeedCap;
 		PaidCost = saved.PaidCost;
 		TimeSeconds = saved.TimeSeconds;

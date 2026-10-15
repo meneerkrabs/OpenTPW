@@ -1,7 +1,7 @@
 namespace OpenTPW.Mods;
 
 /// <summary>
-/// An official extension: OpenTPW engine code that lives in this repository, carries its own [EXT]/[APPROX] labels and
+/// An official extension: OpenTPW engine code that lives in this repository, carries its own fidelity labels and
 /// can be switched off in <c>mods.json</c> or with <c>--disable-extension &lt;id&gt;</c> (docs/MODS.md). Extensions ship
 /// no files; files-based mods may depend on them like on any other mod.
 /// </summary>

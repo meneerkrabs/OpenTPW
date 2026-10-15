@@ -4,7 +4,8 @@ public sealed partial class OriginalObjectRuntime
 {
 	private Func<int, int, float, System.Numerics.Vector3>? bumpToEngine;
 	private Func<System.Numerics.Vector3, Vector3?>? engineToSound;
-	private Func<int, int, Vector3?>? vehicleToSound;
+	private Func<Vector3>? gridSoundOrigin;
+	private Func<System.Numerics.Vector2>? gridEngineOrigin;
 	private readonly Dictionary<int, EngineVoice> engineVoices = new();
 	/// <summary>The break-smoke emitter handle of each vehicle slot (presentation only).</summary>
 	private readonly Dictionary<int, ParticleRendererModule.EmitterRef> smokeEmitters = new();
@@ -16,12 +17,29 @@ public sealed partial class OriginalObjectRuntime
 	/// Gives the runtime the placement of the ride's vehicles: the engine position of a vehicle point (section units and a model-unit height) and the sound-space
 	/// position of an engine position. Presentation only; headless runtimes have none and play nothing positioned.
 	/// </summary>
-	/// <param name="toVehicleSound">The sound-space place of a vehicle's engine voice at a vehicle point (<see cref="BumpEffects.VoicePlace"/> on the park's sound origin), or null to use <paramref name="toSound"/>.</param>
-	internal void SetBumpPlacement( Func<int, int, float, System.Numerics.Vector3> toEngine, Func<System.Numerics.Vector3, Vector3?> toSound, Func<int, int, Vector3?>? toVehicleSound = null )
+	internal void SetBumpPlacement( Func<int, int, float, System.Numerics.Vector3> toEngine, Func<System.Numerics.Vector3, Vector3?> toSound )
 	{
 		bumpToEngine = toEngine;
 		engineToSound = toSound;
-		vehicleToSound = toVehicleSound;
+	}
+
+	/// <summary>
+	/// Gives the runtime the park grid's origin, in sound units (the vehicles' voices: the karts' voice place, the tour cars' module units / 300) and in engine
+	/// units (the tour cars' emitters). Presentation only; a headless runtime has neither and places nothing.
+	/// </summary>
+	internal void SetVehicleOrigin( Func<Vector3> soundOrigin, Func<System.Numerics.Vector2> engineOrigin )
+	{
+		gridSoundOrigin = soundOrigin;
+		gridEngineOrigin = engineOrigin;
+	}
+
+	/// <summary>The sound-space place of a kart's, bumper car's or boat's engine voice: <see cref="BumpEffects.VoicePlace"/> from the grid's sound origin, or null headless.</summary>
+	private Vector3? VehicleVoicePlace( int x, int y )
+	{
+		if ( gridSoundOrigin?.Invoke() is not { } origin )
+			return null;
+		var (vx, vz) = BumpEffects.VoicePlace( x, y );
+		return new Vector3( origin.X + vx, origin.Y, origin.Z + vz );
 	}
 
 	/// <summary>A vehicle's engine voice: a sentence with a parameter channel, or a plain voice when the engine event is not a repeating sentence.</summary>
@@ -54,9 +72,11 @@ public sealed partial class OriginalObjectRuntime
 	}
 
 	/// <summary>Starts a vehicle's engine voice at its place: a sentence with a parameter channel, or a plain voice for a non-sentence event.</summary>
-	private EngineVoice? StartEngineVoice( int engineEvent, int x, int y, Vector3? fallback )
+	private EngineVoice? StartEngineVoice( int engineEvent, int x, int y, Vector3? fallback ) => StartEngineVoice( engineEvent, VehicleVoicePlace( x, y ) ?? fallback );
+
+	/// <summary>Starts an engine voice (level cat_rides, RSE type 3) at a sound-space place: a sentence with a parameter channel, or a plain voice for a non-sentence event.</summary>
+	private EngineVoice? StartEngineVoice( int engineEvent, Vector3? place )
 	{
-		var place = vehicleToSound?.Invoke( x, y ) ?? fallback;
 		if ( place is { } at && GameAudio.StartRseSentence( 3, (uint)engineEvent, at ) is { } sentence )
 			return new EngineVoice( sentence, null );
 		return GameAudio.PlayRseEvent( 3, (uint)engineEvent, place ) is { } voice ? new EngineVoice( null, voice ) : null;
@@ -145,7 +165,7 @@ public sealed partial class OriginalObjectRuntime
 				// [BIN:TPW-EXE:0x00548104 engine voice tick] while the vehicle holds a voice (+0x20) the integration moves it to the vehicle's voice place (0x51C270: (int)(x × 0.0033036), 0, (int)(y × 0.0033036)) and then sets parameter code = EventMap variable 10 (0x55A3E0) to speed / 3 (0x51BC40 -> 0x6B5B80 -> the placeholder's SetParameter 0x6BBB80); the water, kart and bumper branches do the same (0x548132/0x5481E7, 0x5484C7/0x54857C, 0x548A81/0x548B63)
 				if ( engineVoices.TryGetValue( effect.Slot, out var engineVoice ) )
 				{
-					if ( (vehicleToSound?.Invoke( effect.X, effect.Y ) ?? sound) is { } place )
+					if ( (VehicleVoicePlace( effect.X, effect.Y ) ?? sound) is { } place )
 						engineVoice.MoveTo( place );
 					if ( EventMapVariable( BumpEffects.EngineParameterVariable ) is { } code )
 						engineVoice.Sentence?.SetParameter( code, effect.Value );

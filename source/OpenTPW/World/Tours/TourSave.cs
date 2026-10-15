@@ -6,7 +6,7 @@ internal sealed record TourCarSaveData(
 	int PreviousX, int PreviousY, int PreviousZ, int PreviousHeading, int PreviousPitch, int PreviousRoll,
 	int TargetX, int TargetY, int TargetZ, int PreviousTargetX, int PreviousTargetY, int PreviousTargetZ,
 	int VelocityX, int VelocityZ, int Turn, int VerticalVelocity, int Speed, int Thrust, int Timer, int Corner,
-	int RiderCount, List<int> Riders, bool Leaving, bool Broken, int ApproachHeading, int Random, int Animation, bool AnimationLoops );
+	int RiderCount, List<int> Riders, bool Leaving, bool Broken, int ApproachHeading, int Random, int Animation, bool AnimationLoops, int Emitter = 0 );
 
 /// <summary>
 /// The stale words of a free car slot (TOUR-009): the original's car creation keeps the heading, patrol corner, seat ids and approach heading of the slot's last car,
@@ -51,7 +51,7 @@ internal static class TourSave
 				car.PreviousX, car.PreviousY, car.PreviousZ, car.PreviousHeading, car.PreviousPitch, car.PreviousRoll,
 				car.TargetX, car.TargetY, car.TargetZ, car.PreviousTargetX, car.PreviousTargetY, car.PreviousTargetZ,
 				car.VelocityX, car.VelocityZ, car.Turn, car.VerticalVelocity, car.Speed, car.Thrust, car.Timer, car.Corner,
-				car.RiderCount, car.Riders.ToList(), car.Leaving, car.Broken, car.ApproachHeading, car.Random, car.Animation, car.AnimationLoops ) );
+				car.RiderCount, car.Riders.ToList(), car.Leaving, car.Broken, car.ApproachHeading, car.Random, car.Animation, car.AnimationLoops, car.Emitter ) );
 		}
 		return new TourControllerSaveData( controller.AttractionId, controller.StationX, controller.StationY, controller.StationZ, controller.RotationDegrees, controller.Small,
 			controller.Wanted, controller.Requested, controller.CarCount, controller.Duration, controller.AvoidanceScale, controller.BankScale, controller.LandingReserved, controller.Condition,
@@ -87,6 +87,7 @@ internal static class TourSave
 			Require( car.Heading is >= 0 and < 4096 && car.PreviousHeading is >= 0 and < 4096 && car.Roll is >= 0 and < 4096 && car.PreviousRoll is >= 0 and < 4096, $"car {car.Slot} has an angle out of range" );
 			Require( Small( car.Pitch ) && Small( car.PreviousPitch ) && Small( car.VelocityX ) && Small( car.VelocityZ ) && Small( car.Turn ) && Small( car.VerticalVelocity ) && Small( car.Speed ) && Small( car.Thrust ) && Small( car.Timer )
 				&& car.Corner is >= 0 and < 4 && Small( car.ApproachHeading ) && car.Animation is >= 0 and <= 10, $"car {car.Slot} has a scalar out of range" );
+			Require( car.Emitter is 0 or TourEffects.ParticleFlySmoke or TourEffects.ParticleFlyFire, $"car {car.Slot} holds an unknown emitter {car.Emitter}" );
 			// the seat words: every seat (the stale ones after the riders aboard included), or only the riders aboard in a save from before the stale words were kept
 			Require( Math.Abs( car.RiderCount ) <= TourCar.MaximumRiders && car.Riders != null && (car.Riders.Count == Math.Abs( car.RiderCount ) || car.Riders.Count == TourCar.MaximumRiders), $"car {car.Slot}'s riders do not match its count" );
 			riders += Math.Abs( car.RiderCount );

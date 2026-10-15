@@ -71,6 +71,13 @@ public sealed class TourCar
 	/// <summary>The animation the car's mesh plays (0 idle, 3 docked, 4 take-off, 5 flying, 6 landing, 9 flying broken, 10 repaired) and whether it loops.</summary>
 	public int Animation { get; internal set; }
 	public bool AnimationLoops { get; internal set; }
+	/// <summary>Clip triggers so far (each change of <see cref="Animation"/> or <see cref="AnimationLoops"/> restarts the clip); presentation state, not saved, not hashed.</summary>
+	public long AnimationSerial { get; internal set; }
+	/// <summary>
+	/// The particle id of the emitter the car holds (+0xC4): 0 none, 39 FlySmoke (worn), 40 FlyFire (broken). Presentation state: saved with the car so a resumed park
+	/// restarts it, not hashed.
+	/// </summary>
+	public int Emitter { get; internal set; }
 
 	/// <summary>
 	/// Cars created in this slot so far: presentation state only (not saved, not hashed). The renderer snaps a car to its pose on its first draw, as the original does through

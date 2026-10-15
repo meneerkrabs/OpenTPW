@@ -103,6 +103,9 @@ public class ParkEconomyOriginalDataTests
 		var spray = catalog[1303];
 		Assert.AreEqual( (20, 50, 75), (spray.PricePerUse, spray.CostOfGoods, spray.ChanceOfLosingPercent) );
 		Assert.AreEqual( ParkObjectKind.FixedItem, catalog[1601].Kind );
+		// tp.exe's buy-menu filler 0x4aaf70 never lists WhichUIType 4: per theme the six features-directory fixed items (bus, gates, seaplane, lights, ferry, end)
+		foreach ( var theme in new[] { "jungle", "hallow", "fantasy", "space" } )
+			Assert.AreEqual( 6, EconomyObjectCatalog.Load( theme, easy: false ).Objects.Count( info => info.Kind == ParkObjectKind.FixedItem && info.WhichUIType == 4 ), theme );
 		Assert.AreEqual( ParkObjectKind.LandTool, catalog[101].Kind );
 		Assert.AreEqual( 1150, catalog[1500].AddOnTargetId, "Dino Karts Jump upgrades the Dino Karts" );
 		Assert.AreEqual( 10000, catalog[1185].PurchaseCost, "coaster archive: the .sam with Info.Id, not coaster.sam" );

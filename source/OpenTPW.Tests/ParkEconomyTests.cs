@@ -37,6 +37,17 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void AFeatureIsAFixedItemByItsUiTypeAsTheBuyMenuFillerReadsIt()
+	{
+		// tp.exe 0x4aaf70 lists a definition only in the tab equal to Info.WhichUIType (0-3) and never reads Research.Category
+		EconomyObjectInfo Feature( string keys ) => EconomyObjectCatalog.FromSettings(
+			new SamSettings( new[] { SamDocument.Parse( "Info.Id 1650\nUpgrades[0].CostOfUpgrade 100\n" + keys, "test.sam" ) } ), ParkObjectKind.Feature, "features/test.wad" );
+		Assert.AreEqual( ParkObjectKind.FixedItem, Feature( "Info.WhichUIType 4\nResearch.Category 3\n" ).Kind );
+		Assert.AreEqual( ParkObjectKind.Feature, Feature( "Info.WhichUIType 3\nResearch.Category 0\n" ).Kind );
+		Assert.AreEqual( ParkObjectKind.Feature, Feature( "Research.Category 0\n" ).Kind, "no UI type key" );
+	}
+
+	[TestMethod]
 	public void BalanceSettingsReadEveryEconomyGroup()
 	{
 		var settings = EconomyTestData.Settings();

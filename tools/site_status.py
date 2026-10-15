@@ -112,8 +112,9 @@ def parse_matrix(text: str) -> dict:
 
 def parse_formats(text: str) -> dict:
     lines = text.splitlines()
-    rows = [{"format": plain(re.sub(r"\s*\(.*$", "", r[0])), "status": "decoded" if "✅" in r[1] else "partial", "note": plain(r[2])}
-            for r in table_rows(lines, "| Format | Status") if len(r) == 3]
+    rows = [{"format": plain(re.sub(r"\s*\(.*$", "", r[0])), "status": "decoded" if "✅" in r[1] else "partial",
+             "note": plain(r[2]), "open": plain(r[3]), "game": plain(r[4])}
+            for r in table_rows(lines, "| Format | Decoding") if len(r) == 5]
     if not rows:
         raise ValueError("README.md: file format table not found")
     return {"rows": rows, "decoded": sum(r["status"] == "decoded" for r in rows), "partial": sum(r["status"] == "partial" for r in rows)}
@@ -289,7 +290,7 @@ def render_page(status: dict) -> str:
     targets = table(["Executed target", "C# on main"], [[t["target"], labels[t["csharp"]]] for t in o["targets"]])
     matrix = table(["Area", "Gate", "Implementation", "macOS", "Windows", "Linux", "Original VM"],
                    [[x["area"], x["gate"], x["implementation"], x["macos"], x["windows"], x["linux"], x["original_vm"]] for x in m["rows"]])
-    formats = table(["Format", "Status", "Note"], [[x["format"], x["status"], x["note"][:160] + ("..." if len(x["note"]) > 160 else "")] for x in fm["rows"]])
+    formats = table(["Format", "Decoding", "Still open in the format"], [[x["format"], x["status"], x["open"][:160] + ("..." if len(x["open"]) > 160 else "")] for x in fm["rows"]])
     body = f"""<h1>Project status</h1>
 <p class="lead">Figures read from the repository when this site was built, so they match what is merged on <code>main</code>. {stamp(status)}.</p>
 <div class="stats">{tiles}</div>
@@ -312,7 +313,7 @@ def render_page(status: dict) -> str:
 <p>Source: <a href="FEATURE-MATRIX.html">feature matrix</a>. Implemented or self-tested does not mean original fidelity; unassessed means no evidence yet either way.</p>
 {matrix}
 <h2 id="formats">File formats</h2>
-<p>Source: the format table in the <a href="README.html#file-formats">README</a>. Decoded means the observed decoding is implemented; partial means decoding or semantics remain incomplete.</p>
+<p>Source: the format table in the <a href="README.html#file-formats">README</a>. Decoded means every observed file decodes and its fields are understood; partial means some bytes or field meanings are still unknown. Game integration is listed separately in the README.</p>
 {formats}"""
     return load_site_docs().page("Project status", body, 0, "tools/site_status.py")
 

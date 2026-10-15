@@ -21,8 +21,8 @@ public sealed record LobbyIslandInfo( int Index, string Level, string Directory,
 /// The original front-end lobby as described by <c>lobby.wad</c>: <c>lobby.txt</c> holds the camera
 /// (ISLANDFOV, SPINSPEED, SPINRADIUS, VERTICALOFFSET) and island positions (ISLANDCAMERAPOSITION
 /// index, x, z), and one file per theme holds ISLAND(index, directory, island model, gate model,
-/// name, angle, height), FLYINGMESH, SKYCOLOUR, RAINY and LIGHTNING. The meaning of the angle (island
-/// yaw in degrees) and height (camera target height) is inferred, not proven (docs/UI.md).
+/// name, angle, height), FLYINGMESH, SKYCOLOUR, RAINY and LIGHTNING. The angle is the island's yaw in
+/// degrees and the height the camera target's height (tp.exe 0x5dfa60, 0x5e1210).
 /// </summary>
 public sealed class LobbyDefinition
 {
@@ -81,7 +81,9 @@ public sealed class LobbyDefinition
 			: ((byte)Math.Clamp( Number( sky.Arguments, 0 ), 0, 255 ), (byte)Math.Clamp( Number( sky.Arguments, 1 ), 0, 255 ), (byte)Math.Clamp( Number( sky.Arguments, 2 ), 0, 255 ));
 		var lightning = commands.FirstOrDefault( command => command.Name == "LIGHTNING" );
 		var rainy = commands.FirstOrDefault( command => command.Name == "RAINY" );
-		// [DATA:lobby.wad:<theme>.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture
+		// [DATA:lobby.wad:<theme>.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING]
+		// [BIN:TPW-EXE:0x5dfa60 island angle] the ISLAND angle is the yaw of the island and gate models in degrees (× π × 1/180 at 0x5dfb81, both models at (x, 0, z), 0x5dfb46)
+		// [BIN:TPW-EXE:0x5e1210 island height] the ISLAND height is the Y of the island's camera target (x, height, z) kept at +0x3c (0x5e3210 → 0x5dfb07); the eye orbits it at SPINRADIUS and VERTICALOFFSET above
 		var result = new LobbyIslandInfo( (int)Number( island.Arguments, 0 ), level, island.Arguments[1], island.Arguments[2], island.Arguments[3], island.Arguments[4],
 			Number( island.Arguments, 5 ), Number( island.Arguments, 6 ), colour,
 			commands.Where( command => command.Name == "FLYINGMESH" && command.Arguments.Count >= 2 ).Select( command => command.Arguments[1] ).ToArray(),

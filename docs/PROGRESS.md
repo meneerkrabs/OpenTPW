@@ -6,9 +6,9 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
-## Original saves bring their research, challenges and staff HQ (October 15, 2026)
+## Original saves bring their research, challenges, staff HQ and hiring pool (October 15, 2026)
 
-Importing an original save (the Jungle Easymode start) now restores three more parts, all read in tp.exe:
+Importing an original save (the Jungle Easymode start) now restores four more parts, all read in tp.exe:
 
 - **Research** (`0x502dc0`): the lab's projects, their points and each category's current project, effort and work load. The Jungle start
   continues researching rides 1150, shops 1212, sideshows 1304 and features 1414 where it left off; the lab's own table order differs from

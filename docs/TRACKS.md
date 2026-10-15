@@ -111,7 +111,9 @@ the second (`Exit`) is where the first line starts.
 
 `TrackCircuitWalker`, `[TPW-EXE:0x52A970]`. From the start tile the walk follows the masks two cells at a time. Each step needs a track tile with at least
 two arms and an arm toward the flow; a bend leaves by the other arm and rewrites the link; a three- or four-arm tile continues straight ahead and fails
-when that arm is missing or the cell ahead has type 0 (**the tee refusal**); more is untraced (TRACK-014). The segment number goes to the tile. The circuit is
+when that arm is missing or the cell ahead has type 0 (**the tee refusal**). The original (read October 15) keeps the heading on every non-corner cell
+without testing arms, fails a three-arm cell when the cell two ahead has type 0 (or, by a literal bit test, is an armless track cell while the heading is
+0x01), has no step limit and numbers the steps from 0 (TRACK-014). The segment number goes to the tile. The circuit is
 valid when the walk arrives back at the start tile; no minimum length. The result is the attraction's validity flag, which `BUMP 5` returns and which the
 park points counts-test and guest boarding read. A re-walk (commit mode) also resets the controller: boats leave, the ride closes
 (`[TPW-EXE:0x545450]`).

@@ -13,7 +13,7 @@ public sealed partial class ParkHud
 {
 	// [BIN:TPW-EXE:0x755150 object window tables] the three tables share the window rectangle, the preview box (348,162), the stats frame (853,162) with 7 or 8 rows of a label (x 876..1273) and a value (x 1315..1550), the title box at y 74..153 and the buttons b_door (1430,784), b_erase (300,800), b_okay (1671,818), b_arup/b_ardown (1662,126/216) and b_allthings (1648,583); the ride table also has b_queue, b_ride it!, b_callmech and b_upgrade in the bottom row
 	// [DATA:video 4:00, 10:40, 23:40, 24:20, 77:09, 78:20] the windows of Belly Bounce, Tempel der Duisternis, Wilde Aap, Drankwinkel, Klein Toilet and IJswinkeltje have this layout (title in yellow, preview, seven rows, bottom row of round buttons, right column of arrows, list and tick); labels and values are white
-	// [APPROX:UI-024] the sliders (speed, capacity, duration, price), b_queue, b_move, b_track and b_applyall are not drawn (their features are not simulated); the preview is OpenTPW's orthographic icon
+	// [APPROX:UI-024] the sliders (speed, capacity, duration, price, quality, sugar, salt, ice, fat, chance of winning) and b_move are not drawn (ride settings and the move tool are not simulated), apply-all copies only the price; the preview is OpenTPW's orthographic icon
 	/// <summary>What a row of the stats frame shows; the labels are UITEXT 17-23 for rides and 32-37 and 23 for shops and sideshows.</summary>
 	internal enum ObjectRowKind { None, Users, Age, Excitement, Reliability, Repair, Life, Scrap, Customers, CostOfGoods, Takings, Profit, Satisfaction, Happiness }
 
@@ -73,6 +73,9 @@ public sealed partial class ParkHud
 		public LayoutNode? RideIt { get; init; }
 		public LayoutNode? CallMech { get; init; }
 		public LayoutNode? Upgrade { get; init; }
+		public LayoutNode? Queue { get; init; }
+		public LayoutNode? Track { get; init; }
+		public LayoutNode? ApplyAll { get; init; }
 		public UiRect? PriceSlot { get; init; }
 
 		/// <summary>The table the original opens for an object of <paramref name="category"/>: rides, sideshows, and the shop table for every other object.</summary>
@@ -102,7 +105,7 @@ public sealed partial class ParkHud
 				Door = table.TryModel( "b_door" ), Erase = table.TryModel( "b_erase" ), Okay = table.TryModel( "b_okay" ), Previous = table.TryModel( "b_arup" ),
 				Next = table.TryModel( "b_ardown" ), List = table.TryModel( "b_allthings" ), RideIt = table.TryModel( "b_ride it!" ),
 				// a toilet's call button (shops have none of their own) uses the ride table's slot
-				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ),
+				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" ),
 				PriceSlot = slot == null ? null : UiRect.FromCenter( slot.Rect.Center, 340, 150 )
 			};
 		}
@@ -202,7 +205,51 @@ public sealed partial class ParkHud
 		objNext = Info( new UiButton { Id = "infoNext", Model = "b_ardown", Clicked = () => CycleSelectedObject( 1 ) } );
 		objList = Info( new UiButton { Id = "infoList", Model = "b_allthings", Clicked = () => { SetInfoArm( false ); OpenAttractionsWindow(); } } );
 		// the original's "Ride it!" button (gui_CameraFlags 4); owners ride as well as visitors of a published park
+		// [BIN:TPW-EXE:0x755150 b_queue, b_track, b_applyall] the ride window's queue button (help 9) lets the player edit the ride's queue, its track button (help 10) the track; the shop and sideshow windows' apply-all button (help 536, 537) copies the window's settings to every object of the type
+		objQueue = Info( new UiButton { Id = "editQueue", Model = "b_queue", Clicked = EditQueue } );
+		objTrack = Info( new UiButton { Id = "editTrack", Model = "b_track", Clicked = EditTrack } );
+		objApplyAll = Info( new UiButton { Id = "applyAll", Model = "b_applyall", Clicked = ApplyPriceToAll } );
 		objRideIt = Info( new UiButton { Id = "rideView", Model = "b_ride it!", Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); } } );
+	}
+
+	private bool CanEditQueue( OriginalObject item ) => !level.IsReadOnlyVisit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && item.Visitors.QueueFrontCell != null;
+
+	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null);
+
+	private void EditQueue()
+	{
+		if ( selectedObject is not { IsDeleted: false } item || !CanEditQueue( item ) || RejectReadOnlyAction() )
+			return;
+		SetInfoArm( false );
+		LeaveBuildTool();
+		if ( level.EnterQueueTool( item.Visitors ) )
+			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
+	}
+
+	private void EditTrack()
+	{
+		if ( selectedObject is not { IsDeleted: false } item || !CanEditTrack( item ) || RejectReadOnlyAction() )
+			return;
+		SetInfoArm( false );
+		LeaveBuildTool();
+		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
+		if ( entered )
+			PostMessage( item.Runtime.Coaster != null ? CoasterToolHelp : TrackToolHelp );
+	}
+
+	/// <summary>Copies the selected shop's or sideshow's price to every placed object of the same type.</summary>
+	// [APPROX:UI-024] the original's apply-all copies all of the window's settings (the sliders as well); OpenTPW's window has only the price
+	private void ApplyPriceToAll()
+	{
+		if ( selectedObject is not { IsDeleted: false } owner || !TryPriceTarget( owner, out var economy, out var state ) || RejectReadOnlyAction() )
+			return;
+		foreach ( var other in level.Objects.Objects )
+		{
+			if ( other.IsDeleted || ReferenceEquals( other, owner ) || other.Entry.InfoId != owner.Entry.InfoId || level.GetEconomyInstance( other ) is not int instance
+				|| !economy.TryGetObject( instance, out var target ) || target.InfoId != state.InfoId )
+				continue;
+			economy.SetPrices( target.Id, state.Price );
+		}
 	}
 
 	/// <summary>Moves the selection to the next (<paramref name="direction"/> 1) or previous placed object of the selected one's category, wrapping around.</summary>
@@ -219,7 +266,7 @@ public sealed partial class ParkHud
 	}
 
 	// the elements of the object window, found once by BuildObjectWindow
-	private UiElement? objWindow, objStatsFrame, objPreviewFrame, objPreview, objName, objDoor, objErase, objOkay, objPrevious, objNext, objList, objRideIt;
+	private UiElement? objQueue, objTrack, objApplyAll, objWindow, objStatsFrame, objPreviewFrame, objPreview, objName, objDoor, objErase, objOkay, objPrevious, objNext, objList, objRideIt;
 	private readonly UiElement?[] objLabels = new UiElement?[ObjectWindowRows], objValues = new UiElement?[ObjectWindowRows], objGauges = new UiElement?[ObjectWindowRows];
 	private ObjectWindowLayout? appliedObjectLayout;
 	private string? appliedObjectLanguage;
@@ -263,6 +310,9 @@ public sealed partial class ParkHud
 			Place( objNext, layout.Next, HelpOf( layout.Next?.Help ?? -1 ) );
 			Place( objList, layout.List, HelpOf( layout.List?.Help ?? -1 ) );
 			Place( objRideIt, layout.RideIt, HelpOf( layout.RideIt?.Help ?? -1 ) );
+			Place( objQueue, layout.Queue, HelpOf( layout.Queue?.Help ?? -1 ) );
+			Place( objTrack, layout.Track, HelpOf( layout.Track?.Help ?? -1 ) );
+			Place( objApplyAll, layout.ApplyAll, HelpOf( layout.ApplyAll?.Help ?? -1 ) );
 			Place( callStaffButton, layout.CallMech, HelpOf( layout.CallMech?.Help ?? -1 ) );
 			Place( rideUpgradeButton, layout.Upgrade, HelpOf( layout.Upgrade?.Help ?? -1 ) );
 			if ( shopPriceButton != null && layout.PriceSlot is { } slot )
@@ -284,6 +334,11 @@ public sealed partial class ParkHud
 		// the per-frame visibility reset shows every control of the window: hide the ones this table lacks
 		if ( layout.RideIt == null && objRideIt != null ) objRideIt.Visible = false;
 		if ( layout.Upgrade == null && rideUpgradeButton != null ) rideUpgradeButton.Visible = false;
+		// the queue, track and apply-all buttons show only where they can act
+		var target = selectedObject!;
+		if ( objQueue != null ) objQueue.Visible &= layout.Queue != null && CanEditQueue( target );
+		if ( objTrack != null ) objTrack.Visible &= layout.Track != null && CanEditTrack( target );
+		if ( objApplyAll != null ) objApplyAll.Visible &= layout.ApplyAll != null && TryPriceTarget( target, out _, out _ );
 		for ( var row = layout.Rows.Length; row < ObjectWindowRows; row++ )
 		{
 			if ( objLabels[row] != null ) objLabels[row]!.Visible = false;

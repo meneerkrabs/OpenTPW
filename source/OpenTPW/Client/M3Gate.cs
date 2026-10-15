@@ -201,8 +201,10 @@ public static class M3Gate
 		}
 		if ( args.Contains( "--no-determinism" ) )
 			options = options with { DeterminismProbe = false };
+		GameAudio.Screams.Reset();
 		var report = Run( options );
 		Console.Write( report.ToSummary() );
+		Console.Write( GameAudio.Screams.Summary() );
 		if ( Option( args, "--report" ) is { } path )
 		{
 			File.WriteAllText( path, report.ToJson() + "\n" );

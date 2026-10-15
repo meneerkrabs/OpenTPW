@@ -60,6 +60,10 @@ public sealed record OriginalObjectRuntimeSnapshot
 	public const int MaximumParticleObjects = 4096;
 	/// <summary>The ADDOBJ type 1/2 records of live particle effects (slot operand and pool handle), or null when none; the pool's generations and counters restore exactly, so the handles stay valid.</summary>
 	public IReadOnlyList<ParticleObjectRecord>? ParticleObjects { get; init; }
+	/// <summary>The pool handle of the repair effect REPAIREFFECT 1 started (the original keeps it at the script's +0xCC), or 0 when none is live; older saves have none.</summary>
+	public int RepairParticle { get; init; }
+	/// <summary>Whether the script's own view of its scream handle is set (the scream diagnostics follow it, with or without audio); null in older saves, which fall back to <see cref="HeldScream"/>.</summary>
+	public bool? ScriptHoldsScream { get; init; }
 
 	/// <summary>Deep copy.</summary>
 	public OriginalObjectRuntimeSnapshot DeepCopy() => this with

@@ -210,10 +210,31 @@ public sealed class ParkObjects
 		return heights.Length == 0 ? 0 : heights.Average();
 	}
 
+	private bool clearing;
+	private readonly HashSet<OriginalObject> removing = new();
+
+	/// <summary>
+	/// Raised for an object that is about to be removed, while its script and footprint are still there: the one seam every removal (remove tool, sale from a window, scripted
+	/// removal) passes through, except <see cref="Clear"/>. A handler that removes the same object again is ignored; one that throws aborts the removal.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4dd0a0 object removal] the removal passes flag 0x2 to the kill 0x559060 (which starts the DestroyParticleEffect) unless a park loads or clears (DAT_00785a2c)
+	public event Action<OriginalObject>? ObjectRemoving;
+
 	public bool Remove( OriginalObject item )
 	{
-		if ( !objects.Remove( item ) )
+		if ( !objects.Contains( item ) || !removing.Add( item ) )
 			return false;
+		try
+		{
+			if ( !clearing )
+				ObjectRemoving?.Invoke( item );
+			if ( !objects.Remove( item ) )
+				return false;
+		}
+		finally
+		{
+			removing.Remove( item );
+		}
 		foreach ( var key in occupied.Where( pair => pair.Value == item ).Select( pair => pair.Key ).ToArray() )
 			occupied.Remove( key );
 		item.Delete();
@@ -223,8 +244,16 @@ public sealed class ParkObjects
 
 	public void Clear()
 	{
-		foreach ( var item in objects.ToArray() )
-			Remove( item );
+		clearing = true;
+		try
+		{
+			foreach ( var item in objects.ToArray() )
+				Remove( item );
+		}
+		finally
+		{
+			clearing = false;
+		}
 	}
 
 	public void Simulate( double deltaSeconds )

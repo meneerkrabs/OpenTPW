@@ -408,6 +408,87 @@ internal static class Game
 					Log.Trace( $"--debug-particle: effect {id} at {position} -> handle {OriginalObjectRuntime.ParticleStarter?.Invoke( new ParticleEventRequest( 0, 0, 1, 0, id, 1000, position, null, -1, -1 ) )}." );
 			}
 		}
+		// [EXT:debug-object-effect] smoke-only: once the original level is up, builds the first buildable ride that names a build effect on a free cell next to
+		// the camera target through the build tool's own path (Level.PlaceObject), and for "demolish" removes it again through the remove tool's (Level.RemoveObjectAt),
+		// so captures show the type's Create and Destroy particle effects (docs/PARTICLES.md, PTCL-908).
+		var debugObjectEffect = GetOption( args, "--debug-object-effect", "build or demolish for effect captures" );
+		if ( debugObjectEffect != null )
+		{
+			var objectFrames = 0;
+			var builtAtFrame = 0;
+			// the capture camera is held for the last 30 frames before the capture: build once it is in place, so the ride stands in the picture
+			var buildFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } frameText && int.TryParse( frameText, out var parsedFrames ) && parsedFrames > 30 ? parsedFrames - 29 : 40;
+			OriginalObject? built = null;
+			Render.PostUpdate += RunDebugObjectEffect;
+			void RunDebugObjectEffect()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++objectFrames < buildFrame )
+					return;
+				if ( built == null )
+				{
+					var entry = level.Objects.Catalog.Buildable.FirstOrDefault( item => item.Category == ObjectCategory.Ride && item.CreateParticleEffect != 0 );
+					if ( entry == null || !level.TryGetGridCell( park.Target.X, park.Target.Y, out var cellX, out var cellY ) )
+					{
+						Log.Warning( "--debug-object-effect: no buildable ride with a build effect, or the camera target is off the grid." );
+						Render.PostUpdate -= RunDebugObjectEffect;
+						return;
+					}
+					for ( var radius = 0; radius < 40 && built == null; radius++ )
+						for ( var dx = -radius; dx <= radius && built == null; dx++ )
+							for ( var dy = -radius; dy <= radius && built == null; dy++ )
+								if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.CheckObject( entry, cellX + dx, cellY + dy, 0 ) == OriginalPlacementResult.Allowed )
+									built = level.PlaceObject( entry, cellX + dx, cellY + dy, 0 );
+					Log.Trace( $"--debug-object-effect: built {entry.DisplayName} (effect {entry.CreateParticleEffect}): {(built == null ? level.LastActionMessage : "placed")}." );
+					builtAtFrame = objectFrames;
+					if ( built == null )
+						Render.PostUpdate -= RunDebugObjectEffect;
+					return;
+				}
+				if ( debugObjectEffect != "demolish" )
+				{
+					Render.PostUpdate -= RunDebugObjectEffect;
+					return;
+				}
+				if ( objectFrames - builtAtFrame >= 60 )
+				{
+					Log.Trace( $"--debug-object-effect: demolished {built.Entry.DisplayName} (effect {built.Entry.DestroyParticleEffect}): {level.RemoveObjectAt( built.Placement.X, built.Placement.Y )}." );
+					Render.PostUpdate -= RunDebugObjectEffect;
+				}
+			}
+		}
+		// [EXT:debug-sim-minutes] smoke-only: once the original level is up, runs its fixed-step simulation (guests, ride scripts, economy) for that many park minutes
+		// as fast as it goes and prints the scream statistics (docs/AUDIO.md "Scream diagnostics"); use it with --capture-world, which ends the run afterwards.
+		var debugSim = GetOption( args, "--debug-sim-minutes", "park minutes to simulate for the audio diagnostics" );
+		if ( debugSim != null && double.TryParse( debugSim, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var simMinutes ) )
+		{
+			var simFrames = 0;
+			Render.PostUpdate += RunDebugSim;
+			void RunDebugSim()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || ++simFrames < 30 )
+					return;
+				Render.PostUpdate -= RunDebugSim;
+				// the park door opens as the player's button would; guests arrive and the rides run their scripts with riders
+				level.Park?.Economy.OpenPark();
+				GameAudio.Screams.Reset();
+				var total = M3Gate.TicksForMinutes( simMinutes );
+				var perMinute = M3Gate.TicksForMinutes( 1 );
+				var clock = System.Diagnostics.Stopwatch.StartNew();
+				for ( long tick = 1; tick <= total; tick++ )
+				{
+					level.AdvanceSimulation( FixedStepClock.TickDuration );
+					if ( tick % (perMinute * 5) == 0 || tick == total )
+					{
+						var stats = GameAudio.Screams;
+						Log.Trace( $"--debug-sim-minutes: minute {tick / perMinute}: {level.Guests?.Guests.Count} guests, park {(level.Park?.Economy.IsParkOpen == true ? "open" : "closed")}, {level.Park?.Economy.Counters[ParkCounters.Admissions]} admissions, {stats.Starts} scream starts, {stats.Refusals} refused (leaked), {stats.Stops} stops, {clock.Elapsed.TotalSeconds:0} s." );
+					}
+				}
+				var final = GameAudio.Screams;
+				Log.Trace( $"--debug-sim-minutes: bands (STARTSCREAM operand: count) {string.Join( ", ", final.Bands.Select( pair => $"{pair.Key}: {pair.Value}" ) )}." );
+				foreach ( var (name, counts) in final.PerRide.OrderByDescending( pair => pair.Value.Refusals ) )
+					Log.Trace( $"--debug-sim-minutes: {name}: {counts.Starts} starts, {counts.Refusals} refused, {counts.Stops} stops." );
+			}
+		}
 		// [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes
 		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once, and every
 		// fourth shows a thought bubble again whenever its last one went.

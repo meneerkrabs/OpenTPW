@@ -61,7 +61,10 @@ public sealed class SoundChain
 		var sample = system.PickSample( soundEvent.Sounds[soundIndex].Samples, -1, avoidRepeat: false );
 		if ( sample >= 0 && system.Decode( category, soundEvent.Sounds[soundIndex].Samples[sample] ) is { } audio )
 		{
-			var child = system.Mixer.Play( audio, channel, system.Volume( soundEvent.Sounds[soundIndex] ) / 100f, position, range );
+			var volume = system.Volume( soundEvent.Sounds[soundIndex] ) / 100f;
+			var child = system.Mixer.Play( audio, channel, volume, position, range );
+			// [BIN:TPW-EXE:0x6bc410 sample start] volume, then pitch, then (below) the wait: the order of the original's draws
+			child.SetPitch( system.Pitch( soundEvent.Sounds[soundIndex] ) );
 			children.Add( child );
 			lastSample = sample;
 		}

@@ -1115,7 +1115,7 @@ public sealed class CoasterTrack
 	/// chain) or the station end node the closed circuit will end in (closed, not yet completed). Null while fewer than two nodes exist.
 	/// </summary>
 	// [BIN:TPW-EXE:0x435d50 build cursor] every frame the edited coaster (data 0x790fec, flag 4) runs this edit step: for a hovered cell within 300 units of the last node it fills the coaster's spare cursor node (controller +0x68, 0x436190, 0x436230) with the cell and links it after the last node, then rebuilds the track (0x444700) — the cursor node is a regular node of the chain, so the curve is drawn through it before the pylon is placed; a hovered cell that already holds a node of the chain marks the chain's start as closing (flag 0x8) instead
-	// [APPROX:COAST-035] the ghost node takes the tool's current height and loop mode and is drawn like a placed one (no tint for an invalid cell); the original's ghost/invalid presentation (node flags 0x200000, 0x800000, 0x804000 and the invalid cross section uiInvalidCrossSection) is not decoded — evidence needed: the consumers of node flags 0x800000/0x804000 and a capture of an invalid pylon
+	// [APPROX:COAST-035] the ghost node takes the tool's current height and loop mode and carries the cursor flag (0x8000); the renderer draws the link to it as a translucent blue or red ribbon without a pylon (CoasterRenderer.BuildRibbon); the original's consumers of the node flags 0x8000/0x4000 and of uiInvalidCrossSection are not found — evidence needed: those consumers
 	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop )
 	{
 		if ( (IsComplete && !IsCut) || nodes.Count < StationNodeCount || DepartCell == null )

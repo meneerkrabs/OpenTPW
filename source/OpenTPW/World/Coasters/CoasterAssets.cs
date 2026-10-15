@@ -49,6 +49,22 @@ internal sealed class CoasterAssets : IDisposable
 		return TrackSlots = slots;
 	}
 
+	private Texture? ghostBlue, ghostRed;
+
+	/// <summary>
+	/// The 16 slots of the build cursor's ribbon: translucent blue where the cursor's cell is valid, translucent red where the validator refuses it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x435d50 cursor node] the cursor node carries 0x8000 and 0x4000 when the validator refuses its cell; the video (73:20-75:58) shows the pending link as a wide translucent ribbon, blue or red
+	// [APPROX:COAST-035] the ribbon is OpenTPW's own mesh (a strip along the pending link, 6 units wide, lifted 0.6 units) in a generated translucent blue or red; the original's renderer consumers of node flags 0x8000/0x4000 and of uiInvalidCrossSection are not found — evidence needed: those consumers
+	public Texture[] GhostSlots( bool valid )
+	{
+		ghostBlue ??= new Texture( new byte[] { 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140 }, 2, 2 );
+		ghostRed ??= new Texture( new byte[] { 235, 55, 45, 140, 235, 55, 45, 140, 235, 55, 45, 140, 235, 55, 45, 140 }, 2, 2 );
+		var slots = new Texture[16];
+		Array.Fill( slots, valid ? ghostBlue : ghostRed );
+		return slots;
+	}
+
 	/// <summary>A texture of the archive by name (cached), or <see cref="Texture.Missing"/>.</summary>
 	public Texture Load( string name )
 	{

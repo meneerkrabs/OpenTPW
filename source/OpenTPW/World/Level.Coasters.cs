@@ -52,7 +52,7 @@ public partial class Level
 	/// <paramref name="infoId"/> picks the coaster (its <c>Info.Id</c>), the first buildable one by default. Null when no site has room.
 	/// </summary>
 	// [EXT:debug-coaster] developer/screenshot helper, not original behaviour: it builds the track for the player without the tool and without charging money
-	internal OriginalObject? BuildDemoCoaster( bool finished, int? infoId, int height = 40 )
+	internal OriginalObject? BuildDemoCoaster( bool finished, int? infoId, int height = 40, bool enterTool = false )
 	{
 		if ( IsReadOnlyVisit || Guests == null || OriginalPark == null )
 			return null;
@@ -86,6 +86,9 @@ public partial class Level
 			{
 				builder.Place( ends.Return.X, ends.Return.Y );
 				builder.Complete();
+				// with the tool: the finished coaster is taken into the tool, so its panel shows on the height button (capture helper)
+				if ( enterTool )
+					EnterCoasterTool( station );
 			}
 			else
 			{
@@ -98,6 +101,16 @@ public partial class Level
 			return station;
 		}
 		return null;
+	}
+
+	/// <summary>The camera's heading in the knot directions' yaw convention (atan2(x, z) of its forward direction in track coordinates), which turns the tilt drag to the view.</summary>
+	internal float CoasterCameraYaw
+	{
+		get
+		{
+			var forward = Camera.Rotation.Forward;
+			return MathF.Atan2( forward.X, forward.Y );
+		}
 	}
 
 	/// <summary>Whether a cell holds nothing but ground: no object, path or queue (the cells the placement area marks).</summary>

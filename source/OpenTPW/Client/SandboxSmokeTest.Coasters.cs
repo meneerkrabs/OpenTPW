@@ -25,12 +25,7 @@ internal sealed partial class SandboxSmokeTest
 		var entry = level.Objects.Catalog.Buildable.Where( item => CoasterDefinition.IsCoaster( item.Settings ) ).OrderBy( item => item.InfoId ).FirstOrDefault();
 		Require( entry != null, "the theme catalogue has a coaster station" );
 		var canvas = hudContext.Canvas;
-		var viewport = new System.Numerics.Vector2( canvas.Width, canvas.Height );
-		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point ) =>
-			level.TryProjectCell( cell.X, cell.Y, viewport, out point )
-			&& point.X > canvas.Width * 0.05f && point.X < canvas.Width * 0.95f && point.Y > canvas.Height * 0.05f && point.Y < canvas.Height * 0.95f
-			&& !hud.Stack.Covers( canvas, point )
-			&& level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell;
+		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point ) => TryClickPoint( cell, out point );
 		var grid = level.Objects.Grid;
 		(int X, int Y)? anchor = null;
 		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
@@ -56,16 +51,9 @@ internal sealed partial class SandboxSmokeTest
 		var builder = level.CoasterTool!;
 		var depart = builder.Track.DepartCell!.Value;
 		var balance = economy?.Balance ?? 0;
-		void Press( System.Numerics.Vector2 point )
-		{
-			hud.Update( hudContext, new UiInput( point, true, true, false, false, UiKeys.None ) );
-			hud.Update( hudContext, new UiInput( point, false, false, true, false, UiKeys.None ) );
-		}
-		// Three wheel notches raise the next pylons by 30 units.
-		var height = builder.Height;
-		for ( var notch = 0; notch < 3; notch++ )
-			hud.Update( hudContext, new UiInput( new System.Numerics.Vector2( -1, -1 ), false, false, false, false, UiKeys.None, 1 ) );
-		Require( builder.Height == height + 3 * OpenTPW.Hud.ParkHud.CoasterHeightStep, "the mouse wheel sets the pylon height" );
+		void Press( System.Numerics.Vector2 point ) => SmokeClick( point );
+		var panel = level.CoasterPanel!;
+		Require( panel.Selected == CoasterToolButton.Build && panel.IsEnabled( CoasterToolButton.Build ) && !panel.IsEnabled( CoasterToolButton.Demolish ), "the panel opens on the build button of an unfinished track (0x4455c0, 0x445910)" );
 		foreach ( var (dx, dy) in SmokeCircuit )
 		{
 			Clickable( (depart.X + dx, depart.Y + dy), out var point );
@@ -91,6 +79,27 @@ internal sealed partial class SandboxSmokeTest
 		Log.Trace( $"HUD coaster tool: {entry!.DisplayName} with {builder.Track.PylonCount} pylons for ${builder.Ride.PaidCost}, {builder.Ride.Samples.Count} samples, excitement {rating.Excitement:F1}, sickness {rating.Sickness:F1}, {rating.Trains} train(s)." );
 	}
 
+	/// <summary>The screen point of a cell's centre when the pointer there reaches the park: on screen, under no HUD element, picking that very cell.</summary>
+	private bool TryClickPoint( (int X, int Y) cell, out System.Numerics.Vector2 point )
+	{
+		point = default;
+		if ( hudContext == null || hud == null )
+			return false;
+		var canvas = hudContext.Canvas;
+		var viewport = new System.Numerics.Vector2( canvas.Width, canvas.Height );
+		return level.TryProjectCell( cell.X, cell.Y, viewport, out point )
+			&& point.X > canvas.Width * 0.05f && point.X < canvas.Width * 0.95f && point.Y > canvas.Height * 0.05f && point.Y < canvas.Height * 0.95f
+			&& !hud.Stack.Covers( canvas, point )
+			&& level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell;
+	}
+
+	/// <summary>A left click of the HUD at a point: the press, then the release.</summary>
+	private void SmokeClick( System.Numerics.Vector2 point )
+	{
+		hud!.Update( hudContext!, new UiInput( point, true, true, false, false, UiKeys.None ) );
+		hud.Update( hudContext!, new UiInput( point, false, false, true, false, UiKeys.None ) );
+	}
+
 	/// <summary>A few seconds later: a train left the station and the renderer drew the track; then the track and station are removed.</summary>
 	private void VerifyCoasterRuns()
 	{
@@ -106,8 +115,26 @@ internal sealed partial class SandboxSmokeTest
 		Require( smokeStation.IsOpen, "leaving the tool opens the ride again" );
 		var economy = level.Park?.Economy;
 		var balance = economy?.Balance ?? 0;
-		Require( level.DeleteCoasterTrack( smokeStation ) && !ride.IsOperational, "delete the coaster track" );
-		Require( (economy?.Balance ?? 0) == balance, "deleting the track refunds nothing" );
+		// The track is taken out through the panel: the tool on a finished coaster opens on the height button with the demolish button enabled; two clicks of the demolish button on the station's
+		// departing and arriving pylons cut every pylon out and leave the unfinished station.
+		Require( level.EnterCoasterTool( smokeStation ) && level.CoasterPanel != null, "the tool starts again on the finished coaster" );
+		var panel = level.CoasterPanel!;
+		Require( panel.Selected == CoasterToolButton.Height && panel.IsEnabled( CoasterToolButton.Demolish ) && !panel.IsEnabled( CoasterToolButton.Build ), "a finished circuit opens the panel on the height button and enables the demolish button" );
+		Require( panel.Select( CoasterToolButton.Demolish ), "the demolish button is selected" );
+		var builder = level.CoasterTool!;
+		var track = builder.Track;
+		var stationCells = new[] { (track.Nodes[2].X, track.Nodes[2].Y), (track.Nodes[0].X, track.Nodes[0].Y) };
+		foreach ( var cell in stationCells )
+		{
+			Require( TryClickPoint( cell, out var point ), $"the station's pylon cell ({cell.Item1}, {cell.Item2}) can be clicked" );
+			hud!.Update( hudContext!, UiInput.Idle( point ) );
+			SmokeClick( point );
+		}
+		Require( !track.IsComplete && track.Nodes.Count == CoasterTrack.StationNodeCount && ride.State == CoasterControllerState.Incomplete && ride.Trains.Count == 0 && !ride.IsOperational,
+			"the cut through the panel removed the pylons and the trains and left the unfinished station" );
+		Require( panel.Selected == CoasterToolButton.Build, "the cut reselects the build button" );
+		level.ExitCoasterTool();
+		Require( (economy?.Balance ?? 0) == balance, "cutting the track refunds nothing" );
 		level.Objects.Remove( smokeStation );
 		Require( !level.Coasters.Contains( ride ), "removing the station removes its coaster" );
 		smokeStation = null;

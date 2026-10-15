@@ -244,7 +244,6 @@ public sealed class CoasterRenderer : Entity
 			else
 				return;
 			var knots = track.BuildKnots( Ride.Site, chain, writeBanks: false );
-			var slices = HermiteCoasterCurve.Slices( knots, definition.Curviness, closed );
 			var invalid = new HashSet<int>();
 			for ( var pair = 0; pair < chain.Count; pair++ )
 			{
@@ -252,12 +251,70 @@ public sealed class CoasterRenderer : Entity
 				if ( next < chain.Count && (chain[pair].Flags & CoasterNodeFlags.Invalid) != 0 && (chain[next].Flags & CoasterNodeFlags.Invalid) != 0 )
 					invalid.Add( pair );
 			}
-			// The link to the build cursor is marked by the cursor's own check; the placed nodes carry their own flags.
-			if ( !closed && preview is { Valid: false } && chain.Count == track.Nodes.Count + 1 )
-				invalid.Add( chain.Count - 2 );
 			var matrix = owner.ToEngine();
-			BuildTrack( slices, Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), invalid, matrix );
+			// A circuit the demolish button cut open is two chains: the nodes before the cut and the nodes after it (the cut ends are marked, 0x446740), each drawn on its own.
+			var cursorIndex = chain.ToList().FindIndex( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 );
+			var start = 0;
+			for ( var index = 0; index < chain.Count; index++ )
+			{
+				var last = index == chain.Count - 1;
+				if ( !last && (closed || (chain[index].Flags & CoasterNodeFlags.CutEnd) == 0) )
+					continue;
+				if ( index - start >= 1 )
+					BuildChain( knots.Skip( start ).Take( index - start + 1 ).ToArray(), definition.Curviness, closed && start == 0 && last, invalid, cursorIndex == index && cursorIndex > start ? preview?.Valid ?? true : null, matrix );
+				start = index + 1;
+			}
 			BuildPylons( chain, knots, matrix );
+		}
+
+		/// <summary>
+		/// Draws one chain of knots: the track through them, and the last link as the translucent cursor ribbon when the chain ends in the build cursor's node
+		/// (<paramref name="ribbonValid"/> is whether its cell passed the validator, null when the chain has no cursor).
+		/// </summary>
+		private void BuildChain( CoasterKnot[] knots, float curviness, bool closed, IReadOnlyCollection<int> invalid, bool? ribbonValid, Matrix4x4 matrix )
+		{
+			var slices = HermiteCoasterCurve.Slices( knots, curviness, closed );
+			if ( ribbonValid is { } valid && slices.Length > HermiteCoasterCurve.SliceSegments )
+			{
+				// the pending link is the last knot pair: its slices are the ribbon, the others the track
+				var split = slices.Length - 1 - HermiteCoasterCurve.SliceSegments;
+				BuildRibbon( slices[split..], valid, matrix );
+				slices = slices[..(split + 1)];
+			}
+			BuildTrack( slices, Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), invalid, matrix );
+		}
+
+		/// <summary>The half width of the cursor ribbon (original units) and its lift above the track.</summary>
+		private const float RibbonHalfWidth = 3f, RibbonLift = 0.6f;
+
+		private void BuildRibbon( CoasterSlice[] slices, bool valid, Matrix4x4 matrix )
+		{
+			if ( slices.Length < 2 )
+				return;
+			var vertices = new List<Vertex>( slices.Length * 2 );
+			var indices = new List<uint>( slices.Length * 6 );
+			var length = 0f;
+			for ( var index = 0; index < slices.Length; index++ )
+			{
+				var slice = slices[index];
+				if ( index > 0 )
+					length += SVector3.Distance( slices[index - 1].Position, slice.Position );
+				var (right, up) = CoasterTrackMesh.Frame( slice.Yaw, slice.Pitch, slice.Roll );
+				var centre = slice.Position + up * RibbonLift;
+				vertices.Add( new Vertex( Swap( centre - right * RibbonHalfWidth ), Swap( up ), new SVector2( 0, length / CoasterTrackMesh.MetersPerRepeat ) ) { TexIndex = 0 } );
+				vertices.Add( new Vertex( Swap( centre + right * RibbonHalfWidth ), Swap( up ), new SVector2( 1, length / CoasterTrackMesh.MetersPerRepeat ) ) { TexIndex = 0 } );
+				if ( index == 0 )
+					continue;
+				var first = (uint)(vertices.Count - 4);
+				indices.Add( first );
+				indices.Add( first + 1 );
+				indices.Add( first + 3 );
+				indices.Add( first );
+				indices.Add( first + 3 );
+				indices.Add( first + 2 );
+			}
+			trackTriangles += indices.Count / 3;
+			AddModel( vertices.ToArray(), indices.ToArray(), assets.GhostSlots( valid ), matrix, doubleSided: true, dynamic: false, out _ );
 		}
 
 		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, IReadOnlyCollection<int> invalid, Matrix4x4 matrix )
@@ -265,7 +322,7 @@ public sealed class CoasterRenderer : Entity
 			var sections = assets.Sections;
 			// The slices of a finished track end on the station end node, which stands on the first knot: the mesh needs no wrap segment.
 			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, invalid );
-			trackTriangles = mesh.TriangleCount;
+			trackTriangles += mesh.TriangleCount;
 			if ( mesh.TriangleCount == 0 )
 				return;
 			var fixedVertices = new List<Vertex>();
@@ -317,7 +374,8 @@ public sealed class CoasterRenderer : Entity
 			for ( var index = 0; index < chain.Count; index++ )
 			{
 				var node = chain[index];
-				if ( node.IsPylonless || assets.GetPylon( node.LoopPylon ) is not { } rig )
+				// the build cursor's node has no pylon of its own (the video shows only the ribbon)
+				if ( node.IsPylonless || (node.Flags & CoasterNodeFlags.Cursor) != 0 || assets.GetPylon( node.LoopPylon ) is not { } rig )
 					continue;
 				var lift = CoasterTrack.PylonHeight( definition.Pylon( node.LoopPylon ), node.T );
 				var knot = knots[index];

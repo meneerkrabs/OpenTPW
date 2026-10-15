@@ -950,6 +950,9 @@ internal static class ParkResumeSaveFile
 				Require( saved.T is >= 0 and <= 1, $"coaster {ride.AttractionId}'s node {node} height parameter {saved.T} is outside 0..1" );
 				Require( saved.LoopRotate is null || (float.IsFinite( saved.LoopRotate.Value ) && saved.LoopRotate.Value is >= 0 and <= 1),
 					$"coaster {ride.AttractionId}'s node {node} loop rotate {saved.LoopRotate} is outside 0..1" );
+				Require( saved.Yaw is null || float.IsFinite( saved.Yaw.Value ), $"coaster {ride.AttractionId}'s node {node} yaw {saved.Yaw} is not finite" );
+				Require( saved.Incline is null || (float.IsFinite( saved.Incline.Value ) && Math.Abs( saved.Incline.Value ) <= 3.1417f ),
+					$"coaster {ride.AttractionId}'s node {node} incline {saved.Incline} is outside ±π" );
 				Require( saved.StackIndex >= 0, $"coaster {ride.AttractionId}'s node {node} stack index {saved.StackIndex} is negative" );
 				Require( (saved.Flags & ~CoasterSave.KnownNodeFlags) == 0,
 					$"coaster {ride.AttractionId}'s node {node} carries flag bits 0x{saved.Flags:X}, which this format does not know" );
@@ -987,7 +990,14 @@ internal static class ParkResumeSaveFile
 				Require( threeNodeStation || track.DepartCell == (track.Nodes[0]!.X, track.Nodes[0].Y),
 					$"coaster {ride.AttractionId}'s station node does not stand at its depart end" );
 			}
-			Require( !track.IsComplete || track.IsClosed, $"coaster {ride.AttractionId}'s track completed without closing" );
+			Require( !track.IsComplete || track.IsClosed || track.CutAfter != null, $"coaster {ride.AttractionId}'s track completed without closing" );
+			if ( track.CutAfter is int cut )
+			{
+				Require( track.IsComplete && !track.IsClosed && cut >= CoasterTrack.StationNodeCount - 1 && cut < track.Nodes.Count - 2,
+					$"coaster {ride.AttractionId}'s circuit is cut open after node {cut}, which does not fit a finished track of {track.Nodes.Count} nodes" );
+				Require( (track.Nodes[cut]!.Flags & (uint)CoasterNodeFlags.CutEnd) != 0 && (track.Nodes[cut + 1]!.Flags & (uint)CoasterNodeFlags.CutStart) != 0,
+					$"coaster {ride.AttractionId}'s cut ends carry no cut marks" );
+			}
 			Require( !track.IsClosed || pylons >= 2, $"coaster {ride.AttractionId}'s circuit closes over {pylons} pylons" );
 			if ( track.IsComplete )
 			{
@@ -1002,7 +1012,7 @@ internal static class ParkResumeSaveFile
 				Require( track.Nodes.All( node => !node!.IsStationEnd ),
 					$"coaster {ride.AttractionId}'s open track holds a station end node" );
 			Require( ride.State is null or 1 or 2 or 4 or 8, $"coaster {ride.AttractionId}'s controller state {ride.State} is not 1, 2, 4 or 8" );
-			Require( ride.State is null or 1 || track.IsComplete, $"coaster {ride.AttractionId}'s controller state {ride.State} needs a finished track" );
+			Require( ride.State is null or 1 || (track.IsComplete && track.CutAfter == null), $"coaster {ride.AttractionId}'s controller state {ride.State} needs a finished track" );
 			Require( ride.BreakdownState is >= 0 and <= 2, $"coaster {ride.AttractionId}'s breakdown state {ride.BreakdownState} is not 0, 1 or 2" );
 			Require( ride.SpeedSetting >= 0, $"coaster {ride.AttractionId}'s speed setting {ride.SpeedSetting} is negative" );
 			Require( ride.SeatsPerTrain >= 0, $"coaster {ride.AttractionId}'s trains seat {ride.SeatsPerTrain}" );
@@ -1014,7 +1024,7 @@ internal static class ParkResumeSaveFile
 			Require( ride.Trains != null && ride.Leaving != null, $"coaster {ride.AttractionId} holds no train or leaving list" );
 			Require( ride.Trains!.Count <= CoasterSave.MaximumTrains,
 				$"coaster {ride.AttractionId} holds {ride.Trains.Count} trains, above {CoasterSave.MaximumTrains}" );
-			Require( track.IsComplete || ride.Trains!.Count == 0,
+			Require( (track.IsComplete && track.CutAfter == null) || ride.Trains!.Count == 0,
 				$"coaster {ride.AttractionId} holds {ride.Trains!.Count} trains on a track that never completed" );
 			void RequireRider( int guestId, string where )
 			{

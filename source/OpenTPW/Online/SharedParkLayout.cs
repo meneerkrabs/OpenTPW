@@ -99,7 +99,8 @@ public static class SharedParkLayout
 			return null;
 		var nodes = builder.Track.Nodes.Where( node => node.IsPlayerPylon )
 			.Select( node => new CoasterNodeRecord( node.X, node.Y, node.Height, node.LoopPylon ) ).ToList();
-		return new CoasterTrackRecord( station, nodes, builder.Track.IsClosed, builder.Track.IsComplete );
+		// A circuit cut open in the middle is published as the open track its pylons make (the layout record has no gap).
+		return new CoasterTrackRecord( station, nodes, builder.Track.IsClosed, builder.Track.IsComplete && !builder.Track.IsCut );
 	}
 
 	/// <summary>

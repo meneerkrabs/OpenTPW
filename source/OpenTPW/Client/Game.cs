@@ -348,7 +348,7 @@ internal static class Game
 					Log.Warning( "--debug-water-track / --debug-kart-track: no site with room for a track ride and its circuit." );
 			}
 		}
-		// [EXT:debug-coaster] smoke-only (Debug builds): once the original level is up, builds a small coaster ("built" or "open", optionally with a coaster
+		// [EXT:debug-coaster] smoke-only (Debug builds): once the original level is up, builds a small coaster ("built", "open" or "tool": built and taken into the coaster tool, optionally with a coaster
 		// Info.Id from --debug-coaster-id) and points the camera at it, so captures show the track, pylons and cars (docs/COASTERS.md).
 		var debugCoaster = GetOption( args, "--debug-coaster", "built or open for a coaster capture" );
 		if ( debugCoaster != null )
@@ -362,7 +362,7 @@ internal static class Game
 				if ( flow.Level is not { OriginalPark: not null } demoLevel || ++coasterFrames < 30 )
 					return;
 				Render.PostUpdate -= BuildCoasterDemo;
-				if ( demoLevel.BuildDemoCoaster( debugCoaster == "built", coasterId, coasterHeight ) == null )
+				if ( demoLevel.BuildDemoCoaster( debugCoaster is "built" or "tool", coasterId, coasterHeight, debugCoaster == "tool" ) == null )
 					Log.Warning( "--debug-coaster: no site with room for a coaster and its circuit." );
 			}
 		}

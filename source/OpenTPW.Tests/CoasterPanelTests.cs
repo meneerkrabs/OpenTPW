@@ -440,6 +440,43 @@ public class CoasterPanelTests
 		Assert.AreEqual( CoasterTrack.CutResult.Refused, finished.Cut( finished.Track.Nodes.Count - 1, First + 2 ), "the station end node cannot either" );
 	}
 
+	[TestMethod]
+	public void HandEditsAndACutCircuitRoundTripThroughTheParkSave()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var panel = new CoasterToolPanel( builder );
+		panel.Select( CoasterToolButton.Rotate );
+		Assert.IsTrue( panel.Press( First + 1, new NVector2( 100, 100 ), 0, 0 ) );
+		panel.Drag( new NVector2( 80, 100 ), 0, null );
+		panel.Release( First + 1, null );
+		panel.Select( CoasterToolButton.Tilt );
+		Assert.IsTrue( panel.Press( First + 2, new NVector2( 100, 100 ), 0, 0 ) );
+		panel.Drag( new NVector2( 90, 95 ), 0, null );
+		panel.Release( First + 2, null );
+		panel.Select( CoasterToolButton.Demolish );
+		panel.Release( First + 3, null );
+		Assert.AreEqual( CoasterPanelResult.Cut, panel.Release( First + 5, null ) );
+
+		var captured = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( ride, attractionId: 7 ) ) );
+		Assert.AreEqual( builder.Track.CutAfter, captured.Track.CutAfter );
+		var resumed = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+		var other = new CoasterBuilder( resumed, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( other, (20, 20) );
+		resumed.RestoreSnapshot( captured );
+		var (a, b) = (builder.Track, other.Track);
+		Assert.AreEqual( a.CutAfter, b.CutAfter );
+		Assert.AreEqual( a.Nodes.Count, b.Nodes.Count );
+		for ( var index = 0; index < a.Nodes.Count; index++ )
+		{
+			Assert.AreEqual( a.Nodes[index].Flags, b.Nodes[index].Flags, $"node {index}" );
+			Assert.AreEqual( (a.Nodes[index].Yaw, a.Nodes[index].Incline, a.Nodes[index].Bank), (b.Nodes[index].Yaw, b.Nodes[index].Incline, b.Nodes[index].Bank), $"node {index}" );
+		}
+		Assert.AreEqual( CoasterControllerState.Incomplete, resumed.State );
+		var (x, y) = (a.Nodes[a.CutAfter!.Value + 1].X, a.Nodes[a.CutAfter!.Value + 1].Y);
+		Assert.IsTrue( b.IsChainStart( x, y ) );
+	}
+
 	// ---- The cursor and the placement area ----------------------------------------------------------------
 
 	[TestMethod]

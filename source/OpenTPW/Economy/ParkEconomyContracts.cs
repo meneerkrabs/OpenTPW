@@ -73,6 +73,7 @@ public sealed record ParkEvent( long Tick, ParkEventKind Kind, int InstanceId, i
 public enum ParkRecordKind
 {
 	CoasterHeight,
+	/// <summary>Kept only so older saves' record lists still read; type 19 now reads the coasters' counted sections (tp.exe 0x4d1660).</summary>
 	CoasterLoops,
 	GokartExcitement,
 	KartCrossroads,

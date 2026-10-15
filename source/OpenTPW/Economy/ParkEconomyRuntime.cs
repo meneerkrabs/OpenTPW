@@ -28,8 +28,8 @@ public sealed class ParkEconomyRuntime
 
 	/// <summary>
 	/// Routes guest admission, shop/sideshow purchases and ride use through the economy, feeds guest
-	/// statistics to the park rating, tickets and challenges, and opens the park unless the imported
-	/// save's <c>mParkClosed</c> says it is closed.
+	/// statistics to the park rating, tickets and challenges, and opens an imported park unless its save's
+	/// <c>mParkClosed</c> says it is closed; a park started without a save stays closed until the player opens it.
 	/// </summary>
 	public void AttachGuests( GuestSimulation guests ) => AttachGuests( guests, openParkOnAttach: true );
 
@@ -44,10 +44,13 @@ public sealed class ParkEconomyRuntime
 		Economy.GuestStatistics = Guests;
 		Economy.RideOperations = Guests;
 		AttachLitter( guests );
+		// [BIN:TPW-EXE:0x51562d world constructor] a new world writes mParkClosed (+0x1da710) = 1; only the gate command 0x519ef0 (the entrance-price window's button
+		// 0x498c60, the keys 0x40c3f0 / 0x40c410, the online park creation 0x516700) opens it, and a park loaded from a file takes the flag from it (reader 0x5179c0)
 		if ( Import is { ParkClosed: true } )
 			Log.Trace( "Park economy: the imported park is closed, as saved." );
+		else if ( Import == null )
+			Log.Trace( "Park economy: a new park starts closed until the player opens it." );
 		else if ( openParkOnAttach )
-			// [APPROX:ECON-031] a park started without an original save is opened when guests attach (an imported park follows its saved mParkClosed) — evidence needed: the open state of a new original park
 			Economy.OpenPark();
 		Log.Trace( $"Park economy: guests pay the ${Economy.EntranceFee} entrance fee and shop/sideshow prices into the ledger." );
 	}

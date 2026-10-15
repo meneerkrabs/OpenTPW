@@ -14,7 +14,7 @@ the whole map; the state machines decide the first job on their next update. Rig
 ## Pick up and drop
 
 The staff window's employee view has a Pick up button (the original's control 0x50e, UI-098), enabled by `CanBePickedUp` (0x505bd0): refused on strike (states 4,
-5), in hand (7) and escorting (13, 18: `StaffMember.Escorting`, ECON-052), and when the member's own cell is not type 0, 1, 3, 9 or 10. The member becomes
+5), in hand (7), repairing (13: `StaffJob.Repairing`) and escorting (18: `StaffMember.Escorting`), and when the member's own cell is not type 0, 1, 3, 9 or 10. The member becomes
 `StaffState.PickedUp`; a mechanic's ride assignment and a handyman's litter and toilet claims are released at once. The Carry tool drops it on a valid cell
 (0x509af0 → 0x505ea0): cell centre, `Navigation = null`, Idle, idle stamp 0, no jobs; the patrol rectangle is untouched. Cancelling drops it back on the cell
 it came from; only one carry runs at a time (a new pick-up drops the previous member back); there is no guest pick-up.
@@ -26,7 +26,7 @@ ground marker (UI-099).
 
 ## Saves
 
-A member in hand is saved dropped on its old cell (ECON-053); a pending hire is not saved. A member left in state PickedUp without a tool (an imported
+A member in hand is saved dropped on its old cell, as the original's save does (it first ends the carry tool, whose exit `0x46cdc0` drops the member, `0x516c80`); a pending hire is not saved. A member left in state PickedUp without a tool (an imported
 original save) is put back to Idle by `StaffPlacement.Reconcile`.
 
 ## Drawing

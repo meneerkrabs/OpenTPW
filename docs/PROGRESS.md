@@ -6,6 +6,89 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Arrival and save rules settled against tp.exe (October 15, 2026)
+
+Seventeen arrival and save approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address
+re-read):
+
+- **The booth books the fee with the bank** (`0x4ffade` → `0x4d0600`): the guest's purse (`+0x1A0`) is never touched, as in the original
+  (ARRIVAL-007 retired). The determinism hash is now `0x9AA9973FC2A6A5D6`.
+- **Arrival groups** keep a negative remainder after the cut (`0x4cf6e5`), which every reader treats as 0 (ARRIVAL-004 retired), and a
+  guest the booth sends to wait reruns the verdict N + 1 turns later (`0x4ffa72`, `0x4ffb01`; ARRIVAL-006 narrowed).
+- **The counts-test's track terms** apply to the attraction choice (`0x4dd9ad` → `0x441970`; ARRIVAL-003 narrowed).
+- SAVE-930 is OpenTPW's own layout checkpoint (`[EXT:tpi-layout-checkpoint]`); thirteen arrival and save items are narrowed, among them
+  the bus, seaplane or ferry by group size (`0x4cf48c`) and the coaster save block (`0x437300`, `0x437b60`).
+
+## Guest rules settled against tp.exe (October 15, 2026)
+
+Sixteen guest approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Prices against RipOffOK** (`0x4d3e00`, key 42 of the table at `0x7456e8`): each shop or sideshow type's own RipOffOK now sets how far
+  above the fair price a guest still pays (100 for shops, 250 for sideshows in the shipped data, so up to 2× and 3.5×); a noticeable
+  balance change (GUEST-003 narrowed).
+- **A full queue costs nothing** (`0x4ffbc0`): a guest finding no room records the event and walks on, with no thought and no happiness
+  loss, and a queue that is too long no longer costs happiness either (GUEST-004 narrowed).
+- **Newest attraction first** (`0x4fcb10`, `0x519d80` pushes at the head): the choice walks the objects newest first, which decides ties
+  (GUEST-002 narrowed).
+- **The use routine's other terms** (`0x4fe1e0`): the small-portion penalty, scaled happiness, fat, salt and ice from the ingredients and
+  the toilet speed term (GUEST-005 narrowed).
+- **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
+  determinism hash is now `0xD28386DACAD73241`.
+
+## Queue exits as in tp.exe (October 15, 2026)
+
+- **A closed ride drains its queue one head per turn** (`0x4e1220` → `0x4e0450`): the others keep waiting, a closed ride that breaks down
+  sends away two that turn (`0x4e0e60`), and joins and the walk to a ride no longer test the open word or the broken state, as the
+  original's join `0x4ffbc0` does not (QUEUE-018 retired; the choice still skips closed rides). A guest at its place in a coaster's queue
+  leaves with thought 13 while the track refuses guests (`0x500612`; COAST-024 narrowed).
+- **Every queue exit but a removed ride costs the medium happiness drop** (the dismissal `0x5012f0`, `0x4fea70(1)`): feeling sick, bored,
+  unhappy, needing the toilet, a failed move-up, a queue edit or a refused price alike; a water ride with a broken circuit is only
+  skipped by the choice, its queue stays (`0x500612` tests coasters and kart tracks). The "problem with a queue" exit (`0x500270`) thinks nothing, and a toilet above 80
+  thinks "need toilet" before the relief test (`0x5003aa`).
+
+## Economy rules settled against tp.exe, part one (October 15, 2026)
+
+Seventeen economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Research categories come from the object data** (`0x4aaffc`, the add-on id at `+0x284`; `+0x508` only means "model not loaded"): a
+  project takes the object's own Research.Category and Group, and an object outside category 4 gets level projects (ECON-018 retired; no
+  change on the shipped data, which a game-data test pins).
+- **The research cursor moves on** after a project completes to the next eligible project in table order, wrapping (`0x4aaec0` → `0x5034f0`),
+  instead of falling back to the first selectable one (ECON-017 narrowed: the table's fill order is still open).
+- **Staff training is booked as other costs** (`0x505a10` writes its own word `+0x1fa40`, not the staff-costs series of the eight-series
+  finance graph `0x49a7b0`); total money out is unchanged (ECON-005 narrowed).
+- ECON-002 (the 2000-01-01 Gregorian UTC calendar, `0x4f7eb0`) and ECON-028 (`0x523658`) are retired; the ×2/×4 speed buttons are an
+  OpenTPW extension (`[EXT:speed-buttons]`: the original has only the numpad keys, `0x7480a0`) and so is the headless economy's own
+  mechanic dispatch to worn rides (`[EXT:headless-economy]`: the finder `0x4daa90` only takes broken, upgrading or called rides). Ten more
+  items are narrowed to what is still unknown.
+
+## Path tool and walking settled against tp.exe (October 15, 2026)
+
+The path and walk approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **A refused preview lays nothing** (`0x524a63`, flag `0x816d48`): a click whose line contains a refused cell ends the path or queue tool
+  without laying the cells before the refusal. After a commit the tool ends only when the line reached a cell that was already a path or a
+  queue cell, the ride's own queue included (`0x5345a1`); otherwise the snapped end is the next start, and the queue-join sound plays only for
+  a committed line (PATH-003 and PATH-012 retired).
+- **Backspace without a tool** takes one placement off the path cell under the cursor, as `0x40be8b` → ClearCell(0, 1) does, so a cell laid
+  twice survives one press.
+- PATH-002 (the tool's undo already matched; the old text saying Backspace does nothing was wrong), PATH-010 (path costs land in the other
+  costs, `0x4d01f0`) and PATH-011 (Escape ends the tool first, `0x40c180`; only the next Escape opens the pause menu) are retired, and 20 path
+  and walk items are narrowed to what is still unknown.
+
+## Queue rules settled against tp.exe (October 15, 2026)
+
+The queue and gate approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Full rides are skipped** (`0x4dd920`): a guest choosing an attraction passes over a ride whose queue already holds 4 × its cells, as the
+  original's choice does; the join keeps its own room check for a queue that fills while the guest walks there (QUEUE-017 retired).
+- **Queued guests turn as the original does** (`0x4ffff0`): only within 30 turns of their last interlude, one in ten turns, by −400..+399 of
+  2048 instead of a fixed ±400 (QUEUE-009 retired).
+- QUEUE-016 is retired (the turn order `0x516394` → `0x50b360` matches), the M3 gate minute is an OpenTPW extension
+  (`[EXT:m3-gate-minute]`: the original's clock runs on scaled real time, 31 ms substeps and a park turn every eighth), and 16 queue items
+  are narrowed to what is still unknown. Two register claims were wrong and are corrected: a queue event goes into the guest's own history,
+  and a 0/0 queue score takes the 0.75 floor on PC (`0x4e07d2`), not 0. The determinism hash is now `0x4AEFBABAD786E2FD`.
+
 ## Original saves bring their research, challenges, staff HQ and hiring pool (October 15, 2026)
 
 Importing an original save (the Jungle Easymode start) now restores four more parts, all read in tp.exe:
@@ -1058,6 +1141,23 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Pitch variation and build effects (October 15):** every sample playback now draws its pitch step from the sound's signed range
+  on the sound chooser stream (`min + r % (max - min)`, after the volume draw) and plays at ratio 1 for step 0, otherwise
+  2^(sign x (|step| + 1) / 96), as tp.exe `0x6bc170` and the mixer wrapper `0x6d2820` do; the tables (`0x782f40`/`0x783540`,
+  one step off) hold those powers written with six decimals, and OpenTPW computes them by that rule, and the six steps of the scream, chain and crowd
+  sounds (0..6, the maximum never drawn, 2^(1/96) never played) match the 141 playbacks measured in the original's video, so
+  the repeated screams and laughter are detuned like the original's (AUDIO-003 retired for pitch, narrowed to the delay of
+  non-chain sounds, reverb, the fixed-pitch flag `0x10000` and a parameter-bound pitch). A voice out of range without the any-distance flag (event flag
+  `0x200`) has its sample stopped by mixer message 3 (`0x6bca70` -> handler `0x6b8d60` -> `0x6bb7c0`), for one-shots and
+  sentence segments, and a chain starts no new child (AUDIO-038 narrowed: a chain's playing children play out, loops keep
+  advancing, nothing read restarts a stopped loop or shows how a sentence resumes). The
+  build, demolish, repair and upgrade effects every category `.sam` names (rides 79 / 75 / 51 / 89) start at the object's
+  footprint middle and are sized to it (`0x558e7c`, `0x5590f7`, `0x556DE0`, `0x55A100`, `0x520030`); REPAIREFFECT 1 and 0 switch
+  the repair effect (PTCL-908 narrowed). Captured in the native jungle level: a build shows green and yellow stars over the
+  footprint, a demolition a green and white burst. The leaked-chain count of a 120-minute jungle gate run is 0 of 791
+  STARTSCREAM (169 in the all-rides gate), so the scream rate is not a leak. GraphicsSettings no longer says the particle pool
+  uses density 1000 (it is 500). New: `AudioPitchTests`, `ObjectParticleEffectTests`, `ScreamDiagnosticsTests`, a volume-extent
+  case in `ParticleSystemPortTests`; `--debug-object-effect` and `--debug-sim-minutes` for captures and diagnostics.
 - **Coaster three-node station (October 15):** the coaster's station is the original's three nodes (COAST-029, tp.exe `0x436ac0`, read again at the
   instruction level): S0, a StdPylon in the cell beyond the `<` cell (node flags `0x400`, winch, no previous link), S1, pylon-less on the exact
   middle dummy (`0x200 | 0x400`, winch) and S2, a StdPylon in the cell beyond the `>` cell (`0x200`, no next link). The three dummies are read from the

@@ -124,7 +124,7 @@ public sealed class StaffStrikeBoard
 	/// <param name="litter">The handymen's analyser sums, when known.</param>
 	// [BIN:STP-PPC:0x100F7E18 month consideration] skipped (debug text "park is closed") while the park is closed (word 0x1DA710) or 0x100C1FB4(park, 5) counts a guest, unless the forced word is set; then per role with staff not yet considered this turn: an active strike ends, else the escalation runs
 	// [BIN:STP-PPC:0x100F7FE0 strike escalation] stamp / 25.92e12 (signed low word) below 24 ends it; a grievance: level 0 → 1 with the warning (kind 0), 1 → 2, 2 → 3, 3 → 4, 4 → 4 each with the active flag and the strike message (kind 2); no grievance: level 1 sends "called off" (kind 3), the level and the flag clear
-	// Approximation (ECON-014, registered at ParkEconomy.UpdateStaffVitals): the clock stamp (0x100E4628) goes through imports whose epoch is not traced: if it counts from an absolute epoch before 2000 the age test is always met; OpenTPW counts the park clock from its start, so a strike needs a park of 24 thirty-day months
+	// [BIN:TPW-EXE:0x004F8800 time stamp] the age test's stamp is the calendar's base plus floor(turn × rate / 4) × 10^7 minus the base again (0x005FC530 / 0x005FC550): the park clock counted from world turn 0, so a strike needs a park of 24 thirty-day months, as here
 	public IReadOnlyList<StrikeMessage> ConsiderMonth( long turn, bool forced, bool parkOpen, int guestsInPark, long stampUnits,
 		Func<StaffType, IReadOnlyList<StaffVital>> roster, LitterStatistic? litter = null )
 	{

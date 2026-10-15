@@ -55,7 +55,7 @@ public sealed class ParkCellMap
 	/// InitialPath cells linked to every cardinal neighbour; MAP InitialPath path cells carry NoModify (§5.4).
 	/// </summary>
 	// [BIN:STP-PPC:0x10085538 map initialisation] MAP attribute bit 0x08 (InitialPath) makes the cell type 1 with flag 0x20 (NOMODIFY)
-	// [APPROX:PATH-007] no cell gets flag 0x40 (Unowned): the original sets it on every non-InitialPath cell and Buy Land clears it, but the starting park's owned land is not decoded from the save or MAP, so every in-bounds cell counts as owned — evidence needed: the save/MAP ownership bits and which of the 24 clear sites (0x84aa4(cell, 0x40)) mark the starting park
+	// [APPROX:PATH-007] PATH-LAND: no cell gets the unowned flag 0x40 (every in-bounds cell counts as owned); the original sets 0x40 on every non-InitialPath cell at level load (tp.exe 0x536490 from 0x52f050), clears it inside the park fence that 0x5323f0 lays from the level's outline table 0x784e3c anchored on the gate (fill 0x531040/0x5311c0 plus a strip at the gate), refuses 0x40 cells for paths (0x535670) and saves the flags as mFlags (0x4d0b30); OpenTPW decodes neither the outline nor the saved flags, and Buy Land (tool 0x39, 0x5327e0) is not modelled — still open: the level outline table 0x784e3c (Scape data) and the saved mFlags are not imported
 	public static ParkCellMap FromOriginal( MapFile map, OriginalParkImport? save )
 	{
 		var cells = new ParkCellMap( map.CellCountX, map.CellCountY );

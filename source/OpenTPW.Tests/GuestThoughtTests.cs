@@ -146,6 +146,24 @@ public class GuestThoughtTests
 	}
 
 	[TestMethod]
+	public void ALostSideshowSkipsTheUseRoutineForTheMediumLoss()
+	{
+		// tp.exe 0x004FDA0D: a lost play goes to "Person lost this sideshow" (0x004FDB8D), the medium happiness step, not the use routine 0x004FE1E0
+		var settings = GuestTests.CreateSettings();
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false, Payments = new SideshowPayments( false ) };
+		IRideVisitorHost host = simulation;
+		var guest = simulation.SpawnInPark( 6, 5 );
+		guest.Happiness = 50;
+		guest.Litter = 0;
+		var sideshow = new RideVisitorBridge( 1, "Sideshow", RideVisitorKind.Sideshow, 2, 50, 10 ) { ExitCell = (6, 5), LitterEffect = 20, HappinessEffect = 30 };
+		host.OnVisitorBoarded( sideshow, guest.Id );
+		host.OnVisitorReleased( sideshow, guest.Id );
+		Assert.AreEqual( 50f - (settings.MediumHappinessChange & 0xFF), guest.Happiness, "only the medium loss" );
+		Assert.AreEqual( 0f, guest.Litter, "no use effects" );
+		Assert.AreEqual( GuestThought.Dissatisfied, guest.Thought );
+	}
+
+	[TestMethod]
 	public void OldSavesLoseTheInventedThoughtsAndAFutureBubbleIsRefused()
 	{
 		var settings = GuestTests.CreateSettings();

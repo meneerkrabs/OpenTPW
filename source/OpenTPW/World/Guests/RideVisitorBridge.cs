@@ -44,7 +44,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private bool letMeOnWritten;
 	private long lastAdmissionTurn = long.MinValue;
 	private long calledTurn = -1;
-	private Func<bool> isOpen = () => true;
+	private Func<bool> isOpen = () => true;     // the ride's open word (+0x68)
+	private Func<bool> takesGuests = () => true; // the coaster and track tests of the choice (0x00441970, the track word +0x2C of track types 1 and 2)
+	private Func<bool> refusesQueue = () => false; // the queue's own test (0x00500612: a coaster failing 0x00441970, or track type 1 with +0x2C at 0)
 	private readonly int excitementLevel;
 
 	public RideVisitorBridge( int attractionId, string name, RideVisitorKind kind, int capacity, int excitementLevel, int attractionValue,
@@ -125,6 +127,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int VomitEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.InitCostOfGoods</c> (<c>+320</c>).</summary>
 	public int InitCostOfGoods { get; set; }
+	/// <summary>Type <c>UsageInfo.RipOffOK</c> (tp.exe type <c>+0x16C</c>).</summary>
+	public int RipOffOk { get; set; }
+	/// <summary>Type <c>UsageInfo.FatigueEffect</c> (tp.exe type <c>+0xE8</c>).</summary>
+	public int FatigueEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
 	public int HappinessEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.LitterEffect</c> (tp.exe type <c>+0x154</c>).</summary>
@@ -146,7 +152,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>The type's <c>UsageInfo.AppearanceEffect</c> (tp.exe <c>+0x15C</c>): 1 gives the guest a balloon, 2 puts on or returns a costume.</summary>
 	public int AppearanceEffect { get; set; }
 	/// <summary>The ride's amount of the special ingredient (Mac <c>+404</c>, PC <c>+0x198</c> beside the price per use at <c>+0x194</c>; the serializer <c>0x004DB7D0</c> names it <c>mAmountOfSpecialIngredient</c>), 50 when the ride is built.</summary>
-	// [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (a Sugar visit adds 3): the original's shop screen can change it (ride +404, saved as mAmountOfSpecialIngredient) and OpenTPW has neither that control nor the saved field — evidence needed: the screen that sets +404 (handlers 0x1685b4 and 0x168640), its range and the save field
+	// [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (tp.exe 0x4db090 stores 0x32 at +0x198, 0x4db3b3), so a Sugar visit adds 3 (0x4fe5f8: trunc(6 x amount / 100)); the original's shop window shows a 0..100 amount slider for ingredient shops only (range set at 0x4b06d2; refresh 0x4b0950 hides controls 0xc086/0xc084 unless the type's ingredient is 1..4), writes it to the object (0x4b0aa0) or to every object of that type (0x4b0ae0) and saves it as mAmountOfSpecialIngredient (0x4db7d0); OpenTPW has no slider, its save does not store the amount and the original-save import skips it — still open: no slider or save field in OpenTPW
 	// Only tests change it: nothing in play sets +404 and it is neither saved nor hashed, so a public setter would make state the save loses.
 	public int IngredientAmount { get; internal set; } = GuestSpeed.DefaultIngredientAmount;
 	/// <summary>Toilets (<c>UsageInfo.ProvidesRelief</c>): queueing guests do not leave for the toilet.</summary>
@@ -161,7 +167,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public QueueParameters Parameters { get; set; } = QueueParameters.Default;
 	public bool HasQueue => Parameters.HasQueue;
 	public IRideVisitorHost? Host { get; set; }
-	public bool IsOpen => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting) && isOpen();
+	public bool IsOpen => ScriptRuns && isOpen() && takesGuests();
+	/// <summary>
+	/// The ride's script runs and its coaster or track takes guests (<see cref="Attach"/>); unlike <see cref="IsOpen"/> it ignores the open word and the
+	/// breakdown, which the original's join (state 10, <c>0x004FFBC0</c>) does not read either.
+	/// </summary>
+	public bool AcceptsJoins => ScriptRuns && takesGuests();
+	/// <summary>The coaster or track refuses guests (the original's state 11 sends a queued guest away with thought 13, <c>0x004FFFF0</c>).</summary>
+	public bool TrackRefusesGuests => vm != null && refusesQueue();
+	private bool ScriptRuns => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting);
 	/// <summary>
 	/// The ride script reports a breakdown (<c>VAR_BROKEN</c>, which the original's ride update turns into ride state 1, or 4 when
 	/// the life gauge is 0): the ride dismisses its queue head first, one guest per park turn, and takes nobody (ORACLE.md F15).
@@ -528,11 +542,17 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return quotient >= 4294967296f ? uint.MaxValue : (uint)quotient;
 	}
 
-	/// <summary>Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride.</summary>
-	public void Attach( RideVM script, Func<bool> open )
+	/// <summary>
+	/// Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride (the open word +0x68),
+	/// <paramref name="takes"/> whether its coaster or track takes guests for the choice (null: always), <paramref name="refuses"/> whether the
+	/// queue's own test sends queued guests away (null: when <paramref name="takes"/> fails).
+	/// </summary>
+	public void Attach( RideVM script, Func<bool> open, Func<bool>? takes = null, Func<bool>? refuses = null )
 	{
 		vm = script;
 		isOpen = open;
+		takesGuests = takes ?? (() => true);
+		refusesQueue = refuses ?? (() => !takesGuests());
 	}
 
 	/// <summary>
@@ -581,7 +601,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return null;
 	}
 
-	// [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue. In tp.exe the back of the queue counts as connected (0x004DE4A0, for objects with flag +0x32 bit 8) when its connection bits hold more than its own link, and the path cell it is attached to is the first neighbour in the order 1, 4, 16, 64 (the same −Y, +X, +Y, −X) whose connection bit is set and which is a path cell (type 1; 0x004DE840). OpenTPW keeps no connection bits for queue cells (the queue tool, QUEUE-012..014), so it uses adjacency — evidence needed: the queue tool's connection writes, then the state-10 walk to the back cell
+	// [APPROX:QUEUE-003] guests walk to OpenTPW's join cell, the back cell's first walkable 4-neighbour in Directions order (−Y, +X, +Y, −X, the links 1, 4, 16, 64) with no connection test, and join from there; with none the ride cannot be joined. In tp.exe the state-10 join (0x004FFBC0) needs the guest's own cell to be the back queue cell (0x004DE110 → 0x004DE130, else "The back of the queue has moved"), and the first neighbour in that order whose bit is set in the back cell's connection byte +0x0C (0x00522770) and which is a path cell (type 1, 0x00536310) is used only for the axis of the back cell's fourth place (0x004DE840; none: the log "No path attached to end of queue" and the cell's own link +0x0D). OpenTPW keeps no connection bits for queue cells (QUEUE-012..014) — evidence needed: the queue tool's writes of +0x0C and +0x0D, and the route (0x004FA5F0) that walks a guest onto a queue cell
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];
@@ -622,10 +642,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null )
 	{
-		if ( guestId <= 0 || !IsOpen )
-			return QueueJoinResult.Closed;
-		// [APPROX:QUEUE-018] a ride in state 1 refuses joins as if closed (its open word is 0 then); the PC join gate is not traced, the Mac join offer 0xe03f0 rejects states 1 and 4 (ORACLE.md) — evidence needed: the PC twin of the state-10 join checks
-		if ( IsBrokenDown )
+		// [BIN:TPW-EXE:0x004FFBC0 state-10 join] the join reads neither the ride's state (+0x19C) nor its open word (+0x68): after the walk step 0x004FA2A0 it tests the guest's cell against the back cell (0x004DE110), the room 0x004DDA20, the excitement gate 0x004FD4E0 / 0x004E0860(1) and the limit 0x004DDB60, then appends (0x004DDB90); a guest joining a closed or broken ride is sent away when it reaches the head (HostStep: 0x004E1220 → 0x004E0450, states 1, 2 and 4 through 0x004E0E00). Only the choice's counts-test 0x004DD920 refuses them. A ride whose script does not run takes nobody (OpenTPW's teardown), nor does a coaster or track that refuses guests (COAST-024)
+		if ( guestId <= 0 || !AcceptsJoins )
 			return QueueJoinResult.Closed;
 		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
 			return QueueJoinResult.AlreadyQueued;
@@ -635,7 +653,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return QueueJoinResult.NoRoom;
 		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
 		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
-		// [APPROX:QUEUE-004] water and kart rides (Bumper.WhichTrackType 2 and 1) apply the controller formula (docs/TRACKS.md); a ride with any other thing behind +36 is not modelled — evidence needed: whether such things exist
+		// [APPROX:QUEUE-004] the controller base comes from OpenTPW's BumpController (BumperTemplates.ForRide: water and kart rides of their own family, and the bumper cars −1, −6, −11, −14); tp.exe's placement 0x00529E10 builds a controller through 0x00545890 for any nonzero type word +0xA0 (taken to be Bumper.BumperType), including the types −2 and −3 and a type of the other family, and 0x004E0560 then scores 60 % of the level plus the counts — evidence needed: whether a shipped ride uses BumperType −2 or −3 or a mixed pair, and whether a loaded ride keeps its controller handle
 		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
 			return refusal;
 		if ( count >= QueueLimit )
@@ -664,7 +682,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				return QueueJoinRules.SideshowExcitement( Sideshow );
 			if ( ExcitementSource is { } source )
 				return source();
-			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; the original would divide 0 by 0 (NaN, excitement 0) — evidence needed: none, no original object lacks them
+			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; tp.exe's 0x004E0560 divides with no zero guard and its clamps take the 0.75 floor for a NaN ratio (FCOM against 0.75 sets C0 when unordered: 0x004E07D2, 0x004E0802), so 0/0 gives trunc(0.5625 × level), and QueueJoinRules.ClampRatio lets NaN through — evidence needed: none, no original object lacks them (the Mac reading, NaN → excitement 0, is not re-checked here)
 			var level = ExcitementBase?.Invoke( excitementLevel ) ?? excitementLevel;
 			if ( Parameters is { Speed: 0, InitSpeed: 0, Duration: 0, InitDuration: null or 0 } )
 				return level;
@@ -784,27 +802,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
 			MarkBoarded( called );
 
-		// A breakdown takes precedence over a closed ride: SetState(1) writes VAR_RIDECLOSED = 1 itself, and the original still drains the
-		// queue head first (0xe0aec) instead of emptying it at once.
-		if ( !isOpen() && !IsBroken && !IsBrokenDown )
-		{
-			if ( called != 0 )
-			{
-				// The script never took the guest before closing; give it back.
-				var guest = called;
-				Withdraw();
-				Unlink( guest );
-				Host?.OnVisitorTurnedAway( this, guest );
-			}
-			foreach ( var guest in Queue )
-			{
-				Unlink( guest );
-				Host?.OnVisitorTurnedAway( this, guest );
-			}
-			return;
-		}
-
-		// [APPROX:QUEUE-016] every ride evaluates admission once per park turn and every queued guest runs state 11 once per park turn; the live-list eligibility of the object and guest updates is not traced — evidence needed: the live-list flags of 0x100FA9B0 and the guest update dispatcher
+		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test; the whole walk is skipped while world mode +0x1DA738 is 4, the turn still counting, 0x00516395, DET-plan §2.1) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
 		var turn = Host?.ParkTurn ?? -1;
 		if ( turn >= 0 && turn == lastAdmissionTurn )
 			return;
@@ -812,7 +810,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:STP-PPC:0x100E0AEC ride update, states 1, 2 and 4] while the ride is broken (state 1; 4 when condemned) every update removes the head guest from the queue and sends it away (0xdcebc, 0xee804) unless the script has already taken it; the rest wait their turn, so a queue drains one guest per park turn. Static reading (ORACLE.md F15): the dispatch is exercised in the oracle target queue-ride-update
 		// [BIN:STP-PPC:0x100E1864 breakdown noticed] in state 0 the ride update runs the admission (0xe1404) first and only then reads VAR_BROKEN and enters state 1 (4 when the life gauge is 0): SetState(1) runs the head step once, zeroes the pending visitor and writes VAR_RIDECLOSED = 1 with the open word 0 (the oracle target ride-set-state executes it, ORACLE.md F27)
 		// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] state 0 runs 0x4e14e0 (VAR_BROKEN, script slot 7: SetState(1), or 4 when the life gauge +0x48 truncates to 0); states 1, 2 and 4 run the head step 0x4e0450 and the script dismiss 0x4e1410; nothing in states 1, 2 or 4 reads VAR_BROKEN
-		// [APPROX:QUEUE-019] OpenTPW keeps state 1 in the bridge (state 2, upgrading, is the economy's closed ride, ECON-023): it is left when the ride is opened again, which stands for the SetState(0) callers (repair 0x4df8f0, the open button, an upgrade's end); state 4 (life gauge 0) is not told apart from 1 — evidence needed: none for the dispatch (read), the life gauge in the bridge
+		// [APPROX:QUEUE-019] OpenTPW keeps state 1 in the bridge (state 2, upgrading, is the economy's closed ride, ECON-023): it is left when the ride is opened again (the repair 0x4df8f0 opens the ride and calls SetState(0); the reopen guard 0x4df290 refuses states 1, 2 and 4); state 4 (0x4e14e0: the life gauge +0x48 truncates to 0) is not told apart from 1, while the guest's state 11 holds its place only in state 1 (0x4e0370 at 0x00500523) and walks on in state 4 — evidence needed: the life gauge in the bridge
 		if ( brokenDown )
 		{
 			if ( IsBrokenDown )
@@ -822,16 +820,21 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			}
 			brokenDown = false;
 		}
+		// [BIN:TPW-EXE:0x004E1220 closed ride admission] state 0 runs the admission first (0x004E14E0); with the open word +0x68 at 0 it only runs the head step 0x004E0450, which unlinks the queue head (0x004DDD20) and dismisses it (0x005012F0), so a closed ride sends away one head per park turn and the others wait (a head the script has already taken was boarded above: 0x004E0450's "forcing him onto ride" case, 0x00500870)
+		if ( !isOpen() )
+			DismissHead();
 		if ( IsBroken )
 		{
-			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too; it is
-			// admitted from only while open. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
-			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 )
+			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too, after the admission's own
+			// head step: a closed ride dismisses two heads on that turn. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
+			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 && !refusesQueue() )
 				CheckAdmission( turn );
 			EnterBrokenState();
 			return;
 		}
-		CheckAdmission( turn );
+		// COAST-024: a coaster or track that refuses guests calls nobody forward; its queued guests leave by themselves (state 11, thought 13)
+		if ( isOpen() && !refusesQueue() )
+			CheckAdmission( turn );
 	}
 
 	/// <summary>
@@ -1065,7 +1068,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// With every slot taken nothing is stored and the visitor is not bouncing.
 	/// </summary>
 	// [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc)
-	// [APPROX:QUEUE-020] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock does not advance inside an opcode, the original's can tick between the two calls and put the start 1 ms after the deadline's base, which moves UNBOUNCE's 200 ms window by 1 ms — evidence needed: none for the reading (0xadfb0, 0xadfcc); a stepped clock cannot reproduce the tick
+	// [APPROX:QUEUE-020] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock does not advance inside an opcode; tp.exe's BOUNCE 0x00555674 calls the clock 0x00402D70 (timer 0x00785970) once for the deadline (0x00555753, + 1000 × dur) and again for the start (0x00555770), so a millisecond tick between them puts the start 1 ms after the deadline's base and moves UNBOUNCE's 200 ms window by 1 ms — evidence needed: none for the reading; a stepped clock cannot reproduce a live tick
 	internal static bool TakeBounceSlot( List<(int Guest, double Until, double Start)> slots, int capacity, int guest, double until, double now )
 	{
 		for ( var index = 0; index < capacity; index++ )

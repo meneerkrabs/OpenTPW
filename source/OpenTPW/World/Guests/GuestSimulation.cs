@@ -53,6 +53,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public const int BoredomTurns = 100;
 	/// <summary>Park turns an idle interlude lasts (state 8 restores the saved state once turn &gt; +520 + 10).</summary>
 	public const int InterludeTurns = 10;
+	/// <summary>The queue facing change spans (r mod 800) − 400 of 2048 (tp.exe <c>0x004FFFF0</c>).</summary>
+	public const int FacingChangeRange = 800;
 	public const float LeaveHappiness = 10;
 	public const float ToiletLeaveLevel = 80;
 	public const float TicketBoothSeconds = 1.0f;
@@ -390,7 +392,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
-		// [APPROX:GUEST-920] elapsed simulated seconds begin at successful admission (seeded guests at zero), stop on road-home travel, and omit the admission tick — evidence needed: original visitor elapsed-time update and admission boundary
+		// [APPROX:GUEST-920] elapsed simulated seconds begin at successful admission (seeded guests at zero), stop on road-home travel, and omit the admission tick; tp.exe's stamp +0x1D4 (the world turn) is written only by the guest constructor (0x4FAFDB, at the bus drop-off 0x4CF720) and the load, and the visitor panel shows (turn − stamp) >> 2 (0x4FD950) as whole hours — evidence needed: the seconds per world turn, and whether guests on the road home stay in the visitors list
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
@@ -399,9 +401,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			UpdateNeedsTurn( guest );
 			// The leaving test itself runs in state 6 (UpdateDeciding). The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
-			// would strand every guest whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the
+			// would strand every guest whose ride holds admission (OpenTPW's rides do not close with the park, and a queued guest's happiness rarely sinks below the
 			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
-			// [APPROX:GUEST-011] OpenTPW pulls queued and boarding guests out when the park closes; in tp.exe nothing in the queue reads the closed word (game +0x1DA710, 0x0051A280): its readers are the guest state handlers for states 2, 3, 5, 6, 10 and 18 (0x004FF730, 0x004FF7F0, 0x004FFB20, 0x004FEC90, 0x004FFBC0, 0x00500A50; the state dispatcher 0x005019F0), the strike test 0x00508E70, staff code 0x00506300, the park's average happiness 0x004C7BB0 (0 while closed), 0x004C9050 and the UI 0x00498D80, so the original's queues keep running and their guests leave only after the ride — evidence needed: whether OpenTPW's rides keep admitting in a closed park (oracle F26), which decides whether the safeguard can go
+			// [APPROX:GUEST-011] OpenTPW pulls queued, called and boarding guests out at once when the park closes and sends them home with one big drop; tp.exe closes every openable object (0x519EF0 → 0x4DF300: open word +0x68 = 0), and a closed ride's update dismisses its queue head, one per update (0x4E1220 → 0x4E0450 → 0x5012F0: event 6, the medium drop, state 6, whose leaving gate takes the big drop at 0x4FEE87), a head the script already took rides (0x500870) and AdmitPerson 0x4E0900 refuses a called guest; a guest walking to a ride takes the big drop in state 10 (0x4FFEB9) and again in state 6, where OpenTPW takes it once — evidence needed: whether shops and stalls carry the openable flag 4 of +0x32
 			if ( Payments?.ParkClosed == true )
 			{
 				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding && FindAttraction( guest.AttractionId ) is { } closed )
@@ -417,7 +419,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
-			// [APPROX:GUEST-012] the original also demands the guest's cell pass 0xe6c6c (its cell record through 0x10a9b0 and 0x85190..0x851d0) — evidence needed: which cells qualify; OpenTPW approximates the predicate by the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane), the stage before leaving. The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc)
+			// [APPROX:GUEST-012] tp.exe's recall (0x500A50) also demands the guest's cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType); OpenTPW's imported grid writes only 0, 1 and 3 (ECON-050), so the test would pass everywhere, and OpenTPW stands in for it with the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane). The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc) — evidence needed: which cells the original's state-18 walk crosses before state 19 (0x500AD0) and their types
 			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
 				guest.State = GuestState.DoingNothing;
 		}
@@ -434,7 +436,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
 	/// enters the temporary history.
 	/// </summary>
-	// [APPROX:GUEST-006] the guest's cell environment record has all the original's sources (vomit, stinkbombs, entertainers, guards, toilets, cameras, fireworks; ParkEnvironment) and the thoughts follow tp.exe (the pick 0x4FC8A0 on one needs phase in ten, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority), but a load puts back the row an object's saved state implies, a show loses its row when its script's VAR_STATUS reaches 1, which only the script writes in OpenTPW, the pick's one-in-ten draw is a hash of the guest and the turn rather than a draw of the world generator, and bubbles are always on where the original skips them online and while bits 0x16 of the flag word 0x790AB0 are set — evidence needed: who sets a show's VAR_STATUS and what bits 0x16 of 0x790AB0 mean
+	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, but the pick's one-in-ten draw is a hash of the guest and the turn where 0x501919 takes a world draw on every needs phase of a guest outside states 16 and 17 on a park cell; the pick's voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0) is not played; bubbles are always on where 0x50BE80 skips them online (0xFB3B7C = 1; none of its 22 callers passes the override) and while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -592,7 +594,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// reach; otherwise it is removed. True when it walks out.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FEB50 guard sets a guest down] the guest at the cell's centre (0x004FA930), its model back (0x004D4140), cat_kids 128 at it, +0x188 = 1, a route to one of the two gate cells by a world draw's bit 0 (0x004D86D0): state 18 ("<Humph>"); no route destroys it (0x0050B780)
-	// Approximation (GUEST-007, registered at Prank): the guest stands at its own offset in the cell rather than the centre and walks to the nearer arrival lane like any leaving guest, where the original routes to the gate cell its draw picked
+	// Approximation (GUEST-007, registered at Prank): the guest stands at its own offset in the cell and walks out by the nearer reachable arrival lane, where tp.exe's set-down 0x004FEB50 puts it at the cell's centre (0x004FA930), takes one world draw and routes it to the single park-side crossing cell the draw's bit 0 picks (0x004D86D0: CrossingParkSideA, or CrossingParkSideB's X with side A's Y), destroying it (0x0050B780) when that route fails
 	bool IGuardGuests.Release( int guestId, (int X, int Y) cell )
 	{
 		if ( Find( guestId ) is not { } guest )
@@ -626,15 +628,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
 
-	// [APPROX:GUEST-008] OpenTPW's energy meter (drained while walking, restored while resting) has no original counterpart: the original has no energy field and nothing reads this one; its rates are invented — evidence needed: none (a field the original lacks)
+	// [BIN:TPW-EXE:0x004FD970 guest meter +0x1B8] the energy meter is the original's unnamed float +0x1B8: nothing changes it while walking, resting, queueing or riding (the needs phase 0x00501650 does not touch it), so OpenTPW keeps only its use step (OnVisitorReleased)
 	private void UpdateNeeds( Guest guest, float dt )
 	{
-		var riding = guest.State == GuestState.Using;
-		if ( riding || guest.State is GuestState.Queueing or GuestState.WaitingToBoard or GuestState.DoingNothing )
-			guest.Energy = Math.Min( 100, guest.Energy + Settings.EnergyRecoveryPerSecond * dt );
-		else
-			guest.Energy = Math.Max( 0, guest.Energy - Settings.EnergyDrainPerSecond * dt );
-		if ( !riding )
+		if ( guest.State != GuestState.Using )
 			guest.SecondsSinceRide += dt;
 	}
 
@@ -678,14 +675,14 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A cell is walkable for the stepping guest (the <c>+180</c> mask) when it is on its current walk: the route cells
 	/// and, for a queue walk, the queue's next cells ahead of the destination and behind the start.
 	/// </summary>
-	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (its route cells and the walk's extra open cells), so path cells beside the route are walls; the original tests the cell's edge flags against the guest's +180 mask (0xd768c) and commits the step through a transition call (0xfee3c..0xfee58) — evidence needed: the edge flags 0xd768c reads, the +180 mask per guest state and the commit callback
+	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (route and extra open cells), so path cells beside the route are walls; the original commits a step through the callback 0x510510 (at most one cell, diagonal steps through either L-shaped route) and the edge test 0x4d8750 with the guest's mask (walk +0xb4): path-to-path steps are always open, queue boundaries need the target's link back, other cell types and the masks 1 and 2 have their own rules; none of this is modelled — still open: the edge test 0x4d8750 on ParkCellMap and the mask writers are not ported
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
 
 	/// <summary>
 	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10); the original's query also keeps thing types 4–8 and 18, which never push in OpenTPW — evidence needed: the writers of thing +4/+6 and of the cell lists, and what thing types 4–8 and 18 are
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) in OpenTPW's cell lists, rebuilt every park turn in guest order with movers appended; the original (tp.exe query 0x5102f0, Mac 0x10087c) walks per-cell thing lists that are head-inserted when a thing enters a cell (0x50b6a0 via 0x4d91f0) and never rebuilt, keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
@@ -967,7 +964,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// pick the next wander destination and keep walking; otherwise the guest decides again (state 6).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501ABB state 7] the walk step 0x004FA2A0 returns 0 (arrived), 1 (walking) or 2 (stuck); on 0 or 2 one draw, and when its low two bits are 0 the wander destination 0x004F9490 keeps state 7 on success; every other case sets state 6
-	// [APPROX:GUEST-010] OpenTPW's walk has no stuck result (its steering reroutes, WALK-I): a walk ends on arrival, or as stuck when a grid edit takes a cell of its route (EndBrokenWalks)
+	// [APPROX:GUEST-010] OpenTPW's walk has no stuck result of its own (its steering reroutes, WALK-I): a walk ends on arrival, or as stuck when a grid edit takes a cell or link of its route (EndBrokenWalks), without a replan; tp.exe's walk +0xB8 (guest +0x18C) is set when a replan fails after the guest's ground changed or its progress stalled (0x50ED10) or a route request fails (0x50F8E0), and 0x4FA2A0 then returns 2 — evidence needed: none (read)
 	private void UpdateWalkingAround( Guest guest )
 	{
 		if ( !turnStarted )
@@ -1001,7 +998,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// reaches; the guest then walks to the cell in front of it (state 9). False when there is none.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00500DC0 bin search] the object list (game +0x1DA746, next at +0xC) in order; objects with flag +0x32 bit 0x40 (UsageInfo.HoldsLitter, type record +0xF8); dx² + dy² from the guest's cell to the object's below 9 and strictly below the best so far; the route test 0x004FA530 to the object's access cell +0x36 keeps it
-	// [APPROX:GUEST-005] the route test of an unreachable but closer bin also overwrites the guest's destination words in the original, which a later reachable candidate's test sets again; OpenTPW keeps the reachable bin's route — evidence needed: none (read); the overwrite matters only when the last bin tried is unreachable
+	// [APPROX:GUEST-005] OpenTPW keeps the reachable bin's route; in tp.exe the route request of an unreachable but closer bin tested later fails and marks the walk stuck (0x0050F8E0: walk +0xB8, guest +0x18C), so the walk step 0x004FA2A0 returns 2 at once (0x004FA301) and state 9 drops the litter on the cell — evidence needed: the route test's early exit (0x004FA530 through +0x198 and 0x004FA770)
 	private bool SeekBin( Guest guest )
 	{
 		if ( Bins?.Invoke() is not { Count: > 0 } bins )
@@ -1034,7 +1031,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// stuck drops the litter on the guest's cell instead (<c>1 + rand % 5</c>). Either way the meter empties and the guest decides again.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FFF20 state 9] the walk step 0x004FA2A0: 1 keeps walking; 0 with a bin triggers the bin's script (Level.TriggerBin); 2, or a bin id of 0, drops 1 + rand % 5 on the current cell (0x004D93B0); then the meter +0x1B4 = 0 and state 6
-	// [APPROX:GUEST-005] a bin removed during the walk counts as no bin (the litter falls on the cell), where the original still triggers the script of the object id it holds; the walk ends stuck only when a grid edit takes a cell or link of its route (EndBrokenWalks) — evidence needed: none (read)
+	// [APPROX:GUEST-005] a bin removed during the walk counts as no bin (the litter falls on the cell), where tp.exe's removal message reaches the guest whose target it is (0x004FB360: SmallHappinessChange lost via 0x004FE980(0), target cleared, state 6, litter meter kept); the walk ends stuck only when a grid edit takes a cell or link of its route (EndBrokenWalks) — evidence needed: none (read)
 	private void UpdateThrowingAwayLitter( Guest guest )
 	{
 		if ( !turnStarted )
@@ -1055,7 +1052,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: pranksters prank as in tp.exe (0x4FF0F5, x86 X18) and a prank on a cell with security sends a guard (0x508A30); a balloon prankster's victim is the first other guest on the cell in OpenTPW's guest order rather than the cell's thing list; the prank message reaches no advisor line and the guest event 15 is not recorded; a guest the guard sets down stands at its own offset and walks to the nearer arrival lane rather than the gate cell its draw picked — evidence needed: none (read); waits for the advisor's prank lines and the cell thing lists
+	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes and the guard reply (0x508A30) match, and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank message reaches no advisor line where 0x59B060 queues the advice 0x7D, 0x7E or 0x7F by the prank kind; a guest the guard sets down is handled as at the set-down's own approximation — evidence needed: the advice rows 0x7D..0x7F and which guest states are on the cell thing lists
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
@@ -1188,7 +1185,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] the attraction's back-of-queue cell (0xdd3f4) is the bridge's last queue cell and its queue count the guests in OpenTPW's queue list; a back cell that is not connected to a path (no join cell) is scored 0; the type's own thing-array order, tie rule on equal scores and the thing behind ride +36 follow the join gate's approximations (QUEUE-004)
+	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0), but the queue count is OpenTPW's whole queue list where 0x4DDF50 stops after the first listed guest outside the queue states (0x502430: 11..14, or 8 with the saved state +0x224 in 11..14) and counts it; a back cell with no join cell is scored 0 here, and ChooseAttraction routes to the join cell where 0x4FCB10 routes to the back cell itself (0x4FA530) — evidence needed: whether a listed guest can leave states 11..14, and whether a route to an unconnected back cell fails
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( attraction.JoinCell == null )
@@ -1210,23 +1207,35 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E8FF4 choice loop] executed by the PowerPC oracle (attraction-choice); the tie rule reads the world turn's bit 0 (game +0x1da70c)
 	// [BIN:TPW-EXE:0x4dd920 counts-test] the candidate needs flag +0x32 bit 4, a state other than 1 and 4 (+0x19c), the open word (+0x68), a back cell, queue room below 4 × cells (+0x40) and the type checks; VAR_BROKEN is not read, so a ride whose script just reported a breakdown is chosen until its ride update enters state 1
-	// [APPROX:QUEUE-017] the queue room and the coaster controller tests of the counts-test are left to the join (ARRIVAL-003)
+	// [BIN:TPW-EXE:0x004DD920 counts-test room] the candidate's queue list count (0x004DDF50 with id 0) must be below 4 × its cells (+0x40, from the back-of-queue walk 0x004DE130); the coaster test 0x00441970 and the kart/water track word +0x2C are applied through IsOpen (CoasterRide.AcceptsGuests, BumpController.IsTrackValid; the edited-coaster exclusion is COAST-024)
 	// [BIN:TPW-EXE:0x004FCB10 choice loop] no price or money test in the choice: a candidate needs flag +0x32 bit 4, a back-of-queue cell, a score above 9 that beats the best (ties on an odd turn), the counts-test 0x004DD920 and a route; the price is tested when the guest is called forward (0x004FDE50)
 	// [BIN:TPW-EXE:0x4ff419 major decision] once the turn is above +0x1FC + 30 the choice 0x4fcb10 runs; with no target the guest logs event 1, thinks 4, loses the small step (0x4fea70(0)) and is stamped; nothing in it tests time since a ride, and no instruction reads PeepTypes' BoredomThreshold (0x7850EC + 12 × type has no reference; excitement 0x7850E4 and cash 0x7850E8 have)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest )
 	{
 		IEnumerable<AttractionChoice.Candidate> Candidates()
 		{
-			foreach ( var attraction in attractions )
+			foreach ( var attraction in NewestFirst() )
 			{
 				var canJoin = attraction.JoinCell != null;
 				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
-					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
+					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells
+						&& attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
 			}
 		}
 		var id = AttractionChoice.Pick( Candidates(), ParkTurn );
 		return id == 0 ? null : FindAttraction( id );
 	}
+
+	/// <summary>The attractions in the order the original's choice loop meets them: newest first.</summary>
+	// [BIN:TPW-EXE:0x004FCB10 thing list order] the choice walks the object list from its head (game +0x1DA746) through each thing's next word +0xC; 0x00519D80, called only by the object constructor 0x004DB090, pushes each new object at the head, and the save 0x00516C80 and the load 0x005179C0 keep the head word, so the newest object comes first; attraction ids are allocated in placement order
+	private IEnumerable<IRideVisitorBridge> NewestFirst()
+	{
+		for ( var index = attractions.Count - 1; index >= 0; index-- )
+			yield return attractions[index];
+	}
+
+	/// <summary>The major decision's choice for <paramref name="guest"/> on the current park turn, without changing the guest (tests).</summary>
+	internal IRideVisitorBridge? PeekChoice( Guest guest ) => ChooseAttraction( guest );
 
 	private IRideVisitorBridge? FindAttraction( int id )
 	{
@@ -1241,7 +1250,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.HasWaypoint && !Move( guest ) )
 			return;
 		var attraction = FindAttraction( guest.AttractionId );
-		if ( attraction == null || !attraction.IsOpen )
+		// [BIN:TPW-EXE:0x004FFBC0 walk to the queue] state 10 reads neither the ride's state nor its open word: a guest keeps walking to a ride closed or broken meanwhile, joins, and the ride sends it away from the queue head (RideVisitorBridge.HostStep)
+		if ( attraction == null || !attraction.AcceptsJoins )
 		{
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
@@ -1264,17 +1274,17 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				BeginQueue( guest, attraction );
 				return;
 			}
-			// [BIN:TPW-EXE:0x004FFCD7 join refusal] too exciting: 15, not exciting enough: 12, a queue too long: 16 (0x004FFD7E)
-			Think( guest, result switch
-			{
-				QueueJoinResult.TooExciting => GuestThought.Scared,
-				QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
-				_ => GuestThought.QueueTooLong
-			} );
-			if ( result is QueueJoinResult.NoRoom or QueueJoinResult.QueueTooLong )
-				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.SmallHappinessChange );
+			// [BIN:TPW-EXE:0x004FFCD7 join refusal] too exciting: 15, not exciting enough: 12, a queue too long: 16 (0x004FFD7E); none of the join's refusals changes happiness (0x004FFBC0 calls 0x004FEA70 only when the walk is stuck or the park closed)
+			// [BIN:TPW-EXE:0x004FFC4F full queue room] the room test 0x004DDA20 (count below 4 × cells) fails: event 0x15 and state 6 only (0x004FFE0A → 0x004FFE54), no thought, no happiness change and no history push
+			if ( result != QueueJoinResult.NoRoom )
+				Think( guest, result switch
+				{
+					QueueJoinResult.TooExciting => GuestThought.Scared,
+					QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
+					_ => GuestThought.QueueTooLong
+				} );
 			// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
-			// [APPROX:GUEST-004] a full queue room (NoRoom, count ≥ 4 × queue cells) is treated like the original's queue-too-long refusal for the thought and the happiness loss, but pushes no history: its original path (0xdc988 then the dismissal 0xee804) pushes none — evidence needed: where a guest meets a physically full queue in state 10
+			// [APPROX:GUEST-004] the full-room refusal keeps the target +0x1DC in tp.exe (the jump past 0x004FFEDA), which OpenTPW clears; the state-6 handler cannot tell (its only read, 0x004FF437, follows the choice 0x004FCB10, which clears the word first at 0x004FCB21), but the object-removal message handler 0x004FB360 still matches a stale target and costs the guest SmallHappinessChange (0x004FE980(0)) with a reset to state 6, a message OpenTPW does not model — evidence needed: none (read)
 			if ( result is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
 				PushHistory( guest.TemporaryHistory, attraction.AttractionId );
 			// [BIN:TPW-EXE:0x004FFCF6 excitement refusal] the refusal clears the target and the decision stamp +0x1FC, so the next major decision is not held back 30 turns
@@ -1334,20 +1344,18 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
 			if ( position < 0 || position >= room )
 			{
-				// the dismissal 0x005012F0 lowers happiness by the medium step (0x004FEA70 with 1)
-				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
-				LeaveQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
+				DismissFromQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
 			if ( guest.State == GuestState.Boarding )
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest thinks Angry for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id, and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight, which OpenTPW does not (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what the event-6 record feeds
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs): state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0; OpenTPW's queue walk cannot route a guest standing off the queue back, so such a guest leaves (Confused) and the guests that stay are given their walk again. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 records event 6 with the ride id in the guest's own event history (0x0050C100 with ECX = guest + 0x30) and plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D), which OpenTPW does not (its medium happiness drop is applied) — evidence needed: whether the generic route reaches a queue place from a cell off the queue, the thing-id numbering, and what the event history feeds
 			if ( index < 0 && !onJoinCell )
 			{
-				LeaveQueue( guest, attraction, GuestThought.Confused );
+				DismissFromQueue( guest, attraction, GuestThought.Confused );
 				continue;
 			}
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
@@ -1387,7 +1395,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var position = attraction.GetQueuePosition( guest.Id );
 		if ( position < 0 )
 		{
-			LeaveQueue( guest, attraction, GuestThought.Confused );
+			// the move-up's failure in 0x004FFFF0 ("Couldn't get to my intended queue position") leaves through the dismissal too
+			DismissFromQueue( guest, attraction, GuestThought.Confused );
 			return;
 		}
 		guest.QueuePosition = position;
@@ -1425,7 +1434,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			route.Add( EntranceCellOf( attraction ) );
 		// The queue goes on beyond both ends of the walk: the cell ahead of the destination (the entrance cell ahead of
 		// the front cell) and the cell behind the start (the join cell behind the back cell) are walkable too.
-		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start (the entrance and the join cell at the ends), and no other cell off its route; this stands in for the original's edge flags along the queue — evidence needed: the queue cells' edge flags and the +180 mask in states 12 and 13
+		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route; in the original a step from a queue cell is open (edge test 0x4d8750) into a path, queue or queue-end neighbour whose link points back at it, or into a type-0x1e fixed walkway when the mask is not 2, and blocked otherwise; OpenTPW does not read the cell links for this — still open: the edge test 0x4d8750 on the queue links is not ported (WALK-005)
 		(int X, int Y)? ahead = toEntrance ? null : index > 0 ? cells[index - 1] : EntranceCellOf( attraction );
 		var behind = from + 1 < cells.Count ? cells[from + 1] : attraction.JoinCell;
 		var alsoOpen = new List<(int X, int Y)>( 2 );
@@ -1456,7 +1465,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// sideways byte <paramref name="lateral"/> (114..141) across it, each byte / 256 of a cell (<c>0xe68cc</c>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 queue slot] depth = trunc(255 × 0.25 × the place within the cell); lateral = 0x72 + rand % 28. Up to depth 128 the cell's own link to the front picks the axis: link 1 (−Y) gives (lateral, depth), 4 (+X) (255 − depth, lateral), 16 (+Y) (lateral, 255 − depth), 64 (−X) (depth, lateral). Beyond 128 (the fourth place) the axis is the link of the queue cell behind (0x004DE670), for the back cell the direction from its attached path cell (the first of its connections 1, 4, 16, 64 that leads to a path cell, reversed), and link 4 then gives depth − 128 instead of 255 − depth
-	// [APPROX:QUEUE-006] the back cell's fourth place takes its axis from OpenTPW's join cell (QUEUE-003) where the original takes the first connected path neighbour in the order 1, 4, 16, 64 — evidence needed: none for the rule (static); QUEUE-003's join cell decides the difference
+	// [APPROX:QUEUE-006] the back cell's fourth place takes its axis from OpenTPW's join cell, the first adjacent path cell in the order 1, 4, 16, 64; tp.exe 0x004DE840 takes the first such cell whose bit is also set in the back cell's connection byte +0x0C (0x004DEA2F..0x004DEA57), so the two differ when the back cell touches an unconnected path cell earlier in that order — evidence needed: the queue tool's connection writes (QUEUE-003)
 	public (int CellIndex, float X, float Y) QueuePositionPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
 		var (index, x, y) = QueueSlotPoint( attraction, position, lateral );
@@ -1553,7 +1562,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			EnterStanding( guest );
 		else if ( TooExpensive( guest, attraction ) )
 			// [BIN:TPW-EXE:0x005006B0 called forward] at the stand point the price test 0x004FDE50 comes before the ride takes the guest (AdmitPerson); a guest that refuses leaves the queue ("Object %d is too expensive, I'm leaving the queue") and keeps its thought
-			// [APPROX:GUEST-003] the refusal costs happiness twice at the medium step (0x004FEA70 with 1, once for the refusal and once in the dismissal 0x005012F0), but its other effects are not modelled: animation 6, the guest record of event 10 (0x0050C100), the ride's walk-away count (mNumWalkAways, 0x004E1670) and the price perception statistic per shop category (0x004C74B0); the park's per-type word +0xC (0x004E2740) is taken as 0 — evidence needed: the writers of that word (script opcodes around 0x004CA47F) and the uses of the walk-away count and the statistic
+			// [APPROX:GUEST-003] the refusal's thought 6, two medium drops (0x004FEA70 with 1 at 0x00500778, and the dismissal 0x005012F0) and leave match; not modelled: the ride's walk-away counters (0x004E1670: +0x1A4 and the period count +0x230, which 0x004DD320 rolls and 0x004CAAE0 sums per ShopType for the advisor), the dismissal's sound for a thing id whose low three bits are 0 and the price statistic 0x004C74B0 (recorded on every shop and sideshow test); the guest's event records (0x0050C100) feed only the debug dump 0x004FAA60 — evidence needed: none (read)
 			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
@@ -1562,9 +1571,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>A called guest refuses the price: two medium happiness drops (the refusal and the dismissal), then it leaves the queue.</summary>
 	private void RefusePrice( Guest guest, IRideVisitorBridge attraction )
 	{
-		guest.Happiness = Math.Max( 0, guest.Happiness - 2 * Settings.MediumHappinessChange );
-		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6
-		LeaveQueue( guest, attraction, GuestThought.Dissatisfied );
+		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6, then the refusal's own 0x004FEA70(1) before the dismissal's
+		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
+		DismissFromQueue( guest, attraction, GuestThought.Dissatisfied );
 	}
 
 	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
@@ -1579,12 +1588,13 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// The price test's words for <paramref name="attraction"/>: the live words the level mirrors from the economy (a free visit's
 	/// all-zero terms included); a bridge nobody mirrors into keeps its constructor price.
 	/// </summary>
+	// [BIN:TPW-EXE:0x004D3E00 per-type price word] the word +0xC of the per-type record the price test reads (0x004E2740 → 0x004D3D10) is copied from the type record's +0x16C, UsageInfo.RipOffOK (key 42 of the table at 0x007456E8); no caller of the record lookup 0x004D3D10 stores that word
 	internal static PriceTerms PriceTermsOf( IRideVisitorBridge attraction )
 	{
 		var live = attraction.Sideshow;
 		var price = attraction.HasSideshowTerms ? live.PricePerUse : attraction.Price;
 		return new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
-			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, 0 );
+			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, attraction.RipOffOk );
 	}
 
 	/// <summary>The cell the walking guest stands on, and its queue index when it is a queue cell.</summary>
@@ -1639,45 +1649,48 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.State = GuestState.Boarding;
 			return;
 		}
-		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken ride
+		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken or closed ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
-		// [APPROX:QUEUE-008] the predicate follows the original and relief objects now wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning); the online game type's branch of the wear step (a dirty toilet cleans itself back to 100 at once, tp.exe 0x004E2440) and the dirty-toilet messages' own handlers (0x004D8460 / 0x004D8440 with 1 and 6, raised here as ToiletDirty) are not modelled — evidence needed: what the two message handlers do with the toilet's cell
+		// [APPROX:QUEUE-008] the predicate follows the original; relief objects wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning), and the swaps of the RegionFX rows 1 and 6 at the toilet's cell are the original's (0x004D8460 / 0x004D8440 are the remove and add wrappers of the region writer 0x004D8480, ParkEconomy.SwapToiletEffect). Not modelled: the branch of 0x004E2440 for game type 1 (the word 0x00FB3B7C), where a use wears nothing and a toilet whose gauge byte is below 25 is cleaned at once (rows 6 → 1, script variable 8 = 0, gauge 100, +0x5E and +0x64 cleared); OpenTPW wears toilets in every game — evidence needed: what game type 1 is in OpenTPW's terms
+		// [BIN:TPW-EXE:0x005004AA queue exit] every state-11 exit unlinks the guest (0x004DDD20), dismisses it (0x005012F0: "dismissed from queue", the medium happiness drop 0x004FEA70(1), the queue words cleared) and sets state 6; the thought, if any, is set before the jump (DismissFromQueue)
 		if ( attraction.ReliefWornOut )
 		{
-			LeaveQueue( guest, attraction, GuestThought.FeelingSick );
+			DismissFromQueue( guest, attraction, GuestThought.FeelingSick );
 			return;
 		}
 		// 4. Position lookup.
 		var position = attraction.GetQueuePosition( guest.Id );
 		if ( position < 0 )
 		{
-			LeaveQueue( guest, attraction, GuestThought.Confused );
+			// [BIN:TPW-EXE:0x00500270 guest missing from its queue] "Problem with a queue - shouldn't be fatal": a log line and the dismissal, no thought
+			DismissFromQueue( guest, attraction, GuestThought.None );
 			return;
 		}
 		// 5. Moving up: wait out the delay while the gap is at most 2, else walk to the new position.
 		// While the ride is in state 1 (broken) 0xed4b0 (0xdfe0c) skips the walk and goes straight to the needs window (0xed58c), so the
 		// guests keep their physical places as the head is dismissed.
 		// [BIN:STP-PPC:0x100ED4B0 broken ride holds the queue] only state 1 holds; state 4 (condemned, life gauge 0) is not told apart from it here (QUEUE-019)
-		var held = false;
-		if ( position != guest.QueuePosition )
+		// [BIN:TPW-EXE:0x005002C2 move-up] a changed place decrements the delay (0x005002EB), holds for a broken ride (0x004E0370) or starts the
+		// walk (0x00501160, state 12); each continues into the needs window at 0x005002F2, and only an unchanged place reaches the limit test (0x0050059D)
+		var moved = position != guest.QueuePosition;
+		if ( moved )
 		{
 			var gap = guest.QueuePosition - position;
 			if ( guest.QueueMoveDelay != 0 && gap is >= 0 and <= MoveUpWaitGap )
-			{
 				guest.QueueMoveDelay--;
-				return;
-			}
-			if ( !attraction.IsBrokenDown )
-			{
+			else if ( !attraction.IsBrokenDown )
 				MoveToQueuePosition( guest, attraction );
-				return;
-			}
-			held = true;
 		}
 		// 6. Beyond the limit.
-		if ( !held && guest.QueuePosition > attraction.QueueLimit )
+		if ( !moved && guest.QueuePosition > attraction.QueueLimit )
 		{
-			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+			DismissFromQueue( guest, attraction, GuestThought.QueueTooLong );
+			return;
+		}
+		// [BIN:TPW-EXE:0x00500612 coaster or track refuses] at its position, after the limit test, a guest queueing for a coaster (0x004E2B50) that fails 0x00441970, or for a ride of track type 1 whose track word +0x2C is 0, thinks 13 and leaves (0x005004AA)
+		if ( !moved && attraction.TrackRefusesGuests )
+		{
+			DismissFromQueue( guest, attraction, GuestThought.Angry );
 			return;
 		}
 		// 7. Needs window, and the boredom test that cannot fire (QUEUE-plan §5.3): +508 ≥ +520 always holds here.
@@ -1693,29 +1706,35 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( happiness < (int)LeaveHappiness )
 			{
-				LeaveQueue( guest, attraction, GuestThought.Unhappy );
+				DismissFromQueue( guest, attraction, GuestThought.Unhappy );
 				return;
 			}
-			if ( (int)guest.Toilet > (int)ToiletLeaveLevel && !attraction.ProvidesRelief )
+			// [BIN:TPW-EXE:0x005003AA toilet in the queue] a toilet byte above 80 thinks 4 first and then leaves unless the ride gives relief (ride +0x32 bit 0): a guest queueing for a toilet thinks it and stays
+			if ( (int)guest.Toilet > (int)ToiletLeaveLevel )
 			{
-				LeaveQueue( guest, attraction, GuestThought.NeedToilet );
+				if ( attraction.ProvidesRelief )
+				{
+					Think( guest, GuestThought.NeedToilet );
+					return;
+				}
+				DismissFromQueue( guest, attraction, GuestThought.NeedToilet );
 				return;
 			}
-		}
-		else if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
-		{
-			LeaveQueue( guest, attraction, GuestThought.Bored );
+			// [BIN:TPW-EXE:0x004FFFF0 needs branch returns] beyond the window every path of the needs branch returns (0x00500311..0x005003A2), so the facing change below runs only within 30 turns of the last interlude
 			return;
 		}
-		// 8. A 1-in-10 facing change of ±400/2048 of a turn.
-		// [APPROX:QUEUE-009] the facing change's sign comes from the same draw (0 → +400, 1 → −400 of 2048) — evidence needed: the sign selection after the 1-in-10 facing test at the end of 0x100ED244
-		var draw = random.Next( 20 );
-		if ( draw < 2 )
+		if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
 		{
-			var angle = (draw == 0 ? 400 : -400) * MathF.Tau / 2048;
-			var (sin, cos) = MathF.SinCos( angle );
-			(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
+			DismissFromQueue( guest, attraction, GuestThought.Bored );
+			return;
 		}
+		// 8. A 1-in-10 facing change of −400..+399 of 2048 of a turn.
+		// [BIN:TPW-EXE:0x004FFFF0 queue facing change] one draw (0x00516330) mod 10 must be 0 (else return), then a second draw gives heading +0x1C += (r mod 800) − 400, wrapped by 0x800; OpenTPW draws both from its GuestRandom (DET-014) and turns the heading vector by the same angle
+		if ( random.Next( 10 ) != 0 )
+			return;
+		var angle = (random.Next( FacingChangeRange ) - FacingChangeRange / 2) * MathF.Tau / 2048;
+		var (sin, cos) = MathF.SinCos( angle );
+		(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
 	}
 
 	/// <summary>Idle interlude (<c>0xe8b74</c>): +520 = turn, state 8 until turn &gt; +520 + 10, then state 11 again.</summary>
@@ -1725,8 +1744,22 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.InQueueInterlude = true;
 	}
 
+	/// <summary>
+	/// The queue exits of state 11, the queue edit and the price refusal (tp.exe <c>0x005004AA</c>, <c>0x00501496</c>, <c>0x00500756</c>): the thought, then the
+	/// dismissal <c>0x005012F0</c>, which lowers happiness by the medium step (<c>0x004FEA70</c> with 1, <c>PeepInfo.MediumHappinessChange</c>, clamped at 0)
+	/// before the guest leaves the queue.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005012F0 dismissal] "Person %d: dismissed from queue on ride %d", event 6 (0x0050C100), the sound for one thing id in eight, 0x004FEA70(1), the queue words +0x22A/+0x228/+0x1F8/+0x1DC/+0x1F1 cleared, state 6; the event and the sound are not modelled (QUEUE-005)
+	private void DismissFromQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
+	{
+		if ( thought != GuestThought.None )
+			Think( guest, thought );
+		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
+		LeaveQueue( guest, attraction, GuestThought.None );
+	}
+
 	/// <summary>The guest leaves the queue without riding and steps back onto the path at the join cell.</summary>
-	// [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; the original walk out of the queue is not traced — evidence needed: the state-6 transition after a queue exit
+	// [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; in tp.exe every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position, so the guest stays on its queue cell in state 6 until the state-6 handler 0x004FEC90 starts its next walk from there — evidence needed: the state-6 handler's walk from a queue cell and the route it takes
 	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		attraction.LeaveQueue( guest.Id );
@@ -1852,7 +1885,17 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		PushHistory( guest.UsedHistory, ride.AttractionId );
-		ApplyVisit( guest, ride );
+		// [BIN:TPW-EXE:0x004FD9EE use fatigue] a completed use, won or lost, lowers the meter +0x1B8 by the type's UsageInfo.FatigueEffect (type +0xE8) through the clamped adder 0x004FB4F0, before the use routine; only the save reads the meter (0x004FC026)
+		guest.Energy = MeterMath.Add( guest.Energy, -(float)ride.FatigueEffect );
+		// [BIN:TPW-EXE:0x004FDA0D lost sideshow] a lost play (win byte +0x1F1 of 0) skips the use routine: "Person lost this sideshow" (0x004FDB8D) costs the medium happiness step (byte 0x0078505C) and thinks 6
+		if ( ride.Kind == RideVisitorKind.Sideshow && guest.SideshowWon == false )
+		{
+			guest.SideshowWon = null;
+			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
+			Think( guest, GuestThought.Dissatisfied );
+		}
+		else
+			ApplyVisit( guest, ride );
 		// [BIN:TPW-EXE:0x00501FD3 state 15 entry] after the use routine (0x005015F4, 0x004FD970) the state-15 entry gives a guest with balloon life its balloon back, except at a balloon shop, whose use routine has just made one
 		if ( guest.BalloonLife > 0 && ride.AppearanceEffect != GuestAppearance.Balloon )
 			guest.HasBalloon = true;
@@ -1888,7 +1931,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
-	// [APPROX:GUEST-005] a relief visit wears the toilet, empties the toilet meter and clears an illness byte above 90, and every visit fills the litter meter (tp.exe 0x004FE1E0), but its guest records (events 0x11 and 0x12) and the ingredient and appearance effects beyond the speed boost are not modelled — evidence needed: what the guest records feed
+	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except a won sideshow's tail (0x004FE802..0x004FE8D9, type kind +0x4AC 2: +0x1D0 += 1, happiness += trunc(medium step × log2(object +0x188 / object +0x194)), "Sideshow won - happiness up", then one discarded world draw), the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws come from OpenTPW's guest stream (DET-014) — evidence needed: none (read)
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
@@ -1905,8 +1948,30 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		(guest.Happiness, guest.Thirst, guest.Hunger, _, guest.Nausea) = effects;
 		// [BIN:TPW-EXE:0x004FE1E0 litter meter] after the happiness effect the type's LitterEffect (+0x154) is added to the litter meter +0x1B4, clamped to 0..100 ("Litter gone up by %d, is now %d")
 		guest.Litter = MeterMath.Add( guest.Litter, ride.LitterEffect );
-		// then 0xeaaf8 switches on the type's special ingredient (0xeaf44; its sole caller 0xe9ff8 runs when a guest leaves the object): Sugar raises the speed boost
-		guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
+		var amount = ride.IngredientAmount & 0xFF;
+		// [BIN:TPW-EXE:0x004FE436 small portion] for a nonzero HungerEffect, then a nonzero ThirstEffect (0x004FE488): one world draw r each, and (r & 7) + amount + effect below 30 (unsigned) costs the small happiness step (byte 0x00785058) through the clamped adder 0x004FB4F0
+		if ( ride.HungerEffect != 0 )
+			SmallPortion( guest, amount, ride.HungerEffect );
+		if ( ride.ThirstEffect != 0 )
+			SmallPortion( guest, amount, ride.ThirstEffect );
+		// [BIN:TPW-EXE:0x004FE4CF scaled happiness] then happiness += trunc(amount × HappinessEffect / 100), clamped to 0..100
+		guest.Happiness = MeterMath.Add( guest.Happiness, amount * ride.HappinessEffect / 100 );
+		// [BIN:TPW-EXE:0x004FE527 special ingredient] the switch on type +0x158 (jump table 0x004FE8E8): Fat adds the amount to the toilet meter, Salt to thirst, Ice adds trunc(amount × ThirstEffect / 100) to thirst (each clamped to 0..100), Sugar raises the speed boost +0xC4 by trunc(6 × amount / 100)
+		switch ( ride.SpecialIngredient )
+		{
+			case FatIngredient:
+				guest.Toilet = MeterMath.Add( guest.Toilet, amount );
+				break;
+			case SaltIngredient:
+				guest.Thirst = MeterMath.Add( guest.Thirst, amount );
+				break;
+			case IceIngredient:
+				guest.Thirst = MeterMath.Add( guest.Thirst, amount * ride.ThirstEffect / 100 );
+				break;
+			default:
+				guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, amount );
+				break;
+		}
 		ApplyAppearance( guest, ride.AppearanceEffect );
 		if ( ride.ProvidesRelief )
 		{
@@ -1915,7 +1980,21 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Toilet = 0;
 			if ( ((long)guest.Nausea & 0xFF) > 90 )
 				guest.Nausea = 0;
+			// [BIN:TPW-EXE:0x004FE7F5 relief speed term] the block ends by setting the toilet speed term +0xC2 to 25 (word 0x0075C7F2), until the guest's next needs phase rewrites it
+			guest.ToiletBonus = GuestSpeed.ToiletBonus;
 		}
+	}
+
+	/// <summary>The special ingredients of <c>UsageInfo.SpecialIngredient</c> (type <c>+0x158</c>) other than Sugar.</summary>
+	private const int FatIngredient = 1, SaltIngredient = 2, IceIngredient = 3;
+	/// <summary>The small-portion test's limit (tp.exe <c>0x004FE44E</c>, <c>cmp eax, 0x1e</c>).</summary>
+	private const uint SmallPortionLimit = 30;
+
+	/// <summary>One small-portion test of the use routine: a world draw, and a small happiness loss when the portion was small.</summary>
+	private void SmallPortion( Guest guest, int amount, int effect )
+	{
+		if ( unchecked( (uint)((int)(random.NextWord() & 7) + amount + effect) ) < SmallPortionLimit )
+			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
 	}
 
 	/// <summary>

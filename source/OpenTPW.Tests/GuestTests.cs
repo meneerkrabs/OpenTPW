@@ -267,10 +267,17 @@ public class GuestTests
 		shop.Step(); // calls 1, script takes it
 		shop.Step();
 		shop.Open = false;
+		// tp.exe 0x4e1220 → 0x4e0450: a closed ride sends one queue head away per ride update; the others wait.
+		foreach ( var (gone, left) in new[] { (2, 2), (3, 1), (4, 0) } )
+		{
+			shop.Step();
+			CollectionAssert.Contains( host.Events, $"away {gone}" );
+			Assert.AreEqual( left, shop.Bridge.QueueLength );
+		}
+		// The join (0x4ffbc0) reads no open word: a closed ride still takes a joiner and sends it away from the head.
+		Assert.IsTrue( shop.Bridge.TryJoinQueue( 5 ), "the join reads no open word" );
 		shop.Step();
-		CollectionAssert.Contains( host.Events, "away 2" );
-		Assert.AreEqual( 0, shop.Bridge.QueueLength );
-		Assert.IsFalse( shop.Bridge.TryJoinQueue( 4 ), "closed rides take nobody" );
+		CollectionAssert.Contains( host.Events, "away 5" );
 		shop.Bridge.ReleaseAll();
 		CollectionAssert.Contains( host.Events, "release 1" );
 	}
@@ -465,7 +472,7 @@ public class GuestTests
 			Assert.AreEqual( phaseZero ? 2f * fixedSteps : 0f, guest.Hunger, $"guest {guest.Id} hunger" );
 			Assert.AreEqual( phaseZero ? 2f * fixedSteps : 0f, guest.Thirst, $"guest {guest.Id} thirst" );
 			Assert.AreEqual( phaseZero ? 1f * fixedSteps : 0f, guest.Toilet, $"guest {guest.Id} toilet" );
-			Assert.IsTrue( guest.Energy < 100 );
+			Assert.AreEqual( 0f, guest.Energy, "nothing but a completed use changes the meter +0x1B8 (tp.exe 0x004FD970)" );
 		}
 		var thirsty = guests[0];
 		thirsty.Thirst = 90;
@@ -501,6 +508,108 @@ public class GuestTests
 		iceCream.Bridge.IngredientAmount = 100;
 		host.OnVisitorReleased( iceCream.Bridge, guest.Id );
 		Assert.AreEqual( (ushort)9, guest.Boost, "a second visit adds on top: 3 + 6" );
+	}
+
+	/// <summary>
+	/// The choice loop (tp.exe 0x004FCB10) walks the object list newest first (0x00519D80 pushes each new object at the head) and takes an equal
+	/// score only on an odd world turn, so of two attractions that tie the newest wins on an even turn and the oldest on an odd one (GUEST-002).
+	/// </summary>
+	[TestMethod]
+	public void ATieGoesToTheNewestAttractionOnAnEvenTurnAndTheOldestOnAnOddOne()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var older = CreateShop( 1, (5, 5) );
+		var newer = CreateShop( 2, (15, 5) );
+		simulation.Register( newer.Bridge );
+		simulation.Register( older.Bridge );
+		var guest = simulation.SpawnInPark( 10, 5 );
+		var score = simulation.ScoreAttraction( guest, older.Bridge );
+		Assert.AreEqual( score, simulation.ScoreAttraction( guest, newer.Bridge ), "the two tie" );
+		Assert.IsTrue( score >= AttractionScore.CandidateFloor, $"score {score}" );
+		var seen = new HashSet<long>();
+		while ( seen.Count < 2 )
+		{
+			var parity = simulation.ParkTurn & 1;
+			seen.Add( parity );
+			Assert.AreEqual( parity == 0 ? 2 : 1, simulation.PeekChoice( guest )?.AttractionId, $"turn {simulation.ParkTurn}" );
+			simulation.Tick( Tick );
+			(guest.CellX, guest.CellY) = (10, 5);
+		}
+	}
+
+	/// <summary>
+	/// The original's meter +0x1B8 (OpenTPW's <c>Energy</c>): 0 for a new guest (tp.exe 0x004FAEC0), and a completed use takes the type's
+	/// <c>UsageInfo.FatigueEffect</c> off it through the clamped adder (0x004FD970, 0x004FB4F0); walking, waiting and riding leave it alone.
+	/// </summary>
+	[TestMethod]
+	public void OnlyACompletedUseMovesTheMeterAtPlus1B8()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var shop = CreateShop( 2, (0, 5), satisfies: GuestNeeds.Hunger );
+		var host = (IRideVisitorHost)simulation;
+		var guest = simulation.SpawnInPark( 19, 5 );
+		Assert.AreEqual( 0f, guest.Energy, "a new guest starts at 0" );
+		Run( simulation, new[] { shop }, 600 );
+		Assert.AreEqual( 0f, guest.Energy, "ten seconds in the park change nothing" );
+		shop.Bridge.FatigueEffect = 5;
+		host.OnVisitorReleased( shop.Bridge, guest.Id );
+		Assert.AreEqual( 0f, guest.Energy, "the shipped FatigueEffect 5 is clamped at 0" );
+		shop.Bridge.FatigueEffect = -30;
+		host.OnVisitorReleased( shop.Bridge, guest.Id );
+		Assert.AreEqual( 30f, guest.Energy, "a negative effect raises it" );
+		shop.Bridge.FatigueEffect = -90;
+		host.OnVisitorReleased( shop.Bridge, guest.Id );
+		Assert.AreEqual( 100f, guest.Energy, "and clamps at 100" );
+	}
+
+	/// <summary>
+	/// The rest of tp.exe's use routine 0x004FE1E0 after the litter (GUEST-005): the small-portion tests (0x004FE436, 0x004FE488), the scaled
+	/// happiness (0x004FE4CF), the special ingredients Fat, Salt and Ice (0x004FE527) and the relief block's toilet speed term (0x004FE7F5).
+	/// Shops of excitement 0 keep the ride outcome out of the way.
+	/// </summary>
+	[TestMethod]
+	public void AUseAppliesThePortionHappinessIngredientAndReliefSteps()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var host = (IRideVisitorHost)simulation;
+		var guest = simulation.SpawnInPark( 19, 5 );
+		void Set( float happiness, float thirst, float hunger, float toilet ) =>
+			(guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea) = (happiness, thirst, hunger, toilet, 0);
+
+		var burgers = CreateShop( 2, (0, 5), excitement: 0, satisfies: GuestNeeds.Hunger );
+		burgers.Bridge.HungerEffect = 40;
+		burgers.Bridge.HappinessEffect = 10;
+		burgers.Bridge.SpecialIngredient = 1;
+		Set( 50, 30, 80, 20 );
+		host.OnVisitorReleased( burgers.Bridge, guest.Id );
+		Assert.AreEqual( (65f, 30f, 40f, 70f), (guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet),
+			"happiness 50 + 10 + trunc(50 × 10 / 100); 50 + 40 is no small portion; Fat adds the amount 50 to the toilet meter" );
+
+		var fries = CreateShop( 3, (0, 6), excitement: 0, satisfies: GuestNeeds.Hunger );
+		fries.Bridge.SpecialIngredient = 2;
+		Set( 50, 30, 80, 20 );
+		host.OnVisitorReleased( fries.Bridge, guest.Id );
+		Assert.AreEqual( (50f, 80f), (guest.Happiness, guest.Thirst), "Salt adds the amount to thirst; no effect, so no draw and no penalty" );
+
+		var drinks = CreateShop( 4, (0, 7), excitement: 0, satisfies: GuestNeeds.Thirst );
+		drinks.Bridge.ThirstEffect = 60;
+		drinks.Bridge.SpecialIngredient = 3;
+		Set( 50, 90, 80, 20 );
+		host.OnVisitorReleased( drinks.Bridge, guest.Id );
+		Assert.AreEqual( (50f, 60f), (guest.Happiness, guest.Thirst), "thirst 90 − 60, then Ice adds trunc(50 × 60 / 100)" );
+
+		var crumbs = CreateShop( 5, (0, 8), excitement: 0, satisfies: GuestNeeds.Hunger );
+		crumbs.Bridge.HungerEffect = 2;
+		crumbs.Bridge.IngredientAmount = 1;
+		Set( 50, 30, 80, 20 );
+		host.OnVisitorReleased( crumbs.Bridge, guest.Id );
+		Assert.AreEqual( 45f, guest.Happiness, "(r & 7) + 1 + 2 is always below 30: the small step 5" );
+
+		var toilet = CreateShop( 6, (0, 9), excitement: 0, satisfies: GuestNeeds.Toilet );
+		Set( 50, 30, 80, 95 );
+		guest.ToiletBonus = 0;
+		host.OnVisitorReleased( toilet.Bridge, guest.Id );
+		Assert.AreEqual( (0f, GuestSpeed.ToiletBonus), (guest.Toilet, guest.ToiletBonus), "a relief visit empties the meter and sets the speed term to 25" );
 	}
 
 	[TestMethod]

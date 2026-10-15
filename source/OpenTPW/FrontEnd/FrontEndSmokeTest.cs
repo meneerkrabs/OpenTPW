@@ -1139,8 +1139,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			if ( !queueToolAfterSecond )
 				return;
-			// PATH-011: Escape inside the path/queue tool ends the tool; only the next Escape opens the pause menu.
-			Require( !flow.Level!.CellTool.IsActive && !flow.Hud!.Paused, "Escape ends the queue tool before it opens the pause menu (PATH-011)" );
+			// tp.exe 0x40c180: Escape inside the path/queue tool ends the tool; only the next Escape opens the pause menu.
+			Require( !flow.Level!.CellTool.IsActive && !flow.Hud!.Paused, "Escape ends the queue tool before it opens the pause menu (tp.exe 0x40c180)" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );

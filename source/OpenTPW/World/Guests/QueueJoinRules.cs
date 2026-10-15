@@ -121,7 +121,7 @@ public static class QueueJoinRules
 		return Truncate( (float)((float)level * (float)(speedRatio * durationRatio)) );
 	}
 
-	/// <summary>Clamps to 0.75..1.25 with the original's compares: NaN is neither below nor above and passes.</summary>
+	/// <summary>Clamps to 0.75..1.25 with the Mac's compares: NaN is neither below nor above and passes (on PC 0x4E07D2 floors NaN to 0.75; QUEUE-022).</summary>
 	private static float ClampRatio( float ratio ) => ratio < 0.75f ? 0.75f : ratio > 1.25f ? 1.25f : ratio;
 
 	/// <summary>

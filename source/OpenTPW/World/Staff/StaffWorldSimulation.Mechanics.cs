@@ -66,7 +66,7 @@ public sealed partial class StaffWorldSimulation
 	/// reaches, which he claims and walks to; otherwise a patrol, else idle.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DA5B0 mechanic search] 0x00506A40; too tired (0x00506680): "Too tired to fix rides"; the ride finder 0x004DAA90 (the object list from a cursor that moves one object on per search; rides broken down (state 1), upgrading (state 2) or with mRequestedService +0x64 that are no toilet; the claim +0x5E free or his; the smallest dx² + dy² from his cell, strictly smaller replaces) stores the ride at +0x218; a route to its access cell +0x36 claims it (0x004E01F0: +0x5E = him, +0x60 = the turn), posts the advisor's "on the way" message unless requested or upgrading, and sets state 12 (no speed bonus, 0x004DA370); without one 0x004F9490 patrols or he idles
-	// Approximation (ECON-022, registered at UpdateStaff): the finder scans the objects in id order from the first, where the original starts one object further on each search (only ties differ), and the advisor's "mechanic on the way" message is not posted
+	// Approximation (ECON-022, registered at UpdateStaff): the finder scans the objects in id order from the first, where the original's one cursor on the mechanic HQ (+0xC of the thing at game +0x1DA71A, 0x004DA5F7) starts each search one object after the previous start, so ties differ and the search after one that started at the last object finds no ride; the advisor's "mechanic on the way" message is not posted
 	private void SearchMechanic( ParkEconomy economy, StaffMember member, long turn )
 	{
 		if ( StrikeOrRest( economy, member, turn ) )

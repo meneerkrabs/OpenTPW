@@ -71,7 +71,7 @@ public sealed class ThemeParkIncHud
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
 		level.Objects.ObjectPlaced += OnObjectPlaced;
-		// [APPROX:PATH-011] Escape inside a tool ends it without writing; only a Back outside every tool opens the menu
+		// [BIN:TPW-EXE:0x40C180 Escape in a tool] Escape ends a tool (installs the default park mode, SetMode(0)) and is consumed; only an Escape with no tool on reaches the pause menu row (0x748378, 0x40C4D0)
 		hud.Back = () =>
 		{
 			if ( level.CellTool.IsActive )
@@ -462,12 +462,16 @@ public sealed class ThemeParkIncHud
 		// The commit click; Level skips it because this frame's pointer is reported as captured.
 		var queueJoin = level.QueueJoinCell( tool );
 		var result = tool.Click( (cursorX, cursorY) );
-		level.PlayQueueJoin( queueJoin );
+		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
+		if ( result is { GhostRefused: false } )
+			level.PlayQueueJoin( queueJoin );
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
-			GameAudio.PlayPathRefused( cursorX, cursorY );
+			// a commit stopped only by OpenTPW's own queue cap is not one of the original's refusals (QUEUE-013)
+			if ( !result.StoppedByOwnLimit )
+				GameAudio.PlayPathRefused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		}
 		return toolPress = true;

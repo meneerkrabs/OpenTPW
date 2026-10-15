@@ -51,8 +51,8 @@ rules (section 7.3) never exceeded it, and reached at most about 0.6 of it.
   in a catch-up loop, so its slices jitter. Section 5's release timing holds
   only on the grid. OpenTPW's fixed-step clock is this nominal model.
 - **A2 cadence.** Every live guest runs its state handler, and the ride its
-  update, once per park turn (QUEUE-plan §6; `[APPROX:QUEUE-016]`). The
-  live-list eligibility flags are not traced.
+  update, once per park turn (QUEUE-plan §6; tp.exe `0x516394` → `0x50b360`,
+  every live-list thing whose byte `+3` is 0).
 - **A3 open ride.** For the whole wait, the ride is open and unbroken (ride
   `+408 == 0`, `VAR_RIDECLOSED` and `VAR_BREAKSTAT` are 0), its exit is
   connected (`0xeeb30` succeeds), and DUR/CAP do not change. The closed and

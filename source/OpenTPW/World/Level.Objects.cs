@@ -49,6 +49,8 @@ public partial class Level
 		}
 		// Objects keep off built path and queue cells; imported path cells are refused by the terrain rule as before.
 		Objects = new ParkObjects( catalog!, grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
+		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
+		Objects.ObjectRemoving += item => item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
 		Objects.ObjectRemoved += item =>
 		{
 			if ( ReferenceEquals( RideView?.Ride, item ) )
@@ -134,7 +136,7 @@ public partial class Level
 	}
 
 	/// <summary>An object's access cell (thing <c>+0x36</c>) for bins and rest areas: its entrance's outside cell on a path, else its first path neighbour.</summary>
-	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
+	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; tp.exe's constructor 0x004DB090 stores the shape's first entrance cell itself (0x004DB33C, the shape cell 0x00413410 records at +0x494; no walkability test) — evidence needed: whether the original's route finder reaches a goal cell inside a footprint
 	private static (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
 	{
 		var cell = (item.Placement.X, item.Placement.Y);
@@ -238,7 +240,7 @@ public partial class Level
 
 	/// <summary>Starts the path tool at (x, y) (a click in the park view on an empty owned cell or a path cell).</summary>
 	// [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444
-	// [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1
+	// [APPROX:PATH-001] PATH-ENTER: a left click on an object-less cell (hover state 2, help 441) or a path cell (state 1, help 442) enters the path tool (tp.exe click dispatch 0x4879d0 builds the tool object 0x46c580(1), whose enter 0x46d5a0 calls SetMode(1) 0x52f200); the click's release sets that cell as the start only when the start check 0x535670(1, 0) does not refuse it (0x527222..0x5272b8), else the tool stays on without a start; OpenTPW instead refuses to enter when CheckCell fails, the re-preview while game+36 is set (0x5249b6) is not modelled, and the release-time ghost gate (0x524a63) is modelled for clicks after a start (CellBuildTool.Click) but not for the entering click — still open: OpenTPW refuses entry on a failed CheckCell; the entering click's release-time ghost gate and the game+36 re-preview
 	public bool EnterPathTool( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Paths == null )
@@ -274,7 +276,7 @@ public partial class Level
 	/// (<see cref="EnterQueueTool"/>). False when the cell is not a queue cell of a HasQueue ride.
 	/// </summary>
 	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
-	// [APPROX:QUEUE-021] the left click on a queue cell is the help's documented action; the click handler that calls SetMode(3) for an existing queue is not traced — evidence needed: the caller of SetMode 0x1007B320 on a queue cell
+	// [APPROX:QUEUE-021] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool); tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580) — evidence needed: where mode 3 goes on laying after 0x00530120's list
 	public bool EditQueueAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
@@ -313,15 +315,18 @@ public partial class Level
 
 	/// <summary>
 	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
-	/// backtrack sound, then removes that cell the forced way; the sound plays even when the cell stays (a fixed cell). False
-	/// when the cell under the cursor is not a path cell, so the key does nothing there.
+	/// backtrack sound, then takes one placement off that cell, which goes only when it was laid once; the sound plays even
+	/// when the cell stays (a fixed or a re-laid cell). False when the cell under the cursor is not a path cell, so the key
+	/// does nothing there.
 	/// </summary>
+	// [BIN:TPW-EXE:0x40BE8B backtrack click] the key handler clicks the cell in mode 0x32, whose one-cell LayLine (0x536100) calls SetCell(0x32, 0, 1) and so ClearCell 0x5367A0 with (0, 1): the counted removal, not the forced one
 	public bool BacktrackAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Paths == null || Paths.Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return false;
 		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
-		RemovePathCell( x, y );
+		if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
+			LastActionMessage = "Removed a path cell.";
 		return true;
 	}
 
@@ -454,7 +459,7 @@ public partial class Level
 		return removed;
 	}
 
-	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows and no object footprint — evidence needed: the queue tool's placement validity in 0x10070B98..0x1008C7C0
+	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain) and no object footprint; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (map setup 0x00536490 sets it on cells outside the park, test 0x00450420, and on inside cells other than the initial path) and object cells by their type, allows empty cells, lets a queue replace a path cell unless NoModify (+0x0E bit 0x20), and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: what clears bit 0x40 (buying land) and the ride-cell count test (0x00818C10)
 	private bool IsQueueBlocked( int x, int y ) =>
 		Objects.Grid.CheckTerrain( x, y ) != OriginalPlacementResult.Allowed || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
 
@@ -540,6 +545,8 @@ public partial class Level
 			}
 		}
 		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ )!;
+		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
+		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 		if ( bought != null )
 			LinkEconomy( placed, bought.Id );
 		LastActionMessage = bought != null

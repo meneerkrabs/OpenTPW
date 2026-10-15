@@ -1310,7 +1310,7 @@ Medium happiness loss at `VomitCapacity`, and read the static `ExcitementLevel`.
 *What changes for a player.* A ride next to a guest who prefers its excitement scores 27 (the former rule gave, for an `Info.AttractionValue` of 40, 65 plus a random 0..9; first counterexample, plan 65 against 27);
 bought less than 8 days ago it scores 135, an attraction of the type the guest just used 0, one it used one, two or three rides before the last a quarter, a third or a half, and one it was turned away from a fifth for about 20 s. A ride 3 columns away (9 squares) loses its queue weight and scores
 19 instead of 27; at a squared distance of 8 a queue of 6 in 3 cells gives 22. A guest riding at excitement 70 with a preference of 65 gains `GoodRide` (the former rule gave `PerfectRide`) and a bored or scared guest no longer loses
-happiness from the ride itself (a refused join still costs `SmallHappinessChange` in C#: GUEST-004).
+happiness from the ride itself (a refused join costs no happiness either: tp.exe `0x4ffbc0` changes happiness only on a stuck walk or a closed park; GUEST-004).
 
 *Pins.* `attraction-score` 593 inputs (592 differ from the plan; first counterexample: the shipped weights, a perfect ride, original 27 against 65), `ride-outcome` 561 (498; original `{happiness 75, illness 30}` against `{75, 6}`),
 `attraction-choice` 515 (99; the score 9 is not a candidate in the original). Mutation checks: `450 → 449`, `<= → <` of the new-ride test, the good band `<= 15` and the swapped tie parity are caught.
@@ -1374,7 +1374,7 @@ penalty. First counterexamples: `guest-needs-turn`, id 4 on turn 0, needs 10 and
 `guest-constructor`, world state 0: type 2, money 528, thirst 12, hunger 47, toilet 4, counter 109 and happiness 50, against type 7, money 522, needs 0, counter 122 and happiness 60.
 
 *Not changed / open.* The environment words of the cells (GUEST-006), the thought pick and its thresholds (since modelled from tp.exe `0x4fc8a0`, GUEST-006; the Mac `0xe8c58` takes hunger and thirst both above 90, a single need above 99 or happiness above 99
-or below 10), the prankery byte (GUEST-007), the energy meter (OpenTPW only, GUEST-008), the guest's thing id against OpenTPW's guest id for the phase (WALK-010), the litter meter and the toilet branch of the use routine
+or below 10), the prankery byte (GUEST-007), the energy meter (since matched to tp.exe's unnamed float +0x1B8: 0 at creation, lowered only by a completed use's FatigueEffect, `0x4fd970`, and read only by the save; GUEST-008 retired), the guest's thing id against OpenTPW's guest id for the phase (WALK-010), the litter meter and the toilet branch of the use routine
 (GUEST-005). The Windows executables were not compared (the x86 oracle was not run for this finding).
 
 **F26, the guest lifecycle constants (GUESTS.md "Decision", `GuestLifecycle`, `GuestSimulation.StartLeaving`; fixed in C#).** Three of OpenTPW's unsourced numbers are settled by the Mac
@@ -2215,11 +2215,11 @@ the willingness of a guest whose needs are all 20. For example, a burger shop at
 The rule therefore leaves the default prices just acceptable and lets needier guests pay more.
 
 A refusal lowers happiness twice by the medium step (`0x4fea70` with 1, for the refusal and again in the dismissal `0x5012f0`).
-GUEST-003 keeps four things:
-- the per-type park word (`0x4e2740`, park record `+0xc`, written by script opcodes; taken as 0);
-- animation 6;
-- the guest record of event 10;
-- the walk-away count and the price statistic.
+The per-type word is not 0: `0x4d3e00` (new-game setup `0x5156a0` through `0x4d3de0`) fills the record `0x4e2740` returns from the
+type's `UsageInfo.RipOffOK` (type `+0x16c`), 100 for every shipped shop and 250 for every sideshow, so the willingness above is
+multiplied by 2 or 3.5 before the happiness factor; OpenTPW passes it since the GUEST-003 fix (the willingness figures above are the
+word-0 values). GUEST-003 keeps the ride's walk-away counters (`0x4e1670`, read by the advisor's per-ShopType test `0x4caae0`), the
+dismissal's sound and the price statistic `0x4c74b0`; the guest's event records (`0x50c100`, events 10 and 6) feed only a debug dump.
 
 ### 7.13 Finding X17: toilets wear by use, handymen clean them
 

@@ -238,7 +238,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines; without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the handymen's litter share counts the live map (ECON-020), the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the month gate skips a month while any guest is in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 in a census reused for up to 23 turns (0x4C7FA0); the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: none for the routines (read); the census needs the original cell types (ECON-050)
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -483,7 +483,8 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>The staff manager's month-end consideration of each role's strike (ECON-014): <see cref="StaffStrikeBoard.ConsiderMonth"/> with the park's state.</summary>
-	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike debug word is never set, OpenTPW's stamp counts the park clock from its start, and the game-type gating of the caller is not traced (strikes are considered in every mode)
+	// [BIN:TPW-EXE:0x004F8260 month message] the calendar update sends the month message (kind 12, 0x0040F500) to the staff manager (0x00508A30 → 0x00508E70) with no game-type test, so strikes are considered in every mode; the stamp (0x004F8800) is floor(turn × rate / 4) × 10^7 with the calendar's base added and taken off again, the park clock from world turn 0
+	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike word is never set (an original save's mForceStrike is not imported, SAVE-009), and the month gate takes the guests in the park by state for the cell census 0x004C7FA0
 	// [BIN:TPW-EXE:0x00509360 handyman grievance] the handymen's litter grievance: the analyser's littered cells (0x004C8180) over its path, queue and type-9 cells (0x004C8150), as singles, above 0.2 (ParkLitter.Statistic)
 	private void ConsiderStrikes()
 	{
@@ -541,7 +542,7 @@ public sealed class ParkEconomy : IParkEconomy
 		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride ).ToList() )
 		{
 			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
-			// [APPROX:ECON-023] the wear step and the breakdown check do not know relief objects (toilets are not simulated, +0x2E bit 0), and the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does — evidence needed: the callers that set state 2 for an upgrade, what feeds toilets' wear and the script side of VAR_BREAKSTAT
+			// [APPROX:ECON-023] the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word: an economy breakdown (a life or repair byte of 0, relief objects exempt) marks the ride broken down at once, where the original only writes VAR_BREAKSTAT = 1 (0x004E0CA5 / 0x004E0CFA) and leaves it in state 0 until the script sets VAR_BROKEN (state 1, or 4 with a life byte of 0: 0x004E14E0); a breakdown that only the script reports gets no mechanic, where the original's state 1 gets one (0x004DAA90) and the repair waits for VAR_BROKEN to clear (0x004DA830); VAR_WORN is not written (the wear step 0x004DF670 sets it below a repair byte of 20, the update for relief objects below 25 at 0x004E0D16); only rides are updated, where the original updates every choosable object (state 0 at 0x004DB4FB): the shipped toilets are choosable with WearRate 0, so only their use (0x004E2440, modelled) wears them; state 2 comes only from the upgrade request 0x004E0050 (buy handler 0x004AF480) — evidence needed: the ride scripts' handling of VAR_BREAKSTAT and VAR_WORN (.rse data)
 			var state = ObjectState( item );
 			if ( !RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
 				continue;
@@ -685,7 +686,7 @@ public sealed class ParkEconomy : IParkEconomy
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
-			// [APPROX:ECON-021] without a staff world (a headless economy) the mechanic starts at once where the original first walks to the ride, and its jobs keep OpenTPW's dispatch order (broken, upgrading, then rides worn below 25 by OpenTPW's own threshold); in a level the mechanics run the original's state machine (ECON-022) — evidence needed: none for the level (read, tp.exe 0x004DA490); the headless dispatch is OpenTPW's own
+			// [EXT:headless-economy] without a staff world (the gate harnesses and tests; a level with guests always attaches one, Level.SetupStaff) a mechanic starts his job at once and the jobs keep OpenTPW's order (broken, upgrading, then rides worn below 25); the original always walks its mechanics to the nearest ride that is broken down (state 1), upgrading (state 2) or called (+0x64) (0x004DAA90) and never sends one to a worn ride on its own; in a level the mechanics run its state machine (ECON-022)
 			int? upgradeDuration = ObjectState( job ) == RideObjectStates.Upgrading && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
 				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
 			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
@@ -801,7 +802,9 @@ public sealed class ParkEconomy : IParkEconomy
 		var training = Staff.Train();
 		if ( training > 0 )
 		{
-			Post( LedgerCategory.StaffCosts, training );
+			// [BIN:TPW-EXE:0x00505A10 staff training] the training is a debit (0x004D01F0, money out) added to its own analyser word +0x1FA40, which no finance row shows;
+			// the staff costs row (+0x1F7F0, graph bit 0x80 at 0x0049A7B0) takes only the wages (0x00504C70, 0x00505790)
+			Post( LedgerCategory.OtherCosts, training );
 			Raise( ParkEventKind.TrainingPaid, training );
 		}
 		ConsiderStrikes();
@@ -827,7 +830,7 @@ public sealed class ParkEconomy : IParkEconomy
 				loans.RemoveAt( position );
 				// [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes
 				// [BIN:TPW-EXE:0x4d0750 take loan] taking a loan only needs its bought flag (+0x28) clear: no credit test
-				// [APPROX:ECON-007] a repaid loan is offered again at once; the PPC offer test 0x100CC9E8 has no confirmed PC counterpart — evidence needed: the PC routine that lists the loan offers
+				// [APPROX:ECON-007] a repaid loan is offered again at once and every offer not taken is listed, without a credit test: the original clears the bought flag at the last instalment (0x4D0370) and lists an offer on the Available tab (0x49FA00) only when it is not bought and its stored test passed, amount ≤ net worth (0x4C7DB0, the park value with its cell points, ECON-026) − the remaining instalments of the bought loans (0x4D06B0), stored whenever the list is built (the dialog opens, a tab is selected); taking a loan needs only the bought flag clear (0x4D0750) — evidence needed: the net worth's cell points (ECON-026)
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}
@@ -859,7 +862,7 @@ public sealed class ParkEconomy : IParkEconomy
 			IsParkOpen = false;
 			Raise( ParkEventKind.Bankrupt, MonthsInRed );
 		}
-		// [APPROX:ECON-030] message type 2 is taken as bankruptcy: the park closes and the simulation stops, and the TAG_SYSTEM warnings come when the count reaches 3 and 5 — evidence needed: the receiver of message type 2 and the writer of the warnings
+		// [APPROX:ECON-030] message type 2 of the bank's month (posted at each month end while more than 5 thirty-day months have passed since the turn-entered-red stamp, tp.exe 0x4D0370) is taken as bankruptcy: the park closes and the simulation stops, and the TAG_SYSTEM warnings come when the count reaches 3 and 5; the original's bank handler (0x4D02D0) acts on it once, unless the word 0x7CF4F4 is set (0x516C00), by setting the world state to 4 (0x5168F0): the per-turn thing loop stops (0x516380) and the park script's variable 0 becomes 2 (0x519EF0); the park-closed word is not written, and the turn counter, the calendar and the monthly bank go on; the bank routine compares the count only with 5, so it gives no warnings — evidence needed: the producer of the TAG_SYSTEM warnings and the meaning of the word 0x7CF4F4
 		else if ( previousMonthsInRed < 5 && MonthsInRed >= 5 )
 			Raise( ParkEventKind.BankruptcyWarning, 5 );
 		else if ( previousMonthsInRed < 3 && MonthsInRed >= 3 )
@@ -923,7 +926,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// current one times its state of repair / 100. The original adds the map's cell points to it (2 per owned empty cell, 3 per path, 5 per queue, ...).
 	/// </summary>
 	// [BIN:STP-PPC:0x100C1D4C park value] the thing loop adds sum(Upgrades[0..level].CostOfUpgrade) × byte(state of repair) / 100 for every object that is not in state 4; the 128 × 128 cell loop adds 1, 3, 5, 1, 1, 2 and 50 points by cell type (the predicates 0x10085174..0x10085418) for cells without the unowned flag 0x40; both executed by the oracle target park-value
-	// [APPROX:ECON-026] the map's cell points are not added: the cell map has no ownership flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, and the scrap values are no longer part of it — evidence needed: the ownership of the starting park's cells and the original cell types
+	// [APPROX:ECON-026] the map's cell points are not added: the original (0x004C7DB0) adds, for each cell without flag 0x40, 2 for type 0, 3 for type 1, 1 for types 2 and 10, 5 for type 3, 6 for type 9 and 50 when the cell's 40-byte record (for a record of type 12 or 17, the record its link names) has type 11, 13, 16, 18 or 25; at map start (0x00536490, 0x00450420) flag 0x40 is set on every cell but the InitialPath cells the terrain's ownership bits mark owned; OpenTPW's cell map has no such flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, which matches, without the scrap values, as in the original — evidence needed: the terrain's ownership bit (Terrain base.md2 vertex flags +0x2C, bit 0, read by 0x00450420) and the writer that later clears 0x40 (Buy Land)
 	public long ParkValue => objects.Values.Sum( ObjectValue );
 
 	/// <summary>One object's share of the park value (<see cref="ParkValueRules.ObjectValue"/>); condemned objects count for nothing.</summary>
@@ -946,7 +949,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		get
 		{
-			// [APPROX:ECON-027] the visitor term counts the guests in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 (the census 0xc3684); every hired staff member counts, where the original skips a staff thing whose byte +3 is set — evidence needed: cell-type provenance for the census (ECON-050) and the writers of the staff byte +3
+			// [APPROX:ECON-027] the visitor term counts the guests in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 (0x004CCEB0 with the cell test 0x004FA990, recounted at every rating, capped at 1000); ParkGate.GuestCensus has that test, but the imported cell types are incomplete (ECON-050), so the rating keeps the state count; the staff terms match (the byte +3 is set only by the deleter at 0x0050B8E9, which then marks the thing deleted at 0x0050B906, and a dismissal removes the member at once here too) — evidence needed: the original cell types (ECON-050)
 			var guests = Math.Min( guestStatistics.PeopleInPark, 1000 ) * 20 / 1000;
 			// An object counts by the type's Info.WhichUIType: the shipped add-ons (the upgrades directory) declare 0 and count as rides, fixed items declare 4 and count for nothing.
 			int Count( int uiType, int minimumLevel = 0 ) => objects.Values.Count( item => Catalog.TryGet( item.InfoId, out var info ) && info.RatingType == uiType && item.Level >= minimumLevel );
@@ -1056,7 +1059,7 @@ public sealed class ParkEconomy : IParkEconomy
 		var payWithTickets = PaysWithTickets( info );
 		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
 			return PurchaseResult.NotEnoughGoldenTickets;
-		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
+		// [BIN:TPW-EXE:0x5234d0 purchase gate] a cash-priced object (GoldenTicketCost +0xc4 below 1, or already bought) is refused when its price (+0x1b8) is greater than the bank balance (+0xc), equal allowed (0x523658; the placement validator 0x535670 repeats it at 0x535927); the test is skipped only in layout replay (0x785a2c, set by 0x404140), and the debit 0x4d01f0 does not test the balance
 		if ( !payWithTickets && info.PurchaseCost > Balance )
 			return PurchaseResult.NotEnoughMoney;
 		return PurchaseResult.Ok;
@@ -1174,7 +1177,7 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 			if ( member.RestAreaId == instanceId )
 			{
-				// the rest area went: a walk to it or a rest in it ends (the original's case is not traced; ECON-022)
+				// the rest area went: a walk to it or a rest in it ends; the original's removal message 10 (0x004DD0A0, handled by 0x00504C70) also ends both and sends a resting member on to the nearest other rest area, which is not modelled (ECON-022)
 				member.RestAreaId = 0;
 				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting )
 				{

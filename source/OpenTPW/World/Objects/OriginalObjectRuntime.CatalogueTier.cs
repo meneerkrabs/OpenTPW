@@ -66,7 +66,7 @@ public sealed partial class OriginalObjectRuntime
 	}
 
 	/// <summary>Completed tier metadata only: no live VM, queue/rider/head, animator or scheduler mutation.</summary>
-	// [APPROX:QUEUE-011] exact completed economy tiers drive factory-owned catalogue defaults; live CAP/DUR stay authored, and native completion reset/performance behavior remains unverified.
+	// [APPROX:QUEUE-011] exact completed economy tiers drive factory-owned catalogue defaults and the speed bias; tp.exe's completion 0x004DF8F0 (its state-2 branch) also writes live VAR_CAPACITY through 0x004DD7F0 (InitCapacity +0x198, clamped to UsageInfo Min/MaxCapacity +0x124/+0x128 when their sum is above 0) and VAR_DURATION (InitDuration +0x1A0, clamped to Min/MaxDuration +0x12C/+0x130), each only when above 0, while OpenTPW keeps live CAP/DUR authored — evidence needed: none for the writes (read); the routine's common entry (gauge 100, VAR_WORN 0) and reopen tail are not compared with OpenTPW's completion path
 	internal bool TryApplyCatalogueTierDefaults( int tier, out string reason, bool completion = false )
 	{
 		if ( !CanConfigureCatalogue( out reason ) ) return false;

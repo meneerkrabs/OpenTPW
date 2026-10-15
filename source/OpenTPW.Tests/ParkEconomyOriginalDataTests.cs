@@ -120,6 +120,32 @@ public class ParkEconomyOriginalDataTests
 	}
 
 	[TestMethod]
+	public void ShippedResearchDataGivesTheOriginalsUpgradeCategory()
+	{
+		// tp.exe 0x005031A0 / 0x00504580: projects take the object's own Research.Category and Research.Group, and level projects come from objects whose own
+		// category is not 4. On the shipped data that is the old kind rule: every add-on declares category 4 and group 0 and names a ride, no other object is in
+		// category 4, and only rides have levels above 0.
+		UseOriginalData();
+		foreach ( var theme in Themes )
+		{
+			foreach ( var easy in BalanceSettings.HasEasyLayer( theme ) ? new[] { false, true } : new[] { false } )
+			{
+				var catalog = EconomyObjectCatalog.Load( theme, easy );
+				var buyable = catalog.Objects.Where( info => info.IsBuyable ).ToList();
+				Assert.IsTrue( buyable.Count( info => info.Kind == ParkObjectKind.Upgrade ) > 0, theme );
+				foreach ( var info in buyable )
+				{
+					Assert.AreEqual( info.Kind == ParkObjectKind.Upgrade, info.ResearchCategory == ResearchCategory.Upgrade, $"{theme} {info.InfoId}" );
+					if ( info.Kind == ParkObjectKind.Upgrade )
+						Assert.IsTrue( info.ResearchGroup == 0 && catalog.TryGet( info.AddOnTargetId, out var target ) && target.Kind == ParkObjectKind.Ride, $"{theme} {info.InfoId}" );
+					if ( info.Kind != ParkObjectKind.Ride )
+						Assert.IsTrue( info.Upgrades.Count <= 1, $"{theme} {info.InfoId}" );
+				}
+			}
+		}
+	}
+
+	[TestMethod]
 	public void ShippedScrapRowsGiveTheOriginalsRefunds()
 	{
 		// ORACLE.md F21: the refund is Upgrades[0].CostOfUpgrade times the current level's ScrapValueYearN percentage, or the whole

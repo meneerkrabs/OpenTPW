@@ -552,7 +552,7 @@ public class FshFileTests
 		}
 	}
 
-	private static IEnumerable<(string Name, WadArchiveFile File)> WadMembers( ArchiveDirectory directory, string prefix )
+	internal static IEnumerable<(string Name, WadArchiveFile File)> WadMembers( ArchiveDirectory directory, string prefix )
 	{
 		foreach ( var child in directory.Children )
 		{

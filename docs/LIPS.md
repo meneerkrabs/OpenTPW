@@ -49,7 +49,8 @@ clip starts silent. This is a voice-activity timeline, not phonemes or visemes.
 Evidence (separate Python/numpy analysis of every clip decoded with ffmpeg; repeated
 in C# by `LipSyncTimelineTests` with the new decoder):
 
-- Loudness: in the 638 decodable English global clips, 10 ms windows inside talking
+- Loudness: in all 639 English global clips (`z_error`, the one Layer I clip, included now that the
+  decoder reads Layer I), 10 ms windows inside talking
   intervals average 70.2 dB, silent ones 41.9 dB (re 1 LSB; C# test). Per interval
   pair, a silent interval is louder than the following talking one in < 1 %.
   Danish/German/Swedish/French ISO clips give 23–34 dB differences.
@@ -61,11 +62,11 @@ in C# by `LipSyncTimelineTests` with the new decoder):
   differences of 9.6/18.8/**31.5**/27.5/12.4 dB; the peak is exactly at 1 µs per unit
   in all five languages and for the four level `sp_001.LIP` against their level
   speech banks (20–31 dB).
-- Fit: the last mark lies inside the clip for 637/638 decodable English global clips
+- Fit: the last mark lies inside the clip for 638/639 English global clips
   (exception: `sp_478`, 1.05×; its byte-identical space-level copy fits the
   space speech). Danish `sp_127`/`sp_427` overrun by 3 %/0.3 %.
 - Second check (`LipSyncTimelineTests.OriginalLastMarkFitsSpeechDurationInMicroseconds`,
-  October 9, 2026): last mark divided by the decoded MP2 duration over the 638 English
+  October 9, 2026; `z_error` included since October 15): last mark divided by the decoded duration over the 639 English
   global clips. Median 0.974, shortest talking clip 0.039 (`sp_019`), longest 1.051 (`sp_478`,
   the only overrun). One clip (`sp_146`) has a single 0 mark and ratio 0. A millisecond or
   1/1000 unit would put the median near 1000 or 0.001, so the data supports microseconds.

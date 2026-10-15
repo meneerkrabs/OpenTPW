@@ -916,10 +916,14 @@ def counts_reading(x: dict) -> int:
 def counts_csharp_rule(x: dict) -> int:
     """ParkEconomy.CountsForParkPoints with the level's sync, in the routine's terms: IsChoosable, not broken (states 1 and 4),
     open, and QueueHasRoom (QueueJoinRules.QueueCountsForParkPoints: real queue cells > 0, which is when the back cell exists,
-    and length < 4 x cells). This transcribes the C# rule; the C# helper itself is covered by a unit test. The coaster
-    controller and the kart/water word are not applied (ARRIVAL-003)."""
+    and length < 4 x cells), a coaster (track type 3) only while CoasterRide.AcceptsGuests holds and a kart or water ride
+    (1, 2) only with its track word (BumpController.IsTrackValid). This transcribes the C# rule; the C# helper itself is
+    covered by a unit test (ARRIVAL-003)."""
     has_room = x['back'] != 0 and x['cells'] > 0 and x['length'] < 4 * x['cells']
-    return int(bool(x['flags'] & 4) and x['state'] not in (1, 4) and bool(x['open']) and has_room)
+    counts = bool(x['flags'] & 4) and x['state'] not in (1, 4) and bool(x['open']) and has_room
+    counts = counts and not (x['track'] == 3 and not x['controller_ok'])
+    counts = counts and not (x['track'] in (1, 2) and not x['track_word'])
+    return int(counts)
 
 
 def counts_inputs(rng: random.Random, n: int) -> list:
@@ -951,8 +955,8 @@ COUNTS_TARGET = Target(
                   'csharp-rule-untracked': lambda x: counts_csharp_rule(x) if counts_domain_csharp(x) else counts_reading(x)},
     notes=['Executed: 0x4dd920. Stubs: 0x4de130 back of queue (chosen; checked for the thing), 0x4ddf50 list length (checked '
            'to be asked with guest 0), 0x412e90 type record (track type chosen), 0x441970 coaster controller test (chosen). '
-           'csharp-rule differs only for coasters, karts and water rides (ARRIVAL-003); csharp-rule-untracked takes the '
-           'routine reading for those, so it must agree everywhere.'])
+           'csharp-rule applies every condition, the coaster test and the kart/water word included (ARRIVAL-003); '
+           'csharp-rule-untracked takes the routine reading for those types, so both must agree everywhere.'])
 
 # ============================================================================== (i) tp.exe price test 0x4fde50
 PRICE_ENTRY = 0x4FDE50         # thiscall (guest, ride), ret 4 -> 1 when the ride is too expensive for the guest

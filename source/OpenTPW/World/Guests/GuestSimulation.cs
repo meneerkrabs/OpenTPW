@@ -371,9 +371,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var count = (int)(factor * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		count = Math.Max( count, Settings.ArrivalMinPeople );
 		var limit = OnlineVisit ? OnlineArrivalParkLimit : ArrivalParkLimit;
-		if ( guests.Count + count > limit )
-			// [APPROX:ARRIVAL-004] the cut group stops at 0; the original stores 1500 − guests as is (negative above 1500, compared unsigned; oracle F9). Executing 0xcb2ac with a negative group (oracle F11) shows the same behaviour as 0: at the next stop (phase 2) it creates no guest, restarts the timer and clears the active byte (0xcb3bc, 0xcb3f4), so nothing holds. What differs is the stored group word (negative) and the missing 'group == 0' arrival-vehicle step (0xcb488, slot 74), whose effect is not traced
-			count = Math.Max( 0, limit - guests.Count );
+		if ( (uint)(guests.Count + count) > (uint)limit )   // compared unsigned (jbe at 0x004CF690 and 0x004CF6EE)
+			// [BIN:TPW-EXE:0x004CF6E5 no floor] the cut group is the limit minus the counted guests with no clamp (sub esi,ebx at 0x004CF704), negative above the limit; every reader treats it as 0: the stop's signed test (jle 0x004CF56B: no guest, timer restart, active byte cleared), the vehicle size (jg 0x004CF48F: a bus), the boarding gate 0x0051A760 (cmp 0xA, jge at 0x0051A844) and the advisor score 0x0059F220 over the group history (a drop from the previous group above a threshold, the same for any threshold under 100)
+			count = limit - guests.Count;
 		return count;
 	}
 
@@ -826,12 +826,12 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( verdict == BoothVerdictKind.Expensive )
 			{
-				var wait = BoothVerdict.ExpensiveWaitBase + random.NextWord() % BoothVerdict.ExpensiveWaitBase;
+				var wait = BoothVerdict.ExpensiveWaitTurns( random.NextWord() );
 				Think( guest, GuestThought.Dissatisfied );
 				guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
 				if ( ((int)guest.Happiness & 0xFF) != 0 )
 				{
-					// [APPROX:ARRIVAL-006] the wait counts park turns of the booth's fixed clock (248 ms each) rather than the guest updates of state 4, and the draws come from the guest stream (DET-014)
+					// [APPROX:ARRIVAL-006] the N + 1 turns of the wait are timed as seconds of the frame clock (248 ms each), not counted at park-turn boundaries, turns the original's loop drops (at most 3 per pass, 0x0054F680) are not dropped, and the draws come from the guest stream rather than the world generator 0x00516330 (DET-014)
 					guest.StateTimer = wait * ParkCalendar.TurnMilliseconds / 1000f;
 					return;
 				}
@@ -2164,8 +2164,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Error( $"Departed {snapshot.Departed} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
 			Error( $"SpawnTimer {snapshot.SpawnTimer} is not finite." );
-		if ( snapshot.PendingArrivals < 0 )
-			Error( $"PendingArrivals {snapshot.PendingArrivals} is negative." );
+		// PendingArrivals may be negative: a group cut above the park limit keeps limit − guests, as the original's word does (0x004CF6E5), and ends at the next stop like 0.
 		if ( snapshot.LaneToggle < 0 )
 			Error( $"LaneToggle {snapshot.LaneToggle} is negative." );
 		// A file that lost one of its core lists (a JSON null) cannot be cross-checked; the hole is named and

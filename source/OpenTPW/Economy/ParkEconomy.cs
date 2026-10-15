@@ -1076,7 +1076,8 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / divisor, age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
 	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
 	// [BIN:STP-PPC:0x100DC834 counts-test] only things passing 0x100DC834 count: thing +0x2E bit 0x4 (the type's Info.IsChoosable, 0x100DABDC), ride state (+0x198) not BROKEN_DOWN (1, 0x100DFE0C) and not CONDEMNED (4, 0x100DFE20), the open word +0x64 nonzero (0x100DFF18; 1 at construction, cleared by closing and by breaking down), a connected entrance (0x100DD3F4 gives a cell), room in the queue (0x100DC988), a coaster without riders (0x100E2FE4, 0x10045EAC) and a built track for karts and water rides (+0x28)
-	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; of the counts-test Info.IsChoosable, IsBrokenDown (which also stands for the original's CONDEMNED, a breakdown at life gauge 0), IsOpen and the queue (cells from the entrance, room in them) are applied, not the coaster controller test 0x00441970 (riders +0x140 zero, controller +0x3C bit 0 set and bit 1 clear, a global at 0x00790FEC clear) nor the kart track word (+0x2C on the PC, which the circuit walk writes after every track edit: a water ride's walk is applied, TRACK-005) — evidence needed: the coaster controller's +0x140 and +0x3C bits in OpenTPW terms (riders, VAR_ONRIDE?), and whether a condemned ride stays condemned after a repair
+	// [BIN:TPW-EXE:0x004C8240 park points] a thing counts only when its type's Info.WhichUIType (+0x4AC, copied from +0x4C at 0x004134F5) is 0 or 2, it passes the counts-test 0x004DD920 and its type has copies (0x004D3D80 +0x18 > 0)
+	// [APPROX:ARRIVAL-003] the coaster test is CoasterRide.AcceptsGuests, which also needs 3 track samples and has no not-the-coaster-being-edited term (0x00790FEC; COAST-024), and a kart or water ride's track word is false before its first circuit walk where the original's constructor sets it to 1 (0x004DB0DF) — evidence needed: whether a kart or water ride can have queue cells before its first walk
 	public int ParkPoints()
 	{
 		var counts = new Dictionary<int, int>();
@@ -1085,7 +1086,7 @@ public sealed class ParkEconomy : IParkEconomy
 		var points = 0;
 		foreach ( var item in objects.Values )
 		{
-			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Kind is not (ParkObjectKind.Ride or ParkObjectKind.Sideshow) || !CountsForParkPoints( item, info ) )
+			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.RatingType is not (0 or 2) || !CountsForParkPoints( item, info ) )
 				continue;
 			var tracked = info.TrackType != 0;
 			var since = tracked ? ParkCalendar.Turn( item.BuiltTick ) : Counters[ParkCounters.FirstPurchaseTurn( item.InfoId )];
@@ -1105,11 +1106,14 @@ public sealed class ParkEconomy : IParkEconomy
 	public uint ObjectAgeDays( ParkObjectState item ) => (uint)(Math.Max( 0, Turn - ParkCalendar.Turn( item.BuiltTick ) ) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);
 
 	/// <summary>
-	/// The part of the original's park points counts-test (0x100DC834) that OpenTPW has state for: the type is choosable, and the
-	/// object is neither broken down (in the economy or by its script) nor closed. The test's world conditions are listed at <see cref="ParkPoints"/>.
+	/// The original's park points counts-test (tp.exe 0x004DD920): the type is choosable, the object is neither broken down (in the
+	/// economy or by its script) nor closed, its queue has cells from the entrance and room in them, a kart or water ride has a valid
+	/// track and a coaster's controller accepts guests. The level mirrors the live conditions each tick.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DD920 counts-test] the same tests as 0x100DC834 at the PC offsets (flags +0x32 bit 4, state +0x19C not 1 or 4, open word +0x68); the back of the queue 0x004DE130 walks the queue from the front cell at the entrance and counts its cells (+0x40), so an attraction without queue cells has none and does not count, and 0x004DDF50 called with guest 0 returns the whole list's length, compared with 4 × the cells
-	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen && item.QueueHasRoom && item.TrackValid;
+	// [BIN:TPW-EXE:0x004DD9AD counts-test track types] Bumper.WhichTrackType (type +0x9C) 3 needs the coaster test 0x00441970 (cdecl, the thing), 1 and 2 need the track word +0x2C, any other type passes
+	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen && item.QueueHasRoom
+		&& (info.TrackType is not (1 or 2) || item.TrackValid) && (info.TrackType != 3 || item.CoasterAcceptsGuests);
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
 	/// <param name="builtTick">When the object was built, for an object from an original save (default: now).</param>

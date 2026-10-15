@@ -547,15 +547,17 @@ any one of them brings mismatches back (`test_arrival_reading_is_sharp`).
   through `0x5166b0` (call at `0x54f760`), so the visited park runs the arrival step with the 500 cut. ARRIVAL-002 keeps
   the visit's inputs: the original loads `online_Standard.sam` for GameType 1 (`0x51573c`), OpenTPW reads `Standard.sam`,
   and a read-only visit counts no park points.
-- **No floor.** Both cuts compare `guests + group` with `cmplwi` (unsigned) and store `limit − guests` as is. With more
-  guests counted than the limit, the group is negative: 1700 guests give −200, where C# gives 0. Statically, the caller
-  `0xcb2ac` creates guests only while the count is above 0 (`0xcb3bc`). Executing it with a negative group is F11
-  (ARRIVAL-004): the group does not hold the arrival state.
+- **No floor (fixed in C#).** Both cuts compare `guests + group` with `cmplwi` (unsigned) and store `limit − guests` as is.
+  With more guests counted than the limit, the group is negative: 1700 guests give −200. C# gave 0 until the PC twin
+  confirmed the rule (tp.exe `0x4cf6e5`, `jbe` at `0x4cf690`/`0x4cf6ee`) and every reader of the word was found to treat a
+  negative group as 0; it now keeps the negative group and compares unsigned. Statically, the caller `0xcb2ac` creates guests
+  only while the count is above 0 (`0xcb3bc`). Executing it with a negative group is F11: the group does not hold the
+  arrival state.
 
-After the factor and the online cut 49 of the 515 inputs still differ from GUESTS.md and C# (the plan and C# pin the same
-inputs). All are the missing floor (ARRIVAL-004): 36 in limit mode 1 and 12 in the other modes, where more guests are
-counted than the limit and the original's group is negative while C# gives 0, plus 1 where a negative group (MinPeople −5)
-wraps the unsigned compare. The 42 limit-mode-1 mismatches of the first fix fell by only 6, because most of them had
+After the factor and the online cut 49 of the 515 inputs still differed from GUESTS.md and C# (the plan and C# pinned the
+same inputs). All were the missing floor (the former ARRIVAL-004): 36 in limit mode 1 and 12 in the other modes, where more
+guests are counted than the limit and the original's group is negative while C# gave 0, plus 1 where a negative group
+(MinPeople −5) wraps the unsigned compare. With the floor removed and the compare unsigned, the plan and C# agree on all 515. The 42 limit-mode-1 mismatches of the first fix fell by only 6, because most of them had
 guests above 500. First counterexample: shipped values, 600 guests counted, limit mode 1: the original gives −100 and
 the plan and C# give 0. Before the fix the first one was the shipped values with the word positive: the
 original gave 2 (0.8 × 20 / 6) and the plan 4; 125 inputs differed. Integer and float steps agree with the plan wherever
@@ -642,8 +644,11 @@ Scripts of repeated calls, with the vehicle phase and report flag chosen per cal
   `+17` through `0xca20`). A saved game therefore restores the group and active byte as saved. No other writer was
   found; a store through a pointer copied elsewhere would not show up in this search (static reading).
 
-Result: ARRIVAL-004 changes no guest or timer behaviour. The C# floor at 0 produces the same guests and timer as the
-original's negative group, differing only in the stored group word and the untraced empty-group vehicle step. The
+Result: the floor changed no guest or timer behaviour. The C# floor at 0 produced the same guests and timer as the
+original's negative group, differing only in the stored group word and the empty-group vehicle step. On the PC that step
+(`0x4cf4de`) only writes the vehicle script's variable 0 again (`0x51a2f0` with a vehicle current, `0x51a649`), and the other
+readers of the word, the boarding gate `0x51a760` (`cmp 0xa` at `0x51a83d`) and the advisor score `0x59f220` over the group
+history, treat a negative group as 0; C# now keeps the negative word (the former ARRIVAL-004 is retired). The
 brief's static reading, a negative group holding the state, differs on 66 scripts and is refuted. The
 `plan` side models the stop gate as the vehicle phase 2. `UpdateArrivals` steps once per park turn from the turn after a group starts, because tp.exe's twin `0x4cf3e0` runs once per world turn (at the end of `0x516380`, through `0x4d7b20`); only the bus's drive to the stop is missing (ARRIVAL-001). C# is not compared.
 
@@ -2159,9 +2164,17 @@ It agrees with that reading on 515 inputs.
 one-cell fallback on a path cell (RIDES-028) does not count, just as the original's back-of-queue walk finds no cell there. The rule then
 requires the queue list to be shorter than 4 × those cells. The level, the M3 and M4 gate loops and the prototype ride sync the result
 into `ParkObjectState.QueueHasRoom` each tick, and `CountsForParkPoints` requires it. A ride without a queue, or with a full one, no
-longer counts. Transcribed into the routine's terms, the C# rule agrees for every attraction that is not a coaster, kart or water ride.
-ARRIVAL-003 keeps the controller test and the track word (29 inputs differ, all of those types). The flag is not saved; it is true until
-the first sync after a load or a purchase.
+longer counts. The flag is not saved; it is true until the first sync after a load or a purchase.
+
+**Fixed in C# (track types).** `CountsForParkPoints` now applies condition 6 too: a coaster counts only while
+`ParkObjectState.CoasterAcceptsGuests`, which the level syncs from `CoasterRide.AcceptsGuests` (no controller fails, as the
+original's lookup `0x436860` returns 0), holds; the coaster test `0x441970` reads the controller's `+0x140` (its self-intersection
+count, which `0x439c40` increments for each crossing of the track with itself; not a rider count) and the `+0x3c` bits complete and
+closed. A kart or water ride counts only with `TrackValid`, the circuit walk's verdict; other types ignore both. The park points sum
+`0x4c8240` filters by the type's `Info.WhichUIType` (`+0x4ac`) 0 or 2, which C# now reads (`EconomyObjectInfo.RatingType`) instead
+of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule`). ARRIVAL-003 keeps two residuals: the C# coaster
+test also needs three track samples and has no edited-coaster term (`0x790fec`), and the track word starts false before a kart or water
+ride's first walk where the original's constructor stores 1 (`0x4db0df`).
 
 ### 7.12 Finding X16: guests test the price when they are called forward
 

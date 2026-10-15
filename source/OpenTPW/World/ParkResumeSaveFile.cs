@@ -561,7 +561,6 @@ internal static class ParkResumeSaveFile
 		Require( guests.NextGuestId >= 1, $"the next guest id {guests.NextGuestId} is not positive" );
 		Require( guests.Admissions >= 0 && guests.Departed >= 0, "the guest snapshot holds negative admission counters" );
 		Require( float.IsFinite( guests.SpawnTimer ), "the arrival spawn timer is not finite" );
-		Require( guests.PendingArrivals >= 0, $"the guest snapshot holds {guests.PendingArrivals} pending arrivals" );
 		Require( guests.LaneToggle >= 0, $"the arrival lane toggle {guests.LaneToggle} is negative" );
 
 		// Attractions: queue invariants, unique ids the park really places, and cells inside the cell map.

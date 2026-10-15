@@ -793,7 +793,13 @@ public class GuestTests
 		Assert.AreEqual( 40, simulation.ArrivalGroupSize(), "an offline park is cut at 1500" );
 		simulation.OnlineVisit = true;
 		list.AddRange( Enumerable.Repeat<Guest>( null!, 120 ) );
-		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "600 guests: the group stops at 0 (ARRIVAL-004)" );
+		Assert.AreEqual( -100, simulation.ArrivalGroupSize(), "600 guests: 500 − 600, not floored (tp.exe 0x004CF6A6)" );
+		simulation.OnlineVisit = false;
+		settings.ArrivalMinPeople = -5;
+		simulation.ParkPoints = () => -100;
+		list.RemoveRange( 0, 600 );
+		// (int)(1.2 × (−100 + 20)) / 6 = −16, raised to MinPeople −5
+		Assert.AreEqual( 1500, simulation.ArrivalGroupSize(), "a negative group wraps the unsigned compare and is cut to 1500 − 0" );
 	}
 
 	[TestMethod]

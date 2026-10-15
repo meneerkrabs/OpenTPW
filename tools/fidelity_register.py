@@ -183,7 +183,11 @@ def collect(root: Path, registers: dict[str, str] | None = None,
             errors.append(f"missing declaration register: {relative}")
             continue
         count = 0
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        register_text = path.read_text(encoding="utf-8")
+        # A register whose last entry was retired says so with this marker instead of failing the scan.
+        if "register-empty:" in register_text:
+            continue
+        for number, line in enumerate(register_text.splitlines(), 1):
             match = DECLARATION.match(line)
             if not match:
                 continue

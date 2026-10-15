@@ -141,8 +141,10 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   Resume Game, Options, Quit Game as in the original's lobby menu, plus Load Park, `[EXT:lobby-load]`; there are no
   player profiles, so no Select New Player). Choosing Go Online, Load or Options closes the menu before opening
   its screen.
-- Enter park → Game Mode window (239; Instant Action 240 / Full Simulation 241,
-  tooltips 358/359) → starts a new park on the original level of the island.
+- Enter park → Game Mode window (the original's name dialog `0x753f50`: 239; Instant Action 240 / Full Simulation 241,
+  tooltips 358/359): the two toggles latch in one group with none chosen at first, `e_joy` shows while Instant Action is
+  chosen, and the tick starts a new park on the original level of the island, in Instant Action only when that toggle is
+  chosen (`0x4a6d00`).
   Instant Action adds the `Easy_` balance layer and the shipped `Easymode.TPWI`
   seed where the level has them and gates tickets, challenges, loans, the
   research lab and upgrades; Full Simulation starts with the standard balance
@@ -623,7 +625,7 @@ Source: `World/RideCameraMode.cs`, `World/RideSeat.cs`, `Hud/ParkHud.RideView.cs
 | Control | Action | Status | Test |
 | --- | --- | --- | --- |
 | previous / enter / next island buttons (343-345) | wrap through the theme islands; enter asks for the game mode | wired | `OriginalUiTests` |
-| Game Mode dialog (Instant Action / Full Simulation, 358/359) | starts the park in that mode | wired | `OriginalUiTests` |
+| Game Mode dialog (Instant Action / Full Simulation, 358/359, tick) | the toggles latch; the tick starts the park in the chosen mode | wired | `OriginalUiTests` |
 | Load (202) | lists shipped and own saves and loads them | wired | `OriginalUiTests` |
 | Options | opens the options screen | wired | `OriginalUiTests` |
 | Go Online | opens the online screens when built | wired | online suite |
@@ -653,7 +655,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-007 | `UI/Original/UiWidgets.cs:96` | one-pixel (×UI scale) drop shadow under UI text | captures of original screens |
 | UI-008 | `UI/Original/UiWidgets.cs` | text buttons on purple_button art: each half is one end cap drawn with its mirror image; upper half normal, lower half focused/pressed | capture of the original front-end buttons |
 | UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | dialog arrow/Enter/Tab/Space navigation is OpenTPW's ([EXT:ui-key-navigation]; none of the original's six key groups 0x747f38-0x748378 contains it), shortcut letters follow KEYBOARD.str (0x40cb80, table 0x3fc) except a plain letter that is a camera-pan key (W, A, S, D: the Dutch hire letter A keeps H), the help texts of the Dutch video name (M) gate window, (T) training budgets, (O) research, (Ctrl-A) postcard, (Ctrl-W) staff locate and (C) camcorder exit (video 8:00-8:40, 41:00), so the letters are per language, shortcuts fire on press where the original's callbacks sit in the release-side slot, the 500 ms / 6 px click rule (0x65f6d1) applies to every UI control, and the right click leaves a modal screen, the object window and the ride view only with the RMBCancelOn option (+0x39; the readers traced are the camcorder 0x488aa1 and the ride-view screens 0x48a7ab and 0x48aadb, the ride view also waiting 2000 ms after it opened); the other windows are taken to read the option too, and the camcorder walk's own right click is not gated (reader 0x4881ae not examined) | which other screens read RMBCancelOn and what 0x4881ae does |
-| UI-013 | `UI/Original/UiDialogs.cs:9` | the window sizes of the game-mode and load screens and of OpenTPW's own windows; the confirm dialog follows table 0x7583e8 and the lobby's and the park's pause menus the original's lines, whose exact rectangles are read off video 27:42 only | the load dialog's window and inner layout (not in the capture), the game-mode screen's table (0x753f50 holds the original choice) and the pause-menu text rectangles |
+| UI-013 | `UI/Original/UiDialogs.cs:9` | the window sizes of the load screen and of OpenTPW's own windows; the confirm dialog follows table 0x7583e8 and the game-mode screen the name dialog 0x753f50; the lobby's and the park's pause menus space their lines 169 units apart and 1100 wide, read off video 27:42, where the original sizes each line from its measured text (0x48c150 → 0x492f60: the text's pixel width + 1 and height + 5 scaled to the 2048×1536 canvas, centred, 5 units apart from y 10) and its vertical placement on screen is untraced | the load dialog's window and inner layout (not in the capture); the pause menu's font and vertical placement (0x492f60, 0x4929f0) |
 | UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
 | UI-018 | `Client/GameFlow.cs:238`, `World/Lobby/LobbyScene.cs:14` | lobby sky eases toward the nearest island's SKYCOLOUR without the original's red-toward-blue quirk and its settings gate (untested); the cloud layer, the flying meshes (bats, butterflies), the island and gate animations and the key-unlock and enter-zoom sequences are not drawn; the lightning flash is not drawn (the capture shows none) | the cloud layer's source, the flying-mesh and animation systems, the key-unlock and enter-zoom sequences |

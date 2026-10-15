@@ -1408,6 +1408,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "enter park asks for the game mode again" );
 			Click( flow.Menu.Stack.Top!, "instantAction" );
 		} );
+		Do( "confirm Instant Action", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameMode" && flow.Menu.Stack.Top.Find( "joy" ) is { Visible: true }, "the Instant Action toggle latches and shows e_joy" );
+			Click( flow.Menu.Stack.Top!, "ok" );
+		} );
 		Wait( "Instant Action park loads", 40 );
 		Do( "Instant Action start", PlayInstantAction );
 	}

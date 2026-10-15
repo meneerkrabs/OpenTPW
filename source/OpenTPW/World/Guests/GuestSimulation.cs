@@ -679,14 +679,14 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A cell is walkable for the stepping guest (the <c>+180</c> mask) when it is on its current walk: the route cells
 	/// and, for a queue walk, the queue's next cells ahead of the destination and behind the start.
 	/// </summary>
-	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (its route cells and the walk's extra open cells), so path cells beside the route are walls; the original tests the cell's edge flags against the guest's +180 mask (0xd768c) and commits the step through a transition call (0xfee3c..0xfee58) — evidence needed: the edge flags 0xd768c reads, the +180 mask per guest state and the commit callback
+	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (route and extra open cells), so path cells beside the route are walls; the original commits a step through the callback 0x510510 (at most one cell, diagonal steps through either L-shaped route) and the edge test 0x4d8750 with the guest's mask (walk +0xb4): path-to-path steps are always open, queue boundaries need the target's link back, other cell types and the masks 1 and 2 have their own rules; none of this is modelled — still open: the edge test 0x4d8750 on ParkCellMap and the mask writers are not ported
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
 
 	/// <summary>
 	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10); the original's query also keeps thing types 4–8 and 18, which never push in OpenTPW — evidence needed: the writers of thing +4/+6 and of the cell lists, and what thing types 4–8 and 18 are
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) in OpenTPW's cell lists, rebuilt every park turn in guest order with movers appended; the original (tp.exe query 0x5102f0, Mac 0x10087c) walks per-cell thing lists that are head-inserted when a thing enters a cell (0x50b6a0 via 0x4d91f0) and never rebuilt, keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
@@ -1427,7 +1427,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			route.Add( EntranceCellOf( attraction ) );
 		// The queue goes on beyond both ends of the walk: the cell ahead of the destination (the entrance cell ahead of
 		// the front cell) and the cell behind the start (the join cell behind the back cell) are walkable too.
-		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start (the entrance and the join cell at the ends), and no other cell off its route; this stands in for the original's edge flags along the queue — evidence needed: the queue cells' edge flags and the +180 mask in states 12 and 13
+		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route; in the original a step from a queue cell is open (edge test 0x4d8750) into a path, queue or queue-end neighbour whose link points back at it, or into a type-0x1e fixed walkway when the mask is not 2, and blocked otherwise; OpenTPW does not read the cell links for this — still open: the edge test 0x4d8750 on the queue links is not ported (WALK-005)
 		(int X, int Y)? ahead = toEntrance ? null : index > 0 ? cells[index - 1] : EntranceCellOf( attraction );
 		var behind = from + 1 < cells.Count ? cells[from + 1] : attraction.JoinCell;
 		var alsoOpen = new List<(int X, int Y)>( 2 );

@@ -313,15 +313,18 @@ public partial class Level
 
 	/// <summary>
 	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
-	/// backtrack sound, then removes that cell the forced way; the sound plays even when the cell stays (a fixed cell). False
-	/// when the cell under the cursor is not a path cell, so the key does nothing there.
+	/// backtrack sound, then takes one placement off that cell, which goes only when it was laid once; the sound plays even
+	/// when the cell stays (a fixed or a re-laid cell). False when the cell under the cursor is not a path cell, so the key
+	/// does nothing there.
 	/// </summary>
+	// [BIN:TPW-EXE:0x40BE8B backtrack click] the key handler clicks the cell in mode 0x32, whose one-cell LayLine (0x536100) calls SetCell(0x32, 0, 1) and so ClearCell 0x5367A0 with (0, 1): the counted removal, not the forced one
 	public bool BacktrackAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Paths == null || Paths.Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return false;
 		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
-		RemovePathCell( x, y );
+		if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
+			LastActionMessage = "Removed a path cell.";
 		return true;
 	}
 

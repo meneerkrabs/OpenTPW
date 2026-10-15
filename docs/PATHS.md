@@ -45,6 +45,9 @@ built and charged.
 Removal is `ClearCell`'s forced path case (the original's area-clear tool,
 tp.exe `0x52bdd0`): links cleared on both sides, no refund. A `NoModify` cell that still has linked neighbours stays; without
 neighbours the flag is dropped and the cell is removed (PATH-005).
+Backspace over a path cell with no tool on uses the counted case (tp.exe
+`0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
+when it was laid once (`ParkPathBuilder.RemoveOnce`).
 
 ## Tool
 

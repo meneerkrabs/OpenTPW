@@ -326,8 +326,8 @@ Traced in the binary but not triggered yet:
   linking has no queue-link check (PATH-004, AUDIO-023). The count-classed removal sounds `cat_ui` 141–144 and 150–153
   (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
 * `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
-  a path cell under the cursor it plays at that cell, then that one cell is removed (ClearCell's path case), even when a fixed
-  cell stays. Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
+  a path cell under the cursor it plays at that cell, then that cell loses one placement (ClearCell's counted path case,
+  tp.exe `0x40BE8B`) and goes only when it was laid once; the sound plays even when the cell stays. Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
   a refund and plays no sound, as OpenTPW's segment undo does.
 * The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording

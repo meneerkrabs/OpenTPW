@@ -284,7 +284,17 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	/// </summary>
 	// [BIN:STP-PPC:0x100859B4 ClearCell] path case: NOMODIFY keeps the cell unless it has no neighbours ("Removing path cell with no neighbours but NOMODIFY set"); a = b = 0 sets the counter to −1; each cardinal link is cleared on both sides; no Earn (no refund)
 	// [APPROX:PATH-005] PATH-REMOVE: the forced path removal (a = b = 0, NoModify respected, no refund) is the original's area clear (tool mode 0x3a from the Delete key handler 0x40c5e0: two clicks span a rectangle and 0x52bdd0 calls ClearCell 0x5367a0(0, 0) on every type-1 cell, 0x52c11f), which Remove matches; OpenTPW's remove tool is one click that clears an object, else a queue cell, else a path cell, while the original's rectangle removes only objects wholly inside it and type-1 path cells and leaves queue and type-10 cells — still open: the two-click rectangle of tool 0x3a (0x52bdd0) is not ported
-	public CellBuildResult Remove( int x, int y )
+	public CellBuildResult Remove( int x, int y ) => Clear( x, y, forced: true );
+
+	/// <summary>
+	/// <c>ClearCell</c>'s path case with a walk step (a, b) other than (0, 0), as the backtrack key and the segment undo
+	/// call it: the cell's placement counter drops by one and the cell is removed only when it falls below zero
+	/// (<see cref="CellBuildResult.Existing"/> when the cell stays). NoModify as in <see cref="Remove"/>; no refund.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5367A0 ClearCell] (a, b) other than (0, 0) decrements the signed counter +0x20; the cell stays while it is >= 0, else the counter is reset to 0 and the cell is cleared like the forced case
+	public CellBuildResult RemoveOnce( int x, int y ) => Clear( x, y, forced: false );
+
+	private CellBuildResult Clear( int x, int y, bool forced )
 	{
 		if ( Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return CellBuildResult.NotPath;
@@ -293,6 +303,15 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			if ( HasPathNeighbours( x, y ) )
 				return CellBuildResult.NoModify;
 			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+		}
+		if ( !forced )
+		{
+			var count = Cells.PlacementCountAt( x, y ) - 1;
+			if ( count >= 0 )
+			{
+				Cells.SetPlacementCount( x, y, (short)count );
+				return CellBuildResult.Existing;
+			}
 		}
 		for ( var direction = 0; direction < 4; direction++ )
 		{

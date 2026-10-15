@@ -474,6 +474,29 @@ public class PathBuilderTests
 	}
 
 	[TestMethod]
+	public void TheCountedRemovalTakesOnePlacementAtATime()
+	{
+		// ClearCell 0x5367a0 with a step other than (0, 0), as the backtrack key calls it (0x40be8b, SetCell(0x32, 0, 1)):
+		// a cell laid twice survives one removal; the forced removal (a = b = 0) clears it at once.
+		var rig = new Rig();
+		rig.Builder.BuildSegment( (2, 2), (4, 2) );
+		rig.Builder.BuildSegment( (4, 2), (4, 2) );
+		Assert.AreEqual( (short)1, rig.Cells.PlacementCountAt( 4, 2 ) );
+		var balance = rig.Economy!.Balance;
+		Assert.AreEqual( CellBuildResult.Existing, rig.Builder.RemoveOnce( 4, 2 ), "the counter drops to 0, the cell stays" );
+		Assert.AreEqual( ParkCellType.Path, rig.Cells.TypeAt( 4, 2 ) );
+		Assert.AreEqual( (short)0, rig.Cells.PlacementCountAt( 4, 2 ) );
+		Assert.AreEqual( CellBuildResult.Ok, rig.Builder.RemoveOnce( 4, 2 ), "below zero: removed" );
+		Assert.AreEqual( ParkCellType.Empty, rig.Cells.TypeAt( 4, 2 ) );
+		Assert.AreEqual( 0, rig.Cells.LinksAt( 3, 2 ) & GuestPathGrid.LinkValue( 1 ), "the neighbour's link is cleared" );
+		Assert.AreEqual( balance, rig.Economy.Balance, "no refund" );
+		Assert.AreEqual( CellBuildResult.NotPath, rig.Builder.RemoveOnce( 4, 2 ) );
+		rig.Builder.BuildSegment( (6, 6), (6, 6) );
+		rig.Builder.BuildSegment( (6, 6), (6, 6) );
+		Assert.AreEqual( CellBuildResult.Ok, rig.Builder.Remove( 6, 6 ), "the forced removal ignores the counter" );
+	}
+
+	[TestMethod]
 	public void UndoRemovesTheLastSegmentWithoutARefund()
 	{
 		var rig = new Rig();
@@ -488,7 +511,7 @@ public class PathBuilderTests
 		Assert.AreEqual( 4, rig.Grid.WalkableCount );
 		Assert.AreEqual( (short)0, rig.Cells.PlacementCountAt( 4, 1 ), "the joint's counter bump is taken back" );
 		Assert.AreEqual( 0, rig.Cells.LinksAt( 4, 1 ) & GuestPathGrid.LinkValue( 2 ) );
-		Assert.AreEqual( balance, rig.Economy.Balance, "no refund (PATH-002)" );
+		Assert.AreEqual( balance, rig.Economy.Balance, "no refund (tp.exe Back 0x52fe50)" );
 		Assert.AreEqual( (4, 1), tool.Start );
 		CollectionAssert.AreEqual( new[] { (1, 1), (4, 1) }, tool.Vertices.ToArray() );
 		Assert.IsTrue( tool.Undo() );

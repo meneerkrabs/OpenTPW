@@ -55,7 +55,7 @@ internal sealed class CoasterAssets : IDisposable
 	/// The 16 slots of the build cursor's ribbon: translucent blue where the cursor's cell is valid, translucent red where the validator refuses it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x435d50 cursor node] the cursor node carries 0x8000 and 0x4000 when the validator refuses its cell; the video (73:20-75:58) shows the pending link as a wide translucent ribbon, blue or red
-	// [APPROX:COAST-035] the ribbon is OpenTPW's own mesh (a strip along the pending link, 6 units wide, lifted 0.6 units) in a generated translucent blue or red; the original's renderer consumers of node flags 0x8000/0x4000 and of uiInvalidCrossSection are not found — evidence needed: those consumers
+	// [APPROX:COAST-035] the ribbon is OpenTPW's own mesh (a strip along the pending link, 6 units wide, lifted 0.6 units) in a generated translucent blue or red; the original's section builder 0x43f4e0 recolours a link into a node with flag 0x800000 or 0x2000 to cross-section material variant 3, or 2 when that node has 0x4000 (0x43f517, 0x43f593..0x43f5c4) — evidence needed: what those variants and uiInvalidCrossSection draw, and which edit step sets 0x800000/0x2000 on the cursor node
 	public Texture[] GhostSlots( bool valid )
 	{
 		ghostBlue ??= new Texture( new byte[] { 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140 }, 2, 2 );

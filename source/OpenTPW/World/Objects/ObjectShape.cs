@@ -116,8 +116,8 @@ public sealed class ObjectShape
 
 	/// <summary>The kind of a symbol from its cell type in <see cref="ObjectShapeSymbols"/>; a space is free.</summary>
 	// [BIN:TPW-EXE:0x007396C8 shape symbol kinds] '.' type 0, '*' 4, 'Q' 3, '@' 1, '+' 11, '#' 16; entrances (type 9) 8 6 2 4 O; exits (type 10) N E S W X; track ends (type 23) D > <
-	// [APPROX:RIDES-011] The uses of type 11 ('+', track-upgrade cells laid over the parent ride's track) and of the track ends '<' '>' (coaster station ends) are inferred; the types and direction bits of all symbols are the executable's table — evidence needed: the placement code that consumes the cell types
-	// [APPROX:RIDES-031] The types of '@' (1, only in the Theme Park Inc road signs "*@*" and "*@@*"), 'Q' (3) and '#' (16) differ from the occupied type 4 in the executable, but their placement meaning is untraced; they count as occupied footprint cells here (Theme Park Inc may differ) — evidence needed: the consumer of the shape cell types
+	// [APPROX:RIDES-011] Type 11 ('+') is an overlay cell over the parent ride's track and the track ends '<' '>' are station connections here. The original placement 0x528A70 stamps '+', '#' and the ends as occupied type 4 (0x5290C7–0x5290EE); '+' is checked with cell op 0x10B (0x20B when validating), '#' with 0x110/0x210, and on commit both overwrite the flags word +0xE of the cell and of its second-layer cell with 0x10 (0x52950D–0x52951C); an end with a direction needs the cell beyond it in its rotated direction (refused when missing, 0x5295A8) and on commit makes that cell type 0x15 (ops 0x87, 0x15, 0x83, 0x84, 0x81 at 0x5295F7–0x52963F) — evidence needed: what cell ops 0x10B/0x110 require (the dispatcher 0x532FC0 → validator 0x535670) and what type 0x15 is
+	// [APPROX:RIDES-031] '@' (1, only in the Theme Park Inc road signs "*@*" and "*@@*"), 'Q' (3) and '#' (16) count as occupied footprint cells here. The original placement 0x528A70 stamps '@' as a path cell inside the footprint (type 1; on commit flags word 0x20, links by 0x5348D0 and to the neighbouring path cells, 0x529173–0x529208), 'Q' as a queue cell (type 3 through the generic stamp at 0x529119) and '#' like '+' (RIDES-011) — evidence needed: a path and queue cell model inside footprints (OpenTPW keeps them out of the cell map)
 	public static ObjectCellKind Classify( char symbol )
 	{
 		if ( symbol == ' ' )
@@ -144,14 +144,14 @@ public sealed class ObjectShape
 /// rotation turns the local grid about it. Verified in Easymode: rotation 0 maps (u, v) → (X+u, Y+v);
 /// rotation 90 maps (u, v) → (X+v, Y−u) (Staff Room and Round Fountain footprints, the Staff Room entrance
 /// opening towards −X); rotation 270 turns the Small Toilet entrances towards +X, the inverse rotation.
-/// Rotation 180 and non-square shapes follow from the same rigid rotation but are not observed in a save.
+/// Rotation 180 and non-square shapes follow the same rigid rotation in the original placement (tp.exe 0x528A70).
 /// </summary>
 public static class ObjectFootprint
 {
 	public static bool IsValidRotation( int degrees ) => degrees is 0 or 90 or 180 or 270;
 
 	/// <summary>Grid cell of local cell (u, v) for an object anchored at (x, y).</summary>
-	// [APPROX:RIDES-013] Rotation 180 and non-square rotated footprints follow the rigid rotation verified for 0/90/270 squares — evidence needed: a save with such objects
+	// [BIN:TPW-EXE:0x00528F62 footprint stamping] the placement stamps shape cell (column u, row v; the parser 0x402720 reverses the rows, so row 0 is the bottom text row) at the anchor plus (u, v), (v, −u), (−u, −v) and (−v, u) for 0, 90, 180 and 270 (0x528F7C, 0x529003, 0x528FD2, 0x528FA2 with the window offsets of 0x528B31–0x528BE4), for any width and height; the anchor is the cell of (0, 0) stored at 0x528DFF–0x528E12, and the demolition 0x527EE0 walks the same mapping
 	public static (int X, int Y) ToGrid( int anchorX, int anchorY, int rotation, int u, int v ) => rotation switch
 	{
 		0 => (anchorX + u, anchorY + v),
@@ -187,7 +187,8 @@ public static class ObjectFootprint
 	/// Cells without a direction bit open towards −V.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00413410 shape access cells] the first entrance cell (type 9) is copied with its row, column and direction byte to the object record (def+0x494..0x49C, default direction 1) and the first exit cell (type 10) to def+0x4A0..0x4A8 (default 0x10); the direction therefore belongs to the symbol, not to the edge the cell lies on
-	// [APPROX:RIDES-012] The compass bits 0x01 N, 0x04 E, 0x10 S, 0x40 W are mapped to the local axes with text-down = N (−V), text-up = S (+V), right = E (+U), left = W (−U), and the outward side is the exit's bit and the entrance's opposite; every corpus shape agrees (Easymode entrance 2 queue at −V, Belly Bounce exit S at +V), but no reader of def+0x49C/+0x4A8 was traced — evidence needed: the placement code that reads the direction bytes
+	// [BIN:TPW-EXE:0x00529323 entrance outside cell] the placement rotates the entrance symbol's direction byte by the build rotation (0x4D8C20: shifted left by log2 of 1, 0x40, 0x10, 4 for 0, 90, 180, 270, wrapping) and takes the outside cell 1 → (x, y+1), 4 → (x−1, y), 0x10 → (x, y−1), 0x40 → (x+1, y) (table 0x529D90)
+	// [BIN:TPW-EXE:0x00529239 exit outside cell] the exit's rotated direction gives 1 → (x, y−1), 4 → (x+1, y), 0x10 → (x, y+1), 0x40 → (x−1, y) (table 0x529D3C): with grid +y = local +V this is N −V, E +U, S +V, W −U, the exit opening along its bit and the entrance opposite; every access symbol has a bit ('O' and 'X' are N), so the −V default below has no case
 	public static (int U, int V) OutwardDirection( ObjectShape shape, ObjectShapeCell cell )
 	{
 		var (du, dv) = cell.Direction switch

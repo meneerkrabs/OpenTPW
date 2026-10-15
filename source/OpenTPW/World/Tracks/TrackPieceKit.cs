@@ -72,7 +72,7 @@ public sealed class TrackPieceKit
 	}
 
 	/// <summary>The height profile of a piece, or null when it has none or the file is malformed.</summary>
-	// [APPROX:TRACK-002] the height profiles (.hmp) are the original's per-object height map ([BIN:TPW-EXE:0x00451640] loads it from the mesh loader 0x4629D0 and rebuilds it from the mesh with 0x451880 when it is missing or mis-sized); OpenTPW parses it and uses it only as the kart surface (TRACK-001) — evidence needed: the sampler mode that reads it (0x4527F0)
+	// [APPROX:TRACK-002] the height profiles (.hmp) are the original's per-object height map ([BIN:TPW-EXE:0x00451640] loads it from the mesh loader 0x4629D0 and rebuilds it from the mesh with 0x451880 when it is missing or mis-sized); OpenTPW parses it and uses it only as the kart surface (TRACK-001); 0x4527F0 is the landscape sampler, not an .hmp reader, and the map (+0xCC) is read by the cell-height lookup 0x452AE0 (owner's map byte × 100/255 plus its base height; callers 0x45CDC0, 0x532FC0, 0x536CA0, 0x5370E0, 0x55ABF0, 0x55C350, 0x55CC00) — evidence needed: whether any vehicle sampler of a track piece reaches 0x452AE0 (the pose sampler is TRACK-001's)
 	public HmpFile? GetHeightProfile( int piece )
 	{
 		if ( StemOf( piece ) is not { } stem )

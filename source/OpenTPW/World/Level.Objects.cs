@@ -463,7 +463,7 @@ public partial class Level
 	private bool IsQueueBlocked( int x, int y ) =>
 		Objects.Grid.CheckTerrain( x, y ) != OriginalPlacementResult.Allowed || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
 
-	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules
+	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell. The original placement 0x528A70 lays the access cells itself: on commit with 0x52FAB0 true (option 0x81B0CC, default 1 at 0x52F139, and 0x8187F8 clear) the entrance's outside cell becomes a queue cell linked to the entrance (0x5297BD–0x529890) and the exit's outside cell a path cell linked to its path neighbours (0x529A58–0x529B1A); with it false the entrance's outside cell becomes a path cell and the exit gets none; an outside cell off the map refuses the placement (0x529744, 0x5299E2), and validation runs ops 0x204/0x201 on it — evidence needed: the cell ops 0x81/0x85/0x86 that link the laid cells, and a model of the laid cells' cost
 	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
 		grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 

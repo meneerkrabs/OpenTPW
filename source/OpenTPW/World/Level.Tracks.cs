@@ -91,7 +91,7 @@ public partial class Level
 	/// Removes the track of a station: every tile laid for its ride (TRACK-021), then the station tiles. Nothing is charged or refunded.
 	/// </summary>
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
-	// [APPROX:TRACK-007] the demolition clears the ride's own tiles and pays nothing: the original's one Spend (2 × the cell cost scaled by a percentage) has an untraced sign and percentage — evidence needed: 0x100E2424 and the Spend's direction
+	// [APPROX:TRACK-007] the demolition clears the ride's own tiles and pays nothing. The original demolition 0x527EE0 replays the track tool from both station sides with flag 0x81B46C = 1; ClearCell 0x53B280 then earns (0x4D0190 at 0x53B622) the kart or water cell cost (0x52FB60/0x52FB80, chosen by the cell type at 0x53B299) × the ride's scrap percentage (0x4E2290) / 100 per cleared track cell that passes the +0x20/thing-id tests at 0x53B54A–0x53B57F, and after the replay the demolition charges (Spend 0x4D01F0) 2 × the cell cost × the scrap percentage / 100 once (0x52814A–0x528179) — evidence needed: the refund conditions of 0x53B54A–0x53B57F (which replayed cells refund)
 	private void DemolishTrack( TrackStation station, TrackBuilder builder )
 	{
 		// exactly the tiles laid for this ride go, so a neighbouring ride's circuit that touches it stays

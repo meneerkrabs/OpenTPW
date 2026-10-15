@@ -75,7 +75,7 @@ parts: a save without them restores with zero stale words. No schema version mov
 
 ## Not done
 
-Sounds and effects (TOUR-004), the car animations and shadow (TOUR-008), the pad's live-instance read and rotation identity (TOUR-003), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+Sounds and effects (TOUR-004), the car animations and shadow (TOUR-008), the pad's live-instance read and an imported ride's saved rotation (TOUR-003; for a built ride the instance angle +0x10 is the build angle, `0x4DB0CD`), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
 
 ## Drawing
 

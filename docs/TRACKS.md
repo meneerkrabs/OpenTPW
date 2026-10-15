@@ -73,7 +73,7 @@ offset, six floats (the bounding box, at most 20). Body: (5w) × (5h) bytes of p
 w × h zero flags. A piece profile is 2 × 2 cells (156 bytes), the station's 4 × 4 (480 bytes). The reader is bounded (1 MiB), strict about the
 offsets and the length, and rejects malformed files. The profile is the original's per-object height map (`[TPW-EXE:0x451640]`, called from the mesh loader
 `0x4629D0` after swapping the extension, checks magic 0xAB1E0003 and (5, 100), and rebuilds the map from the mesh with `0x451880` when the file is missing or the size
-differs); OpenTPW uses it only as the kart surface (TRACK-001, TRACK-002: the sampler mode that reads it, `0x4527F0`, is not traced).
+differs); OpenTPW uses it only as the kart surface (TRACK-001, TRACK-002: `0x4527F0` is the landscape sampler; the `.hmp` is read by the cell-height lookup `0x452AE0`, whose callers are the build ghosts and the tour code).
 
 ## The tool (`TrackLineWriter`, `TrackBuilder`)
 

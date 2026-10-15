@@ -101,7 +101,7 @@ type and a compass bit (`ObjectShapeSymbols`): `.` free (0), `*` occupied (4), `
 first entrance and first exit cell with their direction byte, so the open side belongs to the symbol, not to the
 edge the cell lies on: an exit opens towards its bit, an entrance opposite to it (the guest walks in along the bit).
 With text-down N (−V), text-up S (+V), right E (+U) and left W (−U) every corpus shape (209 access cells) opens
-as before; that axis mapping is medium confidence (RIDES-012). The bonus Snake's `W` is a west exit, not an occupied cell.
+as before; the placement `0x528A70` uses exactly this mapping (retired RIDES-012, see the read round below). The bonus Snake's `W` is a west exit, not an occupied cell.
 
 Local coordinates: `U` = column = model +X, `V` = rows counted from the **last**
 text row = model +Z; one cell = 10 MD2 units. Evidence:
@@ -333,11 +333,9 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | RIDES-003 | World/Objects/ObjectAnimator.cs | Finished clip holds its last pose (AnimID 14 path traced: 0xa7498, 0xa68ac, 0xa694c); the next trigger restores against the ended clip, while the original passes the AnimID-14 slot as the old clip (0xa692c–0xa6948) | Capture after a clip ends; the object's AnimID-14 table slot; the ride-data sources of object flags 0x8 (stop) and 0x10 (hold) |
-| RIDES-011 | World/Objects/ObjectShape.cs | Uses inferred: type 11 (`+`) as track-upgrade cells over the parent ride's track, the track ends `<` `>` (type 23, directions W/E) as coaster station ends; the symbol types and direction bits are the executable's table (0x7396C8) | The placement code that consumes the cell types |
-| RIDES-012 | World/Objects/ObjectShape.cs | Access cells open towards the compass bit of their symbol: an exit towards it, an entrance opposite to it (N −V, S +V, E +U, W −U; `2` opens to −V). The bit-to-axis mapping is medium confidence: every corpus shape agrees, but no reader of the direction bytes (def+0x49C/+0x4A8) was traced | The placement code that reads def+0x49C/+0x4A8 |
-| RIDES-013 | World/Objects/ObjectShape.cs:103 | 180° and non-square rotations follow the rigid rotation | Save with such objects |
+| RIDES-011 | World/Objects/ObjectShape.cs | `+` is an overlay cell over the parent ride's track, the track ends `<` `>` station connections. The original placement `0x528A70` stamps `+`, `#` and the ends as occupied type 4 (`0x5290C7`–`0x5290EE`), checks `+` with cell op 0x10B and `#` with 0x110 and on commit writes the flags word 0x10 on the cell and its second-layer cell (`0x52950D`); an end with a direction needs the cell beyond it and on commit makes it type 0x15 (`0x5295F7`) | What cell ops 0x10B/0x110 require and what type 0x15 is |
 | RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
-| RIDES-015 | World/Objects/ParkObjects.cs:190 | Imported and built objects start open | TPWS ride state, original build behaviour |
+| RIDES-015 | World/Objects/ParkObjects.cs | Imported and built objects start open. The original constructor `0x4DB090` opens a built object, then closes one whose type has `Info.HasQueue` (def+0x40; `0x4DB712`–`0x4DB779`: open word 0, VAR_RIDECLOSED 1), so built rides with a queue start closed | TPWS ride state (save loader `0x415270`) |
 | RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
 | RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates, Lights and Bus. The original creates Gates and Lights at world setup (0x5156A0); its arrival vehicle is bus, seaplane or ferry at random per arrival (LCG at 0x51A2F0, the current vehicle is reused) and End is created elsewhere (0x516B00). Not implemented: the arrival owner's vehicle choice | The arrival code (ARRIVAL register) |
 | RIDES-021 | World/Level.Objects.cs:46 | Build centred on clicked cell; cursor ray hits Z = 0 | Original build cursor behaviour |
@@ -345,8 +343,8 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-024 | World/Objects/ObjectCatalog.cs | Bonus archives merge; this port skips a bonus entry whose Info.Id is taken. The original dedupes by archive name (0x41EDE0) and loads Info.Id duplicates too, its id lookups (0x412E90/0x412EF0) taking the first definition in directory order | The directory order of the original's category walk; how a `_name_N` archive finds its `_name.sam` |
 | RIDES-025 | World/Objects/ObjectCatalog.cs | Bonus name: selected language file, then English, then the .sam name. The original reads only `<selected language>.txt` (0x41F350) and falls back to the id table (empty for bonus ids except 3301); the English and .sam fallbacks are an OpenTPW extension for languages an archive lacks (third-party content) | None needed for the shipped archives (all 35 carry the four shipped languages) |
 
-| RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |
-| RIDES-031 | World/Objects/ObjectShape.cs | Shape symbols `@` (type 1; only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`"), `Q` (3) and `#` (16) are cell types of their own in the executable's table, not the occupied type 4; their placement meaning is untraced and they count as occupied here | The consumer of the shape cell types; TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
+| RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue). The original placement `0x528A70` lays a queue cell at the entrance's outside cell and a path cell at the exit's (option `0x81B0CC` on; only an entrance path cell with it off) and refuses an outside cell off the map | The link ops 0x81/0x85/0x86 of the laid cells |
+| RIDES-031 | World/Objects/ObjectShape.cs | Shape symbols `@` (type 1; only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`"), `Q` (3) and `#` (16) count as occupied here. The original placement `0x528A70` stamps `@` as a linked path cell inside the footprint (flags word 0x20, `0x529173`–`0x529208`), `Q` as a queue cell (type 3) and `#` like `+` (RIDES-011) | A path and queue cell model inside footprints; TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
 | RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route. PC: render callback 0x463030 (model record +0x140, set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 updates instances without it via 0x473c70(inst, 0, 8) without posing and clears it on the others; object flag 0x00400000 is set at 0x4737e8 when a non-looping clip ends with nothing deferred, flags & 0x10 set and & 0x8 clear (also sets 0x40000000, holds the last frame). The list-pass route is not modelled | The renderer's call site of the +0x140 callback |
 | RIDES-033 | VM/RideVM.cs | Script speed = 0.5 + bias / 100 (0x551769); the bias is the ride's SPEED: ride init `Upgrades[0].InitSpeed` when above 0 (0x4db51c..0x4db54c), children copy the parent's (0x551888), creation default 50 (0x558c3c), setter 0x55a300, and upgrade completion (0x4DF8F0) sets `Upgrades[level].InitSpeed` when above 0 (also capacity from +0x198 and duration from +0x1A0, which QUEUE-011 keeps authored). Not modelled: ride-settings speed changes (UI command 0x4af440 → 0x4dd6e0), as OpenTPW has no ride speed control | The ride-settings UI of the original |
 | RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks apply to rendering (MD2-900..902). PC writer: clip update 0x4721F0 runs 0x470C90, which writes the slot record at model+0x50+slot·8 (frame at +2, dirty bit 0x04 in byte +1); no reader of the frame or the dirty bit was found, so the binding follows this port's material-slot mapping | The draw-path reader of a texture slot's current frame (a runtime write watchpoint on a slot's +2, or the D3D texture-bind code) |
@@ -374,6 +372,18 @@ Reclassified as OpenTPW conventions (no original rule to recover): `[EXT:md2-eng
 `[EXT:trig-anim-speed-guard]` (formerly `APPROX:RIDES-038`: the corpus has 4 TRIGANIMSPEED uses, all literal 1800–4000, so the guard against 0 and negative speeds only meets malformed input).
 
 Narrowed: RIDES-011, 012, 019, 024, 025, 031, 033, 035 and 044 (rows above); RIDES-013, 015, 021, 023, 028, 032, 040 stay as they were.
+
+### Read round (tp.exe, October 15)
+
+The object placement routine `0x528A70` (preview, check and commit of the build tool) settles two items:
+
+- `APPROX:RIDES-012`: the access cells' outside side is read from the shape grid's direction byte, turned by the build rotation (`0x4D8C20`):
+  an entrance opens opposite to its bit (`0x529323`, table `0x529D90`), an exit along it (`0x529239`, table `0x529D3C`), N −V, E +U, S +V, W −U,
+  as `ObjectFootprint.OutwardDirection` does.
+- `APPROX:RIDES-013`: the footprint is stamped by the rigid rotation about the anchor cell (`0x528F62`; the parser `0x402720` reverses the rows),
+  for every rotation and any width and height, as `ObjectFootprint.ToGrid` does.
+
+Narrowed by the same round: RIDES-011, 015, 028 and 031 (rows above).
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

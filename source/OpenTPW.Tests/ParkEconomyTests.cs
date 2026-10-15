@@ -864,6 +864,26 @@ public class ParkEconomyTests
 		Assert.IsTrue( Reached( upgrade ), "the third level (byte 2) reaches TargetVal 2" );
 	}
 
+	/// <summary>Objectives over <see cref="EconomyTestData.ChallengesText"/> plus a second type-20 follow-up (index 2, another ride) listed before index 8.</summary>
+	private static ParkObjectives TwoFollowupObjectives() => new( new BalanceSettings(
+		new SamSettings( new[] { SamDocument.Parse( EconomyTestData.StandardText().Replace( "ChallengesInThisLevel[0].ChallengeType 1\nChallengesInThisLevel[1].ChallengeType 7\nChallengesInThisLevel[2].ChallengeType 8\n",
+			"ChallengesInThisLevel[0].ChallengeType 7\nChallengesInThisLevel[1].ChallengeType 2\nChallengesInThisLevel[2].ChallengeType 8\n" ), "Standard.sam" ) } ),
+		new SamSettings( new[] { SamDocument.Parse( EconomyTestData.ChallengesText
+			+ "Challenges[2].Type 20\nChallenges[2].FollowupType 0\nChallenges[2].TargetTime 90\nChallenges[2].TargetVal 5\nChallenges[2].TargetObj 1150\nChallenges[2].TargetObj2 0\nChallenges[2].TargetStaffType 0\nChallenges[2].Prize 1000\nChallenges[2].CheckAtEndOnly 0\nChallenges[2].Independent 0\n", "Challenges.sam" ) } ),
+		null, "jungle", false ), EconomyTestData.Catalog() );
+
+	[TestMethod]
+	public void TheFollowupIsTheFirstOpenSlotOfItsTypeWhateverItsObject()
+	{
+		// tp.exe 0x4d2b60 compares only the type, scanning the slots from the first: index 2 (another ride) comes before index 8 (the same ride)
+		var objectives = TwoFollowupObjectives();
+		Assert.AreEqual( 7, objectives.AdvanceDay( 540, _ => 0 ).Single().Index );
+		objectives.Accept( 540, 0 );
+		var results = objectives.AdvanceDay( 541, definition => definition.Type == 18 ? 1 : 0 ).ToList();
+		Assert.AreEqual( ParkEventKind.ChallengeCompleted, results[0].Kind );
+		Assert.AreEqual( (ParkEventKind.ChallengeOffered, 2), (results[1].Kind, results[1].Index) );
+	}
+
 	[TestMethod]
 	public void ChallengesAreOfferedCompletedFollowedUpAndForfeited()
 	{

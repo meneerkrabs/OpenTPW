@@ -209,10 +209,11 @@ public sealed class ParkObjectives
 		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.FollowupType == 0 ? definition.Prize : 0, Describe( definition ));
 		if ( definition.FollowupType != 0 )
 		{
-			// [APPROX:ECON-055] a follow-up of the same object is preferred, else the first open one of the type as in 0x4d2b60; the original carries the satisfying object (+0x2e, set by types 14, 15 and 18) into the follow-up slot instead — evidence needed: how the follow-up types read the carried object
-			var open = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
-				.Where( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) ).ToList();
-			var followup = open.FirstOrDefault( item => item.TargetObject == definition.TargetObject ) ?? open.FirstOrDefault();
+			// [BIN:TPW-EXE:0x4d2b60 follow-up offer] the slots are scanned from the first, in table order, for the follow-up type (+0x18) with mHaveWon (+0x2c) clear and
+			// mChallengeDeclined (+0x28) below DeclinesToForfeit; only the type is compared, not the object (0x4d2bc0..0x4d2bd8)
+			// [APPROX:ECON-055] the satisfying object a won challenge carries into its follow-up is not modelled: the checks of types 14, 15 and 18 store the best object's thing id in the slot (+0x2e, 0x4d1660), the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot, and while the filter is set the accumulator 0x4d27a0 adds only events of that one object (its parameter B, the object index: ride uses of types 17, 20 and 22, 0x501db0); OpenTPW counts the follow-up's uses of every object of its TargetObject type — evidence needed: none (read); OpenTPW keeps no per-object use counts
+			var followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
+				.FirstOrDefault( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) );
 			if ( followup != null )
 			{
 				Current = new ActiveChallenge( followup.Index, day, false, 0, 0, 0 );

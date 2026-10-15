@@ -64,7 +64,7 @@ public enum GoldenTicketKind
 /// follow-ups, <c>Independent</c>, <c>CheckAtEndOnly</c>, offer delays, declines to forfeit and every
 /// golden ticket threshold. The Easymode save stores the level's challenge list in exactly this order
 /// (docs/ECONOMY.md). <b>Approximations</b>: the meaning of each challenge type is taken from the
-/// <c>Challenges.sam</c> comments; offers wait for an explicit accept/decline; follow-ups are offered
+/// <c>Challenges.sam</c> comments; declines count towards a forfeit (ECON-035); follow-ups are offered
 /// immediately after completion; types without a progress source never complete.
 /// </summary>
 public sealed class ParkObjectives
@@ -159,7 +159,8 @@ public sealed class ParkObjectives
 
 	/// <summary>Daily challenge processing; returns the events to publish and the prize won (0 when none).</summary>
 	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win
-	// [APPROX:ECON-035] offers wait for accept/decline (the offer dialog 0x4d2c50 keeps +0x3da set until it is answered); a won challenge is marked finished, where 0x4d2fb0 marks the slot at the current index, which the follow-up offer has already moved on — evidence needed: challenge flow captures
+	// [BIN:TPW-EXE:0x4d1e90 challenge day] nothing is offered, checked or timed out while an offer waits for its answer (+0x3da, set by 0x4d2a70 / 0x4d2b60), which only
+	// the accept 0x4d2df0 (accepted +0x3d9, the deadline from mTargetTime) or the decline 0x4d2ec0 clears
 	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure )
 	{
 		if ( Current == null )
@@ -198,27 +199,30 @@ public sealed class ParkObjectives
 
 	/// <summary>
 	/// A won challenge: the prize is paid only by a challenge without a follow-up type, so a chain pays the prize of its last part;
-	/// a part whose follow-up type finds no follow-up pays nothing.
+	/// a part whose follow-up type finds no follow-up pays nothing. The slot marked won is the one current after the follow-up offer:
+	/// the follow-up when one was offered (the won part stays open and can be offered again), else the won challenge.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4d2fb0 challenge won] FollowupType (+0x18) 0: the prize (+0x14) is credited (0x4d0190); otherwise the follow-up is offered at once (0x4d2b60: the first slot of that type not completed and below the forfeit count) and no prize is paid
+	// [BIN:TPW-EXE:0x4d310d challenge won] the won mark 0x4d1a00 (mHaveWon +0x2c) goes to the slot at the current index (+0x3cc), read after 0x4d2b60 has moved it to the offered follow-up (0x4d2be6)
 	private IEnumerable<(ParkEventKind, int, long, string)> Complete( long day, ChallengeDefinition definition )
 	{
-		finished.Add( definition.Index );
-		Current = null;
-		NextOfferDay = day + settings.ChallengeTiming.DaysAfterCompletedChallenge;
-		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.FollowupType == 0 ? definition.Prize : 0, Describe( definition ));
+		ChallengeDefinition? followup = null;
 		if ( definition.FollowupType != 0 )
 		{
 			// [BIN:TPW-EXE:0x4d2b60 follow-up offer] the slots are scanned from the first, in table order, for the follow-up type (+0x18) with mHaveWon (+0x2c) clear and
 			// mChallengeDeclined (+0x28) below DeclinesToForfeit; only the type is compared, not the object (0x4d2bc0..0x4d2bd8)
 			// [APPROX:ECON-055] the satisfying object a won challenge carries into its follow-up is not modelled: the checks of types 14, 15 and 18 store the best object's thing id in the slot (+0x2e, 0x4d1660), the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot, and while the filter is set the accumulator 0x4d27a0 adds only events of that one object (its parameter B, the object index: ride uses of types 17, 20 and 22, 0x501db0); OpenTPW counts the follow-up's uses of every object of its TargetObject type — evidence needed: none (read); OpenTPW keeps no per-object use counts
-			var followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
+			followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
 				.FirstOrDefault( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) );
-			if ( followup != null )
-			{
-				Current = new ActiveChallenge( followup.Index, day, false, 0, 0, 0 );
-				yield return (ParkEventKind.ChallengeOffered, followup.Index, followup.Prize, Describe( followup ));
-			}
+		}
+		finished.Add( (followup ?? definition).Index );
+		Current = null;
+		NextOfferDay = day + settings.ChallengeTiming.DaysAfterCompletedChallenge;
+		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.FollowupType == 0 ? definition.Prize : 0, Describe( definition ));
+		if ( followup != null )
+		{
+			Current = new ActiveChallenge( followup.Index, day, false, 0, 0, 0 );
+			yield return (ParkEventKind.ChallengeOffered, followup.Index, followup.Prize, Describe( followup ));
 		}
 	}
 
@@ -247,6 +251,7 @@ public sealed class ParkObjectives
 		Current = Current with { Accepted = true, StartDay = day, DeadlineDay = day + definition.TargetTime, Baseline = baseline };
 	}
 
+	// [APPROX:ECON-035] a declined challenge counts towards DeclinesToForfeit and is finished when it reaches it; tp.exe's offer scans (0x4d2a70, 0x4d2b60) do skip a slot whose mChallengeDeclined (+0x28) is not below DeclinesToForfeit (0x7857cc), but its decline 0x4d2ec0 does not raise that count and no writer other than the slot initialisers (0x4d0f70, 0x4d1bd0) and the serializer was found, so in the original a declined challenge may be offered again without limit (offers waiting for an answer, the won mark and a declined follow-up's half prize are read and modelled: 0x4d1e90, 0x4d2df0, 0x4d2ec0, 0x4d2fb0) — evidence needed: a writer of the slot's mChallengeDeclined (+0x28) outside the challenge module 0x4d0000-0x4d6000
 	public int Decline( long day )
 	{
 		if ( Current == null || Current.Accepted )

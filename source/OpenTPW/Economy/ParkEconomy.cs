@@ -1449,8 +1449,14 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public void DeclineChallenge()
 	{
+		var definition = Objectives.CurrentDefinition;
 		var index = Objectives.Decline( ParkCalendar.DayIndex( Tick ) );
-		Raise( ParkEventKind.ChallengeDeclined, 0, 0, index );
+		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] a declined challenge whose mIndependent (+0x1d) is clear, a follow-up, credits half its prize (+0x14 / 2,
+		// truncated toward zero, 0x4d2f1d..0x4d2f33) through the bank credit 0x4d0190; an independent one pays nothing
+		var half = definition is { Independent: false } ? definition.Prize / 2 : 0;
+		if ( half > 0 )
+			Post( LedgerCategory.OtherIncome, half );
+		Raise( ParkEventKind.ChallengeDeclined, half, 0, index );
 	}
 
 	// ---------------------------------------------------------------- guests

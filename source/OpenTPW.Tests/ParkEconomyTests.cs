@@ -885,6 +885,29 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void DecliningAFollowupPaysHalfItsPrize()
+	{
+		// tp.exe 0x4d2ec0: a declined challenge that is not independent credits prize / 2 (0x4d0190); an independent one pays nothing
+		var park = EconomyTestData.Park();
+		EconomyTestData.HireBest( park, StaffType.Researcher );
+		park.AdvanceDays( 540 );
+		var balance = park.Balance;
+		park.DeclineChallenge();
+		Assert.AreEqual( balance, park.Balance, "challenge 1 is independent" );
+		park.AdvanceDays( 270 );
+		park.AcceptChallenge();
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1180, out _ ) );
+		park.AdvanceDays( 1 );
+		Assert.AreEqual( 8, park.Objectives.Current!.DefinitionIndex );
+		balance = park.Balance;
+		var events = new List<ParkEvent>();
+		park.EventRaised += events.Add;
+		park.DeclineChallenge();
+		Assert.AreEqual( balance + 15000, park.Balance );
+		Assert.AreEqual( 15000, events.Single( item => item.Kind == ParkEventKind.ChallengeDeclined ).Amount );
+	}
+
+	[TestMethod]
 	public void ChallengesAreOfferedCompletedFollowedUpAndForfeited()
 	{
 		var park = EconomyTestData.Park();
@@ -919,8 +942,9 @@ public class ParkEconomyTests
 		Assert.AreEqual( 1, park.Objectives.Current!.DefinitionIndex );
 		park.DeclineChallenge();
 		Assert.IsTrue( park.Objectives.Finished.Contains( 1 ), "second decline forfeits" );
+		CollectionAssert.AreEquivalent( new[] { 1, 8 }, park.Objectives.Finished.ToArray(), "0x4d2fb0 marked the follow-up 8 won, not the chain head 7" );
 		park.AdvanceDays( 600 );
-		Assert.IsNull( park.Objectives.Current );
+		Assert.AreEqual( 7, park.Objectives.Current!.DefinitionIndex, "the won chain head stays open and is offered again" );
 
 		var failing = EconomyTestData.Park();
 		failing.AdvanceDays( 540 );

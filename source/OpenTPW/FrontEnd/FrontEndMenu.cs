@@ -148,34 +148,42 @@ public sealed partial class FrontEndMenu
 	public void ShowGameMode()
 	{
 		var screen = new ProgressChoiceScreen( "gameMode" );
-		var window = UiDialogs.CenteredWindow( 1100, 760 );
-		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.GameMode] );
-		screen.Add( new UiLabel { Id = "park", Text = () => SelectedName, Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Center, Bounds = new UiRect( window.X + 80, window.Y + 140, window.Width - 300, 70 ), Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x753f50 name dialog] the game mode is chosen in the new-player dialog: the wdialogw window (500,233)-(1516,830) with the title box (655,285)-(1315,365), the two latched b_ltoggle buttons (764,405)-(1206,476) and (764,498)-(1206,569) (help 358 and 359) and the tick and X; the name field (593,616) belongs to player profiles, which OpenTPW has none of
+		// [APPROX:UI-013] a mode button starts the park at once where the original latches it and waits for the tick
+		var table = OriginalLayoutTables.NameDialog;
+		var window = table.Root.Rect;
+		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.GameMode], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x709 ).Rect, Anchor = UiAnchor.Center } );
+		var toggles = table.All.Where( node => node.Model == "b_ltoggle" ).OrderBy( node => node.Rect.Y ).ToArray();
 		var modes = new (string Id, UIStrings Label, GameMode Mode, int Help)[]
 		{
 			("instantAction", UIStrings.InstantAction, GameMode.InstantAction, 358),
 			("fullSimulation", UIStrings.FullSimulation, GameMode.FullSimulation, 359),
 		};
+		screen.Add( new UiLabel { Id = "park", Text = () => SelectedName, Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Center, Bounds = table.Control( 0x70A ).Rect, Anchor = UiAnchor.Center } );
 		for ( var index = 0; index < modes.Length; index++ )
 		{
 			var entry = modes[index];
 			screen.Add( new UiButton
 			{
 				Id = entry.Id,
+				Model = "b_ltoggle",
 				Text = () => strings[entry.Label],
+				Font = fonts => fonts.Label,
 				Help = strings.Help( entry.Help ),
 				Clicked = () => { if ( screen.TryActivate( Stack ) ) { PlayEnterPark( entry.Mode == GameMode.InstantAction ); actions.StartPark( Selected, entry.Mode ); } },
-				Bounds = new UiRect( window.X + 150, window.Y + 240 + index * 150, window.Width - 450, 120 ),
+				Bounds = toggles[index].Rect,
 				Anchor = UiAnchor.Center
 			} );
 		}
+		var exit = table.Model( "b_exit" );
 		screen.Add( new UiButton
 		{
 			Id = "back",
-			Text = () => strings.Extra( OpenTpwText.Back ),
+			Model = exit.Model,
 			Help = strings.Help( 2 ),
 			Clicked = () => { if ( !screen.IsRemoved && ReferenceEquals( Stack.Top, screen ) ) Stack.Pop(); },
-			Bounds = new UiRect( window.X + 150, window.Bottom - 190, 420, 104 ),
+			Bounds = exit.Rect,
 			Anchor = UiAnchor.Center
 		} );
 		screen.Back = () => { if ( !screen.IsRemoved && ReferenceEquals( Stack.Top, screen ) ) Stack.Pop(); };

@@ -6,6 +6,13 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## The All Attractions button is a round icon again (October 15, 2026)
+
+The button that opens the All Attractions window from the buy window (above All Staff) and the staff window was a text
+button in a round slot about 100 units wide. Its label ("All Rides", in Dutch "Alle Attracties") fitted no font size,
+so the text fallback wrapped it one letter per line down the panel. It now wears the attractions window's own rides tab
+icon (`b_srides`), round like its neighbours, with the name as its popup help.
+
 ## Scream voices limited to the sound manager's pool of twelve (October 14, 2026)
 
 Ride screams no longer start new children everywhere in the park. tp.exe's sound manager (`0x6b62b0`) ticks only 12 audible

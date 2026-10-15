@@ -13,7 +13,7 @@ public static class ArrivalApproximations
 		("ARRIVAL-003", "POINTS: the counts-test (0xDC834, tp.exe 0x4DD920) is applied except the coaster controller test and the kart track word (a water ride's track-valid flag is applied, docs/TRACKS.md), and kind 0/2 is read as ride/sideshow"),
 		("ARRIVAL-004", "FLOOR: a group cut by the 1500 limit stops at 0; the original keeps 1500 minus guests, negative above the limit (oracle F9). Executed (oracle F11), a negative group ends at the next stop like 0: no guest, timer restart, active byte cleared. Only the stored group word and one arrival-vehicle step (slot 74, 'group == 0', effect untraced) differ"),
 		("ARRIVAL-005", "FIRST PURCHASE: imported and fixed objects set a type's first-purchase turn to the current turn; the original restores park record +28 from its save"),
-		("ARRIVAL-006", "BOOTH WAIT: the booth's expensive wait counts park turns of the fixed clock (248 ms each) rather than the guest updates of state 4, and its draws come from the guest stream (DET-014)"),
+		("ARRIVAL-006", "BOOTH WAIT: the booth's expensive wait counts park turns of the fixed clock (248 ms each) rather than the guest updates of state 4, and its draws come from the guest stream (DET-014); a closed park's state 3 (0x4FF966) first counts any remaining wait +0x200 down, one per guest update, before it sends the guest home, where OpenTPW sends it home at once (the wait is 0 on both of OpenTPW's paths into it: a guest arriving at the booth and one that has just paid after its wait ran out)"),
 		("ARRIVAL-007", "PURSE: OpenTPW charges the entrance fee from the guest's purse and turns back a guest who cannot pay; the original's booth books the fee (0x004D0600) without reading the guest's cash"),
 	};
 }

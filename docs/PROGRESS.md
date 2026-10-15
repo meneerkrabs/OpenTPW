@@ -20,6 +20,31 @@ Twenty-two more interface approximations were read again in tp.exe:
   knob** maps to the original's workload of 70..100 (`0x4aacce`, `0x4a985b`).
 - UI-910 (the left mouse button is button 0, `0x634963`) is retired; 15 interface items are narrowed.
 
+## Nine divergences from tp.exe fixed (October 15, 2026)
+
+Divergences found while reading other areas, each checked in tp.exe and fixed in its own commit:
+
+- **Upgrades are paid at installation** (`0x4df8f0`, debit at `0x4dfa96` with no balance check); buying (`0x4af4e9`) only requests the
+  upgrade when the balance is above the cost. A save's pending upgrade gains the optional `UpgradeCostDue`; one loaded from an older
+  save, already charged at purchase, is not charged again.
+- **A sideshow play wins** when R % 100 ≤ the win byte (100 − InitChanceOfLoosing, `0x4e26e2`, `0x4db3a1`).
+- **A sale or play at price 0 books no takings** (`0x4fe1a0` skips `0x4e16b0`); the cost of goods and the customer count still apply
+  (ECON-034 narrowed).
+- **A cleaned toilet opens** through `0x4df390` without the reopening guard (ECON-049 text extended).
+- **A called ride gets its mechanic** in any state, condemned included (`0x4da740`, `0x4daa90`).
+- **Removing an attraction or bin** sends its guests the original's removal message (`0x4fb360`, message 10): riders get their model
+  back, queued guests are dismissed, every targeting guest goes to state 6, and every guest's history slots naming the object are
+  cleared (GUEST-004 and GUEST-005 narrowed).
+- **A closed park stops visitors on the walk to the booth** (`0x4ff730`, `0x4ff7f0`): they go home with no thought; the booth and the
+  booking read no closed state, so a guest who paid at a closed park is sent home without a refund. A bankrupt park still takes no fee
+  (its thing loop stops in tp.exe, ECON-030).
+- **A staff candidate draws** variant, spare, grade, name and timeout in tp.exe's order (`0x507600`, GUEST-014 narrowed).
+- **A new park starts with only the research-free objects researched** (`Upgrades[0].CostOfResearch` = 0, `0x5031a0`): Jungle's Wooden
+  Log now has to be researched.
+
+A tenth candidate (the dismissal leaving VAR_LETMEON set) does not hold: every caller unlinks first (`0x4ddd20`). The pinned run hash
+moves to `0xDB1DDEE4817DE5B0` (the staff candidate draws; docs/DETERMINISM.md).
+
 ## Advisor presentation, crowd sound and particle density from tp.exe (October 15, 2026)
 
 - **The advisor moves**: its antennae, hands and eyes vertex tracks and the level advisors' eye texture tracks play through the shared

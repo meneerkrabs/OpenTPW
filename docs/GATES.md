@@ -39,8 +39,11 @@ The reduced imported guest grid does not yet preserve every original cell type: 
 
 ## What closing does to guests
 
-- Admissions stop: `ParkEconomy.TryAdmitVisitor` refuses while the park is closed, so visitors at the booth
-  do not enter.
+- Admissions stop at the walk to the booth, not at the booth (tp.exe `0x4ff730`, `0x4ff7f0`, `0x4ff9d0`): a visitor
+  who reaches the booth while the park is closed turns home with no thought; one already at the booth is weighed and
+  pays as usual (the booth and `ParkEconomy.TryAdmitVisitor`, like `0x4d0600`, read no park-closed state) and
+  is then sent home without a refund while the park stays closed. A bankrupt park takes no fee: tp.exe's bankruptcy
+  stops the whole thing loop (world state 4, `0x516380`, ECON-030), where OpenTPW's guests keep updating.
 - Guests already inside keep their place and carry on. Their rides are closed; a queue for a closed ride is
   turned away, one head at a time (the fork's `FUN_004e0450`, `docs/exe/ride-operation.md`, "The closed
   ride"; not reproduced by `ParkGate`).
@@ -54,8 +57,8 @@ The reduced imported guest grid does not yet preserve every original cell type: 
   open a ride whose queue back has lost its path, which the original's guard (`0x004DF290`) refuses.
 - `ECON-050`: the guest-grid import types only empty, path, queue and track cells. The original types every cell at world init from its MAP byte
   and the base.md2 tile flags (`0x00536490`: off-terrain 2, 30 or 7) and placement writes footprint types; here those cells read 0 and count.
-- The ticket booth closes at once; the original's booth state and the closed-ride queue turn-away are not
-  traced here.
+- `GUEST-011`: a paid visitor walks in without waiting for the entrance gate's script variable 1, which the original's
+  state 3 requires (`0x51a290`); the closed-ride queue turn-away is not traced here.
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C
   is a fork lead (`park-engine.md`, PC `0x0040c410`), not verified statically.
 

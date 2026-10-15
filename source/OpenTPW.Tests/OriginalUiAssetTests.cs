@@ -181,8 +181,9 @@ public class OriginalUiAssetTests
 	}
 
 	/// <summary>
-	/// The evidence behind UI-909's text buttons: ui.wad ships the b_allthinginfo and b_goto models without
-	/// their textures (so the overview windows cannot use that art), while the art they do draw resolves.
+	/// The evidence behind UI-909's stand-in buttons: ui.wad ships the b_allthinginfo and b_goto models without
+	/// their textures (so the overview windows cannot use that art), while the art they do draw resolves, among it the
+	/// rides tab icon the All Attractions entry buttons wear instead of a text label too wide for their round slot.
 	/// </summary>
 	[TestMethod]
 	public void TheOverviewWindowsButtonArtEvidenceHolds()
@@ -195,9 +196,9 @@ public class OriginalUiAssetTests
 			Assert.IsTrue( textures.Length > 0, $"{name} ships a model that references textures" );
 			foreach ( var texture in textures )
 				Assert.IsNull( UiImages.Resolve( texture ),
-					$"{name}'s texture '{texture}' resolves now — UI-909's text buttons can switch to the shipped art" );
+					$"{name}'s texture '{texture}' resolves now — UI-909's stand-in buttons can switch to the shipped art" );
 		}
-		foreach ( var name in new[] { "list_all", "b_svisit", "b_gopeep", "b_erase" } )
+		foreach ( var name in new[] { "list_all", "b_svisit", "b_gopeep", "b_erase", ParkHud.AllAttractionsModel } )
 		{
 			var model = UiModel.Load( name );
 			var textures = model.Frames.SelectMany( frame => frame.Parts ).Select( part => part.TextureName )

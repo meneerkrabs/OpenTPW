@@ -433,8 +433,10 @@ glyph in all 14 UI fonts of each language.
   (Enter does, as for a text field) so the map key never co-fires with the panel
   under the pointer. The All Staff key S and All Attractions key A stay
   unhandled: the host camera pans with S and A (WASD), and one press cannot be
-  both; the All Attractions window opens through the buy window's all-things
-  button instead. A second press of a window key closes the
+  both; the All Attractions window opens through a round button above All Staff
+  in the buy window (and one in the staff window) instead, wearing the window's rides tab icon
+  `b_srides` with "All Rides" as its popup help: the shipped `b_allthinginfo` art has no texture,
+  and a text label does not fit the round slot. A second press of a window key closes the
   window (`[EXT:window-key-toggle]`); dialogs and the pause menu keep the keys. The shortcut letters come from the
   language's `KEYBOARD.str` (21 entries, `Input.ApplyKeyboardStrings`; the Dutch buy key is K and research is O),
   except a plain letter that is a camera-pan key (W, A, S, D), which keeps its default, and in the browser build the Ctrl+W/T/N chords the browser reserves (`[EXT:browser-reserved-chords]`); a plain shortcut never fires while Ctrl is held (Dutch research O vs Ctrl+O) (the Dutch hire letter A, UI-012). The time keys

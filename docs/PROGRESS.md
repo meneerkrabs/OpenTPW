@@ -25,6 +25,12 @@ Importing an original save (the Jungle Easymode start) now restores three more p
 
 Imported staff also take the display state of their saved state word (`0x5064f0`): the word is the member's own state, not the
 STAFFSTATES index, so a member walking to rest or striking no longer shows as working or picked up. SAVE-003, 004, 005, 007 and 009 are narrowed.
+## The All Attractions button is a round icon again (October 15, 2026)
+
+The button that opens the All Attractions window from the buy window (above All Staff) and the staff window was a text
+button in a round slot about 100 units wide. Its label ("All Rides", in Dutch "Alle Attracties") fitted no font size,
+so the text fallback wrapped it one letter per line down the panel. It now wears the attractions window's own rides tab
+icon (`b_srides`), round like its neighbours, with the name as its popup help.
 
 ## Scream voices limited to the sound manager's pool of twelve (October 14, 2026)
 

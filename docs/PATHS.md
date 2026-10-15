@@ -53,10 +53,12 @@ neighbours the flag is dropped and the cell is removed (PATH-005).
 one axis and ignores the other end coordinate. A hover previews the snapped
 line (the ghost, no writes), drawn as the original's blue blueprint markers with the refused cell in red
 ([blueprint markers](reverse/BLUEPRINT.md)); a click pushes the end onto the 1024-entry vertex
-stack and commits the line. A click back on the start ends the tool; once a
-line exists it lays nothing, as in the original. The tool also ends when a cell
-is refused (PATH-012) or when the line ends on an existing path or queue cell
-(PATH-003); otherwise the end is the next start. Backspace takes back the last
+stack and commits the line. A click whose ghost has a refused cell ends the
+tool and lays nothing (tp.exe `0x524a63`). A click back on the start ends the
+tool; once a line exists it lays nothing, as in the original. The tool also
+ends when the commit reaches a last cell that already was a path or queue cell,
+the ride's own queue included (tp.exe end flag `0x5345ad`, read by the pass
+`0x81` at `0x527517`); otherwise the snapped end is the next start. Backspace takes back the last
 segment without a refund, as the original's Back (tp.exe `0x52fe50`) does:
 each cell of that segment loses one placement count and goes when it falls
 below zero. Right click, Escape and Back cancel.
@@ -129,14 +131,12 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
 | PATH-001 | PATH-ENTER | a click on an object-less cell or a path starts the tool (tp.exe 0x4879d0, SetMode(1) 0x52f200); the original enters even when the start check 0x535670(1, 0) refuses the cell (then without a start), OpenTPW does not enter |
-| PATH-003 | PATH-ENDFLAG | a line ending on a path or queue cell ends the tool |
 | PATH-004 | PATH-CONNECT | path-to-path links match tp.exe 0x5348d0; its type-9/10 links, diagonal bits, OR write and type-3 conversion are not ported |
 | PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types and ownership |
 | PATH-007 | PATH-LAND | every in-bounds cell is owned; the original's owned land is the fence interior laid by 0x5323f0 from the level outline 0x784e3c |
 | PATH-008 | PATH-CODE8 | path over a queue cell is refused; the original turns a queue end (validator code 8, 0x535d00) into a path cell |
 | PATH-009 | PATH-FREE | free only without a park economy; the free byte (tp.exe 0x8186d4) is set only while modes 4 and 59 place an object |
-| PATH-012 | PATH-ENDREFUSE | a line refused part-way ends the tool |
 | PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause is untraced for clicks |
 | PATH-014 | PATH-VARIANT | built straights and edges pick `str1`/`str2` and `edg1`/`edg2` by a hash of the cell; the original rolls CRT `rand() & 1` on every recomputation (0x535dd0, 0x53602c) |
 | PATH-015 | QUEUE-TEXTURES | queue cells use `QueueTex` ground textures; the original places queue models (0x5229e0, `quedead`..`quebin2.md2`) and no `QueueTex` texture |

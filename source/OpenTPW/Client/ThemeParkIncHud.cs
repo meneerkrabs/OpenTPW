@@ -462,7 +462,9 @@ public sealed class ThemeParkIncHud
 		// The commit click; Level skips it because this frame's pointer is reported as captured.
 		var queueJoin = level.QueueJoinCell( tool );
 		var result = tool.Click( (cursorX, cursorY) );
-		level.PlayQueueJoin( queueJoin );
+		// A click on a refused ghost lays nothing and returns before the commit, so no queue-join sound (tp.exe 0x524A63 skips 0x527587).
+		if ( result is { Completed: true } )
+			level.PlayQueueJoin( queueJoin );
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )

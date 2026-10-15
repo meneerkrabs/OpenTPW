@@ -909,7 +909,9 @@ public sealed partial class ParkHud
 			cellToolClicking = false;
 		}
 		ResolveQueueRearm( result );
-		level.PlayQueueJoin( queueJoin );
+		// A click on a refused ghost lays nothing and returns before the commit, so no queue-join sound (tp.exe 0x524A63 skips 0x527587).
+		if ( result is { Completed: true } )
+			level.PlayQueueJoin( queueJoin );
 		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); [APPROX:AUDIO-022] a refused commit plays cat_ui 175 at the clicked cell
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );

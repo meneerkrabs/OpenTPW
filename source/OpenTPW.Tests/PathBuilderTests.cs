@@ -420,15 +420,17 @@ public class PathBuilderTests
 		tool.Enter( rig.Builder, (1, 1) );
 		var refused = tool.Click( (8, 1) )!;
 		Assert.AreEqual( CellBuildResult.Occupied, refused.StoppedBy );
-		Assert.IsFalse( tool.IsActive, "a failed LayLine ends the tool" );
-		Assert.AreEqual( 3, rig.Grid.WalkableCount, "cells before the refusal stay" );
+		Assert.AreEqual( (4, 1), refused.StoppedAt );
+		Assert.IsFalse( tool.IsActive, "a click on a refused ghost ends the tool (tp.exe 0x524a63)" );
+		Assert.AreEqual( 0, rig.Grid.WalkableCount, "and lays nothing, not even the cells before the refusal" );
+		Assert.AreEqual( 0L, rig.OtherCosts );
 
 		rig.Grid.SetPath( 1, 6, true );
 		tool.Enter( rig.Builder, (1, 2) );
 		var joined = tool.Click( (1, 6) )!;
 		Assert.IsTrue( joined.EndedOnExisting );
-		Assert.IsFalse( tool.IsActive, "ending on an existing path completes it (PATH-003)" );
-		Assert.AreEqual( 5, rig.Grid.Distance( 1, 1, 1, 6 ), "the new line joins (1, 1) to the old path" );
+		Assert.IsFalse( tool.IsActive, "ending on an existing path completes it (tp.exe end flag 0x5345ad)" );
+		Assert.AreEqual( 4, rig.Grid.Distance( 1, 2, 1, 6 ), "the new line joins (1, 2) to the old path" );
 	}
 
 	[TestMethod]
@@ -644,16 +646,22 @@ public class PathBuilderTests
 		CollectionAssert.AreEqual( new[] { (2, 1), (2, 2) }, ghost.Built.ToArray() );
 		Assert.AreEqual( (2, 3), ghost.StoppedAt );
 		Assert.AreEqual( 0, grid.QueueCellCount, "the preview writes nothing" );
-		var commit = tool.Click( (2, 6) )!;
-		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
-		Assert.AreEqual( ghost.StoppedAt, commit.StoppedAt );
+		// A click on that refused ghost ends the tool and lays nothing (tp.exe 0x524a63).
+		var refused = tool.Click( (2, 6) )!;
+		Assert.AreEqual( ghost.StoppedAt, refused.StoppedAt );
+		Assert.IsFalse( tool.IsActive );
+		Assert.AreEqual( 0, grid.QueueCellCount );
 
 		// The length limit counts the ghost's own cells.
 		(grid, ride) = QueueRig( 40 );
 		tool.Enter( QueueWriter( grid, ride ), (2, 1) );
 		ghost = tool.Hover( (2, 35) )!;
 		Assert.AreEqual( QueuePaths.MaximumCells, ghost.Built.Count );
-		commit = tool.Click( (2, 35) )!;
+		Assert.IsFalse( ghost.Completed, "the cell past the limit is refused" );
+		Assert.IsFalse( tool.Click( (2, 35) )!.Completed );
+		Assert.AreEqual( 0, grid.QueueCellCount, "a refused ghost lays nothing" );
+		tool.Enter( QueueWriter( grid, ride ), (2, 1) );
+		var commit = tool.Click( (2, 1 + QueuePaths.MaximumCells - 1) )!;
 		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
 		Assert.AreEqual( QueuePaths.MaximumCells, ride.QueueSizeInCells );
 
@@ -666,17 +674,41 @@ public class PathBuilderTests
 		ghost = tool.Hover( (2, 8) )!;
 		Assert.AreEqual( 3, ghost.Built.Count );
 		Assert.AreEqual( CellBuildResult.NotEnoughMoney, ghost.StoppedBy );
-		commit = tool.Click( (2, 8) )!;
-		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
+		// The ghost refuses the line, so the click lays and spends nothing.
+		Assert.IsFalse( tool.Click( (2, 8) )!.Completed );
+		Assert.AreEqual( 0, grid.QueueCellCount );
+		Assert.AreEqual( 4 * cost - 1, economy.Balance );
+		// A line the balance covers is laid and spent cell by cell.
+		tool.Enter( QueueWriter( grid, ride, economy: economy ), (2, 1) );
+		commit = tool.Click( (2, 3) )!;
+		Assert.AreEqual( 3, commit.Built.Count );
 		Assert.AreEqual( cost - 1, economy.Balance );
+	}
+
+	[TestMethod]
+	public void AQueueLineEndingOnItsOwnQueueEndsTheTool()
+	{
+		// tp.exe 0x5345a1: the commit raises the end flag for a last cell of type 1 or 3, any queue included, so the
+		// pass 0x81 (0x527517) ends the tool; OpenTPW used to continue when the cell was this ride's own queue.
+		var (grid, ride) = QueueRig( 12 );
+		var tool = new CellBuildTool();
+		tool.Enter( QueueWriter( grid, ride ), (2, 1) );
+		var line = tool.Click( (2, 4) )!;
+		Assert.IsTrue( line.Completed );
+		Assert.AreEqual( (2, 4), tool.Start, "a line ending on grass continues from its end" );
+		ride.RecomputeQueue( grid );
+		var back = tool.Click( (2, 2) )!;
+		Assert.IsTrue( back.EndedOnExisting, "the last cell is this ride's own queue cell" );
+		Assert.IsFalse( tool.IsActive );
+		Assert.AreEqual( 4, ride.QueueSizeInCells );
 	}
 
 	[TestMethod]
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		// PATH-UNDO (002), PATH-LEDGER (010) and PATH-CANCEL (011) are retired: traced in tp.exe and matched.
-		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-ENDFLAG", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-ENDREFUSE", "PATH-PAUSE", "PATH-VARIANT", "QUEUE-TEXTURES" }, names );
-		CollectionAssert.AreEqual( new[] { 1, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		// PATH-UNDO (002), PATH-ENDFLAG (003), PATH-LEDGER (010), PATH-CANCEL (011) and PATH-ENDREFUSE (012) are retired: traced in tp.exe and matched.
+		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-PAUSE", "PATH-VARIANT", "QUEUE-TEXTURES" }, names );
+		CollectionAssert.AreEqual( new[] { 1, 4, 5, 6, 7, 8, 9, 13, 14, 15 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

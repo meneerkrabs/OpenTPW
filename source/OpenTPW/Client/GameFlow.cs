@@ -786,7 +786,7 @@ internal sealed partial class GameFlow : IDisposable
 			cityScene = null;
 			cityKey = key;
 			// [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter
-			// [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry
+			// [BIN:TPW-EXE:0x005E27B0 city islands] each entry calls 0x005E3210 with the name its theme id (+0x4c) has in the server's theme list (0x005BD270), the entry and the running counter: 0x005E3210 reads that theme's island file and its ISLAND line, whose slot the counter replaces when it is not negative (0x005E3363), so each park stands as its theme's island at its list position
 			// A park of an unknown theme leaves its slot empty.
 			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
 			try

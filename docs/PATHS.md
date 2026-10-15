@@ -38,9 +38,11 @@ Per cell, in this order (`ParkPathBuilder.Validate`):
 Writing a cell stores the type, links it to every cardinal path neighbour on
 both sides (PATH-004) and spends `Costs.PathCell` (20 in `Standard.sam`) as
 other costs (tp.exe `0x534879`: Spend adds it to the total costs, shown as
-total costs minus staff costs). There is no batch purchase. Without a park economy
-paths are free (PATH-009). A refused cell stops the line; earlier cells stay
-built and charged.
+total costs minus staff costs). There is no batch purchase. A played park always
+pays: the original's debit skips only while the layout replay of a visited online park
+runs (bank `mWithdrawalsEnabled`, tp.exe `0x404140`), and only a builder without a park
+economy is free here. A refused cell stops the line; earlier cells stay built and
+charged.
 
 Removal is `ClearCell`'s forced path case (the original's area-clear tool,
 tp.exe `0x52bdd0`): links cleared on both sides, no refund. A `NoModify` cell that still has linked neighbours stays; without
@@ -139,7 +141,6 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types and ownership |
 | PATH-007 | PATH-LAND | every in-bounds cell is owned; the original's owned land is the fence interior laid by 0x5323f0 from the level outline 0x784e3c |
 | PATH-008 | PATH-CODE8 | path over a queue cell is refused; the original turns a queue end (validator code 8, 0x535d00) into a path cell |
-| PATH-009 | PATH-FREE | free only without a park economy; the free byte (tp.exe 0x8186d4) is set only while modes 4 and 59 place an object |
-| PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause is untraced for clicks |
+| PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause opens a full-screen layer (0x47ed80 → 0x65dd7b) under its panel, whose effect on park clicks is untraced |
 | PATH-014 | PATH-VARIANT | built straights and edges pick `str1`/`str2` and `edg1`/`edg2` by a hash of the cell; the original rolls CRT `rand() & 1` on every recomputation (0x535dd0, 0x53602c) |
 | PATH-015 | QUEUE-TEXTURES | queue cells use `QueueTex` ground textures; the original places queue models (0x5229e0, `quedead`..`quebin2.md2`) and no `QueueTex` texture |

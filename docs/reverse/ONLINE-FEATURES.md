@@ -51,7 +51,7 @@ S5 the TPW-SE roadmap).
 
 | Feature | Evidence | OpenTPW status |
 | --- | --- | --- |
-| The city's top 10 parks as lobby islands (one per theme at slot positions), ranked | BIN tp.exe 0x005E23C0 → 0x005E27B0 → 0x005E3210; DATA data:0x50172 (citylob panel) | Done ([APPROX:ONLINE-016] each island takes its park's theme) |
+| The city's top 10 parks as lobby islands (one per theme at slot positions), ranked | BIN tp.exe 0x005E23C0 → 0x005E27B0 → 0x005E3210; DATA data:0x50172 (citylob panel) | Done (each island is its park's theme's island at its list position: 0x005E3210's slot argument is the running counter) |
 | Selected island's rank at the top, name at the bottom (item detail overlay) | STP-PPC 0x101834A0 labels 0x49D9/0x49DA | Done |
 | "Other Parks In <city>": the chart of the parks outside the top 10, five columns | DATA data:0x5137e; UITEXT 446, 292-297 | Done — original composition and columns |
 | Enter this park (download and visit); "Entering…" | DATA data:0x50172 b_entpark; UITEXT 463 | Done (read-only visit) |
@@ -69,7 +69,7 @@ S5 the TPW-SE roadmap).
 | Un-publishing is separate from publishing (a publish removes nothing) | S5 | Done |
 | Every **visit** earns the park's owner **Platinum Tickets**, voting or not; tickets bought ride downloads | S2; MAN p. 62 | Done — the server counts one per recorded visit; Find Parks shows the player's total ([EXT:ONLINE-070]) |
 | Top-parks ranking is by votes | S2 | Done — lists and charts order by votes (then visits, then the earlier published) |
-| Swear words in park names shown as `****` | S2 | Done — the server masks names with its word filter ([APPROX:ONLINE-023]; the list itself is the operator's `swears.txt`, [APPROX:ONLINE-001]) |
+| Swear words in park names shown as `****` | S2 | Done — the server masks names with its word filter, where the original client masked at display (tp.exe 0x5D3230 from the park-name labels) ([APPROX:ONLINE-023]; the list itself is the operator's `swears.txt`, [APPROX:ONLINE-001]) |
 | Votes limited per day; one vote per park per day | DATA CHAT_COMMANDS 131 | Done (`MaximumVotesPerDay`, per-park per-day) |
 | Visited-before / voted-for flags in the details | DATA UITEXT 280/281 | Done (in the park summary the list carries) |
 | Parks built with cheats cannot be published | DATA UITEXT 417 | Missing: OpenTPW has no cheat detection to drive it |
@@ -80,7 +80,7 @@ S5 the TPW-SE roadmap).
 | Feature | Evidence | OpenTPW status |
 | --- | --- | --- |
 | Chat parks joinable from any menu (the satellites); players present together, moving around the park; the server relays movement; teleport | S5; MAN pp. 63, 67-68 ("Left click to walk to destination. Double click to teleport") | Done — movement is relayed to the room with its own rate limit; the view is a flat overhead map of markers [APPROX:ONLINE-019]; teleport is the same click (one speed, no obstacles decoded) |
-| Chat overlay: people-in-park list left with tabs, player buttons under it, message list and text entry at the bottom, action bar at the top | DATA data:0x50b2c (ids 0xc3123-0xc3128) and data:0x50d1a; MAN pp. 67-70 | Done — original composition; which action sat on which original button is not decoded [APPROX:ONLINE-021] |
+| Chat overlay: people-in-park list left with tabs, player buttons under it, message list and text entry at the bottom, action bar at the top | DATA data:0x50b2c (ids 0xc3123-0xc3128) and data:0x50d1a; MAN pp. 67-70 | Done — original composition; the original's buttons carried other actions (list: earmuffs, vote, 0x4A9380; the six-button table is a name popup) [APPROX:ONLINE-021] |
 | Say (default; "broadcast to people in your vicinity", shown "Dan: Hello") | MAN pp. 67-68; CHAT_COMMANDS words | Done — reaches the whole room; the hearing range has no positional effect [APPROX:ONLINE-005] |
 | Tell (private), reply, last | CHAT_COMMANDS; MAN | Done |
 | Shout / eshout; wshout / ushout to every park | CHAT_COMMANDS | Done |

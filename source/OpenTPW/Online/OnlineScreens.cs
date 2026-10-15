@@ -138,7 +138,7 @@ public sealed class OnlineScreens
 	private (UiButton? Find, UiButton Zoom) AddGlobePanel( UiScreen screen, Action back, Action? find )
 	{
 		screen.Add( new UiModelImage { Id = "worldPanel", Model = "worldlob", Bounds = new UiRect( 9, 620, 501, 911 ), Anchor = UiAnchor.BottomLeft } );
-		// [APPROX:ONLINE-011] f_wlobbg as the button background in the panel's second rectangle (33,1057,480,1505), like f_lobbutbg in the island lobby — evidence needed: the table field that names the panel's background model
+		// [BIN:TPW-EXE:0x7596B0 worldlob table] root 90111 (9,620,510,1531): command 1 binds root worldlob, command 2 the root nunupan of f_wlobbg.MD2 and command 3 its region (33,1057,480,1505); the table is built by 0x4C4FB0
 		screen.Add( new UiModelImage { Id = "worldButtons", Model = "f_wlobbg", Bounds = new UiRect( 33, 1057, 447, 448 ), Anchor = UiAnchor.BottomLeft } );
 		UiButton PanelButton( string id, string model, float x0, float y0, float x1, float y1, int help, Action clicked ) => screen.Add( new UiButton
 		{
@@ -173,7 +173,7 @@ public sealed class OnlineScreens
 		}
 		var screen = new CityLobbyScreen( city );
 		screen.Add( new UiModelImage { Id = "cityPanel", Model = "citylob", Bounds = new UiRect( 28, 541, 448, 980 ), Anchor = UiAnchor.BottomLeft } );
-		// [APPROX:ONLINE-015] f_lobbutbg as the button background in the panel's second rectangle (67,1273,438,1484), as in the island lobby — evidence needed: the table field that names it
+		// [BIN:TPW-EXE:0x757D88 citylob table] root 18900 (28,541,476,1521): command 1 binds root citylob, command 2 the root lobbutbg of f_lobbutbg.MD2 and command 3 its region (67,1273,438,1484)
 		screen.Add( new UiModelImage { Id = "cityButtons", Model = "f_lobbutbg", Bounds = new UiRect( 67, 1273, 371, 211 ), Anchor = UiAnchor.BottomLeft } );
 		UiButton PanelButton( string id, string model, float x0, float y0, float x1, float y1, int help, Action clicked ) => screen.Add( new UiButton
 		{
@@ -1020,8 +1020,16 @@ public sealed class OnlineScreens
 	/// positions in the chat park view. The top action bar (data:0x50d1a, six buttons at their authored places)
 	/// carries the manual's chat actions.
 	/// </summary>
-	// [APPROX:ONLINE-021] which action each original button carried is not decoded: the bar is vote, earmuffs,
-	// postcards, goto, page, locate; the list buttons are buddy, ignore, blackmark (manual pp. 67-70 names them all)
+	// [APPROX:ONLINE-021] the buttons do not carry the original's actions: tp.exe's list handler 0x4BE820 gives 799016
+	// (346,1357) earmuffs on/off by its toggle state (command 0xC, 0x4EBEE0/0x4EBEF0), 799017 (187,1357) vote (command
+	// 0x15, 0x4EB300, then disables itself) and 799018 (29,1357) the shared handler 0x4A9380; the six-button table
+	// 6024-6031 (data:0x50D1A, tp.exe 0x758CD8) is not a top bar but the popup a name in the list opens (event 0x402,
+	// 0x4BE290, placed at the cursor by 0x4BF370) when bit 0 of its list flags is set: 6026 blackmark (command 0xE),
+	// 6027 goto (0x13), 6028 ignore on/off (0xD), 6029 remove buddy (0xF), 6030 locate (0x14), 6031 page (0x11)
+	// (dispatch 0x4BEDE0); otherwise the four-button popup 12290 (data:0x50E56, tp.exe 0x758E18) opens: 12292
+	// blackmark, 12293 goto, 12294 ignore on/off, 12295 add buddy; here the six are a fixed top bar (vote, earmuffs,
+	// postcards, goto, page, locate) and the list buttons buddy, ignore, blackmark — evidence needed: what 0x4A9380
+	// does (also control 100's handler in 0x498AD0) and what bit 0 of a list entry's flags marks
 	public void ShowChat()
 	{
 		if ( Session.Chat == null && Session.IsLoggedIn )

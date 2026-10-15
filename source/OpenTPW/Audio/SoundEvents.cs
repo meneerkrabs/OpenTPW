@@ -114,10 +114,11 @@ public sealed class SoundEventSystem
 			{
 				placements.Remove( placement );
 				if ( placement.Voice is { } started )
-					oneShots.Add( (started, placement.Priority) );
+					oneShots.Add( (started, placement.Priority, placement.Flags) );
 			}
 		}
 		oneShots.RemoveAll( entry => entry.Voice.IsFinished );
+		StopVoicesOutOfRange();
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
 		sentences.RemoveAll( sentence => sentence.IsStopped );
@@ -138,6 +139,25 @@ public sealed class SoundEventSystem
 			}
 		}
 		chains.RemoveAll( chain => chain.IsStopped );
+	}
+
+	/// <summary>The event flag that makes a voice audible at any distance (voice flag 8 of the original, set by 0x6bbe90 from the event's 0x200).</summary>
+	internal const ushort AnyDistanceFlag = 0x200;
+
+	/// <summary>
+	/// A voice out of the listener's range whose event lacks <see cref="AnyDistanceFlag"/> has its sample stopped, for every voice type: one-shots here,
+	/// sentences in <see cref="SoundSentence.Pump"/>, held chains by no longer starting children. Looping voices keep advancing silently (see below).
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bca10 audibility test] a voice whose range² is below the ground distance and whose +0x30 bit 8 is clear goes to 0x6bca70, which sets +0x30 |= 0x800 and, for a playing voice with a sample, posts the type-3 message (vtable 0x70a2d0) to the mixer manager; in range, or with flag 8, it clears 0x800 and only updates the playing sample's 3D parameters (0x6bba90)
+	// [BIN:TPW-EXE:0x6b8d60 type-3 handler] the message looks the sample handle up in the manager's slot table (0x8c bytes each, 0x6bab50) and runs 0x6b7e60 -> 0x6bb7c0 on the slot: stop the wave (vf+0x2c), release it, clear the slot's playing bit; the same message and handler serve the muted-group case (0x6bc760), which also clears the voice's handle at +0x24, and 0x6ba390 runs 0x6bb7c0 over every slot to stop all
+	// [BIN:TPW-EXE:0x6bbe90 voice flags from the event] the event's flag 0x200 becomes voice flag 8 (any distance), 0x8 becomes 6 (loops, with 0x4 clear of the expiry test), 0x4 becomes 2
+	// [DATA:global/sound,levels/*/Sound cat_*SFX.map] 0x200 is set on the crowd sentence (kids 91), music, speech and most UI events, never on a chain, a scream, a ride or staff sound
+	// [APPROX:AUDIO-038] looping voices are not stopped: the range test also reaches them in the original, but nothing read restarts a looped sample after the listener returns, and tp.exe's waterfall evidently resumes, so the restart path is unknown
+	private void StopVoicesOutOfRange()
+	{
+		foreach ( var (voice, _, flags) in oneShots )
+			if ( !voice.Loops && voice.Position != null && voice.Range > 0 && (flags & AnyDistanceFlag) == 0 && !Audible( voice.Position, voice.Range ) )
+				voice.Stop();
 	}
 
 	/// <summary>The voices the sound manager updates per tick (tp.exe <c>0x6b8380</c> passes 12 to the pool set-up <c>0x6b6050</c>).</summary>
@@ -177,7 +197,10 @@ public sealed class SoundEventSystem
 	internal static bool Audible( Vector3? position, float range ) =>
 		position is not { } place || range <= 0 || GroundDistanceSquared( place ) <= range * range;
 
-	private readonly List<(AudioVoice Voice, uint Priority)> oneShots = new();
+	/// <summary>Whether the pool admits a voice: audible, or flagged audible at any distance (0x6bca10, flag 8 at 0x6bca44).</summary>
+	internal static bool Admitted( Vector3? position, float range, ushort flags ) => (flags & AnyDistanceFlag) != 0 || Audible( position, range );
+
+	private readonly List<(AudioVoice Voice, uint Priority, ushort Flags)> oneShots = new();
 	private readonly List<(object Voice, uint Rank)> poolCandidates = new();
 	private readonly HashSet<SoundChain> pooledChains = new();
 	private static readonly Comparison<(object Voice, uint Rank)> ByRankDescending = ( a, b ) => b.Rank.CompareTo( a.Rank );
@@ -187,7 +210,7 @@ public sealed class SoundEventSystem
 	/// starts no new child; the children it already started play out.
 	/// </summary>
 	// [BIN:TPW-EXE:0x6b62b0 sound manager tick] only the voices in the pool of 12 are ticked; the pool is rebuilt every tick (0x6b6ba0), a voice is admitted (0x6b6bc0) only while audible (0x6bca10: the listener within the voice's range, the map sound's float +34, over the ground) and ranked by the dword priority:distance of 0x6bb9f0; a held chain's next child, its first included, is made in its tick (0x6bdae0 → 0x6bdb50 → 0x6bdbb0)
-	// [APPROX:AUDIO-038] the pool ranks the held chains with the running sentences, placed sounds and one-shots started through this system, but only the chains are held back: OpenTPW's sentences and one-shots always play; the voice flag 8 that admits a voice whatever its distance (0x6bca44) and the admission's order among equal ranks are not modelled
+	// [EXT:voice-pool-order] the pool ranks the held chains with the running sentences, placed sounds and one-shots started through this system; the admission's order among equal ranks (0x6b6bc0) is not modelled, and a voice with the any-distance flag is admitted whatever its distance (0x6bca44)
 	private void SelectPooledChains()
 	{
 		pooledChains.Clear();
@@ -195,16 +218,16 @@ public sealed class SoundEventSystem
 			return;
 		poolCandidates.Clear();
 		foreach ( var sentence in sentences )
-			if ( !sentence.IsStopped && Audible( sentence.Position, sentence.Range ) )
+			if ( !sentence.IsStopped && Admitted( sentence.Position, sentence.Range, sentence.Event.Flags ) )
 				poolCandidates.Add( (sentence, PoolRank( sentence.Event.Priority, sentence.Position )) );
 		foreach ( var placement in placements )
-			if ( Audible( placement.Position, placement.Range ) )
+			if ( Admitted( placement.Position, placement.Range, placement.Flags ) )
 				poolCandidates.Add( (placement, PoolRank( placement.Priority, placement.Position )) );
-		foreach ( var (voice, priority) in oneShots )
-			if ( !voice.IsFinished && Audible( voice.Position, voice.Range ) )
+		foreach ( var (voice, priority, flags) in oneShots )
+			if ( !voice.IsFinished && Admitted( voice.Position, voice.Range, flags ) )
 				poolCandidates.Add( (voice, PoolRank( priority, voice.Position )) );
 		foreach ( var chain in chains )
-			if ( !chain.IsStopped && Audible( chain.Position, chain.Range ) )
+			if ( !chain.IsStopped && Admitted( chain.Position, chain.Range, chain.Event.Flags ) )
 				poolCandidates.Add( (chain, PoolRank( chain.Event.Priority, chain.Position )) );
 		poolCandidates.Sort( ByRankDescending );
 		for ( var index = 0; index < Math.Min( VoicePool, poolCandidates.Count ); index++ )
@@ -298,6 +321,19 @@ public sealed class SoundEventSystem
 			return low + range * unchecked((byte)parameter) / 100;
 		// [BIN:TPW-EXE:0x6bc090] volume = min + ror13(chooser) % (max - min); an empty range draws nothing (0x6bc11b)
 		return range == 0 ? low : (int)(low + DrawBelow( (uint)range ));
+	}
+
+	/// <summary>
+	/// The pitch step of a playback: the bounds are put in order (signed), then min + r % (max - min), an empty range drawing nothing; the draw follows the volume's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bc170 pitch draw] swaps the signed bytes +0xE/+0xF of the sound record when max < min, range = max - min, and without a parameter-bound pitch slot (the vf+0x40 query for parameter kind 2) draws ror13(chooser) % range + min; 0x6bc410 calls it right after the volume draw (0x6bc090) and hands it to 0x6c5170, unless the placeholder flag 0x10000 fixes the pitch
+	// [BIN:TPW-EXE:0x6bc410 sample start] the order of draws for one playback is sound, sample, volume, pitch, then the delay (0x6bc343)
+	// [DATA:global/sound,levels/*/Sound cat_*SFX.map] 1,343 shipped sounds have no pitch range; the chain, scream and crowd sounds draw 0..6 (steps 0-5 are played), the others signed ranges from -24..36 to -2..0
+	internal int Pitch( SoundEntry sound )
+	{
+		var low = Math.Min( sound.MinimumPitch, sound.MaximumPitch );
+		var range = Math.Abs( sound.MaximumPitch - sound.MinimumPitch );
+		return range == 0 ? low : low + (int)DrawBelow( (uint)range );
 	}
 
 	private bool TryDecoded( SoundCategory category, SoundSample sample, out Mp2Audio? audio )
@@ -439,12 +475,14 @@ public sealed class SoundEventSystem
 		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] pitch (1/8-semitone steps, ratio 2^(sign * (|p| + 1) / 96), drawn min + r % (max - min), tp.exe 0x6bc170 / 0x6d2820), the delay (u16 + r % range, 0x6bc343, unit not read) and reverb (SndReverb.map) are not applied
+		// [APPROX:AUDIO-003] the pitch is applied (Pitch, AudioVoice.SetPitch); the delay of non-chain sounds (u16 + r % range, 0x6bc343) and reverb (SndReverb.map) are not applied, chain delays are milliseconds (video, 2026-10-15)
 		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
 		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 that skips starting in some cases is not read
-		var voice = mixer.Play( audio, channel, Volume( sound ) / 100f );
+		var volume = Volume( sound ) / 100f;
+		var voice = mixer.Play( audio, channel, volume );
+		voice.SetPitch( Pitch( sound ) );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
-		oneShots.Add( (voice, soundEvent.Priority) );
+		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags) );
 		return voice;
 	}
 
@@ -465,9 +503,11 @@ public sealed class SoundEventSystem
 		// [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8
 		// [LEAD:maexah/OpenTPW docs/exe/audio.md "A voice's range" table: bit 0x8 loops the sample, the voice lives on] PC addresses unverifiable (packed exe)
 		// [BIN:TPW-EXE:0x6bc621 loop test] flag 0x8 loops the sample after both the positioned and the fixed branch (see Play)
-		var voice = mixer.Play( audio, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff );
+		var volume = Volume( sound ) / 100f;
+		var voice = mixer.Play( audio, channel, volume, position, range ?? sound.Rolloff );
+		voice.SetPitch( Pitch( sound ) );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
-		oneShots.Add( (voice, soundEvent.Priority) );
+		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags) );
 		return voice;
 	}
 
@@ -487,12 +527,14 @@ public sealed class SoundEventSystem
 		if ( index < 0 )
 			return null;
 		// [BIN:TPW-EXE:0x6bc621 loop test] as in PlayAt: the loop flag 0x8 applies
-		var placed = new PlacedSound( mixer, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
-			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority };
+		var volume = Volume( sound ) / 100f;
+		var pitch = Pitch( sound );
+		var placed = new PlacedSound( mixer, channel, volume, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
+			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, Pitch = pitch };
 		if ( !placed.Pump() )
 			placements.Add( placed );
 		else if ( placed.Voice is { } started )
-			oneShots.Add( (started, soundEvent.Priority) );
+			oneShots.Add( (started, soundEvent.Priority, soundEvent.Flags) );
 		return placed;
 	}
 
@@ -570,6 +612,10 @@ public sealed class PlacedSound
 	internal float Range => range;
 	/// <summary>The event priority, for the voice pool.</summary>
 	internal uint Priority { get; init; }
+	/// <summary>The event flags (0x200: audible at any distance).</summary>
+	internal ushort Flags { get; init; }
+	/// <summary>The pitch step drawn when the sound was placed.</summary>
+	internal int Pitch { get; init; }
 
 	internal PlacedSound( AudioMixer mixer, AudioChannel channel, float volume, Vector3 position, float range, bool loops, Task<Mp2Audio?> decoding )
 	{
@@ -597,6 +643,7 @@ public sealed class PlacedSound
 		else if ( decoding.IsCompletedSuccessfully && decoding.Result is { } audio )
 		{
 			Voice = mixer.Play( audio, channel, volume, position, range );
+			Voice.SetPitch( Pitch );
 			Voice.Loops = loops;
 		}
 		return true;
@@ -713,6 +760,7 @@ public sealed class SoundSentence
 		// [APPROX:AUDIO-036] OpenTPW evaluates density-controlled crowd gain when a segment starts, not on a parameter change inside a playing segment; which slot carries the crowd's parameter 7 is not read
 		var gain = system.Volume( soundEvent.Sounds[sound], ParameterCode, Parameter ) / 100f;
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
+		voice.SetPitch( system.Pitch( soundEvent.Sounds[sound] ) );
 		voice.Completed += _ => OnCompleted();
 		// [EXT:sentence-prefetch] a sentence's next segment is chosen and decoded ahead when the current one starts, so the draw and the parameter are taken one segment early; the original chooses when the current segment's data runs out (sound_shared GetDataChunk 0x10008CC4 -> 0x1001A1F0), but its chooser is the shared clock-seeded one (see Advance), so the draw's timing has no observable rule to match
 		var successor = Successor();
@@ -733,6 +781,17 @@ public sealed class SoundSentence
 	{
 		if ( IsStopped )
 			return;
+		// [BIN:TPW-EXE:0x6b62b0 sound manager tick] a voice out of range is not admitted to the pool (0x6bca10) and so not ticked, and its sample is stopped (0x6bca70, message 3): the sentence stands still until the listener is back, then starts the next segment
+		if ( (soundEvent.Flags & SoundEventSystem.AnyDistanceFlag) == 0 && !SoundEventSystem.Audible( Position, Range ) )
+		{
+			if ( voice is { IsFinished: false } playing )
+			{
+				playing.Stop();
+				voice = null;
+				waiting = true;
+			}
+			return;
+		}
 		if ( waiting && TryPlayNext() )
 			waiting = false;
 	}

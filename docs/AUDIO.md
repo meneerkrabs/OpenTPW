@@ -192,6 +192,18 @@ empty range draw nothing. A sentence does not repeat the sample it just played w
 two. The state is seeded once at static initialisation (`0x72e09c` -> `0x6bb930` -> `0x5f5f10`,
 QueryPerformanceCounter) and is never saved.
 
+**Pitch.** A sample starts (`0x6bc410`) with the volume draw, then the pitch draw (`0x6bc170`): the signed bytes `+0xE`/`+0xF`
+of the sound record are put in order and the step is `min + r % (max - min)` (a placeholder flag `0x10000` fixes it, a
+parameter-bound pitch slot supplies it from the parameter). A non-zero step multiplies the sample rate by a float of the
+tables at `0x782f40` (positive) and `0x783540` (negative, read at `+4 * |step|`), rounded to an integer for the mixer
+(`0x6d2820`); the tables hold 2^((k + 1) / 96), so the index is one step off: step 1 is already +25 cents, step 0 is the only
+unshifted one, and 2^(1/96) is never played. The scream, chain and crowd sounds draw 0..6 (steps 0-5, up to +4.4 %);
+others range from -24..36 to -2..0 steps, and 1,343 shipped sounds have no range. In the video of the original, 141
+playbacks sit on exactly the six ratios of 0..6 (median error 0.00014), not on 2^(1/96) or the maximum. OpenTPW draws and
+applies it in `SoundEventSystem.Pitch` and `AudioVoice.SetPitch` for every one-shot, placed sound, sentence segment and
+chain child; the pitched voice is shorter by its ratio and a sentence's next segment starts when it ends. The chain
+delays are milliseconds (the video shows sub-second gaps and overlapping children).
+
 OpenTPW draws everything from that one chooser (`SoundEventSystem`; the crowd's separate stream and
 AUDIO-035 are retired). The state is seeded from the clock when the sound service starts, but a park
 **reseeds it from its world seed at entry and saves it with the park** (`WorldRandomState.SoundSeed`;
@@ -308,7 +320,7 @@ continuously, as in the original. What limits it is the sound manager: it ticks 
 priority with the ground distance as tie-break (`0x6bb9f0` stores the priority beside `0xFFFF − d²/100`, and the admission `0x6b6bc0`
 compares both as one word), and a scream is audible only while the listener is within its range of 95 sound units (9.5 cells) over
 the ground. Screams have priority 2700, below the crowd (5300) and most ride and ambient sounds, so a busy scene leaves them few places.
-A chain outside the pool or out of range starts no new child, its first included (AUDIO-038). The visitors'
+A chain outside the pool or out of range starts no new child, its first included (AUDIO-038); every other event voice out of range without the any-distance flag (event flag `0x200`: the crowd sentence, music, speech, most UI sounds) has its sample stopped by mixer message 3 (`0x6bca70`), a sentence standing still until the listener returns. The visitors'
 chatter and laughter is the crowd sentence (`cat_kids` 0x5B), a continuous bed at 14–22 % volume while guests are within four cells
 of the camera: its segments have no delay in the data.
 
@@ -529,7 +541,7 @@ implemented yet.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
-| AUDIO-003 | Pitch (1/8-semitone steps, ratio 2^(sign x (\|p\| + 1) / 96), drawn `min + r % (max - min)`; tp.exe `0x6bc170`/`0x6d2820`), delay (u16 + `r % range`, `0x6bc343`, unit not read) and reverb (`SndReverb.map`) are not applied; position is applied only by the positioned playback path | The pitch link to the mixer's frequency wrapper is inferred (same vtable); the delay unit; `SndReverb.map` |
+| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. Not applied: a parameter-bound pitch slot (ride engine loops), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; the parameter-bound pitch slot |
 | AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2) has bit `0x10` (`0x4857cb`); no OpenTPW control plays it | Which original controls are created with style bit `0x10` (the creation sites or UI resources) |
 | AUDIO-008 | The repair family comes from the owner object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; `0x55635f`/`0x551320`); OpenTPW uses band 1 (75) and plays it at the object as the original does | The band word's meaning and source |
 | AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D; the traced 0x1D callers are buy and hire money and limit checks (tp.exe `0x4879d0`, `0x4ac590`, `0x4af500`), no placement-tool site was found | The object-placement refusal cases of the build tool's 0x35-way tool switch (`0x524acd`) |
@@ -549,7 +561,7 @@ implemented yet.
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
 | AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start; the original re-evaluates the playing sample when a parameter in slots 1-3 changes (`0x6bbb80` -> `0x6bbbe0`) | Which slot carries the crowd's parameter 7 |
-| AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) holds back only the held chains (screams); OpenTPW ranks them with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`), but its sentences and one-shots always play | Voices outside the event system, the voice flag 8 (`0x6bca44`), the order among equal ranks, and what happens to a sentence that loses its place |
+| AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`). A voice out of range without the any-distance flag (event flag `0x200`, voice flag 8 at `0x6bca44`) is flagged `0x800` and its sample stopped by mixer message 3 (`0x6bca70` -> handler `0x6b8d60` -> `0x6bb7c0`: stop, release, clear the slot), and it is not ticked; OpenTPW applies this to one-shots, sentences and chains, but not to looping voices | What restarts a looping voice after the listener returns (nothing read does), the order among equal ranks, and voices the mixer plays outside the event system |
 
 ### Register round 2 (October 14)
 

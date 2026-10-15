@@ -15,6 +15,7 @@ public sealed class ListSortMemory
 	public bool StaffDescending { get; set; }
 	/// <summary>The All Attractions list's direction per category tab (rides, shops, sideshows, features; 0x750d5c..0x750d68).</summary>
 	public bool[] AttractionDescending { get; } = new bool[4];
-	/// <summary>The All Visitors list's direction (0x7508bc).</summary>
+	/// <summary>The All Visitors list's sorted column (0-5) and direction (0x7508bc).</summary>
+	public int VisitorColumn { get; set; }
 	public bool VisitorDescending { get; set; }
 }

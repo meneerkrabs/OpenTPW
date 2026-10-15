@@ -95,7 +95,6 @@ public enum OpenTpwText
 	MapExcitementLegend,
 	QueueLength,
 	RidingNow,
-	VisitorThought,
 	SelectInPark,
 	NewPark,
 	ContinueSavedPark,
@@ -305,7 +304,6 @@ public static class SupplementaryStrings
 		[OpenTpwText.MapExcitementLegend] = new[] { "Red: 0; green: 100", "Rød: 0; grøn: 100", "Rood: 0; groen: 100", "Rouge : 0 ; vert : 100", "Rot: 0; grün: 100", "Röd: 0; grön: 100" },
 		[OpenTpwText.QueueLength] = new[] { "In queue:", "I kø:", "In de wachtrij:", "Dans la file :", "In der Warteschlange:", "I kön:" },
 		[OpenTpwText.RidingNow] = new[] { "Riding now:", "Kører nu:", "Rijdt nu:", "En attraction :", "Fährt jetzt:", "Åker nu:" },
-		[OpenTpwText.VisitorThought] = new[] { "Thought:", "Tanke:", "Gedachte:", "Pensée :", "Gedanke:", "Tanke:" },
 		[OpenTpwText.SelectInPark] = new[] { "Select in park", "Vælg i parken", "Kies in het park", "Sélectionner dans le parc", "Im Park auswählen", "Välj i parken" },
 		[OpenTpwText.OpenTpwPage] = new[] { "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW" },
 		// [DATA:video 15:20] the Dutch line is the original's own help text of a tube message; the other five languages are translated from it

@@ -145,17 +145,17 @@ public class GuestTimeInParkTests
 	}
 
 	[TestMethod]
-	public void DisplayMetadataDoesNotChangeGameplayHashesAndUiUsesElapsedWholeSeconds()
+	public void DisplayMetadataDoesNotChangeGameplayHashesAndUiUsesWholeTurnSteps()
 	{
 		var park = Park(); var guest = park.SpawnInPark( 5, 5 );
 		var canonical = Canonical( park ); var gameplay = park.ComputeStateHash();
-		foreach ( var (duration, display) in new (double?, string)[] { (0, "00:00:00"), (3661.9, "01:01:01"), (90061, "25:01:01"), (null, "—") } )
+		// 248 ms turns, whole 4-turn steps of 15000 park seconds, whole hours (tp.exe 0x49326c)
+		foreach ( var (duration, hours) in new (double?, long?)[] { (0, 0), (3661.9, 14764L * 3750 / 3600), (90061, 363148L * 3750 / 3600), (null, null) } )
 		{
 			guest.TimeInParkSeconds = duration;
 			Assert.AreEqual( canonical, Canonical( park ) );
 			Assert.AreEqual( gameplay, park.ComputeStateHash() );
-			var rows = ParkVisitorRoster.StatRows( guest, Array.Empty<string>(), money => money.ToString() );
-			Assert.AreEqual( (UIStrings.TimeInParkVisitor, display), rows[2] );
+			Assert.AreEqual( hours, ParkVisitorRoster.ValuesOf( guest, refreshed: true ).Hours );
 		}
 	}
 }

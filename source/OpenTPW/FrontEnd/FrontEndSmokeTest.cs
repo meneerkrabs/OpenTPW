@@ -649,7 +649,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		} );
 		Do( "visitors wheel", () =>
 		{
-			Require( flow.Hud!.VisitorFirstRow == 0 && flow.Hud.VisitorItems.Count > ParkHud.StaffVisibleRows, "the visitor list starts scrolled to the top" );
+			Require( flow.Hud!.VisitorFirstRow == 0 && flow.Hud.VisitorItems.Count > ParkHud.VisitorVisibleRows, "the visitor list starts scrolled to the top" );
 			flow.InjectedInput = UiInput.Idle( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 650 ), UiAnchor.Center ) ) with { Wheel = -1 };
 		} );
 		Wait( "visitors scrolled", 3 );
@@ -664,7 +664,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "visitors header sorted", () =>
 		{
 			var rows = flow.Hud!.VisitorItems;
-			Require( rows.Count >= ParkHud.StaffVisibleRows && rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderByDescending( id => id ) ),
+			Require( rows.Count >= ParkHud.VisitorVisibleRows && rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderByDescending( id => id ) ),
 				"the first press on the initial column (ascending) lists the visitor numbers backwards" );
 		} );
 		Do( "click a visitor row", () =>
@@ -674,7 +674,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var visible = Math.Min( 3, rows.Count - hud.VisitorFirstRow - 1 );
 			locatedVisitor = rows[hud.VisitorFirstRow + visible];
 			flow.InjectedInput = UiInput.Click( Context.Canvas.Map(
-				new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center ) );
+				new System.Numerics.Vector2( 1240, ParkHud.VisitorRowsTop + (visible + 0.5f) * ParkHud.VisitorRowHeight ), UiAnchor.Center ) );
 		} );
 		Wait( "visitor row selected", 3 );
 		Do( "visitor row selected", () =>

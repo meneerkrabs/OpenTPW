@@ -1,6 +1,7 @@
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
+using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
@@ -105,58 +106,67 @@ public class OverviewWindowTests
 
 	// ---- All Visitors ---------------------------------------------------------------
 
+	private static VisitorRowValues Values( Guest guest ) => ParkVisitorRoster.ValuesOf( guest, refreshed: true );
+
 	[TestMethod]
 	public void VisitorRowsListOnlyInParkGuestsInNumberOrder()
 	{
 		var guests = new[] { At( 9, GuestState.Queueing ), At( 2, GuestState.WalkingAround ), At( 12, GuestState.CrossingRoad ),
 			At( 5, GuestState.Gone ), At( 3, GuestState.Using ), At( 7, GuestState.LeavingPark ) };
-		var rows = ParkVisitorRoster.Rows( guests, IsInPark, byHappiness: false, descending: false );
+		var rows = ParkVisitorRoster.Rows( guests, IsInPark, Values, 0, descending: false );
 		CollectionAssert.AreEqual( new[] { 2, 3, 7, 9 }, rows.Select( guest => guest.Id ).ToArray(),
 			"queueing, riding and leaving visitors are in the park; arrivals and gone guests are not" );
-		CollectionAssert.AreEqual( new[] { 9, 7, 3, 2 }, ParkVisitorRoster.Rows( guests, IsInPark, byHappiness: false, descending: true )
+		CollectionAssert.AreEqual( new[] { 9, 7, 3, 2 }, ParkVisitorRoster.Rows( guests, IsInPark, Values, 0, descending: true )
 			.Select( guest => guest.Id ).ToArray(), "a repeated header press lists the numbers backwards" );
-		Assert.AreEqual( 0, ParkVisitorRoster.Rows( guests, _ => false, false, false ).Count );
+		Assert.AreEqual( 0, ParkVisitorRoster.Rows( guests, _ => false, Values, 0, false ).Count );
 	}
 
 	[TestMethod]
-	public void VisitorStatusAndThoughtComeFromTheOriginalStringTables()
+	public void EveryVisitorColumnSortsByItsRowValue()
 	{
-		var kidStates = new string[16];
-		kidStates[(int)GuestState.WalkingAround] = "Walking around";
-		kidStates[(int)GuestState.Queueing] = "";
-		Assert.AreEqual( "Walking around", ParkVisitorRoster.StatusOf( At( 1, GuestState.WalkingAround ), kidStates ) );
-		Assert.AreEqual( GuestState.Queueing.ToString(), ParkVisitorRoster.StatusOf( At( 1, GuestState.Queueing ), kidStates ),
-			"an empty table entry falls back to the state's name" );
-		Assert.AreEqual( GuestState.Gone.ToString(), ParkVisitorRoster.StatusOf( At( 1, GuestState.Gone ), kidStates ),
-			"state 255 is not a KIDSTATES entry" );
-		var thoughts = new string[18];
-		thoughts[(int)GuestThought.Hungry] = "I am hungry";
-		var hungry = At( 1, thought: GuestThought.Hungry );
-		Assert.AreEqual( "I am hungry", ParkVisitorRoster.ThoughtOf( hungry, thoughts ) );
-		Assert.AreEqual( "", ParkVisitorRoster.ThoughtOf( At( 2 ), thoughts ), "no thought shows nothing" );
-		Assert.AreEqual( "", ParkVisitorRoster.ThoughtOf( hungry, System.Array.Empty<string>() ), "a missing table shows nothing" );
+		var guests = new[] { At( 4, money: 50, rides: 1, happiness: 90, thought: GuestThought.Bored ), At( 6, money: 10, rides: 5, happiness: 20 ),
+			At( 8, money: 30, rides: 3, happiness: 55, thought: GuestThought.Hungry ) };
+		int[] Order( int column ) => ParkVisitorRoster.Rows( guests, IsInPark, Values, column, false ).Select( guest => guest.Id ).ToArray();
+		CollectionAssert.AreEqual( new[] { 6, 8, 4 }, Order( 1 ), "cash remaining" );
+		CollectionAssert.AreEqual( new[] { 4, 8, 6 }, Order( 3 ), "rides ridden" );
+		CollectionAssert.AreEqual( new[] { 8, 4, 6 }, Order( 4 ), "the thought frame, no thought (999) last" );
+		CollectionAssert.AreEqual( new[] { 6, 8, 4 }, Order( 5 ), "happiness" );
+		CollectionAssert.AreEqual( new[] { 4, 6, 8 }, Order( 2 ), "equal times in the park keep the number order" );
 	}
 
 	[TestMethod]
-	public void VisitorDetailShowsTheGuestsOwnLiveValues()
+	public void VisitorRowValuesFollowTheOriginalCells()
 	{
-		var guest = At( 14, GuestState.Queueing, happiness: 61.4f, money: 235, rides: 3, thought: GuestThought.Pleased );
-		var kidStates = new string[16];
-		kidStates[(int)GuestState.Queueing] = "Queuing";
-		var rows = ParkVisitorRoster.StatRows( guest, kidStates, Money );
-		Assert.AreEqual( (UIStrings.CurrentStatus, "Queuing"), rows[0], "selecting a visitor shows that visitor's state" );
-		Assert.AreEqual( (UIStrings.CashRemainingVisitor, "$235"), rows[1], "cash is the guest's simulated money" );
-		Assert.AreEqual( (UIStrings.TimeInParkVisitor, "—"), rows[2], "a visitor without a known admission duration stays unknown" );
-		Assert.AreEqual( (UIStrings.RidesRiddenVisitor, "3"), rows[3], "rides ridden is the guest's own count" );
-		Assert.AreEqual( (UIStrings.HappinessVisitor, "61%"), rows[4] );
-		Assert.AreEqual( 100, ParkVisitorRoster.HappinessPercent( 140 ), "happiness clamps at 100" );
-		Assert.AreEqual( 0, ParkVisitorRoster.HappinessPercent( -10 ), "happiness clamps at 0" );
+		var guest = At( 14, GuestState.Queueing, happiness: 61.9f, money: 235, rides: 3, thought: GuestThought.Pleased );
+		var values = Values( guest );
+		Assert.AreEqual( (14, 235, (long?)null, 3), (values.Number, values.Cash, values.Hours, values.Rides), "number, cash, unknown time, rides" );
+		Assert.AreEqual( (int)GuestThought.Pleased - 1, values.ThoughtFrame, "the ti_hungry frame is the thought - 1" );
+		Assert.AreEqual( 61 * 1024 / 100, values.HappinessGauge, "the truncated happiness byte on the 1024 scale" );
+		Assert.AreEqual( -1, Values( At( 2 ) ).ThoughtFrame, "no thought, no icon" );
+		Assert.AreEqual( ParkVisitorRoster.NoThought, Values( At( 2 ) ).SortKey( 4 ) );
+		Assert.AreEqual( (300 & 0xff) * 1024 / 100, Values( At( 3, happiness: 300 ) ).HappinessGauge, "only the low byte counts" );
+	}
+
+	[TestMethod]
+	public void TimeInParkShowsHoursThenDays()
+	{
+		Assert.AreEqual( 0L, ParkVisitorRoster.DisplayHours( 3, refreshed: true ), "fewer than four turns are no whole step" );
+		Assert.AreEqual( 4 * 3750 / 3600, ParkVisitorRoster.DisplayHours( 7, refreshed: true ), "one 4-turn step is 15000 park seconds" );
+		Assert.AreEqual( 100L * 4 * 3750 / 3600, ParkVisitorRoster.DisplayHours( 403, refreshed: true ) );
+		Assert.AreEqual( 100L * 3750 / 3600, ParkVisitorRoster.DisplayHours( 403, refreshed: false ), "a new row shows a quarter until the refresh (0x493800 without << 2)" );
+		Assert.AreEqual( (UiTextRecord.Hours, 24L), (ParkVisitorRoster.DurationRecord( 24 ), ParkVisitorRoster.DurationValue( 24 )) );
+		Assert.AreEqual( (UiTextRecord.Day, 1L), (ParkVisitorRoster.DurationRecord( 25 ), ParkVisitorRoster.DurationValue( 25 )) );
+		Assert.AreEqual( (UiTextRecord.Day, 2L), (ParkVisitorRoster.DurationRecord( 48 ), ParkVisitorRoster.DurationValue( 48 )), "48 hours read \"2 day\"" );
+		Assert.AreEqual( (UiTextRecord.Days, 2L), (ParkVisitorRoster.DurationRecord( 49 ), ParkVisitorRoster.DurationValue( 49 )) );
+		var guest = At( 1 );
+		guest.TimeInParkSeconds = 59.99;
+		Assert.AreEqual( 240L * 3750 / 3600, Values( guest ).Hours, "241 turns of 248 ms, 60 whole steps" );
 	}
 
 	[TestMethod]
 	public void VisitorSelectionHealsWhenTheSelectedGuestLeaves()
 	{
-		var rows = ParkVisitorRoster.Rows( new[] { At( 3 ), At( 8 ), At( 11 ) }, IsInPark, false, false );
+		var rows = ParkVisitorRoster.Rows( new[] { At( 3 ), At( 8 ), At( 11 ) }, IsInPark, Values, 0, false );
 		Assert.AreEqual( 8, ParkVisitorRoster.HealedSelection( rows, 8 ), "a visitor still in the park keeps the selection" );
 		var remaining = rows.Where( guest => guest.Id != 8 ).ToArray();
 		Assert.AreEqual( 3, ParkVisitorRoster.HealedSelection( remaining, 8 ), "a left visitor hands the selection to the first row" );

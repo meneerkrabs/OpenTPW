@@ -234,3 +234,95 @@ public class StaffWindowTests
 		Assert.IsFalse( hud.EmployeeWindowOpen );
 	}
 }
+
+/// <summary>The All Visitors window from tp.exe's table 0x7506c8.</summary>
+[TestClass]
+[DoNotParallelize]
+public class VisitorsWindowTests
+{
+	private static void Set( object o, string field, object? value ) => o.GetType().GetField( field, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( o, value );
+
+	private static ParkHud Hud( params Guest[] guests )
+	{
+		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
+		Set( simulation, "guests", guests.ToList() );
+		return hud;
+	}
+
+	private static Guest Visitor( int id, int money = 20, float happiness = 50, double? seconds = 0 ) =>
+		new( id, 0 ) { State = GuestState.WalkingAround, Money = money, Happiness = happiness, TimeInParkSeconds = seconds };
+
+	private static UiContext Context( float delta ) => new( OriginalUiTests.FakeStrings(), null!, new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) ) { Delta = delta };
+
+	[TestMethod]
+	public void TheWindowsControlsComeFromTheTable()
+	{
+		var hud = Hud( Visitor( 1 ) );
+		hud.OpenVisitorWindow();
+		var screen = hud.Stack.Top!;
+		var table = OriginalLayoutTables.VisitorsWindow;
+		Assert.AreEqual( "visitors", screen.Name );
+		Assert.AreEqual( table.Root.Rect, screen.Find( "window" )!.Bounds );
+		Assert.AreEqual( table.Control( 0x1E498 ).Rect, screen.Find( "title" )!.Bounds );
+		Assert.AreEqual( new UiRect( 294, 315, 1426, 599 ), screen.Find( "visitorList" )!.Bounds, "the list's inner rectangle" );
+		Assert.AreEqual( 56f, ParkHud.VisitorRowHeight, "the row template's height 0x38" );
+		Assert.AreEqual( 10, ParkHud.VisitorVisibleRows );
+		var headers = new[] { "headerNumber", "headerCash", "headerTime", "headerRides", "headerThought", "headerHappiness" };
+		for ( var column = 0; column < headers.Length; column++ )
+		{
+			var header = screen.Find( headers[column] )!;
+			Assert.AreEqual( table.Control( (uint)(0x10 + column) ).Rect, header.Bounds, headers[column] );
+			Assert.AreEqual( $"help{129 + column}", header.CurrentHelp, "help 0x81-0x86" );
+		}
+		foreach ( var (id, model) in new[] { ("exit", "b_okay"), ("parkInfo", "b_pkinfo"), ("allStaff", "b_allstaff"), ("allAttractions", "b_allthings") } )
+		{
+			var button = (UiButton)screen.Find( id )!;
+			Assert.AreEqual( model, button.Model, id );
+			Assert.AreEqual( table.Model( model ).Rect, button.Bounds, id );
+			Assert.AreEqual( $"help{table.Model( model ).Help}", button.CurrentHelp, id );
+		}
+	}
+
+	[TestMethod]
+	public void AHeaderPressSortsByItsColumn()
+	{
+		var hud = Hud( Visitor( 1, money: 90 ), Visitor( 2, money: 10 ), Visitor( 3, money: 50 ) );
+		hud.OpenVisitorWindow();
+		CollectionAssert.AreEqual( new[] { 1, 2, 3 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "sort word 1: number ascending" );
+		hud.Stack.Top!.Find( "headerCash" )!.Activate();
+		CollectionAssert.AreEqual( new[] { 2, 3, 1 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "a new column starts ascending" );
+		hud.Stack.Top!.Find( "headerCash" )!.Activate();
+		CollectionAssert.AreEqual( new[] { 1, 3, 2 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "the same column reverses" );
+		Assert.AreEqual( (1, true), hud.VisitorSort );
+	}
+
+	[TestMethod]
+	public void NewRowsShowAQuarterOfTheTimeUntilTheTwoSecondRefresh()
+	{
+		var guest = Visitor( 1, seconds: 400 * 0.248 + 0.01 );
+		var hud = Hud( guest );
+		hud.OpenVisitorWindow();
+		var values = (VisitorRowValues)typeof( ParkHud ).GetMethod( "VisitorValuesOf", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( hud, new object[] { guest } )!;
+		Assert.AreEqual( 100L * 3750 / 3600, values.Hours, "0x493800 adds the row with (turns >> 2) turns" );
+		hud.Stack.Top!.Update( Context( 1.9f ), UiInput.Idle( System.Numerics.Vector2.Zero ) );
+		guest.Money = 5;
+		hud.Stack.Top!.Update( Context( 0.2f ), UiInput.Idle( System.Numerics.Vector2.Zero ) );
+		values = (VisitorRowValues)typeof( ParkHud ).GetMethod( "VisitorValuesOf", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( hud, new object[] { guest } )!;
+		Assert.AreEqual( 400L * 3750 / 3600, values.Hours, "timer 0x80083 rewrites the cells with the whole 4-turn steps" );
+		Assert.AreEqual( 5, values.Cash );
+	}
+
+	[TestMethod]
+	public void TheNavigationButtonsReplaceTheWindow()
+	{
+		var hud = Hud( Visitor( 1 ) );
+		hud.OpenVisitorWindow();
+		hud.Stack.Top!.Find( "allStaff" )!.Activate();
+		Assert.IsFalse( hud.VisitorWindowOpen );
+		Assert.IsTrue( hud.StaffWindowOpen && hud.ShowingEmployedStaff, "b_allstaff opens the staff list (0x496620)" );
+		hud.CloseStaffWindow();
+		hud.OpenVisitorWindow();
+		hud.Stack.Top!.Find( "exit" )!.Activate();
+		Assert.IsFalse( hud.VisitorWindowOpen, "the tick (-2) closes it" );
+	}
+}

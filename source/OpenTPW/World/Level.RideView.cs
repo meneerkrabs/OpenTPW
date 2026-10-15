@@ -7,6 +7,9 @@ public partial class Level
 
 	private CameraMode? parkCameraBeforeRide;
 
+	/// <summary>True while the ride view is open: the original's camcorder hides every interface layer but the viewfinder, the eject button and the advisor ([DATA:video 77:09-77:24]).</summary>
+	public bool HidesInterface => RideView != null;
+
 	/// <summary>
 	/// Enters the ride view of a placed ride from the park camera: the original's "Ride it!" (ride window,
 	/// <c>gui_CameraFlags</c> 4; maexah/OpenTPW hud.md, "Four ways out of camcorder mode"). False when the ride

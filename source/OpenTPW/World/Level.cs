@@ -615,7 +615,8 @@ public partial class Level : IDisposable
 
 	private void DrawTextOverlay()
 	{
-		if ( ShowDeveloperPanels )
+		// the ride view hides the whole HUD, the developer panels included (the camcorder shows only the viewfinder, the eject button and the advisor)
+		if ( ShowDeveloperPanels && !HidesInterface )
 			TextOverlay.Draw();
 	}
 
@@ -629,9 +630,9 @@ public partial class Level : IDisposable
 		if ( RideView?.Ride.IsDeleted == true )
 			ExitRideView();
 		Camera.Update();
-		if ( ShowDeveloperPanels )
+		if ( ShowDeveloperPanels && !HidesInterface )
 			parkLayout.Draw();
-		if ( ShowDeveloperPanels )
+		if ( ShowDeveloperPanels && !HidesInterface )
 		{
 			onlinePanel ??= new OnlinePanel( this, onlineFolders );
 			onlinePanel.Draw();

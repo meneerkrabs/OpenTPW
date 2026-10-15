@@ -6,6 +6,62 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Coaster trains and pylons from tp.exe (October 15, 2026)
+
+- **Trains** are laid out around their middle car, (n − 1) >> 1, from the last car forward, placed after each rating pass with the release
+  time as their spacing (`0x43c450`, `0x43c1f0`), and run at the mean speed of the samples under their cars; the hops queue by remaining
+  budget, the middle car giving the hop and the front car braking (`0x43ced8`; COAST-022 retired). The ride view and camera follow the
+  front car.
+- **Seats** are only in the centre-type cars (`0x43ba90`); COAST 6 bounds the capacity by the fleet's and the train's head counts, a head
+  being a dummy record with flag `0x80` (`0x43b330`, `0x44b2b0`; COAST-023 retired). The Caterpillar has 16 heads, not 12.
+- **Pylons** play all five clips (loft, rotate, incline, bank, loop tilt; `0x430ca0`, `0x430ed0`) through their clip maps, with each dummy
+  record on its own node (`0x44ab90`); the station ends take the auto bank (`0x4310c8`). Cars stand on the curve at their knot-pair
+  parameter (`0x43c0a0` → `0x43e6b0`) and riders sit on the PC head sockets (COAST-015, -017, -033 and -034 narrowed).
+- Saves gain two optional fields (a train's reference car, the ride's lead-car coordinate); older saves convert from the front car.
+
+## Economy rules settled against tp.exe, part two (October 15, 2026)
+
+Sixteen more economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **A new park starts closed** (`0x51562d` writes the closed flag): only the gate button, the two keys and the online park creation open it
+  (`0x519ef0`), and only an imported park saved open is open on load (ECON-031 retired). The M3/M4 gate runs open their park explicitly.
+- **Challenges:** a won challenge with a follow-up marks the follow-up won, so the challenge can be offered again (`0x4d2fb0` re-reads the
+  index the offer moved); declining a follow-up that is not Independent pays half its prize (`0x4d2ec0`); the follow-up is the first open
+  slot of its type in table order (`0x4d2b60`, no same-object preference); type 18 is the best coaster's counted sections with no floor
+  (`0x4d1873`, ECON-036 retired); types 14 and 19 read the coasters' counted sections and type 22 counts ride uses (ECON-034, -035, -055
+  narrowed).
+- **Fixed items** are the objects whose WhichUIType is 4, as the buy menu tests (`0x4aaff0`; ECON-041 retired; the same six per theme), and
+  a repairing mechanic cannot be picked up (`0x505bee` refuses state 13; ECON-052 narrowed).
+- ECON-040 (one golden key once, `0x5afc30`), ECON-051 (the withdrawals flag) and ECON-053 (a carried member is put down where he was
+  before a save, `0x46cdc0`) are retired; ECON-038, -044, -048, -049, -050 and -054 are narrowed.
+
+## Guest rules settled against tp.exe (October 15, 2026)
+
+Sixteen guest approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Prices against RipOffOK** (`0x4d3e00`, key 42 of the table at `0x7456e8`): each shop or sideshow type's own RipOffOK now sets how far
+  above the fair price a guest still pays (100 for shops, 250 for sideshows in the shipped data, so up to 2× and 3.5×); a noticeable
+  balance change (GUEST-003 narrowed).
+- **A full queue costs nothing** (`0x4ffbc0`): a guest finding no room records the event and walks on, with no thought and no happiness
+  loss, and a queue that is too long no longer costs happiness either (GUEST-004 narrowed).
+- **Newest attraction first** (`0x4fcb10`, `0x519d80` pushes at the head): the choice walks the objects newest first, which decides ties
+  (GUEST-002 narrowed).
+- **The use routine's other terms** (`0x4fe1e0`): the small-portion penalty, scaled happiness, fat, salt and ice from the ingredients and
+  the toilet speed term (GUEST-005 narrowed).
+- **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
+  determinism hash is now `0xD28386DACAD73241`.
+
+## Queue exits as in tp.exe (October 15, 2026)
+
+- **A closed ride drains its queue one head per turn** (`0x4e1220` → `0x4e0450`): the others keep waiting, a closed ride that breaks down
+  sends away two that turn (`0x4e0e60`), and joins and the walk to a ride no longer test the open word or the broken state, as the
+  original's join `0x4ffbc0` does not (QUEUE-018 retired; the choice still skips closed rides). A guest at its place in a coaster's queue
+  leaves with thought 13 while the track refuses guests (`0x500612`; COAST-024 narrowed).
+- **Every queue exit but a removed ride costs the medium happiness drop** (the dismissal `0x5012f0`, `0x4fea70(1)`): feeling sick, bored,
+  unhappy, needing the toilet, a failed move-up, a queue edit or a refused price alike; a water ride with a broken circuit is only
+  skipped by the choice, its queue stays (`0x500612` tests coasters and kart tracks). The "problem with a queue" exit (`0x500270`) thinks nothing, and a toilet above 80
+  thinks "need toilet" before the relief test (`0x5003aa`).
+
 ## Economy rules settled against tp.exe, part one (October 15, 2026)
 
 Seventeen economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

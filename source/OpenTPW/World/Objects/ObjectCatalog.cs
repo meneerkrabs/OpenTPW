@@ -138,6 +138,16 @@ public sealed class ObjectCatalogEntry
 	public bool IsBuildable => WhichUIType is >= 0 and <= 3 && !IsFixedItem && !IsTool && Category != ObjectCategory.Upgrade;
 	/// <summary><c>Info.RideTypeStringIndex</c>: ITEMTYPES.str entry (e.g. 12 "Vertical Drop" for the Totem), or null.</summary>
 	public int? RideTypeIndex => Settings.Has( "Info.RideTypeStringIndex" ) ? Settings.GetInt( "Info.RideTypeStringIndex" ) : null;
+	// [BIN:TPW-EXE:0x745020 sam schema] CreateParticleEffect, DestroyParticleEffect, RepairParticleEffect and UpgradeParticleEffect follow each other in the type record (+0x60, +0x64, +0x68, +0x6C, matched by schema order and by role); 0 or an absent key starts nothing
+	// [DATA:<object>.sam:Info.CreateParticleEffect] jungle rides 79/75/51/89, shops 81/77, sideshows and upgrades 80/76, features 82/78 (no repair or upgrade key)
+	/// <summary><c>Info.CreateParticleEffect</c>: the effect started when the object is built (0: none).</summary>
+	public int CreateParticleEffect => Settings.GetInt( "Info.CreateParticleEffect", 0 );
+	/// <summary><c>Info.DestroyParticleEffect</c>: the effect started when the object is demolished (0: none).</summary>
+	public int DestroyParticleEffect => Settings.GetInt( "Info.DestroyParticleEffect", 0 );
+	/// <summary><c>Info.RepairParticleEffect</c>: the effect the script's REPAIREFFECT switches (0: none).</summary>
+	public int RepairParticleEffect => Settings.GetInt( "Info.RepairParticleEffect", 0 );
+	/// <summary><c>Info.UpgradeParticleEffect</c>: the effect started when an upgrade is installed (0: none).</summary>
+	public int UpgradeParticleEffect => Settings.GetInt( "Info.UpgradeParticleEffect", 0 );
 	public int NumSimultaneousAnimations => Math.Max( 1, Settings.GetInt( "UsageInfo.NumSimultAnims", 1 ) );
 	/// <summary>Build cost: <c>Upgrades[0].CostOfUpgrade</c> ("cash cost when buying this item").</summary>
 	// [DATA:<object>.sam:Upgrades[0].CostOfUpgrade]

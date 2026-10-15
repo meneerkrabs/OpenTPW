@@ -124,9 +124,12 @@ class Source(unittest.TestCase):
     def test_breakdown_guards_are_registered(self):
         sources = read(GUESTS / 'GuestSimulation.cs') + read(GUESTS / 'RideVisitorBridge.cs')
         register = read(GUESTS / 'QueueApproximations.cs')
-        for approx in ('QUEUE-018', 'QUEUE-019'):
-            self.assertIn(f'[APPROX:{approx}]', sources)
-            self.assertIn(f'("{approx}",', register)
+        self.assertIn('[APPROX:QUEUE-019]', sources)
+        self.assertIn('("QUEUE-019",', register)
+        # QUEUE-018 is retired: the join reads neither the ride state nor the open word (tp.exe 0x4ffbc0), and a closed ride drains one head per turn.
+        self.assertIn('[BIN:TPW-EXE:0x004FFBC0 state-10 join]', sources)
+        self.assertIn('[BIN:TPW-EXE:0x004E1220 closed ride admission]', sources)
+        self.assertNotIn('("QUEUE-018",', register)
         # QUEUE-017 is retired: the choice applies the counts-test's queue room (tp.exe 0x4dd920).
         self.assertIn('[BIN:TPW-EXE:0x004DD920 counts-test room]', sources)
         self.assertNotIn('("QUEUE-017",', register)

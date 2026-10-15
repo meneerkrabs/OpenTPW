@@ -6,6 +6,19 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Audio, weather and advisor reading round (October 15, 2026)
+
+Thirty-one audio, advisor and compatibility approximations were read again in tp.exe:
+
+- **Weather draws with the original's render states** (decoder `0x567620`): lightning is additive (`0x200d52`, SRCALPHA/ONE, no depth
+  writes), snow writes depth, and all three discard alpha below 16/255; the parallax is absolute (`0x57efd0`); snow is one triangle per
+  flake with a small jitter each frame (`0x8bcbc8` bit `0x100` is never set on PC); the weather's step follows the game speed (`0x57ff60`
+  reads the rate-scaled clock `0x402d70`).
+- **Sounds**: a level event id is looked up in the level's own category only (`0x6b87d0`; incagod.RSE's EVENT 3 id 43 is silent, as in
+  the original), and event and repair sounds start at whole units (`0x5573d0`).
+- ADVISOR-007, AUDIO-011, AUDIO-015, AUDIO-026 and AUDIO-908 are retired, ADVISOR-010's manual tools are an extension
+  (`[EXT:speech-tool-audio-clock]`), and 15 items are narrowed. Items that need QMixer.dll or usp10.dll stay open: only tp.exe is analysed.
+
 ## Interface reading round, part A (October 15, 2026)
 
 Twenty-two interface approximations were read again in tp.exe:

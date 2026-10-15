@@ -37,7 +37,8 @@ internal sealed class SpeechAudioPlayer : IDisposable
 			// [EXT:advisor-no-device-speech] wall clock for the full speech when no audio device opened (--mute and headless runs), where the original shows no speech at all (the rule is fully traced: 0x51BFC0 returns 0 and 0x51C570 returns its preset 1 without the sound system); an optional strict-parity change would use length 1 (budget 501) and no mouth
 			if ( output == null )
 				return clock.Elapsed < duration ? clock.Elapsed : duration;
-			// [APPROX:ADVISOR-010] Lip-sync clock = frames SDL took from its queue; leads the speaker by up to one device buffer (≈46 ms) — evidence needed: original A/V sync source and latency measurement
+			// [BIN:TPW-EXE:0x599880 lip clock] the original compares LIP marks with the advisor timer (0x785970 +0x50 via 0x402D80, a QueryPerformanceCounter/timeGetTime millisecond clock 0x5F5F10) minus its own paused time (0xF79784 while 0x4030C0 reports a pause), from the request - 200 ms (0x599050), never with the mixer position; the automatic advisor does so (Advisor.LipPosition)
+			// [EXT:speech-tool-audio-clock] the manual advisor tools have no advisor clock and drive the mouth from the frames SDL took from its queue, which leads the speaker by up to one device buffer (≈46 ms)
 			return TimeSpan.FromSeconds( (double)output.PlayedFrames / sampleRate );
 		}
 	}

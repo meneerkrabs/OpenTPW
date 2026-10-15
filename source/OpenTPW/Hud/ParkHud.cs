@@ -299,7 +299,8 @@ public sealed partial class ParkHud
 		}
 
 		// [BIN:TPW-EXE:0x755150 object window] the information arm is the original object window: see ParkHud.ObjectWindow.cs
-		// [APPROX:UI-029] b_door down = closed (the original gives help 12 to the down state, 13 to the other), b_erase = delete — evidence needed: which b_door frame the closed state uses
+		// [BIN:TPW-EXE:0x4ad4e0 ride door] the ride window latches b_door (0x668bec, state 5, the down frames) while the ride is closed (+0x68 == 0, 0x4e0440; "Closing" 0x4df300 clears it, "Opening" 0x4df390 sets it), and a latched button shows its second help id (0x669410: 12, open) and the other state the first (13, close); a click (message 0x100) with parameter 1 closes the ride, any other opens it (0x4af858 → 0x48ccf0)
+		// [BIN:TPW-EXE:0x4af8b4 ride erase] b_erase (control 0x3e2b) deletes the ride (0x48cd10), asking first (UITEXT 0x18c) when the Confirmations option [0x78d90f] is on
 		BuildObjectWindow();
 		AddShopPriceButton();
 		AddRideUpgradeButton();

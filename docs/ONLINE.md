@@ -341,7 +341,6 @@ are not claims that the original online protocol or service has been recovered.
 | ID | Assumption | Evidence needed |
 | --- | --- | --- |
 | ONLINE-001 | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. |
-| ONLINE-002 | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. |
 | ONLINE-003 | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. |
 | ONLINE-004 | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. |
 | ONLINE-005 | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. |

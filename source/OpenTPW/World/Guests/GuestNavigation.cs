@@ -106,7 +106,7 @@ public sealed class GuestNavigation
 	/// <summary>Remaining route distance after the last step, −1 right after route setup.</summary>
 	public int PreviousRemaining = -1;
 	/// <summary>Walking off the path grid (the arrival lanes): no walls and every position is accepted.</summary>
-	// [APPROX:WALK-008] guests on the arrival lanes walk off the path grid: no wall force and every position is committed; the original walks them over map cells with the same edge-flag test as anywhere else — evidence needed: the lane cells' edge flags and the +180 mask of a guest outside the park
+	// [APPROX:WALK-008] guests on the arrival lanes walk off the path grid, with no wall force and every position committed; the original walks them like every guest (route search 0x50f8e0, commit 0x510510 and edge test 0x4d8750 with the walk mask), the lane cells being type 0x1e or path from map init 0x536490, so only map-edge, entrance-building, water, ride and queue cells could push or refuse them — still open: lane guests are not walked through the edge test
 	public bool OffGrid;
 	public int Reroutes;
 
@@ -179,7 +179,7 @@ public sealed class GuestNavigation
 	}
 
 	/// <summary>Route setup mode 1 (the stuck reroute): the current cell, then the rest of the route from the current waypoint.</summary>
-	// [APPROX:WALK-004] routes are OpenTPW's cell sequences (one path cell per destination, the queue cells in order) refilled five at a time and rerouted by prepending the current cell to the rest of the route; the original's search 0x101c64 and its refill are not traced beyond the route-store points — evidence needed: 0x101c64 and the +164/+168 bookkeeping
+	// [APPROX:WALK-004] routes are OpenTPW's cell sequences (one Grid.TryStep cell per destination, the queue cells in order, Grid.FindPath for the bin and wander walks) that start at the guest's own cell and are refilled five waypoints at a time from the stored route; the stuck reroute prepends the current cell to the rest; the original searches from the guest's cell at every SetDest (0x510100, setup 0x50f8e0, search 0x511420 = line-and-boundary search 0x511470 plus refinement 0x5108a0), again at each refill (0x50efce) and at the stuck reroute (0x50ee79, mode 1, current cell prepended), and ends the walk when a search fails (+0x60 = +0xb8 = 1, 0x50f945) — still open: the search 0x511470 and refinement 0x5108a0 are not ported
 	private void Reroute()
 	{
 		Reroutes++;
@@ -259,7 +259,7 @@ public sealed class GuestNavigation
 		// (zero counts as positive) within the radius pushes back with 2 x the penetration, perpendicular to the edge. The
 		// edges are tried in the order +x, -x, +y, -y and the first that pushes is the whole force (each branch ends with
 		// b 0xfe5f0: 0xfde78, 0xfdee4, 0xfdf64, 0xfdfe0).
-		// [APPROX:WALK-002] only the edge branch of avoid_walls is modelled; its four diagonal-corner branches (0xfdfe4..0xfe5e0 via 0xfc9e0), tried when no edge pushes, are not — evidence needed: 0xfc9e0 and the corner branches
+		// [APPROX:WALK-002] avoid_walls (tp.exe 0x50e4a0, Mac 0xfdc70) models only its edge branch (the first pushing edge of +x, -x, +y, -y, 2 x the penetration) and takes the cell of the probe; the original takes the cell of the position (0x5104b0 on walk +8/+0xc, 0x50e4eb) and, when no edge pushes, runs one corner block for that cell's corner in the motion quadrant (0x50e75e, 0x50e8b3, 0x50ea07, 0x50eb5e) with the ray test 0x50cc20, which OpenTPW leaves out — still open: the corner branch and the position cell are not ported
 		var probeX = X + VelocityX;
 		var probeY = Y + VelocityY;
 		int wallX = 0, wallY = 0;
@@ -294,7 +294,7 @@ public sealed class GuestNavigation
 		}
 
 		// follow_path (0xfe628).
-		// [APPROX:WALK-007] no map-edit reroute: the original compares the map's block stamp (0xd7e54) with the walk's +72 and reroutes, or sets the failure flag +184, when the map changed under the route (0xfe650..0xfe6f8); OpenTPW walks reroute only on the stuck rule — evidence needed: 0xd7e54, the +72/+184 bookkeeping and the callers that read +184
+		// [APPROX:WALK-007] no map-edit reroute: the original stamps the 16 x 16-cell block of a changed cell with a global counter (0x4d8c50/0x4d8c60, from 0x5346d0, 0x538fc0, 0x5348d0 and 0x4de1f0), and every walk step follow_path (0x50ed10) compares the stamp of the guest's block (0x4d8cd0) with the walk's +72 (0x50ed6c) and searches again (0x50f8e0 mode 1); a failed search sets +184 and ends the walk as arrived; OpenTPW reroutes only on the stuck rule — still open: no block stamps in OpenTPW
 		if ( !Arrived && Count > 0 && PreviousRemaining != 0 && StuckBits() * Fixed16.One / StuckWindow >= StuckFraction )
 			Reroute();
 		int pathX, pathY, goalX = TargetX, goalY = TargetY;
@@ -369,7 +369,7 @@ public sealed class GuestNavigation
 			History = ((History << 1) | 1) & 0x7fff;
 
 		// Progress (0xff738) against the current waypoint: a history bit when it did not improve.
-		// [APPROX:WALK-009] progress compares the raw remaining distance (remaining >= previous) and the first step after route setup sets no bit; the original compares progress = ONE - FixDiv(remaining, +160) with the previous one (<=, 0xfeed8) and resets +172 at route setup (0xff6fc) — evidence needed: the +160 route length and the +172 reset value
+		// [APPROX:WALK-009] the progress history compares raw remaining distances inside the five-waypoint window and skips the first step after route setup; the original's progress is ONE - trunc(remaining x ONE / +160) (0x50fd40; ONE when arrived or +160 is 0), where +160 is the whole route's octile length from the position at setup or refill, compared (<=) with +172 (0x50f5c7), which setup and every refill reset to 0 together with the history +176 (0x50f8e0) — still open: the full-route length +160 and the resets are not ported (refill timing: WALK-004)
 		if ( Count > 0 )
 		{
 			var remaining = Remaining();

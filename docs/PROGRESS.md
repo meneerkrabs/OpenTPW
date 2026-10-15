@@ -22,6 +22,20 @@ Sixteen guest approximations were checked again, item by item, in tp.exe (leads 
 - **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
   determinism hash is now `0xD28386DACAD73241`.
 
+## Path tool and walking settled against tp.exe (October 15, 2026)
+
+The path and walk approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **A refused preview lays nothing** (`0x524a63`, flag `0x816d48`): a click whose line contains a refused cell ends the path or queue tool
+  without laying the cells before the refusal. After a commit the tool ends only when the line reached a cell that was already a path or a
+  queue cell, the ride's own queue included (`0x5345a1`); otherwise the snapped end is the next start, and the queue-join sound plays only for
+  a committed line (PATH-003 and PATH-012 retired).
+- **Backspace without a tool** takes one placement off the path cell under the cursor, as `0x40be8b` → ClearCell(0, 1) does, so a cell laid
+  twice survives one press.
+- PATH-002 (the tool's undo already matched; the old text saying Backspace does nothing was wrong), PATH-010 (path costs land in the other
+  costs, `0x4d01f0`) and PATH-011 (Escape ends the tool first, `0x40c180`; only the next Escape opens the pause menu) are retired, and 20 path
+  and walk items are narrowed to what is still unknown.
+
 ## Queue rules settled against tp.exe (October 15, 2026)
 
 The queue and gate approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

@@ -240,7 +240,7 @@ public partial class Level
 
 	/// <summary>Starts the path tool at (x, y) (a click in the park view on an empty owned cell or a path cell).</summary>
 	// [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444
-	// [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1
+	// [APPROX:PATH-001] PATH-ENTER: a left click on an object-less cell (hover state 2, help 441) or a path cell (state 1, help 442) enters the path tool (tp.exe click dispatch 0x4879d0 builds the tool object 0x46c580(1), whose enter 0x46d5a0 calls SetMode(1) 0x52f200); the click's release sets that cell as the start only when the start check 0x535670(1, 0) does not refuse it (0x527222..0x5272b8), else the tool stays on without a start; OpenTPW instead refuses to enter when CheckCell fails, the re-preview while game+36 is set (0x5249b6) is not modelled, and the release-time ghost gate (0x524a63) is modelled for clicks after a start (CellBuildTool.Click) but not for the entering click — still open: OpenTPW refuses entry on a failed CheckCell; the entering click's release-time ghost gate and the game+36 re-preview
 	public bool EnterPathTool( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Paths == null )
@@ -315,15 +315,18 @@ public partial class Level
 
 	/// <summary>
 	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
-	/// backtrack sound, then removes that cell the forced way; the sound plays even when the cell stays (a fixed cell). False
-	/// when the cell under the cursor is not a path cell, so the key does nothing there.
+	/// backtrack sound, then takes one placement off that cell, which goes only when it was laid once; the sound plays even
+	/// when the cell stays (a fixed or a re-laid cell). False when the cell under the cursor is not a path cell, so the key
+	/// does nothing there.
 	/// </summary>
+	// [BIN:TPW-EXE:0x40BE8B backtrack click] the key handler clicks the cell in mode 0x32, whose one-cell LayLine (0x536100) calls SetCell(0x32, 0, 1) and so ClearCell 0x5367A0 with (0, 1): the counted removal, not the forced one
 	public bool BacktrackAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Paths == null || Paths.Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return false;
 		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
-		RemovePathCell( x, y );
+		if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
+			LastActionMessage = "Removed a path cell.";
 		return true;
 	}
 

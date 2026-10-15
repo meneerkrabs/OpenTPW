@@ -112,6 +112,7 @@ public class OriginalObject : Entity
 			}
 			Runtime.SetEventOrigin(() => ToSound(System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, Placement.ModelToEngine)));
 			Runtime.SetEventAnchors(() => ToSound(FootprintMiddle()), ToSound);
+			Runtime.SetParticleFootprint(ParticleFootprintOrNull);
 			Runtime.BindParticlePlacement(placement);
 			// the kart effects (sounds, particles) happen where the vehicle is: section units at 307.2 per model unit, on the grid, with the height the pose probes found
 			Runtime.SetBumpPlacement(
@@ -148,6 +149,15 @@ public class OriginalObject : Entity
 			Placement.GridOrigin.X + (minX + maxX + 1) * 0.5f * ObjectPlacement.CellSize,
 			Placement.GridOrigin.Y + (minY + maxY + 1) * 0.5f * ObjectPlacement.CellSize,
 			Placement.BaseHeight );
+	}
+
+	/// <summary>The footprint for the type's particle effects: its middle and its size in cells; a fixed item has no footprint box and starts none (0x466B70 fails without one).</summary>
+	private ParticleFootprint? ParticleFootprintOrNull()
+	{
+		if ( Entry.IsFixedItem )
+			return null;
+		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( Entry.Shape, Placement.X, Placement.Y, Placement.Rotation );
+		return new ParticleFootprint( FootprintMiddle(), maxX - minX + 1, maxY - minY + 1 );
 	}
 
 	public ObjectCatalogEntry Entry => Runtime.Entry;

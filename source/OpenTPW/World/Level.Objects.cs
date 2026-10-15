@@ -540,6 +540,8 @@ public partial class Level
 			}
 		}
 		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ )!;
+		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
+		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 		if ( bought != null )
 			LinkEconomy( placed, bought.Id );
 		LastActionMessage = bought != null
@@ -573,6 +575,8 @@ public partial class Level
 		if ( item == null )
 			return false;
 		LastActionMessage = $"Removed {item.Entry.DisplayName}.";
+		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes (the removal passes flag bit 2 unless a park loads or clears)
+		item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
 		Objects.Remove( item );
 		return true;
 	}

@@ -1032,6 +1032,23 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Pitch variation and build effects (October 15):** every sample playback now draws its pitch step from the sound's signed range
+  on the sound chooser stream (`min + r % (max - min)`, after the volume draw) and plays at ratio 1 for step 0, otherwise
+  2^(sign x (|step| + 1) / 96), as tp.exe `0x6bc170` and the mixer wrapper `0x6d2820` do; the table is read from the
+  executable (`0x782f40`/`0x783540`, float32 powers of two, one step off), and the six steps of the scream, chain and crowd
+  sounds (0..6, the maximum never drawn, 2^(1/96) never played) match the 141 playbacks measured in the original's video, so
+  the repeated screams and laughter are detuned like the original's (AUDIO-003 retired for pitch, narrowed to the delay of
+  non-chain sounds, reverb and a parameter-bound pitch). A voice out of range without the any-distance flag (event flag
+  `0x200`) has its sample stopped by mixer message 3 (`0x6bca70` -> handler `0x6b8d60` -> `0x6bb7c0`), for one-shots and
+  sentences as well as chains (AUDIO-038 narrowed: loops keep advancing, nothing read restarts a stopped loop). The
+  build, demolish, repair and upgrade effects every category `.sam` names (rides 79 / 75 / 51 / 89) start at the object's
+  footprint middle and are sized to it (`0x558e7c`, `0x5590f7`, `0x556DE0`, `0x55A100`, `0x520030`); REPAIREFFECT 1 and 0 switch
+  the repair effect (PTCL-908 narrowed). Captured in the native jungle level: a build shows green and yellow stars over the
+  footprint, a demolition a green and white burst. The leaked-chain count of a 120-minute jungle gate run is 0 of 791
+  STARTSCREAM (169 in the all-rides gate), so the scream rate is not a leak. GraphicsSettings no longer says the particle pool
+  uses density 1000 (it is 500). New: `AudioPitchTests`, `ObjectParticleEffectTests`, `ScreamDiagnosticsTests`, a volume-extent
+  case in `ParticleSystemPortTests`; `--debug-object-effect` and `--debug-sim-minutes` for captures and diagnostics.
+
 - **Tour register round (October 15):** the TOUR items were traced in tp.exe (docs/TOURS.md, "Register changes"). The tour tick is 62 ms, not 31: the world step counter's low bit gates the call
   (`0x0054F5D7`), and the draw divides by 62 ms, so flights last twice as long and cars move half as fast per second (TOUR-001 retired; the wall-clock catch-up is `[EXT:tour-fixed-step]`; saves from the
   31 ms clock still restore). The cars are drawn as the original does: the model's +Z axis is forward, yaw = pi/2 - heading, roll negated, pitch counted in 1024ths (four times finer),

@@ -324,6 +324,28 @@ A chain outside the pool or out of range starts no new child, its first included
 chatter and laughter is the crowd sentence (`cat_kids` 0x5B), a continuous bed at 14–22 % volume while guests are within four cells
 of the camera: its segments have no delay in the data.
 
+**Scream diagnostics (October 15).** The original's video shows screams in bursts of 2-17 s with 2-4 samples a second near a
+busy ride, so OpenTPW's rate is not too high; the report's candidate causes were counted. A second STARTSCREAM before a
+STOPSCREAM is refused by `0x551130` (log `0x765a4c`) and leaks the old chain (the caller stores the 0 over the handle,
+`0x555ee3`/`0x555ee6`); `GameAudio.Screams` counts every STARTSCREAM by band, the refusals and the stops, from the script's own
+view of its handle, so the headless gates count them without audio (`--m3-gate` and `--m4-gate` print the summary; the
+native `--debug-sim-minutes` prints it for a running level).
+
+- `--m3-gate --level jungle --minutes 120` (432,000 ticks, 429 guests, 416 rides on Belly Bounce, breakdowns and repairs
+  included): 791 STARTSCREAM, **0 refused**, 737 stops (every start with a band above 0 is stopped but the last); bands 0:
+  53, 1: 116, 2: 141, 3: 160, 4: 202, 5: 119.
+- `--m4-gate` (every ride of the four themes through its lifecycle with queued guests): 169 STARTSCREAM, **0 refused**;
+  bands 0: 105, 1: 9, 2: 11, 3: 7, 4: 37.
+
+So OpenTPW's scripts never reach the leak path, and no chain piles up. The band is the script's operand (`STARTSCREAM V5 20`:
+variable 5 is `VAR_ONRIDE`, which the script maintains per rider with LIMBO and UNLIMBO); tp.exe reads the operand itself, with no
+visitor lookup (`0x551130` takes it as its second argument; 0 returns, 1 picks event 0x47, 2-3 (negative too) 0x48, 4-7 0x49, 8 and
+above 0x4A, parameter `(level + speed) / 2` clamped to 0..100), exactly what `GameAudio.ScreamBandEvent` and `ScreamParameter`
+do. The bands run from 0 to the ride's capacity (5 for Belly Bounce, `Upgrades[0].InitCapacity`), and the data fixes that
+capacity, so OpenTPW's band equals the original's for the same riders; whether the original seats as many riders as OpenTPW
+(boarding and queue pace) is the guest slice's question, not the band's. Near a full ride a band of 4 or more picks the
+0-500 ms and 100-1000 ms event (73, 74) in 43 % of the starts of the jungle run, as in the original's busiest minutes.
+
 Traced in the binary but not triggered yet:
 
 * The custom-bank type 10 is not routed. Type 0 is the dispatcher's default/unsupported path.

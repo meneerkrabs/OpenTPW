@@ -537,6 +537,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	private readonly OriginalObjectRuntime ride;
 	/// <summary>The ride script's held scream (the original's handle, refused while one is held).</summary>
 	private SoundChain? screamChain;
+	private bool scriptHoldsScream;
 	private readonly List<SoundChain> ownedScreams = new();
 	// Positioned EVENT and repair-hide flag-0x8 voices share the existing exact-runtime cleanup ledger.
 	private readonly List<AudioVoice> ownedEventLoops = new();
@@ -648,6 +649,10 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
+			// the diagnostics follow the script's own view of its handle, so a headless run without audio counts the same refusals (a chain, and so a handle, exists whenever the band is not 0)
+			var refused = scriptHoldsScream;
+			GameAudio.Screams.NoteStart( ride.Entry.DisplayName, call.Argument( 0 ), refused );
+			scriptHoldsScream = !refused && call.Argument( 0 ) != 0;
 			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
 			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = screamChain != null ? (call.Argument( 0 ), call.Argument( 1 ), call.VM.SpeedBias) : (0, 0, 0);
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
@@ -657,6 +662,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.STOPSCREAM )
 		{
+			if ( scriptHoldsScream )
+				GameAudio.Screams.NoteStop( ride.Entry.DisplayName );
+			scriptHoldsScream = false;
 			screamChain?.Stop();
 			screamChain = null;
 			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (0, 0, 0);
@@ -701,6 +709,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		{
 			// [BIN:STP-PPC:0x100B1E34 REPAIREFFECT] showing (value 1) starts a cat_kids repair sound (0x100ACC24, event 75 for the traced call); hiding (value 0) plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
 			var show = call.Argument( 0 );
+			// [BIN:TPW-EXE:0x5562bd REPAIREFFECT] the type's repair particle effect is switched before the sounds (0x556DE0)
+			ride.SetRepairParticle( show != 0 );
 			{
 				var voices = GameAudio.PlayRepairEffect( show, ride.ReadEventOrigin() );
 				ownedEventLoops.RemoveAll( loop => loop.IsFinished );

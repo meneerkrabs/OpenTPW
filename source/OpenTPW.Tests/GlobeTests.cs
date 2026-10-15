@@ -67,8 +67,13 @@ public class GlobeTests
 		var many = GlobeScene.PinPlacement( direction, 500 );
 		var foot = NVector3.Transform( NVector3.Zero, few );
 		Assert.AreEqual( GlobeScene.PinRadius, foot.Length(), 1e-3f, "the pin's origin is on the surface" );
-		var up = NVector3.TransformNormal( NVector3.UnitY, few );
+		// tp.exe 0x005DC3E0: the root node's local Z is the radial axis, scaled by p; X and Y lie on the surface, scaled by s.
+		var up = NVector3.TransformNormal( NVector3.UnitZ, few );
 		Assert.AreEqual( 1f, NVector3.Dot( NVector3.Normalize( up ), direction ), 1e-5f, "the pin's height axis points away from the centre" );
-		Assert.IsTrue( NVector3.TransformNormal( NVector3.UnitY, many ).Length() > up.Length() * 4, "a city with many parks gets a taller pin (p from 0.02 to the 0.1 cap)" );
+		Assert.AreEqual( 0.02f, up.Length(), 1e-6f, "no parent scale: the decoded p alone" );
+		Assert.AreEqual( 0.035f + 0.2f * 0.02f, NVector3.TransformNormal( NVector3.UnitX, few ).Length(), 1e-6f );
+		Assert.AreEqual( 0f, NVector3.TransformNormal( NVector3.UnitX, few ).Y, 1e-6f, "the first row is normalize(z, 0, -x)" );
+		Assert.AreEqual( 0f, NVector3.Dot( NVector3.TransformNormal( NVector3.UnitY, few ), direction ), 1e-6f );
+		Assert.IsTrue( NVector3.TransformNormal( NVector3.UnitZ, many ).Length() > up.Length() * 4, "a city with many parks gets a taller pin (p from 0.02 to the 0.1 cap)" );
 	}
 }

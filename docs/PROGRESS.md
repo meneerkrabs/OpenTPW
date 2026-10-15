@@ -18,6 +18,22 @@ Twenty-two interface approximations were read again in tp.exe:
   text renderer without a shadow (`0x48f830`), the four readers of RMBCancelOn (`0x4881a0`), the greedy text wrap (`0x6aec80`), the
   slider class, the options labels and the buy-list row pitch (font slot 7's line height, `0x4ad240`).
 
+## Guest rules settled against tp.exe (October 15, 2026)
+
+Sixteen guest approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Prices against RipOffOK** (`0x4d3e00`, key 42 of the table at `0x7456e8`): each shop or sideshow type's own RipOffOK now sets how far
+  above the fair price a guest still pays (100 for shops, 250 for sideshows in the shipped data, so up to 2× and 3.5×); a noticeable
+  balance change (GUEST-003 narrowed).
+- **A full queue costs nothing** (`0x4ffbc0`): a guest finding no room records the event and walks on, with no thought and no happiness
+  loss, and a queue that is too long no longer costs happiness either (GUEST-004 narrowed).
+- **Newest attraction first** (`0x4fcb10`, `0x519d80` pushes at the head): the choice walks the objects newest first, which decides ties
+  (GUEST-002 narrowed).
+- **The use routine's other terms** (`0x4fe1e0`): the small-portion penalty, scaled happiness, fat, salt and ice from the ingredients and
+  the toilet speed term (GUEST-005 narrowed).
+- **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
+  determinism hash is now `0xD28386DACAD73241`.
+
 ## Queue exits as in tp.exe (October 15, 2026)
 
 - **A closed ride drains its queue one head per turn** (`0x4e1220` → `0x4e0450`): the others keep waiting, a closed ride that breaks down

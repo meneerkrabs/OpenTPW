@@ -279,7 +279,7 @@ public class WalkTests
 	[TestMethod]
 	public void EnergyDoesNotSlowTheWalk()
 	{
-		// Two runs from the same seed; one guest is exhausted in the second. Energy does not enter the speed (WALK-plan §4).
+		// Two runs from the same seed; one guest's meter +0x1B8 is full in the second. It does not enter the speed (WALK-plan §4; tp.exe reads it only in the save).
 		(float X, float Y) Run( bool tired )
 		{
 			var simulation = Corridor( 9 );
@@ -288,7 +288,7 @@ public class WalkTests
 			for ( var tick = 0; tick < 20 * 60; tick++ )
 			{
 				if ( tired )
-					guest.Energy = 0;
+					guest.Energy = 100;
 				simulation.Tick( Tick );
 			}
 			return (guest.X, guest.Y);

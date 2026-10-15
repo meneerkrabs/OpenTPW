@@ -45,7 +45,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private long lastAdmissionTurn = long.MinValue;
 	private long calledTurn = -1;
 	private Func<bool> isOpen = () => true;     // the ride's open word (+0x68)
-	private Func<bool> takesGuests = () => true; // the coaster and track tests (0x00441970, the track word +0x2C)
+	private Func<bool> takesGuests = () => true; // the coaster and track tests of the choice (0x00441970, the track word +0x2C of track types 1 and 2)
+	private Func<bool> refusesQueue = () => false; // the queue's own test (0x00500612: a coaster failing 0x00441970, or track type 1 with +0x2C at 0)
 	private readonly int excitementLevel;
 
 	public RideVisitorBridge( int attractionId, string name, RideVisitorKind kind, int capacity, int excitementLevel, int attractionValue,
@@ -169,7 +170,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	public bool AcceptsJoins => ScriptRuns && takesGuests();
 	/// <summary>The coaster or track refuses guests (the original's state 11 sends a queued guest away with thought 13, <c>0x004FFFF0</c>).</summary>
-	public bool TrackRefusesGuests => vm != null && !takesGuests();
+	public bool TrackRefusesGuests => vm != null && refusesQueue();
 	private bool ScriptRuns => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting);
 	/// <summary>
 	/// The ride script reports a breakdown (<c>VAR_BROKEN</c>, which the original's ride update turns into ride state 1, or 4 when
@@ -539,13 +540,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>
 	/// Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride (the open word +0x68),
-	/// <paramref name="takes"/> whether its coaster or track takes guests (null: always).
+	/// <paramref name="takes"/> whether its coaster or track takes guests for the choice (null: always), <paramref name="refuses"/> whether the
+	/// queue's own test sends queued guests away (null: when <paramref name="takes"/> fails).
 	/// </summary>
-	public void Attach( RideVM script, Func<bool> open, Func<bool>? takes = null )
+	public void Attach( RideVM script, Func<bool> open, Func<bool>? takes = null, Func<bool>? refuses = null )
 	{
 		vm = script;
 		isOpen = open;
 		takesGuests = takes ?? (() => true);
+		refusesQueue = refuses ?? (() => !takesGuests());
 	}
 
 	/// <summary>
@@ -820,13 +823,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		{
 			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too, after the admission's own
 			// head step: a closed ride dismisses two heads on that turn. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
-			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 && takesGuests() )
+			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 && !refusesQueue() )
 				CheckAdmission( turn );
 			EnterBrokenState();
 			return;
 		}
 		// COAST-024: a coaster or track that refuses guests calls nobody forward; its queued guests leave by themselves (state 11, thought 13)
-		if ( isOpen() && takesGuests() )
+		if ( isOpen() && !refusesQueue() )
 			CheckAdmission( turn );
 	}
 

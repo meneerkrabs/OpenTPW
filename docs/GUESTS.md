@@ -671,8 +671,9 @@ There is **no boredom timeout**. The original's test (`turn > +508 + 100`
 within the 30-turn window) can never fire (§5.3); the code keeps it and the
 tests show that guests stand for 2,000 turns without leaving. Guests leave a
 queue only when admitted, when unhappy (< 10), for the toilet (> 80, not when
-queueing for a toilet), when the ride fails, closes or is removed, or on a
-queue edit. Happiness and toilet are compared after truncation to whole
+queueing for a toilet), beyond the queue limit, when the coaster or kart track
+refuses guests (thought 13), when the ride fails, closes or is removed, or on a
+queue edit; every exit but the removal costs the dismissal's medium happiness step. Happiness and toilet are compared after truncation to whole
 numbers, as the original does (`fctiwz`): "> 80" means at least 81.
 Every exit of state 11, like the queue edit's and the price refusal's, ends in the dismissal
 (tp.exe `0x5004aa` → `0x5012f0`): after its thought the guest loses `PeepInfo.MediumHappinessChange`
@@ -683,7 +684,7 @@ one guest per park turn: the ride update (`0xe0a8c`, executed in the oracle for 
 and 4) removes the head from the queue and sends it away (`0xdcebc`, `0xee804`: reason 6, no
 thought, happiness down by `PeepInfo.MediumHappinessChange`, back to wandering). A head the script
 has already taken is forced aboard instead. The guests behind keep their places and wait, and a
-repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new joins: the
+repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new chooses it: the
 choice's counts-test (tp.exe `0x4dd920`) refuses states 1 and 4 and a closed ride, and never reads VAR_BROKEN, so a ride whose script has
 just reported a breakdown is still chosen until its ride update enters state 1. The join itself (state 10, tp.exe `0x4ffbc0`) reads neither the state nor the open word, so a guest already walking there still joins and is sent away when it reaches the head. A closed ride drains the same way: its admission (`0x4e1220`) runs only the head step `0x4e0450` while the open word is 0, one head per park turn, two on the turn a closed ride notices a breakdown (the admission's step, then SetState(1)'s). State 1 lasts
 until the ride is opened again (a repair, an upgrade's end, the open button), even when the script clears VAR_BROKEN first (QUEUE-019). The ride update runs the admission once on the turn it
@@ -756,7 +757,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 
 Retired: `APPROX:QUEUE-016` (admission and state 11 once per park turn: tp.exe `0x516380` walks the live list once per turn and dispatches every thing whose byte `+3` is 0 through `0x50b360`). `APPROX:QUEUE-009` (the queue facing change: only within 30 turns of the last interlude, r mod 10 = 0, then (r₂ mod 800) − 400 of 2048; tp.exe `0x4ffff0`). `APPROX:QUEUE-017` (the choice applies the counts-test's queue room, list count < 4 × cells; tp.exe `0x4dd920`). `APPROX:QUEUE-018` (the join reads neither the ride state nor the open word, tp.exe `0x4ffbc0`; a closed ride drains one head per park turn, `0x4e1220` → `0x4e0450`).
 
-Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
+Not modelled: ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand
 point (guests pay when boarding, see Money), save/load of queues, and the import of the Easymode queue cells.
 

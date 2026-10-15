@@ -1406,4 +1406,22 @@ public class QueueTests
 		foreach ( var id in ids )
 			Assert.IsTrue( docs.Contains( $"| {id} |" ), $"{id} is documented" );
 	}
+
+	[TestMethod]
+	public void AWaterRideWithABrokenCircuitIsSkippedButKeepsItsQueue()
+	{
+		// tp.exe 0x004DD920 skips track types 1 and 2 whose track word is 0; the queue's own test 0x00500612 sends guests away only for a coaster or a kart track
+		RideVisitorBridge Bridge( Func<bool>? refuses )
+		{
+			var bridge = new RideVisitorBridge( 7, "Water ride", RideVisitorKind.Ride, 5, 55, 30 );
+			bridge.Attach( GuestSnapshotTests.IdleScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ) ), () => true, () => false, refuses );
+			return bridge;
+		}
+		var water = Bridge( () => false );
+		Assert.IsFalse( water.IsOpen, "the choice skips it" );
+		Assert.IsFalse( water.TrackRefusesGuests, "its queued guests stay" );
+		var kart = Bridge( null );
+		Assert.IsFalse( kart.IsOpen );
+		Assert.IsTrue( kart.TrackRefusesGuests, "without a separate queue test the choice's refusal sends the queue away" );
+	}
 }

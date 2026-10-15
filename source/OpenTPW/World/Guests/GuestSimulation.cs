@@ -1349,7 +1349,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs): state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0; OpenTPW's queue walk cannot route a guest standing off the queue back, so such a guest leaves (Confused) and the guests that stay are given their walk again. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 records event 6 with the ride id in the guest's own event history (0x0050C100 with ECX = guest + 0x30) and plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D), which OpenTPW does not (its medium happiness drop is applied) — evidence needed: whether the generic route reaches a queue place from a cell off the queue, the thing-id numbering, and what the event history feeds
 			if ( index < 0 && !onJoinCell )
 			{
-				LeaveQueue( guest, attraction, GuestThought.Confused );
+				DismissFromQueue( guest, attraction, GuestThought.Confused );
 				continue;
 			}
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
@@ -1389,7 +1389,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var position = attraction.GetQueuePosition( guest.Id );
 		if ( position < 0 )
 		{
-			LeaveQueue( guest, attraction, GuestThought.Confused );
+			// the move-up's failure in 0x004FFFF0 ("Couldn't get to my intended queue position") leaves through the dismissal too
+			DismissFromQueue( guest, attraction, GuestThought.Confused );
 			return;
 		}
 		guest.QueuePosition = position;

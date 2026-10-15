@@ -65,7 +65,7 @@ public static class PathTiles
 	public static PathTile Choose( byte neighbours, int x, int y )
 	{
 		var tile = ByMask[Reduce( neighbours )];
-		// [APPROX:PATH-014] str1/str2 and edg1/edg2 are picked by a hash of the cell, not by the original's choice (saved cells keep theirs) — evidence needed: the original routine that writes save cell byte +17
+		// [APPROX:PATH-014] PATH-VARIANT: built straights and edges pick str1/str2 and edg1/edg2 by a hash of the cell (saved cells keep theirs); the original's chooser (tp.exe 0x535dd0) uses the second texture (2 becomes 19, 10 becomes 20) when byte 0x820ac0 is set (0x535fcc), and every call that reaches its end stores rand() & 1 there (CRT rand 0x67b5c0, store 0x53602c, seeded with GetTickCount at 0x54dddc), so each recomputation re-rolls from a shared clock-seeded generator and no per-cell rule exists — still open: nothing statically; the original choice is random per recomputation
 		var second = ((x * 73856093) ^ (y * 19349663)) & 1;
 		return tile.TextureIndex switch
 		{
@@ -131,7 +131,7 @@ public static class PathTiles
 					break;
 				}
 			}
-		// [APPROX:PATH-015] QueueTex square/end/straight/corner and rotation are derived from the decoded que4/que3/que1/que2 artwork and queue links; the original tile-selection routine is not traced — evidence needed: original queue terrain texture selection and rotation
+		// [APPROX:PATH-015] QUEUE-TEXTURES: queue cells are drawn with QueueTex ground textures whose shape and turn follow decoded artwork and queue links; the original applies no QueueTex texture: its tile refresh 0x5365d0 sends a queue cell's class-2 result of the chooser 0x535dd0 (table 0x7630b0) to 0x5229e0, which places one of the queue models loaded by 0x522900 (quedead, questra, quebnd2, quebnd1, queend, quebin1, quebin2 .md2) turned by 360 minus the rotation, and gives the ground only the sentinel (0, 8, 0); OpenTPW does not draw these models — still open: the queue models are not drawn; the ground under them (flags 0x101) and the model yaw convention
 		for ( var quarter = 0; quarter < 4; quarter++ )
 		{
 			if ( mask == 0x01 ) return new PathTile( 1, quarter * 90 );

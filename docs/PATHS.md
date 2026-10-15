@@ -37,13 +37,17 @@ Per cell, in this order (`ParkPathBuilder.Validate`):
 
 Writing a cell stores the type, links it to every cardinal path neighbour on
 both sides (PATH-004) and spends `Costs.PathCell` (20 in `Standard.sam`) as
-other costs (PATH-010). There is no batch purchase. Without a park economy
+other costs (tp.exe `0x534879`: Spend adds it to the total costs, shown as
+total costs minus staff costs). There is no batch purchase. Without a park economy
 paths are free (PATH-009). A refused cell stops the line; earlier cells stay
 built and charged.
 
-Removal is `ClearCell`'s forced path case: links cleared on both sides, no
-refund. A `NoModify` cell that still has linked neighbours stays; without
+Removal is `ClearCell`'s forced path case (the original's area-clear tool,
+tp.exe `0x52bdd0`): links cleared on both sides, no refund. A `NoModify` cell that still has linked neighbours stays; without
 neighbours the flag is dropped and the cell is removed (PATH-005).
+Backspace over a path cell with no tool on uses the counted case (tp.exe
+`0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
+when it was laid once (`ParkPathBuilder.RemoveOnce`).
 
 ## Tool
 
@@ -52,13 +56,17 @@ neighbours the flag is dropped and the cell is removed (PATH-005).
 one axis and ignores the other end coordinate. A hover previews the snapped
 line (the ghost, no writes), drawn as the original's blue blueprint markers with the refused cell in red
 ([blueprint markers](reverse/BLUEPRINT.md)); a click pushes the end onto the 1024-entry vertex
-stack and commits the line. A click back on the start ends the tool; once a
-line exists it lays nothing, as in the original. The tool also ends when a cell
-is refused (PATH-012) or when the line ends on an existing path or queue cell
-(PATH-003); otherwise the end is the next start. Backspace takes back the last
-segment without a refund (PATH-002); right click, Escape and Back cancel.
+stack and commits the line. A click whose ghost has a refused cell ends the
+tool and lays nothing (tp.exe `0x524a63`). A click back on the start ends the
+tool; once a line exists it lays nothing, as in the original. The tool also
+ends when the commit reaches a last cell that already was a path or queue cell,
+the ride's own queue included (tp.exe end flag `0x5345ad`, read by the pass
+`0x81` at `0x527517`); otherwise the snapped end is the next start. Backspace takes back the last
+segment without a refund, as the original's Back (tp.exe `0x52fe50`) does:
+each cell of that segment loses one placement count and goes when it falls
+below zero. Right click, Escape and Back cancel.
 Escape or Back inside the tool only ends the tool; the next one opens the
-pause menu (PATH-011). While the pause menu is open the tool takes no clicks;
+pause menu (tp.exe key dispatch `0x488921`, Escape row `0x40c180`). While the pause menu is open the tool takes no clicks;
 the speed pause does not stop it (PATH-013).
 
 In the park view the hover help is 441 over an empty owned cell, 442 over a
@@ -95,9 +103,9 @@ u16 at +21 is a clockwise turn in degrees. Both follow from the neighbour bits a
 
 All 78 path cells of the Easymode save match this rule (`PathTilesTests`): every shape and turn. Which of
 the two straights or edges a cell has is the original's own choice and is not predicted.
-That includes cells whose extra diagonal bits the rule ignores (0x13, 0x53, 0x93, 0x9F, 0xF9). The routine
-in the original that writes these bytes was not located (no table for it exists in `TP.ICD` or the Mac
-binary), so the rule is derived from the data.
+That includes cells whose extra diagonal bits the rule ignores (0x13, 0x53, 0x93, 0x9F, 0xF9). The PC
+original's tile chooser is tp.exe `0x535dd0` (49-row path table at `0x763138`, 11-row queue table at
+`0x7630b0`, called from the tile refresh `0x5365d0`); OpenTPW's rule is still derived from the data.
 
 `OriginalTerrain` draws a cell with the saved texture and turn when it was a path in the save and still has
 the same path neighbours. The saved bits also count ride entrances, which the cell map does not keep.
@@ -125,17 +133,13 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
-| PATH-001 | PATH-ENTER | click on an empty owned cell or a path starts the tool |
-| PATH-002 | PATH-UNDO | Backspace pops the last segment, no refund |
-| PATH-003 | PATH-ENDFLAG | a line ending on a path or queue cell ends the tool |
-| PATH-004 | PATH-CONNECT | link every cardinal path neighbour, both sides |
-| PATH-005 | PATH-REMOVE | forced removal (a = b = 0), NoModify respected |
-| PATH-006 | PATH-SLOPE | no slope limit; the object terrain rule applies |
-| PATH-007 | PATH-LAND | every in-bounds cell is owned |
-| PATH-008 | PATH-CODE8 | path over a queue cell is refused |
-| PATH-009 | PATH-FREE | free only without a park economy (`data:0x7de2d` is a mode 4/59 tool flag) |
-| PATH-010 | PATH-LEDGER | posted as other costs |
-| PATH-011 | PATH-CANCEL | Escape/Back ends the tool first; the next one pauses |
-| PATH-012 | PATH-ENDREFUSE | a line refused part-way ends the tool |
-| PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks; the speed pause does not |
-| PATH-014 | PATH-VARIANT | built straights and edges pick `str1`/`str2` and `edg1`/`edg2` by a hash of the cell |
+| PATH-001 | PATH-ENTER | a click on an object-less cell or a path starts the tool (tp.exe 0x4879d0, SetMode(1) 0x52f200); the original enters even when the start check 0x535670(1, 0) refuses the cell (then without a start), OpenTPW does not enter |
+| PATH-004 | PATH-CONNECT | path-to-path links match tp.exe 0x5348d0; its type-9/10 links, diagonal bits, OR write and type-3 conversion are not ported |
+| PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
+| PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types and ownership |
+| PATH-007 | PATH-LAND | every in-bounds cell is owned; the original's owned land is the fence interior laid by 0x5323f0 from the level outline 0x784e3c |
+| PATH-008 | PATH-CODE8 | path over a queue cell is refused; the original turns a queue end (validator code 8, 0x535d00) into a path cell |
+| PATH-009 | PATH-FREE | free only without a park economy; the free byte (tp.exe 0x8186d4) is set only while modes 4 and 59 place an object |
+| PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause is untraced for clicks |
+| PATH-014 | PATH-VARIANT | built straights and edges pick `str1`/`str2` and `edg1`/`edg2` by a hash of the cell; the original rolls CRT `rand() & 1` on every recomputation (0x535dd0, 0x53602c) |
+| PATH-015 | QUEUE-TEXTURES | queue cells use `QueueTex` ground textures; the original places queue models (0x5229e0, `quedead`..`quebin2.md2`) and no `QueueTex` texture |

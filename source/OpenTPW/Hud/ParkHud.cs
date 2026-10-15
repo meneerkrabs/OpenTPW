@@ -193,10 +193,11 @@ public sealed partial class ParkHud
 		}
 	}
 	public string CashChangeText => BuildActionCost is { } cost ? FormatMoney( cost ) : "";
-	// [DATA:video 40:40-41:30, 73:21] the counters read "1 ×" (the count, a space, the multiplication sign) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
+	// [DATA:video 40:40-41:30, 73:21] the counters show the count followed by an x (the string below) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
 	public string GoldenTicketsText => Status.HasEconomy && Status.GoldenTickets > 0 ? CounterText( Status.GoldenTickets ) : "";
 	public string GoldenKeysText => Status.HasEconomy && Status.GoldenKeys > 0 ? CounterText( Status.GoldenKeys ) : "";
-	private static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count} \u00d7" );
+	// [BIN:TPW-EXE:0x004a10a9 HUD counter text] both counters format their count with the UTF-16 "%d  x" at 0x752ef8 (two spaces, a letter x)
+	internal static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count}  x" );
 	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
 	public void PostMessage( string text )
@@ -242,7 +243,7 @@ public sealed partial class ParkHud
 				Bounds = OriginalLayoutTables.MessagePanel.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		}
 		// [BIN:TPW-EXE:0x7529dc HUD arm table] the red X under the HUD that closes the panel is the arm table's b_retract (id 0x24) at (349,1386)-(429,1466), help 481
-		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseArmPanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
 		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge
@@ -256,8 +257,9 @@ public sealed partial class ParkHud
 		moneyLabel = hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
-		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending; the golden key and ticket counters show only above zero ("1 ×")
-		// [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is read off the art and the video's red down arrow; the keys count is the park's earned tickets / 3 (the player-wide key ledger is not reachable from the HUD) — evidence needed: a capture of the dollar sign with a negative balance
+		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending
+		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
+		// [APPROX:UI-051] green_up frame 1 while the balance fell in the last seconds; the ticket count is the park's available tickets — evidence needed: the trend arrow's visibility and the in-park ticket spend reaching the player ledger
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashChange < 0 ? 1 : 0, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
@@ -276,6 +278,7 @@ public sealed partial class ParkHud
 		// [APPROX:UI-042] the panel's sound 0x131 is not played; ParkHud.CameraPanel.cs
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), 474, ToggleCameraPanel );
 		BuildCameraPanel();
+		BuildLocatorPanels();
 
 		// [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0)
 		// Speed control (OpenTPW buttons): each sets the clock scale of the whole simulation.
@@ -659,6 +662,7 @@ public sealed partial class ParkHud
 		TrackCashChange( context.Delta );
 		UpdateCameraPanel();
 		UpdateMessageTube( context.Delta );
+		UpdateLocatorPanels();
 		SampleHappiness( context.Delta );
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
@@ -1009,7 +1013,7 @@ public sealed partial class ParkHud
 	{
 		foreach ( var element in economyElements )
 			element.Visible = Status.HasEconomy;
-		// the golden ticket and key rows appear only above zero (UI-051)
+		// [BIN:TPW-EXE:0x004a1045 HUD counter rows] the HUD's message 0x1e handler 0x4a0fb0 shows a counter's row (0x34/0x36 keys, 0x35/0x37 tickets) only while its count is not zero
 		foreach ( var id in TicketIds )
 			if ( hud.Find( id ) is { } ticketElement ) ticketElement.Visible = Status.HasEconomy && Status.GoldenTickets > 0;
 		foreach ( var id in KeyIds )

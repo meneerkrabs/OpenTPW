@@ -19,7 +19,7 @@ public interface IHudParkStatus
 	void Update( float realSeconds );
 	/// <summary>Golden tickets the park has earned and not spent (the HUD counter, Mac main HUD table control 55); 0 without an economy.</summary>
 	int GoldenTickets => 0;
-	/// <summary>Golden keys (control 54): one per three golden tickets earned (the original advisor says so, video 41:22); 0 without an economy.</summary>
+	/// <summary>Golden keys (control 54): the player's keys, one per three golden tickets earned plus any extra keys; 0 without an economy and in Instant Action.</summary>
 	int GoldenKeys => 0;
 	/// <summary>The economy the balance comes from; it changes when a save replaces it, so a balance jump is not shown as income or spending.</summary>
 	object? EconomySource => null;

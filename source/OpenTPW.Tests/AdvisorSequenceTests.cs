@@ -126,7 +126,7 @@ public class AdvisorSequenceTests
 		// Row 21: clip 14 (0), clip 5, clip 11, clip 15.
 		var sequence = AdvisorSequences.Build( 21, 5000, durations, () => throw new InvalidOperationException( "a fixed row draws nothing" ) );
 		CollectionAssert.AreEqual( new[] { 14, 5, 11, 15 }, sequence.Clips.ToArray() );
-		Assert.AreEqual( 700 + 300 + 600, sequence.SumMilliseconds, "the sum is when the last clip ends" );
+		Assert.AreEqual( 700 + 300 + 600, sequence.SumMilliseconds, "the sum of the clips after clip 14, whose own length (PlayOf) is left out" );
 		Assert.AreEqual( (uint)(1600 + 1000 + 600), AdvisorSequences.ResponseSpan( sequence, durations ) );
 		Assert.IsNull( sequence.TimerMilliseconds );
 	}

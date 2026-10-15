@@ -1188,6 +1188,16 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   baseline hashes of 71 of 75 signs were re-pinned), object sign lines keep 32 characters and line 1 loses a trailing "--"
   (COMPAT-017 narrowed), COMPAT-006 now names Uniscribe instead of GDI TextOut, COMPAT-008 and COMPAT-013 are extensions, COMPAT-011/012
   are narrowed. 392 to 384 unresolved IDs.
+- **Advisor video round (October 14):** from the Dutch gameplay video and the Windows `tp.exe`. The advisor now wears a hat: each response's two
+  accessory selectors (response record `+0x14`/`+0x18`, `content/data/advisor-costumes.toml`) show one node by dummy attribute (hard hat for
+  breakdowns, security cap, handyman cap, research hair, bowler with bow tie, ticket and kiosk hats, fast-food hat with spatula, no hat for help
+  text) and the level's theme costume (`ThemeAdvisorCostumes` in `Standard.sam`: pith helmet, axe, space helmet, fantasy helm) on the level
+  advisor's own model. The clips are played: the node tracks give the rise and the sink, the blink toggles the blinks (vertex tracks still not), and
+  the model hides when the clips have played out, clip 14's 1000 ms included; a new response restarts at clip 14. Contextual help is a new producer
+  family: 81 help messages (`content/data/advisor-help-messages.toml`, replayed from the descriptor initializer `0x5A0A50`) are posted when
+  the buy, hire, attractions, loans, finance, park-information, visitors and ticket-price windows open and withdrawn when they close; a
+  withdrawn speaking help cuts off at once, counts as unplayed and gains a slap (three cuts discard it), while event advice is never cut.
+  ADVISOR-002 and ADVISOR-023 retired, ADVISOR-006/009/022 narrowed, ADVISOR-026/027 added. Tests: `AdvisorHelpTests` (27) and a script test.
 - **UI register round (October 14):** findings from the Windows `tp.exe` land. The hire window's control 9366 is the plain
   cash label ("Cash $ N", UITEXT `0x1ca`/`0x1cb`); the applicant/employee toggle is now a labelled extension button
   (UI-090 retired). The map zoom is 1.0–3.0 in half steps and a pan moves the centre one map cell whatever the zoom (UI-087

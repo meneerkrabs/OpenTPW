@@ -4,17 +4,17 @@ using Veldrid;
 namespace OpenTPW;
 
 /// <summary>
-/// The original advisor model (<c>global/advisor.wad/Advisor.MD2</c>) drawn flat over the
-/// bottom-right of the screen without a camera (see <see cref="ModelTransform"/>), saying one global speech clip with its mouth driven by the clip's LIP marks
-/// (see docs/LIPS.md). The model carries five co-located mouth meshes; the LIP data only
-/// distinguishes talking from silence. As in the original, silence shows "Mouth - Normal" and
-/// talking shows a mouth picked at random every 100 ms (<see cref="AdvisorMouth"/>). The original poses
-/// the advisor with <c>Advisor&lt;level&gt;m&lt;n&gt;</c> clips (<see cref="AnimationClipName"/>), whose
-/// records all decode. The sequence of clips (generated, or a fixed row of the sequence table) is built
-/// (<see cref="AdvisorSequences"/>) and sets the response's span, when the model hides and the audio's delayed start
-/// (<see cref="AdvisorSpeechStart"/>), but the clips are not drawn:
-/// which hat a clip shows is not known, so hats, the spatula, the bow tie and the blink meshes are hidden and the
-/// model is drawn in its bind pose (see <see cref="NodeWorld"/>).
+/// The original advisor model (<c>global/advisor.wad/Advisor.MD2</c>, or the level's <c>Advisor_&lt;XXX&gt;.MD2</c> for the responses
+/// that name it) drawn flat over the bottom-right of the screen without a camera (see <see cref="ModelTransform"/>), saying one
+/// speech clip with its mouth driven by the clip's LIP marks (see docs/LIPS.md). The model carries five co-located mouth meshes;
+/// the LIP data only distinguishes talking from silence. As in the original, silence shows "Mouth - Normal" and talking shows a
+/// mouth picked at random every 100 ms (<see cref="AdvisorMouth"/>). The original poses the advisor with
+/// <c>Advisor&lt;level&gt;m&lt;n&gt;</c> clips (<see cref="AnimationClipName"/>); the sequence of clips (generated, or a fixed row of
+/// the sequence table) is built (<see cref="AdvisorSequences"/>), sets the response's span, when the model hides and the audio's
+/// delayed start (<see cref="AdvisorSpeechStart"/>), and its clips play one after the other (<see cref="AdvisorTimeline"/>): the
+/// node tracks move the model (the rise in, the gestures, the sink out), the blink toggles swap the eyes, and the response's
+/// accessory selectors (<see cref="AdvisorCostume"/>, <see cref="AdvisorAccessories"/>) put on a hat. The clips' vertex tracks are not
+/// played (ADVISOR-006).
 /// </summary>
 internal sealed class Advisor : IDisposable
 {
@@ -30,27 +30,32 @@ internal sealed class Advisor : IDisposable
 	// [DATA:global/Speech/lips.wad:members sp_001–sp_637]
 	internal const int FirstClip = 1;
 	internal const int LastClip = 637;
-	// [APPROX:ADVISOR-002] Visible set: body, head, eyes, antennae, hands; hats, spatula, bow tie and ShutEye meshes hidden — evidence needed: original node visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role
+	// [DATA:global/advisor.wad:Advisor.MD2:node names] the meshes shown without any accessory; every other mesh (hats, spatula, bow tie, blink meshes, level props) starts hidden, as the clips' node lists hide them (AdvisorAccessories.IsBaseMesh)
 	internal static readonly string[] BodyMeshes = { "Body", "Bug Head", "Right Antennae", "Left Antennae", "Right hand", "Left Hand", "Right Eye", "Left Eye" };
 
 	/// <summary>Every unproven advisor/lip-sync rule (docs/LIPS.md "Approximation register"); logged once when an advisor is created.</summary>
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
-		("ADVISOR-002", "hats, spatula, bow tie and blink meshes hidden"),
 		("ADVISOR-005", "light colour 0.6, shared test.shader ambient/fog"),
-		("ADVISOR-006", "bind pose: the generated (0x598B20) and fixed (0x598BF0, table 0x76DC18) sequences are built, but no clip is drawn; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, not the clip-toggled mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), whose reader is open (RIDES-042)"),
+		("ADVISOR-006", "the clips' node tracks, blink toggles and accessory selectors are drawn, but not their vertex tracks (antennae and hands) nor the texture-coordinate tracks of the level advisors; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, not the clip-toggled mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), whose reader is open (RIDES-042)"),
 		("ADVISOR-007", "drawn double-sided; no back-face test in 0x57A750, 0x57AA10 or 0x574110 through 0x574660; the backend submit 0x581CD0 -> [0x8BCBB8] vtable +8 is unread"),
-		("ADVISOR-009", "--advisor-say plays global clips by number and starts them at its first rendered frame; the controller picks responses only for the five bound messages of game events 0/2/3/4; 135 computed score producers (descriptor table 0x76E300) remain"),
+		("ADVISOR-009", "--advisor-say plays global clips by number and starts them at its first rendered frame; the controller says the five bound game-event messages and the help messages of the HUD windows with a traced message (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price); the other window and tool-start help messages and the 135 computed score producers (descriptor table 0x76E300) are not bound"),
 		("ADVISOR-010", "lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer)"),
 		("ADVISOR-012", "mono speech duplicated to both channels; the original submits it unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D); the left/right levels come from QMixer, outside tp.exe (AUDIO-018)"),
 		("ADVISOR-017", "the advisor clock starts at 0 for a new park and an original-save import; the original's load sets its +0x50 offset to the saved value (0x402E80 -> 0x403160), and it stands still whenever 0x4092A0 pauses the timer (eight callers, screens unidentified)"),
 		("ADVISOR-020", "event 2 comes from the economy's six-month bankruptcy, not 0x4D0370's monthly guard (balance and previous balance < 0, and the red-time term from 0x4F88B0 over 2.592e13 >= 6, with the turn entered red at +0x120); events 3/4 are raised on every open/close button press as in the original"),
-		("ADVISOR-022", "an original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129 and 323 are bound) are dropped on import; OpenTPW's own park save stores the controller"),
-		("ADVISOR-023", "the advisor's unprojected coordinates span the screen from -1 to 1"),
+		("ADVISOR-022", "an original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129, 323 and the help messages are bound) are dropped on import; OpenTPW's own park save stores the controller"),
 		("ADVISOR-025", "the effect a fixed sequence's timer entry fires when the advisor clock reaches it (sequences 28 and 29: the particle effect 0x521E60 (87, 90000, 0, 7000), sound 0xC6 and 0x4B9340 in the update 0x599880) is not ported; the timer is recorded on the sequence only"),
+		("ADVISOR-026", "the level advisors' props (Ticket, MAP, Ticket2, Mutant Eye and the T_Particle/Rotate dummies, shown by the ticket logic 0x599B09-0x599BDE and the accessory bits 0x20000-0x200000 of 0x598DC0) stay hidden"),
+		("ADVISOR-027", "withdrawing the speaking help (0x59AA70 -> 0x5994E0) hides the advisor and stops the speech, but its slap sound (0x27F-0x281 through 0x51BFC0) is not played, and the last-tutorial copy at controller +0x16D0 (0x59A940) is not kept, nor is the branch 0x59AA7B-0x59AAC8 that clears the last-tutorial record's valid byte (+0x16E4) when the message is of group 1 (0x59C500 == 1) and +0x16DC is the message"),
 	};
 
-	private readonly List<(string Name, Model Model, Material Material)> parts = new();
+	private readonly AdvisorRig globalRig;
+	private AdvisorRig? levelRig;
+	private string? levelRigName;
+	private AdvisorRig rig;
+	private AdvisorCostume costume;
+	private AdvisorThemeCostume theme = AdvisorThemeCostume.None;
 	private readonly AdvisorMouth mouth = new( new Random() );
 	private SpeechAudioPlayer? player;
 	private LipSyncTimeline? timeline;
@@ -61,9 +66,14 @@ internal sealed class Advisor : IDisposable
 	private AdvisorSpeechStart? speechStart;
 	// The generated sequences draw from their own stream (see AdvisorRandom).
 	private readonly AdvisorRandom sequenceRandom = new();
+	// The clip lengths of the model that plays (a level advisor's clips 16-20 exist only there), by archive.
 	private AdvisorClipDurations? clipDurations;
-	private string? clipDurationsLevel;
-	private bool clipDurationsLoaded;
+	private readonly Dictionary<string, AdvisorClipDurations?> durationsByArchive = new();
+	// The theme costume of each level seen, read once.
+	private readonly Dictionary<string, AdvisorThemeCostume> themes = new();
+	// The hidden accessory nodes of the response's costume by clip accessory bits, and the per-frame scratch set.
+	private readonly Dictionary<int, HashSet<int>> costumeHidden = new();
+	private readonly HashSet<int> hiddenScratch = new();
 	private System.Numerics.Vector3 mouthMin = new( float.MaxValue );
 	private System.Numerics.Vector3 mouthMax = new( float.MinValue );
 	// [BIN:TPW-EXE:0x00429BA0 advisor setup] model matrix = identity with translation (0.6, -0.6, 0.2); the root node is
@@ -101,12 +111,13 @@ internal sealed class Advisor : IDisposable
 	public uint ResponseSpanMilliseconds { get; private set; }
 
 	/// <summary>
-	/// How long after the request the model stays shown: the end of the last clip, which is the sequence sum (the response's
-	/// span adds 1000 and clip 15 on top of it for the controller). Without a sequence (no clip archives) the span itself.
+	/// How long after the request the model stays shown: the end of the last clip, which is when the clips play out, each for its
+	/// own length including clip 14's (<see cref="AdvisorSequences.PlayMilliseconds"/>; the sequence sum leaves clip 14 out, and the
+	/// response's span adds 1000 and clip 15 on top of that sum for the controller). Without a sequence (no clip archives) the span itself.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004735D0 animation sampler] at the end of a clip (frame past its length, 0x473743–0x47374E) with nothing queued ([channel+0x24] == 12, 0x47375D) and model flag 8 (0x473769–0x473776) the sampler starts the idle set 12 (0x472F60) and hides a shown model with 0x45BDD0 (scene unlink 0x576540, then clears bit 0x19); the advisor model has flag 8 (load flags 0x50120 at 0x429C9D: 0x461F10 ORs 8 at 0x4621C9, 0x4557C0 copies it into the model)
 	// [BIN:TPW-EXE:0x00599880 advisor update] the next clip of the sequence starts only while the channel reads the idle set 12 (0x599A23) through 0x4732A0, which shows the model again (0x4732C6–0x4732DD); after the last clip nothing starts, so the model stays hidden until the next response
-	public uint DrawnSpanMilliseconds => Sequence != null ? (uint)Sequence.SumMilliseconds : ResponseSpanMilliseconds;
+	public uint DrawnSpanMilliseconds => Sequence != null && clipDurations != null ? AdvisorSequences.PlayMilliseconds( Sequence, clipDurations ) : ResponseSpanMilliseconds;
 
 	/// <summary>
 	/// The model is shown: set when a response starts (every sequence starts an animation other than 12), cleared when the
@@ -124,7 +135,7 @@ internal sealed class Advisor : IDisposable
 	/// </summary>
 	internal static (int X, int Y, int Width, int Height) BoxRectangle( Point2 target )
 	{
-		// [APPROX:ADVISOR-023] the advisor's unprojected coordinates span the screen from −1 to 1 (as clip space) — evidence needed: the consumer of the 0x0057A750 transform output in tp.exe, or a capture of the original advisor
+		// [BIN:TPW-EXE:0x0057A750 mesh draw] the unprojected coordinates (centre (0.6, 0.6), y down) span the screen from −1 to 1 as clip space; a capture of the original agrees (docs/LIPS.md, ADVISOR-023 retired)
 		int Pixel( float clip, int size ) => (int)MathF.Round( (clip + 1f) * 0.5f * size );
 		var left = Pixel( Centre.X - BoxHalfSide, target.X );
 		var right = Math.Min( target.X, Pixel( Centre.X + BoxHalfSide, target.X ) );
@@ -152,48 +163,19 @@ internal sealed class Advisor : IDisposable
 		this.clock = clock;
 		foreach ( var (id, rule) in Approximations )
 			Log.Warning( $"[APPROX:{id}] {rule}" );
-		var modelFile = new ModelFile( $"{ArchivePath}/Advisor.MD2" );
-		var restTransforms = ModelAnimationPlayer.ComputeRestTransforms( modelFile );
-		var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
-		var textureFiles = FileSystem.GetFiles( $"{ArchivePath}/textures" );
+		globalRig = rig = AdvisorRig.LoadGlobal();
 		try
 		{
-			foreach ( var name in BodyMeshes.Concat( Mouths ) )
-			{
-				var mesh = modelFile.Meshes.SingleOrDefault( candidate => candidate.Name == name )
-					?? throw new InvalidDataException( $"The original advisor model has no '{name}' mesh." );
-				// [APPROX:ADVISOR-006] Bind pose only: every record of the Advisor<level>m<n> clips decodes (TRS, vertex groups, UV tracks, toggles; one level clip has path parameters) and the generated (0x598B20) and fixed (0x598BF0, table 0x76DC18) sequences are built (AdvisorSequences) and set the span, when the model hides and the audio start, but no clip is drawn — evidence needed: a skinned draw of the clips and a reader of the toggled mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, RIDES-042)
-				var vertices = ConvertMesh( mesh, restTransforms[mesh.NodeIndex] );
-				if ( Mouths.Contains( name ) )
-					foreach ( var vertex in vertices )
-					{
-						mouthMin = System.Numerics.Vector3.Min( mouthMin, vertex.Position.GetSystemVector3() );
-						mouthMax = System.Numerics.Vector3.Max( mouthMax, vertex.Position.GetSystemVector3() );
-					}
-				var textureSlots = new Texture[16];
-				Array.Fill( textureSlots, Texture.Missing );
-				for ( var slot = 0; slot < mesh.Materials.Length; slot++ )
+			foreach ( var part in globalRig.Parts.Where( part => Mouths.Contains( part.Name ) ) )
+				foreach ( var vertex in part.Vertices )
 				{
-					var textureName = mesh.Materials[slot].Name;
-					var path = textureFiles.FirstOrDefault( entry => string.Equals( Path.GetFileNameWithoutExtension( entry ), textureName, StringComparison.OrdinalIgnoreCase ) )
-						?? throw new FileNotFoundException( $"Original advisor texture was not found: {textureName}" );
-					if ( !textures.TryGetValue( path, out var texture ) )
-					{
-						texture = new Texture( path, TextureFlags.Repeat );
-						textures.Add( path, texture );
-					}
-					textureSlots[slot] = texture;
+					mouthMin = System.Numerics.Vector3.Min( mouthMin, vertex.Position.GetSystemVector3() );
+					mouthMax = System.Numerics.Vector3.Max( mouthMax, vertex.Position.GetSystemVector3() );
 				}
-				// [BIN:TPW-EXE:0x00566957 device init] the only Direct3D CULLMODE write is D3DCULL_NONE; no other constant-state SetRenderState sets it and the register-driven setter 0x567A10 only toggles ALPHABLENDENABLE, so the original draws both faces
-				var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader", MaterialFlags.DoubleSided );
-				material.Set( "Color", textureSlots );
-				// [APPROX:ADVISOR-007] Drawn double-sided as the original's Direct3D device does (no hardware culling); the mesh path has no back-face test (0x57A750 defer/skip/matrix select, 0x57AA10 per-vertex setup, 0x574110 through 0x574660 light vectors and colours), but the final submit 0x581CD0 -> [0x8BCBB8] vtable +8 is unread — evidence needed: that backend or a capture
-				parts.Add( (name, new Model( vertices, mesh.Indices, material ), material) );
-			}
 		}
 		catch
 		{
-			Dispose();
+			globalRig.Dispose();
 			throw;
 		}
 	}
@@ -346,15 +328,16 @@ internal sealed class Advisor : IDisposable
 		return true;
 	}
 
-	private AdvisorClipDurations? ClipDurations( string? level )
+	private AdvisorClipDurations? ClipDurations( AdvisorRig playing )
 	{
-		if ( !clipDurationsLoaded || clipDurationsLevel != level )
+		if ( !durationsByArchive.TryGetValue( playing.Archive, out var durations ) )
 		{
-			clipDurations = AdvisorClipDurations.Load( FileSystem, level );
-			clipDurationsLevel = level;
-			clipDurationsLoaded = true;
+			// The playing model's own clips; a level model without any falls back to the global advisor's.
+			durations = AdvisorClipDurations.LoadArchive( FileSystem, playing.Archive )
+				?? (playing.Archive == ArchivePath ? null : AdvisorClipDurations.LoadArchive( FileSystem, ArchivePath ));
+			durationsByArchive[playing.Archive] = durations;
 		}
-		return clipDurations;
+		return durations;
 	}
 
 	private void Play( Mp2Audio audio, LipSyncTimeline lips, int clipNumber, string description, AdvisorResponse? response = null, string? level = null )
@@ -366,14 +349,22 @@ internal sealed class Advisor : IDisposable
 		player = CreatePlayer( audio );
 		speechStart = null;
 		Sequence = null;
+		// Choose the model first: a failed level load must not leave a disposed rig drawn.
+		rig = SelectRig( response, level );
 		ModelShown = true;
+		// [BIN:TPW-EXE:0x005990E3 response player] the response row's +0x14 and +0x18 words are the accessory selectors (0xF79684, 0xF79688) and its +0x10 low half the model slot (0xF79674)
+		costume = response != null ? AdvisorCostumeTable.For( response.Id ) : AdvisorCostume.None;
+		theme = AdvisorThemeCostume.None;
+		if ( (costume.Hat == -1 || costume.SecondHat == -1) && level != null && !themes.TryGetValue( level, out theme! ) )
+			themes[level] = theme = AdvisorThemeCostume.Load( FileSystem, level );
+		costumeHidden.Clear();
 		if ( response != null && clock != null )
 		{
 			var now = clock();
 			speechStart = AdvisorSpeechStart.For( now, response.Animation );
 			// [BIN:TPW-EXE:0x00599050 response player] the builder gets the sample length + 200 + 300 ms; a fixed sequence (response +12 minus 16) comes from table 0x76DC18
 			var length = (int)Duration.TotalMilliseconds;
-			var durations = ClipDurations( level );
+			var durations = clipDurations = ClipDurations( rig );
 			if ( durations != null )
 			{
 				Sequence = AdvisorSequences.Build( response.Animation, length + AdvisorSequences.BudgetSlackMilliseconds, durations, sequenceRandom.Next );
@@ -533,10 +524,12 @@ internal sealed class Advisor : IDisposable
 		// [BIN:TPW-EXE:0x00599880 advisor update] the talking flag is set at LIP load (0x59930B), cleared on the delayed-start path (0x59943E) and set again when the speech starts (0x599987); then each mark flips it once the clock is strictly past it
 		var lipPosition = LipPosition;
 		var shownMouth = mouth.Update( player is { IsStarted: true } && IsTalking( timeline, lipPosition ),(long)lipPosition.TotalMilliseconds );
-		foreach ( var part in parts )
+		var (worlds, hidden) = CurrentPose();
+		foreach ( var part in rig.Parts )
 		{
-			if ( Mouths.Contains( part.Name ) && part.Name != shownMouth )
+			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && part.Name != shownMouth )
 				continue;
+			rig.Write( part, worlds[part.NodeIndex] );
 			part.Material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 			{
 				g_mModel = model,
@@ -551,6 +544,55 @@ internal sealed class Advisor : IDisposable
 			part.Model.Draw();
 		}
 		LastRenderedMouth = shownMouth;
+	}
+
+	/// <summary>
+	/// The pose of the rig now: the node matrices of the clip the sequence plays at this moment after the request (the bind pose without
+	/// a sequence), and the hidden mesh nodes (accessories, blink meshes, props; see <see cref="AdvisorAccessories.HiddenMeshNodes"/>).
+	/// </summary>
+	private (Matrix4x4[] Worlds, HashSet<int> Hidden) CurrentPose()
+	{
+		ModelAnimation? clip = null;
+		var tick = 0f;
+		var bits = 0;
+		var worlds = rig.Rest;
+		if ( Sequence != null && clipDurations != null && clock != null && speechStart is { } start
+			&& AdvisorTimeline.At( Sequence, clipDurations, unchecked((uint)(clock() - start.RequestMilliseconds)) ) is { } position )
+		{
+			clip = rig.Clip( position.Clip );
+			tick = position.Tick;
+			bits = Sequence.AccessoryBits is { } list && position.Index < list.Count ? list[position.Index] : 0;
+			worlds = rig.Pose( position.Clip, tick );
+		}
+		if ( !costumeHidden.TryGetValue( bits, out var accessories ) )
+			costumeHidden[bits] = accessories = AdvisorAccessories.CostumeHiddenNodes( rig.Nodes, costume, theme, bits );
+		hiddenScratch.Clear();
+		hiddenScratch.UnionWith( accessories );
+		AdvisorAccessories.ApplyToggles( rig.Nodes, hiddenScratch, clip, tick );
+		return (worlds, hiddenScratch);
+	}
+
+	/// <summary>The model a response draws: the level's advisor for a response that names model 1 (when the level has one), else the global advisor.</summary>
+	private AdvisorRig SelectRig( AdvisorResponse? response, string? level )
+	{
+		if ( response is not { Model: 1 } || level == null )
+			return globalRig;
+		if ( levelRigName != level )
+		{
+			levelRig?.Dispose();
+			levelRig = null;
+			levelRigName = level;
+			try
+			{
+				levelRig = AdvisorRig.LoadLevel( FileSystem, level );
+			}
+			catch ( Exception exception )
+			{
+				// Any failure to build the level's model leaves the global advisor, never a released one.
+				Log.Warning( $"The advisor model of level {level} could not be loaded: {exception.Message}" );
+			}
+		}
+		return levelRig ?? globalRig;
 	}
 
 	/// <summary>World-target pixel rectangle covering the mouth meshes as <see cref="Render"/> draws them.</summary>
@@ -581,11 +623,8 @@ internal sealed class Advisor : IDisposable
 		disposed = true;
 		player?.Dispose();
 		DisposeImageTarget();
-		foreach ( var part in parts )
-		{
-			part.Model.ReleaseBuffers();
-		}
-		parts.Clear();
+		globalRig.Dispose();
+		levelRig?.Dispose();
 	}
 }
 

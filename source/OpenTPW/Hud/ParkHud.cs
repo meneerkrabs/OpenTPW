@@ -25,6 +25,10 @@ public sealed class HudHost
 	public Action? OptionsChanged { get; init; }
 	/// <summary>The open/close button or its shortcut was pressed (true: open, false: close), also when the park's state does not change; the advisor raises game event 3 or 4 on it.</summary>
 	public Action<bool>? ParkDoorPressed { get; init; }
+	/// <summary>A screen other than the HUD opened (by <see cref="UI.Original.UiScreen.Name"/>); the advisor posts the window's help message.</summary>
+	public Action<string>? WindowOpened { get; init; }
+	/// <summary>A screen other than the HUD closed; the advisor withdraws the window's help message.</summary>
+	public Action<string>? WindowClosed { get; init; }
 }
 
 /// <summary>
@@ -682,6 +686,7 @@ public sealed partial class ParkHud
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		var consumed = Stack.Update( context, input );
+		ReportScreens();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;

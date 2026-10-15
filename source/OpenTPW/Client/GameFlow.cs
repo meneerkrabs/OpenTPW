@@ -362,6 +362,8 @@ internal sealed partial class GameFlow : IDisposable
 			ListSorts = listSorts,
 			OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
+			WindowOpened = window => Advisor?.OnWindowOpened( window ),
+			WindowClosed = window => Advisor?.OnWindowClosed( window ),
 		} );
 		return createdHud;
 	}

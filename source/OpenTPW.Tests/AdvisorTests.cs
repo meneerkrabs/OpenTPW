@@ -82,8 +82,8 @@ public class AdvisorTests
 	{
 		// Traced rules leave the register; their numbers are not reused.
 		// 11 (a deliberate extension), 16 (the fixed rows) and 18 (the model hides at the end of the last clip) left in the MISC round of October 14.
-		var retired = new[] { 1, 3, 4, 8, 11, 13, 14, 15, 16, 18, 19, 21, 24 };
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 25 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
+		var retired = new[] { 1, 2, 3, 4, 8, 11, 13, 14, 15, 16, 18, 19, 21, 23, 24 };
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 27 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
 	[DataTestMethod]

@@ -147,7 +147,7 @@ public sealed class ParkResearch
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
-	// [APPROX:ECON-017] a new park's research table is in info-id order, and after a project completes its category's cursor falls back to the first selectable project; the original fills the table in its object loader's order (0x5031A0 over 0x412E60 / 0x412E70, no sort on that path) and moves the cursor to the next eligible project after the completed one, wrapping (message 0x12 from 0x503D40, 0x4AAEC0 → 0x5034F0); the per-category arrows step the cursor in table order with wrap as the original's do (0x4AA0C0 → 0x5034F0 / 0x5036A0); the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the enumeration order of the object loader 0x413930 / 0x413C10
+	// [APPROX:ECON-017] a new park's research table is in info-id order, where the original fills it in its object loader's order (0x5031A0 over 0x412E60 / 0x412E70, no sort on that path); the cursor steps with the arrows (0x4AA0C0 → 0x5034F0 / 0x5036A0) and moves on after a completed project (0x4AAEC0) in table order with wrap, as the original's does; the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the enumeration order of the object loader 0x413930 / 0x413C10
 	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{
@@ -197,6 +197,7 @@ public sealed class ParkResearch
 	public IReadOnlyList<ResearchItem> AddResearcherPoints( int ability )
 	{
 		var done = new List<ResearchItem>();
+		var finished = new List<ResearchItem>();
 		var active = Enum.GetValues<ResearchCategory>().Select( category => (Category: category, Item: Current( category )) )
 			.Where( entry => entry.Item != null ).ToList();
 		var totalEffort = active.Sum( entry => (long)effort[(int)entry.Category] );
@@ -214,6 +215,7 @@ public sealed class ParkResearch
 				progress.Remove( key );
 				MarkCompleted( item );
 				done.Add( item );
+				finished.Add( item );
 			}
 			else
 				progress[key] = value;
@@ -224,7 +226,24 @@ public sealed class ParkResearch
 				OpenGroups( category );
 			PropagateFreeItems( done );
 		}
+		foreach ( var item in finished )
+			AdvanceCursor( item );
 		return done;
+	}
+
+	/// <summary>Moves a category's cursor on from its completed project: the next selectable project after it in table order, wrapping to the first.</summary>
+	// [BIN:TPW-EXE:0x004AAEC0 research completed] the completion's message 0x11 (0x00504630) reaches the lab (0x00503D40), which opens the groups (0x00503B80) and posts
+	// message 0x12 with the category; its handler (0x0050CA50 → 0x00481520) runs the forward picker 0x005034F0 when the cursor's project is finished (0x00504040): the first
+	// eligible project after the cursor, else the first before it, else none
+	private void AdvanceCursor( ResearchItem finished )
+	{
+		selected.Remove( finished.Category );
+		if ( !byCategory.TryGetValue( finished.Category, out var list ) )
+			return;
+		var index = list.IndexOf( finished );
+		var next = list.Skip( index + 1 ).FirstOrDefault( IsSelectable ) ?? list.Take( index ).FirstOrDefault( IsSelectable );
+		if ( next != null )
+			selected[finished.Category] = next;
 	}
 
 	/// <summary>Marks items with zero research cost whose prerequisites are available (e.g. easy-mode ride upgrades).</summary>

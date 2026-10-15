@@ -42,13 +42,16 @@ public class ResearchCursorTests
 	}
 
 	[TestMethod]
-	public void CompletionAutomaticallyReturnsToFirstEligibleAndAllCompleteHasNoCursor()
+	public void CompletionMovesToTheNextEligibleProjectWithWrapAndAllCompleteHasNoCursor()
 	{
+		// tp.exe 0x004AAEC0: a finished cursor project runs the forward picker 0x005034F0 from its place in the table, wrapping to the first.
 		var research = new ParkResearch( EconomyTestData.Settings(), Catalog() );
 		Assert.IsTrue( research.MoveCurrent( ResearchCategory.Ride, 1 ) );
 		var done = research.AddResearcherPoints( 1000 );
 		Assert.AreEqual( 1130, done.Single().InfoId );
-		Assert.AreEqual( 1120, research.Current( ResearchCategory.Ride )!.InfoId );
+		Assert.AreEqual( 1140, research.Current( ResearchCategory.Ride )!.InfoId, "the project after the completed one, not the first" );
+		Assert.AreEqual( 1140, research.AddResearcherPoints( 1000 ).Single().InfoId );
+		Assert.AreEqual( 1120, research.Current( ResearchCategory.Ride )!.InfoId, "after the last project the cursor wraps to the first" );
 		Assert.IsFalse( research.SelectableItems( ResearchCategory.Ride ).Any( item => item.InfoId == 1130 ) );
 		while ( !research.IsAllResearched )
 			research.AddResearcherPoints( 1000 );

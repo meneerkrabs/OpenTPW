@@ -204,7 +204,8 @@ public sealed class RideCameraMode : CameraMode
 	/// <summary>The front car of the coaster's first train: the eye on its sample, the view along the track's direction.</summary>
 	public static (Vector3 Eye, Vector3 Look) CoasterFrame( CoasterRide coaster, System.Numerics.Vector2 gridOrigin )
 	{
-		var sample = coaster.SampleAt( coaster.Trains[0].Position );
+		// The train's position is its middle car's; the front car stands its offset ahead.
+		var sample = coaster.SampleAt( coaster.CarCoordinate( coaster.Trains[0], 0 ) );
 		var eye = ToEngine( gridOrigin, sample.Position ) + new Vector3( 0, 0, CoasterSeatHeight );
 		var direction = ToEngineDirection( sample.Direction );
 		return (eye, eye + direction);

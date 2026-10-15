@@ -102,6 +102,20 @@ public sealed partial class ParkHud
 		buy.EnsureSelection();
 		Stack.Push( buyScreen );
 		buyScreen.Focus( buyScreen.Find( "buyList" ) );
+		UpdateBuyScrollVisibility( buyScreen );
+	}
+
+	/// <summary>Whether the list's scroll bar and its arrows show: only while the list has more rows than fit.</summary>
+	// [BIN:TPW-EXE:0x664495 list scroller] with more items than visible rows the scroller is shown and gets the range 0 .. count - visible and the first row as its value; otherwise it is hidden (0x65d9dd(0)) with the range 0..0
+	// [DATA:video 1:50 buy window] four rides and no scroll bar, track or arrows; at 17:20 the longer features list shows them
+	public static bool BuyScrollShown( int maxFirstRow ) => maxFirstRow > 0;
+
+	private void UpdateBuyScrollVisibility( UiScreen screen )
+	{
+		var shown = BuyScrollShown( BuyMaxFirstRow );
+		foreach ( var id in new[] { "buyScroll", "scrollUp", "scrollDown" } )
+			if ( screen.Find( id ) is { } element )
+				element.Visible = shown;
 	}
 
 	public void CloseBuyWindow()
@@ -232,6 +246,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiButton { Id = "allAttractions", Model = AllAttractionsModel, Help = strings[UIStrings.AllRides],
 			Clicked = OpenAttractionsWindow, Bounds = Rect( 1866, 458, 1968, 577 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
+		screen.Updating = _ => UpdateBuyScrollVisibility( screen );
 		return screen;
 	}
 
@@ -321,6 +336,16 @@ public sealed partial class ParkHud
 		}
 	}
 
+	/// <summary>The scroll ball's authored rectangle for the first visible row <paramref name="firstRow"/> of <paramref name="maxFirstRow"/>.</summary>
+	// [BIN:TPW-EXE:0x66b088 slider ball] a vertical slider puts its ball (child 3) at top + (min - value) × (height - ball height) / (min - max) in integer table units, so with
+	// the list's range 0 .. count - visible (0x664495) the ball's top runs from the track's top for the first row to a ball height above its bottom for the last
+	internal static UiRect BuyScrollKnobRect( int firstRow, int maxFirstRow )
+	{
+		var travel = (int)BuyScrollTrack.Height - (int)BuyScrollKnob.Height;
+		var top = (int)BuyScrollTrack.Y + (maxFirstRow == 0 ? 0 : travel * firstRow / maxFirstRow);
+		return new UiRect( BuyScrollKnob.X, top, BuyScrollKnob.Width, BuyScrollKnob.Height );
+	}
+
 	/// <summary>The vertical scroll bar: the <c>!slider</c> track with the <c>b_scroller</c> ball; dragging or clicking sets the first visible row.</summary>
 	private sealed class BuyScrollBar : UiElement, IUiDragTarget
 	{
@@ -329,14 +354,7 @@ public sealed partial class ParkHud
 		public override bool Focusable => Visible && Enabled;
 
 		/// <summary>Authored ball rectangle for the current first row: its top runs from the track's top to a ball above the track's bottom.</summary>
-		// [APPROX:UI-049] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends
-		public UiRect KnobRect()
-		{
-			var travel = BuyScrollTrack.Height - BuyScrollKnob.Height;
-			var max = owner.BuyMaxFirstRow;
-			var top = BuyScrollTrack.Y + (max == 0 ? 0 : travel * owner.buy.FirstRow / max);
-			return new UiRect( BuyScrollKnob.X, top, BuyScrollKnob.Width, BuyScrollKnob.Height );
-		}
+		public UiRect KnobRect() => BuyScrollKnobRect( owner.buy.FirstRow, owner.BuyMaxFirstRow );
 
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{

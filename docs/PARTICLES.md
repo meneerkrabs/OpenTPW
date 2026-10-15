@@ -84,8 +84,10 @@ the native pool, rule by rule. It needs no GPU, so tests build one directly, and
 
 - **Init** (`[BIN:TPW-EXE:0x51FAA0]`): the game calls it with no ground function (the pool then uses the stub `0x5D60C0`
   that returns 0, a flat plane at Y 0), the options' PARTICLEDENSITY and a count of `0x800` (`0x54E5F9`, `0x54EAB9`);
-  the count is clamped 100..0x7FFF and a density of 0 becomes 1. OpenTPW passes the options' built-in default, 500
-  (settings record `0x744860`); the player's saved value (registry) is not read or exposed (`APPROX:PTCL-906`).
+  the count is clamped 100..0x7FFF and a density of 0 becomes 1. The density is GameOptions.PARTICLEDENSITY of the detail
+  object (`0x7858C8`), which only the detail-file load fills (`0x44DE20` -> `0x44DC60`: the player's detail level picks
+  `low.sam` 500, `med.sam` 1000 or `high.sam` 1500); OpenTPW passes the value of the player's graphics preset (Enhanced and
+  Custom included, `ParticleSystem.OptionsDensity`) and 500 when no options are loaded.
   TOTALPARTICLES has no code reference in tp.exe. The reset (`0x51FB70`) sets the generator to 1, both generation
   counters to 1 and the free lists ascending from slot 0 / particle 0.
 - **Random forms** (`[BIN:TPW-EXE:0x5205D1, 0x5205F2]`): the generator is `state * 214013 + 2531011`. The signed form
@@ -249,7 +251,7 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
 - `PTCL-904`: the quad's width factor (frame record float +8, projection aspect) is untraced.
 - `PTCL-905`: one primitive per particle in the original against OpenTPW's three blend batches; engine depth sorting
   (`0x565F90`) untraced.
-- `PTCL-906`: the pose conversion inverts OpenTPW's placement; the density option's saved value is not read.
+- `PTCL-906`: the pose conversion inverts OpenTPW's placement.
 - `PTCL-908`: wired are EVENT 1/2, ADDOBJ 1/2 and the per-type object effects (below). Not wired: ADDOBJ following the
   key node afterwards (`0x5516B0` updates it each run with the node position truncated to whole units), ADDOBJ_EXT
   (no VM handler), the negative-key box centre (`0x556B90`/`0x466B70`), the scoped effects (record `+0x4E0`), the further

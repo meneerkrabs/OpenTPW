@@ -132,6 +132,8 @@ public static partial class Program
 		// Use the same persisted graphics choice as the desktop, including an explicit Original choice.
 		TexturePack.RequestMissing = Page.RequestTexture;
 		CompatibilityStartup.Initialize( Array.Empty<string>(), dataDirectory );
+		// [EXT:mods] The browser has the official extensions only (no files-based mods yet), with the choices in /config/mods.json (docs/MODS.md).
+		OpenTPW.Mods.ModStartup.InitializeOfficial( Log.Trace, Log.Warning );
 
 		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
 		GameAudio.Enabled = true;

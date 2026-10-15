@@ -148,6 +148,9 @@ internal static class Game
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
 		CompatibilityStartup.Initialize( args, dataDirectory );
 
+		// [EXT:mods] Extensions and data-only mods (docs/MODS.md): resolved once here; mods.json changes apply at the next start.
+		OpenTPW.Mods.ModStartup.Initialize( args, Log.Trace, Log.Warning );
+
 		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA, else the saved bonus folder, else <config>/bonus.
 		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
 		var bonusRoot = BonusContent.ResolveRoot( GetOption( args, "--bonus-data", "the extracted official bonus content directory" ),

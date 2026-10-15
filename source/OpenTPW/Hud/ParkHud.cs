@@ -286,7 +286,7 @@ public sealed partial class ParkHud
 		infoElements.Add( hud.Add( new UiLabel
 		{
 			Id = "infoName",
-			Text = () => SelectedInfo == null ? "" : SelectedInfo.DisplayName ?? strings.Object( SelectedInfo.ObjectNameIndex ),
+			Text = () => InfoNow == null ? "" : InfoNow.DisplayName ?? strings.Object( InfoNow.ObjectNameIndex ),
 			Font = fonts => fonts.Heading,
 			Color = UiColors.Title,
 			Bounds = new UiRect( 470, 1090, 420, 70 ),
@@ -299,7 +299,7 @@ public sealed partial class ParkHud
 			infoElements.Add( hud.Add( new UiLabel
 			{
 				Id = $"statLabel{index}",
-				Text = () => SelectedInfo != null && index < SelectedInfo.Stats.Count ? strings[SelectedInfo.Stats[index].Label] : "",
+				Text = () => InfoNow != null && index < InfoNow.Stats.Count ? strings[InfoNow.Stats[index].Label] : "",
 				Font = fonts => fonts.Small,
 				Bounds = new UiRect( 470, 1170 + index * 50, 290, 48 ),
 				Anchor = UiAnchor.BottomLeft,
@@ -308,7 +308,7 @@ public sealed partial class ParkHud
 			infoElements.Add( hud.Add( new UiLabel
 			{
 				Id = $"statValue{index}",
-				Text = () => SelectedInfo != null && index < SelectedInfo.Stats.Count ? SelectedInfo.Stats[index].Value ?? (SelectedInfo.Stats[index].IsGauge ? "" : strings.Extra( OpenTpwText.NotSimulated )) : "",
+				Text = () => InfoNow != null && index < InfoNow.Stats.Count ? InfoNow.Stats[index].Value ?? (InfoNow.Stats[index].IsGauge ? "" : strings.Extra( OpenTpwText.NotSimulated )) : "",
 				Font = fonts => fonts.Small,
 				Color = UiColors.Value,
 				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
@@ -318,7 +318,7 @@ public sealed partial class ParkHud
 			infoElements.Add( hud.Add( new UiGaugeBar
 			{
 				Id = $"statGauge{index}",
-				Value = () => SelectedInfo != null && index < SelectedInfo.Stats.Count && SelectedInfo.Stats[index].IsGauge ? SelectedInfo.Stats[index].Gauge : null,
+				Value = () => InfoNow != null && index < InfoNow.Stats.Count && InfoNow.Stats[index].IsGauge ? InfoNow.Stats[index].Gauge : null,
 				Bounds = new UiRect( 765, 1170 + index * 50, 225, 48 ),
 				Anchor = UiAnchor.BottomLeft,
 				Visible = false
@@ -396,6 +396,10 @@ public sealed partial class ParkHud
 		};
 	}
 
+
+	private ObjectInfo? infoNow;
+	/// <summary>The info arm's contents as computed once at the start of the frame (the draw lambdas read it).</summary>
+	private ObjectInfo? InfoNow => infoNow ?? SelectedInfo;
 
 	public ObjectInfo? SelectedInfo => InfoArmOpen && selectedObject is { IsDeleted: false } item
 		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, new[]
@@ -717,7 +721,11 @@ public sealed partial class ParkHud
 			InfoArmOpen = false;
 
 		if ( hud.Find( "openRide" ) is UiButton openButton )
-			openButton.Enabled = !level.IsReadOnlyVisit && SelectedInfo?.CanOpen == true;
+		{
+			// a visit reads the published state while drawing instead (the snapshot stays empty)
+			infoNow = level.IsReadOnlyVisit ? null : SelectedInfo;
+			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true;
+		}
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
 			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem;
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
@@ -849,7 +857,7 @@ public sealed partial class ParkHud
 			if ( messages[index].Age > MessageSeconds )
 				messages.RemoveAt( index );
 		}
-		UpdateCursor( input, overUi || consumed || mouseCaptured == true );
+		UpdateCursor( input, overUi || consumed, mouseCaptured == true );
 		Status.Update( context.Delta );
 		return overUi || consumed || toolClick;
 	}
@@ -1126,14 +1134,17 @@ public sealed partial class ParkHud
 		}
 	}
 
+	private static readonly string[] TicketIds = { "goldenTicket", "goldenTickets" };
+	private static readonly string[] KeyIds = { "goldenKey", "goldenKeys" };
+
 	private void TrackCashChange( float delta )
 	{
 		foreach ( var element in economyElements )
 			element.Visible = Status.HasEconomy;
 		// the golden ticket and key rows appear only above zero (UI-051)
-		foreach ( var id in new[] { "goldenTicket", "goldenTickets" } )
+		foreach ( var id in TicketIds )
 			if ( hud.Find( id ) is { } ticketElement ) ticketElement.Visible = Status.HasEconomy && Status.GoldenTickets > 0;
-		foreach ( var id in new[] { "goldenKey", "goldenKeys" } )
+		foreach ( var id in KeyIds )
 			if ( hud.Find( id ) is { } keyElement ) keyElement.Visible = Status.HasEconomy && Status.GoldenKeys > 0;
 		// A loaded save replaces the economy: start counting changes from its balance.
 		if ( !ReferenceEquals( Status.EconomySource, cashSource ) )
@@ -1157,7 +1168,8 @@ public sealed partial class ParkHud
 	/// <summary>The status line: the recent feedback lines in a translucent box above the popup help box.</summary>
 	private void DrawFeedback( UiContext context )
 	{
-		if ( messages.Count == 0 )
+		// hidden while the info arm or the message panel is out, which cover the same part of the screen
+		if ( messages.Count == 0 || InfoArmOpen || OpenedMessage != null )
 			return;
 		var canvas = context.Canvas;
 		var text = string.Join( "\n", messages.Select( message => message.Text ) );
@@ -1177,7 +1189,6 @@ public sealed partial class ParkHud
 		Stack.Draw( context, HelpBarVisible );
 		if ( debugModels is { Length: > 0 } )
 			DrawDebugModels( context );
-		DrawCursor( context );
 	}
 
 	/// <summary>The preview shows the object's own sign text, like the object in the park (<see cref="ObjectSigns"/>).</summary>

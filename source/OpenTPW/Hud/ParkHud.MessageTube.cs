@@ -12,7 +12,7 @@ public sealed partial class ParkHud
 {
 	/// <summary>How many messages the tube holds; the oldest goes when a sixth arrives.</summary>
 	// [DATA:video 15:20, 51:40, 76:03] up to about five icons are stacked in the tube at once
-	// [APPROX:UI-025] the capacity of five is the most the video shows, not a traced limit; the original's message queue and its overflow rule are not traced
+	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, not a traced limit; the original's message queue and its overflow rule are not traced
 	public const int MessageTubeCapacity = 5;
 
 	// The tube sits left of the HUD panel above its top edge, in the BottomLeft-anchored authored coordinates of the main panel; read off the 720p frames (video 15:20 and 12:00).
@@ -21,6 +21,7 @@ public sealed partial class ParkHud
 	private static readonly UiRect MessagePanelRect = Rect( 405, 1090, 1100, 1445 );
 	private static readonly UiRect MessageTextRect = Rect( 640, 1118, 1085, 1425 );
 
+	private static readonly string[] PanelButtonIds = { "messageDelete", "messageClose" };
 	private List<string>? pendingMessages;
 	private string? openedMessage;
 	private float messageSlide;
@@ -48,6 +49,9 @@ public sealed partial class ParkHud
 	{
 		if ( pendingMessages == null || index < 0 || index >= pendingMessages.Count )
 			return false;
+		// the panel comes out where the info arm is, so opening a message puts the arm away: the opened message is always visible, and one read there is not lost
+		if ( InfoArmOpen )
+			SetInfoArm( false );
 		openedMessage = pendingMessages[index];
 		pendingMessages.RemoveAt( index );
 		return true;
@@ -76,11 +80,15 @@ public sealed partial class ParkHud
 		var target = openedMessage != null && !InfoArmOpen ? 1f : 0f;
 		messageSlide = target > messageSlide ? Math.Min( target, messageSlide + delta * 4f ) : Math.Max( target, messageSlide - delta * 4f );
 		var fullyOut = messageSlide >= 1f;
-		foreach ( var id in new[] { "messageDelete", "messageClose" } )
+		foreach ( var id in PanelButtonIds )
 			if ( hud.Find( id ) is { } element )
 				element.Visible = fullyOut;
+		// an empty tube is hidden, so its rectangle swallows no park clicks
 		if ( hud.Find( "messageTube" ) is { } tube )
+		{
+			tube.Visible = PendingMessages.Count > 0;
 			tube.Bounds = TubeRect( PendingMessages.Count );
+		}
 	}
 
 	/// <summary>The panel slides out of the HUD to the right, drawn under the main panel so it appears from behind it.</summary>

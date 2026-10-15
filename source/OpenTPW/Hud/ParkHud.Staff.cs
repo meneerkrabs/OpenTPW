@@ -543,8 +543,10 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x6656a0 list hover] the applicant list selects the row under the pointer (the details, the skill gauge and the mini balance follow it, video 12:00); the employee view (EXT) only highlights, because its dismiss, pick-up and patrol buttons act on the selection
 		public void Hover( int index )
 		{
+			// only a pointer that moved to another row selects it, so the arrow keys keep the selection while the pointer rests
+			var moved = index != HoveredRow;
 			HoveredRow = index;
-			if ( index >= 0 && !owner.showingEmployedStaff && index < owner.StaffCandidates.Count )
+			if ( moved && index >= 0 && !owner.showingEmployedStaff && index < owner.StaffCandidates.Count )
 				owner.selectedStaffId = owner.StaffCandidates[index].Id;
 		}
 		// [BIN:TPW-EXE:0x6655a2 list click, 0x49b843 hire window] the applicant list (9358, attribute 0x291) posts 0x400 on a click of button 0 (0x6655a2 on a list with attribute 0x80, and 0x6656fa on the release); the window routes it to 0x49b988: the row's item, hire 0x507bf0, advisor message 0x135, close. There is no hire button in the window, and the original's advisor says so when it opens ("click on the name of the person you want to hire", video 11:54): a left click on a name hires and the click starts the Place tool here

@@ -81,7 +81,7 @@ public class UiScreen
 		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
 			Focused = null;
 		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer; OpenTPW only highlights it, because the buttons beside the list act on the selection
-		// Here the hover only highlights (the click selects), so action buttons beside the list keep their target.
+		// The list decides what a hover does: most only highlight (the click selects, so buttons beside the list keep their target), the hire list selects a row when the pointer moves onto it.
 		foreach ( var element in elements )
 		{
 			if ( element is IUiRowList { HoverSelects: true } hoverList )

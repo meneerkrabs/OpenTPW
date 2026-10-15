@@ -54,7 +54,7 @@ RNGs with serialized state, and canonical replay fields.
 
 | Instance | Owner / state | Algorithm and projection | Seed source | Saved by original | Status |
 | --- | --- | --- | --- | --- | --- |
-| World RNG | world `+0x1da708` (uint32), next to `mGameTick` `+0x1da70c` | `s = s·1664525 + 1013904223`; returns wrapping signed abs of `s` | `time(NULL)` at world setup 0x10474c; **reseeded to a thing ID** at 7 sites, to an object field at 1 site | **yes**, label `mRandomSeed` (4 bytes) | pinned |
+| World RNG | world `+0x1da708` (uint32), next to `mGameTick` `+0x1da70c` | Mac: `s = s·1664525 + 1013904223`; returns wrapping signed abs of `s`. PC v2.0 (tp.exe 0x516330, state at world +0x1DA708): the same step, then the state is rotated right by 13 and the rotated value is stored and returned as its wrapping signed abs (DET-013) | `time(NULL)` at world setup 0x10474c; **reseeded to a thing ID** at 7 sites, to an object field at 1 site | **yes**, label `mRandomSeed` (4 bytes) | pinned |
 | Coaster boarding | app global data 622280 (TOC 0xcc0) | `s = s·214013 + 2531011`; `s >> 16` logical | one C-library `rand()` at 0x54bf4 | no label found | pinned |
 | Kart object | object `+0x38` (subsystem 0x20688) | 214013/2531011; `s >> 16` arithmetic (`srawi`) | not traced | no label found | pinned (lane: state field, multiplier; review: multiplier and increment) |
 | Particle object | object `+0x10` (subsystem 0x9f748) | 214013/2531011; arithmetic `>> 16` | not traced | no label found | pinned (lane: state field, multiplier only via the 214013 site count; review: multiplier and increment) |

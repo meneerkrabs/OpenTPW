@@ -52,6 +52,7 @@ internal sealed partial class SandboxSmokeTest
 		Require( station?.Runtime.Coaster is not null, "place a coaster station with its controller" );
 		smokeStation = station;
 		Require( level.EnterCoasterTool( station! ) && level.IsCoasterToolActive, "the coaster tool starts on the station" );
+		Require( !station!.IsOpen && station.Runtime.Coaster!.State == CoasterControllerState.Incomplete, "the tool closes the ride and an unfinished track holds controller state 1 (0x447520)" );
 		var builder = level.CoasterTool!;
 		var depart = builder.Track.DepartCell!.Value;
 		var balance = economy?.Balance ?? 0;
@@ -81,6 +82,8 @@ internal sealed partial class SandboxSmokeTest
 		Require( builder.Track.IsClosed && !builder.Track.IsComplete, "a click on the station end closes the circuit" );
 		Press( stationPoint );
 		Require( builder.Track.IsRunnable && builder.Ride.IsOperational && !level.IsCoasterToolActive, "a second click completes the coaster" );
+		Require( station!.IsOpen && builder.Ride.State == CoasterControllerState.Built, "leaving the tool opens the ride again; a finished coaster is built (state 2) until its script opens it" );
+		Require( builder.Track.Nodes.Count == CoasterTrack.StationNodeCount + SmokeCircuit.Length + 1 && builder.Track.Nodes[^1].IsStationEnd, "the station's three nodes, the pylons and the end node" );
 		var rating = builder.Ride.Rating!.Value;
 		Require( rating.Excitement is >= 0 and <= 100 && rating.Trains >= 1, "the completed coaster is rated" );
 		coasterBuiltFrame = frame;
@@ -96,6 +99,11 @@ internal sealed partial class SandboxSmokeTest
 		Require( train.Position != smokeTrainStart, $"a coaster train left the station (position {train.Position:F1}, speed {train.Speed:F1})" );
 		Require( level.CoasterTrianglesDrawn > 0, "the coaster track is drawn" );
 		CaptureFrame( "original-coaster.png" );
+		Require( ride.State is CoasterControllerState.Open or CoasterControllerState.Closed, "the station script opened the built coaster (COAST 5)" );
+		// Taking a finished coaster into the tool again closes the ride and puts it out of service without removing its trains; leaving it opens the ride.
+		Require( level.EnterCoasterTool( smokeStation ) && !smokeStation.IsOpen && ride.State == CoasterControllerState.Built && ride.Trains.Count > 0 && ride.RidersOnBoard == 0, "the tool on a finished coaster closes the ride (state 2, trains stay, no riders)" );
+		level.ExitCoasterTool();
+		Require( smokeStation.IsOpen, "leaving the tool opens the ride again" );
 		var economy = level.Park?.Economy;
 		var balance = economy?.Balance ?? 0;
 		Require( level.DeleteCoasterTrack( smokeStation ) && !ride.IsOperational, "delete the coaster track" );
@@ -111,11 +119,13 @@ internal sealed partial class SandboxSmokeTest
 	{
 		if ( smokeStation == null || coasterBuiltFrame == 0 )
 			return;
-		var train = smokeStation.Runtime.Coaster!.Trains[0];
-		if ( train.Position == smokeTrainStart )
+		var ride = smokeStation.Runtime.Coaster!;
+		var train = ride.Trains[0];
+		// A built coaster (state 2) moves its trains at once; the station script opens it (COAST 5) a moment later.
+		if ( train.Position == smokeTrainStart || ride.State == CoasterControllerState.Built )
 		{
 			coasterWait ??= System.Diagnostics.Stopwatch.StartNew();
-			Require( coasterWait.Elapsed.TotalSeconds < 60, "a coaster train leaves the station" );
+			Require( coasterWait.Elapsed.TotalSeconds < 60, train.Position == smokeTrainStart ? "a coaster train leaves the station" : "the station script opens the built coaster (COAST 5)" );
 			return;
 		}
 		VerifyCoasterRuns();

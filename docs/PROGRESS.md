@@ -1032,6 +1032,24 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Coaster three-node station (October 15):** the coaster's station is the original's three nodes (COAST-029, tp.exe `0x436ac0`, read again at the
+  instruction level): S0, a StdPylon in the cell beyond the `<` cell (node flags `0x400`, winch, no previous link), S1, pylon-less on the exact
+  middle dummy (`0x200 | 0x400`, winch) and S2, a StdPylon in the cell beyond the `>` cell (`0x200`, no next link). The three dummies are read from the
+  station model with the placement's rotation applied (`CoasterStationLayout`; all 12 PC stations, four rotations, checked against the shape's
+  `<` and `>` cells); the pylon heights are the dummies' heights without the fMinHeight/fMaxHeight clamp (creation parameter bit 4). The end node of a
+  finished track stands on S0's knot with the tangent of S0 (`0x435570`, `0x431660`), S0 leaves straight toward S1 and S2 straight along the platform,
+  the closing click is S0's cell, and no pylon stacks on a station node (`0x200`/`0x400`). The sampler's closing pair E → S1 emits one sample, so
+  the list starts on S0 and the braking zone, the station window (the knot coordinates of S0 and S2) and the swing's fade follow the original's frame
+  (`PlatformStart` and the two-node workaround are gone, COAST-019 retired); the platform links S0 → S1 and S1 → S2 are ordinary links of the collision
+  pass (COAST-004 narrowed). COAST-029 stays open only for the stations whose dummies lie below the StdPylon's h0 (Ghosta Coasta, Scatty Batty, Candy
+  Coaster, Escape Velocity: the loft parameter stops at 0, so S0 and S2 stand above the middle knot) and for the middle knot's fTrackHeightAdjust.
+  The controller has the original's states (COAST-012 retired, `0x435730`): 1 unfinished, 2 built or out of service (trains run empty, no station
+  step), 4 open, 8 closed. Entering the coaster tool closes the ride object and sets state 2 for a finished track (its riders and the admission ring
+  leave, the trains stay) or 1 (the trains are removed); leaving the tool opens the ride again when the state is 2 (`0x447520` is the tool's entry,
+  not its exit as round 2 labelled it). A save with the two-node station migrates on load (the placement's three nodes, the saved pylons, the end
+  node on S0, a new sampling, the riders of the old trains leave); the coaster hash changed shape (docs/DETERMINISM.md). Register: COAST-012 and 019
+  retired, COAST-004 and 029 narrowed, COAST-014, 015, 024 and 030 lost their station clauses. The coaster tool panel (COAST-028/035) is untouched.
+
 - **HUD video round review fixes (October 15):** the software pointer is drawn last (after the advisor and progress overlays) and the system pointer is hidden only when the cursor art from `Data/ui/cursors` (found case-insensitively on disk) is loaded and decodes, the pointer is inside the window and ImGui does not want the mouse; an empty message tube no longer swallows park clicks, opening a message closes the info arm, the status line hides under the info arm and message panel, hover selects an applicant only when the pointer moves, and per-frame allocations are gone.
 - **HUD video round (October 14):** a gameplay video of the Dutch PC build settled the HUD and window register items. The hire window now has the Vaardigheid gauge and the mini balance (money in, staff costs plus the wage, other costs, balance) that follow the hovered candidate; the click-to-hire trigger stays (the original's 0x400 list message and its advisor line, UI-083 retired) and the 3D candidate figure is registered (UI-082). The yellow text under the cash is the cost of the build action under way and is hidden outside the build tools (UI-047). Pending messages stack in a red message tube left of the HUD, left click opens one in a green slide-out panel and right click deletes it (UI-025); OpenTPW's own feedback lines moved to a status line. The popup help box sits at the bottom centre on translucent black (UI-010). The golden ticket and key counters show only above zero as "n ×", keys are tracked (UI-051). Excitement, reliability, repair and life are red-to-green gauges (UI-028/046), the buy list's third column is a tick box (UI-050), and the park draws the original glove, arrow and no-entry pointers (UI-100). UI-011 is retired, UI-042 narrowed and the shortcut letters of the help texts recorded under UI-012.
 - **Particle allocation test (October 14):** `ParticleSystemPortTests.TickAllocatesNothing` measures windows of 100 ticks until one is clean, so tiered-compilation allocations in a busy full run no longer fail it; a real per-tick allocation still never gives a clean window.

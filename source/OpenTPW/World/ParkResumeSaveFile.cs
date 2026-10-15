@@ -938,6 +938,7 @@ internal static class ParkResumeSaveFile
 					$"coaster {ride.AttractionId}'s track holds nodes without station ends" );
 			var pylons = 0;
 			var stationNodes = 0;
+			var stationNodesAtHead = 0;
 			for ( var node = 0; node < track.Nodes.Count; node++ )
 			{
 				var saved = track.Nodes[node];
@@ -952,25 +953,38 @@ internal static class ParkResumeSaveFile
 				Require( saved.StackIndex >= 0, $"coaster {ride.AttractionId}'s node {node} stack index {saved.StackIndex} is negative" );
 				Require( (saved.Flags & ~CoasterSave.KnownNodeFlags) == 0,
 					$"coaster {ride.AttractionId}'s node {node} carries flag bits 0x{saved.Flags:X}, which this format does not know" );
+				Require( (saved.ExactX is null) == (saved.ExactY is null) && (saved.ExactY is null) == (saved.ExactZ is null),
+					$"coaster {ride.AttractionId}'s node {node} holds a partial exact position" );
+				Require( saved.ExactX is null || (float.IsFinite( saved.ExactX.Value ) && float.IsFinite( saved.ExactY!.Value ) && float.IsFinite( saved.ExactZ!.Value )),
+					$"coaster {ride.AttractionId}'s node {node} holds an exact position that is not finite" );
+				Require( saved.ExactX is null || saved.IsStation,
+					$"coaster {ride.AttractionId}'s node {node} holds an exact position but is not a station node" );
 				if ( saved.IsStation )
 				{
 					stationNodes++;
-					Require( node == 0, $"coaster {ride.AttractionId}'s node {node} is a second station node" );
+					// The station is one node (a save from before COAST-029) or its three nodes at the head of the list.
+					Require( node < CoasterTrack.StationNodeCount && (node == 0 || stationNodes == node + 1),
+						$"coaster {ride.AttractionId}'s node {node} is a second station node away from the head of the track" );
+					if ( node == 0 )
+						stationNodesAtHead = 1;
 				}
 				if ( IsPylonlessNode( saved ) )
 				{
 					Require( !saved.LoopPylon && saved.StackIndex == 0,
 						$"coaster {ride.AttractionId}'s pylon-less node {node} is a stacked loop pylon" );
-					Require( node == 0 || node == track.Nodes.Count - 1,
-						$"coaster {ride.AttractionId}'s node {node} is a station end node outside the ends of the track" );
+					Require( saved.IsStationEnd ? node == track.Nodes.Count - 1 : saved.ExactX is not null,
+						$"coaster {ride.AttractionId}'s node {node} is a pylon-less node outside its place in the track" );
 				}
-				else
+				if ( !saved.IsStation && !saved.IsStationEnd )
 					pylons++;
 			}
+			var threeNodeStation = stationNodes == CoasterTrack.StationNodeCount;
 			if ( track.Nodes.Count > 0 )
 			{
-				Require( stationNodes == 1, "a track with nodes holds no station node" );
-				Require( track.DepartCell == (track.Nodes[0]!.X, track.Nodes[0].Y),
+				Require( stationNodesAtHead == 1 && (stationNodes == 1 || threeNodeStation), "a track with nodes holds no station" );
+				Require( !threeNodeStation || (track.Nodes[1]!.ExactX is not null && track.Nodes[0]!.ExactX is null && track.Nodes[2]!.ExactX is null),
+					$"coaster {ride.AttractionId}'s station holds its middle node on a pylon or a pylon-less end" );
+				Require( threeNodeStation || track.DepartCell == (track.Nodes[0]!.X, track.Nodes[0].Y),
 					$"coaster {ride.AttractionId}'s station node does not stand at its depart end" );
 			}
 			Require( !track.IsComplete || track.IsClosed, $"coaster {ride.AttractionId}'s track completed without closing" );
@@ -979,14 +993,16 @@ internal static class ParkResumeSaveFile
 			{
 				var end = track.Nodes[^1]!;
 				Require( end.IsStationEnd, $"coaster {ride.AttractionId}'s completed track holds no station end node" );
-				Require( track.ReturnCell == (end.X, end.Y),
-					$"coaster {ride.AttractionId}'s station end node does not stand at its return end" );
+				Require( threeNodeStation ? (end.X, end.Y) == (track.Nodes[0]!.X, track.Nodes[0].Y) : track.ReturnCell == (end.X, end.Y),
+					$"coaster {ride.AttractionId}'s station end node does not stand at the head of its station" );
 				Require( track.Nodes.Count( node => node!.IsStationEnd ) == 1,
 					$"coaster {ride.AttractionId}'s completed track holds more than one station end node" );
 			}
 			else
 				Require( track.Nodes.All( node => !node!.IsStationEnd ),
 					$"coaster {ride.AttractionId}'s open track holds a station end node" );
+			Require( ride.State is null or 1 or 2 or 4 or 8, $"coaster {ride.AttractionId}'s controller state {ride.State} is not 1, 2, 4 or 8" );
+			Require( ride.State is null or 1 || track.IsComplete, $"coaster {ride.AttractionId}'s controller state {ride.State} needs a finished track" );
 			Require( ride.BreakdownState is >= 0 and <= 2, $"coaster {ride.AttractionId}'s breakdown state {ride.BreakdownState} is not 0, 1 or 2" );
 			Require( ride.SpeedSetting >= 0, $"coaster {ride.AttractionId}'s speed setting {ride.SpeedSetting} is negative" );
 			Require( ride.SeatsPerTrain >= 0, $"coaster {ride.AttractionId}'s trains seat {ride.SeatsPerTrain}" );
@@ -1068,8 +1084,8 @@ internal static class ParkResumeSaveFile
 		}
 	}
 
-	/// <summary>Whether a saved node is a pylon-less station or station end node.</summary>
-	private static bool IsPylonlessNode( CoasterNodeSaveData node ) => node.IsStation || node.IsStationEnd;
+	/// <summary>Whether a saved node is the old shape's station node, the middle station node (an exact position) or the station end node.</summary>
+	private static bool IsPylonlessNode( CoasterNodeSaveData node ) => node.IsStationEnd || node.ExactX is not null;
 
 	/// <summary>
 	/// Runs one inner validator and converts the crashes a null or malformed nested part can cause (the lane

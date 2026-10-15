@@ -57,24 +57,37 @@ public enum CoasterNodeFlags : uint
 	/// <summary>A chain-lift (winch) section, set by the rating pass.</summary>
 	Winch = 0x800,
 	/// <summary>The node or the link after it failed the validator (shown as invalid; the edit is kept).</summary>
-	Invalid = 0x4000
+	Invalid = 0x4000,
+	/// <summary>The station node at the departing end (S2) and the middle one (S1): no pylon stacks on a node with this flag (creation parameter 8).</summary>
+	StationTail = 0x200,
+	/// <summary>The station node at the arriving end (S0) and the middle one (S1): no pylon stacks on a node with this flag (creation parameter 0x10).</summary>
+	StationHead = 0x400,
+	/// <summary>The node has no previous neighbour: its tangent and the chain walk ignore the node before it (creation parameter 0x40; S0 and the station end node).</summary>
+	NoPreviousLink = 0x80000,
+	/// <summary>The node has no next neighbour: its tangent ignores the node after it (creation parameter 0x80; S2, which leaves straight along the platform).</summary>
+	NoNextLink = 0x40000,
+	/// <summary>The node's next neighbour for its tangent and its closing pair is the second node of the chain (creation parameter 0x100; the station end node).</summary>
+	EndNextIsSecond = 0x100000
 }
 
 /// <summary>
-/// One node of a coaster track (COAST-plan §3.3, §13.1): the station node first, then the pylons in build order, then
-/// the station end nodes completion appends. <see cref="Height"/> is the pylon height above the ground after the clamp
-/// (the loft height of pylon-less nodes), <see cref="T"/> the stored height parameter (node <c>+232</c>),
-/// <see cref="StackIndex"/> the position in the cell's pylon stack, <see cref="Bank"/> the auto-bank (node <c>+216</c>).
+/// One node of a coaster track (COAST-plan §3.3, §13.1, COAST-029): the three station nodes first (S0 and S2 are StdPylon nodes in the cells beyond the
+/// station's '&lt;' and '&gt;' cells, S1 is pylon-less on the middle dummy), then the pylons in build order, then the station end node completion
+/// appends. <see cref="Height"/> is the pylon height above the ground after the clamp, <see cref="T"/> the stored height parameter (node <c>+232</c>),
+/// <see cref="StackIndex"/> the position in the cell's pylon stack, <see cref="Bank"/> the auto-bank (node <c>+216</c>). A pylon-less station node
+/// stands on its <see cref="ExactPosition"/>; the station end node on the knot of S0.
 /// </summary>
-public sealed record CoasterNode( int X, int Y, float Height, float T, bool LoopPylon, int StackIndex, bool IsStation, bool IsStationEnd = false )
+public sealed record CoasterNode( int X, int Y, float Height, float T, bool LoopPylon, int StackIndex, bool IsStation, bool IsStationEnd = false, SVector3? ExactPosition = null )
 {
 	public CoasterNodeFlags Flags { get; set; }
 	public float Bank { get; set; }
 	/// <summary>The loop-rotate parameter (node <c>+0xf8</c>): 0 for the first pylon of a loop pair, 0.5 for the second (<c>0x4341ec</c>); a pylon outside a pair takes the old default 0.5.</summary>
 	public float LoopRotate { get; set; } = DefaultLoopRotateValue;
 	internal const float DefaultLoopRotateValue = 0.5f;
-	/// <summary>A pylon-less node (descriptor flag bit 0): the station node and the station end nodes.</summary>
-	public bool IsPylonless => IsStation || IsStationEnd;
+	/// <summary>A pylon-less node (descriptor flag bit 0): the middle station node and the station end node.</summary>
+	public bool IsPylonless => IsStationEnd || ExactPosition != null;
+	/// <summary>A node the player placed: not one of the station's nodes (descriptor flag 2) and not the station end node. Only these move, change height and are deleted.</summary>
+	public bool IsPlayerPylon => !IsStation && !IsStationEnd;
 }
 
 /// <summary>The cells and heights a coaster track is checked against (map bounds, the no-ground cells, ground heights).</summary>
@@ -110,7 +123,7 @@ public sealed class CoasterSite
 				blocked[y * grid.Width + x] = grid.CheckTerrain( x, y ) is OriginalPlacementResult.NoTerrainSurface or OriginalPlacementResult.OutsideTerrain;
 		}
 		var width = grid.Width;
-		return new CoasterSite( grid.Width, grid.Height, ( x, y ) => blocked[y * width + x], ( x, y ) => grid.GetCellHeight( x, y ) / ObjectPlacement.ModelScale );
+		return new CoasterSite( grid.Width, grid.Height, ( x, y ) => blocked[y * width + x], ( x, y ) => grid.GetCellHeight( Math.Clamp( x, 0, grid.Width - 1 ), Math.Clamp( y, 0, grid.Height - 1 ) ) / ObjectPlacement.ModelScale );
 	}
 }
 
@@ -124,6 +137,12 @@ public sealed class CoasterTrack
 	/// <summary>Original world units per map cell (one cell is 10 MD2 units).</summary>
 	public const float CellUnits = 10f;
 	public const float HalfCell = 5f;
+	/// <summary>The station's three nodes (S0, S1, S2) at the head of every track.</summary>
+	public const int StationNodeCount = 3;
+
+	/// <summary>The cell a world coordinate falls in: the truncation of x·0.1 (<c>0x436ac0</c> converts the dummy's position with ftol(x · 0.1)).</summary>
+	// [BIN:TPW-EXE:0x436b9c station cell] the station nodes' cells are ftol(x · 0.1) and ftol(z · 0.1) of the dummy's world position (the constant at 0x6fdedc is 0.1)
+	public static int CellOf( float coordinate ) => (int)MathF.Truncate( coordinate * 0.1f );
 	/// <summary>The cost divisor (constant <c>-13300(r2)</c>): rates are per 10 world units.</summary>
 	public const float CostUnitDivisor = 10f;
 	/// <summary>Definition <c>+16</c>: the auto-bank divisor (fAutoBankDivisor is never loaded).</summary>
@@ -137,13 +156,13 @@ public sealed class CoasterTrack
 	public CoasterTrack( CoasterDefinition definition ) => Definition = definition ?? throw new ArgumentNullException( nameof( definition ) );
 
 	public CoasterDefinition Definition { get; }
-	/// <summary>The station end the track leaves from (shape '&gt;'): the station node's cell.</summary>
+	/// <summary>The station end the track leaves from (shape '&gt;'): the cell before the station's last node S2.</summary>
 	public (int X, int Y)? DepartCell { get; private set; }
-	/// <summary>The station end the track returns to (shape '&lt;').</summary>
+	/// <summary>The station end the track returns to (shape '&lt;'): the cell after the station's first node S0.</summary>
 	public (int X, int Y)? ReturnCell { get; private set; }
 	public IReadOnlyList<CoasterNode> Nodes => nodes;
-	/// <summary>Pylons placed after the station node.</summary>
-	public int PylonCount => nodes.Count( node => !node.IsPylonless );
+	/// <summary>Pylons the player placed after the station's three nodes.</summary>
+	public int PylonCount => nodes.Count( node => node.IsPlayerPylon );
 	/// <summary>Controller <c>+60</c> bit 1 clear: the chain's ends are linked.</summary>
 	public bool IsClosed { get; private set; }
 	/// <summary>Controller <c>+60</c> bit 0: completed (station end nodes appended).</summary>
@@ -154,17 +173,46 @@ public sealed class CoasterTrack
 	/// <summary>Incremented by every edit.</summary>
 	public int Version { get; private set; }
 
-	/// <summary>Sets the station ends and the station node (descriptor flag 2) at the depart cell, removing any pylons.</summary>
-	public void SetStation( (int X, int Y) depart, (int X, int Y) @return )
+	/// <summary>
+	/// Sets the station ends and builds the station's three nodes (descriptor flag 2) from its model frame, removing any pylons: S0 a StdPylon node in the
+	/// cell beyond '&lt;' (no previous link, node flag 0x400), S1 pylon-less on the middle dummy (0x200 | 0x400) and S2 a StdPylon node in the cell beyond '&gt;'
+	/// (no next link, 0x200); S0 and S1 are chain lifts. The pylon heights are the dummies' heights and skip the fMinHeight/fMaxHeight clamp.
+	/// </summary>
+	// [BIN:TPW-EXE:0x436ac0 station nodes] S0: creation parameters 0x274 = node flags 0x400 | 0x1800 (winch) | 0x80000 (no previous link), bit 4 skips the height clamp (0x433bd0 → 0x433790), bit 0x200 registers the pylon in its cell; S1: 0x3c = 0x200 | 0x400 | 0x1800, the exact dummy position as knot (node +0x4c..+0x54); S2: 0x28c = 0x200 | 0x40000 (no next link); ordinals 0, 1, 2
+	// [BIN:TPW-EXE:0x434060 node creation parameters] the constructor maps its parameter bits to node flags: 8 → 0x200, 0x10 → 0x400, 0x20 → 0x1800, 0x40 → 0x80000, 0x80 → 0x40000, 0x100 → 0x100000 (0x4343a6..0x4343eb); bit 0x200 puts the pylon in its map cell (0x452d30)
+	// [APPROX:COAST-029] the middle node's winch mark is re-derived by the rating pass instead of kept from the creation parameter; the middle knot takes fTrackHeightAdjust like every pylon knot (only the Big Dripper's −1.5 is nonzero) where the original's raw descriptor position may not; and a station whose dummies lie below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Escape Velocity 12.04 against 30, Candy Coaster 7.09 against 10) stands on pylon end nodes raised to h0, exactly as the loft clamp t = clamp((h − h0)/(h1 − h0), 0, 1) says, so S0 and S2 sit above the middle node by h0 − h; whether the original's pylon pose and the terrain height under the pylon's cell leave it so has not been traced
+	public void SetStation( (int X, int Y) depart, (int X, int Y) @return, CoasterStationLayout layout )
 	{
 		if ( depart == @return )
 			throw new ArgumentException( "The station ends must differ.", nameof( @return ) );
+		ArgumentNullException.ThrowIfNull( layout );
 		DepartCell = depart;
 		ReturnCell = @return;
 		nodes.Clear();
-		nodes.Add( new CoasterNode( depart.X, depart.Y, Definition.InitialPylonLoftHeight, 0, false, 0, true ) );
+		nodes.Add( StationPylon( layout.End, CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch | CoasterNodeFlags.NoPreviousLink ) );
+		nodes.Add( new CoasterNode( CellOf( layout.Mid.X ), CellOf( layout.Mid.Z ), 0, 0, false, 0, true, ExactPosition: new SVector3( layout.Mid.X, layout.Mid.Y, layout.Mid.Z ) )
+		{ Flags = CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch } );
+		nodes.Add( StationPylon( layout.Start, CoasterNodeFlags.StationTail | CoasterNodeFlags.NoNextLink ) );
 		IsComplete = IsClosed = false;
 		Version++;
+	}
+
+	private CoasterNode StationPylon( CoasterStationPoint point, CoasterNodeFlags flags )
+	{
+		var (height, t) = StationHeight( Definition.StandardPylon, point.Y );
+		return new CoasterNode( CellOf( point.X ), CellOf( point.Z ), height, t, false, 0, true ) { Flags = flags };
+	}
+
+	/// <summary>
+	/// The height of a station pylon and its parameter t = clamp((h − h0)/(h1 − h0), 0, 1): the requested height is taken as it comes, without the
+	/// fMinHeight/fMaxHeight clamp (a station node's creation parameter has bit 4).
+	/// </summary>
+	// [BIN:TPW-EXE:0x434060 node creation parameters] bit 4 of the creation parameters goes to 0x433bd0, which skips the fMinHeight/fMaxHeight clamp of 0x433790; the loft parameter is then clamp((h − h0)/(h1 − h0), 0, 1)
+	public static (float Height, float T) StationHeight( CoasterPylonControl pylon, float requested )
+	{
+		var span = pylon.MeshHeightHigh - pylon.MeshHeightLow;
+		var t = span == 0 ? 0 : Math.Clamp( (requested - pylon.MeshHeightLow) / span, 0f, 1f );
+		return (PylonHeight( pylon, t ), t);
 	}
 
 	/// <summary>The pylon control that validates a link after <paramref name="previous"/> (test 3).</summary>
@@ -212,7 +260,7 @@ public sealed class CoasterTrack
 		var dx = next.X - previous.X;
 		var dy = next.Y - previous.Y;
 		var squared = dx * dx + dy * dy;
-		// [BIN:TPW-EXE:0x4349a5 distance waiver] a link outside [min², max²] is rejected when the previous node's ordinal ([ebp]) is 2 and otherwise waived when its descriptor has flag 2 (0x4349af..0x4349b9): the waiver exempts the station's internal nodes (ordinals 0 and 1, created by 0x436ac0); OpenTPW's one station node has no such predecessor, so every link it builds is checked as in the original (COAST-007 retired; the three-node station is COAST-029)
+		// [BIN:TPW-EXE:0x4349a5 distance waiver] a link outside [min², max²] is rejected when the previous node's ordinal ([ebp]) is 2 and otherwise waived when its descriptor has flag 2 (0x4349af..0x4349b9): the waiver exempts the links that leave the station's internal nodes S0 and S1 (ordinals 0 and 1, created by 0x436ac0), which OpenTPW never validates; every link after S2 (ordinal 2) and after a pylon is checked (COAST-007 retired, COAST-029)
 		if ( squared < pylon.MinPlaceDistanceSquared )
 			return CoasterPlaceResult.TooClose;
 		if ( squared > pylon.MaxPlaceDistanceSquared )
@@ -228,9 +276,9 @@ public sealed class CoasterTrack
 		return CoasterPlaceResult.Ok;
 	}
 
-	/// <summary>The point before node <paramref name="index"/> for its turn angle: the node before it, or the return end before the station node.</summary>
-	// [APPROX:COAST-030] the point before the station node is the return end cell; the original takes the station node's predecessor, and it skips the turn test when the nodes carry 0x10000 together with 0x20000 in move mode (0x4348af..0x4348d8, the cut ends of a reopened circuit, set by 0x434060 on a node added to an open circuit), flags OpenTPW never sets — evidence needed: the station node's predecessor
-	private (int X, int Y)? Before( int index ) => index >= 1 ? (nodes[index - 1].X, nodes[index - 1].Y) : ReturnCell;
+	/// <summary>The point before node <paramref name="index"/> for its turn angle: the cell of the node before it (the first station node has none).</summary>
+	// [APPROX:COAST-030] the original skips the turn test when the nodes carry 0x10000 together with 0x20000 in move mode (0x4348af..0x4348d8, the cut ends of a reopened circuit, set by 0x434060 on a node added to an open circuit), flags OpenTPW never sets — evidence needed: a capture of a cut and reconnected circuit
+	private (int X, int Y)? Before( int index ) => index >= 1 ? (nodes[index - 1].X, nodes[index - 1].Y) : null;
 
 	/// <summary>
 	/// The validator <c>0x36ba4</c> for a new pylon after the last node (<paramref name="moving"/> null) or for node
@@ -241,9 +289,9 @@ public sealed class CoasterTrack
 	// [BIN:STP-PPC:0x10094474 slope and deviance] slope (fMaxHeightDiffPerGSquareDist, pylon +112), loop rotation deviance (+152) and loop height difference (+172) are loaded but never read by the coaster code; fMaxRotnAngleDeviance (+148) only bounds the rotate slider 0x10046508
 	public CoasterPlaceResult CheckPlacement( CoasterSite site, CoasterWorld? world, CoasterRide? owner, int x, int y, bool loopMode, int? moving = null )
 	{
-		if ( DepartCell == null || nodes.Count == 0 || ((IsComplete || IsClosed) && moving == null) )
+		if ( DepartCell == null || nodes.Count < StationNodeCount || ((IsComplete || IsClosed) && moving == null) )
 			return CoasterPlaceResult.NotEditable;
-		if ( moving is int index && (index <= 0 || index >= nodes.Count || nodes[index].IsPylonless) )
+		if ( moving is int index && (index < StationNodeCount || index >= nodes.Count || !nodes[index].IsPlayerPylon) )
 			return CoasterPlaceResult.NotEditable;
 		if ( loopMode && !Definition.HasLoopPylon )
 			return CoasterPlaceResult.NoLoopPylon;
@@ -267,11 +315,11 @@ public sealed class CoasterTrack
 			// [BIN:STP-PPC:0x10037318 move re-validation] moving a node re-validates the following node and the one after it with the moved position (0x10037318, 0x100373B4)
 			for ( var next = moved + 1; next <= moved + 2 && next < nodes.Count; next++ )
 			{
-				if ( nodes[next].IsPylonless )
+				if ( !nodes[next].IsPlayerPylon )
 					break;
 				var after = nodes[next - 1];
 				var from = next - 1 == moved ? (x, y) : (after.X, after.Y);
-				var behind = next - 2 == moved ? (x, y) : next - 2 >= 0 ? (nodes[next - 2].X, nodes[next - 2].Y) : ReturnCell;
+				var behind = next - 2 == moved ? (x, y) : next - 2 >= 0 ? (nodes[next - 2].X, nodes[next - 2].Y) : ((int X, int Y)?)null;
 				var control = Definition.Pylon( next - 1 == moved ? loopMode : (after.Flags & CoasterNodeFlags.Loop) != 0 );
 				if ( CheckLink( control, (nodes[next].X, nodes[next].Y), from, behind, entrance: after.IsStation ) != CoasterPlaceResult.Ok )
 					return CoasterPlaceResult.BreaksNextLink;
@@ -282,7 +330,7 @@ public sealed class CoasterTrack
 
 	/// <summary>Test 7: a cell that already holds pylons takes another only from the same coaster, with the same pylon control, below the stack limit.</summary>
 	// [BIN:STP-PPC:0x10037104 pylon stacking] an occupying pylon (found by walking every coaster's descriptor list, 0x10056BAC) must belong to the same coaster (+20), use the same pylon control (+24) and have stack height (+48) < uiMaxStackedPylons (+204), with no object flags 0x600
-	// [APPROX:COAST-030] the stacking test does not test the bottom node's flags: the original reads node flags 0x200/0x400 of the bottom node of the stack (0x434d34..0x434d3d, 0x434da8..0x434db1), which only the station nodes carry (creation parameters 8 and 0x10), so no pylon stacks on a station node; OpenTPW never stacks on its pylon-less nodes
+	// [BIN:TPW-EXE:0x434d34 stacking on station nodes] the stacking test reads node flags 0x200 and 0x400 of the bottom node of the stack (0x434d34..0x434d3d, 0x434da8..0x434db1), which only the station nodes carry (creation parameters 8 and 0x10): S0 (0x400), S2 (0x200) and S1 (both); no pylon stacks on a station pylon, a placement there is refused as a full stack
 	private CoasterPlaceResult CheckStack( CoasterWorld? world, CoasterRide? owner, int x, int y, bool loopMode, int? moving )
 	{
 		var count = 0;
@@ -292,6 +340,8 @@ public sealed class CoasterTrack
 				continue;
 			if ( ride != owner )
 				return CoasterPlaceResult.OtherCoaster;
+			if ( (node.Flags & (CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead)) != 0 )
+				return CoasterPlaceResult.StackFull;
 			if ( node.LoopPylon != loopMode )
 				return CoasterPlaceResult.OtherPylonKind;
 			if ( moving is int at && ride == owner && nodes.IndexOf( node ) > at )
@@ -317,10 +367,10 @@ public sealed class CoasterTrack
 	{
 		foreach ( var node in nodes )
 			node.Flags &= ~CoasterNodeFlags.Invalid;
-		for ( var index = 1; index < nodes.Count; index++ )
+		for ( var index = StationNodeCount; index < nodes.Count; index++ )
 		{
 			var node = nodes[index];
-			if ( node.IsPylonless )
+			if ( !node.IsPlayerPylon )
 				continue;
 			var previous = nodes[index - 1];
 			var failed = site.IsBlocked( node.X, node.Y )
@@ -341,9 +391,9 @@ public sealed class CoasterTrack
 	{
 		get
 		{
-			for ( var index = nodes.Count - 1; index >= 1; index-- )
+			for ( var index = nodes.Count - 1; index >= StationNodeCount; index-- )
 			{
-				if ( !nodes[index].IsPylonless )
+				if ( nodes[index].IsPlayerPylon )
 					return index;
 			}
 			return null;
@@ -396,7 +446,7 @@ public sealed class CoasterTrack
 	/// <summary>Deletes the last pylon of an incomplete track; a closed circuit opens again (the cut ends are marked open).</summary>
 	internal bool RemoveLast()
 	{
-		if ( IsComplete || nodes.Count <= 1 )
+		if ( IsComplete || nodes.Count <= StationNodeCount )
 			return false;
 		IsClosed = false;
 		nodes.RemoveAt( nodes.Count - 1 );
@@ -404,35 +454,39 @@ public sealed class CoasterTrack
 		return true;
 	}
 
-	/// <summary>Removes every pylon (the station node stays) and opens the track.</summary>
+	/// <summary>Removes every pylon (the station's three nodes stay) and opens the track.</summary>
 	internal void Clear()
 	{
-		if ( nodes.Count > 1 )
-			nodes.RemoveRange( 1, nodes.Count - 1 );
+		if ( nodes.Count > StationNodeCount )
+			nodes.RemoveRange( StationNodeCount, nodes.Count - StationNodeCount );
 		IsComplete = IsClosed = false;
 		Version++;
 	}
 
-	/// <summary>Whether the last pylon joins the return end (distance window, turn, and the arrival turn into the station).</summary>
-	// [APPROX:COAST-030] OpenTPW's closure check: the closing link and the arrival turn (entrance window at the return end) are validated and Revalidate marks the last pylon invalid when they fail; the original validates the open start of a reopened circuit through the validator's re-validation (0x434d6b, 0x434e5a) and a fresh circuit is closed by completion
+	/// <summary>Whether the last pylon joins the head of the chain, the cell of S0 (distance window, turn, and the arrival turn along the platform).</summary>
+	// [APPROX:COAST-030] OpenTPW's closure check: the closing link to the station's first node S0 and the arrival turn (entrance window at S0, toward S1) are validated and Revalidate marks the last pylon invalid when they fail; the original validates the open start of a reopened circuit through the validator's re-validation (0x434d6b, 0x434e5a) and a fresh circuit is closed by completion
 	public CoasterPlaceResult CheckClosure()
 	{
-		if ( ReturnCell is not { } back || DepartCell is not { } depart || LastPylonIndex is not int lastIndex )
+		if ( nodes.Count < StationNodeCount || LastPylonIndex is not int lastIndex )
 			return CoasterPlaceResult.NotEditable;
+		var head = (nodes[0].X, nodes[0].Y);
+		var second = (nodes[1].X, nodes[1].Y);
 		var last = nodes[lastIndex];
 		var pylon = ControlAfter( last, loopMode: false );
-		var link = CheckLink( pylon, back, (last.X, last.Y), (nodes[lastIndex - 1].X, nodes[lastIndex - 1].Y), entrance: false );
+		var link = CheckLink( pylon, head, (last.X, last.Y), (nodes[lastIndex - 1].X, nodes[lastIndex - 1].Y), entrance: false );
 		if ( link != CoasterPlaceResult.Ok )
 			return link;
-		var dx = back.X - last.X;
-		var dy = back.Y - last.Y;
-		var angle = MathF.Abs( TurnAngle( depart, back, (last.X, last.Y) ) );
+		var dx = head.X - last.X;
+		var dy = head.Y - last.Y;
+		var angle = MathF.Abs( TurnAngle( second, head, (last.X, last.Y) ) );
 		var (low, high) = AngleWindow( pylon, MathF.Sqrt( dx * dx + dy * dy ), entrance: true );
 		return angle < low ? CoasterPlaceResult.TurnTooSharp : angle > high ? CoasterPlaceResult.TurnTooWide : CoasterPlaceResult.Ok;
 	}
 
-	/// <summary>Whether a click on (x, y) is on the chain's open start (COAST-016: the station's end cells).</summary>
-	public bool IsChainStart( int x, int y ) => (x, y) == DepartCell || (x, y) == ReturnCell;
+	/// <summary>Whether a click on (x, y) is on the chain's open start: the cell of the head S0 (COAST-030), or a cell of the station itself where the track begins and ends.</summary>
+	// [BIN:TPW-EXE:0x435d50 closing target] the cell that holds the head node (S0) of a fresh track is the closing target (the closing flag, and the open-circuit close test of 0x435020)
+	// [EXT:coaster-station-end-click] a click on the station's '<' or '>' cell closes the circuit too, as it did when the station's ends were the track's ends; the original's own completion click takes any ride cell (types 4, 9, 10), see CoasterBuilder.Complete
+	public bool IsChainStart( int x, int y ) => (x, y) == DepartCell || (x, y) == ReturnCell || (nodes.Count > 0 && (x, y) == (nodes[0].X, nodes[0].Y));
 
 	/// <summary>Closes the circuit (<c>0x470c4</c>): no node is added, the chain's ends are linked and "circuit open" clears.</summary>
 	// [BIN:STP-PPC:0x100470C4 close circuit] placing on the cell of the chain's open start node closes the circuit instead of adding a node: the end nodes become adjacent and controller +60 bit 1 clears
@@ -445,29 +499,31 @@ public sealed class CoasterTrack
 		return true;
 	}
 
-	/// <summary>The node flags of the station end node completion appends: none OpenTPW models. The call that appends it passes the creation parameters 0x144, which the node constructor maps to node flags 0x80000 and 0x100000, not to 0x144 (<c>0x435570</c>, <c>0x4343e6</c>).</summary>
+	/// <summary>The node flags of the station end node completion appends: no previous link and the second node as its next one. The call that appends it passes the creation parameters 0x144, which the node constructor maps to node flags 0x80000 and 0x100000, not to 0x144 (<c>0x435570</c>, <c>0x4343e6</c>).</summary>
 	// [BIN:TPW-EXE:0x434060 node creation parameters] the constructor maps its parameter bits to node flags: 2 → 0x2000, 8 → 0x200, 0x10 → 0x400, 0x20 → 0x1800, 0x40 → 0x80000, 0x80 → 0x40000, 0x100 → 0x100000 (0x4343a6..0x4343eb), bit 0 clear → 0x200000 on the node and its predecessor, bit 4 goes to 0x433bd0; the end node's 0x144 is therefore 0x80000 | 0x100000, no loop flag 0x40, no 0x4 and no 0x100. The Mac call site 0x10037E34 passes the same 0x144; its node constructor could not be compared (no Mac binary here)
-	public const CoasterNodeFlags StationEndFlags = CoasterNodeFlags.None;
+	public const CoasterNodeFlags StationEndFlags = CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.EndNextIsSecond;
 
 	/// <summary>
 	/// Completes a closed track (<c>0x37ef0</c>): sets controller <c>+60</c> bit 0 and appends one pylon-less station end
-	/// node with node flags 0x144.
+	/// node at the knot of S0 (creation parameters 0x144): the track returns onto the head of the platform.
 	/// </summary>
 	// [BIN:STP-PPC:0x10037EF0 complete track] completion sets controller +60 bit 0 and appends the station end node (0x10037CC8); then track flags 1 and 0x1000 (rebuild, re-rate, recount trains)
 	// [BIN:STP-PPC:0x10037CC8 station end nodes] definition bit 0x20 set → one end node with flags 0x144 (0x10037CF4, 0x10037E34), clear → two with flags 4; the loader always ORs 0xA0 into the definition flags (0x100301F4) and nothing clears 0x20, so the original always appends one end node with 0x144 whatever bVisibleEndPylon says
-	// [APPROX:COAST-029] the station is the '>' node and the '<' end node at fInitialPylonLoftHeight; the original builds three station nodes at the station model's attribute-0x400000 dummies 1..3 (0x436ac0: a StdPylon node, a pylon-less node and a StdPylon node, descriptors 0x12/0x13/0x12 with flag 2 and the winch flag) and puts the end node at the first node's pylon track tag (0x435570) — evidence needed: the dummy positions in the station MD2s (game data) and their transform by the station's placement
+	// [BIN:TPW-EXE:0x435570 completion] with definition flag 0x20 one end node is built: a pylon-less descriptor (0x13) at the world position of the first station node's pylon track dummy (head node +0x100 → +0x18 → +0x2c, instance +0x30..+0x38 through 0x435710), creation parameters 0x144 = node flags 0x80000 | 0x100000 with bit 4; then controller flags 0x1001 and the state setter 0x435730 with state 2; its tangent has no previous neighbour and its next is S1
 	internal CoasterPlaceResult Complete()
 	{
 		if ( IsComplete )
 			return CoasterPlaceResult.NotEditable;
 		if ( !IsClosed )
 			return CoasterPlaceResult.NotClosed;
-		var back = ReturnCell!.Value;
-		nodes.Add( new CoasterNode( back.X, back.Y, Definition.InitialPylonLoftHeight, 0, false, 0, false, IsStationEnd: true ) { Flags = StationEndFlags } );
+		nodes.Add( StationEnd() );
 		IsComplete = true;
 		Version++;
 		return CoasterPlaceResult.Ok;
 	}
+
+	/// <summary>The station end node: pylon-less, on the knot of S0 (its position is read from there), tangent along S0 toward S1.</summary>
+	private CoasterNode StationEnd() => new( nodes[0].X, nodes[0].Y, nodes[0].Height, 0, false, 0, false, IsStationEnd: true ) { Flags = StationEndFlags };
 
 	/// <summary>Reopens a completed track: removes the station end nodes and opens the circuit.</summary>
 	// [BIN:STP-PPC:0x10037E8C reopen track] reopening clears controller +60 bits 0 and 1 (cut ends marked open, 0x10047170..0x10047508)
@@ -482,17 +538,23 @@ public sealed class CoasterTrack
 	/// Restores a saved track verbatim (the inverse of the capture; park-resume restore): the station end cells, every
 	/// node with its flags, bank and stack index exactly as saved, the circuit flags and the edit version. Nothing is
 	/// re-derived here — the stack index and the invalid/winch marks are state the build edits left, and the curve is
-	/// the controller's to refit (<see cref="CoasterRide.Rebuild"/>).
+	/// the controller's to refit (<see cref="CoasterRide.Rebuild"/>). A save of the older shape, whose station was one node at the departing end
+	/// (and whose completed track ended in a station end node at the return end), keeps the three station nodes the placement built and takes only its
+	/// pylons over; the end node of a completed track is made again at the head of the new station. Returns true for such a track, whose old samples,
+	/// train positions and the rest of what the old geometry derived are no longer valid.
 	/// </summary>
-	internal void RestoreSnapshot( CoasterTrackSaveData saved )
+	internal bool RestoreSnapshot( CoasterTrackSaveData saved )
 	{
 		ArgumentNullException.ThrowIfNull( saved );
+		if ( saved.Nodes.Count > 0 && saved.Nodes.Count( node => node.IsStation ) == 1 )
+			return MigrateTwoNodeStation( saved );
 		DepartCell = saved.DepartCell;
 		ReturnCell = saved.ReturnCell;
 		nodes.Clear();
 		foreach ( var savedNode in saved.Nodes )
 		{
-			var node = new CoasterNode( savedNode.X, savedNode.Y, savedNode.Height, savedNode.T, savedNode.LoopPylon, savedNode.StackIndex, savedNode.IsStation, savedNode.IsStationEnd )
+			var node = new CoasterNode( savedNode.X, savedNode.Y, savedNode.Height, savedNode.T, savedNode.LoopPylon, savedNode.StackIndex, savedNode.IsStation, savedNode.IsStationEnd,
+				savedNode.ExactX is { } exactX && savedNode.ExactY is { } exactY && savedNode.ExactZ is { } exactZ ? new SVector3( exactX, exactY, exactZ ) : null )
 			{
 				// A save from before the PC creation parameters carried 0x144 on the station end node as node flags (loop, no auto-bank, zero bank); the node is restored as a freshly completed one.
 				Flags = savedNode.IsStationEnd ? (CoasterNodeFlags)savedNode.Flags & (CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid) | StationEndFlags : (CoasterNodeFlags)savedNode.Flags,
@@ -504,6 +566,31 @@ public sealed class CoasterTrack
 		IsClosed = saved.IsClosed;
 		IsComplete = saved.IsComplete;
 		Version = saved.Version;
+		return false;
+	}
+
+	/// <summary>The migration of a track saved with the old station (COAST-029): the new station stays, the saved pylons follow it, the end node returns to the head.</summary>
+	// [EXT:coaster-save-migration] OpenTPW's own old-save rule: a track saved before the three-node station keeps its pylons, circuit flags and node marks; the station nodes are the ones the placement built from the station model, the end node of a completed track stands at S0 again, and the controller re-samples the whole circuit (the saved train placement belongs to the old sampling and is dropped by CoasterRide.RestoreSnapshot)
+	private bool MigrateTwoNodeStation( CoasterTrackSaveData saved )
+	{
+		if ( nodes.Count < StationNodeCount || DepartCell == null )
+			throw new InvalidDataException( "A coaster track saved with the older station needs its station placed before it is restored." );
+		nodes.RemoveRange( StationNodeCount, nodes.Count - StationNodeCount );
+		foreach ( var savedNode in saved.Nodes.Where( node => !node.IsStation && !node.IsStationEnd ) )
+		{
+			nodes.Add( new CoasterNode( savedNode.X, savedNode.Y, savedNode.Height, savedNode.T, savedNode.LoopPylon, savedNode.StackIndex, false )
+			{
+				Flags = (CoasterNodeFlags)savedNode.Flags,
+				Bank = savedNode.Bank,
+				LoopRotate = savedNode.LoopRotate ?? DefaultLoopRotate
+			} );
+		}
+		IsClosed = saved.IsClosed;
+		IsComplete = saved.IsComplete;
+		if ( IsComplete )
+			nodes.Add( StationEnd() );
+		Version = saved.Version;
+		return true;
 	}
 
 	// ---- Cost -------------------------------------------------------------------------------------------
@@ -558,7 +645,7 @@ public sealed class CoasterTrack
 	// [BIN:STP-PPC:0x1004B168 pylon cost] the unit term is gated by r4 (0x1004B188, 0x1004B284): the place path passes 1 (0x10037864), the pick-up (0x1004A3DC, 0x1004A3F8), drop (0x1004A5DC, 0x1004A610, 0x1004A690) and height slider (0x10046268) pass 0
 	public float NodeCost( int index, bool chargeUnit = true )
 	{
-		if ( index <= 0 || index >= nodes.Count || nodes[index].IsPylonless )
+		if ( index < StationNodeCount || index >= nodes.Count || !nodes[index].IsPlayerPylon )
 			return 0;
 		return LinkCost( nodes[index], nodes[index - 1], StackBelow( nodes[index] ), chargeUnit );
 	}
@@ -593,12 +680,17 @@ public sealed class CoasterTrack
 	/// level 0, the node below + h(t) when stacked; pylon-less nodes stand at their loft height above the ground.
 	/// </summary>
 	// [BIN:STP-PPC:0x10033398 node position] descriptor +28 = 10x, +36 = 10y, +32 = terrain height; the node is at the cell centre (+5.0, 0x100333EC); Y = ground + h(t), or Y below + pylon +196 + h(t) when stacked
-	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank; the pylon mesh track tags behind 0x1019B298 and the incline and bank clips are not read, and OpenTPW's one station node stands for the original's three — evidence needed: the tag table builder and the tag data in the StdPylon/LoopPylon meshes
+	// [BIN:TPW-EXE:0x434060 pylon-less knot] a pylon-less node's knot is its descriptor's exact position (node +0x4c..+0x54); the station end node's descriptor holds the world position of S0's pylon track dummy (0x435570), so the end node stands on the knot of S0
+	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank; the pylon mesh track tags behind 0x1019B298 and the incline and bank clips are not read — evidence needed: the tag table builder and the tag data in the StdPylon/LoopPylon meshes
 	public SVector3 NodePosition( CoasterSite site, CoasterNode node )
 	{
+		if ( node.IsStationEnd )
+			return nodes.Count > 0 ? NodePosition( site, nodes[0] ) : default;
+		if ( node.ExactPosition is { } exact )
+			return new SVector3( exact.X, exact.Y + Definition.TrackHeightAdjust, exact.Z );
 		var x = node.X * CellUnits + HalfCell;
 		var z = node.Y * CellUnits + HalfCell;
-		var lift = node.IsPylonless ? node.Height : PylonHeight( Definition.Pylon( node.LoopPylon ), node.T );
+		var lift = PylonHeight( Definition.Pylon( node.LoopPylon ), node.T );
 		var below = node.StackIndex > 0 ? StackBelow( node ) : null;
 		// [BIN:TPW-EXE:0x433280 stacked height] the height of a stacked node is the sum over the nodes below it of (h0 + t(h1 − h0) + stack offset) of the node's own pylon, then its own h0 + t(h1 − h0): each level adds the pylon's stack offset (+0xc4)
 		var y = below is { } under ? NodePosition( site, under ).Y - Definition.TrackHeightAdjust + Definition.Pylon( node.LoopPylon ).StackOffset + lift : site.GroundHeight( node.X, node.Y ) + lift;
@@ -691,32 +783,37 @@ public sealed class CoasterTrack
 	/// tangent; vertical on a pylon-less loop node) and, on loop pylons, the loop factor K.
 	/// </summary>
 	// [BIN:STP-PPC:0x10033630 auto-bank pass] nodes with a next node are banked in order when definition flag 0x10 is set and node flag 0x4 is clear (0x1003360C); node flag 0x100 forces bank 0 (0x1003F584); the speed estimate starts at 0 and is updated after each banked node with floor fMinSpeed
-	// [BIN:STP-PPC:0x10032DD8 knot direction] a knot without a pylon takes (0, −1, 0) when its node has flag 0x40 and flag 0x80 is clear (0x10032DFC; the 0x144 station end node), (0, 1, 0) when both are set (never: OpenTPW sets no node flag 0x80), else the node tangent
-	public IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site ) => BuildKnots( site, nodes, closed: true, writeBanks: true );
+	// [BIN:STP-PPC:0x10032DD8 knot direction] a knot without a pylon takes (0, −1, 0) when its node has flag 0x40 and flag 0x80 is clear (0x10032DFC), (0, 1, 0) when both are set (never: OpenTPW sets no node flag 0x80), else the node tangent; the station end node (flags 0x80000 | 0x100000) and the middle station node carry no 0x40 and take their tangent
+	public IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site ) => BuildKnots( site, nodes, writeBanks: true );
 
 	/// <summary>
-	/// The knots of <paramref name="chain"/>: closed like <see cref="BuildKnots(CoasterSite)"/> or open, the shape of a track under
-	/// construction (a chain with no wrap: the first knot has no previous and the last no next node). <paramref name="writeBanks"/>
-	/// stores the auto-banks on the nodes (the controller's rebuild); a preview leaves the nodes untouched.
+	/// The knots of <paramref name="chain"/>: the nodes of the finished track (ending in the station end node) or of a track under
+	/// construction (ending in the build cursor's node). The neighbours of a knot follow the node flags: S0 and the station end node have no
+	/// previous node, S2 no next one, and the station end node's next is S1. <paramref name="writeBanks"/> stores the auto-banks on the
+	/// nodes (the controller's rebuild); a preview leaves the nodes untouched.
 	/// </summary>
 	// [BIN:STP-PPC:0x10031450 node tangents] an end node without a previous node takes T+ = b/SD along the next node, one without a next node T+ = −a/SD away from the previous node; the chord to the missing neighbour is 1.0 (0x10032990)
-	// [BIN:TPW-EXE:0x43eb70 track rebuild] the mesh rebuild walks the node list of an open chain exactly like a closed one: it pairs every node with its next node until there is none, so a track under construction is drawn as the curve through the placed nodes
-	internal IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site, IReadOnlyList<CoasterNode> chain, bool closed, bool writeBanks )
+	// [BIN:TPW-EXE:0x431677 node neighbours] the tangent routine drops the previous neighbour on node flag 0x80000 and the next on 0x40000, and on 0x100000 takes the head node's next node (S1): S0 leaves along S1 − S0, S2 along S2 − S1 whatever the first pylon, and the station end node along S1 − S0 as well
+	// [BIN:TPW-EXE:0x43eb70 track rebuild] the mesh rebuild walks the node list of an open chain exactly like a finished one: it pairs every node with its next node until there is none, so a track under construction is drawn as the curve through the placed nodes
+	internal IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site, IReadOnlyList<CoasterNode> chain, bool writeBanks )
 	{
 		var count = chain.Count;
-		int Wrap( int index ) => closed ? (index + count) % count : Math.Clamp( index, 0, count - 1 );
 		var positions = chain.Select( node => NodePosition( site, node ) ).ToArray();
+		int? Previous( int index ) => index > 0 && (chain[index].Flags & CoasterNodeFlags.NoPreviousLink) == 0 ? index - 1 : null;
+		int? Next( int index ) => (chain[index].Flags & CoasterNodeFlags.NoNextLink) != 0 ? null
+			: (chain[index].Flags & CoasterNodeFlags.EndNextIsSecond) != 0 ? (count > 1 ? 1 : null)
+			: index + 1 < count ? index + 1 : null;
 		var banks = new float[count];
 		var speed = 0f;
 		for ( var index = 0; index < count; index++ )
 		{
 			var node = chain[index];
-			// [BIN:TPW-EXE:0x4310c8 auto-bank] a node banks unless it carries node flag 0x4 (or 0x100 forces bank 0); the PC build path never sets 0x4 and the station end node's 0x144 are creation parameters (0x434060), so the end node banks like any pylon
-			// [APPROX:COAST-015] the station node (whose creation parameters 0x274 the node constructor maps to node flags 0x400, 0x1800 and 0x80000, none of them 0x4) banks as well; its one node stands for the original's three station nodes
-			if ( !Definition.AutoBanks || (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) != 0 || !closed && (index == 0 || index == count - 1) )
+			// [BIN:TPW-EXE:0x4310c8 auto-bank] a node banks unless it carries node flag 0x4 (or 0x100 forces bank 0) and only when it has a next node in the list (the test of the raw link, not the flag-masked neighbour); the PC build path never sets 0x4 and the station end node's 0x144 are creation parameters (0x434060)
+			// [APPROX:COAST-015] S0 has no previous node and is not banked (its angle needs both neighbours); S2, whose next link the tangent ignores but the bank pass does not, banks from S1 and the first pylon like any node; the speed estimate runs through the banked nodes only
+			if ( !Definition.AutoBanks || (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) != 0 || index == 0 || index == count - 1 )
 				continue;
-			var previous = positions[Wrap( index - 1 )];
-			var next = positions[Wrap( index + 1 )];
+			var previous = positions[index - 1];
+			var next = positions[index + 1];
 			var turn = TurnAngleXZ( previous, positions[index], next );
 			banks[index] = AutoBank( speed, turn, (previous - positions[index]).Length(), (next - positions[index]).Length() );
 			speed = SpeedEstimate( Definition, speed, Definition.MinSpeed, positions[index].Y, next.Y );
@@ -730,34 +827,32 @@ public sealed class CoasterTrack
 		for ( var index = 0; index < count; index++ )
 		{
 			var node = chain[index];
-			var previous = positions[Wrap( index - 1 )];
-			var next = positions[Wrap( index + 1 )];
+			var before = Previous( index ) is int back ? chain[back] : null;
+			var after = Next( index ) is int forward ? chain[forward] : null;
 			var pylon = node.IsPylonless ? null : Definition.Pylon( node.LoopPylon );
-			var before = chain[Wrap( index - 1 )];
-			var after = chain[Wrap( index + 1 )];
 			SVector3 tangent;
-			if ( !closed && index == 0 )
-				tangent = next - positions[index];
-			else if ( !closed && index == count - 1 )
-				tangent = positions[index] - previous;
+			if ( Previous( index ) is not int previousIndex )
+				tangent = Next( index ) is int nextOnly ? positions[nextOnly] - positions[index] : SVector3.Zero;
+			else if ( Next( index ) is not int nextIndex )
+				tangent = positions[index] - positions[previousIndex];
 			else
 			{
 				// The tangent rule tests pylon flag 0x4000: a flume's trough pylon (0x8000) is not a loop pylon there.
-				var loopNeighbour = IsLoopPylon( before ) || IsLoopPylon( after );
-				tangent = ForwardTangent( previous, positions[index], next, Definition.Curviness, Definition.StraightDivisor, pylon?.StraightDotThreshold, IsLoopPylon( node ), loopNeighbour, (node.Flags & CoasterNodeFlags.LoopFirst) != 0 );
+				var loopNeighbour = IsLoopPylon( before! ) || IsLoopPylon( after! );
+				tangent = ForwardTangent( positions[previousIndex], positions[index], positions[nextIndex], Definition.Curviness, Definition.StraightDivisor, pylon?.StraightDotThreshold, IsLoopPylon( node ), loopNeighbour, (node.Flags & CoasterNodeFlags.LoopFirst) != 0 );
 			}
 			var direction = node.IsPylonless && (node.Flags & CoasterNodeFlags.Loop) != 0 ? new SVector3( 0, -1, 0 )
 				: tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ;
 			var factor = 0f;
 			if ( node.LoopPylon )
 			{
-				var heading = new SVector3( next.X - positions[index].X, 0, next.Z - positions[index].Z );
+				var heading = Next( index ) is int towards ? new SVector3( positions[towards].X - positions[index].X, 0, positions[towards].Z - positions[index].Z ) : SVector3.Zero;
 				var axis = new SVector3( direction.X, 0, direction.Z );
 				var side = heading.LengthSquared() > 0 && axis.LengthSquared() > 0 ? SVector3.Dot( SVector3.Normalize( heading ), SVector3.Normalize( axis ) ) : 0;
 				factor = HermiteCoasterCurve.LoopKnotFactor( Definition.Curviness, side, node.LoopRotate );
 			}
-			knots[index] = new CoasterKnot( positions[index], direction, banks[index], index, node.LoopPylon, factor, (after.Flags & CoasterNodeFlags.Loop) != 0,
-				(node.Flags & CoasterNodeFlags.LoopFirst) != 0, (before.Flags & CoasterNodeFlags.Loop) != 0 );
+			knots[index] = new CoasterKnot( positions[index], direction, banks[index], index, node.LoopPylon, factor, after != null && (after.Flags & CoasterNodeFlags.Loop) != 0,
+				(node.Flags & CoasterNodeFlags.LoopFirst) != 0, before != null && (before.Flags & CoasterNodeFlags.Loop) != 0 );
 		}
 		return knots;
 	}
@@ -770,14 +865,12 @@ public sealed class CoasterTrack
 	// [APPROX:COAST-035] the ghost node takes the tool's current height and loop mode and is drawn like a placed one (no tint for an invalid cell); the original's ghost/invalid presentation (node flags 0x200000, 0x800000, 0x804000 and the invalid cross section uiInvalidCrossSection) is not decoded — evidence needed: the consumers of node flags 0x800000/0x804000 and a capture of an invalid pylon
 	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop )
 	{
-		if ( IsComplete || nodes.Count == 0 || DepartCell == null )
+		if ( IsComplete || nodes.Count < StationNodeCount || DepartCell == null )
 			return null;
 		var chain = new List<CoasterNode>( nodes );
 		if ( IsClosed )
 		{
-			if ( ReturnCell is not { } back )
-				return null;
-			chain.Add( new CoasterNode( back.X, back.Y, Definition.InitialPylonLoftHeight, 0, false, 0, false, IsStationEnd: true ) { Flags = StationEndFlags } );
+			chain.Add( StationEnd() );
 			return (chain, true);
 		}
 		if ( cursor is { } cell && !IsChainStart( cell.X, cell.Y ) )
@@ -814,6 +907,9 @@ public sealed class CoasterTrack
 			hash.Add( (long)node.Flags );
 			hash.Add( node.Bank );
 			hash.Add( node.LoopRotate );
+			hash.Add( node.ExactPosition is { } exact ? exact.X : float.NaN );
+			hash.Add( node.ExactPosition is { } exactY ? exactY.Y : float.NaN );
+			hash.Add( node.ExactPosition is { } exactZ ? exactZ.Z : float.NaN );
 		}
 	}
 }

@@ -77,7 +77,7 @@ public sealed class CoasterPylonControl
 /// unconditionally (absent = 0). No PC <c>.sam</c> sets a motion, distance, angle or rating key, so the PC game
 /// runs on these defaults.
 /// </summary>
-// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 and the hop 0x43ce20; the differences are COAST 6's literal 0 floor (the Mac reading takes a global), the round-to-nearest sine-table indices (fistp) of the PC where the Mac and C# truncate (the swing uses the PC rule; the validator's and curve's Mac tables truncate), x87 arithmetic, the three-node station (COAST-029) and the creation parameters of the end node; the cost routine 0x447830 is not compared — evidence needed: 0x447830 against the Mac cost 0x1004B168
+// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 and the hop 0x43ce20; the differences are COAST 6's literal 0 floor (the Mac reading takes a global), the round-to-nearest sine-table indices (fistp) of the PC where the Mac and C# truncate (the swing uses the PC rule; the validator's and curve's Mac tables truncate), and x87 arithmetic; the cost routine 0x447830 is not compared — evidence needed: 0x447830 against the Mac cost 0x1004B168
 public sealed class CoasterDefinition
 {
 	/// <summary><c>Bumper.WhichTrackType</c> of a coaster (<c>0xe2fe4</c>: type record +156 == 3).</summary>
@@ -329,7 +329,7 @@ public sealed class CoasterDefinition
 		definition.MaxCars = Int( "sTrainType.uiMaxCars", definition.MaxCars );
 
 		var flags = AlwaysFlags;
-		// The always-set 0xA0 already holds 0x20, so the setting is kept on its own for the end-node count (COAST-029).
+		// The always-set 0xA0 already holds 0x20, so the setting is kept on its own (it does not change the end node count, 0x435570).
 		definition.VisibleEndPylon = Flag( Coaster + "bVisibleEndPylon" );
 		if ( definition.VisibleEndPylon )
 			flags |= VisibleEndPylonFlag;

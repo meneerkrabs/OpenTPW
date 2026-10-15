@@ -95,9 +95,9 @@ public static class SharedParkLayout
 	internal static CoasterTrackRecord? CaptureCoaster( int station, CoasterBuilder builder )
 	{
 		ArgumentNullException.ThrowIfNull( builder );
-		if ( builder.Track.Nodes.Count <= 1 )
+		if ( builder.Track.PylonCount == 0 )
 			return null;
-		var nodes = builder.Track.Nodes.Where( node => !node.IsPylonless )
+		var nodes = builder.Track.Nodes.Where( node => node.IsPlayerPylon )
 			.Select( node => new CoasterNodeRecord( node.X, node.Y, node.Height, node.LoopPylon ) ).ToList();
 		return new CoasterTrackRecord( station, nodes, builder.Track.IsClosed, builder.Track.IsComplete );
 	}

@@ -15,6 +15,8 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class CoasterPylonRuleTests
 {
+	private const int First = CoasterTrack.StationNodeCount;
+
 	[TestInitialize]
 	public void Init() => Log = new();
 
@@ -22,7 +24,7 @@ public class CoasterPylonRuleTests
 	{
 		var ride = new CoasterRide( CoasterDefinition.FromValues( settings ?? CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-		builder.SetStation( (20, 20), (17, 20) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
 		return (builder, ride);
 	}
 
@@ -37,17 +39,17 @@ public class CoasterPylonRuleTests
 		Assert.IsTrue( builder.LoopMode, "one of the pair is left to place" );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20, 29 ) );
 		Assert.IsFalse( builder.LoopMode, "the counter (0x79c664) reached 0: the mode ends" );
-		var first = builder.Track.Nodes[2];
-		var second = builder.Track.Nodes[3];
+		var first = builder.Track.Nodes[First + 1];
+		var second = builder.Track.Nodes[First + 2];
 		Assert.AreEqual( (CoasterNodeFlags)0xe0, first.Flags, "the first loop pylon: 0x40 loop, 0x20 and 0x80 (0x43415a)" );
 		Assert.AreEqual( (CoasterNodeFlags)0x60, second.Flags, "the second: 0x60 (0x43415f)" );
 		Assert.AreEqual( (0f, 0.5f), (first.LoopRotate, second.LoopRotate), "loop rotate 0 then 0.5 (0x4341ec, 0x4341f8)" );
-		Assert.AreEqual( CoasterNodeFlags.None, builder.Track.Nodes[1].Flags );
+		Assert.AreEqual( CoasterNodeFlags.None, builder.Track.Nodes[First].Flags );
 		Assert.IsTrue( first.LoopPylon && second.LoopPylon );
 		// A later pylon is a standard one again; entering the mode again starts a new pair.
 		builder.LoopMode = true;
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 17, 26 ) );
-		Assert.AreEqual( (CoasterNodeFlags)0xe0, builder.Track.Nodes[4].Flags );
+		Assert.AreEqual( (CoasterNodeFlags)0xe0, builder.Track.Nodes[First + 3].Flags );
 		builder.LoopMode = false;
 		Assert.IsFalse( builder.LoopMode );
 	}
@@ -60,8 +62,8 @@ public class CoasterPylonRuleTests
 		builder.LoopMode = true;
 		builder.Place( 24, 20 );
 		builder.Place( 24, 26 );
-		var first = builder.Track.NodeCost( 1 );
-		var second = builder.Track.NodeCost( 2 );
+		var first = builder.Track.NodeCost( First );
+		var second = builder.Track.NodeCost( First + 1 );
 		// A loop pylon not stacked on a loop pylon pays the StdPylon length and height rates (0x4b294..0x4b2b4), so the 0x80 test behind it (0x4b2b8) only matters for a stacked one.
 		Assert.AreEqual( 60f + 10f * 4f + 10f * 1f, first );
 		Assert.AreEqual( 60f + 10f * 6f + 10f * 1f, second );
@@ -85,9 +87,9 @@ public class CoasterPylonRuleTests
 		builder.Place( 20, 29 );
 		builder.Place( 15, 24 );
 		builder.Place( 15, 18 );
-		var knots = builder.Track.BuildKnots( builder.Site, builder.Track.Nodes, closed: false, writeBanks: false );
-		Assert.IsTrue( knots[2].Reversed && !knots[3].Reversed && !knots[1].Reversed );
-		Assert.IsTrue( knots[3].PreviousIsLoopNode && !knots[2].PreviousIsLoopNode );
+		var knots = builder.Track.BuildKnots( builder.Site, builder.Track.Nodes, writeBanks: false );
+		Assert.IsTrue( knots[First + 1].Reversed && !knots[First + 2].Reversed && !knots[First].Reversed );
+		Assert.IsTrue( knots[First + 2].PreviousIsLoopNode && !knots[First + 1].PreviousIsLoopNode );
 	}
 
 	[TestMethod]
@@ -103,8 +105,8 @@ public class CoasterPylonRuleTests
 			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + circuit[index].X, 20 + circuit[index].Y ), $"pylon {index}" );
 		}
 		Assert.IsFalse( builder.LoopMode, "pylons 1 and 2 were the pair" );
-		Assert.AreEqual( (CoasterNodeFlags)0xe0, builder.Track.Nodes[2].Flags & ~CoasterNodeFlags.Winch );
-		Assert.AreEqual( (CoasterNodeFlags)0x60, builder.Track.Nodes[3].Flags & ~CoasterNodeFlags.Winch );
+		Assert.AreEqual( (CoasterNodeFlags)0xe0, builder.Track.Nodes[First + 1].Flags & ~CoasterNodeFlags.Winch );
+		Assert.AreEqual( (CoasterNodeFlags)0x60, builder.Track.Nodes[First + 2].Flags & ~CoasterNodeFlags.Winch );
 		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
 		Assert.AreEqual( 1, ride.Rating!.Value.CountedSections, "nodes with flags 0x40 and 0x80 are the counted sections (ORACLE F8)" );
 	}
@@ -126,12 +128,12 @@ public class CoasterPylonRuleTests
 		var (offset, offsetRide) = Build( 6.5f );
 		var nodes = flat.Track.Nodes;
 		Assert.AreEqual( 1, nodes[^1].StackIndex );
-		var below = flat.Track.NodePosition( flat.Site, nodes[1] ).Y;
+		var below = flat.Track.NodePosition( flat.Site, nodes[First] ).Y;
 		var onTop = flat.Track.NodePosition( flat.Site, nodes[^1] ).Y;
 		var lift = CoasterTrack.PylonHeight( flatRide.Definition.StandardPylon, nodes[^1].T );
 		Assert.AreEqual( below + lift, onTop, 1e-3f, "no offset: the stacked node adds its own height" );
 		Assert.AreEqual( below + 6.5f + lift, offset.Track.NodePosition( offset.Site, offset.Track.Nodes[^1] ).Y, 1e-3f, "each level adds the pylon's stack offset (0x4332c3)" );
-		Assert.AreEqual( flat.Track.NodePosition( flat.Site, nodes[1] ), offset.Track.NodePosition( offset.Site, offset.Track.Nodes[1] ), "a node on the ground does not move" );
+		Assert.AreEqual( flat.Track.NodePosition( flat.Site, nodes[First] ), offset.Track.NodePosition( offset.Site, offset.Track.Nodes[First] ), "a node on the ground does not move" );
 	}
 
 	[TestMethod]
@@ -161,7 +163,7 @@ public class CoasterPylonRuleTests
 		var old = captured with { Track = captured.Track with { Nodes = oldNodes } };
 		var restored = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
 		restored.RestoreSnapshot( old );
-		Assert.AreEqual( CoasterNodeFlags.None, restored.Track.Nodes[^1].Flags & ~CoasterNodeFlags.Winch, "0x144 were creation parameters, not node flags" );
+		Assert.AreEqual( CoasterTrack.StationEndFlags, restored.Track.Nodes[^1].Flags & ~CoasterNodeFlags.Winch, "0x144 were creation parameters: node flags 0x80000 | 0x100000, not the saved bits" );
 		Assert.IsTrue( restored.Track.Nodes.All( node => node.LoopRotate == CoasterTrack.DefaultLoopRotate ), "no loop rotate saved: the old 0.5" );
 		var hash = new StateHasher();
 		restored.AddCanonicalState( hash );

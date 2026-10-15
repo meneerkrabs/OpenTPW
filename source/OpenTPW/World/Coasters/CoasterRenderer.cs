@@ -243,12 +243,12 @@ public sealed class CoasterRenderer : Entity
 				(chain, closed) = (open.Chain, open.Closed);
 			else
 				return;
-			var knots = track.BuildKnots( Ride.Site, chain, closed, writeBanks: false );
+			var knots = track.BuildKnots( Ride.Site, chain, writeBanks: false );
 			var slices = HermiteCoasterCurve.Slices( knots, definition.Curviness, closed );
 			var invalid = new HashSet<int>();
 			for ( var pair = 0; pair < chain.Count; pair++ )
 			{
-				var next = closed ? (pair + 1) % chain.Count : pair + 1;
+				var next = pair + 1;
 				if ( next < chain.Count && (chain[pair].Flags & CoasterNodeFlags.Invalid) != 0 && (chain[next].Flags & CoasterNodeFlags.Invalid) != 0 )
 					invalid.Add( pair );
 			}
@@ -256,14 +256,15 @@ public sealed class CoasterRenderer : Entity
 			if ( !closed && preview is { Valid: false } && chain.Count == track.Nodes.Count + 1 )
 				invalid.Add( chain.Count - 2 );
 			var matrix = owner.ToEngine();
-			BuildTrack( slices, closed, Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), invalid, matrix );
+			BuildTrack( slices, Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), invalid, matrix );
 			BuildPylons( chain, knots, matrix );
 		}
 
-		private void BuildTrack( CoasterSlice[] slices, bool closed, IReadOnlyCollection<int> winch, IReadOnlyCollection<int> invalid, Matrix4x4 matrix )
+		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, IReadOnlyCollection<int> invalid, Matrix4x4 matrix )
 		{
 			var sections = assets.Sections;
-			var mesh = CoasterTrackMesh.Build( sections, slices, closed, winch, invalid );
+			// The slices of a finished track end on the station end node, which stands on the first knot: the mesh needs no wrap segment.
+			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, invalid );
 			trackTriangles = mesh.TriangleCount;
 			if ( mesh.TriangleCount == 0 )
 				return;

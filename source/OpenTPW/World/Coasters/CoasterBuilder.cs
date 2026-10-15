@@ -72,11 +72,15 @@ public sealed class CoasterBuilder
 		return depart is { } d && back is { } r ? (d, r) : null;
 	}
 
-	/// <summary>Starts the track at a station (removing any pylons).</summary>
-	public void SetStation( (int X, int Y) depart, (int X, int Y) @return )
+	/// <summary>
+	/// Starts the track at a station (removing any pylons): its three station nodes stand where the station model's dummies are (<paramref name="layout"/>),
+	/// or in the cells beyond the '&gt;' and '&lt;' cells at the coaster's initial pylon loft height when the model is not at hand.
+	/// </summary>
+	public void SetStation( (int X, int Y) depart, (int X, int Y) @return, CoasterStationLayout? layout = null )
 	{
 		Ride.ClearTrains();
-		Track.SetStation( depart, @return );
+		Ride.EnterState( CoasterControllerState.Incomplete );
+		Track.SetStation( depart, @return, layout ?? CoasterStationLayout.FromCells( depart, @return, Site, Ride.Definition.InitialPylonLoftHeight ) );
 	}
 
 	/// <summary>What the validator says about a pylon on (x, y) after the last node now (no writes).</summary>
@@ -135,7 +139,7 @@ public sealed class CoasterBuilder
 	// [APPROX:COAST-030] moving a pylon or its height is refused while riders are on board a complete track: OpenTPW's guard (the Mac reading of the guest predicate); the original pick-up 0x446300 excludes only descriptor flag 2 and has no rider or state test, and cutting a range (0x446740) sets state 1, whose setter takes the trains off (0x43bf20)
 	public CoasterPlaceResult Move( int index, int x, int y )
 	{
-		if ( index <= 0 || index >= Track.Nodes.Count || Track.Nodes[index].IsPylonless || (Track.IsComplete && Ride.RidersOnBoard != 0) )
+		if ( index < CoasterTrack.StationNodeCount || index >= Track.Nodes.Count || !Track.Nodes[index].IsPlayerPylon || (Track.IsComplete && Ride.RidersOnBoard != 0) )
 			return CoasterPlaceResult.NotEditable;
 		var node = Track.Nodes[index];
 		if ( (node.X, node.Y) == (x, y) )
@@ -154,7 +158,7 @@ public sealed class CoasterBuilder
 	// [BIN:STP-PPC:0x10045FC4 height slider] releasing the height slider credits trunc(stored cost) and debits ceil(new cost)
 	public bool SetHeight( int index, float requested )
 	{
-		if ( index <= 0 || index >= Track.Nodes.Count || Track.Nodes[index].IsPylonless || (Track.IsComplete && Ride.RidersOnBoard != 0) )
+		if ( index < CoasterTrack.StationNodeCount || index >= Track.Nodes.Count || !Track.Nodes[index].IsPlayerPylon || (Track.IsComplete && Ride.RidersOnBoard != 0) )
 			return false;
 		var node = Track.Nodes[index];
 		var (clamped, t) = CoasterTrack.ClampHeight( Track.Definition.Pylon( node.LoopPylon ), requested );
@@ -215,7 +219,7 @@ public sealed class CoasterBuilder
 	{
 		if ( !Track.IsComplete || Ride.RidersOnBoard != 0 )
 			return false;
-		Ride.ClearTrains();
+		Ride.EnterState( CoasterControllerState.Incomplete );
 		Track.Reopen();
 		Track.Revalidate( Site, Ride.World, Ride );
 		return true;
@@ -225,6 +229,7 @@ public sealed class CoasterBuilder
 	public void Delete()
 	{
 		Ride.ClearTrains();
+		Ride.EnterState( CoasterControllerState.Incomplete );
 		Track.Clear();
 		Ride.RaiseTrackChanged();
 	}

@@ -117,7 +117,7 @@ public partial class Level
 		if ( item.Runtime.Coaster == null || GetCoasterBuilder( item ) is not { } builder )
 			return;
 		if ( CoasterBuilder.StationEnds( item.Entry.Shape, item.Placement.X, item.Placement.Y, item.Placement.Rotation ) is { } ends )
-			builder.SetStation( ends.Depart, ends.Return );
+			builder.SetStation( ends.Depart, ends.Return, item.ComputeCoasterStationLayout() );
 	}
 
 	private void OnCoasterStationRemoved( OriginalObject item )
@@ -145,27 +145,35 @@ public partial class Level
 	public CoasterSite CoasterSite => coasterSite ??= CoasterSite.FromGrid( Objects.Grid );
 	private CoasterSite? coasterSite;
 
-	/// <summary>Starts the coaster tool on a station: park clicks place pylons, a click on a station end closes the circuit, the next one completes the track.</summary>
+	/// <summary>
+	/// Starts the coaster tool on a station: park clicks place pylons, a click on a station end closes the circuit, the next one completes the track. The ride is closed
+	/// (its riders leave, no guest is stranded) and its controller goes to state 2 when the track is finished, so the trains run empty without a station step, or to state 1
+	/// (no trains) when it is not.
+	/// </summary>
+	// [BIN:TPW-EXE:0x447520 coaster tool entry] with no coaster being edited the ride object is closed (0x4df300) and the controller set to state 2 (a complete track with its circuit closed) or 1 (0x435730); round 2 labelled 0x447520 the tool's exit, it is its entry when called with param 1
 	public bool EnterCoasterTool( OriginalObject station )
 	{
 		if ( IsReadOnlyVisit || GetCoasterBuilder( station ) is not { } builder )
 			return false;
-		if ( builder.Track.IsComplete && !builder.Reopen() )
-		{
-			LastActionMessage = "Cannot edit the coaster while riders are on board.";
-			return false;
-		}
+		if ( CoasterToolStation != null && CoasterToolStation != station )
+			ExitCoasterTool();
 		StaffPlacement?.Cancel();
 		CellTool.Cancel();
+		station.Close();
+		builder.Ride.EnterTool();
 		CoasterToolStation = station;
 		return true;
 	}
 
-	/// <summary>Ends the coaster tool (the track keeps its pylons; an incomplete track takes no riders).</summary>
+	/// <summary>Ends the coaster tool (the track keeps its pylons; an incomplete track takes no riders). A ride the tool took out of service (state 2) opens again.</summary>
+	// [BIN:TPW-EXE:0x447520 coaster tool exit] leaving the tool (param 0) opens the ride object again (0x4df390) when the controller's state is 2; the station script's COAST 5 then sets state 4 or 8; a ride left in state 1 stays closed
 	public void ExitCoasterTool()
 	{
+		var station = CoasterToolStation;
 		CoasterToolStation = null;
 		CoasterPreview = null;
+		if ( station is { IsDeleted: false } && station.Runtime.Coaster is { State: CoasterControllerState.Built } )
+			station.Open();
 	}
 
 	/// <summary>
@@ -203,7 +211,7 @@ public partial class Level
 		var rating = builder.Ride.Rating!.Value;
 		LastActionMessage = $"Coaster complete (track ${builder.Ride.PaidCost}): excitement {rating.Excitement:F0}, sickness {rating.Sickness:F0}, {rating.Trains} train(s).";
 		var station = CoasterToolStation!;
-		CoasterToolStation = null;
+		ExitCoasterTool();
 		if ( station.Entry.HasQueue && station.Runtime.IsAttraction && station.Visitors.HasCells )
 			EnterQueueTool( station.Visitors );
 		return result;

@@ -15,8 +15,15 @@ namespace OpenTPW.Tests;
 public class CoasterTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
-	/// <summary>The station's departure end ('&gt;') and return end ('&lt;') on the flat test site.</summary>
+	/// <summary>
+	/// The cells of the test station's last node S2 (where the track leaves the platform) and first node S0 (where it returns onto it) on the flat test site: a two-cell
+	/// station '&lt;&gt;' on (18, 20) and (19, 20), whose outer nodes stand one cell beyond, so every link after S2 has the geometry the single station node gave it.
+	/// </summary>
 	private static readonly (int X, int Y) Depart = (20, 20), Return = (17, 20);
+	/// <summary>Builds the two-cell test station '&lt;&gt;' whose last node S2 stands on <paramref name="s2"/>: its '&gt;' cell is one before, its '&lt;' cell two before (S0 stands three before).</summary>
+	internal static void PlaceStation( CoasterBuilder builder, (int X, int Y) s2 ) => builder.SetStation( (s2.X - 1, s2.Y), (s2.X - 2, s2.Y) );
+	/// <summary>The index of the first pylon the player places: the station has three nodes.</summary>
+	private const int First = CoasterTrack.StationNodeCount;
 	/// <summary>A closed circuit (offsets from the depart end) that passes every window of the PC coasters.</summary>
 	internal static readonly (int X, int Y)[] Circuit = { (4, 0), (7, 4), (4, 8), (-4, 8), (-8, 4), (-7, 0) };
 
@@ -51,7 +58,7 @@ public class CoasterTests
 		var ride = new CoasterRide( CoasterDefinition.FromValues( settings ?? PcSettings() ), world, "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( size, size, blocked ), () => economy );
 		var start = depart ?? Depart;
-		builder.SetStation( start, (start.X - 3, start.Y) );
+		PlaceStation( builder, start );
 		return (builder, world);
 	}
 
@@ -156,16 +163,16 @@ public class CoasterTests
 		var (builder, _) = NewCoaster( blocked: ( x, y ) => blocked.Contains( (x, y) ) );
 		Assert.AreEqual( CoasterPlaceResult.Blocked, builder.Check( 24, 20 ) );
 		Assert.AreEqual( CoasterPlaceResult.Blocked, builder.Place( 24, 20 ), "a no-ground cell: the pylon is still placed" );
-		Assert.AreEqual( 2, builder.Track.Nodes.Count );
-		Assert.IsTrue( builder.Track.Nodes.All( node => node.Flags.HasFlag( CoasterNodeFlags.Invalid ) ), "node and predecessor get flag 0x4000" );
-		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( 1, 23, 20 ) );
+		Assert.AreEqual( First + 1, builder.Track.Nodes.Count );
+		Assert.IsTrue( builder.Track.Nodes.Skip( First - 1 ).All( node => node.Flags.HasFlag( CoasterNodeFlags.Invalid ) ), "node and predecessor (S2) get flag 0x4000" );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( First, 23, 20 ) );
 		Assert.IsFalse( builder.Track.HasInvalidNodes, "the flag clears once validation passes" );
 		Assert.AreEqual( CoasterPlaceResult.TooClose, builder.Place( 25, 21 ), "a too-short link is placed and marked too" );
 		Assert.IsTrue( builder.Track.Nodes[^1].Flags.HasFlag( CoasterNodeFlags.Invalid ) && builder.Track.Nodes[^2].Flags.HasFlag( CoasterNodeFlags.Invalid ) );
 		Assert.IsTrue( builder.RemoveLast() );
 		Assert.IsFalse( builder.Track.HasInvalidNodes );
 		Assert.AreEqual( CoasterPlaceResult.OutsideMap, builder.Place( -1, 20 ), "only structural refusals leave the track unchanged" );
-		Assert.AreEqual( 2, builder.Track.Nodes.Count );
+		Assert.AreEqual( First + 1, builder.Track.Nodes.Count );
 	}
 
 	[TestMethod]
@@ -297,12 +304,13 @@ public class CoasterTests
 	{
 		var (builder, _) = NewCoaster();
 		BuildCircuit( builder );
-		Assert.AreEqual( CoasterPlaceResult.NotEditable, builder.Move( 0, 21, 25 ), "the station node cannot be picked up" );
-		Assert.AreEqual( CoasterPlaceResult.BreaksNextLink, builder.Move( 1, 25, 22 ), "P2 at (27,24) would be √8 cells away (below 3)" );
-		Assert.AreEqual( (25, 22), (builder.Track.Nodes[1].X, builder.Track.Nodes[1].Y), "the drop is kept" );
-		Assert.IsTrue( builder.Track.Nodes[2].Flags.HasFlag( CoasterNodeFlags.Invalid ) );
-		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( 1, 25, 20 ) );
-		Assert.AreEqual( (25, 20), (builder.Track.Nodes[1].X, builder.Track.Nodes[1].Y) );
+		for ( var station = 0; station < First; station++ )
+			Assert.AreEqual( CoasterPlaceResult.NotEditable, builder.Move( station, 21, 25 ), "a station node (descriptor flag 2) cannot be picked up" );
+		Assert.AreEqual( CoasterPlaceResult.BreaksNextLink, builder.Move( First, 25, 22 ), "P2 at (27,24) would be √8 cells away (below 3)" );
+		Assert.AreEqual( (25, 22), (builder.Track.Nodes[First].X, builder.Track.Nodes[First].Y), "the drop is kept" );
+		Assert.IsTrue( builder.Track.Nodes[First + 1].Flags.HasFlag( CoasterNodeFlags.Invalid ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( First, 25, 20 ) );
+		Assert.AreEqual( (25, 20), (builder.Track.Nodes[First].X, builder.Track.Nodes[First].Y) );
 		Assert.IsFalse( builder.Track.HasInvalidNodes );
 	}
 
@@ -317,8 +325,8 @@ public class CoasterTests
 		var (builder, _) = NewCoaster();
 		builder.Height = 250;
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
-		Assert.AreEqual( 100f, builder.Track.Nodes[1].Height );
-		Assert.AreEqual( 1f, builder.Track.Nodes[1].T );
+		Assert.AreEqual( 100f, builder.Track.Nodes[First].Height );
+		Assert.AreEqual( 1f, builder.Track.Nodes[First].T );
 	}
 
 	// ---- Cost 0x4b168 and rounding 0x41aa4 ------------------------------------------------------------------
@@ -375,20 +383,20 @@ public class CoasterTests
 		var (builder, _) = NewCoaster( economy: economy );
 		BuildCircuit( builder );
 		var balance = economy.Balance;
-		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( 1, 24, 20 ), "same cell" );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( First, 24, 20 ), "same cell" );
 		Assert.AreEqual( balance, economy.Balance, "a drop on its own cell moves no money" );
-		var old = builder.Track.NodeCost( 1 );
-		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( 1, 25, 20 ) );
-		var now = builder.Track.NodeCost( 1 );
+		var old = builder.Track.NodeCost( First );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( First, 25, 20 ) );
+		var now = builder.Track.NodeCost( First );
 		Assert.AreEqual( (90f, 100f), (old, now) );
 		Assert.AreEqual( balance + CoasterTrack.Truncate( old ) - CoasterTrack.RoundUp( now ), economy.Balance, "open track: the node only" );
 		balance = economy.Balance;
-		old = builder.Track.NodeCost( 5 );
-		Assert.IsTrue( builder.SetHeight( 5, 55 ) );
-		Assert.AreEqual( 55f, builder.Track.Nodes[5].Height );
-		Assert.AreEqual( balance + CoasterTrack.Truncate( old ) - CoasterTrack.RoundUp( builder.Track.NodeCost( 5 ) ), economy.Balance );
+		old = builder.Track.NodeCost( First + 4 );
+		Assert.IsTrue( builder.SetHeight( First + 4, 55 ) );
+		Assert.AreEqual( 55f, builder.Track.Nodes[First + 4].Height );
+		Assert.AreEqual( balance + CoasterTrack.Truncate( old ) - CoasterTrack.RoundUp( builder.Track.NodeCost( First + 4 ) ), economy.Balance );
 		Assert.IsTrue( builder.RemoveLast() );
-		Assert.AreEqual( balance + CoasterTrack.Truncate( old ) - CoasterTrack.RoundUp( builder.Track.NodeCost( 5 ) ) + 0, economy.Balance + 0, "deleting a pylon refunds nothing" );
+		Assert.AreEqual( balance + CoasterTrack.Truncate( old ) - CoasterTrack.RoundUp( builder.Track.NodeCost( First + 4 ) ) + 0, economy.Balance + 0, "deleting a pylon refunds nothing" );
 	}
 
 	/// <summary>Moves and the height slider ask 0x4b168 without CostPerUnit (r4 = 0); a fractional unit shows it in the rounding.</summary>
@@ -400,17 +408,17 @@ public class CoasterTests
 		var economy = EconomyTestData.Park( initialCash: 50000 );
 		var (builder, _) = NewCoaster( settings, economy: economy );
 		BuildCircuit( builder );
-		Assert.AreEqual( 90.5f, builder.Track.NodeCost( 1 ), "the place path: 40.5 + 10 × 4 + 10 × 1" );
-		Assert.AreEqual( 50f, builder.Track.NodeCost( 1, chargeUnit: false ) );
+		Assert.AreEqual( 90.5f, builder.Track.NodeCost( First ), "the place path: 40.5 + 10 × 4 + 10 × 1" );
+		Assert.AreEqual( 50f, builder.Track.NodeCost( First, chargeUnit: false ) );
 		var balance = economy.Balance;
 		var (income, costs) = (Total( economy, LedgerCategory.OtherIncome ), Total( economy, LedgerCategory.OtherCosts ));
-		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( 1, 25, 20 ) );
-		Assert.AreEqual( 60f, builder.Track.NodeCost( 1, chargeUnit: false ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Move( First, 25, 20 ) );
+		Assert.AreEqual( 60f, builder.Track.NodeCost( First, chargeUnit: false ) );
 		Assert.AreEqual( 50, Total( economy, LedgerCategory.OtherIncome ) - income, "credit trunc(50), not trunc(90.5)" );
 		Assert.AreEqual( 60, Total( economy, LedgerCategory.OtherCosts ) - costs, "debit ceil(60), not ceil(100.5)" );
 		Assert.AreEqual( balance - 10, economy.Balance );
 		balance = economy.Balance;
-		Assert.IsTrue( builder.SetHeight( 1, 15 ) );
+		Assert.IsTrue( builder.SetHeight( First, 15 ) );
 		Assert.AreEqual( balance - 5, economy.Balance, "slider: trunc(60) back, ceil(65) charged" );
 	}
 
@@ -424,7 +432,7 @@ public class CoasterTests
 		var (builder, _) = NewCoaster( economy: economy );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TrySpendCoasterTrack( economy.Balance - 89 ) );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ), "90 > 89 is not refused" );
-		Assert.AreEqual( 2, builder.Track.Nodes.Count );
+		Assert.AreEqual( First + 1, builder.Track.Nodes.Count );
 		Assert.AreEqual( -1, economy.Balance );
 		Assert.AreEqual( 90, builder.Ride.PaidCost );
 	}
@@ -443,7 +451,7 @@ public class CoasterTests
 		flume.Height = 10;
 		flume.LoopMode = true;
 		flume.Place( 24, 20 );
-		Assert.AreEqual( 110f, flume.Track.NodeCost( 1 ), "a trough pylon on the ground: StdPylon rates" );
+		Assert.AreEqual( 110f, flume.Track.NodeCost( First ), "a trough pylon on the ground: StdPylon rates" );
 	}
 
 	[TestMethod]
@@ -454,7 +462,7 @@ public class CoasterTests
 			builder.Place( Depart.X + dx, Depart.Y + dy );
 		Assert.AreEqual( CoasterPlaceResult.NotClosed, builder.Complete() );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( Return.X, Return.Y ), "the click closes, no node is added" );
-		Assert.AreEqual( 5, builder.Track.Nodes.Count );
+		Assert.AreEqual( First + 4, builder.Track.Nodes.Count );
 		Assert.AreEqual( CoasterPlaceResult.TooFar, builder.Track.CheckClosure(), "(16,28) → (17,20) is 8.06 cells" );
 		Assert.IsTrue( builder.Track.Nodes[^1].Flags.HasFlag( CoasterNodeFlags.Invalid ) );
 		Assert.AreEqual( CoasterPlaceResult.InvalidNodes, builder.Complete() );
@@ -467,9 +475,12 @@ public class CoasterTests
 		var ends = builder.Track.Nodes.Where( node => node.IsStationEnd ).ToArray();
 		Assert.AreEqual( 1, ends.Length, "the loader always sets 0x20: one end node even without bVisibleEndPylon" );
 		Assert.AreEqual( (Return.X, Return.Y), (ends[0].X, ends[0].Y) );
-		Assert.AreEqual( CoasterNodeFlags.None, ends[0].Flags & ~CoasterNodeFlags.Winch, "0x435570 passes the creation parameters 0x144: node flags 0x80000 | 0x100000, no loop flag 0x40, no 0x4, no 0x100" );
-		Assert.AreEqual( new SVector3( 1, 0, 0 ), builder.Track.BuildKnots( builder.Site )[^1].Direction, "an end node without node flag 0x40 takes its neighbours' tangent (here straight along +x), not the vertical (0, −1, 0) of a loop node" );
-		Assert.IsFalse( builder.Ride.World.HasPylon( Return.X, Return.Y ), "the end node is no pylon" );
+		Assert.AreEqual( CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.EndNextIsSecond, ends[0].Flags & ~CoasterNodeFlags.Winch, "0x435570 passes the creation parameters 0x144: node flags 0x80000 | 0x100000, no loop flag 0x40, no 0x4, no 0x100" );
+		var knots = builder.Track.BuildKnots( builder.Site );
+		Assert.AreEqual( knots[0].Position, knots[^1].Position, "the end node stands on the knot of S0 (0x435570)" );
+		Assert.AreEqual( knots[0].Direction, knots[^1].Direction, "its tangent has no previous neighbour and its next is S1: along the platform like S0's" );
+		Assert.AreEqual( new SVector3( 1, 0, 0 ), knots[^1].Direction, "an end node without node flag 0x40 takes its neighbour's tangent (here straight along +x), not the vertical (0, −1, 0) of a loop node" );
+		Assert.AreEqual( 1, builder.Ride.World.PylonsAt( Return.X, Return.Y ).Count(), "the end node is no pylon: only S0's pylon stands on its cell" );
 		var settings = PcSettings();
 		settings["sCoasterType.bVisibleEndPylon"] = "1";
 		var (visible, _) = NewCoaster( settings );
@@ -640,7 +651,7 @@ public class CoasterTests
 		Assert.IsTrue( rating.LapTime > 0 && rating.MaxSpeed >= ride.Definition.WinchSpeed && rating.MaxHeight > 20 );
 		Assert.AreEqual( CoasterRating.TrainCount( rating.LapTime, 30000, 6 ), rating.Trains );
 		Assert.AreEqual( rating.Trains, ride.Trains.Count );
-		Assert.IsTrue( ride.WinchSections.Contains( 0 ), "the climb out of the station is a chain lift" );
+		Assert.IsTrue( ride.WinchSections.Contains( 0 ), "the platform is a chain lift" );
 		Assert.IsTrue( ride.Track.Nodes[0].Flags.HasFlag( CoasterNodeFlags.Winch ) );
 		Assert.AreEqual( 0, ride.GuestExcitement, "no controller before COAST 8" );
 
@@ -707,7 +718,7 @@ public class CoasterTests
 		Assert.IsFalse( builder.Reopen() );
 		builder.Delete();
 		Assert.IsFalse( ride.IsOperational );
-		Assert.AreEqual( 1, ride.Track.Nodes.Count, "only the station node is left" );
+		Assert.AreEqual( CoasterTrack.StationNodeCount, ride.Track.Nodes.Count, "only the station's three nodes are left" );
 		Assert.IsFalse( ride.World.HasPylon( 24, 20 ) );
 		Assert.AreEqual( 104, ride.Command( 3, 0 ) );
 		Assert.AreEqual( 0, ride.RidersOnBoard );
@@ -772,7 +783,7 @@ public class CoasterTests
 			var scripts = new RideScriptWorld( 99 );
 			var ride = new CoasterRide( CoasterDefinition.FromValues( PcSettings() ), scripts.Coasters );
 			var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-			builder.SetStation( Depart, Return );
+			PlaceStation( builder, Depart );
 			BuildCircuit( builder );
 			CloseAndComplete( builder );
 			ride.Command( 8, 0 );
@@ -890,7 +901,7 @@ public class CoasterTests
 		var ride = builder.Ride;
 		var knots = builder.Track.BuildKnots( builder.Site );
 		Assert.AreEqual( knots[0].Position, ride.Samples[0].Position, "sample 0 is the first knot" );
-		Assert.AreEqual( new SVector3( Depart.X * 10 + 5, 10, Depart.Y * 10 + 5 ), knots[0].Position, "cell centre 10x + 5 at the loft height" );
+		Assert.AreEqual( new SVector3( Return.X * 10 + 5, 10, Return.Y * 10 + 5 ), knots[0].Position, "S0: the cell centre 10x + 5 at the loft height" );
 		for ( var index = 1; index < ride.Samples.Count; index++ )
 		{
 			var gap = SVector3.Distance( ride.Samples[index - 1].Position, ride.Samples[index].Position );
@@ -1004,6 +1015,9 @@ public class CoasterTests
 		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
 		var ride = builder.Ride;
 		ride.Command( 8, 0 );
+		// A built ride (state 2) runs no station step; the script opens and closes it, and a closed ride unloads arriving trains.
+		ride.Command( 5, 0 );
+		ride.Command( 5, 1 );
 		var train = ride.Trains[0];
 		ride.Command( 4, 1 );
 		train.CarLists[0].Add( 7 );

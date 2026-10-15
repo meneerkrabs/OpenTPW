@@ -28,7 +28,7 @@ public class CoasterSaveTests
 		var world = new CoasterWorld( 1 );
 		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), world, "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( size, size ) );
-		builder.SetStation( Depart, Return );
+		CoasterTests.PlaceStation( builder, Depart );
 		return (builder, ride, world);
 	}
 
@@ -59,7 +59,7 @@ public class CoasterSaveTests
 		// track to its station node), and the saved state now goes onto it.
 		var ride = new CoasterRide( definition, world, "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-		builder.SetStation( Depart, Return );
+		CoasterTests.PlaceStation( builder, Depart );
 		return ride;
 	}
 
@@ -287,6 +287,58 @@ public class CoasterSaveTests
 		StringAssert.Contains( wrongCars.Message, "cars in the save" );
 	}
 
+	/// <summary>
+	/// A save made with the two-node station (one station node at the departing end, the end node at the return end of a completed track) migrates on load
+	/// (COAST-029): the station placement's three nodes stay, the saved pylons follow them, the end node returns onto S0, the whole circuit is sampled again, and the
+	/// riders of the old placement wait to leave because the train placement of the new sampling is another one.
+	/// </summary>
+	[TestMethod]
+	public void ASaveOfTheTwoNodeStationMigratesToTheThreeNodeStationAndItsRidersLeave()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		for ( var tick = 0; tick < 240 * 60 && ride.RidersOnBoard == 0; tick++ )
+			ride.Advance( Tick );
+		Assert.IsTrue( ride.RidersOnBoard > 0, "a train seated the boarding guests" );
+		ride.Board( 103 );
+		var captured = CoasterSave.CaptureRide( ride, 7 );
+		var riders = captured.Trains.SelectMany( train => train.Cars.Concat( train.BoardingCars ?? new List<List<int>>() ) ).SelectMany( car => car ).Concat( captured.Leaving ).ToList();
+		Assert.IsTrue( riders.Count > 0 && captured.Admission!.Count > 0, "riders on board and a guest waiting for a seat" );
+
+		// The old shape: the station node on the depart end, the pylons as they were placed, the end node on the return end (it carried 0x144 as flags).
+		var depart = ride.Track.DepartCell!.Value;
+		var back = ride.Track.ReturnCell!.Value;
+		var oldNodes = new List<CoasterNodeSaveData> { new( depart.X, depart.Y, 10f, 0f, false, 0, true, false, 0, 0f ) };
+		oldNodes.AddRange( captured.Track.Nodes.Where( node => !node.IsStation && !node.IsStationEnd ) );
+		oldNodes.Add( new CoasterNodeSaveData( back.X, back.Y, 10f, 0f, false, 0, false, true, 0x144, 0f ) );
+		var old = captured with { Track = captured.Track with { Nodes = oldNodes }, State = null };
+
+		var restored = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		restored.RestoreSnapshot( old );
+		var nodes = restored.Track.Nodes;
+		Assert.AreEqual( 3, nodes.Count( node => node.IsStation ), "the station placement's three nodes" );
+		Assert.AreEqual( ride.Track.Nodes.Count, nodes.Count );
+		CollectionAssert.AreEqual( ride.Track.Nodes.Select( node => (node.X, node.Y, node.IsStation, node.IsStationEnd, node.Flags & ~CoasterNodeFlags.Winch) ).ToArray(),
+			nodes.Select( node => (node.X, node.Y, node.IsStation, node.IsStationEnd, node.Flags & ~CoasterNodeFlags.Winch) ).ToArray(), "the same track as the freshly built one: the end node stands on S0" );
+		Assert.IsTrue( restored.IsOperational && restored.Track.IsRunnable );
+		CollectionAssert.AreEqual( ride.Samples.Select( sample => sample.Position ).ToArray(), restored.Samples.Select( sample => sample.Position ).ToArray(), "the circuit is sampled again from the new station" );
+		Assert.AreEqual( CoasterControllerState.Open, restored.State, "an open ride stays open" );
+
+		// The train placement is the new one; every rider of the old one waits to leave, the admission ring is kept.
+		Assert.AreEqual( 0, restored.RidersOnBoard );
+		Assert.AreEqual( 0f, restored.Trains[0].Position, "a new train starts on the platform" );
+		var waiting = new List<int>();
+		while ( restored.TakeLeavingRider() is var guest and not 0 )
+			waiting.Add( guest );
+		CollectionAssert.AreEquivalent( riders, waiting, "nobody is lost" );
+		CollectionAssert.AreEqual( captured.Admission, restored.AdmissionGuests.ToList() );
+
+		// A save of the current shape still must match exactly.
+		var current = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		current.RestoreSnapshot( captured );
+		Assert.AreEqual( Hash( ride ), Hash( current ), "the current shape restores verbatim" );
+	}
+
 	// ---- Envelope shape validation -----------------------------------------------------------------------
 
 	/// <summary>A structurally valid coaster entry for the envelope fixture's placed attraction 1.</summary>
@@ -302,6 +354,57 @@ public class CoasterSaveTests
 		var track = new CoasterTrackSaveData( (2, 6), (0, 6), true, true, 8, nodes );
 		var train = new CoasterTrainSaveData( 12.5f, 30f, CoasterRide.LegacyRunningState, 5.0, new List<List<int>> { new(), new(), new(), new() } );
 		return new CoasterRideSaveData( 1, track, true, false, 0, 60, 16, 105f, 1234, 45.5, 40.0, new List<CoasterTrainSaveData> { train }, new List<int>() );
+	}
+
+	/// <summary>A structurally valid coaster entry with the three-node station (COAST-029): S0, S1 on its exact position, S2, two pylons and the end node on S0.</summary>
+	private static CoasterRideSaveData ThreeNodeCoasterEntry()
+	{
+		var nodes = new List<CoasterNodeSaveData>
+		{
+			new( 1, 6, 10f, 0f, false, 0, true, false, (uint)(CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch | CoasterNodeFlags.NoPreviousLink), 0f ),
+			new( 3, 6, 0f, 0f, false, 0, true, false, (uint)(CoasterNodeFlags.StationHead | CoasterNodeFlags.StationTail | CoasterNodeFlags.Winch), 0f, null, 36.5f, 12f, 65f ),
+			new( 5, 6, 10f, 0f, false, 0, true, false, (uint)(CoasterNodeFlags.StationTail | CoasterNodeFlags.NoNextLink), 0f ),
+			new( 8, 6, 40f, 0.3f, false, 0, false, false, (uint)CoasterNodeFlags.Winch, 0.1f ),
+			new( 3, 9, 30f, 0.2f, false, 0, false, false, 0, 0.2f ),
+			new( 1, 6, 10f, 0f, false, 0, false, true, (uint)CoasterTrack.StationEndFlags, 0f )
+		};
+		var track = new CoasterTrackSaveData( (4, 6), (2, 6), true, true, 8, nodes );
+		var train = new CoasterTrainSaveData( 12.5f, 30f, CoasterRide.LegacyRunningState, 5.0, new List<List<int>> { new(), new(), new(), new() } );
+		return new CoasterRideSaveData( 1, track, true, false, 0, 60, 16, 105f, 1234, 45.5, 40.0, new List<CoasterTrainSaveData> { train }, new List<int>(), State: 4 );
+	}
+
+	[TestMethod]
+	public void TheThreeNodeStationShapeAndItsControllerStatePassTheShapeCheckAndTheCodec()
+	{
+		var snapshot = WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { ThreeNodeCoasterEntry() } } );
+		ParkResumeSaveFile.ValidateShape( snapshot );
+		var restored = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( snapshot ) );
+		ParkResumeSaveFile.ValidateShape( restored );
+		var middle = restored.Coasters!.Rides[0].Track.Nodes[1];
+		Assert.AreEqual( (36.5f, 12f, 65f), (middle.ExactX, middle.ExactY, middle.ExactZ), "the middle node's exact position survives the codec" );
+		Assert.AreEqual( 4, restored.Coasters.Rides[0].State );
+		void Rejects( CoasterRideSaveData entry, string message ) =>
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>(
+				() => ParkResumeSaveFile.ValidateShape( WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { entry } } ) ) ).Message, message );
+		var entry = ThreeNodeCoasterEntry();
+		Rejects( entry with { State = 3 }, "controller state 3" );
+		Rejects( entry with { State = 2, Track = entry.Track with { IsComplete = false, IsClosed = false, Nodes = entry.Track.Nodes.Take( 5 ).ToList() } }, "needs a finished track" );
+		var partial = entry.Track.Nodes.ToList();
+		partial[1] = partial[1] with { ExactZ = null };
+		Rejects( entry with { Track = entry.Track with { Nodes = partial } }, "partial exact position" );
+		var misplaced = entry.Track.Nodes.ToList();
+		misplaced[3] = misplaced[3] with { ExactX = 1f, ExactY = 2f, ExactZ = 3f };
+		Rejects( entry with { Track = entry.Track with { Nodes = misplaced } }, "not a station node" );
+		var sunk = entry.Track.Nodes.ToList();
+		sunk[0] = sunk[0] with { IsStation = false };
+		sunk[1] = sunk[1] with { ExactX = null, ExactY = null, ExactZ = null };
+		Rejects( entry with { Track = entry.Track with { Nodes = sunk } }, "away from the head of the track" );
+		var wrongEnd = entry.Track.Nodes.ToList();
+		wrongEnd[^1] = wrongEnd[^1] with { X = 2 };
+		Rejects( entry with { Track = entry.Track with { Nodes = wrongEnd } }, "head of its station" );
+		var middleOnPylon = entry.Track.Nodes.ToList();
+		middleOnPylon[1] = middleOnPylon[1] with { ExactX = null, ExactY = null, ExactZ = null };
+		Rejects( entry with { Track = entry.Track with { Nodes = middleOnPylon } }, "middle node on a pylon" );
 	}
 
 	private static ParkResumeSnapshot WithCoasters( CoasterWorldSaveData coasters ) =>

@@ -129,7 +129,7 @@ public class CoasterCollisionTests
 	{
 		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-		builder.SetStation( (20, 20), (17, 20) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
 		builder.Height = height;
 		foreach ( var (dx, dy) in circuit )
 			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ) );
@@ -160,8 +160,8 @@ public class CoasterCollisionTests
 	{
 		var (ride, builder) = Build( FigureEight, 20 );
 		Assert.AreEqual( 2, ride.IntersectionCount );
-		// The link that crosses is the one between pylons 3 and 4 over the first link; lifting every later pylon by 60 units clears the prisms.
-		for ( var index = 3; index < ride.Track.Nodes.Count - 1; index++ )
+		// The link that crosses is the one between the third and fourth pylons over the first link; lifting every later pylon by 60 units clears the prisms.
+		for ( var index = CoasterTrack.StationNodeCount + 2; index < ride.Track.Nodes.Count - 1; index++ )
 			Assert.IsTrue( builder.SetHeight( index, 80 ) );
 		Assert.AreEqual( 0, ride.IntersectionCount, "the crossing is recounted on every rebuild" );
 		Assert.IsTrue( ride.AcceptsGuests );
@@ -173,7 +173,7 @@ public class CoasterCollisionTests
 		var settings = CoasterTests.PcSettings();
 		var ride = new CoasterRide( CoasterDefinition.FromValues( settings ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-		builder.SetStation( (20, 20), (17, 20) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
 		builder.Height = 40;
 		foreach ( var (dx, dy) in CoasterTests.Circuit )
 			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ) );

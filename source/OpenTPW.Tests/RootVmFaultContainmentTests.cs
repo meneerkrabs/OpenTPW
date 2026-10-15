@@ -182,7 +182,7 @@ public class RootVmFaultContainmentTests
 		{
 			var coaster = runtime.Coaster!;
 			var builder = new CoasterBuilder( coaster, new CoasterSite( 64, 64 ) );
-			builder.SetStation( (20, 20), (17, 20) ); builder.Height = 40;
+			CoasterTests.PlaceStation( builder, (20, 20) ); builder.Height = 40;
 			foreach ( var (x, y) in CoasterTests.Circuit ) Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + x, 20 + y ) );
 			Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
 			coaster.Command( 8, 0 ); coaster.Command( 5, 0 ); coaster.Command( 6, 6 ); coaster.Board( 101 );

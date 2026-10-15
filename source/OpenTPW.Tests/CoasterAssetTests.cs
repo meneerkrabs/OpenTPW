@@ -130,6 +130,39 @@ public class CoasterAssetTests
 		Assert.AreEqual( 0f, Rig( 1180, false ).StackOffset, "the stack dummy of this model is dummy number 1, the track dummy's neighbour at the same height" );
 	}
 
+	/// <summary>
+	/// The three station nodes stand where the station model's dummies do (<c>0x436ac0</c>): the first one half a cell before the '&lt;' cell and the last one half a cell
+	/// past the '&gt;' cell along the platform, in every rotation, with the middle node between them; the cells and heights of the shipped stations are the ones of the dummies.
+	/// </summary>
+	[TestMethod]
+	public void TheStationFrameComesFromTheModelsDummiesInEveryRotation()
+	{
+		var stations = 0;
+		foreach ( var entry in PcCoasters() )
+		{
+			var scripts = new RideScriptWorld( 3 );
+			var runtime = new OriginalObjectRuntime( entry, scripts, seed: 5, open: true );
+			foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+			{
+				var placement = new ObjectPlacement( 30, 30, rotation, System.Numerics.Vector2.Zero, 0f );
+				var layout = CoasterStationLayout.FromModel( runtime.Model, runtime.Animator.NodeTransforms, placement );
+				Assert.IsNotNull( layout, $"{entry.DisplayName}: the model holds dummies 1, 2 and 3 with attribute 0x400000" );
+				var (depart, back) = CoasterBuilder.StationEnds( entry.Shape, 30, 30, rotation )!.Value;
+				var step = (X: Math.Sign( depart.X - back.X ), Y: Math.Sign( depart.Y - back.Y ));
+				Assert.AreEqual( (back.X - step.X, back.Y - step.Y), (CoasterTrack.CellOf( layout!.End.X ), CoasterTrack.CellOf( layout.End.Z )), $"{entry.DisplayName} rotation {rotation}: S0 stands beyond the '<' cell" );
+				Assert.AreEqual( (depart.X + step.X, depart.Y + step.Y), (CoasterTrack.CellOf( layout.Start.X ), CoasterTrack.CellOf( layout.Start.Z )), $"{entry.DisplayName} rotation {rotation}: S2 stands beyond the '>' cell" );
+				var along = step.X != 0 ? (layout.Mid.X - layout.End.X) * step.X : (layout.Mid.Z - layout.End.Z) * step.Y;
+				var whole = step.X != 0 ? (layout.Start.X - layout.End.X) * step.X : (layout.Start.Z - layout.End.Z) * step.Y;
+				Assert.IsTrue( along > 0 && along < whole, $"{entry.DisplayName} rotation {rotation}: S1 lies between the two end nodes" );
+				if ( rotation == 0 )
+					Log.Trace( $"station {entry.InfoId} {entry.DisplayName}: h0 {CoasterDefinition.FromCatalogEntry( entry ).StandardPylon.MeshHeightLow:F2} h1 {CoasterDefinition.FromCatalogEntry( entry ).StandardPylon.MeshHeightHigh:F2} adjust {CoasterDefinition.FromCatalogEntry( entry ).TrackHeightAdjust:F2} initial {CoasterDefinition.FromCatalogEntry( entry ).InitialPylonLoftHeight:F2}; End ({layout.End.X - 300:F2}, {layout.End.Y:F2}, {layout.End.Z - 300:F2}), Mid ({layout.Mid.X - 300:F2}, {layout.Mid.Y:F2}, {layout.Mid.Z - 300:F2}), Start ({layout.Start.X - 300:F2}, {layout.Start.Y:F2}, {layout.Start.Z - 300:F2})" );
+			}
+			runtime.Stop();
+			stations++;
+		}
+		Assert.AreEqual( 12, stations );
+	}
+
 	/// <summary>Every PC coaster builds the same circuit on a flat site, completes, rates within [0, 100] and runs.</summary>
 	[TestMethod]
 	public void EveryPcCoasterBuildsRatesAndRuns()
@@ -139,7 +172,7 @@ public class CoasterAssetTests
 			var world = new CoasterWorld( 3 );
 			var ride = new CoasterRide( CoasterDefinition.FromEntry( entry ), world, entry.DisplayName );
 			var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-			builder.SetStation( (20, 20), (17, 20) );
+			CoasterTests.PlaceStation( builder, (20, 20) );
 			builder.Height = 40;
 			foreach ( var (dx, dy) in CoasterTests.Circuit )
 				Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ), $"{entry.InfoId}" );

@@ -460,7 +460,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
-		// staff and buy open those windows, msg:<text> posts a message, help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
+		// staff and buy open those windows, msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
 		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
 		if ( debugHud != null )
 		{
@@ -480,7 +480,12 @@ internal static class Game
 						case "buy": hud.OpenBuyWindow(); break;
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;
+						case "msgaction": hud.PostGameMessage( "A message with two actions", argument.Split( '+' ).Select( kind => new OpenTPW.Hud.GameMessageAction( Enum.Parse<OpenTPW.Hud.GameMessageKind>( kind, true ), () => { } ) ).ToArray() ); break;
+						case "pause": hud.OpenPauseMenu(); break;
+						case "confirm": hud.Stack.Push( OpenTPW.UI.Original.UiDialogs.Message( "debugConfirm", () => "QUIT GAME\n\nAre you sure you want to quit the game ?", (() => "Yes", () => { }), (() => "No", () => { }) ) ); break;
+						case "select": if ( flow.Level.Objects.Objects.Skip( int.Parse( argument ) ).FirstOrDefault() is { } selected ) hud.SelectObject( selected ); break;
 						case "help": hud.DebugHelp( argument ); break;
+						case "ride": hud.DebugRide( argument ); break;
 						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
 						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
 					}

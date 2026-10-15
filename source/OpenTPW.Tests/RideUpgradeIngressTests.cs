@@ -131,7 +131,7 @@ public class RideUpgradeIngressTests
 		var button = (UiButton)hud.Screen.Find( "rideUpgrade" )!; if ( gate is not "ambiguous" and not "removedDuplicate" ) Assert.IsFalse( button.Visible && button.Enabled ); button.Activate(); Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel );
 	}
 	[TestMethod]
-	public void TheInfoArmsTrackButtonOpensTheCoasterToolOnASelectedCoasterAndOnlyThere()
+	public void TheRideWindowsTrackButtonOpensTheCoasterToolOnASelectedCoasterAndOnlyThere()
 	{
 		var hud = Fixture( BuildCategory.Rides, out var level, out _, out var owner, out var other, out _, extra: "Bumper.WhichTrackType 3\n" ); var context = Context();
 		Assert.IsNotNull( owner.Runtime.Coaster );
@@ -146,7 +146,7 @@ public class RideUpgradeIngressTests
 		Assert.AreEqual( CoasterToolButton.Build, level.CoasterPanel!.Selected, "an unfinished track opens on the build button" );
 		Assert.IsFalse( owner.IsOpen, "the tool closes the ride object" );
 		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
-		Assert.IsFalse( button.Visible, "the arm closes with the tool" );
+		Assert.IsFalse( button.Visible, "the ride window closes with the tool" );
 		Assert.IsTrue( hud.Screen.Find( "coasterBuild" )!.Visible && hud.Screen.Find( "coasterPanelShield" )!.Visible, "the panel shows" );
 		level.ExitCoasterTool();
 		Assert.IsFalse( hud.Screen.Find( "coasterBuild" )!.Visible is true && level.IsCoasterToolActive );

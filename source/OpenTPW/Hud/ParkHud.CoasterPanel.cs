@@ -44,38 +44,8 @@ public sealed partial class ParkHud
 	/// <summary>The cell under the pointer was pressed on a pylon the sub-mode picked up: the release belongs to the tool.</summary>
 	private bool coasterPress;
 
-	/// <summary>Whether the object has a track the track button edits: a coaster (the coaster tool) or a water track ride (its track tool).</summary>
-	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null);
-
-	/// <summary>
-	/// The ride window's track button (<c>b_track</c>, control 0x3e2a, help 10): for a coaster (track type 3 of the object's type record, +0x9c) it opens the coaster tool on the selected ride (<c>0x4af200</c> →
-	/// <c>0x4988c0</c> → <c>0x4474d0</c>); a water track ride opens its track tool.
-	/// </summary>
-	// [BIN:TPW-EXE:0x4ad53a track button] the ride window shows control 0x3e2a when the object's type record has a track type (+0x9c nonzero), and its handler 0x4af200 sends type 1 to tool 0xe, type 2 to 0x13 and type 3, a coaster, to 0x4988c0, which enters the tool (0x4474d0, state 2 for a complete track whose circuit is closed) and selects the panel's first button (0x4455c0)
-	// [EXT:ride-track-button] the button sits in the info arm beside the ride's other buttons; the ride window (table 0x755150, b_track at (625, 800, 779, 953)) belongs to the layout-table round
-	private void EditTrack()
-	{
-		if ( selectedObject is not { IsDeleted: false } item || !CanEditTrack( item ) )
-			return;
-		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
-		if ( !entered )
-			return;
-		SetInfoArm( false );
-		PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
-	}
-
 	private void BuildCoasterPanel()
 	{
-		infoElements.Add( hud.Add( new UiButton
-		{
-			Id = "editTrack",
-			Model = "b_track",
-			Help = strings.Help( 10 ),
-			Clicked = EditTrack,
-			Bounds = UiRect.FromCenter( new NVector2( 870, 1425 ), 120, 120 ),
-			Anchor = UiAnchor.BottomLeft,
-			Visible = false
-		} ) );
 		// the panel's backdrop takes the clicks of the area it covers, so a click beside a button does not reach the park
 		var shield = hud.Add( new UiLabel { Id = "coasterPanelShield", Text = () => "", Bounds = CoasterArmRect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		foreach ( var spec in CoasterButtons )

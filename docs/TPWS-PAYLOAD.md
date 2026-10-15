@@ -127,7 +127,8 @@ block, which has a bounded structural reader (next section).
 | Easymode range | Content |
 | --- | --- |
 | 1,179–1,242 | 64 bytes of labelled World variables (`SaveWorldVariables`, writer `0x105d3c`/reader `0x106708`): `version` (2; other versions are rejected), arrival-vehicle sizes, thing IDs of the bank, mechanic HQ, analyser, gates, traffic lights, research lab, staff HQ, tag system, UI receiver, weather and the first staff of each role and first object, `mGameTick` 755, `mParkClosed` 0, `mNumberOfVisitorsToDate`, `mRandomSeed`, `mWorldState` |
-| 1,243–6,718 | Control manager (`0xd1a60`) and macro AI candidate pool (`0xf5f1c`): widths not pinned, kept opaque |
+| 1,243–6,048 | Control manager (`0xd1a60`): width not pinned, kept opaque |
+| 6,049–6,718 | Staff hiring pool (`SaveStaffPool`, tp.exe writer `0x507850`, the macro AI's first part): 32 × 20-byte candidates (role, name index, grade, sub-type, valid, on pointer, time stamp, timeout), five (people in category, stop producing) pairs, the pool's time stamp (722) and the opening-pool flag; 16 valid candidates |
 | 6,719–6,746 | Calendar (`0xe3d30`): FunnyTimeStart 8, SessionStart 8, month cache 4, day cache 4, rate 4 (15,000) |
 | 6,747–6,764 | Arrivals (`0xcb050`): 18 bytes, raw |
 | 6,765–1,385,520 | Per-cell grid: 16,384 records (16,134 × 84 bytes + 250 × 94 bytes) |

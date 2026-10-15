@@ -250,6 +250,10 @@ public class OriginalUiTests
 			menu.Stack.Clear();
 			menu.Stack.Push( menu.Main );
 			menu.Stack.Update( context, UiInput.Key( UiKeys.Back ) );
+			Assert.AreEqual( "lobbyMenu", menu.Stack.Top!.Name, "Escape in the lobby opens its menu (Load, Options, Resume, Quit; there is no menu column)" );
+			Assert.IsNull( menu.Main.Find( "quit" ), "the lobby has no right-hand Quit button" );
+			Assert.AreEqual( "resume", menu.Stack.Top.Focused!.Id );
+			menu.Stack.Update( context, UiInput.Click( menu.Stack.Top.Find( "quit" )!.ScreenRect( context.Canvas ).Center ) );
 			Assert.AreEqual( "confirmQuit", menu.Stack.Top!.Name );
 			Assert.AreEqual( "ui9", ((UiLabel)menu.Stack.Top.Find( "message" )!).Text(), "original QUIT GAME confirmation" );
 			menu.Stack.Update( context, UiInput.Key( UiKeys.Accept ) );
@@ -507,7 +511,7 @@ public class OriginalUiTests
 		Assert.IsTrue( display.IsConfirmationPending );
 		Assert.AreEqual( (chosen.X, chosen.Y), (display.Current.Width, display.Current.Height) );
 		Assert.AreEqual( "confirmDisplay", stack.Top!.Name );
-		StringAssert.StartsWith( ((UiLabel)stack.Top.Find( "message" )!).Text(), "ui400" );
+		StringAssert.StartsWith( ((UiLabel)stack.Top.Find( "caption" )!).Text(), "ui400" );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		Assert.AreEqual( (1280, 720), (display.Current.Width, display.Current.Height) );
 		Assert.AreEqual( "restored", stack.Top!.Name );

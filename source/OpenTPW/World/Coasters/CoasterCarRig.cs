@@ -125,6 +125,8 @@ public sealed class CoasterCarRig
 				seats.Add( (node, rest[node] * shift) );
 		}
 		Seats = seats;
+		var seat = RideSeat.FindNode( model );
+		CameraSeat = seat >= 0 ? rest[seat] * shift : null;
 	}
 
 	public ModelFile Model { get; }
@@ -137,6 +139,9 @@ public sealed class CoasterCarRig
 	public float RearExtent { get; }
 	/// <summary>The head sockets in head-id order: the model node and its matrix relative to the pivot (MD2 axes).</summary>
 	public IReadOnlyList<(int Node, Matrix4x4 Local)> Seats { get; }
+	/// <summary>The car model's camera seat (<see cref="RideSeat"/>) relative to the pivot in MD2 axes, null when the model has none.</summary>
+	// [BIN:TPW-EXE:0x42a560 ride camera] a coaster's ride camera takes the node the seat lookup 0x44b220(model, 0x1000, 1) finds in the car model (coasta/megacost cart, minecart cart node 5 "camera")
+	public Matrix4x4? CameraSeat { get; }
 
 	/// <summary>
 	/// The distance from the front car's pivot back to each car's pivot: the previous car's rear extent plus the car's front extent (each with the type's distance add).

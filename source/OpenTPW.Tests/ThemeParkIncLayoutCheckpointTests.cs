@@ -267,7 +267,7 @@ public class ThemeParkIncLayoutCheckpointTests
 			var text = ((UiLabel)hud.Stack.Top.Find("message")!).Text();
 			StringAssert.Contains(text, "NEW experimental session");
 			StringAssert.Contains(text, "not a continuation");
-			var confirm = (UiButton)hud.Stack.Top.Find("choice1")!;
+			var confirm = (UiButton)hud.Stack.Top.Find("choice0")!;
 			var bounds = confirm.ScreenRect(context.Canvas);
 			var click = UiInput.Click(new System.Numerics.Vector2(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
 			if (successful)

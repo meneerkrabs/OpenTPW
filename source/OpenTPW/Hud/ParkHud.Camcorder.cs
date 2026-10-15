@@ -17,6 +17,17 @@ public partial class ParkHud
 		return true;
 	}
 
+	/// <summary>Arms the camcorder as the C key does (the camera panel's camcorder button); the next click in the park starts the walk.</summary>
+	internal void ArmCamcorder()
+	{
+		var tools = level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.CellTool.IsActive || level.IsCoasterToolActive;
+		if ( CamcorderArmed || level.FreeWalk != null || tools || IsRiding || GameEditions.Current != GameEdition.ThemeParkWorld
+			|| Camera.Mode is not ParkCameraMode || level.OriginalPark == null )
+			return;
+		CamcorderArmed = true;
+		PostMessage( strings.Extra( OpenTpwText.CamcorderArmed ) );
+	}
+
 	private bool UpdateCamcorder( UiInput input, System.Numerics.Vector2 viewport, bool blocked )
 	{
 		var down = Input.IsFrameKeyDown( Input.ChordKey( InputButton.CamcorderMode ) ) || Input.Down( InputButton.CamcorderMode );

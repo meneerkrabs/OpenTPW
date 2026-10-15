@@ -283,6 +283,13 @@ a controller changes and the pinned fixed run (`0x776A2A9E9A53BF25`, schema 17) 
 boats' `Engine` flag are presentation state: saved (trailing optional fields, so older saves restore) but not hashed. A save from
 before the tick change may carry a tick clock up to 1/30 s and still restores (`BumpController.MaximumSavedRemainder`).
 
+Tour register round (October 15): the tour controllers tick every 62 ms (`TourController.TickSeconds = 0.062`, was 31 ms: the original runs the tour tick on every second world step), so every park with a tour
+ride runs different flights than before; the park-resume continuation hashes of such a park move with it. A free car slot's stale words (heading, patrol corner, approach heading, seat ids) now join the
+tour part of the hash and are saved (trailing optional `FreeSlots`, and every seat word of a live car), a handed-out seat keeps its id, and a ride closed after a departure order keeps its car docked until it
+reopens, which changes a closing run. No `SchemaVersion` bump and no pinned hash moved: the tour module still joins the hash only while a controller exists, and nothing pins a park with one.
+A save from the 31 ms clock still restores (`TourController.MaximumSavedRemainder`, 62 ms). The wall-clock catch-up of the original's world loop (2 s clamp) and the parity phase of the tour tick
+against the script loop are not reproduced (`[EXT:tour-fixed-step]`). The drawn pose of a car (`TourCar.Drawn`, the head-node shuffle) is presentation state: not saved, not hashed, and it draws nothing from any stream.
+
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the
 same process.
@@ -314,7 +321,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x9F437861FA2E5452`, schema 19: a ride keeps its broken-down state (QUEUE-019) in the hash, the booth's verdict on the fee
+  (`0x611EFAD61F9A8D68`, schema 19: each staff candidate draws its own timeout, `StaffTimeoutTime` + R % (`StaffTimeoutTime` / 2) units of
+  four park turns, and the pool refills on the first turn past 4 × `TimeBetweenStaffUpdates` turns (tp.exe `0x00507600`, `0x005084F0`), so the
+  candidates and the world stream after them move. Before that:
+  `0x9F437861FA2E5452`, schema 19: a ride keeps its broken-down state (QUEUE-019) in the hash, the booth's verdict on the fee
   (tp.exe `0x004FF5B0`) draws from the guest stream, and the invented boredom loss is gone (nothing in tp.exe reads BoredomThreshold; docs/GUESTS.md). Before that:
   `0xCAF8114002723B8C`, schema 18: the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp join the
   park save and so the hash; the synthetic park stays in the black, so only the hashed fields change the value (docs/ECONOMY.md). Before that:

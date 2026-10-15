@@ -15,19 +15,22 @@ public readonly record struct TourStation( int X, int Y, int Z, int RotationDegr
 /// The tour-ride controller of one original tour ride (Jurassic, Flightmare, Star and Tweety Tours): the module's 0x122C-byte controller with its 20 flying
 /// cars. The ride has no track: its cars take off from the station, fly a random walk over the park's lattice for the ride's duration at a height that clears the
 /// ground, return, circle the station until the landing slot is free and land, where the script unloads them and loads the next riders. The ride script
-/// drives it through the <c>TOUR</c> opcode (<see cref="Command"/>). The controller ticks at the original's world step of 31 ms.
+/// drives it through the <c>TOUR</c> opcode (<see cref="Command"/>). The controller ticks once per 62 ms: the original's tour tick runs on every second world step of 31 ms.
 /// </summary>
 /// <remarks>
-/// [BIN:TPW-EXE:0x0055ABF0 tour tick] the per-tick state machine over the controllers and their cars, called once per fixed world step (0x0054F5EF, step 31 ms of 0x0054E360).
+/// [BIN:TPW-EXE:0x0055ABF0 tour tick] the per-tick state machine over the controllers and their cars, called from 0x0054F5EF only on even step counts (0x0054F5D7 tests the low bit of the step counter [0x00877D34], which 0x0054F4D3 raises once per 31 ms step of 0x0054E360): one tick per 62 ms. The draw interpolation divides by the same 62 ms (the constant at 0x00700F90 is 1/62).
 /// [BIN:TPW-EXE:0x005542FE TOUR] the opcode's handler: command number − 1 indexes the jump table 0x5569D0 (18 entries).
 /// </remarks>
-// [APPROX:TOUR-001] the controller ticks at 1000/31 steps per second from the game clock; the original's world step is a 31 ms catch-up loop on the wall clock (0x0054E360), whose phase against the script loop is not modelled
+// [EXT:tour-fixed-step] the controller ticks from OpenTPW's fixed simulation clock, one tick per 62 ms; the original's world step is a catch-up loop on the wall clock (next step += 31 at 0x0054F4C4, a backlog over 2000 ms dropped at 0x0054F493..0x0054F49B) whose phase against the script loop is not reproduced (a determinism decision, docs/DETERMINISM.md)
 public sealed class TourController
 {
 	/// <summary>The cars a controller holds.</summary>
 	public const int CarSlots = 20;
-	/// <summary>The world step in seconds: the original steps its world in 31 ms units.</summary>
-	public const double TickSeconds = 0.031;
+	/// <summary>The tour tick in seconds: the original's tour tick runs on every second world step of 31 ms.</summary>
+	// [BIN:TPW-EXE:0x0054F5EF tour tick] call 0x0055ABF0 behind `test al, 1` on the step counter at 0x0054F5D7: only even steps, so one tick per 62 ms (the draw divides by 62 ms, 0x00700F90)
+	public const double TickSeconds = 0.062;
+	/// <summary>The largest tick clock a save may carry. Saves from before the 62 ms tick (the 31 ms clock) hold less than 0.031 and restore unchanged: the clock is elapsed seconds, so the first advance runs it off.</summary>
+	public const double MaximumSavedRemainder = TickSeconds;
 
 	// the commands of the TOUR opcode (jump-table index + 1)
 	public const int CommandCreate = 1;
@@ -157,6 +160,15 @@ public sealed class TourController
 			car.Random = data.Random;
 			car.Animation = data.Animation;
 			car.AnimationLoops = data.AnimationLoops;
+		}
+		foreach ( var data in saved.FreeSlots ?? new List<TourFreeSlotSaveData>() )
+		{
+			var car = cars[data.Slot];
+			car.Heading = data.Heading;
+			car.Corner = data.Corner;
+			car.ApproachHeading = data.ApproachHeading;
+			for ( var rider = 0; rider < data.Riders.Count; rider++ )
+				car.Riders[rider] = data.Riders[rider];
 		}
 		world.Add( this );
 	}
@@ -305,13 +317,12 @@ public sealed class TourController
 			car.RiderCount++;
 			Riders--;
 			Released++;
-			var guest = car.Riders[-car.RiderCount];
-			car.Riders[-car.RiderCount] = 0;
-			return guest;
+			// the seat keeps the id: the original reads it without clearing the slot (0x0055D610), and a stale seat word is saved and hashed like any other (TOUR-009)
+			return car.Riders[-car.RiderCount];
 		}
 		if ( car != null && Ejected.Count > 0 )
 		{
-			// [APPROX:TOUR-002] riders a severe breakdown threw off are handed out at the station like unloaded riders; the original drops them from the car without any hand-over (0x0055D720 discards the ids), and what returns them to the park is not traced
+			// [APPROX:TOUR-002] riders a severe breakdown threw off are handed out at the station like unloaded riders (which also lowers VAR_ONRIDE); the original drops them from the car without any hand-over (the loop in 0x0055DA70 discards the ids 0x0055D720 returns), so the script never releases them and VAR_ONRIDE keeps counting them
 			var guest = Ejected[^1];
 			Ejected.RemoveAt( Ejected.Count - 1 );
 			Released++;
@@ -355,6 +366,7 @@ public sealed class TourController
 			return;
 		}
 		// closed (a broken ride ignores it): one car wanted, every flight ends now, a car at the station with riders starts unloading them
+		// [BIN:TPW-EXE:0x0055D9F0 TOUR 14] the loop touches the timer, the count and the open word only: the ready flag is left as it is. A departure the script ordered (TOUR 11 cleared ready) that the closing stops before the lift-off leaves the sole car docked with its riders and ready clear (0x0055ABF0 state 1 needs ready clear and, for the first car of a ride with one car, an open ride), so TOUR 10 reads 0 until the ride reopens; it then flies once more with its negative count, lands (ready set) and the script unloads it
 		if ( Condition == 3 )
 			return;
 		Wanted = 1;
@@ -364,9 +376,6 @@ public sealed class TourController
 				car.Timer = 0;
 			if ( car.State == TourCar.StateDocked && car.RiderCount > 0 )
 				car.RiderCount = -car.RiderCount;
-			// [APPROX:TOUR-010] a departure the script ordered (TOUR 11 cleared the ready flag) that the closing stops before the car lifted off is cancelled: the car stays ready, so the script's unload loop runs; the original leaves the flag clear and the sole car never takes off nor reads as ready
-			if ( car.State == TourCar.StateDocked && !Ready )
-				Ready = true;
 		}
 		IsOpen = false;
 	}
@@ -414,7 +423,6 @@ public sealed class TourController
 			while ( car.RiderCount > 0 )
 			{
 				var guest = car.Riders[car.RiderCount - 1];
-				car.Riders[car.RiderCount - 1] = 0;
 				car.RiderCount--;
 				Riders--;
 				Ejected.Add( guest );
@@ -423,7 +431,7 @@ public sealed class TourController
 	}
 
 	// [BIN:TPW-EXE:0x0055AA80 car animation] the mesh animation is triggered through 0x004732A0 (looping when the last operand is set) and logs "FLY: Failed to trigger a flying car anim" on failure
-	// [APPROX:TOUR-004] the cars' engine sounds (0x0051BC40), the breakdown smoke and repair sounds (events 0x27, 0x28, 0xBB) and the spawn sound are not played; the animation id is kept on the car
+	// [APPROX:TOUR-004] not played: the engine sound (0x0051EEB0, 0x0051BC40, 0x0051C270), the breakdown smoke (effects 0x27 and 0x28), the repair sound (event 0xBB) and the car clips; the animation id is kept on the car
 	private static void SetAnimation( TourCar car, int animation, bool loops )
 	{
 		car.Animation = animation;
@@ -476,11 +484,7 @@ public sealed class TourController
 			return;
 		var car = cars[slot];
 		car.State = TourCar.StateReturn;
-		// [APPROX:TOUR-009] a car created in a slot starts with no heading, patrol corner or seat contents; the original reuses the slot's stale words, which no save holds, so a saved and an uninterrupted run would diverge
-		car.Heading = 0;
-		car.Corner = 0;
-		car.ApproachHeading = 0;
-		Array.Clear( car.Riders );
+		// [BIN:TPW-EXE:0x0055A720 car creation] the slot's stale words stay: the heading (+0x10, only the ride's first car takes the station's), the patrol corner (+0x88), the seat ids (+0x90..) and the approach heading (+0xBC) are not written here, so a new car in a reused slot starts from the last car's values. They are saved, hashed and restored for free slots too
 		car.Pitch = car.Roll = 0;
 		car.VerticalVelocity = 0;
 		car.Turn = 0;
@@ -512,6 +516,7 @@ public sealed class TourController
 		car.PreviousTargetZ = car.TargetZ;
 		CarCount++;
 		car.Random = TourMath.Abs( Random() );
+		car.Generation++;
 		if ( CarCount == 1 )
 		{
 			car.State = TourCar.StateDocked;
@@ -979,7 +984,15 @@ public sealed class TourController
 		{
 			hash.Add( car.State );
 			if ( car.State == TourCar.StateFree )
+			{
+				// the stale words a new car in this slot inherits (TOUR-009)
+				hash.Add( car.Heading );
+				hash.Add( car.Corner );
+				hash.Add( car.ApproachHeading );
+				for ( var rider = 0; rider < TourCar.MaximumRiders; rider++ )
+					hash.Add( car.Riders[rider] );
 				continue;
+			}
 			hash.Add( car.X );
 			hash.Add( car.Y );
 			hash.Add( car.Z );

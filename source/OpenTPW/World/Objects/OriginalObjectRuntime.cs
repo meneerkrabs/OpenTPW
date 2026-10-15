@@ -90,7 +90,7 @@ public sealed partial class OriginalObjectRuntime
 			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them) or crosses itself (the +0x140 == 0 test, CoasterRide.AcceptsGuests); the not-being-edited exclusion is not modelled itself (the coaster tool closes the ride and puts the controller in state 2 while it edits, Level.EnterCoasterTool) and the state 11 thought-13 exit (GUESTS.md) belongs to the guest and queue owner
 			// A water ride takes guests only while its circuit is valid (the original's counts-test reads the track word the walk writes, TRACK-005).
 			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.AcceptsGuests ?? true) && (Bump?.IsTrackValid ?? true) );
-			// [APPROX:TOUR-007] a tour ride's riders take one second to walk off after WALKOFF; the original's walk-off nodes and their duration are not traced, and a walker that completes at once makes the unload loops of the Star and Tweety Tours scripts end after one rider
+			// [APPROX:TOUR-007] a tour ride's riders take one second to walk off after WALKOFF; the original takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0, 0x005571A0) and OpenTPW's WALKON keeps no walk nodes (the walk owner supplies them); a walker that completes at once makes the unload loops of the Star and Tweety Tours scripts end after one rider
 			if ( UsesTour )
 				Visitors.WalkOffMilliseconds = 1000;
 		}

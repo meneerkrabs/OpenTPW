@@ -142,8 +142,8 @@ public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int 
 /// <summary>
 /// Hiring pool, employees, wages and training. Data-driven values: pool sizes, grade chances,
 /// park maxima, wages (<see cref="BalanceSettings.GetMonthlyWage"/>) and <c>PoundsPerTrainingPoint</c>.
-/// <b>Approximations</b> (documented in docs/ECONOMY.md): pool timing treats
-/// <c>TimeBetweenStaffUpdates</c>/<c>StaffTimeoutTime</c> as seconds at normal speed, candidate grades
+/// Pool timing counts <c>TimeBetweenStaffUpdates</c>/<c>StaffTimeoutTime</c> in units of four park turns (tp.exe 0x5084f0).
+/// <b>Approximations</b> (documented in docs/ECONOMY.md): candidate grades
 /// are drawn around <c>AvgGradeOf*</c>, hiring is free (the original's hire path has no debit, <c>BaseCostPerStaff</c> and
 /// <c>CostPerQualityLevel</c> are never read, ORACLE.md F28), training spends a per-role monthly budget at the month's end
 /// (divided over every employee of the role, ORACLE F17), and 100 training points raise one grade.
@@ -174,9 +174,14 @@ public sealed class ParkStaff
 	/// </summary>
 	public int PendingPlacementId { get; set; }
 
-	// [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing
-	public long UpdateInterval => Math.Max( 1, ParkCalendar.SecondsToTicks( settings.TimeBetweenStaffUpdates ) );
-	public long CandidateLifetime => Math.Max( 1, ParkCalendar.SecondsToTicks( settings.StaffTimeoutTime ) );
+	/// <summary>Park turns per unit of <c>TimeBetweenStaffUpdates</c> and <c>StaffTimeoutTime</c>: the pool compares elapsed turns with four times them.</summary>
+	public const int TurnsPerPoolUnit = 4;
+	// [BIN:TPW-EXE:0x5084f0 staff pool update] a candidate whose turns since its stamp (+0xc, 0x41a970) exceed 4 × its timeout (+0x10) leaves unless it is being placed; the pool refills once the turns since its own stamp exceed 4 × TimeBetweenStaffUpdates (0x785304)
+	/// <summary>Ticks from one pool refill to the next: the refill comes on the first turn past 4 × <c>TimeBetweenStaffUpdates</c> turns.</summary>
+	public long UpdateInterval => ParkCalendar.TickOfTurn( TurnsPerPoolUnit * (long)Math.Max( 0, settings.TimeBetweenStaffUpdates ) + 1 );
+
+	/// <summary>The first tick of the turn after <paramref name="units"/> pool units from the turn of <paramref name="tick"/>.</summary>
+	private static long TickAfterUnits( long tick, long units ) => ParkCalendar.TickOfTurn( ParkCalendar.Turn( tick ) + TurnsPerPoolUnit * units + 1 );
 
 	public IEnumerable<StaffMember> OfType( StaffType type ) => members.Where( member => member.Type == type );
 
@@ -199,7 +204,7 @@ public sealed class ParkStaff
 			for ( var count = 0; count < Math.Min( role.BeginningNumberInPool, Math.Max( role.MaximumInPool, role.MinimumInPool ) ); count++ )
 				candidates.Add( CreateCandidate( role, random, tick ) );
 		}
-		NextPoolUpdateTick = tick + UpdateInterval;
+		NextPoolUpdateTick = TickAfterUnits( tick, settings.TimeBetweenStaffUpdates );
 	}
 
 	/// <summary>The original hiring pool has 32 slots.</summary>
@@ -213,10 +218,10 @@ public sealed class ParkStaff
 	// [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff
 	public void UpdatePool( DeterministicRandom random, long tick )
 	{
+		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId );
 		if ( tick < NextPoolUpdateTick )
 			return;
-		NextPoolUpdateTick = tick + UpdateInterval;
-		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId );
+		NextPoolUpdateTick = TickAfterUnits( tick, settings.TimeBetweenStaffUpdates );
 		var roles = settings.Roles;
 		var shortfall = roles.Select( role => OfType( role.Type ).Count() >= role.MaximumInPark ? 0 : role.MaximumInPool - candidates.Count( candidate => candidate.Type == role.Type ) ).ToArray();
 		var cap = Math.Min( settings.MaxNumberOfStaffPerUpdate, PoolSlots - candidates.Count );
@@ -258,7 +263,10 @@ public sealed class ParkStaff
 		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
 		var raw = (role.AverageGrade + random.Next( 3 ) - 1) & 0xFF;
 		var grade = raw > BalanceSettings.GradeCount - 1 ? BalanceSettings.GradeCount - 1 : raw;
-		return new StaffCandidate( NextId++, role.Type, random.Next( NameTableSize ), grade, tick + CandidateLifetime );
+		var name = random.Next( NameTableSize );
+		// [BIN:TPW-EXE:0x507600 staff candidate] the timeout (+0x10) is StaffTimeoutTime + R % (StaffTimeoutTime >> 1)
+		var timeout = settings.StaffTimeoutTime + (settings.StaffTimeoutTime >> 1 > 0 ? random.Next( settings.StaffTimeoutTime >> 1 ) : 0);
+		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ) );
 	}
 
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;
@@ -334,12 +342,37 @@ public sealed class ParkStaff
 
 	internal int AllocateId() => NextId++;
 
+	/// <summary>The display state of a member's own state word +0x19c (tp.exe <c>0x005064F0</c>): 0 Idle, 1 Patrolling, 2–3 Resting, 4–5 On strike, 7 Picked up, any other Working.</summary>
+	// [BIN:TPW-EXE:0x5064f0 display state] switch on +0x19c: 0 → 0, 1 → 1, 2 and 3 → 3, 4 and 5 → 4, 7 → 5, default → 2
+	public static StaffState DisplayState( uint word ) => word switch
+	{
+		0 => StaffState.Idle,
+		1 => StaffState.Patrolling,
+		2 or 3 => StaffState.Resting,
+		4 or 5 => StaffState.OnStrike,
+		7 => StaffState.PickedUp,
+		_ => StaffState.Working
+	};
+
 	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
 	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum )
 	{
 		var member = new StaffMember { Id = AllocateId(), Type = type, NameIndex = 0, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		members.Add( member );
 		return member;
+	}
+
+	/// <summary>
+	/// Replaces the pool with an original save's candidates (role, name index, grade, the turn it was made and its timeout in units of four turns) and
+	/// sets the next refill from the turn of the pool's last one; each candidate leaves on the first turn past its timeout.
+	/// </summary>
+	internal void RestoreOriginalPool( IEnumerable<(StaffType Type, int NameIndex, int Grade, long MadeTurn, long Timeout)> saved, long lastRefillTurn )
+	{
+		candidates.Clear();
+		PendingPlacementId = 0;
+		foreach ( var (type, name, grade, made, timeout) in saved.Take( PoolSlots ) )
+			candidates.Add( new StaffCandidate( AllocateId(), type, name, grade, TickAfterUnits( ParkCalendar.TickOfTurn( made ), timeout ) ) );
+		NextPoolUpdateTick = TickAfterUnits( ParkCalendar.TickOfTurn( lastRefillTurn ), settings.TimeBetweenStaffUpdates );
 	}
 
 	/// <summary>Moves the pool's update and expiry times by <paramref name="ticks"/> (a new park started at a later turn).</summary>

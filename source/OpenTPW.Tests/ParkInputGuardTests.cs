@@ -33,14 +33,4 @@ public class ParkInputGuardTests
 		Assert.IsFalse( ParkHud.ParkShortcutsAllowed( false, false, true, false ), "typing E/O/C cannot act on the park" );
 		Assert.IsFalse( ParkHud.ParkShortcutsAllowed( false, false, false, true ), "ImGui keyboard/text capture owns shortcuts" );
 	}
-
-	[TestMethod]
-	public void RideRightClickWaitsForBothMouseOwners()
-	{
-		Assert.IsTrue( ParkHud.RideRightClickAllowed( true, false, false, false ) );
-		Assert.IsFalse( ParkHud.RideRightClickAllowed( false, false, false, false ), "modal or keyboard capture blocks the exit" );
-		Assert.IsFalse( ParkHud.RideRightClickAllowed( true, true, false, false ), "original HUD owns the pointer" );
-		Assert.IsFalse( ParkHud.RideRightClickAllowed( true, false, true, false ), "original UI consumed the click" );
-		Assert.IsFalse( ParkHud.RideRightClickAllowed( true, false, false, true ), "developer UI owns the pointer" );
-	}
 }

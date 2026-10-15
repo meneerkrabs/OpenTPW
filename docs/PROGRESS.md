@@ -6,6 +6,32 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Original saves bring their research, challenges, staff HQ and hiring pool (October 15, 2026)
+
+Importing an original save (the Jungle Easymode start) now restores four more parts, all read in tp.exe:
+
+- **Research** (`0x502dc0`): the lab's projects, their points and each category's current project, effort and work load. The Jungle start
+  continues researching rides 1150, shops 1212, sideshows 1304 and features 1414 where it left off; the lab's own table order differs from
+  OpenTPW's info-id order (ECON-017 narrowed with the evidence).
+- **Challenges** (`0x4d2320`, `0x4d1e90`): won and declined challenges, a running or unanswered challenge and the next offer day. A system not
+  yet switched on offers its first challenge on park day `DaysUntilFirstChallenge`, as the original counts from the park's start: the Jungle
+  start now gets its first offer on day 540 instead of 572.
+- **Staff HQ** (`0x508bb0`, `0x50c800`): training budgets in the role order handyman, mechanic, entertainer, guard, researcher, and each
+  role's strike level, active flag and last-considered turn (`0x508e70`).
+- **Hiring pool** (`0x507850`, the 670 bytes before the calendar): the Jungle start keeps its 16 saved candidates with their own expiry
+  turns, and the pool refills on its own schedule. The saved stamps (refills on turns 361 and 722) confirm the pool timing now read in
+  `0x5084f0`: the pool refills on the first turn past 4 × `TimeBetweenStaffUpdates` turns, and each candidate draws its own timeout of
+  `StaffTimeoutTime` + R % (`StaffTimeoutTime` / 2) units of four turns (`0x507600`) instead of a fixed 120 seconds (ECON-010 retired).
+
+Imported staff also take the display state of their saved state word (`0x5064f0`): the word is the member's own state, not the
+STAFFSTATES index, so a member walking to rest or striking no longer shows as working or picked up. SAVE-003, 004, 005, 007 and 009 are narrowed.
+## The All Attractions button is a round icon again (October 15, 2026)
+
+The button that opens the All Attractions window from the buy window (above All Staff) and the staff window was a text
+button in a round slot about 100 units wide. Its label ("All Rides", in Dutch "Alle Attracties") fitted no font size,
+so the text fallback wrapped it one letter per line down the panel. It now wears the attractions window's own rides tab
+icon (`b_srides`), round like its neighbours, with the name as its popup help.
+
 ## Scream voices limited to the sound manager's pool of twelve (October 14, 2026)
 
 Ride screams no longer start new children everywhere in the park. tp.exe's sound manager (`0x6b62b0`) ticks only 12 audible
@@ -1060,11 +1086,46 @@ research batch was included in this merge.
   cell, the area's occupancy test and the guessed clip angles stay approximations).
 
 - **Coaster tool panel review fixes (October 15):** the way back into the tool exists: a selected coaster shows the ride window's `b_track` button (control `0x3e2a`, handler `0x4af200` → `0x4988c0` →
-  `0x4474d0`, read at the instruction level) in its info arm, so select, track button, cut, extend and complete all work in normal play (tested, and the jungle smoke does it through the HUD). The cut refuses the second
+  `0x4474d0`, read at the instruction level) on the ride window (the table-driven one, at its original place), so select, track button, cut, extend and complete all work in normal play (tested, and the jungle smoke does it through the HUD). The cut refuses the second
   release on the same station node (`0x44678c`) and any cut that starts inside the station; a loop-tilted loop rotation (−0.35) and a height above the model's top (t above 1, as `0x434680` allows) load again;
   moving a stacked pylon away and back keeps the stack whole; the panel's background takes its clicks; Backspace waits for a drag and a released drag while paused ends; a stale cut start is dropped; a save taken
   in the tool lets the ride out on load; a removed station cleans the tool up; drags fit the controller once, on the release. The `[EXT:coaster-tool-admission]` claim was wrong (4 → 2 and 8 → 2 run the closing
   move, `0x43587f`..`0x4358cb`): it is a BIN tag now and the one difference left is `[EXT:coaster-state-clear]`.
+- **Layout-table review follow-ups (October 15):** the TPI layout-load confirmation lists the tick first (a source scan of every
+  `UiDialogs` caller guards the order); Escape and the right click (RMBCancelOn) close the object window; the window layout is
+  cached; the shop and sideshow windows use their own row kinds, the ride one shows the age; the theme-start dialog, the game-mode
+  screen and the training-budget window follow their tables; the object windows gain the queue, track and apply-all buttons;
+  the lobby shows a menu hint. Restart Park leaves an older automatic checkpoint alone.
+- **Original UI layout tables (October 15):** the Windows executable holds the layout command streams of its windows (the
+  grammar of the Mac tables, checked against the window builder 0x65FD58 and its dispatcher 0x66076E), and
+  `tools/ppc-analysis/lanes/ui/tpw_exe_layouts.py` generates the derived rectangles, help ids and ui.wad model names of ten of
+  them (ride, shop and sideshow windows, message panel, camera panel, camcorder, confirm and name dialogs, the two lobby
+  tables) plus the 22 pointer ids and the tool-to-pointer rules (0x4899C0, 0x52F950) into
+  `UI/Original/OriginalLayoutTables.cs`; the script fails on any unexpected command, address, count or model hash, and `--check`
+  compares the file. What uses them: the object windows (w_med frame, yellow name, preview, white stat rows, the round buttons
+  `b_door`, `b_erase`, `b_callmech`, `b_upgrade`, Ride it!, the arrows, the list and the tick; sliders, `b_queue`, `b_move`,
+  `b_track` and `b_applyall` are not drawn), the help box (fixed `f_helpbg` rectangle 574..1474 ending at y 1520, UI-010 retired), the
+  confirm dialog (the (500,233)-(1516,830) window with the stacked tick and X buttons, the first choice the tick), a frameless
+  cyan pause menu in the original order (Restart Park only for Instant Action parks, Publish Park opens the online publish
+  flow, Go Online stays as `[EXT]`), the lobby at the table rectangles without logo or menu column (UI-014 retired; its Escape
+  menu holds Go Online, Load as `[EXT]`, Options, Resume and Quit; the globe button opens the online world), the full pointer
+  table with the tool rules (queue, track and camcorder pointers; link, end, cash and the crosshair stay unchosen), the message
+  panel's `messagel/m/r` rectangles with `mb_erase` and two action buttons whose art follows the action's kind (no message uses
+  one yet), the camera slide-out panel (camcorder, postcard and the `[EXT]` view cycle), buy-list rows of 41.4 units and no white
+  lightning flash in the lobby. UI-093 retired (the E key is `[EXT:ride-view-key]`); UI-006, 013, 018, 024, 025, 029, 042,
+  044, 047 and 100 narrowed. Not done: the right-click back-out gated on RMBCancelOn (UI-012), the ride view and camcorder overlay
+  (another worker), the employee, training-budget and player-screen tables, the game-mode screen on the name dialog's table.
+
+- **Ride view (October 15):** the ride view is the original camcorder now (UI-093/094/095). The eye is the model's seat (the first dummy with bit 0x1000 and value 1, tp.exe 0x44b220), so every attraction with such a dummy can be ridden, not only coasters (a coaster uses its front car model's seat); the orientation is the seat's with the traced one-frame blend (weight (1000 - dt_ms) * 0.0005, about 0.48 at 30 fps) and the pointer turns the view (dead zone 0.2, 3.5 rad per unit horizontally, 1.2 / 1.0 vertically; the camera can roll with the car). The screen shows the `viewfinder` model and the eject button at the table rectangles with the HUD hidden, a yellow crosshair and 0.33 s of generated TV static on entry and exit ([EXT]). Exits: Escape, C, eject, and a right click after 2 s with RMB cancel on; leaving re-centres the park camera on the object under its target. The info arm has the b_rideit button. Not traced: the field of view, the car choice, the yaw rule on exit.
+- **Tour register round (October 15):** the TOUR items were traced in tp.exe (docs/TOURS.md, "Register changes"). The tour tick is 62 ms, not 31: the world step counter's low bit gates the call
+  (`0x0054F5D7`), and the draw divides by 62 ms, so flights last twice as long and cars move half as fast per second (TOUR-001 retired; the wall-clock catch-up is `[EXT:tour-fixed-step]`; saves from the
+  31 ms clock still restore). The cars are drawn as the original does: the model's +Z axis is forward, yaw = pi/2 - heading, roll negated, pitch counted in 1024ths (four times finer),
+  applied roll, then pitch, then yaw, with the per-frame quarter/eighth smoothing, and the riders hang from a head node picked by the car's own random word (`TourPose`, TOUR-008 narrowed to the
+  animations and shadow). A new car keeps its slot's stale heading, corner, approach heading and seat ids, and they are saved and hashed (TOUR-009 retired); closing no longer forces the ready flag, so a
+  car whose departure was ordered stays docked with its riders until the ride reopens, and deleting the ride still releases everyone (TOUR-010 retired). The cars clear the `.hmp` height map of the
+  object on a cell (`ObjectHeightMaps`; all 274 catalogue objects ship one and every footprint lies inside it at all rotations; TOUR-005 narrowed). TOUR-006 is `[EXT:legacy-tour-save]`, TOUR-007 is narrowed
+  with the walk-off formula and left to the walk owner (no walk nodes exist yet), TOUR-002 records that thrown-off riders keep inflating the rider count in the original. Tests: `TourRegisterRoundTests`
+  and the changed `TourControllerTests` and `TourAssetTests`.
 - **HUD video round review fixes (October 15):** the software pointer is drawn last (after the advisor and progress overlays) and the system pointer is hidden only when the cursor art from `Data/ui/cursors` (found case-insensitively on disk) is loaded and decodes, the pointer is inside the window and ImGui does not want the mouse; an empty message tube no longer swallows park clicks, opening a message closes the info arm, the status line hides under the info arm and message panel, hover selects an applicant only when the pointer moves, and per-frame allocations are gone.
 - **HUD video round (October 14):** a gameplay video of the Dutch PC build settled the HUD and window register items. The hire window now has the Vaardigheid gauge and the mini balance (money in, staff costs plus the wage, other costs, balance) that follow the hovered candidate; the click-to-hire trigger stays (the original's 0x400 list message and its advisor line, UI-083 retired) and the 3D candidate figure is registered (UI-082). The yellow text under the cash is the cost of the build action under way and is hidden outside the build tools (UI-047). Pending messages stack in a red message tube left of the HUD, left click opens one in a green slide-out panel and right click deletes it (UI-025); OpenTPW's own feedback lines moved to a status line. The popup help box sits at the bottom centre on translucent black (UI-010). The golden ticket and key counters show only above zero as "n ×", keys are tracked (UI-051). Excitement, reliability, repair and life are red-to-green gauges (UI-028/046), the buy list's third column is a tick box (UI-050), and the park draws the original glove, arrow and no-entry pointers (UI-100). UI-011 is retired, UI-042 narrowed and the shortcut letters of the help texts recorded under UI-012.
 - **Particle allocation test (October 14):** `ParticleSystemPortTests.TickAllocatesNothing` measures windows of 100 ticks until one is clean, so tiered-compilation allocations in a busy full run no longer fail it; a real per-tick allocation still never gives a clean window.

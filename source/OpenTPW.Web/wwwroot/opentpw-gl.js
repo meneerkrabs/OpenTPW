@@ -531,6 +531,8 @@ function attachInput() {
 	const position = event => events.push(`m ${event.offsetX} ${event.offsetY}`);
 	const button = event => event.button === 0 ? 0 : event.button === 1 ? 1 : event.button === 2 ? 2 : 3 + event.button - 3;
 	canvas.addEventListener('mousemove', position);
+	// a pointer that leaves the canvas reports no position (the ride view's free look centres on it)
+	canvas.addEventListener('mouseleave', () => events.push('m -1 -1'));
 	canvas.addEventListener('mousedown', event => {
 		canvas.focus();
 		position(event);

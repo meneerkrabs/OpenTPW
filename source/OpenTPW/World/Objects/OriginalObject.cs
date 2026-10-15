@@ -191,7 +191,7 @@ public class OriginalObject : Entity
 	/// number 99; the ride origin when it has none) with each coordinate truncated to whole model units first, as the original's creation command does, and the placement rotation.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005542FE TOUR 1] the node lookup 0x0044B220 (class 0x800, number 0x63), its world position 0x004386D0, each coordinate converted to an integer and multiplied by 300
-	// [APPROX:TOUR-003] the pad is read from the model's rest pose and the placement's rotation is taken as the original's angle word (degrees × 4096 / 360); the sign of that angle against OpenTPW's rotation direction is not confirmed on a placed ride
+	// [APPROX:TOUR-003] the pad is read from the model's rest pose (the original reads the live node instance) and the placement's rotation is taken as equal to the original's instance angle (+0x10, degrees; the formula 0x00554385 is the original's); evidence needed: an original save with a placed tour ride
 	internal TourStation ComputeTourStation()
 	{
 		var model = Runtime.Model;

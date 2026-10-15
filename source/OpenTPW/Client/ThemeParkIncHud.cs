@@ -344,8 +344,8 @@ public sealed class ThemeParkIncHud
 	{
 		Stack.Push(UiDialogs.Message("confirmLayoutLoad",
 			() => "Replace this world with the saved layout and start a NEW experimental session? Guests, ride script progress, simulation clock and audio restart. This is not a continuation or original TPI save.",
-			(() => "Cancel", () => Stack.Pop()),
-			(() => "Load new session", () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction(host.LoadLayout!, null); })));
+			(() => "Load new session", () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction(host.LoadLayout!, null); }),
+			(() => "Cancel", () => Stack.Pop())));
 	}
 
 	private static UiButton MenuButton( UiScreen menu, string id, Func<string> text, Action clicked, float top ) => menu.Add( new UiButton

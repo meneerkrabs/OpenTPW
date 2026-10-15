@@ -12,14 +12,13 @@ public readonly record struct AttractionListRow(
 	int QueueLength, int Riders, double WearPercent, int? Excitement );
 
 /// <summary>
-/// The All Attractions window's list model: filtering, ordering, status text, the detail rows of the
-/// original per-category statistic labels (UITEXT 78-97) and selection healing. A null detail value
-/// means "not simulated"; the window substitutes its own note for those.
+/// The All Attractions window's list model: filtering, ordering, status text, the per-category columns of
+/// the original lists (UITEXT 82-99) and selection healing.
 /// </summary>
 internal static class ParkAttractionRoster
 {
 	/// <summary>
-	/// The status column of a row: the original status strings name only the abnormal states
+	/// The status of a row (the original list has no status column; the smoke tests read it): the original status strings name only the abnormal states
 	/// (UITEXT 364 'Closed', 365 'Broken down'; 366-388 name upgrade/cleaning/repair/track states that
 	/// OpenTPW does not simulate), so an open working attraction shows no status text.
 	/// </summary>
@@ -44,42 +43,60 @@ internal static class ParkAttractionRoster
 	/// <summary>First scrollable row of a list of <paramref name="count"/> rows (never negative).</summary>
 	public static int MaxFirstRow( int count, int visibleRows ) => Math.Max( 0, count - visibleRows );
 
-	/// <summary>
-	/// Detail rows of <paramref name="row"/> for its category, from the original per-category statistic
-	/// labels: rides UITEXT 83/85/86, shops 88-91, sideshows 93-97 (features have none of their own).
-	/// Values are live simulation values where OpenTPW simulates them; null means "not simulated".
-	/// </summary>
-	// [EXT:overview-detail-rows] the original attractions window has no detail rows; ride monthly users, remaining life and customer satisfaction remain unavailable, the HUD supplies existing mapped shop/sideshow customer and profit counters, state of repair is the live wear gauge and excitement the bridge's live level
-	public static (UIStrings Label, string? Value)[] StatRows( in AttractionListRow row )
+	/// <summary>The columns of a category's list, left to right: what each shows, its header (UITEXT 82-99) and the header's help id.</summary>
+	// [BIN:TPW-EXE:0x00494ec0 rides list] the rides list is table 0x750ab8 with headers 82-86 (help 105-109); shops (0x494c70) use the same table with headers
+	// 87-91 (help 105, 584-587), sideshows (0x494250) table 0x750ba0 with headers 92-97 (help 105, 584, 107, 585-587) and features (0x495110) table 0x750ca0 with
+	// headers 98-99 (help 105, 588); the row adders give rides users, excitement, repair and life (0x493cd0), shops customers, profit last month, total profit and
+	// satisfaction (0x493f30), sideshows customers, excitement, profit last month, total profit and satisfaction (0x494070), features the number owned of their type (0x4941e0)
+	public static (AttractionColumnKind Kind, UIStrings Header, int Help)[] Columns( BuildCategory category ) => category switch
 	{
-		string? Percent( double value ) => $"{Math.Round( Math.Clamp( value, 0, 100 ) )}%";
-		return row.Category switch
+		BuildCategory.Rides => new[]
 		{
-			BuildCategory.Rides => new[]
-			{
-				(UIStrings.UsersLastMonthAttr, (string?)null),
-				(UIStrings.StateOfRepairAttr, Percent( row.WearPercent )),
-				(UIStrings.RemainingLifeAttr, null),
-			},
-			BuildCategory.Shops => new[]
-			{
-				(UIStrings.CustomersLastMonthShop, (string?)null),
-				(UIStrings.ProfitLastMonthShop, null),
-				(UIStrings.TotalProfitShop, null),
-				(UIStrings.CustomerSatisfactionShop, null),
-			},
-			BuildCategory.Sideshows => new[]
-			{
-				(UIStrings.CustomersLastMonthGame, (string?)null),
-				(UIStrings.ExcitementGame, row.Excitement is { } excitement ? Percent( excitement ) : null),
-				(UIStrings.ProfitLastMonthGame, null),
-				(UIStrings.TotalProfitGame, null),
-				(UIStrings.CustomerSatisfactionGame, null),
-			},
-			_ => Array.Empty<(UIStrings, string?)>(),
-		};
+			(AttractionColumnKind.Name, UIStrings.NameRideAttr, 105), (AttractionColumnKind.Users, UIStrings.UsersLastMonthAttr, 106),
+			(AttractionColumnKind.Excitement, UIStrings.ExcitementRideAttr, 107), (AttractionColumnKind.Repair, UIStrings.StateOfRepairAttr, 108),
+			(AttractionColumnKind.Life, UIStrings.RemainingLifeAttr, 109),
+		},
+		BuildCategory.Shops => new[]
+		{
+			(AttractionColumnKind.Name, UIStrings.NameShopAttr, 105), (AttractionColumnKind.Customers, UIStrings.CustomersLastMonthShop, 584),
+			(AttractionColumnKind.ProfitLastMonth, UIStrings.ProfitLastMonthShop, 585), (AttractionColumnKind.TotalProfit, UIStrings.TotalProfitShop, 586),
+			(AttractionColumnKind.Satisfaction, UIStrings.CustomerSatisfactionShop, 587),
+		},
+		BuildCategory.Sideshows => new[]
+		{
+			(AttractionColumnKind.Name, UIStrings.NameGameAttr, 105), (AttractionColumnKind.Customers, UIStrings.CustomersLastMonthGame, 584),
+			(AttractionColumnKind.Excitement, UIStrings.ExcitementGame, 107), (AttractionColumnKind.ProfitLastMonth, UIStrings.ProfitLastMonthGame, 585),
+			(AttractionColumnKind.TotalProfit, UIStrings.TotalProfitGame, 586), (AttractionColumnKind.Satisfaction, UIStrings.CustomerSatisfactionGame, 587),
+		},
+		_ => new[] { (AttractionColumnKind.Name, UIStrings.NameItemAttr, 105), (AttractionColumnKind.NumberOwned, UIStrings.NumberOwnedAttr, 588) },
+	};
+
+	/// <summary>Whether a column draws a red-to-green bar (the rows' type-9 cells with ridestatbar.wct, range 0..1024).</summary>
+	public static bool IsGauge( AttractionColumnKind kind ) => kind is AttractionColumnKind.Excitement or AttractionColumnKind.Repair or AttractionColumnKind.Life or AttractionColumnKind.Satisfaction;
+
+	/// <summary>Whether a column shows money (formatter 0x490250, right-aligned); counts are centred (0x48fde0) and the name left-aligned.</summary>
+	public static bool IsMoney( AttractionColumnKind kind ) => kind is AttractionColumnKind.ProfitLastMonth or AttractionColumnKind.TotalProfit;
+
+	/// <summary>
+	/// Rows of one category ordered by <paramref name="column"/>: the name column by name (ordinal), the others by their cell's value with
+	/// unknown values first; ties keep the attraction id order.
+	/// </summary>
+	public static IReadOnlyList<AttractionListRow> Rows( IEnumerable<AttractionListRow> attractions, BuildCategory category, int column, bool descending,
+		Func<AttractionListRow, IReadOnlyList<AttractionCell>> cells )
+	{
+		var listed = attractions.Where( row => row.Category == category ).OrderBy( row => row.AttractionId ).ToArray();
+		if ( column <= 0 )
+			return Rows( listed, category, descending );
+		double Key( AttractionListRow row ) => cells( row ) is { } values && column < values.Count && values[column].Key is { } key ? key : double.NegativeInfinity;
+		return (descending ? listed.OrderByDescending( Key ) : listed.OrderBy( Key )).ThenBy( row => row.AttractionId ).ToArray();
 	}
 }
+
+/// <summary>What one column of the All Attractions list shows.</summary>
+public enum AttractionColumnKind { Name, Users, Excitement, Repair, Life, Customers, ProfitLastMonth, TotalProfit, Satisfaction, NumberOwned }
+
+/// <summary>One list cell: its text (a count or money), or a 0..1 bar; <see cref="Key"/> orders the column, null when unknown.</summary>
+public readonly record struct AttractionCell( string? Text, float? Gauge, double? Key );
 
 /// <summary>The cells of one visitor row, as the row holds them between refreshes (bar values on the original's 0..1024 scale).</summary>
 /// <param name="Hours">Whole park hours in the park; null for a visitor whose admission duration is unknown (an old save).</param>

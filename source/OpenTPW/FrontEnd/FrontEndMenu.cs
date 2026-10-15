@@ -148,11 +148,11 @@ public sealed partial class FrontEndMenu
 	public void ShowGameMode()
 	{
 		var screen = new ProgressChoiceScreen( "gameMode" );
-		// [BIN:TPW-EXE:0x753f50 name dialog] the game mode is chosen in the new-player dialog: the wdialogw window (500,233)-(1516,830) with the title box (655,285)-(1315,365), the two latched b_ltoggle buttons (764,405)-(1206,476) and (764,498)-(1206,569) (help 358 and 359) and the tick and X; the name field (593,616) belongs to player profiles, which OpenTPW has none of
-		// [APPROX:UI-013] a mode button starts the park at once where the original latches it and waits for the tick
+		// [BIN:TPW-EXE:0x753f50 name dialog] the game mode is chosen in the new-player dialog: the wdialogw window (500,233)-(1516,830) with the title box (655,285)-(1315,365), the two latched b_ltoggle buttons (764,405)-(1206,476) and (764,498)-(1206,569) (help 358 and 359), e_joy (1241,606)-(1343,708) and the tick and X; the name field (593,616) belongs to player profiles, which OpenTPW has none of
 		var table = OriginalLayoutTables.NameDialog;
 		var window = table.Root.Rect;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = window, Anchor = UiAnchor.Center } );
+		// [EXT:no-player-profiles] the title box shows "Game Mode" where the original's dialog asks for the player's name
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.GameMode], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x709 ).Rect, Anchor = UiAnchor.Center } );
 		var toggles = table.All.Where( node => node.Model == "b_ltoggle" ).OrderBy( node => node.Rect.Y ).ToArray();
 		var modes = new (string Id, UIStrings Label, GameMode Mode, int Help)[]
@@ -161,9 +161,14 @@ public sealed partial class FrontEndMenu
 			("fullSimulation", UIStrings.FullSimulation, GameMode.FullSimulation, 359),
 		};
 		screen.Add( new UiLabel { Id = "park", Text = () => SelectedName, Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Center, Bounds = table.Control( 0x70A ).Rect, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x004a70d1 mode radio group] the build selects no toggle of the group 0x70c (0x66a295 with 0x7a17, which names no child); e_joy (0x70b) is drawn as the table has it
+		var joy = table.All.Single( node => node.Model == "e_joy" );
+		var joyImage = screen.Add( new UiModelImage { Id = "joy", Model = joy.Model!, Bounds = joy.Rect, Anchor = UiAnchor.Center } );
+		GameMode? chosen = null;
 		for ( var index = 0; index < modes.Length; index++ )
 		{
 			var entry = modes[index];
+			// [BIN:TPW-EXE:0x004a6e09 mode toggles] a toggle latches in its group (message 0x101) and only shows or hides e_joy: shown while the Instant Action toggle 0x70d is the selected one
 			screen.Add( new UiButton
 			{
 				Id = entry.Id,
@@ -171,11 +176,27 @@ public sealed partial class FrontEndMenu
 				Text = () => strings[entry.Label],
 				Font = fonts => fonts.Label,
 				Help = strings.Help( entry.Help ),
-				Clicked = () => { if ( screen.TryActivate( Stack ) ) { PlayEnterPark( entry.Mode == GameMode.InstantAction ); actions.StartPark( Selected, entry.Mode ); } },
+				Selected = () => chosen == entry.Mode,
+				Clicked = () => { chosen = entry.Mode; joyImage.Visible = entry.Mode == GameMode.InstantAction; },
 				Bounds = toggles[index].Rect,
 				Anchor = UiAnchor.Center
 			} );
 		}
+		// [BIN:TPW-EXE:0x004a6d51 mode tick] the tick (control −1) confirms: the player is made with Instant Action only when toggle 0x70d is selected, otherwise Full Simulation, also with no toggle selected (0x4a6b80)
+		var ok = table.Model( "b_okay" );
+		var tick = screen.Add( new UiButton
+		{
+			Id = "ok",
+			Model = ok.Model,
+			Help = strings.Help( ok.Help ),
+			Clicked = () =>
+			{
+				var mode = chosen == GameMode.InstantAction ? GameMode.InstantAction : GameMode.FullSimulation;
+				if ( screen.TryActivate( Stack ) ) { PlayEnterPark( mode == GameMode.InstantAction ); actions.StartPark( Selected, mode ); }
+			},
+			Bounds = ok.Rect,
+			Anchor = UiAnchor.Center
+		} );
 		var exit = table.Model( "b_exit" );
 		screen.Add( new UiButton
 		{
@@ -187,6 +208,9 @@ public sealed partial class FrontEndMenu
 			Anchor = UiAnchor.Center
 		} );
 		screen.Back = () => { if ( !screen.IsRemoved && ReferenceEquals( Stack.Top, screen ) ) Stack.Pop(); };
+		// [BIN:TPW-EXE:0x004a6dc1 dialog Enter] Enter in the dialog's name field posts 0x802 (the edit control's key handler 0x667fee: 0x0d → 0x802, Escape → 0x804),
+		// which the dialog procedure 0x4a6d00 turns into the tick (0x100 with control −1), whatever toggle has the focus
+		screen.Accept = tick.Activate;
 		screen.Focus( screen.FocusableElements.First() );
 		Stack.Push( screen );
 	}

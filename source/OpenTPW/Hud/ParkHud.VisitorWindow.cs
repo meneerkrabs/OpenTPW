@@ -38,6 +38,8 @@ public sealed partial class ParkHud
 	private int visitorSortColumn { get => Sorts.VisitorColumn; set => Sorts.VisitorColumn = value; }
 	private bool visitorSortDescending { get => Sorts.VisitorDescending; set => Sorts.VisitorDescending = value; }
 	private int selectedVisitorId;
+	// the visitor whose info a row click opened (0x400 → 0x4b79b0), 0 while none is open
+	private int visitorInfoId;
 	private int visitorFirstRow;
 	private float visitorValueAge;
 	/// <summary>The cells of each listed visitor, as the original's rows hold them between refreshes.</summary>
@@ -90,6 +92,8 @@ public sealed partial class ParkHud
 	}
 
 	private Guest? SelectedVisitor => visitorRows.FirstOrDefault( guest => guest.Id == selectedVisitorId );
+	/// <summary>The visitor whose info a left click on a row opened, while that visitor is still listed (the original's visitor info window and its thing [0x7c2658]).</summary>
+	private Guest? VisitorInfoGuest => visitorInfoId == 0 ? null : visitorRows.FirstOrDefault( guest => guest.Id == visitorInfoId );
 	private int VisitorMaxFirstRow => ParkAttractionRoster.MaxFirstRow( visitorRows.Count, VisitorVisibleRows );
 	private int VisitorRowIndex( int id )
 	{
@@ -108,6 +112,7 @@ public sealed partial class ParkHud
 		selectedVisitorId = 0;
 		visitorValues.Clear();
 		visitorValueAge = 0;
+		visitorInfoId = 0;
 		RefreshVisitorRows();
 		EnsureVisitorSelection();
 		visitorScreen ??= CreateVisitorScreen();
@@ -163,6 +168,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which the window routes to the visitor's info panel (0x49351e → 0x4b79b0 with the row's visitor; button 0 = left is medium confidence, [APPROX:UI-910])
 	private void OpenSelectedVisitorInfo()
 	{
+		visitorInfoId = selectedVisitorId;
 		GameAudio.PlayVisitorClick();
 	}
 
@@ -170,7 +176,7 @@ public sealed partial class ParkHud
 	public bool CanLocateVisitors => Camera.Mode is ParkCameraMode && level.OriginalPark != null;
 
 	/// <summary>Focuses a specific visitor's simulated position on the terrain (the locator flow of the staff window's visitor button).</summary>
-	// [APPROX:UI-091] the locator focuses a live simulated position; the locator panels 0x4b3f60/0x4b4280 are not ported (Ctrl+S 0x40c590 → 0x481790, Ctrl+V 0x40c5a0 → 0x4817c0; per-employee cycling buttons 1293/1295, UI-904) — evidence needed: porting those panels
+	// the row's right click (0x402, 0x4867b0) focuses the visitor's simulated position; the locator panels are ParkHud.LocatorPanel.cs
 	public bool LocateVisitor( Guest? guest )
 	{
 		if ( guest == null || Camera.Mode is not ParkCameraMode camera || level.OriginalPark is not { } park ||

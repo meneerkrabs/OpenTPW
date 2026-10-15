@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
@@ -61,22 +62,52 @@ public class OverviewWindowTests
 	}
 
 	[TestMethod]
-	public void AttractionDetailShowsLiveWearAndExcitementAndHonestGaps()
+	public void EachCategoryListsTheOriginalColumns()
 	{
-		var ride = new AttractionListRow( 1, "Zoom", BuildCategory.Rides, true, false, 6, 4, 73.6, null );
-		var rideRows = ParkAttractionRoster.StatRows( ride );
-		Assert.AreEqual( 3, rideRows.Length );
-		Assert.AreEqual( (UIStrings.UsersLastMonthAttr, (string?)null), rideRows[0], "per-attraction monthly users are not simulated" );
-		Assert.AreEqual( "74%", rideRows[1].Value, "state of repair is the live wear gauge, rounded to a whole percent" );
-		Assert.IsNull( rideRows[2].Value, "remaining life is not simulated" );
-		var sideshow = ParkAttractionRoster.StatRows( new AttractionListRow( 2, "Arcade", BuildCategory.Sideshows, true, false, 0, 0, 100, 82 ) );
-		Assert.AreEqual( (UIStrings.ExcitementGame, "82%"), sideshow[1], "sideshow excitement is the bridge's live level" );
-		Assert.AreEqual( 5, sideshow.Length );
-		Assert.IsTrue( sideshow.Take( 1 ).Concat( sideshow.Skip( 2 ) ).All( row => row.Value == null ), "sideshow customers, profit and satisfaction are not simulated" );
-		Assert.AreEqual( 4, ParkAttractionRoster.StatRows( new AttractionListRow( 3, "Burger", BuildCategory.Shops, true, false, 0, 0, 100, null ) ).Length );
-		Assert.AreEqual( 0, ParkAttractionRoster.StatRows( new AttractionListRow( 4, "Well", BuildCategory.Features, true, false, 0, 0, 100, null ) ).Length,
-			"features have no original statistic labels of their own" );
-		Assert.AreEqual( "0%", ParkAttractionRoster.StatRows( new AttractionListRow( 5, "Old", BuildCategory.Rides, true, false, 0, 0, -20, null ) )[1].Value, "wear clamps at 0%" );
+		// tp.exe 0x494ec0 / 0x494c70 / 0x494250 / 0x495110: headers UITEXT 82-99 with their help ids
+		static (AttractionColumnKind, int, int)[] Of( BuildCategory category ) => ParkAttractionRoster.Columns( category ).Select( column => (column.Kind, (int)column.Header, column.Help) ).ToArray();
+		CollectionAssert.AreEqual( new[] { (AttractionColumnKind.Name, 82, 105), (AttractionColumnKind.Users, 83, 106), (AttractionColumnKind.Excitement, 84, 107),
+			(AttractionColumnKind.Repair, 85, 108), (AttractionColumnKind.Life, 86, 109) }, Of( BuildCategory.Rides ) );
+		CollectionAssert.AreEqual( new[] { (AttractionColumnKind.Name, 87, 105), (AttractionColumnKind.Customers, 88, 584), (AttractionColumnKind.ProfitLastMonth, 89, 585),
+			(AttractionColumnKind.TotalProfit, 90, 586), (AttractionColumnKind.Satisfaction, 91, 587) }, Of( BuildCategory.Shops ) );
+		CollectionAssert.AreEqual( new[] { (AttractionColumnKind.Name, 92, 105), (AttractionColumnKind.Customers, 93, 584), (AttractionColumnKind.Excitement, 94, 107),
+			(AttractionColumnKind.ProfitLastMonth, 95, 585), (AttractionColumnKind.TotalProfit, 96, 586), (AttractionColumnKind.Satisfaction, 97, 587) }, Of( BuildCategory.Sideshows ) );
+		CollectionAssert.AreEqual( new[] { (AttractionColumnKind.Name, 98, 105), (AttractionColumnKind.NumberOwned, 99, 588) }, Of( BuildCategory.Features ) );
+		Assert.IsTrue( ParkAttractionRoster.IsGauge( AttractionColumnKind.Repair ) && !ParkAttractionRoster.IsGauge( AttractionColumnKind.Users ) );
+		Assert.IsTrue( ParkAttractionRoster.IsMoney( AttractionColumnKind.TotalProfit ) && !ParkAttractionRoster.IsMoney( AttractionColumnKind.Customers ) );
+	}
+
+	[TestMethod]
+	public void TheListTablesGiveOneHeaderPerColumn()
+	{
+		// tables 0x750ab8 (rides and shops), 0x750ba0 (sideshows), 0x750ca0 (features): list 400 with header controls 0x10.. and the !slider scroll bar
+		foreach ( var (table, columns) in new[] { (OriginalLayoutTables.RideShopList, 5), (OriginalLayoutTables.SideshowList, 6), (OriginalLayoutTables.FeatureList, 2) } )
+		{
+			Assert.AreEqual( 0x190u, table.Root.Id );
+			Assert.AreEqual( columns, table.Root.Children.Count( node => node.Type == 2 && node.Id is >= 0x10 and < 0x20 ) );
+			Assert.AreEqual( "!slider", table.Root.Children.Single( node => node.Type == 3 ).Model2 );
+		}
+		Assert.AreEqual( new UiRect( 275, 428, 1739 - 275, 875 - 428 ), OriginalLayoutTables.RideShopList.Root.Inner );
+		var window = OriginalLayoutTables.AttractionsWindow;
+		Assert.AreEqual( "window4", window.Root.Model );
+		CollectionAssert.AreEqual( new[] { 111, 112, 113 }, new[] { "b_pkinfo", "b_allstaff", "b_kids" }.Select( model => window.Model( model ).Help ).ToArray() );
+	}
+
+	[TestMethod]
+	public void ColumnsSortByTheirValuesWithUnknownValuesFirst()
+	{
+		var rows = new[]
+		{
+			new AttractionListRow( 1, "B", BuildCategory.Shops, true, false, 0, 0, 100, null ),
+			new AttractionListRow( 2, "A", BuildCategory.Shops, true, false, 0, 0, 100, null ),
+			new AttractionListRow( 3, "C", BuildCategory.Shops, true, false, 0, 0, 100, null ),
+			new AttractionListRow( 4, "D", BuildCategory.Rides, true, false, 0, 0, 100, null ),
+		};
+		var customers = new Dictionary<int, double?> { [1] = 7, [2] = null, [3] = 2 };
+		IReadOnlyList<AttractionCell> Cells( AttractionListRow row ) => new[] { new AttractionCell( row.Name, null, null ), new AttractionCell( null, null, customers[row.AttractionId] ) };
+		CollectionAssert.AreEqual( new[] { 2, 3, 1 }, ParkAttractionRoster.Rows( rows, BuildCategory.Shops, 1, false, Cells ).Select( row => row.AttractionId ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 1, 3, 2 }, ParkAttractionRoster.Rows( rows, BuildCategory.Shops, 1, true, Cells ).Select( row => row.AttractionId ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 2, 1, 3 }, ParkAttractionRoster.Rows( rows, BuildCategory.Shops, 0, false, Cells ).Select( row => row.AttractionId ).ToArray(), "column 0 sorts by name" );
 	}
 
 	[TestMethod]

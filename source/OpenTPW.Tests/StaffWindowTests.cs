@@ -233,6 +233,22 @@ public class StaffWindowTests
 		hud.Stack.Top!.Update( context, UiInput.Idle( System.Numerics.Vector2.Zero ) );
 		Assert.IsFalse( hud.EmployeeWindowOpen );
 	}
+
+	[TestMethod]
+	public void TheStaffKeyLocatesTheEmployeeWhoseWindowIsOpen()
+	{
+		// tp.exe 0x481790: while the per-employee window is open the key opens 0x4b3f60 with its employee [0x7c2658], else with no actor
+		var hud = EmployeeHud( out var economy, StaffType.Guard );
+		var guard = economy.Staff.Members[0];
+		hud.OpenStaffLocator();
+		Assert.AreEqual( (LocatorMode.Staff, 0, 0), (hud.Locator.Mode, hud.Locator.Role, hud.Locator.ActorId) );
+		hud.CloseLocator();
+		hud.OpenEmployeeWindow( guard );
+		hud.OpenStaffLocator();
+		Assert.AreEqual( (LocatorMode.Staff, LocatorModel.RoleOf( StaffType.Guard ), guard.Id, true),
+			(hud.Locator.Mode, hud.Locator.Role, hud.Locator.ActorId, hud.Locator.RadioChosen) );
+		Assert.IsFalse( hud.EmployeeWindowOpen, "the locator closes the open window" );
+	}
 }
 
 /// <summary>The All Visitors window from tp.exe's table 0x7506c8.</summary>

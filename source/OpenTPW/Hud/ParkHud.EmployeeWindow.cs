@@ -182,16 +182,14 @@ public sealed partial class ParkHud
 		FilterStaff( role );
 	}
 
-	/// <summary>The locate button: the camera centres on the employee and the window closes.</summary>
-	// [BIN:TPW-EXE:0x004b5f07 locate] control 0x521 (b_locate, help 93) opens the staff locator panel on the member (0x4b3f60)
-	// [APPROX:UI-091] the locate button focuses the employee's actual position and closes the window instead of opening the locator panel 0x4b3f60 — evidence needed: porting that panel
+	/// <summary>The locate button: the staff locator panel opens on the employee (its role chosen, the camera following) and the window closes.</summary>
+	// [BIN:TPW-EXE:0x004b5f07 locate] control 0x521 (b_locate, help 93) opens the staff locator panel on the member (0x4b3f60 with [0x7c2658]), which closes the open window
 	public bool LocateEmployee()
 	{
-		if ( Employee is not { } member || Camera.Mode is not ParkCameraMode camera || !level.TryGetStaffWorldPosition( member.Id, out var position ) )
+		if ( Employee is not { } member || Camera.Mode is not ParkCameraMode || !level.TryGetStaffWorldPosition( member.Id, out _ ) )
 			return false;
-		camera.Focus( position );
 		lastLocatedStaff[member.Type] = member.Id;
-		CloseEmployeeWindow();
+		OpenLocator( LocatorMode.Staff, LocatorModel.RoleOf( member.Type ), member.Id );
 		return true;
 	}
 

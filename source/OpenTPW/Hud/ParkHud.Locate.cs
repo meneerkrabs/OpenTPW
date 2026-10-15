@@ -1,6 +1,6 @@
 namespace OpenTPW.Hud;
 
-// [APPROX:UI-091] actual actor locators use host ID cycling and ground camera focus; the locator panels 0x4b3f60/0x4b4280 are not ported (the 0x402 path that centres the camera on the cell, 0x4867b0, is, for the list rows) — evidence needed: porting those panels
+// [PROVISIONAL:LOCATE] the staff window's locate buttons focus actual actor positions with host id cycling; the original's locator panels are ParkHud.LocatorPanel.cs (UI-091)
 public sealed partial class ParkHud
 {
 	private int lastLocatedVisitorId;

@@ -128,33 +128,36 @@ public sealed partial class ParkHud
 		var rows = new ObjectStat[kinds.Count];
 		var state = LiveState( item );
 		var economy = Status.EconomySource as ParkEconomy;
-		string Number( long value ) => value.ToString( System.Globalization.CultureInfo.InvariantCulture );
 		for ( var index = 0; index < rows.Length; index++ )
-		{
-			var kind = kinds[index];
-			var label = RowLabel( kind );
-			rows[index] = kind switch
-			{
-				ObjectRowKind.None => new ObjectStat( UIStrings.Blank, null ),
-				// [DATA:video 15:20, 51:40 ride window] the gauges are red-to-green bars (UiGauge), not percentages; an unknown value draws the empty track
-				// [APPROX:UI-028] the fills: excitement is the authored UsageInfo.ExcitementLevel / 100, reliability is 1 - WearRate / 10 of the object's base level (as the buy window does), repair and remaining life are the live economy record's repair and life gauge (a version 2 visit uses the owner's published repair); the original reads the excitement and reliability from the slider values (0x4e0560, 0x4df640) and the other two from the floats at +0x44 and +0x48, which OpenTPW's economy fields do not map onto with certainty
-				ObjectRowKind.Excitement => new ObjectStat( label, null, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? Math.Clamp( item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) / 100f, 0f, 1f ) : null, true ),
-				ObjectRowKind.Reliability => new ObjectStat( label, null, item.Entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0f, 1f ) : null, true ),
-				ObjectRowKind.Repair => new ObjectStat( label, null, state?.Repair is { } liveRepair ? Math.Clamp( (float)liveRepair / 100f, 0f, 1f )
-					: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
-				ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
-				ObjectRowKind.Satisfaction or ObjectRowKind.Happiness => new ObjectStat( label, null, null, true ),
-				ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLastMonth ) ),
-				ObjectRowKind.Age => new ObjectStat( label, state == null || economy == null ? null
-					: string.Format( strings.Extra( OpenTpwText.AgeDays ), Number( Math.Max( 0, ParkCalendar.DayIndex( economy.Tick ) - ParkCalendar.DayIndex( state.BuiltTick ) ) ) ) ),
-				ObjectRowKind.Scrap => new ObjectStat( label, state == null || economy == null ? null : FormatMoney( economy.ScrapValue( state ) ) ),
-				ObjectRowKind.CostOfGoods => new ObjectStat( label, state == null ? null : FormatMoney( state.CostOfGoods ) ),
-				ObjectRowKind.Takings => new ObjectStat( label, state == null ? null : FormatMoney( state.TakingsLastMonth ) ),
-				ObjectRowKind.Profit => new ObjectStat( label, state == null ? null : FormatMoney( state.ProfitLastMonth ) ),
-				_ => new ObjectStat( UIStrings.Blank, null )
-			};
-		}
+			rows[index] = ObjectStatOf( item, kinds[index], state, economy );
 		return rows;
+	}
+
+	/// <summary>One stat of an object as its window shows it (the All Attractions list's bars use the same values).</summary>
+	private ObjectStat ObjectStatOf( OriginalObject item, ObjectRowKind kind, ParkObjectState? state, ParkEconomy? economy )
+	{
+		string Number( long value ) => value.ToString( System.Globalization.CultureInfo.InvariantCulture );
+		var label = RowLabel( kind );
+		return kind switch
+		{
+			ObjectRowKind.None => new ObjectStat( UIStrings.Blank, null ),
+			// [DATA:video 15:20, 51:40 ride window] the gauges are red-to-green bars (UiGauge), not percentages; an unknown value draws the empty track
+			// [APPROX:UI-028] the fills: excitement is the authored UsageInfo.ExcitementLevel / 100, reliability is 1 - WearRate / 10 of the object's base level (as the buy window does), repair and remaining life are the live economy record's repair and life gauge (a version 2 visit uses the owner's published repair); the original reads the excitement and reliability from the slider values (0x4e0560, 0x4df640) and the other two from the floats at +0x44 and +0x48, which OpenTPW's economy fields do not map onto with certainty
+			ObjectRowKind.Excitement => new ObjectStat( label, null, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? Math.Clamp( item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) / 100f, 0f, 1f ) : null, true ),
+			ObjectRowKind.Reliability => new ObjectStat( label, null, item.Entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0f, 1f ) : null, true ),
+			ObjectRowKind.Repair => new ObjectStat( label, null, state?.Repair is { } liveRepair ? Math.Clamp( (float)liveRepair / 100f, 0f, 1f )
+				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
+			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
+			ObjectRowKind.Satisfaction or ObjectRowKind.Happiness => new ObjectStat( label, null, null, true ),
+			ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLastMonth ) ),
+			ObjectRowKind.Age => new ObjectStat( label, state == null || economy == null ? null
+				: string.Format( strings.Extra( OpenTpwText.AgeDays ), Number( Math.Max( 0, ParkCalendar.DayIndex( economy.Tick ) - ParkCalendar.DayIndex( state.BuiltTick ) ) ) ) ),
+			ObjectRowKind.Scrap => new ObjectStat( label, state == null || economy == null ? null : FormatMoney( economy.ScrapValue( state ) ) ),
+			ObjectRowKind.CostOfGoods => new ObjectStat( label, state == null ? null : FormatMoney( state.CostOfGoods ) ),
+			ObjectRowKind.Takings => new ObjectStat( label, state == null ? null : FormatMoney( state.TakingsLastMonth ) ),
+			ObjectRowKind.Profit => new ObjectStat( label, state == null ? null : FormatMoney( state.ProfitLastMonth ) ),
+			_ => new ObjectStat( UIStrings.Blank, null )
+		};
 	}
 
 	private ObjectWindowLayout? ObjectLayout => selectedObject is { IsDeleted: false, Runtime: not null } item ? ObjectWindowLayout.For( item.Entry.WhichUIType ) : null;
@@ -203,7 +206,7 @@ public sealed partial class ParkHud
 		objOkay = Info( new UiButton { Id = "retractInfo", Model = "b_okay", Clicked = () => SetInfoArm( false ) } );
 		objPrevious = Info( new UiButton { Id = "infoPrevious", Model = "b_arup", Clicked = () => CycleSelectedObject( -1 ) } );
 		objNext = Info( new UiButton { Id = "infoNext", Model = "b_ardown", Clicked = () => CycleSelectedObject( 1 ) } );
-		objList = Info( new UiButton { Id = "infoList", Model = "b_allthings", Clicked = () => { SetInfoArm( false ); OpenAttractionsWindow(); } } );
+		objList = Info( new UiButton { Id = "infoList", Model = "b_allthings", Clicked = () => { var item = selectedObject; SetInfoArm( false ); OpenAttractionsWindow( item is { } shown ? (BuildCategory)shown.Entry.WhichUIType : null, item ); } } );
 		// the original's "Ride it!" button (gui_CameraFlags 4); owners ride as well as visitors of a published park
 		// [BIN:TPW-EXE:0x755150 b_queue, b_track, b_applyall] the ride window's queue button (help 9) lets the player edit the ride's queue, its track button (help 10) the track; the shop and sideshow windows' apply-all button (help 536, 537) copies the window's settings to every object of the type
 		objQueue = Info( new UiButton { Id = "editQueue", Model = "b_queue", Clicked = EditQueue } );

@@ -299,7 +299,7 @@ public partial class Level
 			if ( !live.Contains( ride ) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s coaster controller is not live; a stopped station holds no coaster state." );
 			ride.RestoreSnapshot( entry );
-			// [APPROX:COAST-012] a save taken while the coaster tool was open holds the ride out of service (state 2, its object closed); the tool is not open after a load, so the ride is let out as leaving the tool would (0x447520 → 0x4df390; the original's save during the tool is not traced)
+			// [EXT:coaster-resume-reopen] a save taken while the coaster tool was open holds the ride out of service (state 2, its object closed); the tool is not open after a load, so the ride is let out as leaving the tool would (0x447520 → 0x4df390; the original's save during the tool is not traced)
 			if ( ride.State == CoasterControllerState.Built && !station.IsOpen )
 				station.Open();
 		}

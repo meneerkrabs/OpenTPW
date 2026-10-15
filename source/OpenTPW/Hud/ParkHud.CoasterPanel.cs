@@ -52,7 +52,7 @@ public sealed partial class ParkHud
 	/// <c>0x4988c0</c> → <c>0x4474d0</c>); a water track ride opens its track tool.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4ad53a track button] the ride window shows control 0x3e2a when the object's type record has a track type (+0x9c nonzero), and its handler 0x4af200 sends type 1 to tool 0xe, type 2 to 0x13 and type 3, a coaster, to 0x4988c0, which enters the tool (0x4474d0, state 2 for a complete track whose circuit is closed) and selects the panel's first button (0x4455c0)
-	// [APPROX:UI-023] the button sits in the info arm beside the ride's other buttons; the ride window (table 0x755150, b_track at (625, 800, 779, 953)) belongs to the layout-table round
+	// [EXT:ride-track-button] the button sits in the info arm beside the ride's other buttons; the ride window (table 0x755150, b_track at (625, 800, 779, 953)) belongs to the layout-table round
 	private void EditTrack()
 	{
 		if ( selectedObject is not { IsDeleted: false } item || !CanEditTrack( item ) )

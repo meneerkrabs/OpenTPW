@@ -337,7 +337,7 @@ advisors add texture-coordinate tracks and one clip with path parameters
 (docs/reverse/ANIM-plan.md §10). The original starts animation id n as
 `Advisor<level>m<n>.MD2` on channel 0 at speed 1.0 on clock B
 (`Advisor.AnimationClipName`). The clip choice of a generated sequence (`0x598B20`) and the fixed rows (`0x598BF0`, table `0x76DC18`) are traced and
-built by `AdvisorSequences` (see "Sequences and timing" below) and played (see "Clip timeline"); their vertex tracks are not (ADVISOR-006). The clips' node lists set node bit
+built by `AdvisorSequences` (see "Sequences and timing" below) and played (see "Clip timeline"), vertex and texture-coordinate tracks included. The clips' node lists set node bit
 0x10 on the hats, spatula and bow tie, the hidden set of the base model. That bit is the clip-toggled word of the mesh-node record
 (+0, set at `0x472E75`, cleared at `0x472401`); the mesh draw's own bit 0x10 (`0x57A797`) is a different word, a render-node deferral
 marker (the draw defers a node of a model with flag 0x200000 to the list at `0x8BB220` and the drain `0x579C80` sets and clears it), so it
@@ -372,8 +372,13 @@ not the kiosk hat), selector 0 shows them, the spatula hides the right hand. Sel
 `0xF797A4`/`0xF797B4`; jungle add-on 4 is the pith helmet, hallow 3, 16, 17 the axe and its two antennae halves, space 2 the helmet, fantasy 1
 the helm). Responses of model 1 draw the level's `Advisor_<XXX>.MD2`; the other 473 the global model. The shipped table: 77 responses hard
 hat, 47 security, 48 handyman, 8 kiosk, 34 ticket, 58 research, 32 bowler, 18 fast food, 129 theme costume, 159 none (help text, and the
-welcome-like level responses). A fixed sequence's accessory bit `0x10000` (the clips 19 and 20 of sequences 17 and 29) hides the costume;
-the bits `0x20000`–`0x200000` start particle effects and are not ported. `AdvisorAccessories`, tested without a GPU
+welcome-like level responses). A fixed sequence's accessory bit `0x10000` (the clips 19 and 20 of sequences 17 and 29) hides the costume,
+the bug head (`0xF79698`, the mesh `0x44B2E0` finds by the name "bug head") and the mouth (the mouth update `0x599B09`-`0x599BDE` shows
+none); the bits `0x20000`–`0x200000` start screen-space effects of the UI particle pool, which are not ported (ADVISOR-026), and `0x40000`
+alone also plays `cat_ui` `0xC5` (`0x598F1C`). The node bits live on the model instance: a clip start sets the bit of its listed nodes only, so
+a prop a clip toggles on stays shown in the next clip: the ticket advice (sequence 29: clips 17, 18, 19, 20) shows Ticket2 from tick 38 of
+clip 18, and the close-up clip 19 lists (hides) the body, eyes, hands and mouths, keeps the ticket and hides it at tick 39
+(`AdvisorAccessories.SequenceHiddenNodes` rebuilds that state from the clip starts and toggles of the sequence). `AdvisorAccessories`, tested without a GPU
 (`AdvisorHelpTests`). Video evidence: `[EXT-EVIDENCE:video tpw-nl 0:42]` and `29:01` (park intros in the theme hat: the safari helmet in
 Lost Kingdom), `78:57` (the axe in Halloween), `14:00` (yellow hard hat on a breakdown), `9:47` (research hair), `48:26` (cleaner cap),
 `60:40` (police cap), `6:49` (bowler on the ticket price), `55:08` (fast-food visor on shop value), `74:10` (no hat on help).
@@ -384,8 +389,12 @@ OpenTPW's capture of the jungle welcome shows the pith helmet.
 A sequence's clips play one after the other from the request, each for its own length (trailer word 2 × 1000 / 30 ms; the budget table
 zeroes clip 14's entry, not its playing: `AdvisorClipDurations.PlayOf`). The node tracks move the model: clip 14 lifts the body and head
 from below the screen edge (z −73 to −21) over its 30 ticks, clip 15 sinks them (−21 to −74) over 20; the blink toggles
-(`NodeFlagToggles`: a positive entry shows the node, zero or negative hides it) swap `Right/Left Eye` and `ShutEye R/L`; the vertex tracks
-(antennae, hands) and the level advisors' texture tracks are not played (ADVISOR-006). The sampler hides the model when the last clip ends
+(`NodeFlagToggles`: a positive entry shows the node, zero or negative hides it) swap `Right/Left Eye` and `ShutEye R/L` (hiding the toggled
+meshes is OpenTPW's reading of the mesh-node bit, whose reader is open, ADVISOR-006). The vertex tracks (antennae, hands, eyes) and the level
+advisors' texture-coordinate tracks (the eyes of clip 16) play as an object's do: the advisor's model slots are drawn by the shared instance
+draw `0x473C70(instance, 1, 0)` from `0x429DF0`, which runs the channel sampler `0x4735D0` -> `0x471860` for each animation channel (vertex pass in set mode, the
+models' header flag 4 being clear, and texture-coordinate pass `0x4745C0`); `AdvisorRig.Write` samples them per part. No advisor clip has a
+12-byte vertex block. The sampler hides the model when the last clip ends
 (`0x4735D0`), `Advisor.DrawnSpanMilliseconds` = the sum of the played lengths. A new response restarts at clip 14, so an interrupted
 advisor disappears in the frame the next one starts and rises again. Video check (`[EXT-EVIDENCE:video tpw-nl 32:07]`, `41:58`, `58:38`,
 `61:34`): the model appears at the request, speech starts 0.6–1.0 s later (the 800 ms delayed start), the last word ends and the advisor is
@@ -396,7 +405,7 @@ gone 0.8–1.0 s later (2.2 s for one longer outro); the played sum puts the end
 ### Contextual help (ADVISOR-009, October 14, 2026)
 
 About half of all speech in the video is help text for a window or tool. In `tp.exe` it is a message family: descriptors of the
-tutorial group (group 1; 82 descriptors, 81 of them with a response in the table, since 291 names the absent response 551) whose score callback `0x59E8C0` returns the Advisor.sam score `HelpMessage.ContextHelpScore` (1000), marked to
+tutorial group (group 1; 82 descriptors, 81 of them with a response in the table, since 291 names the absent response 551) whose score callback `0x59E8C0` returns the Advisor.sam score `HelpMessage.Score` (`+0x328`, 1000), marked to
 skip the background scan, posted by the UI code (`content/data/advisor-help-messages.toml`; the descriptor table `0x76E300` is filled at
 start by the straight-line initializer `0x5A0A50`, which the script replays). A window builder posts its message with `0x486B00`
 (build `0x59B590`, queue `0x59A940`) and its close handler withdraws it with `0x486B40` → `0x59AA70`: pending records of the message are
@@ -410,7 +419,14 @@ starts, each cut by the next window), again three times in the next park, and th
 attractions 191, loans 195 (full simulation only), finance 197, park information 199, all visitors 286, ticket price 303, identified by the
 title strings their builders load (`AdvisorUiHelp`). `ParkHud` reports screens opening and closing to the host, `AutomaticAdvisor.OnWindowOpened`/
 `OnWindowClosed` post and withdraw. The other 73 help ids (windows OpenTPW does not have, tool starts such as the queue and path tools; mode 3 of
-`SetMode` posts 203) are bound as descriptors but have no producer (ADVISOR-009); the slap sound the last-tutorial copy and its clearing branch `0x59AA7B`-`0x59AAC8` are ADVISOR-027.
+`SetMode` posts 203) are bound as descriptors but have no producer (ADVISOR-009). A cut-off while the speech sound still plays (the update
+`0x599902` drops the handle once it ends) plays one of the three slaps of the global `cat_speech` bank, `0x27F` + `rand() % 3`
+(`0x5995A4`; OpenTPW draws from a local presentation generator). Every tutorial (group 1) record offered to the queue is first copied to
+controller `+0x16D0` (`0x59A940`), admitted or not; withdrawing that message clears the copy (`0x59AA7B`-`0x59AAC8`), and F1 in a help
+window (the default window procedure `0x488BA0`, key `0x70` without modifiers) offers it again at `HelpMessage.ContextHelpScore` with its
+once-only and slap checks overridden (`0x59AB50`). The help descriptors themselves score `HelpMessage.Score` (`+0x328`, `0x59E8C0`). The
+copy is the save's "current record" and rides in OpenTPW's park save; `+0x16E8` (`mRequestedLastTutorial`) has no writer besides the
+save/load and its clear, so the one update it skips only follows an original save that held it (reported under SAVE-010).
 
 ### Sequences and timing
 
@@ -442,7 +458,9 @@ October 14, 2026, from the decrypted Windows `tp.exe` (`[BIN:TPW-EXE:...]` citat
   sum of 0 with a nonzero budget falls back to the generator with the same budget, so 28 is generated (and keeps its timer), and so is
   any row whose clips are missing from the archives: clips 16–20 exist only in the level advisors. The span is then the same sum + 1000
   + the length of clip 15. When the advisor clock reaches the timer (`0x599991`) the update calls the particle effect `0x521E60` (87,
-  90000, 0, 7000), plays sound `0xC6` and calls `0x4B9340`; those effects are not ported (ADVISOR-025). Without any clip archive every length is 0 and
+  90000, 0, 7000), plays sound `0xC6` (global `cat_ui`, flat) and calls `0x4B9340`; OpenTPW plays the sound once per response (the
+  deadline minus the clock as a signed 32-bit difference, not positive), while the particle (template 87, screen-space) and the HUD
+  counter refresh are not ported (ADVISOR-025). Without any clip archive every length is 0 and
   the original returns 1000; OpenTPW keeps speech + 200 + 300 + 1000 for such a partial install (`[EXT:advisor-no-clips]`).
 - **Shown.** The model is shown when any animation other than 12 starts (`0x4732A0` → `0x45BD30`). "Kill advisor"
   (`0x429D60`: animation 12 with the immediate flag, then unlink) hides it at once; it is called by the stop path `0x5996D0` (six
@@ -627,20 +645,19 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ID | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | ADVISOR-005 | `source/OpenTPW/World/Advisor.cs` | Light colour 0.6, `test.shader` ambient 0.4 + fog (the light direction is traced); the original lights each vertex (`0x574660` → `0x5741B0`: ambient + Σ colour × max(0, −L·N) over its directional lights, clamped per channel) with the advisor's light colour 1.0 (`0x429BA0`, a `0x429A60` directional light) | The ambient during the advisor pass (default 0.15 grey, `0x573FD0`; writers `0x457F18`, `0x458426`, `0x45861C`, `0x5D8C3B`, `0x5D8D7B`, `0x5D923B`) and its fog state |
-| ADVISOR-006 | `source/OpenTPW/World/AdvisorRig.cs` | The clips' node tracks, blink toggles and accessory selectors are drawn; their vertex tracks (antennae, hands), the level advisors' texture-coordinate tracks and the 12-byte block are not; the draw-path bit 0x10 at `0x57A797` is a render-node deferral marker, not the clip-toggled mesh-node bit (mesh record +0, `0x472E75`/`0x472401`) | A skinned draw of the vertex tracks and a reader of the toggled mesh-node bit (RIDES-042) |
+| ADVISOR-006 | `source/OpenTPW/World/AdvisorRig.cs` | The clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and texture-coordinate tracks (the level advisors' eyes) are drawn; the blink toggles set the mesh-node bit (mesh record +0, `0x472E75`/`0x472401`), whose reader in the draw is open (the draw-path bit 0x10 at `0x57A797` is a render-node deferral marker), so hiding the toggled meshes is OpenTPW's reading; a clip the archive lacks leaves the bind pose | A reader of the toggled mesh-node bit (RIDES-042) |
 | ADVISOR-009 | `source/OpenTPW/World/Advisor.cs` | `--advisor-say` plays global clips by number and starts them at its first rendered frame; responses follow the traced global/level selector; the controller says messages 0, 106, 128, 129, 323 and the help messages of eight HUD windows (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price) | The other 73 help messages (windows OpenTPW lacks, tool starts, `SetMode` 3 → 203) and the 135 computed score producers (table `0x76E300`) |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs` | Mono speech duplicated to both stereo channels; the original submits it unpositioned (`0x51BFC0` with 0,0,0) and the library places flat sounds at (0,1,0) (`0x6BC51D`) | QMixer (outside tp.exe, AUDIO-018) or a capture |
 | ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Controller clock starts at 0 for a new park and an original-save import, one controller update per frame; it stands still while the pause menu is open. The original saves the clock as the second word of the `SSEM` (MESS) block (writer `0x402E00`, snapshot `0x402E60`, reader `0x402E30`) and its load sets the clock to it (`0x415140` → `0x402E80` → `0x403160`); it stands still whenever `0x4092A0` pauses: on app deactivation (`0x46B600`, WM_ACTIVATEAPP) and in message boxes (`0x47F020`) | Reading the saved word in the import; which screen each of the pause callers `0x48C87E`, `0x49EFBA`, `0x49F29F`, `0x4A3A6C`, `0x4A93D7`, `0x5F0B7F` is |
 | ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Event 2 comes from the economy's bankruptcy (six months in the red), not the monthly guard of `0x4D0370` (balance and previous balance < 0 and the red-time term ≥ 6); events 3/4 are raised on every open/close button press as in `0x519EF0` | `0x4F88B0` and an economy field for the turn entered red (ParkEconomy belongs to the economy work) |
 | ADVISOR-022 | `source/OpenTPW/World/AdvisorController.cs` | On an original save import, pending advice and history of messages without a bound descriptor (all but 0, 106, 128, 129, 323 and the 81 help messages) are dropped (reported); OpenTPW's own park save stores the controller | The remaining descriptor rows (table `0x76E300`) |
-| ADVISOR-025 | `source/OpenTPW/World/AdvisorSequence.cs` | The effect of a fixed sequence's timer entry (sequences 28 and 29: particle `0x521E60` (87, 90000, 0, 7000), sound `0xC6`, `0x4B9340`) is not ported; the timer is recorded on the sequence | The effects of `0x521E60` with these arguments and of `0x4B9340` |
-| ADVISOR-026 | `source/OpenTPW/World/AdvisorCostumes.cs` | The level advisors' props (Ticket, MAP, Ticket2, Mutant Eye, T_Particle/Rotate dummies) stay hidden; the ticket logic `0x599B09`–`0x599BDE` and the accessory bits `0x20000`–`0x200000` of `0x598DC0` are not ported | The ticket schedule behind `0xF7978C`/`0xF79788` and the effects of `0x5ED5A0`–`0x5ED700` |
-| ADVISOR-027 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | A withdrawn speaking help hides the advisor and stops the speech; the slap sound (`0x27F`–`0x281`) and the last-tutorial copy at controller `+0x16D0` with its clearing branch `0x59AA7B`-`0x59AAC8` (when `0x59C500(message) == 1` and `+0x16DC` is the message, `+0x16E4` is cleared) are not ported | The samples of the three sound ids and the reader of `+0x16D0`/`+0x16E8` (`0x59A550`) |
+| ADVISOR-025 | `source/OpenTPW/World/AdvisorSequence.cs` | A fixed sequence's timer (sequences 28 and 29) plays `cat_ui` `0xC6` when the advisor clock reaches it; its particle `0x521E60` (87, 90000, 0, 7000) is not started (template 87 is screen-space, which the particle renderer does not draw) and `0x4B9340` (the HUD golden-ticket/key counter) has no counter to refresh | The screen-space particle draw path and its coordinate mapping; the HUD counter (UI-051) |
+| ADVISOR-026 | `source/OpenTPW/World/AdvisorCostumes.cs` | The level advisors' props (Ticket, MAP, Ticket2, Mutant Eye) follow the clips' node lists and blink toggles carried from clip to clip (`AdvisorAccessories.SequenceHiddenNodes`); the accessory bit `0x10000` hides the costume, the bug head and the mouth, and the key clip's bit `0x40000` plays `cat_ui` `0xC5`; the screen-space effects of the bits `0x20000`-`0x200000` (UI particle pool `0x5ED5A0`, `0x5ED660`, `0x5ED700`) are not started, and the node state is rebuilt at every response while the original keeps the bits on the model instance | The screen-space particle draw path; whether anything resets the node bits between responses (clip 19 hides the body) |
 
 Retired October 14, 2026 (traced in tp.exe, citations at the sites): ADVISOR-008 (audio start), ADVISOR-013 (talking
 flag), ADVISOR-014 (synthesis window), ADVISOR-019 (balance fields +0x18/+0x1C are not read), ADVISOR-016 (the ten fixed
 rows of table `0x76DC18`; the unported timer effect is ADVISOR-025) and ADVISOR-018 (the sampler hides the model at the end of the
-last clip). ADVISOR-002 (costumes) and ADVISOR-023 (the −1..1 screen space, confirmed by the video: the body centre at 0.80 of the
+last clip). ADVISOR-027 (the cut-off slap, the last tutorial record and its F1 replay) retired on October 15, 2026. ADVISOR-002 (costumes) and ADVISOR-023 (the −1..1 screen space, confirmed by the video: the body centre at 0.80 of the
 frame in both axes, `[EXT-EVIDENCE:video tpw-nl 1:50]`) retired on October 14, 2026 (video round). ADVISOR-011 is an extension (`[EXT:advisor-no-device-speech]`), as is ADVISOR-024 (`[EXT:advisor-aspect]`).
 
 ## Remaining gates

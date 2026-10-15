@@ -20,6 +20,39 @@ files remain outside that publication.
 - Saves gain two optional fields (a train's reference car, the ride's lead-car coordinate, which also joins the state hash); older saves
   convert from the front car. The coaster hash content changes with all of this (docs/DETERMINISM.md); no pinned hash depended on it.
 
+## Advisor presentation, crowd sound and particle density from tp.exe (October 15, 2026)
+
+- **The advisor moves**: its antennae, hands and eyes vertex tracks and the level advisors' eye texture tracks play through the shared
+  instance draw (`0x429df0` → `0x473c70`); clip node bits carry from clip to clip, so bit `0x10000` hides the bug head and mouth and
+  `0x40000` plays cat_ui `0xC5` (the ticket close-up, ADVISOR-006 and -026 narrowed).
+- **The slap and F1**: cutting the advisor off while it speaks plays one of three slaps (`0x5994e0`), and F1 in the eight help windows
+  replays the last tutorial record (`0x488c02` → `0x59ab50`, saved as an optional field; ADVISOR-027 retired). The help descriptors read
+  `HelpMessage.Score`, not `ContextHelpScore` (both 1000 in the shipped file).
+- **The crowd sound follows its parameter** (`0x6bbb80`): a parameter change recomputes the playing sample's volume and pitch, on the
+  original's beat of every 32nd 31 ms step (`0x54f82d`, AUDIO-036 retired). The ticket timer plays cat_ui `0xC6` (`0x5999b2`).
+- **Particle density** comes from the player's graphics preset as the original's detail files set it (500/1000/1500, `0x44dc60`;
+  PTCL-906 narrowed).
+
+## Buy Land, as in the original (October 15, 2026)
+
+The original's land purchase is in: the build window's Miscellaneous tab has "Buy Land" (with the `Costs.MapCell` price) and "Clear
+Land" (`0x4ab12f`), and the land a park owns now limits what can be built.
+
+- **The fence and the owned land** come from each theme's `Hoardings.sam` (loaded at `0x407f20`): the fence runs from post A (the gate's
+  second entrance + 3) to post B (the first − 4, `0x5323f0`), and every cell outside it is unowned (`0x40`, set at `0x536490`). An
+  imported original save keeps its own flags and fence (a save whose fence cannot be walked from post A to post B keeps its flags
+  but has no Buy Land); on the Jungle Easymode save the fill rule reproduces all 16,384 cells' flags, and that save owns 674 cells
+  more than a new park (land the player bought).
+- **The Buy Land tool** (mode `0x39`) takes two clicks on the fence-post lattice and checks the rectangle as `0x531a50` does (map
+  bounds and size, gate posts, runs over no-terrain or fixed-walkway cells (types 7 and 0x1e; water does not count), contact with
+  the park, no new land, no enclosed pocket, money with an equal balance allowed); each unowned cell in [x0+2, x1) × [y0+2, y1)
+  costs `Costs.MapCell` (`0x532303`; 100 in the standard balance, 10 in Jungle's easy one), booked as other costs. The fence is
+  walked round the new land (`0x5327e0`), one purchase per activation.
+- **Unowned land** refuses paths, queues, objects, tracks and staff drops (`0x535670`). Saves keep the land as an optional record;
+  older saves fall back to the land computed from the fence.
+- Not yet: the fence models and the unowned-terrain tint, Clear Land (the rectangle bulldozer, PATH-005), and the coaster tool's
+  ownership test. PATH-007 and ECON-026 are narrowed.
+
 ## Interface windows from tp.exe's tables (October 15, 2026)
 
 - **All Attractions** is built from four decoded tables (`0x7508e0`, `0x750ab8`, `0x750ba0`, `0x750ca0`): the original per-category

@@ -14,7 +14,7 @@ namespace OpenTPW;
 // [BIN:STP-PPC:engine_shared 0x1ACC8 particle draw] over the emitter slots, culled by bounding box; a camera-facing quad of half-size size/1024 times the sprite scale, rotated by the spin
 // [BIN:STP-PPC:engine_shared 0x1ACC8 blend] untextured: SRC_ALPHA, ONE_MINUS_SRC_ALPHA; render flags 0x2004: SRC_ALPHA, ONE; flags 0x4: ONE, ONE; otherwise the sprite's own alpha blend
 // [BIN:TPW-EXE:0x57C620 draw driver] one quad per particle in slot order 0..119, newest particle first, each with its own blend state; the render flags apply to untextured particles too
-// [APPROX:PTCL-905] OpenTPW groups the quads into three blend batches (alpha, source-alpha-over-one, one-plus-one), each in emitter slot order, depth-tested without depth writes and unsorted; the original submits one primitive per particle in that order, and whether its engine queue depth-sorts (tp.exe 0x565F90) is untraced; untextured particles with neither flag draw as alpha (the original's 0x1256 / 0x556 states are not mapped)
+// [APPROX:PTCL-905] OpenTPW groups the quads into three blend batches (alpha, source-alpha-over-one, one-plus-one), each in emitter slot order, depth-tested without depth writes and unsorted; the original submits one batch per particle in that order (0x565F90), whose state word (decoder 0x567620) keeps depth writes on unless flags 0x4000 add 0x800, draws an untextured particle opaque (0x1256) when its alpha byte is 0 or >= 0xF0 and by alpha with an alpha test at 0x10/255 (0x556) otherwise, and whose triangles are depth-sorted within the batch when the state lacks 0x1000/0x2000 (0x565590 -> 0x565490); the order across batches is not read
 public sealed class ParticleRenderer : Entity
 {
 	private const int VerticesPerQuad = 6;
@@ -183,7 +183,7 @@ public sealed class ParticleRenderer : Entity
 			return false;
 		var centre = originalToEngine( new SVector3( sprite.X, sprite.Y, sprite.Z ) / 64f );
 		// [BIN:TPW-EXE:0x57C6B8 sprite size] half-height = (size << 1) * (1/1024) * 0.5 = size / 1024 original units for every particle; only the width gets a factor
-		// [APPROX:PTCL-904] the width factor is the frame record's float +8 (textured) or the projection aspect DAT_008BCBCC (untextured) in the original; neither is traced, so a sprite uses its frame's pixel aspect and an untextured quad 1
+		// [APPROX:PTCL-904] the width factor is the frame record's float +8 (textured) or DAT_008BCBCC (untextured) in the original; DAT_008BCBCC is the display's height / width (0x582EB0), which an aspect-correct projection may already apply, and the frame record's float +8 is not read, so a sprite uses its frame's pixel aspect and an untextured quad 1
 		var (halfWidth, halfHeight) = HalfExtents( sprite.Size, scale, sprite.FrameCount, found.Width, found.Height );
 		if ( !(halfWidth > 0 && halfHeight > 0) )
 			return false;

@@ -162,7 +162,7 @@ public sealed class WeatherVisualState
 	/// The step the field takes for a frame: wall-clock seconds capped at <see cref="MaximumStepSeconds"/>, zero while
 	/// paused or for a non-finite or negative delta.
 	/// </summary>
-	// [APPROX:AUDIO-903] the engine zeroes dt under a flag that is not identified; OpenTPW zeroes it while the park is paused (simulation speed 0) and otherwise uses the wall-clock frame time, whatever the simulation speed
+	// [APPROX:AUDIO-903] OpenTPW zeroes dt while the park is paused (simulation speed 0) and otherwise uses the wall-clock frame time, whatever the simulation speed; tp.exe's CRain update (0x57ff60) also zeroes dt while engine flag 0x8bd508 bit 2 is set (0x57ffb1, 0x57ffc9), and nothing writes that bit alone (only whole-word stores at 0x564342, 0x577326, 0x577446 and 0x583555), so what sets it is not identified
 	public static float FrameSeconds( float deltaSeconds, bool paused ) =>
 		paused || !float.IsFinite( deltaSeconds ) || deltaSeconds <= 0 ? 0f : MathF.Min( deltaSeconds, MaximumStepSeconds );
 
@@ -216,7 +216,7 @@ public sealed class WeatherVisualState
 	// [BIN:STP-PPC:0x101035D4 bolt start] the strike hands the renderer the sky point (x, 300, z); up to 16 bolts are live
 	// [BIN:STP-PPC:engine_shared 0x10020150 bolt ground] the ground point is at original y = 0, not on the terrain: the bolt keeps the top's x and z (the original's ground point is a uniform float draw whose range is not traced)
 	// [BIN:STP-PPC:engine_shared 0x1001EA18 bolt shape] recursive midpoint displacement with roughness 0.6; a segment stops splitting when its squared length is under 6 + 2u (u in [-1,1)), so segments run about 2 to 2.8 units; each split has a 9/512 chance to branch, up to depth 4, a branch being 2.5 x (512..1535) / (96 x depth) long and bent downward; the shape is fixed per bolt from a seeded generator (the PC behaviour)
-	// [APPROX:AUDIO-902] the displacement per split is OpenTPW's: roughness x segment length x 0.25 x u along both axes perpendicular to the segment, the branch direction is half the parent's plus a random sideways term and a downward bias; only the roughness, the stop test, the branch odds, depth and length are traced
+	// [APPROX:AUDIO-902] the displacement per split is OpenTPW's: roughness x segment length x 0.25 x u along both axes perpendicular to the segment, the branch direction is half the parent's plus a random sideways term and a downward bias; tp.exe moves the midpoint along one perpendicular (0x57e4b0: from one of three axes picked by rand % 3) by |segment| x roughness x r2 x r1^2 with a random sign (r = (rand % 0x1fff) / 8192), and a branch (0x57e810: (rand & 0x1ff) < 9, depth below +0xa1a0) heads 2.5 x (0x200 + rand & 0x3ff) / (96 x depth) along the segment plus (0x200 + rand & 0x3ff) / (96 x depth) x the bolt's direction, halved when it points back
 	public WeatherBolt AddBolt( NVector3 top, float lifetimeSeconds ) => AddBolt( top, WeatherStrike.Below( top ).Bottom, lifetimeSeconds );
 
 	/// <summary>Starts a bolt between <paramref name="top"/> and <paramref name="bottom"/> (original units): the lobby hands both.</summary>
@@ -272,7 +272,7 @@ public sealed class WeatherVisualState
 	}
 
 	/// <summary>The bolt's colour grey 0..1: opaque, pulsing in 500 ms cycles from 192 up to 255, plus its 0..63 flicker, capped at 255.</summary>
-	// [APPROX:AUDIO-902] the 500 ms pulse is drawn as a sine between 192 and 255 plus rand(0..63); the original's exact curve is not traced
+	// [APPROX:AUDIO-902] the 500 ms pulse is drawn as a sine between 192 and 255 plus rand(0..63); the original's exact curve (the segment emitter 0x57dd10) is not read
 	public static float BoltGrey( WeatherBolt bolt )
 	{
 		var phase = bolt.Age / BoltPulseSeconds;

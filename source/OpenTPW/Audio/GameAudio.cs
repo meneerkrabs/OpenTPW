@@ -483,7 +483,7 @@ public static class GameAudio
 	/// </summary>
 	// [BIN:STP-PPC:0x100BC388 rain level] above 0 the global rain voice (cat_ambient 0x21, submitted flat) is started once and given parameter 8 = the level; 0 stops it with 0x100BBA58
 	// [BIN:STP-PPC:0x10103394 level source] the level is the weather thing's current drop count × 100 / MaxRaindrops (the Mac's rain tick; the fork's +0x34 target reading is refuted)
-	// [APPROX:AUDIO-015] the thing's own flat voice (SetWeatherRain) is built beside the level-driven one while it rains; whether the library lets two instances of one event sound (a per-event instance or priority limit) is not traced
+	// [BIN:TPW-EXE:0x6b87d0 event submit] the library has no per-event instance limit: a submit replaces only the live voice of the handle it carries (0x6b6830; refused while that voice's priority +0x22 >= the new event's +0xc, else the old voice is flagged 0x100, 0x6b88c0-0x6b88df), the thing submits its voice with handle 0 (0x51327c) while +0x54 is free, and the pool admits voices by rank alone (0x6b62b0, 0x6b6bc0), so both rain voices sound, as here
 	public static void SetRain( int level )
 	{
 		if ( events == null )

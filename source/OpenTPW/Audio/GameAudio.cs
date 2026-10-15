@@ -758,26 +758,16 @@ public static class GameAudio
 	};
 
 	/// <summary>
-	/// The event an RSE <c>EVENT</c> instruction plays: the id is looked up in the routed category, and when that is a
-	/// level category without the event, in the global category of the same name. Original scripts rely on the fallback
-	/// (<c>incagod.RSE</c> plays <c>EVENT 3 id 43</c>, which only the global <c>cat_rides</c> has).
+	/// The event an RSE <c>EVENT</c> instruction plays: the id is looked up in the routed category only, so an id the
+	/// level category lacks plays nothing (<c>incagod.RSE</c>'s <c>EVENT 3 id 43</c>, which only the global
+	/// <c>cat_rides</c> has, is silent in the original too).
 	/// </summary>
 	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for a null category)
-	// [APPROX:AUDIO-011] OpenTPW falls back from a level category without the event to the global category of the same name (incagod.RSE's EVENT 3 id 43 exists only in the global cat_rides); whether the library's own lookup resolves a missing id elsewhere is not traced
+	// [BIN:TPW-EXE:0x6b87d0 event lookup] the submit takes the category by its handle (0x6b9b30, a deque index; an empty slot returns) and searches only that category's 20-byte event records for the id (0x6c5870, linear, null when absent), returning without a voice (0x6b8919); the level category is loaded from the level's own data under its own path key (0x51ec50 -> 0x51b530 -> 0x6bf330, path joined at 0x6b8690), so nothing falls back to the global category
 	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId )
 	{
 		var category = RseEventCategory( type );
 		var soundEvent = category?.Catalog.Find( eventId );
-		if ( soundEvent == null && type == 3 )
-		{
-			category = Rides;
-			soundEvent = category?.Catalog.Find( eventId );
-		}
-		if ( soundEvent == null && type == 4 )
-		{
-			category = Ambient;
-			soundEvent = category?.Catalog.Find( eventId );
-		}
 		return soundEvent == null || category == null ? null : (category, soundEvent);
 	}
 

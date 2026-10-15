@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -238,6 +239,7 @@ public class AudioTriggerTests
 			ObjectCatalog.BonusDataRoot = null;
 			var routed = GameAudio.RseEventRoutes.Select( route => route.Type ).ToHashSet();
 			var literalTypes = 0;
+			var silent = new SortedSet<string>( StringComparer.OrdinalIgnoreCase );
 			foreach ( var level in new[] { "jungle", "space", "fantasy", "hallow" } )
 			{
 				var levelRides = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Sound", "cat_rides" );
@@ -276,15 +278,25 @@ public class AudioTriggerTests
 						var id = instruction.Operands[2];
 						if ( id.Kind != RideScriptOperandKind.Literal )
 							continue;
-						// [APPROX:AUDIO-011] a level category falls back to the global one of the same name (incagod.RSE's EVENT 3 id 43 is only in the global cat_rides)
+						// [BIN:TPW-EXE:0x6b87d0 event lookup] the level category is searched alone: an id it lacks is silent (incagod.RSE's EVENT 3 id 43 is only in the global cat_rides)
 						if ( type.Value == 3 )
+						{
 							Assert.IsTrue( levelRides.Catalog.Find( id.Value ) != null || globalRides.Catalog.Find( id.Value ) != null, $"{entry.ScriptPath}: EVENT 3 id {id.Value} is neither a {level} nor a global cat_rides event" );
+							if ( levelRides.Catalog.Find( id.Value ) == null )
+								silent.Add( $"{Path.GetFileName( entry.ScriptPath )} EVENT 3 id {id.Value}" );
+						}
 						if ( type.Value == 4 )
+						{
 							Assert.IsTrue( levelAmbient.Catalog.Find( id.Value ) != null || globalAmbient.Catalog.Find( id.Value ) != null, $"{entry.ScriptPath}: EVENT 4 id {id.Value} is neither a {level} nor a global cat_ambient event" );
+							if ( levelAmbient.Catalog.Find( id.Value ) == null )
+								silent.Add( $"{Path.GetFileName( entry.ScriptPath )} EVENT 4 id {id.Value}" );
+						}
 					}
 				}
 			}
 			Assert.IsTrue( literalTypes > 200, $"{literalTypes} literal EVENT instructions checked (the corpus uses more than 200)" );
+			Console.WriteLine( $"Level EVENT ids only the global category has (silent, as in the original): {string.Join( "; ", silent )}" );
+			Assert.IsTrue( silent.Contains( "incagod.RSE EVENT 3 id 43" ), "incagod.RSE's EVENT 3 id 43 is the known level id only the global cat_rides has" );
 		}
 		finally
 		{

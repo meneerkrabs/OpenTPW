@@ -128,7 +128,7 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		TearDown();
 		lobbyDefinition ??= LobbyDefinition.Load();
-		Lobby = new LobbyScene( lobbyDefinition );
+		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
@@ -755,8 +755,11 @@ internal sealed partial class GameFlow : IDisposable
 		if ( backdrop != Backdrop.Lobby )
 		{
 			lobbyEffects.StopRain();
+			cityScene?.Step( Time.Delta );
 			return;
 		}
+		// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby steps its subsystems in the order they registered: the flying-mesh system (0x5d5aed) before the islands component, so the flyers draw from the generator first
+		Lobby.Step( Time.Delta );
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
 			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f );
@@ -792,7 +795,7 @@ internal sealed partial class GameFlow : IDisposable
 			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
 			try
 			{
-				cityScene = new LobbyScene( Lobby!.Definition, themes );
+				cityScene = new LobbyScene( Lobby!.Definition, themes, lobbyEffects.Draw );
 				cityScene.Visible = backdrop == Backdrop.City;
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )

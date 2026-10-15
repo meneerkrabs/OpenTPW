@@ -69,7 +69,7 @@ public sealed class LobbyEffects
 	/// <summary>The generator's next draw: the LCG step rotated right by 13 bits, which is also the stored state.</summary>
 	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34 (inlined in the islands update)
 	// [BIN:TPW-EXE:0x5e0f4b lobby generator draw] tp.exe stores the step at lobby +0x34, rotates it right by 13 (ror 0xd) and stores and uses the rotated value; every inlined draw does the same (0x5d98d1 flying-mesh placement, 0x5da0d4 flying-mesh spawn, 0x5e113f island one-shots)
-	// [APPROX:UI-941] only the islands' own draws advance the generator; the original's flying meshes and camera wander draw from it too (0x5d9830, 0x5da020, 0x5d9b50, 0x5e09da; Mac 0x10090174, 0x1009476C), so the strikes come in a different rhythm
+	// [APPROX:UI-941] the islands' draws and the flying meshes (LobbyFlyingMeshes) advance the generator, but the original's camera wander draws from it too (0x5e09da, Mac 0x1009476C) and the islands step 30 times a second while the flyers step per frame (UI-940), so the strikes come in a different rhythm
 	public uint Draw()
 	{
 		state = System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );

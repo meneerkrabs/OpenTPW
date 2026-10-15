@@ -15,7 +15,7 @@ namespace OpenTPW;
 /// </summary>
 // [BIN:STP-PPC:engine_shared 0x1001CF38 CRain::GameLoad] the images are loaded from Data/Generic/Weather: raindrop.tga, snow.tga, lightning.tga (generic/sweather holds smaller copies; which set the park selects is not traced, so the full-size set is used)
 // [BIN:STP-PPC:engine_shared 0x1001DE6C bolt ribbon] a camera-facing ribbon of half-width 1.3 / (branch depth + 1) textured with lightning.tga; opaque grey; no screen flash and no sky darkening in the park
-// [APPROX:AUDIO-900] the blend is not traced (the engine's render-state flags 0x200D22 rain, 0x200D52 bolt and 0x556 snow are not decoded): rain streaks blend additively (the raindrop image has no alpha, white on black), snow and bolts blend by alpha
+// [BIN:TPW-EXE:0x567620 render states] the rain (0x57efd0) and the bolts (0x57ec50) are submitted with state 0x200D52: source alpha over one (low byte 0x52 -> SRCBLEND 5, DESTBLEND 2), blending on (0x100), the alpha test (0x400, reference 0x10 of 255, ALPHAFUNC greater-or-equal from 0x566840) and no depth writes (0x800); the snow (0x57f490) with 0x556: source alpha over inverse source alpha, blending and the alpha test on, depth writes on; the rain's 0x200D22 (one plus one, 0x57f1a7) applies only on the chips flagged at 0x566840 (engine flag 0x8bcbc8 bit 2)
 // [APPROX:AUDIO-904] the rain field lives within +-4 original units (0.8 engine units) of the eye, so the camera's 0.1 near plane clips the nearest drops (those within 0.5 original units of the eye plane), where the original's near plane is 0.1 original units (0x54e86f -> 0x578be0: near 0.1, far 1000, fov 90; the park camera 0x578ca0 changes only the far plane) and its polygon clipper (clip codes 0x561bc0, clipping 0x562a70, called from 0x565bb0) cuts the streaks there, drawing only drops in front of the eye (0x57f1f0); the vertex buffer is sized once for 1024 drops plus 16 bolts of 512 segments, so a browser session allocates no further per-frame GPU memory
 public sealed class WeatherRenderer : Entity
 {
@@ -23,6 +23,12 @@ public sealed class WeatherRenderer : Entity
 	internal static readonly string[] ImagePaths = { "/generic/weather/raindrop.tga", "/generic/weather/snow.tga", "/generic/weather/lightning.tga" };
 
 	private const int VerticesPerQuad = 6;
+	/// <summary>The rain's state 0x200D52: source alpha over one, no depth writes.</summary>
+	internal const MaterialFlags RainFlags = MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend;
+	/// <summary>The snow's state 0x556: alpha blend with depth writes.</summary>
+	internal const MaterialFlags SnowFlags = MaterialFlags.DoubleSided;
+	/// <summary>The bolts' state 0x200D52, as the rain's.</summary>
+	internal const MaterialFlags BoltFlags = MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend;
 	/// <summary>Worst-case vertex count: the drop field (rain or snow, one at a time) plus every bolt, allocated once.</summary>
 	private static readonly int MaximumVertices = (WeatherVisualState.FieldSize + WeatherVisualState.MaximumBolts * WeatherVisualState.MaximumBoltSegments) * VerticesPerQuad;
 
@@ -57,9 +63,9 @@ public sealed class WeatherRenderer : Entity
 		Name = "Weather";
 		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
 		// first simulation step — so no gameplay frame pays the shader compile and pipeline build mid-rain.
-		rainMaterial = Prepare( ImagePaths[0], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
-		snowMaterial = Prepare( ImagePaths[1], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
-		boltMaterial = Prepare( ImagePaths[2], MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
+		rainMaterial = Prepare( ImagePaths[0], RainFlags );
+		snowMaterial = Prepare( ImagePaths[1], SnowFlags );
+		boltMaterial = Prepare( ImagePaths[2], BoltFlags );
 	}
 
 	/// <summary>A material textured with one weather image from the game data, or null when the game folder lacks it (nothing of that kind is drawn then).</summary>

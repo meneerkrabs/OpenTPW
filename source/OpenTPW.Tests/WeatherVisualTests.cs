@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NVector3 = System.Numerics.Vector3;
@@ -108,6 +109,43 @@ public class WeatherVisualTests
 		if ( moved > WeatherVisualState.BoxHalfExtent )
 			moved -= 2 * WeatherVisualState.BoxHalfExtent;
 		Assert.AreEqual( -5 * WeatherVisualState.ParallaxScale, moved, 1e-4f, "the field follows 0.1 of the camera's movement (a zero dt leaves the fall alone)" );
+	}
+
+	[TestMethod]
+	public void TheParallaxIsTheAbsoluteCameraPositionSoAReturnRestoresTheField()
+	{
+		// [BIN:TPW-EXE:0x57efd0] the drops move by -0.1 x the camera's position (wrapped), not by an accumulated delta
+		var state = Field( 8 );
+		var before = Enumerable.Range( 0, 8 ).Select( state.DropOffset ).ToList();
+		state.Update( 0f, new Source { DropCount = 8 }, WeatherCamera.Looking( new NVector3( 37.3f, -12f, 5.5f ) ) );
+		state.Update( 0f, new Source { DropCount = 8 }, WeatherCamera.Looking( new NVector3( -3f, 140f, 2f ) ) );
+		state.Update( 0f, new Source { DropCount = 8 }, Eye );
+		var after = Enumerable.Range( 0, 8 ).Select( state.DropOffset ).ToList();
+		for ( var index = 0; index < 8; index++ )
+			Assert.IsTrue( NVector3.Distance( before[index], after[index] ) < 1e-3f, $"drop {index}: {before[index]} vs {after[index]}" );
+		var moved = Field( 8 );
+		moved.Update( 0f, new Source { DropCount = 8 }, WeatherCamera.Looking( new NVector3( 0, 0, 30 ) ) );
+		var shift = moved.Offset.Z - state.Offset.Z;
+		Assert.AreEqual( -3f + 8f, shift < 0 ? shift + 8f : shift, 1e-4f, "z moved by -0.1 x 30, wrapped into the 8-unit box" );
+	}
+
+	[TestMethod]
+	public void TheRenderStatesFollowTheOriginalStateWords()
+	{
+		// [BIN:TPW-EXE:0x567620] 0x200D52 (rain, bolts): source alpha over one, no depth writes; 0x556 (snow): alpha blend with depth writes
+		Assert.AreEqual( MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend, WeatherRenderer.RainFlags );
+		Assert.AreEqual( WeatherRenderer.RainFlags, WeatherRenderer.BoltFlags );
+		Assert.AreEqual( MaterialFlags.DoubleSided, WeatherRenderer.SnowFlags );
+		var shader = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "weather.shader" ) );
+		StringAssert.Contains( shader, "if ( alpha < 16.0 / 255.0 )", "the alpha test at 0x10 of 255 (ALPHAFUNC greater-or-equal)" );
+	}
+
+	private static string RepositoryRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !Directory.Exists( Path.Combine( directory.FullName, "content", "shaders" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new DirectoryNotFoundException( "content/shaders" );
 	}
 
 	[TestMethod]

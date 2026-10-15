@@ -443,14 +443,17 @@ Behaviour worth knowing:
   default is 5) and 0.8 for snow, plus 0.1 x the camera's movement as parallax. The original's parallax
   is the wrapped absolute camera position times a factor (`CRain +0x3340`, 0.1; 0.3 while the camera-mode
   byte `0x790ab0 & 0x16` is set, `0x57fff8`-`0x58000b`), per axis `wrap(f x position + 4) - 4` into
-  [-4, 4) (x and z `+f`, y `-f`; `0x580013`-`0x5800b7`); OpenTPW's per-frame delta form is equivalent
-  only up to the sign with which the offset is added to the drops, and the 0.3 case is not
-  reproduced (AUDIO-900). At the original scale
+  [-4, 4) (x and z `+f`, y `-f`; `0x580013`-`0x5800b7`), and the draw (`0x57efd0`) subtracts it from x and z
+  and adds it to y, so every axis moves by `-f x position`; OpenTPW wraps `fall - 0.1 x eye` the same way, but
+  the 0.3 case and the 1/16384 quantisation are not reproduced (AUDIO-900). At the original scale
   (0.2 engine units a unit) the field is a small near-field around the eye: streaks are 0.1 units
   long and 0.2 x that wide. The camera's 0.1 near plane clips the nearest 0.5 units of it, where the
   original's near plane is 0.1 units (`0x578be0`, AUDIO-904).
 * Rain: grey `3 x max(0, int(12 x (6 - depth)))` (216 at the eye, 0 at depth 6), alpha 0x80 at the
-  streak's trailing end and 0xFF at the leading end, only depth > 0 drawn, additive blend (AUDIO-900).
+  streak's trailing end and 0xFF at the leading end, only depth > 0 drawn. The render states come from tp.exe's
+  decoder `0x567620`: rain and bolts `0x200D52` (source alpha over one, no depth writes), snow `0x556` (alpha blend,
+  depth writes), each with the alpha test at 0x10 of 255; the rain's `0x200D22` (one plus one) is only a fallback
+  for the chips flagged at device init (`0x566840`).
 * Snow: flakes of half-size 0.1 map to atlas quadrant `index & 3`, full white, x and y spread by
   `1 + depth/8`, jittering by +-1/128 each frame. The original's other mode (flag `0x115E94` bit 8)
   swirls flakes along a closed 128-point spline; its meaning is not identified, so it is not drawn (AUDIO-901).
@@ -459,7 +462,7 @@ Behaviour worth knowing:
   displacement with roughness 0.6, splitting until a segment's squared length is under 6 + 2u (about
   2 to 2.8 units), a 9/512 branch chance per split up to depth 4 (length `2.5 x (512..1535) / (96 x depth)`,
   bent downward), shape fixed per bolt from a seeded generator, ribbon half-width `1.3 / (depth + 1)`,
-  opaque grey pulsing in 500 ms cycles, 192-255 plus rand(0..63), alive `WeatherEffects.LightningTime`
+  grey (alpha 0xFF, blended source alpha over one) pulsing in 500 ms cycles, 192-255 plus rand(0..63), alive `WeatherEffects.LightningTime`
   (2000 ms) with up to 16 at once. There is no screen flash and no sky darkening in the park. The
   displacement, branch heading and pulse curve are OpenTPW's; tp.exe's displacement (`0x57e4b0`) and branch
   heading (`0x57e810`) are read but not ported (AUDIO-902).
@@ -577,7 +580,7 @@ implemented yet.
 | AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
 | AUDIO-025 | December's average is the storage of the unnamed type-0 `.sam` schema record after `Seasons` (`0x741d80`), taken as 4; the season is the FILETIME date's month / 3 (`0x4f8770`, wMonth 1-12, so December is row 4) and the word (`0x7854f4`) is in .bss with no code reference; its tolerance and chance are confirmed | The generic `.sam` loader's type-0 case (if it stores nothing the average would be 0, not 4) |
 | AUDIO-037 | The sound chooser is seeded from the clock at start-up (as the original) but a park reseeds it from its world seed at entry and saves it with the park, so headless runs and tests start from a known state (not a replay guarantee with sound on); the original's chooser is clock-seeded and unsaved | None (a deliberate determinism choice) |
-| AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops; the parallax is a per-frame delta (equal to the original's wrapped absolute position x 0.1 only up to the sign it is added with; the 0.3 factor under camera modes `0x790ab0 & 0x16` is not reproduced) | The sign with which the offset is added to the drops, and the blend states |
+| AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-0.1 x camera position` (`0x57efd0`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the 0.3 factor under camera modes `0x790ab0 & 0x16` and the 1/16384 quantisation are not reproduced | Which views set the camera-mode bits `0x16` |
 | AUDIO-901 | Snow reuses the rain's drop count but falls slower with a sinusoidal sway | The original's snow motion |
 | AUDIO-902 | The bolt follows the traced CRain shape (roughness 0.6, stop test, branch odds, depth and lengths, ground at y = 0, 2000 ms life, up to 16); the per-split displacement and the branch heading are OpenTPW's where tp.exe displaces the midpoint along one random-axis perpendicular by \|segment\| x roughness x r2 x r1² (`0x57e4b0`) and heads a branch along the segment plus the bolt's direction (`0x57e810`); the pulse curve is OpenTPW's and the ground point keeps the top's x and z | A port of `0x57e4b0`/`0x57e810`; the pulse in the segment emitter `0x57dd10`; the ground point's float draw |
 | AUDIO-903 | The weather's visuals run on the wall-clock frame time capped at 500 ms and freeze while the park is paused; tp.exe also zeroes dt while engine flag `0x8bd508` bit 2 is set (`0x57ffb1`) | What sets that bit (no instruction writes it alone) |

@@ -24,6 +24,22 @@ Land" (`0x4ab12f`), and the land a park owns now limits what can be built.
 - Not yet: the fence models and the unowned-terrain tint, Clear Land (the rectangle bulldozer, PATH-005), and the coaster tool's
   ownership test. PATH-007 and ECON-026 are narrowed.
 
+## Economy rules settled against tp.exe, part two (October 15, 2026)
+
+Sixteen more economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **A new park starts closed** (`0x51562d` writes the closed flag): only the gate button, the two keys and the online park creation open it
+  (`0x519ef0`), and only an imported park saved open is open on load (ECON-031 retired). The M3/M4 gate runs open their park explicitly.
+- **Challenges:** a won challenge with a follow-up marks the follow-up won, so the challenge can be offered again (`0x4d2fb0` re-reads the
+  index the offer moved); declining a follow-up that is not Independent pays half its prize (`0x4d2ec0`); the follow-up is the first open
+  slot of its type in table order (`0x4d2b60`, no same-object preference); type 18 is the best coaster's counted sections with no floor
+  (`0x4d1873`, ECON-036 retired); types 14 and 19 read the coasters' counted sections and type 22 counts ride uses (ECON-034, -035, -055
+  narrowed).
+- **Fixed items** are the objects whose WhichUIType is 4, as the buy menu tests (`0x4aaff0`; ECON-041 retired; the same six per theme), and
+  a repairing mechanic cannot be picked up (`0x505bee` refuses state 13; ECON-052 narrowed).
+- ECON-040 (one golden key once, `0x5afc30`), ECON-051 (the withdrawals flag) and ECON-053 (a carried member is put down where he was
+  before a save, `0x46cdc0`) are retired; ECON-038, -044, -048, -049, -050 and -054 are narrowed.
+
 ## Guest rules settled against tp.exe (October 15, 2026)
 
 Sixteen guest approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
